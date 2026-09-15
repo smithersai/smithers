@@ -330,6 +330,9 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | GET | `/api/bootstrap` | Versioned host/capability contract |
 | GET | `/api/health` | Local process, Node, and sandbox status |
 | POST | `/api/agent/turn` | NDJSON agent stream (`/api/chat/turn` is a compatibility alias) |
+| POST | `/api/agent/turn/replay` | Read committed batches from a persisted leg cursor; never start inference |
+| POST | `/api/agent/turn/retire` | Retire a leg using its private replay capability |
+| POST | `/api/agent/turn/erase` | Delete-only proof, including fencing a not-yet-accepted leg |
 | POST | `/api/agent/turn/cancel` | Cancel a turn (`/api/chat/cancel` is an alias) |
 | GET | `/api/harnesses` | Installed harness snapshot (each row states its verified model suggestions and whether it has a list command) |
 | GET | `/api/harnesses/:id/models` | The harness's own model list (its list command under a 5 s cap), else the table's verified suggestions; empty + reason on failure |

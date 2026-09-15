@@ -1,5 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { createAppStore } from "../AppStore"
@@ -56,19 +56,22 @@ const sseResponse = (frames: ReadonlyArray<string>): Response => {
   return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
 }
 
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
+
 type Route = Response | ((url: URL) => Response | Promise<Response>)
 
 const harness = async (
   routes: Record<string, Route>,
-  options: { readonly signedIn?: boolean; readonly degraded?: boolean; readonly stream?: "live" | "closed" | Response } = {}
+  options: { readonly storage?: StorageApi; readonly repairIntervalMs?: number; readonly signedIn?: boolean; readonly degraded?: boolean; readonly stream?: "live" | "closed" | Response | (() => Response); readonly receipt?: (transition: Parameters<AppStore["dispatch"]>[0], receipt: ReturnType<AppStore["dispatch"]>) => ReturnType<AppStore["dispatch"]> } = {}
 ) => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const store = await createAppStore({ kind: "localStorage", storage: options.storage ?? memoryStorage() })
   /** `METHOD path` per request, the query string dropped; the same with it. */
   const requests: Array<string> = []
   const urls: Array<string> = []
   const bodies: Array<{ readonly key: string; readonly body: unknown }> = []
   /** The stream door's calls: the path and the signal the seam attached. */
-  const streamCalls: Array<{ readonly path: string; readonly accept: string | null; readonly signal: AbortSignal | undefined }> = []
+  const streamCalls: Array<{ readonly path: string; readonly accept: string | null; readonly cursor: string | null; readonly signal: AbortSignal | undefined }> = []
   const live = liveStream()
   const ctx: SeamContext = {
     http: async (input, init) => {
@@ -82,19 +85,23 @@ const harness = async (
       if (typeof init?.body === "string") bodies.push({ key, body: JSON.parse(init.body) })
       const route = routes[key] ?? routes[path]
       if (route === undefined) return json(404, { message: `no route ${key}` })
-      return typeof route === "function" ? route(url) : route
+      return typeof route === "function" ? route(url) : route.clone()
     },
     stream: async (input, init) => {
       const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
       const url = new URL(stripped, "https://cloud.invalid/")
       const path = url.pathname.slice(1)
-      streamCalls.push({ path, accept: init?.headers === undefined ? null : new Headers(init.headers).get("accept"), signal: init?.signal ?? undefined })
+      streamCalls.push({ path, cursor: new Headers(init?.headers).get("Last-Event-ID"), accept: init?.headers === undefined ? null : new Headers(init.headers).get("accept"), signal: init?.signal ?? undefined })
+      if (typeof options.stream === "function") return options.stream()
       if (options.stream instanceof Response) return options.stream
       return options.stream === "closed" ? sseResponse([]) : live.response
     },
     baseUrl: "",
     store,
-    dispatch: (transition) => store.dispatch(transition),
+    dispatch: (transition) => {
+      const receipt = store.dispatch(transition)
+      return options.receipt?.(transition, receipt) ?? receipt
+    },
     actor: () => "user",
     nextOrdinal: () => 0
   }
@@ -115,7 +122,9 @@ const harness = async (
       { id: REPO, org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "qupxosqw", commitId: "c0ffee1" } }
     ]
   })
-  return { ctx, store, seam: createAgentSessionSeam(ctx), requests, urls, bodies, streamCalls, live }
+  const seam = createAgentSessionSeam(ctx, { repairIntervalMs: options.repairIntervalMs })
+  cleanups.push(async () => { seam.dispose(); await store.dispose?.() })
+  return { ctx, store, seam, requests, urls, bodies, streamCalls, live }
 }
 
 const cardOf = (store: AppStore, sessionId = SESSION_ID) => store.collections.cards.get(`agent-session-${sessionId}`)
@@ -167,7 +176,7 @@ describe("agent.session.new", () => {
       [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, message)
     })
     const result = await seam.newSession(REPO, "codex", "Fix the retry loop")
-    expect(requests).toEqual([
+    expect(requests.filter(request => request.startsWith("POST "))).toEqual([
       `POST api/repos/${REPO}/agent/sessions`,
       `POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`
     ])
@@ -195,7 +204,7 @@ describe("agent.session.new", () => {
     expect(CardSchema.safeParse(cardOf(store)).success).toBe(true)
     /* The transcript streams: the SSE door opened on the session's stream with the SSE accept. */
     expect(streamCalls).toEqual([
-      { path: `api/repos/${REPO}/agent/sessions/${SESSION_ID}/stream`, accept: "text/event-stream", signal: expect.any(AbortSignal) }
+      { path: `api/repos/${REPO}/agent/sessions/${SESSION_ID}/stream`, accept: "text/event-stream", cursor: "41", signal: expect.any(AbortSignal) }
     ])
     expect(typeof result).toBe("object")
     expect(result).toMatchObject({ value: expect.stringContaining(SESSION_ID) })
@@ -286,7 +295,7 @@ describe("agent.session.view", () => {
       [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, messages)
     })
     const result = await seam.viewSession(SESSION_ID, REPO)
-    expect(urls).toContain(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=200`)
+    expect(urls).toContain(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=100`)
     const payload = payloadOf(store)
     expect(payload?.workspaceId).toBe("ws-agent-1")
     expect(payload?.provider).toBeNull()
@@ -338,7 +347,7 @@ describe("agent.session.view", () => {
     await seam.newSession(REPO, "codex", "Fix the retry loop")
     /* No argument names the repository: the bare act re-finds it on the session's card. */
     await seam.viewSession(SESSION_ID)
-    expect(urls.at(-1)).toBe(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=200`)
+    expect(urls.at(-1)).toBe(`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=100`)
   })
 })
 
@@ -503,4 +512,229 @@ describe("the transcript stream", () => {
     expect(payloadOf(store)?.transcript.map((row) => row.id)).toEqual([41])
     expect(payloadOf(store)?.state).toBe("active")
   })
+})
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+describe("agent session observation ownership", () => {
+  test("an accepted session is durable before the run-dispatching POST and stream attachment", async () => {
+    const held = deferred<void>()
+    let receipts = 0
+    const { seam, store, requests, streamCalls } = await harness({
+      [`POST api/repos/${REPO}/agent/sessions`]: json(201, AGENT_SESSION_WIRE.session()),
+      [`POST api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(201, AGENT_SESSION_WIRE.message())
+    }, { receipt: (transition, receipt) => {
+      if (transition.type !== "card.upsert" || receipts++ > 0) return receipt
+      return Object.assign(Object.create(receipt) as typeof receipt, { isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held.promise).then(() => receipt) } })
+    } })
+    const pending = seam.newSession(REPO, "codex", "Fix the retry loop")
+    await until(() => receipts === 1)
+    expect(requests).toHaveLength(1)
+    expect(streamCalls).toHaveLength(0)
+    held.resolve()
+    await pending
+    expect(requests.filter(request => request.startsWith("POST "))).toHaveLength(2)
+    expect(streamCalls[0]?.cursor).toBe("41")
+    seam.dispose()
+    await store.dispose?.()
+  })
+
+  test("disposal or sign-out during creation suppresses the second POST and old-account card", async () => {
+    for (const retire of ["dispose", "sign-out"] as const) {
+      const response = deferred<Response>()
+      const { seam, store, requests, streamCalls } = await harness({
+        [`POST api/repos/${REPO}/agent/sessions`]: () => response.promise
+      })
+      const pending = seam.newSession(REPO, "codex", "private task")
+      await until(() => requests.length === 1)
+      if (retire === "dispose") seam.dispose()
+      else await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
+      response.resolve(json(201, AGENT_SESSION_WIRE.session()))
+      expect(await pending).toBeUndefined()
+      expect(requests).toHaveLength(1)
+      expect(cardOf(store)).toBeUndefined()
+      expect(streamCalls).toHaveLength(0)
+      seam.dispose()
+      await store.dispose?.()
+    }
+  })
+
+  test("stream observations wait for the previous receipt and request delivery after the initial observed message ID", async () => {
+    const held = deferred<void>()
+    let holding = false
+    const { seam, store, live, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, [AGENT_SESSION_WIRE.message()])
+    }, { receipt: (transition, receipt) => {
+      if (transition.type !== "card.upsert" || transition.actor !== "system" || holding) return receipt
+      holding = true
+      return Object.assign(Object.create(receipt) as typeof receipt, { isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held.promise).then(() => receipt) } })
+    } })
+    await seam.viewSession(SESSION_ID, REPO)
+    expect(streamCalls[0]?.cursor).toBe("41")
+    live.push(sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 42, sequence: 2 })), { id: 42 })
+      + sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 43, sequence: 3 })), { id: 43 }))
+    await until(() => holding)
+    expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual([41, 42])
+    held.resolve()
+    await until(() => payloadOf(store)?.transcript.length === 3)
+    expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual([41, 42, 43])
+    seam.dispose()
+    await store.dispose?.()
+  })
+
+  test("a stream is retired on authentication change and cannot publish trailing rows", async () => {
+    const { seam, store, live, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
+    await until(() => streamCalls[0]?.signal?.aborted === true)
+    // A canceled transport may still have delivered a queued frame; the generation fence is independent of abort.
+    expect(() => live.push(sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message()), { id: 41 }))).toThrow()
+    expect(payloadOf(store)?.transcript ?? []).toEqual([])
+    seam.dispose()
+    await store.dispose?.()
+  })
+
+  test("a mismatched message session or SSE identity cannot enter the transcript", async () => {
+    const { seam, store } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session()),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: json(200, [])
+    }, { stream: sseResponse([
+      sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ session_id: "another-session" })), { id: 41 }),
+      sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message()), { id: 42 }),
+      sseFrame(AGENT_SESSION_WIRE.statusEvent("completed"))
+    ]) })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => payloadOf(store)?.state === "completed")
+    expect(payloadOf(store)?.transcript).toEqual([])
+    seam.dispose()
+    await store.dispose?.()
+  })
+})
+
+describe("agent session snapshot and stream repair", () => {
+  test("an empty read followed by cursor-zero live-only connection recovers a message committed before connection readiness", async () => {
+    let connected = false
+    const stream = liveStream()
+    const { seam, store, streamCalls, requests } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => json(200, AGENT_SESSION_WIRE.session({ message_count: connected ? 1 : 0 })),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, connected ? [AGENT_SESSION_WIRE.message()] : [])
+    }, { stream: () => { connected = true; return stream.response } })
+    await seam.viewSession(SESSION_ID, REPO)
+    expect(streamCalls[0]?.cursor).toBe("0")
+    // No SSE message is sent: Plue starts cursor0 at its captured head.
+    await until(() => payloadOf(store)?.transcript.length === 1)
+    expect(payloadOf(store)?.transcript[0]?.id).toBe(41)
+    expect(requests.filter(request => request.startsWith("POST "))).toEqual([])
+  })
+
+  test("periodic snapshot repair captures a dropped terminal wakeup and its final committed message", async () => {
+    let completed = false
+    const { seam, store, streamCalls, requests } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => json(200, AGENT_SESSION_WIRE.session({ status: completed ? "completed" : "active", message_count: completed ? 2 : 1 })),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, [AGENT_SESSION_WIRE.message(), ...(completed ? [AGENT_SESSION_WIRE.message({ id: 42, sequence: 2, role: "assistant" })] : [])])
+    }, { repairIntervalMs: 10 })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => requests.filter(request => request.endsWith(`/sessions/${SESSION_ID}`)).length >= 2)
+    completed = true
+    await until(() => payloadOf(store)?.state === "completed" && streamCalls[0]?.signal?.aborted === true)
+    expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual([41, 42])
+    expect(requests.filter(request => request.startsWith("POST "))).toEqual([])
+  })
+
+  test("a completed large session reads the newest200 rows through the real100-row route cap", async () => {
+    const rows = Array.from({ length: 435 }, (_, index) => AGENT_SESSION_WIRE.message({ id: index + 1, sequence: index + 1 }))
+    const { seam, store, urls, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: json(200, AGENT_SESSION_WIRE.session({ status: "completed", message_count: rows.length })),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: url => {
+        const limit = Math.min(100, Number(url.searchParams.get("limit") ?? 30))
+        const offset = Math.floor(Number(url.searchParams.get("cursor") ?? 0) / limit) * limit
+        return json(200, rows.slice(offset, offset + limit))
+      }
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual(Array.from({ length: 200 }, (_, index) => index + 236))
+    expect(urls.filter(url => url.includes("/messages?"))).toEqual([200, 300, 400].map(offset => `GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages?limit=100&cursor=${offset}`))
+    expect(streamCalls).toEqual([])
+  })
+
+  test("reconnect waits for the last observation receipt and resumes its committed message ID without a POST", async () => {
+    let connections = 0
+    let heldReceipt = false
+    const held = deferred<void>()
+    const next = liveStream()
+    const { seam, store, streamCalls, requests } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => json(200, AGENT_SESSION_WIRE.session({ message_count: 1 })),
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, [AGENT_SESSION_WIRE.message()])
+    }, {
+      repairIntervalMs: 10,
+      stream: () => ++connections === 1 ? sseResponse([sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 42, sequence: 2 })), { id: 42 })]) : next.response,
+      receipt: (transition, receipt) => {
+        if (heldReceipt || transition.type !== "card.upsert" || transition.actor !== "system") return receipt
+        heldReceipt = true
+        return Object.assign(Object.create(receipt) as typeof receipt, { isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held.promise).then(() => receipt) } })
+      }
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => heldReceipt)
+    expect(streamCalls).toHaveLength(1)
+    expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual([41, 42])
+    held.resolve()
+    await until(() => streamCalls.length === 2)
+    expect(streamCalls.map(call => call.cursor)).toEqual(["41", "42"])
+    expect(requests.filter(request => request.startsWith("POST "))).toEqual([])
+  })
+
+  test("a repair response from the retired account cannot restore its card", async () => {
+    const delayed = deferred<Response>()
+    let reads = 0
+    const { seam, store, requests, streamCalls } = await harness({
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => ++reads === 1 ? json(200, AGENT_SESSION_WIRE.session()) : delayed.promise,
+      [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, [])
+    })
+    await seam.viewSession(SESSION_ID, REPO)
+    await until(() => reads === 2)
+    await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+    const before = requests.length
+    delayed.resolve(json(200, AGENT_SESSION_WIRE.session({ title: "private old account", message_count: 1 })))
+    await until(() => streamCalls[0]?.signal?.aborted === true)
+    // Wait for the delayed promise continuation without opening another read.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    expect(requests).toHaveLength(before)
+    expect(cardOf(store)).toBeUndefined()
+  })
+})
+
+test("failed stream persistence stops delivery and reopening retains the last committed cursor", async () => {
+  const data = memoryStorage()
+  let reject = false
+  const storage: StorageApi = { ...data, setItem: (key, value) => {
+    if (reject) throw new Error("fixture write unavailable")
+    data.setItem(key, value)
+  } }
+  const { seam, store, live, streamCalls, requests } = await harness({
+    [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}`]: () => json(200, AGENT_SESSION_WIRE.session({ message_count: 1 })),
+    [`GET api/repos/${REPO}/agent/sessions/${SESSION_ID}/messages`]: () => json(200, [AGENT_SESSION_WIRE.message()])
+  }, { storage })
+  await seam.viewSession(SESSION_ID, REPO)
+  reject = true
+  live.push(sseFrame(AGENT_SESSION_WIRE.messageEvent(AGENT_SESSION_WIRE.message({ id: 42, sequence: 2 })), { id: 42 }))
+  await until(() => streamCalls[0]?.signal?.aborted === true)
+  expect(payloadOf(store)?.transcript.map(row => row.id)).toEqual([41])
+  seam.dispose()
+  await store.dispose?.()
+  reject = false
+  const reopened = await createAppStore({ kind: "localStorage", storage })
+  try {
+    expect(payloadOf(reopened)?.transcript.map(row => row.id)).toEqual([41])
+    expect(streamCalls).toHaveLength(1)
+    expect(requests.filter(request => request.startsWith("POST "))).toEqual([])
+  } finally { await reopened.dispose?.() }
 })

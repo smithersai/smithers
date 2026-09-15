@@ -36,6 +36,7 @@ import {
 } from "./ControlError.ts"
 import type { CancelRecord } from "./ControlExecutor.ts"
 import { ControlExecutor } from "./ControlExecutor.ts"
+import * as ControlFacts from "./ControlFacts.ts"
 import { ControlRuntime } from "./ControlRuntime.ts"
 import type {
   ControlEvent,
@@ -330,6 +331,7 @@ export const layer: Layer.Layer<
         return {
           ...run,
           executionObservation: "observed" as const,
+          executionView: observed.executionView,
           status: observed.status,
           waitingReason: observed.waitingReason,
           parentRunId: observed.parentRunId,
@@ -361,7 +363,7 @@ export const layer: Layer.Layer<
           runId: JournalEvent.RunId.make(runId),
           sourceId,
           eventType,
-          payload
+          payload: json(payload)
         })
       ).pipe(
         Effect.mapError((cause) =>
@@ -398,9 +400,14 @@ export const layer: Layer.Layer<
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
         const fence = yield* runtime.claimFence(runId)
-        yield* runtime.writeStatus(runId, fence, "failed")
-        yield* emit(runId, "control.run.failed", { runId, status: "failed", cause: cause.slice(0, 4096) })
+        const run = yield* runtime.writeStatus(runId, fence, "failed")
+        yield* emit(
+          runId,
+          "control.run.failed",
+          json({ runId, status: "failed", cause: cause.slice(0, 4096), ...ControlFacts.runFact(run) })
+        )
       }).pipe(
+        journal.transact,
         Effect.catchCause((failure) =>
           Effect.annotateLogs(
             Effect.logWarning("A refused launch could not be settled"),
@@ -558,7 +565,7 @@ export const layer: Layer.Layer<
               input.target._tag === "Plan" ? `plan:${input.target.planId}` : input.target.runId,
               `control.approval.${decision}`,
               json({
-                tokenId: token.tokenId,
+                ...ControlFacts.approvalDecisionFact(token.tokenId, input.target),
                 target: input.target._tag,
                 scope: input.scope,
                 envelope: input.target.envelope,
@@ -654,6 +661,7 @@ export const layer: Layer.Layer<
               json({
                 runId: input.runId,
                 status: (claimed ?? current).status,
+                ...(claimed === undefined ? {} : ControlFacts.runFact(claimed)),
                 principal,
                 ...(input.reason === undefined ? {} : { reason: input.reason })
               })
@@ -739,9 +747,10 @@ export const layer: Layer.Layer<
         const current = yield* runtime.getRun(runId)
         if (terminal(current.status)) return
         const fence = yield* runtime.claimFence(runId)
-        yield* runtime.writeStatus(runId, fence, status)
-        yield* emit(runId, `control.run.${status}`, { runId, status })
+        const run = yield* runtime.writeStatus(runId, fence, status)
+        yield* emit(runId, `control.run.${status}`, json({ runId, status, ...ControlFacts.runFact(run) }))
       }).pipe(
+        journal.transact,
         Effect.catchCause((failure) =>
           Effect.annotateLogs(
             Effect.logWarning("A settled engine row could not be reconciled onto the control row"),
@@ -758,11 +767,16 @@ export const layer: Layer.Layer<
       if (run.waitingReason !== "event" && run.waitingReason !== "released") return Effect.void
       return runtime.resume(run.runId, { scope: "launched" }).pipe(
         Effect.flatMap((resumed) =>
-          emit(run.runId, "control.steer.woke", {
-            runId: run.runId,
-            messageId,
-            status: resumed.status
-          })
+          emit(
+            run.runId,
+            "control.steer.woke",
+            {
+              runId: run.runId,
+              messageId,
+              status: resumed.status,
+              ...ControlFacts.runFact(resumed)
+            } as ControlEvent["payload"]
+          )
         ),
         Effect.catchTag("/control/ClaimLost", () => Effect.void),
         Effect.catchTag("/control/RunNotFound", () => Effect.void)
@@ -1299,12 +1313,17 @@ export const layer: Layer.Layer<
               if (launched._tag === "Parked") {
                 return { ...launched.receipt, receiptId: input.idempotencyKey }
               }
-              yield* emit(launched.run.runId, "control.run.accepted", {
-                runId: launched.run.runId,
-                planId: input.planId,
-                digest: input.digest,
-                status: launched.run.status
-              })
+              yield* emit(
+                launched.run.runId,
+                "control.run.accepted",
+                {
+                  runId: launched.run.runId,
+                  planId: input.planId,
+                  digest: input.digest,
+                  status: launched.run.status,
+                  ...ControlFacts.runFact(launched.run, "created")
+                } as ControlEvent["payload"]
+              )
               const plan = yield* runtime.getPlan(input.planId)
               const acceptance = Option.isSome(executor)
                 ? yield* executor.value.launch({ plan, run: launched.run })
@@ -1312,17 +1331,27 @@ export const layer: Layer.Layer<
               if (acceptance === "accepted") {
                 const fence = yield* runtime.claimFence(launched.run.runId)
                 const running = yield* runtime.writeStatus(launched.run.runId, fence, "running")
-                yield* emit(launched.run.runId, "control.run.running", {
-                  runId: launched.run.runId,
-                  status: running.status
-                })
+                yield* emit(
+                  launched.run.runId,
+                  "control.run.running",
+                  {
+                    runId: launched.run.runId,
+                    status: running.status,
+                    ...ControlFacts.runFact(running)
+                  } as ControlEvent["payload"]
+                )
               } else {
                 const fence = yield* runtime.claimFence(launched.run.runId)
                 const pending = yield* runtime.releasePending(launched.run.runId, fence)
-                yield* emit(launched.run.runId, "control.run.pending", {
-                  runId: launched.run.runId,
-                  status: pending.status
-                })
+                yield* emit(
+                  launched.run.runId,
+                  "control.run.pending",
+                  {
+                    runId: launched.run.runId,
+                    status: pending.status,
+                    ...ControlFacts.runFact(pending)
+                  } as ControlEvent["payload"]
+                )
               }
               return {
                 _tag: "Accepted",
@@ -1554,10 +1583,15 @@ export const layer: Layer.Layer<
                     "cancel",
                     Effect.gen(function*() {
                       const run = yield* effect
-                      yield* emit(input.runId, `control.run.${run.status}`, {
-                        runId: input.runId,
-                        status: run.status
-                      })
+                      yield* emit(
+                        input.runId,
+                        `control.run.${run.status}`,
+                        {
+                          runId: input.runId,
+                          status: run.status,
+                          ...ControlFacts.runFact(run)
+                        } as ControlEvent["payload"]
+                      )
                       return run
                     })
                   )

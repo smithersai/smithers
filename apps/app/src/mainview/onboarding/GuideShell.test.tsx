@@ -158,7 +158,10 @@ for (const state of ["tutorial closed", "tutorial open", "finished workspace"]) 
     expect(stack.textContent).toContain("storage.failed")
     if (!finished) expect(stack.textContent).not.toContain("guide-tip-old")
     const dismiss = stack.querySelector<HTMLButtonElement>('[aria-label="Dismiss: storage.failed"]')!
+    const run = spyOn(controller.commands, "run")
     dismiss.click()
+    expect(run).toHaveBeenCalledWith("toast.dismiss", "toast-storage.failed")
+    await run.mock.results[0]!.value
     expect([...controller.store.collections.toasts.values()].map(toast => toast.key)).toEqual(["guide-tip-old"])
   } finally { mounted.pop()?.() }
 }, 2_000)
@@ -204,6 +207,7 @@ test("Chat button focuses the input before another keydown, including reopening"
     const chat = host.querySelector<HTMLButtonElement>('.guide-footer [data-flow="chat.open"]')!
     chat.focus()
     chat.click()
+    await settle()
     expect(document.activeElement === host.querySelector('textarea[data-testid="composer-input"]')).toBe(true)
     const input = document.activeElement!
     flushSync(() => {

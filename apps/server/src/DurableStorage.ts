@@ -20,6 +20,8 @@ import { readJson, readText } from "./Http"
 export interface DurableStorageShape {
   readonly get: <T>(key: string) => Effect.Effect<T | undefined, StorageFailure>
   readonly put: (key: string, value: unknown) => Effect.Effect<void, StorageFailure>
+  /** Optional host capability; callers requiring erasure fail closed when absent. */
+  readonly delete?: (key: string) => Effect.Effect<void, StorageFailure>
 }
 
 export class DurableStorage extends Context.Service<DurableStorage, DurableStorageShape>()("smithers-server/DurableStorage") {}
@@ -28,13 +30,18 @@ export class DurableStorage extends Context.Service<DurableStorage, DurableStora
 export interface NativeStorage {
   readonly get: <T>(key: string) => Promise<T | undefined>
   readonly put: (key: string, value: unknown) => Promise<void>
+  readonly delete?: (key: string) => Promise<boolean | void>
 }
 
 export const storageFrom = (storage: NativeStorage): DurableStorageShape => ({
   get: <T>(key: string) =>
     Effect.tryPromise({ try: () => storage.get<T>(key), catch: (cause) => new StorageFailure({ operation: `storage.get ${key}`, cause }) }),
   put: (key, value) =>
-    Effect.tryPromise({ try: () => storage.put(key, value), catch: (cause) => new StorageFailure({ operation: `storage.put ${key}`, cause }) })
+    Effect.tryPromise({ try: () => storage.put(key, value), catch: (cause) => new StorageFailure({ operation: `storage.put ${key}`, cause }) }),
+  ...(storage.delete === undefined ? {} : { delete: (key: string) => Effect.tryPromise({
+    try: async () => { await storage.delete!(key) },
+    catch: (cause) => new StorageFailure({ operation: `storage.delete ${key}`, cause })
+  }) })
 })
 
 export const storageLayer = (storage: NativeStorage): Layer.Layer<DurableStorage> => Layer.succeed(DurableStorage, storageFrom(storage))
@@ -47,7 +54,8 @@ export const memoryStorage = (initial?: Record<string, unknown>): NativeStorage 
     get: async <T>(key: string) => data.get(key) as T | undefined,
     put: async (key: string, value: unknown) => {
       data.set(key, value)
-    }
+    },
+    delete: async (key: string) => { data.delete(key) }
   }
 }
 

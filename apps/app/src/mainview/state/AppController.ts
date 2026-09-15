@@ -1,5 +1,6 @@
 import { bindFlowPreloading } from "../flows/FlowAction"
 import { invalidatePreparedViews, disposePreparedViews } from "./PreparedView"
+import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { openRequestedRepo } from "../RepoLink"
 import { createInputModeController } from "./controller/inputMode"
 import type { InputMode } from "./InputMode"
@@ -226,11 +227,13 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * deny answer nothing: the value the person wrote is what resumes the run.
    * It is its own method because a value cannot ride a flow's argument string.
    */
-  readonly answerApproval: (id: string, answer: unknown) => void
+  readonly answerApproval: (id: string, answer: unknown, question?: string) => void
   readonly retryLastTurn: () => string | void
   readonly inspectLiveTutorial: (cardId: string, eventId: string) => Promise<string | void>
   readonly retryLiveTutorial: (cardId: string) => Promise<string | { value: string }>
   readonly guideAct: (action: string, value?: string) => Promise<string | void>
+  /** The guide shell reports mount ownership; this is a system observation, not a user command. */
+  readonly observeGuideVisibility: (visible: boolean) => void
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
   readonly setPalette: (args: string) => string | void
@@ -288,7 +291,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly minimizeCard: () => void
   readonly frameBack: () => void
   readonly frameForward: () => void
-  readonly forkFrame: () => string | void
+  readonly forkFrame: () => Promise<string | void>
   /* The local-app tabs (docs/LOCAL-APP.md "Tabs"); see controller/tabs.ts. */
   readonly openTerminalTab: TabsController["openTerminalTab"]
   readonly openHarnessTab: TabsController["openHarnessTab"]
@@ -427,7 +430,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Load the identity session record from the identity seam (actor: system). */
   readonly loadSession: () => Promise<void>
   /** Redirect to the identity seam's GitHub OAuth start. */
-  readonly signIn: () => void
+  readonly signIn: (reservedOpen?: (url: string) => Promise<boolean>) => Promise<void> | void
   readonly signOut: () => Promise<string | void>
   readonly requestAccess: () => Promise<string | void>
   /**
@@ -760,8 +763,8 @@ export const createAppController = (
   const restoredGuide = store.session().guide
   if (restoredGuide?.conversationOpen) store.dispatch({ type: "guide.changed", actor: "system", guide: { ...restoredGuide, conversationOpen: false } })
   const actors = createActorBindings(ctx.onDispose)
-  const { guideAct } = actors.pair(ctx, (context, select) => createGuideController(context,
-    () => context.commands.run("repo.update", "practice:smithersai/hello-server"),
+  const { guideAct, observeGuideVisibility } = actors.pair(ctx, (context, select) => createGuideController(context,
+    () => context.commands.run("repo.update", "practice:smithersai/hello-server", "automatic"),
     async repo => {
       if (!store.collections.repositories.get(repo)) {
         const refusal = await openRequestedRepo(
@@ -789,7 +792,12 @@ export const createAppController = (
   const features: Required<AppFeatures> = {
     suggestionPills: services.features?.suggestionPills ?? services.bootstrap?.host === "cloud"
   }
-  const { withToast, resolveToast, dismissToast, surfaceCommandFailure } = createFailureController(ctx)
+  const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
+  const surfaceCommandFailure: typeof surfaceFailure = (name, outcome) => {
+    // Storage recovery owns this failure; a toast would itself be another failed write.
+    if (ctx.disposed || (outcome.status === "failed" && outcome.persistenceFailed)) return
+    surfaceFailure(name, outcome)
+  }
   ctx.withToast = withToast
   ctx.resolveToast = resolveToast
 
@@ -841,8 +849,8 @@ export const createAppController = (
       } }).isPersisted.promise
     }
   }))
-  const billingSeam = actors.pair(seamCtx, (context) => createBillingSeam(context, services.bootstrap?.capabilities.includes("billing.checkout") ?? true))
-  const repositoryUpdate = actors.pair(seamCtx, createRepositoryUpdate)
+  const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, services.bootstrap?.capabilities.includes("billing.checkout") ?? true, () => ctx.disposed))
+  const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
   const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context))
@@ -868,7 +876,7 @@ export const createAppController = (
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
   /* Onboarding SCRIPT v4 beat 11: a reader whose repository Smithers already sees finishes the install lesson on arrival. */
-  const settleInstall = () => queueMicrotask(() => { void gitHubSeam.settleInstallLesson() })
+  const settleInstall = () => queueMicrotask(() => { if (!ctx.disposed) void gitHubSeam.settleInstallLesson() })
   const installLessonSubscriptions = [store.collections.sessions.subscribeChanges(settleInstall), store.collections.repositories.subscribeChanges(settleInstall), store.collections.identitySessions.subscribeChanges(settleInstall)]
   settleInstall()
   ctx.onDispose(() => { for (const subscription of installLessonSubscriptions) subscription.unsubscribe() })
@@ -1219,6 +1227,7 @@ export const createAppController = (
   }
 
   const noteCommandRun = (name: string): void => {
+    if (ctx.disposed) return
     store.dispatch({ type: "command.ran", actor: "user", name })
   }
 
@@ -1272,6 +1281,9 @@ export const createAppController = (
   }
 
   const traceFlow = (record: Extract<AppTransition, { type: "flow.invoked" }>): void => {
+    // Command settlement can outlive its subscription scope. A diagnostic
+    // receipt must not write into a controller whose shutdown has begun.
+    if (ctx.disposed) return
     store.dispatch(record)
   }
 
@@ -1551,7 +1563,7 @@ export const createAppController = (
     selectWikiCardDocument,
     setWikiCardView,
     decideApproval,
-    answerApproval: (id: string, answer: unknown) => decideApproval(id, "approved", answer),
+    answerApproval: (id: string, answer: unknown, question?: string) => decideApproval(id, "approved", answer, question),
     retryLastTurn,
     clearConversation,
     openBrowser,
@@ -1859,7 +1871,9 @@ export const createAppController = (
       }
     }
   }
-  const registry = createCommandRegistry(commandActions, actors.select(commandActions))
+  const registry = createCommandRegistry(commandActions, actors.select(commandActions), createCommandIntentLifecycle(ctx, request => {
+    if (request.actor === "user" && request.source === "command") recommender.noteDispatch(request.name)
+  }))
   /*
    * The user's one door (slash, button, pill, form submit) also answers the
    * standing recommendation: the recommender reports the dispatched flow as
@@ -1867,9 +1881,9 @@ export const createAppController = (
    */
   const commands: CommandRegistry = {
     ...registry,
-    run: (name, args) => {
-      recommender.noteDispatch(name)
-      return registry.run(name, args)
+    run: (name, args, source) => {
+      if (ctx.disposed) return Promise.resolve({ status: "failed", error: "The controller is closed." })
+      return registry.run(name, args, source)
     }
   }
   ctx.commands = commands
@@ -1886,7 +1900,13 @@ export const createAppController = (
   // Enter the useful first lesson through the same durable flow as replay.
   // The start receipt makes the background repository read once per playthrough.
   if (store.session().guide?.step === 1 && !store.session().guide?.finished && (store.session().guide?.completed?.length ?? 0) === 0) {
-    void commands.run("onboarding.act", "start").then(outcome => surfaceCommandFailure("onboarding.act", outcome))
+    const startup = commands.run("onboarding.act", "start", "automatic").then(outcome => {
+      if (!ctx.disposed) surfaceCommandFailure("onboarding.act", outcome)
+    })
+    // Join the initialization before releasing the store registered above.
+    // Observe rejection immediately; disposal still reports a failed startup.
+    void startup.catch(() => {})
+    ctx.onDispose(() => startup)
   }
 
   liveTutorial.resume()
@@ -1906,8 +1926,9 @@ export const createAppController = (
   const dispose = ctx.dispose
 
   const runCommand = (name: string, args?: string): boolean => {
+    if (ctx.disposed) return false
     if (commands.find(name) === undefined) return false
-    void commands.run(name, args).then((outcome) => surfaceCommandFailure(name, outcome))
+    void commands.run(name, args).then((outcome) => { if (!ctx.disposed) surfaceCommandFailure(name, outcome) })
     return true
   }
 
@@ -1920,6 +1941,7 @@ export const createAppController = (
   const { snapshot: _snapshot, ...sharedActions } = commandActions
   return {
     ...sharedActions,
+    observeGuideVisibility,
     store,
     controlFocus,
     storageRecoveryState,

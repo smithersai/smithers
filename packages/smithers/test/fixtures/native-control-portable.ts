@@ -1,4 +1,5 @@
 import { Control } from "@smthrs/control"
+import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Executable from "@smthrs/registry/Executable"
@@ -12,6 +13,7 @@ import * as CoreFlow from "../../flows/core/src/Flow.ts"
 const runtime = process.argv[2]
 const recovery = process.argv[3] === "recovery"
 const drift = process.argv[3] === "drift"
+const cancel = process.argv[3] === "cancel"
 const started = Date.now()
 const trace = (phase: string) => process.stderr.write(`[native host fixture] ${phase} (${Date.now() - started} ms)\n`)
 const bounded = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
@@ -56,7 +58,7 @@ export default Flow.make({ description: "Portable native delegate", input: Schem
     Interpreter.layer(Delegate),
     Probe.toLayer(({ value }) =>
       Effect.suspend(() => {
-        if ((recovery || drift) && !interrupted) {
+        if ((recovery || drift || cancel) && !interrupted) {
           interrupted = true
           return Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
         }
@@ -123,6 +125,31 @@ export default Flow.make({ description: "Portable native delegate", input: Schem
       if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected run")
       runId = receipt.runId
       trace("run accepted")
+      if (cancel) {
+        yield* bounded("native action before cancellation", Deferred.await(entered))
+        yield* control.cancel({ runId, idempotencyKey: "portable-cancel" })
+        const events = yield* observe(control, runId)
+        const requests = events.filter((event) => event.kind === "control.engine.event").map((event) =>
+          event.payload as {
+            executionId?: string
+            sourceId?: string
+            payload?: { decision?: string; executionFact?: { observation?: { cancelRequestedAtMs?: number } } }
+          }
+        ).filter((event) =>
+          event.executionId === runId && event.sourceId === "native-control:execution-facts:v1" &&
+          event.payload?.decision === "cancel-requested"
+        )
+        assert.equal(requests.length, 1, "the active native cancellation callback must commit its exact intent once")
+        assert.equal(typeof requests[0]?.payload?.executionFact?.observation?.cancelRequestedAtMs, "number")
+        const listed = yield* control.list({ _tag: "runs", filters: { runId } })
+        assert.equal(listed._tag, "runs")
+        if (listed._tag !== "runs" || listed.items[0] === undefined) throw new Error("cancelled run not listed")
+        const projected = GatewayProjection.runSummary(listed.items[0], events)
+        assert.equal(projected.status, "cancelled")
+        assert.equal(projected.executionProvenance?.source, "events", JSON.stringify(projected.executionProvenance))
+        assert.deepEqual(calls, [])
+        return
+      }
       if (recovery || drift) {
         yield* bounded("the initial native action", Deferred.await(entered))
         if (recovery) {
@@ -228,6 +255,7 @@ export default Flow.make({ description: "Changed after approval", input: Schema.
       runtime,
       recovery,
       drift,
+      cancel,
       passed: true,
       checks: "discovery, approved plan, native delegate, engine/control SQLite, completion, scope shutdown"
     }) + "\n"

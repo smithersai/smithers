@@ -133,3 +133,22 @@ test("Next over walked ground moves one beat per press", async () => {
   expect(store.session().guide?.autoPaused).toBe(true)
   await store.dispose?.()
 })
+
+
+test("guide mount observations retain system attribution and ignore a closed controller", async () => {
+  const { store } = await setup(2, fetch)
+  const context = { store, commandActor: "smithers", disposed: false }
+  const controller = createGuideController(context as unknown as ControllerContext)
+  controller.observeGuideVisibility(true)
+  expect(store.session().guideVisible).toBe(true)
+  controller.observeGuideVisibility(false)
+  const history = await store.eventHistory()
+  expect(store.session().guideVisible).toBe(false)
+  expect(history.events.filter(event => event.type === "guide.visibility.changed").map(event => event.actor)).toEqual(["system", "system"])
+  context.disposed = true
+  controller.observeGuideVisibility(true)
+  expect((await store.eventHistory()).head).toEqual(history.head)
+  expect(store.session().guideVisible).toBe(false)
+  await store.dispose?.()
+  expect(() => controller.observeGuideVisibility(false)).not.toThrow()
+})

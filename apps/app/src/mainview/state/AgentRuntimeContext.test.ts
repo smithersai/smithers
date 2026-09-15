@@ -421,7 +421,7 @@ test("practice chat composes the displayed issue list and issue body without sig
   expect(requests[1]?.context?.activeRepository).toBe("smithersai/smithers")
   expect(JSON.stringify(requests[1]?.messages)).not.toContain("Add a /time endpoint")
   // A persisted practice selection cannot keep tutorial priming alive after its beat.
-  store.collections.sessions.update(store.session().id, draft => { draft.activeRepoKey = PRACTICE_REPO })
+  await store.dispatch({ type: "repo.selected", actor: "user", id: PRACTICE_REPO }).isPersisted.promise
   controller.send("Read the practice repository")
   await settled()
   expect(JSON.stringify(requests[2]?.messages)).not.toContain("Expected: Hello, world!")

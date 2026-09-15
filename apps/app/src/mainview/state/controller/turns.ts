@@ -1,3 +1,6 @@
+import { prepareApprovalAnswer, isCurrentApprovalAnswer } from "../ApprovalAnswerState"
+import { toolActLine } from "../ToolActLine"
+import { createHttpTurnDriver } from "./httpTurns"
 import { currentRepositoryUpdate } from "../RepositoryContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION, composeAgentInstructions, renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
@@ -30,7 +33,7 @@ import { activeCatalogRepositoryId, activeRepositoryId } from "../RepoContext"
 import { WORLD_BODY_BUDGET, worldContextDocuments } from "../WorldContext"
 import { isPracticeContext, practiceContextMessage, PRACTICE_CONTEXT_INSTRUCTION } from "../practice/PracticeContext"
 import { downloadUrlOf } from "./app"
-import type { ActiveTurn, ControllerContext, PendingToolCall } from "./context"
+import type { ActiveTurn, ControllerContext } from "./context"
 
 /**
  * The client-side tool-loop leg cap, mirroring the chat worker's
@@ -70,7 +73,7 @@ export interface TurnController {
   readonly send: (text: string) => void
   readonly reset: () => void
   readonly stop: () => void
-  readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
+  readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
   readonly retryLastTurn: () => string | void
 }
 
@@ -157,7 +160,7 @@ export const createTurnController = (
       console.warn("Smithers dropped a card.update frame that fails schema", merged.error)
       return
     }
-    store.dispatch({ type: "card.updated", actor: "smithers", id: frame.id, patch: merged.data })
+    store.dispatch({ type: "card.updated", actor: "smithers", id: frame.id, patch: CardPatchSchema.parse(merged.data) })
   }
 
   /** The transcript as the chat contract reads it: no tool-act lines, no empty bubbles. */
@@ -498,6 +501,36 @@ export const createTurnController = (
     void pending.then(settled, settled)
   }
 
+  const accountOwner = (): string | null | undefined => {
+    const identity = store.collections.identitySessions.get("identity")
+    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
+      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
+  }
+  let owner = accountOwner()
+  let ownershipGeneration = 0
+  const turnGenerations = new WeakMap<ActiveTurn, number>()
+  const ownTurn = (turn: ActiveTurn): ActiveTurn => {
+    turnGenerations.set(turn, ownershipGeneration)
+    return turn
+  }
+  const revokedTurn = (turn: ActiveTurn): boolean => ctx.disposed ||
+    turnGenerations.get(turn) !== ownershipGeneration || accountOwner() !== owner
+  const isCurrentTurn = (turn: ActiveTurn): boolean => !revokedTurn(turn) && ctx.activeTurn === turn &&
+    store.session().turnId === turn.id && store.session().phase === "responding"
+  const ownershipCurrent = (generation: number): boolean => !ctx.disposed &&
+    generation === ownershipGeneration && accountOwner() === owner
+  const identitySubscription = store.collections.identitySessions.subscribeChanges(() => {
+    const nextOwner = accountOwner()
+    if (nextOwner === owner) return
+    owner = nextOwner
+    ownershipGeneration += 1
+    const turn = ctx.activeTurn
+    ctx.activeTurn = undefined
+    // Cancel without rendering a terminal row into the replacement account.
+    if (turn !== undefined) cancelTurn(turn.id)
+  })
+  ctx.onDispose(() => { identitySubscription.unsubscribe() })
+
   const launchLeg = (
     turnId: string,
     messages: ReadonlyArray<AgentChatMessage>,
@@ -509,7 +542,7 @@ export const createTurnController = (
     keepTail = 1
   ): void => {
     const turn = ctx.activeTurn
-    if (turn === undefined || turn.id !== turnId) return
+    if (turn === undefined || turn.id !== turnId || !isCurrentTurn(turn)) return
     /*
      * §4.13: the client re-sent the whole transcript every turn, so a long
      * conversation crossed the boundary's body limit and then stayed dead —
@@ -530,10 +563,16 @@ export const createTurnController = (
     const cancellation = pendingCancellations.get(turnId)
     const started = cancellation === undefined
       ? agent.startTurn(request)
-      : cancellation.then(() => ctx.activeTurn === turn ? agent.startTurn(request) : undefined)
+      : cancellation.then(() => isCurrentTurn(turn) ? agent.startTurn(request) : undefined)
     void started
       .then((result) => {
-        if (result?.status !== "error" || ctx.activeTurn !== turn) return
+        if (!isCurrentTurn(turn)) {
+          // Cancellation can beat a delayed start acknowledgement at the host.
+          // Do not let that acknowledgement leave the revoked turn running.
+          if (result?.status === "started" && revokedTurn(turn) && ctx.activeTurn?.id !== turn.id) cancelTurn(turn.id)
+          return
+        }
+        if (result?.status !== "error") return
         ctx.activeTurn = undefined
         // §1: a leg that never started still ends a turn that launched a
         // run, and a claim streamed before the launch is already on screen.
@@ -553,7 +592,7 @@ export const createTurnController = (
         settleTurnBilling()
       })
       .catch(() => {
-        if (ctx.activeTurn !== turn) return
+        if (!isCurrentTurn(turn)) return
         ctx.activeTurn = undefined
         settleRunClaims(turn)
         store.dispatch({
@@ -573,57 +612,6 @@ export const createTurnController = (
    * enters the conversation. The full-fidelity record lives in the toolCalls
    * collection for the admin dev-tools panel.
    */
-  const toolActLine = (call: PendingToolCall, result: string): string => {
-    let inner = call.name
-    let action: string | undefined
-    let args: string | undefined
-    try {
-      const parsed: unknown = JSON.parse(call.args)
-      if (typeof parsed === "object" && parsed !== null) {
-        // The model may spell the name "/browser" (the catalog's own
-        // dialect, normalized at the agent boundary too) — stripped here
-        // so the label renders /browser, never //browser.
-        if ("name" in parsed && typeof parsed.name === "string") inner = parsed.name.replace(/^\/+/, "")
-        if ("action" in parsed && typeof parsed.action === "string") action = parsed.action
-        if ("args" in parsed && typeof parsed.args === "string") args = parsed.args
-      }
-    } catch {
-      // The raw tool name is the honest label when the arguments don't parse.
-    }
-    if (call.name === "commands" && action === "list") return "Smithers checked what it can do here"
-    if (result.startsWith("asked the user to confirm ")) return `Smithers asked for confirmation of /${inner}`
-    if (result.startsWith("rendered a form for ")) return `Smithers opened the /${inner} form`
-    if (
-      call.name === "commands" && (inner === "browser" || inner === "browser.open") && !result.startsWith("failed:") && !result.startsWith("unknown-")
-    ) {
-      let host = args ?? ""
-      try {
-        host = new URL(args ?? "").host
-      } catch {
-        // Keep the raw args as the host label.
-      }
-      return `Smithers read ${host}`
-    }
-    /*
-     * Wave 12 §1: the act line for a launch is deterministic too — it names
-     * the run the client actually started, from the machine acknowledgment,
-     * never from the model's wording.
-     */
-    const launched = runLaunchCommandOf(call.name, call.args)
-    if (launched !== undefined && toolResultLaunchedRun(result)) {
-      const workflow = /\bworkflow=(\S+)/.exec(result)?.[1] ?? inner
-      const repo = /\brepo=(\S+)/.exec(result)?.[1]
-      return `Smithers started a ${workflow} run${repo === undefined ? "" : ` on ${repo}`}`
-    }
-    const label = call.name === "commands" ? `/${inner}` : call.name
-    if (result.startsWith("executed /") || (!result.startsWith("failed:") && !result.startsWith("unknown-"))) {
-      return `Smithers ran ${label}`
-    }
-    // The honest failure, one line, payload-free: an error string that
-    // still looks like raw JSON never reaches the transcript.
-    const clean = result.trim().startsWith("{") || result.trim().startsWith("[") ? "that didn't work" : result
-    return `Smithers tried ${label} — ${clean.replace(/\s+/g, " ").slice(0, 160)}`
-  }
 
   /*
    * One tool-loop leg: execute the model's call through the registry (the
@@ -631,6 +619,7 @@ export const createTurnController = (
    * then POST the continuation turn with the tool-role result appended.
    */
   const continueToolLeg = async (turn: ActiveTurn): Promise<void> => {
+    if (!isCurrentTurn(turn)) return
     const call = turn.pendingCall
     if (call === undefined) return
     turn.pendingCall = undefined
@@ -644,10 +633,10 @@ export const createTurnController = (
      * read as the user's mistake and apologised for. It is infra by
      * construction, and now says so.
      */
-    const result = await ctx.commands.executeForAgent({ name: call.name, arguments: call.args }).catch((error: unknown) =>
+    const result = await ctx.commands.executeForAgent({ name: call.name, arguments: call.args, httpCall: { turnId: turn.id, callId: call.callId } }).catch((error: unknown) =>
       agentFailureText(agentRefusalText(clientRefusal(error)))
     )
-    if (ctx.activeTurn !== turn) return
+    if (!isCurrentTurn(turn)) return
     /*
      * Wave 12 §1: a real launch arms the deterministic claim surface for the
      * rest of this turn. A refusal or a chooser route launched nothing, so
@@ -730,8 +719,11 @@ export const createTurnController = (
   }
 
   const subscribeToAgent = (): void => {
+    httpTurns.subscribe()
     const unsubscribe = agent.subscribe((frame: AgentTurnFrame) => {
-      if (frame.runId !== ctx.activeTurn?.id || pendingCancellations.has(frame.runId)) return
+      if (ctx.activeTurn === undefined || !isCurrentTurn(ctx.activeTurn) ||
+        ctx.activeTurn.httpAttemptId !== undefined ||
+        frame.runId !== ctx.activeTurn.id || pendingCancellations.has(frame.runId)) return
       if (frame.type === "card" || frame.type === "card.update") {
         handleCardFrame(frame)
         return
@@ -917,6 +909,8 @@ export const createTurnController = (
       : outcome
 
   const send = (text: string): void => {
+    if (ctx.disposed) return
+    const generation = ownershipGeneration
     const parsed = parseSubmit(text, ctx.commands.all())
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown-command") {
@@ -930,7 +924,9 @@ export const createTurnController = (
        * otherwise), and only a name no host has is "no such flow".
        */
       store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
-      void ctx.commands.run(parsed.name).then((outcome) => surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome)))
+      void ctx.commands.run(parsed.name).then((outcome) => {
+        if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome))
+      })
       return
     }
     if (parsed.kind === "command") {
@@ -944,7 +940,7 @@ export const createTurnController = (
       store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
       void ctx.commands
         .run(parsed.name, parsed.args)
-        .then((outcome) => surfaceCommandFailure(parsed.name, outcome))
+        .then((outcome) => { if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, outcome) })
       return
     }
     const prompt = parsed.text
@@ -967,7 +963,7 @@ export const createTurnController = (
         void agent
           .steer(turn.id, prompt)
           .then((admitted) => {
-            if (admitted) {
+            if (admitted && isCurrentTurn(turn)) {
               store.dispatch({ type: "message.steered", actor: "user", turnId: turn.id, text: prompt })
             }
           })
@@ -982,7 +978,11 @@ export const createTurnController = (
       return
     }
     const turnId = crypto.randomUUID()
-    ctx.activeTurn = {
+    if (agent.journal !== undefined) {
+      httpTurns.start(turnId, prompt, false, ctx.commandActor)
+      return
+    }
+    ctx.activeTurn = ownTurn({
       id: turnId,
       receivedText: false,
       toolLegs: 0,
@@ -993,12 +993,13 @@ export const createTurnController = (
       // before the model speaks — ordinary conversation arms nothing.
       askClass: impossibleAskOf(prompt),
       claimBuffer: ""
-    }
+    })
     store.dispatch({ type: "message.submitted", actor: ctx.commandActor, turnId, text: prompt })
     launchLeg(turnId, contextMessages())
   }
 
   const reset = (): void => {
+    if (ctx.disposed) return
     const turn = ctx.activeTurn
     ctx.activeTurn = undefined
     if (turn !== undefined) cancelTurn(turn.id)
@@ -1007,7 +1008,8 @@ export const createTurnController = (
   }
 
   const stop = (): void => {
-    if (ctx.activeTurn === undefined) return
+    if (ctx.disposed || ctx.activeTurn === undefined) return
+    if (httpTurns.stop()) return
     const turn = ctx.activeTurn
     const turnId = turn.id
     ctx.activeTurn = undefined
@@ -1027,10 +1029,12 @@ export const createTurnController = (
     })
   }
 
-  const decideApproval = (id: string, decision: "approved" | "denied", answer?: unknown): void => {
+  const commitApprovalDecision = (id: string, decision: "approved" | "denied", answer?: unknown): void => {
+    if (ctx.disposed) return
+    const generation = ownershipGeneration
     const rowTarget = parseApprovalActionId(id)
     if (rowTarget !== undefined) {
-      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer)
+      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer).catch(() => {})
       return
     }
     /*
@@ -1045,7 +1049,7 @@ export const createTurnController = (
       const requestId = id.slice(separator + 1)
       const inbox = store.collections.cards.get(inboxCardId)
       if (inbox?.kind === "approvals-inbox") {
-        void forwardInboxApprovalDecision(inboxCardId, requestId, decision)
+        void forwardInboxApprovalDecision(inboxCardId, requestId, decision, undefined, answer).catch(() => {})
         return
       }
     }
@@ -1091,8 +1095,9 @@ export const createTurnController = (
       const ask = card.payload.flow === undefined
         ? undefined
         : { name: card.payload.flow, claim: card.payload.capability }
-      store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
-      void agent.resolveApproval(lineage, decision, ask).then((resolved) => {
+      const pending = store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
+      void pending.isPersisted.promise.then(() => ownershipCurrent(generation) ? agent.resolveApproval!(lineage, decision, ask) : false).then((resolved) => {
+        if (!ownershipCurrent(generation)) return
         if (!resolved) {
           store.dispatch({
             type: "card.approval.decision.failed",
@@ -1113,6 +1118,7 @@ export const createTurnController = (
         // lineage re-enters the turn lifecycle here.
         if (card.payload.background !== true) resumeChainTurn(lineage)
       }).catch(() => {
+        if (!ownershipCurrent(generation)) return
         store.dispatch({
           type: "card.approval.decision.failed",
           actor: "system",
@@ -1134,14 +1140,22 @@ export const createTurnController = (
       })
       return
     }
-    store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
-    // The answer travels with the decision here too. A per-run approval card
-    // renders the same answer box the inbox row does, and dropping the value
-    // here sent the gate down the GRANT path: the workspace looked for an
-    // approval token a HumanTask never registers and answered
-    // `/control/RunNotFound` for a run that was open on screen (workspace
-    // 4bb93306, run-1).
-    void forwardApprovalDecision(card, decision, answer)
+    const pending = store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
+    void pending.isPersisted.promise.then(() => ownershipCurrent(generation) ? forwardApprovalDecision(card, decision, answer) : undefined).catch(() => {})
+  }
+
+  const decideApproval = (id: string, decision: "approved" | "denied", answer?: unknown, question?: string): void => {
+    if (ctx.disposed) return
+    if (answer === undefined) { commitApprovalDecision(id, decision); return }
+    const input = prepareApprovalAnswer(store, id, answer, question)
+    if (input === undefined || decision !== "approved") return
+    const generation = ownershipGeneration
+    // An answer is never sent before its human input has a durable receipt.
+    const receipt = store.dispatch({ type: "approval.answer.changed", actor: "user", ...input })
+    void receipt.isPersisted.promise.then(() => {
+      if (!ownershipCurrent(generation) || !isCurrentApprovalAnswer(store.collections.runtimeApprovals.get(input.id), input)) return
+      commitApprovalDecision(id, decision, answer)
+    }).catch(() => {})
   }
 
   /*
@@ -1151,8 +1165,8 @@ export const createTurnController = (
    * lifecycle, so rendering and settlement need no special path.
    */
   const resumeChainTurn = (lineage: string): void => {
-    if (store.session().phase !== "idle" || ctx.activeTurn !== undefined) return
-    ctx.activeTurn = {
+    if (ctx.disposed || store.session().phase !== "idle" || ctx.activeTurn !== undefined) return
+    ctx.activeTurn = ownTurn({
       id: lineage,
       receivedText: true,
       toolLegs: 0,
@@ -1161,13 +1175,17 @@ export const createTurnController = (
       runLaunch: undefined,
       askClass: undefined,
       claimBuffer: ""
-    }
+    })
     const turn = ctx.activeTurn
     store.dispatch({ type: "chain.turn.resumed", actor: "system", turnId: lineage })
     void agent
       .startTurn({ runId: lineage, messages: contextMessages(), instructions: "" })
       .then((result) => {
-        if (result.status === "error" && ctx.activeTurn === turn) {
+        if (!isCurrentTurn(turn)) {
+          if (result.status === "started" && revokedTurn(turn) && ctx.activeTurn?.id !== turn.id) cancelTurn(turn.id)
+          return
+        }
+        if (result.status === "error") {
           ctx.activeTurn = undefined
           store.dispatch({
             type: "message.response.failed",
@@ -1178,7 +1196,7 @@ export const createTurnController = (
         }
       })
       .catch(() => {
-        if (ctx.activeTurn !== turn) return
+        if (!isCurrentTurn(turn)) return
         ctx.activeTurn = undefined
         store.dispatch({
           type: "message.response.failed",
@@ -1204,6 +1222,7 @@ export const createTurnController = (
    * and change nothing on screen, which reads as a dead command.
    */
   const retryLastTurn = (): string | void => {
+    if (ctx.disposed) return
     if (store.session().phase !== "idle" || ctx.activeTurn !== undefined) {
       return "A response is still in progress — stop it first, then retry."
     }
@@ -1216,9 +1235,13 @@ export const createTurnController = (
       offerChatSignIn(last?.text ?? "")
       return
     }
+    if (agent.journal !== undefined) {
+      httpTurns.start(turnId, last?.text ?? "", true, "user")
+      return
+    }
     store.dispatch({ type: "message.retried", actor: "user", turnId })
     if (store.session().phase !== "responding") return
-    ctx.activeTurn = {
+    ctx.activeTurn = ownTurn({
       id: turnId,
       receivedText: false,
       toolLegs: 0,
@@ -1227,9 +1250,16 @@ export const createTurnController = (
       runLaunch: undefined,
       askClass: impossibleAskOf(last?.text ?? ""),
       claimBuffer: ""
-    }
+    })
     launchLeg(turnId, contextMessages())
   }
 
+  const httpTurns = createHttpTurnDriver(ctx, {
+    ownTurn, isCurrentTurn, contextMessages, composeTurn, settled: settleTurnBilling,
+    refused: (turnId, result) => {
+      if (result.refusal?.code === "sign_in_required") offerChatSignIn(store.collections.messages.get(`message-${turnId}-user`)?.text ?? "")
+      else if (result.refusal !== undefined) refuseAnonymousTurn(turnId, result.refusal)
+    }
+  })
   return { subscribeToAgent, send, reset, stop, decideApproval, retryLastTurn }
 }

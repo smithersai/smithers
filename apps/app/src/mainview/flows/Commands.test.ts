@@ -463,7 +463,8 @@ describe("app.download and app.download.prompt", () => {
     const opened: Array<ReadonlyArray<unknown>> = []
     const globals = globalThis as { window?: unknown }
     const previous = globals.window
-    globals.window = { open: (...args: ReadonlyArray<unknown>) => void opened.push(args) }
+    const popup = { opener: {} as unknown, closed: false, location: { href: "about:blank" }, close: () => { popup.closed = true } }
+    globals.window = { open: (...args: ReadonlyArray<unknown>) => { opened.push(args); return popup } }
     try {
       const outcome = await controller.commands.run("app.download")
       expect(outcome.status).toBe("executed")
@@ -471,7 +472,10 @@ describe("app.download and app.download.prompt", () => {
       if (previous === undefined) delete globals.window
       else globals.window = previous
     }
-    expect(opened).toEqual([[RELEASE_URL, "_blank", "noopener"]])
+    expect(opened).toEqual([["about:blank", "_blank"]])
+    expect(popup.opener).toBeNull()
+    expect(popup.location.href).toBe(RELEASE_URL)
+    expect(popup.closed).toBe(false)
   })
 
   test("there is no download link until a native release carries an asset: no door opens, and the card says so", async () => {
@@ -482,7 +486,8 @@ describe("app.download and app.download.prompt", () => {
     const opened: Array<unknown> = []
     const globals = globalThis as { window?: unknown }
     const previous = globals.window
-    globals.window = { open: (...args: ReadonlyArray<unknown>) => void opened.push(args) }
+    const popup = { opener: {} as unknown, closed: false, location: { href: "about:blank" }, close: () => { popup.closed = true } }
+    globals.window = { open: (...args: ReadonlyArray<unknown>) => { opened.push(args); return popup } }
     try {
       expect(await controller.commands.run("app.download")).toEqual({ status: "failed", error: NOT_DOWNLOADABLE_TEXT })
     } finally {

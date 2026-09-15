@@ -19,6 +19,9 @@ import {
   RECOMMEND_PATH,
   TOOLS_BROWSER_FETCH_PATH,
   TURN_PATH,
+  TURN_REPLAY_PATH,
+  TURN_RETIRE_PATH,
+  TURN_ERASE_PATH,
   WORKFLOW_PROVISION_PATH,
   WORKFLOW_RPC_PATH,
   WORKFLOW_TRIGGERS_PATH
@@ -62,7 +65,7 @@ import {
   turnLimitResponse,
   TurnRateLimiter
 } from "./turnLimit"
-import { handleCancel, handleModelStream, handleTurn, readStartTurn, TurnCancelRegistry } from "./turns"
+import { handleCancel, handleModelStream, handleTurn, handleTurnJournalAccess, handleTurnJournalErasure, readStartTurn, TurnCancelRegistry } from "./turns"
 import { handleWorkflowProvision, handleWorkflowRpc, handleWorkflowTriggers } from "./workflows"
 
 /*
@@ -192,17 +195,18 @@ const anonymousCatalogTurn = (request: Request, refusal: Response): Effect.Effec
     const body = yield* readStartTurn(request)
     if (body instanceof Response) return body
     if (!isCatalogRepository(body.context?.activeRepository)) return refusal
-    const config = yield* ServerConfig
-    const salt = config.anonymousTurnSalt === undefined ? undefined : Redacted.value(config.anonymousTurnSalt)
-    const anonymousKey = yield* anonymousTurnKey(request, salt)
-    const limits = yield* TurnLimits
-    const budget = yield* limits.spend(anonymousKey, ANONYMOUS_CEILING)
-    if (!budget.allowed) return turnLimitResponse(budget, ISOLATION_HEADERS, ANONYMOUS_CEILING)
-    // Spent after the address bucket admits, so a visitor who is already at
-    // their own ceiling never draws down everyone's.
-    const shared = yield* limits.spend(ANONYMOUS_ALL_KEY, ANONYMOUS_ALL_CEILING)
-    if (!shared.allowed) return turnLimitResponse(shared, ISOLATION_HEADERS, ANONYMOUS_ALL_CEILING)
-    return yield* handleTurn(request, undefined, body)
+    const admission = Effect.gen(function* () {
+      const config = yield* ServerConfig
+      const salt = config.anonymousTurnSalt === undefined ? undefined : Redacted.value(config.anonymousTurnSalt)
+      const anonymousKey = yield* anonymousTurnKey(request, salt)
+      const limits = yield* TurnLimits
+      const budget = yield* limits.spend(anonymousKey, ANONYMOUS_CEILING)
+      if (!budget.allowed) return turnLimitResponse(budget, ISOLATION_HEADERS, ANONYMOUS_CEILING)
+      // Spend shared capacity only after the address bucket admits.
+      const shared = yield* limits.spend(ANONYMOUS_ALL_KEY, ANONYMOUS_ALL_CEILING)
+      return shared.allowed ? undefined : turnLimitResponse(shared, ISOLATION_HEADERS, ANONYMOUS_ALL_CEILING)
+    })
+    return yield* handleTurn(request, undefined, body, admission)
   })
 
 /** The login's turn ceiling, spent before a model credential is. */
@@ -296,6 +300,18 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== "GET") return methodNotAllowed()
       return yield* handleBootstrap(request)
     }
+    if (url.pathname === TURN_ERASE_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      return yield* handleTurnJournalErasure(request)
+    }
+    if (url.pathname === TURN_REPLAY_PATH || url.pathname === TURN_RETIRE_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      const gate = yield* requireTurnSession(request)
+      // A capability protects an anonymous leg. An owned leg additionally
+      // requires its currently validated account on every bounded read.
+      if (gate instanceof Response && gate.status !== 401) return gate
+      return yield* handleTurnJournalAccess(request, gate instanceof Response ? undefined : gate, url.pathname === TURN_RETIRE_PATH)
+    }
     if (url.pathname === CANCEL_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       const refusal = yield* requireTurnSession(request)
@@ -314,11 +330,9 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate.status === 401 ? yield* anonymousCatalogTurn(request, gate) : gate
-      if (gate !== undefined) {
-        const refused = yield* loginBudget(gate.login)
-        if (refused !== undefined) return refused
-      }
-      return yield* handleTurn(request, gate)
+      // Durable acceptance grants the one producer before spending capacity;
+      // a repeated POST only observes existing acceptance and spends nothing.
+      return yield* handleTurn(request, gate, undefined, gate === undefined ? Effect.succeed(undefined) : loginBudget(gate.login))
     }
     if (url.pathname === MODEL_STREAM_PATH) {
       if (request.method !== "POST") return methodNotAllowed()

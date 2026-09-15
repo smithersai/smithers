@@ -69,7 +69,7 @@ const GRAPH = fixtureTargetGraph("force")
 const RUN_ID = "run-force-1"
 const RUN_BASE = 1_700_000_000_000
 const EVENTS = fixtureRunEvents(GRAPH, { runId: RUN_ID, root: "//:prePush", base: RUN_BASE })
-const RUN_END = Math.max(...EVENTS.map((event) => ("at" in event ? event.at : 0)))
+const RUN_END = Math.max(...EVENTS.map((event) => ("at" in event ? event.at ?? 0 : 0)))
 const SUMMARY = EVENTS.find((event) => event.type === "summary")
 const REPLAY: RunReplayResponse = {
   run: {
@@ -317,7 +317,7 @@ describe("the replay fold gates every frame on the cursor", () => {
     expect(label).toBeDefined()
     /* The stdout frame follows its node's settled frame, so that frame's `at` is its clock. */
     const timed = EVENTS.slice(0, printed).reverse().find((event) => "at" in event)
-    if (timed === undefined || !("at" in timed)) throw new Error("expected a timed frame before the first stdout")
+    if (timed === undefined || !("at" in timed) || timed.at === undefined) throw new Error("expected a timed frame before the first stdout")
     expect(replayAtCursor(EVENTS, timed.at - 1).logs[label!]).toBeUndefined()
     expect(replayAtCursor(EVENTS, timed.at).logs[label!]).toContain(label!)
   })

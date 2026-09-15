@@ -298,11 +298,11 @@ export interface TargetRunnerOptions {
   readonly autoStartMs?: number
   readonly log?: (line: string) => void
   /**
-   * Observes every recorded frame. A returned promise is awaited before the
-   * next chunk of child output is read, so a journal that cannot keep up
-   * paces the run instead of queueing every frame the child ever wrote.
+   * Commits a frame before publication. Return its canonical recorded value
+   * (after redaction/retention), or null to omit it. Legacy observers returning
+   * void acknowledge the supplied frame. A promise paces child output reads.
    */
-  readonly onEvent?: (run: TargetRun, event: TargetRunEvent) => void | Promise<void>
+  readonly onEvent?: (run: TargetRun, event: TargetRunEvent) => void | TargetRunEvent | null | Promise<void | TargetRunEvent | null>
   /** Maximum pending/running children; default 4. */
   readonly maxActiveRuns?: number
   /** Maximum retained run handles; settled handles are evicted oldest-first. */
@@ -617,6 +617,9 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
     readonly parser: RunStdoutParser
     summaryEmitted: boolean
     nextSeq: number
+    emissions: Promise<void>
+    pendingEmissions: number
+    emissionFailure?: Error
   }
   const runs = new Map<string, Live>()
   const maxActiveRuns = options.maxActiveRuns ?? 4
@@ -627,17 +630,32 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
 
   /*
    * Every frame the backend records is stamped with a run-local monotonic
-   * `seq` (@smthrs/rpc/TargetGraph). stdout/stderr/exit/error frames
+   * `seq` (@smthrs/rpc/TargetGraph). stdout/stderr/error frames
    * carry no `at` of their own, so `seq` is the ONLY total order replay can
    * use; without it two frames in one millisecond — or any untimed frame —
    * are unordered by construction.
    */
-  const emit = (run: TargetRun, frame: TargetRunEvent): void | Promise<void> => {
+  const emit = (run: TargetRun, frame: TargetRunEvent): Promise<void> => {
     const live = runs.get(run.runId)
-    const sequenced = { ...frame, seq: live?.nextSeq ?? 0 } as TargetRunEvent
-    if (live !== undefined) live.nextSeq += 1
-    options.publish(runTopic(run.runId), { type: "target-run", runId: run.runId, frame: sequenced })
-    return options.onEvent?.(run, sequenced)
+    if (live === undefined) return Promise.resolve()
+    const sequenced: TargetRunEvent = { ...frame, ...(frame.type === "exit" ? { at: frame.at ?? Date.now() } : {}), seq: live.nextSeq++ }
+    live.pendingEmissions += 1
+    live.emissions = live.emissions.then(async () => {
+      if (live.emissionFailure !== undefined) return
+      const committed = await options.onEvent?.(run, sequenced)
+      if (committed !== null) {
+        try {
+          options.publish(runTopic(run.runId), { type: "target-run", runId: run.runId, frame: committed ?? sequenced })
+        } catch (error) {
+          // A failed subscriber must not stop recording subsequent evidence.
+          try { log(`target-run ${run.runId}: subscriber publication failed: ${String(error)}`) } catch { /* journal remains authoritative */ }
+        }
+      }
+    }).catch((cause: unknown) => {
+      live.emissionFailure = cause instanceof Error ? cause : new Error(String(cause))
+      try { log(`target-run ${run.runId}: publication stopped: ${live.emissionFailure.message}`) } catch { /* retained for stop */ }
+    }).finally(() => { live.pendingEmissions -= 1 })
+    return live.emissions
   }
 
   const pump = async (stream: ReadableStream<Uint8Array>, live: Live, type: "stdout" | "stderr"): Promise<void> => {
@@ -786,21 +804,21 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
       pump(child.stderr as ReadableStream<Uint8Array>, live, "stderr")
     ])
       .then(() => child.exited)
-      .then((code) => {
+      .then(async (code) => {
         for (const event of live.parser.finish()) {
           if (event.type === "summary") live.summaryEmitted = true
-          emit(live.run, event)
+          await emit(live.run, event)
         }
         if (!live.summaryEmitted) {
           const timings = [...live.parser.timings()]
           const count = (status: NodeTiming["status"]): number => timings.filter((node) => node.status === status).length
           const failed = count("failed") + count("refused")
           const summary: RunSummary = { total: timings.length, hit: count("hit"), ran: count("ran"), failed, skipped: count("skipped"), durationMs: Date.now() - live.run.startedAt, ok: code === 0 && failed === 0, criticalPath: [...criticalPath(timings, live.edges)] }
-          emit(live.run, { type: "summary", summary, at: Date.now() })
+          await emit(live.run, { type: "summary", summary, at: Date.now() })
         }
         live.run.exitCode = code
         live.run.status = code === 0 ? "done" : "failed"
-        emit(live.run, { type: "exit", code })
+        await emit(live.run, { type: "exit", code })
       })
   }
 
@@ -811,7 +829,7 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
       throw new TargetRunCapacityError(`At most ${maxActiveRuns} target runs may execute at once.`)
     }
     while (runs.size >= maxRetainedRuns) {
-      const settled = [...runs].find(([, live]) => live.run.status !== "pending" && live.run.status !== "running" && live.termination === undefined)
+      const settled = [...runs].find(([, live]) => live.run.status !== "pending" && live.run.status !== "running" && live.termination === undefined && live.pendingEmissions === 0)
       if (settled === undefined) {
         throw new TargetRunCapacityError(`At most ${maxRetainedRuns} target runs may be retained.`)
       }
@@ -825,7 +843,7 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
       runId: crypto.randomUUID(), repoId, repo, workspace, label: title, labels, startedAt, status: "pending", exitCode: null,
       ...(isPattern ? { verb, pattern } : {})
     }
-    const live: Live = { run, armed: false, node, edges, kinds, parser: createRunStdoutParser({ edges, startedAt }), child: undefined, timer: undefined, settled: undefined, termination: undefined, readers: [], summaryEmitted: false, nextSeq: 0 }
+    const live: Live = { run, armed: false, node, edges, kinds, parser: createRunStdoutParser({ edges, startedAt }), child: undefined, timer: undefined, settled: undefined, termination: undefined, readers: [], summaryEmitted: false, nextSeq: 0, emissions: Promise.resolve(), pendingEmissions: 0 }
     runs.set(run.runId, live)
     return run
   }
@@ -861,6 +879,7 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
           return true
         }
         failBeforeStart(live, "Cancelled before it started.")
+        await live.emissions
         return true
       }
       if (live.run.status === "running" || live.termination !== undefined) {
@@ -881,6 +900,7 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
         }
       }
       await Promise.all(exiting)
+      await Promise.all([...runs.values()].filter(live => live.run.repoId === repoId).map(live => live.settled ?? live.emissions))
     },
     get: (runId) => runs.get(runId)?.run,
     stop: () => stopPromise ??= (async () => {
@@ -894,7 +914,9 @@ export const createTargetRunner = (options: TargetRunnerOptions): TargetRunner =
         else if (live.run.status === "running" || live.termination !== undefined) reaping.push(terminate(live))
       }
       const results = await Promise.allSettled(reaping)
-      const errors = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+      await Promise.all([...runs.values()].map(live => live.settled ?? live.emissions))
+      const errors = [...results.flatMap((result) => result.status === "rejected" ? [result.reason] : []),
+        ...[...runs.values()].flatMap(live => live.emissionFailure === undefined ? [] : [live.emissionFailure])]
       if (errors.length > 0) throw new AggregateError(errors, "Target runner shutdown failed.")
     })()
   }

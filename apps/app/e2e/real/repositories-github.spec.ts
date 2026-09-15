@@ -1,4 +1,5 @@
 import { scenario } from "./coverage/types"
+import { fixtureRepositoryName } from "./support/values"
 import { command, expect, realApi, test } from "./support/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import {
@@ -416,7 +417,7 @@ authenticatedTest(
     expect(appStatus.github_app_configured).toBe(true)
     expect(typeof appStatus.installation_id).toBe("number")
 
-    const name = `smithers-e2e-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const name = fixtureRepositoryName(`smithers-e2e-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     let owned: OwnedGitHubRepository | undefined
     let terminal: Record<string, unknown> | undefined
     let cloudCleanup: { readonly deleteStatus: number; readonly finalStatus: number } | undefined

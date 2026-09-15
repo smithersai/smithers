@@ -35,19 +35,21 @@ recomputation is the only delta that cannot disagree with a fresh snapshot. A
 patch would have to encode an inverse for every fold, and any bug in one would
 leave a client's view permanently wrong in a way nothing detects.
 
-Two projections are append-only, and for those a delta carries only what one
-event added. The client appends it to the rows it already holds.
+Two projections send append deltas: a delta carries only what one event added.
+The client appends it to the rows it already holds.
 
 | Selector     | Delta carries                                     |
 | ------------ | ------------------------------------------------- |
 | `run-events` | the one event that arrived                        |
 | `transcript` | the rows that event contributed, usually one line |
 
-`run-events` rows _are_ the ordered events. `transcript` rows are immutable
-once folded: only the turn counter carries from one event to the next, and the
-follower keeps that counter, so an appended row carries the same `turn` a full
-refold would give it. Concatenating a snapshot's rows with every delta after it
-yields exactly the transcript a fresh snapshot would fold.
+`run-events` rows _are_ the immutable ordered events. `transcript` normally
+adds a row with the same turn counter a full fold would give it. A later native
+call fact can supersede earlier identified telemetry; then the follower sends
+the existing `snapshot-start` / `row` / `snapshot-end` sequence at the new
+cursor to replace those rows. Applying the reset as well as append deltas
+yields exactly the transcript a fresh snapshot would fold. Unidentified legacy
+history is never assigned a guessed call identity to force a match.
 
 Events accumulate in the stream, so recomputing each delta does not re-read
 the journal. Resuming a historical `run-summary` first rebuilds its compacted

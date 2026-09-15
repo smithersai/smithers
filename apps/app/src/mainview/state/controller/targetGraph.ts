@@ -122,7 +122,7 @@ const indexReplay = (events: ReadonlyArray<TargetRunEvent>) => {
     return values
   }
   for (const event of events) {
-    if ("at" in event) {
+    if ("at" in event && event.at !== undefined) {
       if (event.at < clock) ordered = false
       clock = event.at
     }
@@ -619,7 +619,7 @@ export const createTargetGraphController = (
     let endCursor = replay.run.startedAt
     if (replay.run.endedAt === undefined) {
       for (const event of replay.events) {
-        if ("at" in event && event.at > endCursor) endCursor = event.at
+        if ("at" in event && event.at !== undefined && event.at > endCursor) endCursor = event.at
       }
     } else {
       endCursor = replay.run.endedAt

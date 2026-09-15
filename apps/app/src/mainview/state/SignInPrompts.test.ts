@@ -49,17 +49,20 @@ for (const producer of producers) {
     await settle()
     const prompt = [...h.store.collections.messages.values()].find(row => row.action?.flow === "auth.sign-in")
     expect(prompt).toBeDefined()
-    const toast = h.store.collections.toasts.get("toast-command.requirement")
-    if (producer === "requirement") expect(toast?.action?.flow).toBe("auth.sign-in")
+    // The transcript prompt owns sign-in; parking a command adds no duplicate toast.
+    expect(h.store.collections.toasts.get("toast-command.requirement")).toBeUndefined()
+    if (producer === "requirement") expect(h.store.session().pendingCommand).toMatchObject({
+      name: "secrets.list", args: "smithersai/smithers", requirement: "signed-in"
+    })
     await h.signIn()
     const answered = h.store.collections.messages.get(prompt!.id)
     expect(answered?.action).toBeUndefined()
     expect(answered).toMatchObject({ id: prompt!.id, text: prompt!.text, ordinal: prompt!.ordinal, createdAt: prompt!.createdAt,
       answeredAction: { flow: "auth.sign-in", answer: "Signed in with GitHub as @codeplanesmithers." } })
-    if (toast) {
-      expect(h.store.collections.toasts.get(toast.id)?.action).toBeUndefined()
-      // Resuming the parked command supersedes this ephemeral toast.
-      expect(h.store.collections.toasts.get(`toast-command.resume.${producer === "requirement" ? "secrets.list" : producer}`)).toBeDefined()
+    expect(h.store.collections.toasts.get("toast-command.requirement")).toBeUndefined()
+    if (producer === "requirement") {
+      // Continuing the parked act has its own observation; the original prompt keeps its answer.
+      expect(h.store.collections.toasts.get("toast-command.resume.secrets.list")).toBeDefined()
     }
     if (producer === "chat gate") expect(h.store.session().draft).toBe("Keep this draft")
     // A later outage never reopens a completed step (explicit account removal
@@ -183,9 +186,8 @@ test("all outstanding steps answer even when the pending command has been supers
     expect(h.store.collections.messages.get(prompt.id)?.action).toBeUndefined()
     expect(h.store.collections.messages.get(prompt.id)?.answeredAction?.answer).toContain("@codeplanesmithers")
   }
-  const toast = h.store.collections.toasts.get("toast-command.requirement")!
-  expect(toast.action).toBeUndefined()
-  expect(toast.answeredAction?.answer).toContain("@codeplanesmithers")
+  expect(h.store.collections.toasts.get("toast-command.requirement")).toBeUndefined()
+  expect(h.store.collections.toasts.get("toast-command.resume.secrets.list")).toBeUndefined()
 })
 
 test("Cloud sign-out does not reopen an answered historical Cloud step", async () => {

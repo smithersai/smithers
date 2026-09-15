@@ -207,7 +207,7 @@ test.skipIf(process.platform === "win32")("loading a repository opens a bounded 
   }
 })
 
-test.skipIf(process.platform === "win32")("a log backlog the disk has not taken yet stops resolving at the pending budget", async () => {
+test.skipIf(process.platform === "win32")("every journal receipt waits for disk acceptance even below the former pending budget", async () => {
   const repo = await mkdtemp(join(tmpdir(), "smithers-history-"))
   try {
     const dir = runsDirOf(repo)
@@ -219,11 +219,7 @@ test.skipIf(process.platform === "win32")("a log backlog the disk has not taken 
     /* This pins the pending budget; redacting 4 MB of filler only adds CPU time. */
     const history = createTargetRunHistory({ redact: (text) => text })
     const started = history.start(run)
-    /*
-     * Every frame used to extend the append chain at once, so a child that
-     * outran the disk pinned its whole output in queued closures. Now the
-     * frame that crosses the budget waits until the backlog drains under it.
-     */
+    // The initial journal is not committed yet: no frame can be acknowledged.
     const chunk = "x".repeat(100_000)
     const frames = Math.ceil(MAX_PENDING_LOG_CHARS / chunk.length)
     const settled: Array<boolean> = []
@@ -234,7 +230,7 @@ test.skipIf(process.platform === "win32")("a log backlog the disk has not taken 
       pending.push(promise.then(() => { settled[index] = true }))
     }
     await Bun.sleep(50)
-    expect(settled.slice(0, frames).every(Boolean)).toBe(true)
+    expect(settled.some(Boolean)).toBe(false)
     expect(settled[frames]).toBe(false)
     /* One more over the budget waits as well. */
     let overflowSettled = false

@@ -1,3 +1,6 @@
+import { approvalCardFamily } from "./ApprovalCard"
+import type { CardActions } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
@@ -45,7 +48,7 @@ const click = async (host: HTMLElement, selector: string): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** Types into the answer box, which owns its own draft. */
+/** Types into the answer box; input events publish its draft through form.set. */
 const type = (host: HTMLElement, selector: string, value: string): void => {
   const element = host.querySelector<HTMLTextAreaElement>(selector)
   if (element === null) throw new Error(`no element for ${selector}`)
@@ -191,4 +194,50 @@ describe("reading a gateway row", () => {
   test("reads a capability gate as no question at all", () => {
     expect(questionOf({ ...base, request: { kind: "ask", prompt: "not a wait" } })).toBeUndefined()
   })
+})
+
+
+test("the answer box restores the projected draft and every input uses its exact question-bound form field", () => {
+  const asked = row({ question: { kind: "ask", prompt: "Who owns the budget?" }, answerDraft: { question: "a".repeat(64), text: "saved answer" } })
+  const calls: Array<[string, string | undefined]> = []
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = (value: InboxRow) => flushSync(() => root.render(<ApprovalsInboxCardBody
+    card={inbox([value])} onDecideApproval={() => {}}
+    onRunCommand={(name, args) => { calls.push([name, args]) }} />))
+  try {
+    render(asked)
+    const box = host.querySelector<HTMLTextAreaElement>("[data-testid=approval-answer-text]")!
+    expect(box.value).toBe("saved answer")
+    box.value = 'new "owner"\nwith details'
+    flushSync(() => box.dispatchEvent(new Event("input", { bubbles: true })))
+    expect(calls).toEqual([["form.set", flowArgs("form.set", { cardId: approvalActionId("inbox", asked), field: `answer:${asked.answerDraft!.question}`, value: box.value })]])
+    render({ ...asked, question: { ...asked.question!, attempt: 2 }, answerDraft: { question: "b".repeat(64), text: "" } })
+    expect(host.querySelector<HTMLTextAreaElement>("[data-testid=approval-answer-text]")!.value).toBe("")
+    render({ ...asked, answerDraft: { question: "a".repeat(64), text: "restored after reopen" } })
+    expect(host.querySelector<HTMLTextAreaElement>("[data-testid=approval-answer-text]")!.value).toBe("restored after reopen")
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
+})
+
+
+test("a settled individual question no longer offers an answer box", () => {
+  const card: Extract<Card, { kind: "approval" }> = {
+    id: "settled-question", kind: "approval", status: "acted", title: "Owner?", createdAt: 1, ordinal: 1,
+    payload: { capability: "Owner?", question: { kind: "ask", prompt: "Owner?" }, decision: "approved" }
+  }
+  const actions = { onDecideApproval: () => {}, onRunCommand: () => {} } as unknown as CardActions
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(approvalCardFamily.approval!.render(card, actions)))
+    expect(host.querySelector("[data-testid=approval-answer]")).toBeNull()
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
 })

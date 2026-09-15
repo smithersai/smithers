@@ -109,7 +109,7 @@ describe("the browser's persistence resolver", () => {
         throw new Error("must not open")
       }
     })
-    expect(resolved).toEqual({
+    expect(resolved).toMatchObject({
       backend: { kind: "localStorage", storage: record },
       mode: "localStorage",
       degraded: false

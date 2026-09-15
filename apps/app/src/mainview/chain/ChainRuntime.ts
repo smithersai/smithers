@@ -3,8 +3,9 @@ import type { Author, Event, Outcome, ScriptRunner } from "@smthrs/chain"
 import { Cause, Effect, Exit, Fiber, Layer, Option, Ref, Schema } from "effect"
 import { CardPatchSchema, CardSchema } from "@smthrs/rpc/Cards"
 import type { AgentChatMessage, AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnJournalDelivery } from "@smthrs/rpc/AgentTurnJournal"
 import type { CommandRegistry } from "../flows/Commands"
-import type { AgentPort } from "../runtime/AgentPort"
+import type { AgentJournalPort, AgentPort } from "../runtime/AgentPort"
 import type { AppStore } from "../state/AppStore"
 import { isRuntimeOwnedCard } from "../state/isRuntimeOwnedCard"
 import { makeCollectionJournal } from "./CollectionJournal"
@@ -671,6 +672,10 @@ export const createAgentSeat = (
 ): AgentPort & { readonly bindChain: (chain: AgentPort) => void } => {
   const listeners = new Set<(frame: AgentTurnFrame) => void>()
   const startedBy = new Map<string, AgentPort>()
+  const journalOwners = new Map<string, AgentPort>()
+  const journalLegs = new Map<string, string>()
+  const journalListeners = new Set<(delivery: AgentTurnJournalDelivery) => Promise<void>>()
+  const journalSubscriptions = new WeakSet<AgentPort>()
   const parked = new Set<string>()
   let chain: AgentPort | undefined
 
@@ -692,15 +697,50 @@ export const createAgentSeat = (
   }
 
   const current = (): AgentPort => chain ?? native ?? unbound
+  const journalOwner = (runId: string): AgentPort => {
+    const previous = journalOwners.get(runId) ?? startedBy.get(runId)
+    const backend = previous ?? (current().journal !== undefined ? current() : native)
+    if (backend?.journal === undefined) throw new Error("The turn's recording backend is unavailable.")
+    journalOwners.set(runId, backend)
+    return backend
+  }
+  const connectJournal = (backend: AgentPort): void => {
+    if (backend.journal === undefined || journalSubscriptions.has(backend)) return
+    journalSubscriptions.add(backend)
+    backend.journal.subscribe(async delivery => {
+      const runId = delivery.cursor.runId
+      if (journalOwners.get(runId) !== backend) throw new Error("HTTP journal delivery has no matching agent seat owner.")
+      if (journalListeners.size === 0) throw new Error("HTTP journal delivery has no commit subscriber.")
+      // As with WebAgent's cancel handle, release before a committed terminal
+      // can start a continuation. The recording owner survives for later reads.
+      if ((delivery.type === "batch" && delivery.batch.frames.at(-1)?.type === "done") ||
+        (delivery.type === "caught-up" && delivery.terminal)) {
+        if (journalLegs.get(runId) === delivery.cursor.legId && startedBy.get(runId) === backend) {
+          startedBy.delete(runId)
+          journalLegs.delete(runId)
+        }
+      }
+      for (const listener of journalListeners) await listener(delivery)
+    })
+  }
+  if (native !== undefined) connectJournal(native)
+  const journal: AgentJournalPort = {
+    subscribe: listener => { journalListeners.add(listener); return () => { journalListeners.delete(listener) } },
+    read: access => journalOwner(access.runId).journal!.read(access),
+    retire: async access => { await journalOwner(access.runId).journal!.retire(access) },
+    disconnect: runId => { journalOwner(runId).journal!.disconnect(runId) }
+  }
 
   return {
     available: true,
+    get journal() { return current().journal === undefined ? undefined : journal },
     startTurn: async (request) => {
       // A resume reuses its lineage's runId: route it to the agent that
       // started the run.
       const previous = startedBy.get(request.runId)
-      const backend = previous ?? current()
+      const backend = request.journal === undefined ? previous ?? current() : journalOwner(request.runId)
       startedBy.set(request.runId, backend)
+      if (request.journal !== undefined) journalLegs.set(request.runId, request.journal.legId)
       try {
         const result = await backend.startTurn(request)
         if (result.status !== "started" && previous === undefined) startedBy.delete(request.runId)
@@ -712,7 +752,7 @@ export const createAgentSeat = (
     },
     cancelTurn: async (runId) => {
       // The terminal frame owns cleanup; a late cancel may leave a park intact.
-      await (startedBy.get(runId) ?? current()).cancelTurn(runId)
+      await (startedBy.get(runId) ?? journalOwners.get(runId) ?? current()).cancelTurn(runId)
     },
     steer: async (runId, text) => {
       const backend = startedBy.get(runId) ?? current()
@@ -736,6 +776,7 @@ export const createAgentSeat = (
     bindChain: (bound) => {
       chain = bound
       bound.subscribe(forward)
+      connectJournal(bound)
     }
   }
 }

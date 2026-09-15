@@ -555,10 +555,6 @@ describe("coverage conformance", () => {
       // Each guard turns a future host-reflection change into a rejected
       // value rather than a thrown persistence path.
       "smithers/flows/engine-store/src/internal/ActionPersistence.ts": 3,
-      // `releaseOwned`'s successful arm is the generator's terminal
-      // fallthrough; V8 emits no executable location for that synthetic
-      // branch, so the `else` on the owned transition can never be covered.
-      "smithers/flows/engine-store/src/internal/RunDriver.ts": 1,
       // The guest runner is resolved beside this module, and only a built
       // `dist` copy answers to the `.js` extension the arm covers.
       "smithers/flows/src/SandboxedFlow.ts": 1,

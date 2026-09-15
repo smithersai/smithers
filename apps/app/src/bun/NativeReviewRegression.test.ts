@@ -135,12 +135,20 @@ test("run events arriving during journal initialization are retained", async () 
   const run = { runId: "early-event", repoId: "review-repo", repo, workspace: ".", label: "//:test", labels: ["//:test"], startedAt: Date.now(), status: "pending" as const, exitCode: null }
   const history = createTargetRunHistory()
   const started = history.start(run)
-  history.event(run, { type: "exit", code: 0 })
+  const committed = history.event(run, { type: "exit", code: 0 })
   await started
+  const receipt = await committed
+  if (receipt === null) throw new Error("The early exit frame was not committed")
+  const at = receipt?.type === "exit" ? receipt.at : undefined
+  expect(receipt).toMatchObject({ type: "exit", code: 0 })
+  expect(typeof at).toBe("number")
+  expect(at as number).toBeGreaterThanOrEqual(run.startedAt)
   const replay = await history.replay(run.runId)
   expect(replay?.run.status).toBe("done")
-  expect(replay?.events).toContainEqual({ type: "exit", code: 0 })
-  expect((await createTargetRunHistory().replay(run.runId, [{ id: run.repoId, path: repo }]))?.run.status).toBe("done")
+  expect(replay?.events).toContainEqual(receipt)
+  const reopened = await createTargetRunHistory().replay(run.runId, [{ id: run.repoId, path: repo }])
+  expect(reopened?.run.status).toBe("done")
+  expect(reopened?.events).toContainEqual(receipt)
 })
 
 test("native quit waits for cleanup once then allows Electrobun's final quit", async () => {

@@ -7,9 +7,11 @@ import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
+import * as Semaphore from "effect/Semaphore"
 import type * as Arr from "effect/Array"
 import { AgentRuntimeContextSchema, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { runDurable } from "./Boundary"
 import { handleCloudRoleTurn, isCloudRoleTurn, turnHints } from "./cloudRoleTurn"
 import type { TurnRequest } from "./cloudRoleTurn"
@@ -20,6 +22,11 @@ import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { ExecutionContext } from "./Environment"
 import type { ExecutionContextShape } from "./Environment"
 import { StorageFailure, UpstreamUnreachable } from "./Failures"
+import { turnJournalRequest } from "./TurnJournal"
+import type { TurnJournalAudit } from "./TurnJournal"
+import { createTurnJournalClient } from "./TurnJournalClient"
+import type { TurnJournalClient } from "./TurnJournalClient"
+import { accessDurableTurn, eraseDurableTurn, withDurableAgentTurn } from "./DurableTurn"
 import type { BodyUnreadable } from "./Failures"
 import { fetchWithDeadline, readJsonOrUndefined, readText, Transport } from "./Http"
 import type { ValidatedIdentity } from "./identity"
@@ -197,10 +204,14 @@ export const turnCancelRequest = (request: Request): Effect.Effect<Response, nev
   )
 
 export class TurnCancelRegistry {
+  private readonly writes = Semaphore.makeUnsafe(1)
+  private readonly journalAudit: TurnJournalAudit = {}
   constructor(private readonly ctx: { readonly storage: NativeStorage }) {}
 
   fetch(request: Request): Promise<Response> {
-    return runDurable(turnCancelRequest(request).pipe(Effect.provide(storageLayer(this.ctx.storage))))
+    return runDurable(this.writes.withPermit(Effect.suspend(() =>
+      new URL(request.url).pathname === "/journal" ? turnJournalRequest(request, this.journalAudit) : turnCancelRequest(request)
+    )).pipe(Effect.provide(storageLayer(this.ctx.storage))))
   }
 }
 
@@ -209,6 +220,7 @@ export class TurnCancelRegistry {
 /* ------------------------------------------------------------------------ */
 
 export interface TurnCancelsShape {
+  readonly journals: TurnJournalClient
   /** Claim the runId for a turn; a live registration refuses a second one. */
   readonly register: (runId: string, owner?: string) => Effect.Effect<Registration, StorageFailure>
   /** Resolve the runId's live generation for this owner and flip it to cancelled. */
@@ -250,6 +262,7 @@ const namespacedTurnCancels = (namespace: NativeNamespace): TurnCancelsShape => 
       )
     )
   return {
+    journals: createTurnJournalClient(namespace),
     register: (runId, owner) =>
       call(runId, "/register", { method: "POST", headers: registryHeaders(owner, undefined) }).pipe(
         // A registry that answers its own 500 (a storage failure) is the
@@ -618,6 +631,7 @@ const isStartTurnRequest = (value: unknown): value is StartAgentTurnRequest =>
   "instructions" in value &&
   typeof value.instructions === "string" &&
   (!("tools" in value) || Array.isArray(value.tools)) &&
+  (!("journal" in value) || value.journal === undefined || AgentTurnJournalRequestSchema.safeParse(value.journal).success) &&
   (!("context" in value) ||
     value.context === undefined ||
     AgentRuntimeContextSchema.safeParse(value.context).success)
@@ -637,6 +651,7 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
       instructions: body.instructions,
       ...(body.tools === undefined ? {} : { tools: body.tools }),
       ...(body.context === undefined ? {} : { context: body.context }),
+      ...(body.journal === undefined ? {} : { journal: body.journal }),
       ...turnHints(body)
     } as const
   })
@@ -651,7 +666,7 @@ export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionCon
  * settles the registration; once the response is streaming, the pump fiber
  * observes it through the body's `cancel` and settles from its finalizer.
  */
-export const handleTurn = (
+const handleTransientTurn = (
   request: Request,
   session?: ValidatedIdentity,
   parsed?: TurnRequest
@@ -751,6 +766,34 @@ export const handleTurn = (
       Effect.onInterrupt(() => settle)
     )
   })
+
+/** The active turn route selects replayable delivery when the client supplies its durable leg identity. */
+export const handleTurn = <R = never>(
+  request: Request,
+  session?: ValidatedIdentity,
+  parsed?: TurnRequest,
+  admission: Effect.Effect<Response | undefined, never, R> = Effect.succeed(undefined)
+): Effect.Effect<Response, never, TurnServices | R> =>
+  Effect.gen(function* () {
+    const body = parsed ?? (yield* readStartTurn(request))
+    if (body instanceof Response) return body
+    const start = () => Effect.gen(function* () {
+      const refusal = yield* admission
+      return refusal ?? (yield* handleTransientTurn(request, session, body))
+    })
+    if (body.journal === undefined) return yield* start()
+    const cancels = yield* TurnCancels
+    return yield* withDurableAgentTurn({ ...body, journal: body.journal }, session?.login, cancels.journals,
+      start)
+  })
+
+/** Replay and retirement use the same validated owner as initial acceptance. */
+export const handleTurnJournalAccess = (request: Request, session: ValidatedIdentity | undefined, retire = false): Effect.Effect<Response, never, TurnCancels> =>
+  TurnCancels.use(cancels => accessDurableTurn(request, session?.login, cancels.journals, retire))
+
+/** No account credential is retained by the deletion-only recovery outbox. */
+export const handleTurnJournalErasure = (request: Request): Effect.Effect<Response, never, TurnCancels> =>
+  TurnCancels.use(cancels => eraseDurableTurn(request, cancels.journals))
 
 /**
  * The seconds an upstream's own `Retry-After` asked for, when it sent one a

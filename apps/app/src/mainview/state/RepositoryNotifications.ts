@@ -1,11 +1,32 @@
 import { z } from "zod"
 
+export const notificationReceiptKey = (notificationId: string, version: string): string => JSON.stringify([notificationId, version])
+/** A version was read. Legacy evidence supplies no truthful original timestamp. */
+export const NotificationReadReceiptSchema = z.object({
+  id: z.string(), notificationId: z.string(), version: z.string()
+}).strict().refine(row => row.id === notificationReceiptKey(row.notificationId, row.version), { message: "Notification receipt key must match its notification and version" })
+export type NotificationReadReceipt = z.infer<typeof NotificationReadReceiptSchema>
+
+/** The only read-status authority: a receipt for this exact observed version. */
+export const notificationWasRead = (
+  receipts: Pick<ReadonlyMap<string, unknown>, "has">,
+  notificationId: string,
+  version: string
+): boolean => receipts.has(notificationReceiptKey(notificationId, version))
+
+/** Compatibility field for existing activity processing; never an independent write authority. */
+export const notificationReadVersion = (
+  row: Pick<RepositoryNotification, "id" | "version">,
+  receipts: Pick<ReadonlyMap<string, unknown>, "has">
+): string | undefined => notificationWasRead(receipts, row.id, row.version) ? row.version : undefined
+
 /** Human inbox receipts, projected by the same persisted dispatcher as chat. */
 export const RepositoryNotificationSchema = z.object({
   id: z.string(), scope: z.string(), repo: z.string(), source: z.string(), sourceId: z.string(),
   kind: z.enum(["issue", "pr", "notification"]), number: z.number().int().optional(),
   title: z.string(), state: z.string(), updatedAt: z.string().nullable(), version: z.string(),
   tags: z.array(z.string()), processedAt: z.number(), announcedVersion: z.string().optional(),
+  // Derived compatibility cache of notificationReceipts for this row's current version.
   readVersion: z.string().optional()
 })
 export type RepositoryNotification = z.infer<typeof RepositoryNotificationSchema>

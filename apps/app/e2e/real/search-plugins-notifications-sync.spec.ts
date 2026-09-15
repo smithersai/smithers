@@ -15,7 +15,7 @@ test("the real palette filters flow rows and keyboard selection runs the same se
   const palette = page.getByTestId("palette"); await expect(palette).toBeVisible(); await expect(palette).toHaveAttribute("data-mode", "flows")
   await expect(palette.getByRole("option").filter({ hasText: "chat" }).first()).toBeVisible(); await expect(palette.getByRole("option")).not.toContainText("billing.balance")
   await input.press("Enter"); await closeComposer(page)
-  const card = page.locator('.smithers-card[data-kind="search-results"]').last(); await expect(card).toBeVisible(); await expect(card.getByTestId("search-results-query")).toContainText("chat"); await expect(card.locator('[data-kind="flow"]')).toContainText("chat")
+  const card = page.locator('.smithers-card[data-kind="search-results"]').last(); await expect(card).toBeVisible(); await expect(card.getByTestId("search-results-query")).toContainText("chat"); await expect(card.getByTestId("search-item-flow-chat")).toContainText("chat")
 })
 
 test("real search refuses unindexed modes and preserves an honest empty result", scenario("search.unindexed-refusal-real", {
@@ -41,5 +41,5 @@ test("signed-out notifications and sync commands fail closed through the real re
   capabilities: [], coverage: ["action:notifications.list", "action:notifications.read", "action:sync.retry", "host:local", "host:production", "path:permission", "door:slash", "dimension:signed-out-cloud-requirement", "dimension:no-side-effect", "evidence:sign-in-step-and-no-cloud-card"]
 }), async ({ page }) => {
   await boot(page); await command(page, "/notifications.list"); await closeComposer(page); await expect(page.getByText(/Sign in with GitHub to show your notifications/i).last()).toBeVisible(); await expect(page.locator('.smithers-card[data-kind="notifications"]')).toHaveCount(0)
-  await command(page, "/notifications.read"); await closeComposer(page); await expect(page.getByText(/Sign in with GitHub to mark every notification read/i).last()).toBeVisible(); await command(page, "/sync.retry owned-op-that-does-not-exist"); await closeComposer(page); await expect(page.getByText(/Sign in with GitHub to retry one failed sync op/i).last()).toBeVisible(); await expect(page.locator('.smithers-card[data-kind="sync"]')).toHaveCount(0)
+  await command(page, "/notifications.read"); await closeComposer(page); await expect(page.getByText(/Sign in with GitHub to mark every notification read/i).last()).toBeVisible(); await command(page, "/sync.retry owned-op-that-does-not-exist"); await closeComposer(page); await expect(page.getByText(/Sign in with GitHub to retry one failed sync op/i).last()).toBeVisible(); await expect(page.locator('.smithers-card[data-kind="sync-ops"]')).toHaveCount(0)
 })

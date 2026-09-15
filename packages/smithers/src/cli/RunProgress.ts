@@ -1,6 +1,6 @@
 /**
  * Observational progress for attached durable runs. The same watch that waits
- * for settlement feeds a bounded projection; no second subscriber, polling,
+ * for settlement feeds a projection with bounded display labels; no second subscriber, polling,
  * journal write, or terminal rendering is involved in deciding run state.
  *
  * @since 1.0.0
@@ -8,8 +8,9 @@
 import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { ControlSchema } from "@smthrs/control"
+import { callEventKey, nativeCallEvent, openCallIndex } from "@smthrs/gateway/Diagnosis"
 import * as Redaction from "@smthrs/journal/Redaction"
-import { Cause, Context, Effect, Exit, Stream } from "effect"
+import { Cause, Context, Effect, Exit, HashMap, HashSet, Stream } from "effect"
 import type { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
 import { causeLine } from "../internal/Failure.ts"
@@ -37,7 +38,9 @@ export const Configuration = Context.Reference<Options | undefined>("/cli/RunPro
 })
 
 /**
- * Small, immutable run projection; neither event history nor task results are retained.
+ * Immutable run projection. Eight active labels are retained, plus compact
+ * call lifecycle identities for exact replay deduplication; no event payloads
+ * or task results are retained.
  *
  * @category models
  * @since 1.0.0
@@ -49,6 +52,13 @@ export interface State {
   readonly failed: number
   readonly skipped: number
   readonly active: ReadonlyArray<string>
+  /** Identities aligned with the bounded active-label window. */
+  readonly activeCallIds: ReadonlyArray<string | undefined>
+  /** A persistent set keeps incremental duplicate checks cheap and pure. */
+  readonly reportedCalls: HashSet.HashSet<string>
+  /** Native facts can correct an earlier telemetry result without counting twice. */
+  readonly nativeCalls: HashSet.HashSet<string>
+  readonly callFailures: HashMap.HashMap<string, boolean>
   readonly status: string
   readonly settled: boolean
 }
@@ -77,6 +87,10 @@ export const initial = (): State => ({
   failed: 0,
   skipped: 0,
   active: [],
+  activeCallIds: [],
+  reportedCalls: HashSet.empty(),
+  nativeCalls: HashSet.empty(),
+  callFailures: HashMap.empty(),
   status: "Connecting to run",
   settled: false
 })
@@ -128,7 +142,38 @@ export const project = (
   state: State,
   event: ControlSchema.ControlEvent
 ): { readonly state: State; readonly lines: ReadonlyArray<Line> } => {
+  const native = nativeCallEvent(event)
+  event = native ?? event
   const payload = record(event.payload)
+  const callKey = callEventKey(event)
+  if (callKey !== undefined) {
+    const duplicate = HashSet.has(state.reportedCalls, callKey)
+    if (duplicate) {
+      if (native === undefined || HashSet.has(state.nativeCalls, callKey)) return { state, lines: [] }
+      state = { ...state, nativeCalls: HashSet.add(state.nativeCalls, callKey) }
+      if (event.kind === "control.agent.cell-call-settled") {
+        const previous = HashMap.get(state.callFailures, callKey)
+        const failed = payload["outcome"] === "failure"
+        if (previous._tag === "Some") {
+          state = {
+            ...state,
+            completed: state.completed + Number(!failed) - Number(!previous.value),
+            failed: state.failed + Number(failed) - Number(previous.value),
+            callFailures: HashMap.set(state.callFailures, callKey, failed)
+          }
+        }
+      }
+      return { state, lines: [] }
+    }
+    state = {
+      ...state,
+      reportedCalls: HashSet.add(state.reportedCalls, callKey),
+      nativeCalls: native === undefined ? state.nativeCalls : HashSet.add(state.nativeCalls, callKey),
+      callFailures: event.kind !== "control.agent.cell-call-settled" ?
+        state.callFailures :
+        HashMap.set(state.callFailures, callKey, payload["outcome"] === "failure")
+    }
+  }
   switch (event.kind) {
     case "flows.engine.plan-recorded": {
       const nodes = typeof payload["nodes"] === "number" ? payload["nodes"] : undefined
@@ -158,11 +203,14 @@ export const project = (
       const node = event.kind === "flows.engine.node-scheduled"
       const name = text(node ? payload["nodeId"] : payload["flowName"], 100) || "task"
       const retry = node && typeof payload["attempt"] === "number" && payload["attempt"] > 1
+      const alreadyActive = retry && state.active.includes(name)
+      const callId = !node && typeof payload["callId"] === "string" ? payload["callId"] : undefined
       return {
         state: {
           ...state,
           started: state.started + (retry ? 0 : 1),
-          active: retry && state.active.includes(name) ? state.active : [...state.active, name].slice(-8),
+          active: alreadyActive ? state.active : [...state.active, name].slice(-8),
+          activeCallIds: alreadyActive ? state.activeCallIds : [...state.activeCallIds, callId].slice(-8),
           status: name,
           settled: false
         },
@@ -176,7 +224,12 @@ export const project = (
       const failed = payload["outcome"] === "failure" || payload["outcome"] === "failed"
       const skipped = node && (payload["outcome"] === "skipped" || payload["outcome"] === "deferred")
       const cached = node && payload["outcome"] === "clean"
-      const index = state.active.indexOf(name)
+      const callId = !node && typeof payload["callId"] === "string" ? payload["callId"] : undefined
+      const index = openCallIndex(
+        state.active.map((flowName, position) => ({ flowName, callId: state.activeCallIds[position] })),
+        callId,
+        name
+      )
       const message = failed ? text(payload["message"]) : ""
       return {
         state: {
@@ -185,6 +238,9 @@ export const project = (
           failed: state.failed + (failed ? 1 : 0),
           skipped: state.skipped + (skipped ? 1 : 0),
           active: index < 0 ? state.active : state.active.filter((_, position) => position !== index),
+          activeCallIds: index < 0
+            ? state.activeCallIds
+            : state.activeCallIds.filter((_, position) => position !== index),
           status: "Working",
           settled: false
         },

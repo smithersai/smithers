@@ -1,3 +1,6 @@
+import { decodeEventValue } from "./EventValue"
+import { flowArgs } from "../flows/FlowArgs"
+import { runtimeRunKey } from "./RuntimeProjection"
 import { approvalActionId } from "./ApprovalReference"
 /*
  * Lane runs — the run lifecycle beyond launch, through the real controller
@@ -362,7 +365,7 @@ test("declared flow inputs reuse persisted forms and the existing named launch p
   const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
   if (form?.kind !== "flow-form") throw new Error("input form missing")
   expect(form.payload.fields.map(field => [field.name, field.kind])).toEqual([
-    ["path", "text"], ["attempts", "number"], ["mode", "select"], ["draft", "boolean"]
+    ["attempts", "number"], ["draft", "boolean"], ["mode", "select"], ["path", "text"]
   ])
   expect(form.payload.draft.path).toBe("src/retries.ts")
   await controller.commands.run("form.set", `${form.id} attempts 2`)
@@ -885,6 +888,32 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     expect((double.state.submitted[0]?.approval as { answer?: unknown }).answer).toBe("the scheduler owns it")
   })
 
+  test("a nested human question keeps its structured answer through normalized inbox and individual card submissions", async () => {
+    for (const door of ["inbox", "card"] as const) {
+      const store = await webStore()
+      const question = { ...approvalRow("run-a", "question:1", "Which services?"), waitRunId: "child-run", request: { question: "Which services?", kind: "json", prompt: "Which services?" } }
+      const double = relay({ approvals: [question], runs: [{ runId: "run-a", flowId: "review-pr", status: "waiting-approval" }] })
+      const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+      await signIn(store)
+      await controller.commands.run("approvals.list")
+      const currentInbox = inboxCard(store)!
+      expect(currentInbox.payload.approvals[0]?.question?.prompt).toBe("Which services?")
+      let id = approvalActionId(currentInbox.id, question)
+      if (door === "card") {
+        await controller.commands.run("approvals.open", "run-a")
+        const approval = [...store.collections.cards.values()].find(card => card.kind === "approval" && card.payload.requestId === question.requestId)
+        expect(approval?.kind).toBe("approval")
+        id = approval!.id
+      }
+      const answer = { services: ["api", "worker"], note: 'Keep "the retry" budget\nwith the owner.' }
+      controller.answerApproval(id, answer)
+      await waitFor(() => double.state.submitted.length === 1)
+      expect(double.state.submitted[0]).toEqual({ approval: { ...question.payload, answer }, decision: "approve" })
+      await waitFor(() => [...store.collections.runtimeApprovals.values()].some(row => row.row.status === "approved"))
+      expect([...store.collections.runtimeApprovals.values()].every(row => row.pending !== true)).toBe(true)
+    }
+  })
+
   test("two runs with the same request ID have independent actions, pending state and refresh receipts", async () => {
     const store = await webStore()
     const first = approvalRow("run-a", "deploy:gate", "Deploy A?")
@@ -1321,11 +1350,14 @@ describe("workspace-bound run cards", () => {
     const submittedB = b.state.submitted.length
     await controller.commands.run("approval.approve", `approvals-inbox-${REPO}-${workspaceId}:same-gate`)
     await controller.commands.run("approval.approve", `approvals-inbox-${REPO}-${workspaceB}:same-gate`)
-    await waitFor(() => a.state.submitted.length === submittedA + 1 && b.state.submitted.length === submittedB + 1, 10_000)
+    // A stale pending inventory after reload cannot reopen these decided gates.
+    expect(a.state.submitted.length).toBe(submittedA)
+    expect(b.state.submitted.length).toBe(submittedB)
     // Stop-all uses the source list's displayed set, not every workspace with the same repo.
     const list = store.collections.cards.get(listA)!
     if (list.kind !== "run-list") throw new Error("missing list")
-    await store.dispatch({ type: "card.upsert", actor: "system", card: { ...list, payload: { ...list.payload, runs: list.payload.runs.map((row) => ({ ...row, status: "running" })) } } }).isPersisted.promise
+    const recordedA = store.collections.runtimeRuns.get(runtimeRunKey(scopeA))!.summary!
+    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: { scope: scopeA, summary: { ...recordedA, status: "running", updatedAt: recordedA.updatedAt + 1 } } }).isPersisted.promise
     await controller.commands.run("flow.run.stop-all", `sourceCard=${listA} ${REPO}`)
     expect(a.state.cancelled).toHaveLength(1)
     expect(b.state.cancelled).toHaveLength(0)
@@ -1395,4 +1427,141 @@ test("anonymous live tutorial logs use actual saved events and reject a mismatch
   expect(card?.kind==="run-trace"&&card.payload.transcriptRows?.map(row=>row.text)).toEqual(["Run protected regression tests\nACTUAL stdout: missing name failed at hello.ts:2"])
   expect(said(await controller.commands.run("runs.logs",`sourceCard=${cardId} unrelated-run`))).toContain("does not record")
   expect(double.calls.filter(call=>call.path.startsWith("/api/workflow/"))).toHaveLength(0)
+})
+
+
+test("a normalized approval waits for its own decision receipt; failed storage starts no submission", async () => {
+  const backing = memoryStorage()
+  let fail = false
+  const storage = { ...backing, setItem: (key: string, value: string) => {
+    if (fail) throw new Error("decision storage refused")
+    backing.setItem(key, value)
+  } }
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const double = relay({ approvals: [approvalRow("run", "gate", "Deploy?")] })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("approvals.open", "run")
+  const card = [...store.collections.cards.values()].find(row => row.kind === "approval" && row.payload.runId === "run")!
+  await store.settled?.()
+  fail = true
+  controller.decideApproval(card.id, "approved")
+  await settle(10)
+  await store.settled?.().catch(() => {})
+  expect(double.state.submitted).toEqual([])
+  expect(store.collections.cards.get(card.id)).toMatchObject({ status: "active" })
+  expect([...store.collections.runtimeApprovals.values()].every(row => row.row.status === "pending" && row.pending !== true)).toBe(true)
+  fail = false
+  await controller.dispose()
+})
+
+test("a late run snapshot cannot repopulate normalized state after account erasure", async () => {
+  const store = await webStore(), double = relay({ runs: [{ runId: "run", flowId: "test", status: "completed" }] })
+  let release!: () => void, started!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const requested = new Promise<void>(resolve => { started = resolve })
+  const original = double.services.fetchImpl!
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { ...double.services, fetchImpl: async (input, init) => {
+    const body = init?.body === undefined ? undefined : JSON.parse(String(init.body))
+    if (body?.procedure === "Projection.Snapshot" && body.payload.selector._tag === "run-summary") { started(); await held }
+    return original(input, init)
+  } })
+  await signIn(store)
+  const opening = controller.commands.run("runs.open", `run ${REPO}`)
+  await requested
+  await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+  release()
+  const result = await opening
+  expect(result.status).not.toBe("executed")
+  expect([...store.collections.runtimeRuns.values()]).toEqual([])
+  expect([...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.payload.runId === "run")).toBe(false)
+  await controller.dispose()
+})
+
+test("a human answer draft is one event-derived value across inbox, card and reload; agent edits and re-asked questions cannot borrow it", async () => {
+  const backing = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage: backing })
+  const question = { ...approvalRow("run-answer", "question", "Who owns this?"), waitRunId: "child-answer", request: { question: "Who owns this?", kind: "ask", prompt: "Who owns this?" } }
+  const double = relay({ approvals: [question] })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("approvals.list")
+  await controller.commands.run("approvals.open", "run-answer")
+  const initial = inboxCard(store)!
+  const target = approvalActionId(initial.id, question)
+  const field = `answer:${initial.payload.approvals[0]!.answerDraft!.question}`
+  const words = 'the "scheduler"\nkeeps the budget'
+  const args = flowArgs("form.set", { cardId: target, field, value: words })
+  expect((await controller.commands.runForAgent("form.set", args)).status).toBe("failed")
+  expect([...store.collections.runtimeApprovals.values()][0]?.answerDraft).toBeUndefined()
+  expect((await controller.commands.run("form.set", args)).status).toBe("executed")
+  expect(inboxCard(store)?.payload.approvals[0]?.answerDraft?.text).toBe(words)
+  const individual = [...store.collections.cards.values()].find(card => card.kind === "approval" && card.payload.runId === question.runId)
+  expect(individual?.kind === "approval" && individual.payload.answerDraft?.text).toBe(words)
+  await controller.dispose()
+  await store.dispose?.()
+  const reopened = await createAppStore({ kind: "localStorage", storage: backing })
+  expect(inboxCard(reopened)?.payload.approvals[0]?.answerDraft?.text).toBe(words)
+  expect((await reopened.verifyState()).valid).toBe(true)
+  const next = createAppController(reopened, unavailableRepositories, silentAgent, double.services)
+  question.request.prompt = "Who owns the revised budget?"
+  await next.commands.run("approvals.list")
+  expect(inboxCard(reopened)?.payload.approvals[0]?.answerDraft?.text).toBe("")
+  expect((await next.commands.run("form.set", args)).status).toBe("failed")
+  next.answerApproval(target, words, field.slice("answer:".length))
+  await settle(4)
+  expect(double.state.submitted).toEqual([])
+})
+
+test("every human answer kind validates against its current question and commits input before submission", async () => {
+  for (const example of [
+    { kind: "ask", answer: "scheduler", invalid: false, text: "scheduler" },
+    { kind: "confirm", answer: false, invalid: "false", text: "false" },
+    { kind: "select", answer: "stable", invalid: "unknown", text: "stable" },
+    { kind: "json", answer: { retry: 3 }, invalid: undefined, text: '{"retry":3}' }
+  ] as const) {
+    const store = await webStore()
+    const question = { ...approvalRow("run-answer", "question", "Answer?"), waitRunId: "child-answer", request: { question: "Answer?", kind: example.kind, prompt: "Answer?", options: ["canary", "stable"] } }
+    const double = relay({ approvals: [question] })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("approvals.list")
+    const target = approvalActionId(inboxCard(store)!.id, question)
+    if (example.invalid !== undefined) {
+      controller.answerApproval(target, example.invalid)
+      await settle(3)
+      expect(double.state.submitted).toEqual([])
+    }
+    controller.answerApproval(target, example.answer)
+    await waitFor(() => double.state.submitted.length === 1)
+    expect(double.state.submitted[0]).toEqual({ approval: { ...question.payload, answer: example.answer }, decision: "approve" })
+    const events = (await store.eventHistory()).events
+    const accepted = events.find(event => event.type === "approval.answer.changed")
+    expect(accepted).toBeDefined()
+    expect(decodeEventValue(accepted!.input)).toMatchObject({ actor: "user", text: example.text })
+  }
+})
+
+test("an answer whose input cannot persist submits nothing", async () => {
+  const backing = memoryStorage()
+  let fail = false
+  const store = await createAppStore({ kind: "localStorage", storage: { ...backing, setItem: (key, value) => {
+    if (fail) throw new Error("answer storage refused")
+    backing.setItem(key, value)
+  } } })
+  const question = { ...approvalRow("run-answer", "question", "Who?"), waitRunId: "child-answer", request: { question: "Who?", kind: "ask", prompt: "Who?" } }
+  const double = relay({ approvals: [question] })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  await signIn(store)
+  await controller.commands.run("approvals.list")
+  const id = approvalActionId(inboxCard(store)!.id, question)
+  await store.settled?.()
+  fail = true
+  controller.answerApproval(id, "private answer")
+  await settle(10)
+  await store.settled?.().catch(() => {})
+  expect(double.state.submitted).toEqual([])
+  expect([...store.collections.runtimeApprovals.values()][0]?.answerDraft).toBeUndefined()
+  fail = false
+  await controller.dispose()
 })

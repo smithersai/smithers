@@ -1,0 +1,393 @@
+import { scopedControllers } from "./ControllerTestScope"
+import { afterEach, expect, test } from "bun:test"
+import { digest } from "@smthrs/core/Digest"
+import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnBatch, AgentTurnCursor, AgentTurnJournalDelivery, AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import type { AgentPort } from "../runtime/AgentPort"
+import { createWebAgent } from "../native/WebAgent"
+import { createAgentSeat } from "../chain/ChainRuntime"
+import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { createAppStore, type AppStore } from "./AppStore"
+import type { AppController } from "./AppController"
+import { initialGuide, type AppTransition } from "./AppState"
+import { emptyAppProjection, projectAppEvent, seedAppProjection } from "./AppProjection"
+import { appProjectionHash } from "./AppEventStream"
+import { httpToolItems } from "./HttpTurn"
+import { memoryStorage, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
+
+const token = "a".repeat(64)
+const initialCursor = (runId = "turn", legId = "leg"): AgentTurnCursor => ({ version: 1, runId, legId, batch: 0, position: 0, hash: "0".repeat(64) })
+const batchOf = (cursor: AgentTurnCursor, frames: AgentTurnFrame[]): AgentTurnBatch => {
+  const body = { version: 1 as const, runId: cursor.runId, legId: cursor.legId, batch: cursor.batch + 1, from: cursor.position + 1, previousHash: cursor.hash, frames }
+  return { ...body, hash: digest(agentTurnJournalDigestInput("batch", body)) }
+}
+const cursorOf = (batch: AgentTurnBatch): AgentTurnCursor => ({ version: 1, runId: batch.runId, legId: batch.legId, batch: batch.batch, position: batch.from + batch.frames.length - 1, hash: batch.hash })
+const boot = () => seedAppProjection(emptyAppProjection(), { createdAt: 1, theme: "light", seedWiki: false })
+const step = (snapshot: ReturnType<typeof boot>, transition: AppTransition) => projectAppEvent(snapshot, { transition, revision: snapshot.sessions[0]!.revision + 1, createdAt: 2, persistenceMode: "localStorage" })
+const started = (text = "Hello") => step(boot(), { type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text, retry: false, journal: { version: 1, legId: "leg", token } })
+const accepted = (text = "Hello") => step(started(text), { type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() })
+
+test("a complete HTTP batch projects once with its cursor, shared message semantics and stable per-frame identities", () => {
+  const before = accepted()
+  const batch = batchOf(initialCursor(), [
+    { type: "delta", runId: "turn", kind: "text", text: "Hello " }, { type: "delta", runId: "turn", kind: "text", text: "again" },
+    { type: "gate.rejected", runId: "turn", link: 1, kind: "shape" },
+    { type: "steering.drained", runId: "turn", link: 1, count: 1 }
+  ])
+  const event: AppTransition = { type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg", batch }
+  const next = step(before, event)
+  expect(next.messages.find(row => row.id === "message-turn-smithers")?.text).toBe("Hello again")
+  expect(next.messages.filter(row => row.act !== undefined)).toHaveLength(2)
+  expect(new Set(next.messages.map(row => row.id)).size).toBe(next.messages.length)
+  expect(next.httpTurnLegs[0]?.cursor).toEqual(cursorOf(batch))
+  expect(step(next, event)).toBe(next)
+  expect(appProjectionHash(step(before, event))).toBe(appProjectionHash(next))
+  expect(before.messages.some(row => row.role === "smithers")).toBe(false)
+  const changed = { ...batch, frames: [{ type: "delta" as const, runId: "turn", kind: "text" as const, text: "forged" }] }
+  expect(() => step(before, { ...event, batch: changed })).toThrow("integrity")
+  const gap = batchOf({ ...initialCursor(), position: 10 }, [{ type: "delta", runId: "turn", kind: "text", text: "bad" }])
+  expect(() => step(before, { ...event, batch: gap })).toThrow("cursor")
+})
+
+test("withheld claims, pending calls, settled results and continuation input all survive pure event replay", () => {
+  let state = accepted("Send an email to Pat")
+  const batch = batchOf(initialCursor(), [
+    { type: "delta", runId: "turn", kind: "text", text: "I can send an email." },
+    { type: "tool_call", runId: "turn", call_id: "call", name: "commands", arguments: '{"action":"list"}' },
+    { type: "done", runId: "turn", reason: "tool_call" }
+  ])
+  state = step(state, { type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg", batch })
+  expect(state.messages.find(row => row.id === "message-turn-smithers")).toBeUndefined()
+  expect(state.httpTurns[0]?.claimBuffer).toBe("I can send an email.")
+  expect(state.httpTurnLegs[0]).toMatchObject({ status: "tool-ready", call: { callId: "call" } })
+  state = step(state, { type: "http.tool.started", actor: "smithers", attemptId: "attempt", legId: "leg" })
+  state = step(state, { type: "http.tool.settled", actor: "smithers", attemptId: "attempt", legId: "leg", result: "Available commands" })
+  expect(httpToolItems(state.httpTurnLegs, "attempt")).toEqual([
+    { type: "function_call", call_id: "call", name: "commands", arguments: '{"action":"list"}' },
+    { type: "function_call_output", call_id: "call", output: "Available commands" }
+  ])
+  state = step(state, { type: "http.leg.prepared", actor: "system", attemptId: "attempt", journal: { version: 1, legId: "leg2", token } })
+  state = step(state, { type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg2", cursor: initialCursor("turn", "leg2") })
+  state = step(state, { type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg2",
+    batch: batchOf(initialCursor("turn", "leg2"), [{ type: "done", runId: "turn", reason: "stop" }]) })
+  expect(state.messages.find(row => row.id === "message-turn-smithers")?.text).toContain("I can't send or draft email yet")
+  expect(state.sessions[0]?.phase).toBe("idle")
+  expect(state.httpTurns[0]).toMatchObject({ status: "complete", claimBuffer: "" })
+  expect(JSON.stringify(state.transitions)).not.toContain(token)
+})
+
+test("card updates within one batch read preceding card facts and use the shared validated patch contract", () => {
+  const before = accepted()
+  const card = { id: "file", kind: "file" as const, title: "File", status: "active" as const, ordinal: 1, createdAt: 1,
+    payload: { repo: "org/repo", path: "hello.txt", content: "before", truncated: false } }
+  const batch = batchOf(initialCursor(), [{ type: "card", runId: "turn", card },
+    { type: "card.update", runId: "turn", id: "file", patch: { kind: "file", title: "Updated", payload: { content: "after" } } }])
+  const next = step(before, { type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg", batch })
+  expect(next.cards.find(row => row.id === "file")).toMatchObject({ title: "Updated", payload: { content: "after", path: "hello.txt" } })
+  expect(before.cards).toEqual([])
+  expect(next.httpTurnLegs[0]?.cursor).toEqual(cursorOf(batch))
+  const cancelled = step(next, { type: "conversation.reset", actor: "user" })
+  expect(cancelled.httpTurns[0]?.status).toBe("cancelled")
+  expect(cancelled.httpTurnLegs[0]?.status).toBe("cancelled")
+  expect(step(cancelled, { type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg", batch })).toBe(cancelled)
+})
+
+const stores: AppStore[] = [], controllers: AppController[] = []
+afterEach(async () => { for (const controller of controllers.splice(0)) await Promise.resolve(controller.dispose()).catch(() => {}); for (const store of stores.splice(0)) await Promise.resolve(store.dispose?.()).catch(() => {}) })
+const until = async (predicate: () => boolean) => { for (let i = 0; i < 100 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 5)); expect(predicate()).toBe(true) }
+const open = async (storage = memoryStorage()) => {
+  const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false }); stores.push(store)
+  if (!store.session().guide?.finished) await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
+  return store
+}
+const journalAgent = () => {
+  const starts: StartAgentTurnRequest[] = [], reads: unknown[] = [], disconnected: string[] = []
+  let listener: ((delivery: AgentTurnJournalDelivery) => Promise<void>) | undefined
+  let reply: AgentTurnJournalReply = { status: "error", code: "not-found" }
+  const agent: AgentPort = { available: true, startTurn: async request => { starts.push(request); return { status: "started" } }, cancelTurn: async () => {}, subscribe: () => () => {},
+    journal: { subscribe: next => { listener = next; return () => { listener = undefined } }, read: async access => { reads.push(access); return reply }, retire: async () => {}, disconnect: id => { disconnected.push(id) } } }
+  return { agent, starts, reads, disconnected, emit: async (delivery: AgentTurnJournalDelivery) => { await listener?.(delivery) }, setReply: (next: AgentTurnJournalReply) => { reply = next } }
+}
+const controllerFor = (store: AppStore, agent: AgentPort) => { const controller = createAppController(store, unavailableRepositories, agent); controllers.push(controller); return controller }
+
+test("the active AppController persists capability and prompt before POST, then resumes a disconnected leg after a real reopen", async () => {
+  const storage = memoryStorage(), store = await open(storage), remote = journalAgent()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const gated: AppStore = { ...store, dispatch: transition => {
+    const transaction = store.dispatch(transition)
+    return transition.type !== "http.turn.started" ? transaction : new Proxy(transaction, { get: (target, key, receiver) => key === "isPersisted"
+      ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) } : Reflect.get(target, key, receiver) })
+  } }
+  const controller = controllerFor(gated, remote.agent)
+  controller.send("Hello")
+  await store.settled?.()
+  expect(remote.starts).toHaveLength(0)
+  release(); await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  expect(store.collections.httpTurnLegs.get(cursor.legId)?.journal).toEqual(request.journal)
+  await remote.emit({ type: "accepted", cursor })
+  const first = batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "Part one. " }])
+  await remote.emit({ type: "batch", batch: first, cursor: cursorOf(first) })
+  await controller.dispose()
+  const second = batchOf(cursorOf(first), [{ type: "delta", runId: request.runId, kind: "text", text: "Part two." }, { type: "done", runId: request.runId, reason: "stop" }])
+  const restored = await open(storage), resumed = journalAgent()
+  resumed.setReply({ status: "ok", after: cursorOf(first), next: cursorOf(second), head: cursorOf(second), terminal: true, more: false, batches: [second] })
+  controllerFor(restored, resumed.agent)
+  await until(() => restored.session().phase === "idle")
+  expect(resumed.starts).toHaveLength(0)
+  expect(resumed.reads).toHaveLength(1)
+  expect(restored.collections.messages.get(`message-${request.runId}-smithers`)?.text).toBe("Part one. Part two.")
+  expect((await restored.verifyState()).valid).toBe(true)
+})
+
+test("an accepted tool with no durable result is ambiguous after reload and never starts a model or tool again", async () => {
+  const storage = memoryStorage(), store = await open(storage)
+  await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Do work", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+  await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
+  await store.dispatch({ type: "http.turn.batch.received", actor: "system", attemptId: "attempt", legId: "leg", batch: batchOf(initialCursor(), [
+    { type: "tool_call", runId: "turn", call_id: "call", name: "commands", arguments: '{"action":"execute","name":"app.reset"}' }, { type: "done", runId: "turn", reason: "tool_call" }
+  ]) }).isPersisted.promise
+  await store.dispatch({ type: "http.tool.started", actor: "smithers", attemptId: "attempt", legId: "leg" }).isPersisted.promise
+  await store.dispose?.()
+  const restored = await open(storage), remote = journalAgent()
+  controllerFor(restored, remote.agent)
+  await until(() => restored.session().phase === "idle")
+  expect(restored.collections.httpTurns.get("attempt")?.status).toBe("ambiguous")
+  expect(remote.starts).toHaveLength(0)
+  expect(remote.reads).toHaveLength(0)
+  expect(restored.collections.commandIntents.size).toBe(0)
+  expect(restored.collections.messages.get("message-turn-smithers")?.text).toContain("its result was not saved")
+})
+
+test("the production tool door waits for the whole batch receipt, deduplicates replay and scopes an explicit retry to a new attempt", async () => {
+  const store = await open(), remote = journalAgent()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let holdBatch = true
+  const gated: AppStore = { ...store, dispatch: transition => {
+    const transaction = store.dispatch(transition)
+    return transition.type !== "http.turn.batch.received" || !holdBatch ? transaction : new Proxy(transaction, { get: (target, key, receiver) => key === "isPersisted"
+      ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) } : Reflect.get(target, key, receiver) })
+  } }
+  const controller = controllerFor(gated, remote.agent)
+  controller.send("Make a note")
+  await until(() => remote.starts.length === 1)
+  const first = remote.starts[0]!, cursor = initialCursor(first.runId, first.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const call = batchOf(cursor, [{ type: "tool_call", runId: first.runId, call_id: "same-call", name: "commands", arguments: '{"action":"execute","name":"wiki.new-note"}' },
+    { type: "done", runId: first.runId, reason: "tool_call" }])
+  const originalNotes = store.collections.worldDocuments.size
+  const receipt = remote.emit({ type: "batch", batch: call, cursor: cursorOf(call) })
+  await store.settled?.()
+  expect(store.collections.commandIntents.size).toBe(0)
+  expect(store.collections.worldDocuments.size).toBe(originalNotes)
+  expect(remote.starts).toHaveLength(1)
+  holdBatch = false; release(); await receipt
+  await until(() => remote.starts.length === 2)
+  expect(store.collections.worldDocuments.size).toBe(originalNotes + 1)
+  expect([...store.collections.commandIntents.values()].filter(row => row.name === "wiki.new-note" && row.status === "settled")).toHaveLength(1)
+  await remote.emit({ type: "batch", batch: call, cursor: cursorOf(call) })
+  expect(store.collections.worldDocuments.size).toBe(originalNotes + 1)
+  const continuation = remote.starts[1]!, nextCursor = initialCursor(first.runId, continuation.journal!.legId)
+  expect(continuation.messages.filter(item => "type" in item && item.type === "function_call_output")).toHaveLength(1)
+  await remote.emit({ type: "accepted", cursor: nextCursor })
+  const done = batchOf(nextCursor, [{ type: "delta", runId: first.runId, kind: "text", text: "Made a note." }, { type: "done", runId: first.runId, reason: "stop" }])
+  await remote.emit({ type: "batch", batch: done, cursor: cursorOf(done) })
+  await controller.commands.run("chat.retry")
+  await until(() => remote.starts.length === 3)
+  const retry = remote.starts[2]!, retryCursor = initialCursor(first.runId, retry.journal!.legId)
+  expect(retry.runId).toBe(first.runId)
+  expect(retry.journal?.legId).not.toBe(first.journal?.legId)
+  await remote.emit({ type: "accepted", cursor: retryCursor })
+  const again = batchOf(retryCursor, call.frames)
+  await remote.emit({ type: "batch", batch: again, cursor: cursorOf(again) })
+  await until(() => remote.starts.length === 4)
+  expect(store.collections.worldDocuments.size).toBe(originalNotes + 2)
+  expect([...store.collections.commandIntents.values()].filter(row => row.name === "wiki.new-note" && row.status === "settled")).toHaveLength(2)
+})
+
+test("reload drains more than one thousand missed frames across all bounded pages without another inference", async () => {
+  const storage = memoryStorage(), store = await open(storage)
+  await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Hello", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+  await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
+  await store.dispose?.()
+  const batches: AgentTurnBatch[] = []
+  let cursor = initialCursor()
+  for (let page = 0; page < 5; page++) {
+    const frames: AgentTurnFrame[] = Array.from({ length: 201 }, () => ({ type: "delta", runId: "turn", kind: "text", text: "x" }))
+    if (page === 4) frames.push({ type: "done", runId: "turn", reason: "stop" })
+    const batch = batchOf(cursor, frames); batches.push(batch); cursor = cursorOf(batch)
+  }
+  const restored = await open(storage), remote = journalAgent()
+  const journal = remote.agent.journal!
+  let readCount = 0
+  const agent: AgentPort = { ...remote.agent, journal: { ...journal, read: async access => {
+    readCount++
+    const next = batches[access.after?.batch ?? 0]!
+    return { status: "ok", after: access.after ?? initialCursor(), next: cursorOf(next), head: cursor,
+      terminal: true, more: next.batch < batches.length, batches: [next] }
+  } } }
+  controllerFor(restored, agent)
+  await until(() => restored.session().phase === "idle")
+  expect(readCount).toBe(5)
+  expect(remote.starts).toHaveLength(0)
+  expect(restored.collections.messages.get("message-turn-smithers")?.text).toBe("x".repeat(1005))
+  expect(restored.collections.httpTurnLegs.get("leg")?.cursor).toEqual(cursor)
+  expect((await restored.verifyState()).valid).toBe(true)
+})
+
+test("a failed real batch commit cannot start a tool or continuation and reload still owns the preceding cursor", async () => {
+  const disk = memoryStorage()
+  let fail = false
+  const storage = { ...disk, setItem: (key: string, value: string) => { if (fail) throw new Error("disk unavailable"); disk.setItem(key, value) } }
+  const store = await open(storage), remote = journalAgent(), controller = controllerFor(store, remote.agent)
+  controller.send("Make a note")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const notes = store.collections.worldDocuments.size
+  const batch = batchOf(cursor, [{ type: "tool_call", runId: request.runId, call_id: "call", name: "commands", arguments: '{"action":"execute","name":"wiki.new-note"}' },
+    { type: "done", runId: request.runId, reason: "tool_call" }])
+  fail = true
+  await expect(remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })).rejects.toThrow()
+  expect(remote.starts).toHaveLength(1)
+  expect(store.collections.worldDocuments.size).toBe(notes)
+  expect(store.collections.commandIntents.size).toBe(0)
+  fail = false
+  await Promise.resolve(controller.dispose()).catch(() => {})
+  const restored = await open(storage)
+  expect(restored.collections.httpTurnLegs.get(cursor.legId)?.cursor).toEqual(cursor)
+  expect(restored.collections.httpTurnLegs.get(cursor.legId)?.status).toBe("streaming")
+  expect((await restored.verifyState()).valid).toBe(true)
+})
+
+test("account replacement during a held batch receipt prevents old tools, cards and text entering the new account", async () => {
+  const store = await open(), remote = journalAgent()
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const gated: AppStore = { ...store, dispatch: transition => {
+    const transaction = store.dispatch(transition)
+    return transition.type !== "http.turn.batch.received" ? transaction : new Proxy(transaction, { get: (target, key, receiver) => key === "isPersisted"
+      ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) } : Reflect.get(target, key, receiver) })
+  } }
+  const controller = controllerFor(gated, remote.agent)
+  controller.send("Alice private prompt")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const batch = batchOf(cursor, [{ type: "tool_call", runId: request.runId, call_id: "call", name: "commands", arguments: '{"action":"execute","name":"wiki.new-note"}' },
+    { type: "done", runId: request.runId, reason: "tool_call" }])
+  const receipt = remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })
+  await store.settled?.()
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  release(); await receipt
+  const before = await store.eventHistory()
+  await remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })
+  expect(await store.eventHistory()).toEqual(before)
+  expect(store.collections.httpTurns.size).toBe(0)
+  expect(store.collections.httpTurnLegs.size).toBe(0)
+  expect(store.collections.commandIntents.size).toBe(0)
+  expect(remote.starts).toHaveLength(1)
+  expect(JSON.stringify([...store.collections.messages.values()])).not.toContain("Alice")
+  expect((await store.verifyState()).valid).toBe(true)
+})
+
+test("the production agent seat, AppController and actual WebAgent share the durable journal delivery path", async () => {
+  const store = await open(), requests: string[] = []
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    requests.push(String(url))
+    const request = JSON.parse(String(init?.body)) as StartAgentTurnRequest
+    expect(store.collections.httpTurnLegs.get(request.journal!.legId)?.journal).toEqual(request.journal)
+    const cursor = initialCursor(request.runId, request.journal!.legId)
+    const batch = batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "A committed answer." }, { type: "done", runId: request.runId, reason: "stop" }])
+    return new Response([JSON.stringify({ type: "accepted", cursor }), JSON.stringify({ type: "batch", batch, cursor: cursorOf(batch) })].join("\n"), {
+      headers: { "x-smithers-turn-journal": "1", "content-type": "application/x-ndjson" }
+    })
+  } })
+  const controller = controllerFor(store, createAgentSeat(agent))
+  controller.send("Hello")
+  await until(() => requests.length === 1 && store.session().phase === "idle")
+  expect(requests).toEqual([TURN_PATH])
+  expect([...store.collections.messages.values()].some(row => row.text === "A committed answer.")).toBe(true)
+  expect([...store.collections.httpTurns.values()][0]?.status).toBe("complete")
+  expect((await store.verifyState()).valid).toBe(true)
+})
+
+test("a corrupt received batch preserves the applied prefix and settles honestly without replaying its contents", async () => {
+  const store = await open(), remote = journalAgent(), controller = controllerFor(store, remote.agent)
+  controller.send("Hello")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const batch = { ...batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "forged output" }]), hash: "f".repeat(64) }
+  await remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })
+  expect(store.session().phase).toBe("idle")
+  expect(store.collections.httpTurnLegs.get(cursor.legId)?.cursor).toEqual(cursor)
+  expect(store.collections.httpTurnLegs.get(cursor.legId)?.status).toBe("ambiguous")
+  expect(JSON.stringify([...store.collections.messages.values()])).not.toContain("forged output")
+  expect(store.collections.messages.get(`message-${request.runId}-smithers`)?.text).toContain("failed an integrity check")
+  expect(remote.starts).toHaveLength(1)
+  expect((await store.verifyState()).valid).toBe(true)
+})
+
+test("HTTP Stop cancellation settles before an explicit retry can POST the same transcript identity", async () => {
+  const store = await open(), remote = journalAgent()
+  let release!: () => void, cancellations = 0
+  const held = new Promise<void>(resolve => { release = resolve })
+  const controller = controllerFor(store, { ...remote.agent, cancelTurn: async () => { cancellations++; await held } })
+  controller.send("Hello")
+  await until(() => remote.starts.length === 1)
+  await controller.commands.run("chat.stop")
+  await until(() => cancellations === 1)
+  await controller.commands.run("chat.retry")
+  await store.settled?.()
+  expect(remote.starts).toHaveLength(1)
+  expect(store.collections.httpTurns.size).toBe(2)
+  release()
+  await until(() => remote.starts.length === 2)
+  expect(remote.starts[1]?.runId).toBe(remote.starts[0]?.runId)
+  expect(remote.starts[1]?.journal?.legId).not.toBe(remote.starts[0]?.journal?.legId)
+})
+
+test.each([
+  { name: "retired", status: 410, body: { status: "error", code: "request_invalid", message: "Retired" } },
+  { name: "cursor refusal", status: 409, body: { status: "error", code: "request_invalid", message: "Wrong cursor" } },
+  { name: "corrupt prefix", status: 500, body: { status: "error", code: "corrupt" } },
+  { name: "invalid request", status: 400, body: { status: "error", code: "request_invalid" } },
+  { name: "malformed response", status: 200, body: { unexpected: true } },
+  { name: "wrong replay boundary", status: 200, body: { status: "ok", after: initialCursor("other"), next: initialCursor("other"), head: initialCursor("other"), terminal: false, more: false, batches: [] } }
+])("recovery settles $name as ambiguous without another inference or changing the saved prefix", async ({ status, body }) => {
+  const storage = memoryStorage(), store = await open(storage)
+  await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Hello", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+  await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
+  const restored = await open(storage), urls: string[] = []
+  controllerFor(restored, createAgentSeat(createWebAgent({ fetchImpl: async url => { urls.push(String(url)); return Response.json(body, { status }) } })))
+  await until(() => restored.session().phase === "idle")
+  expect(urls).toHaveLength(1)
+  expect(urls).not.toContain(TURN_PATH)
+  expect(restored.collections.httpTurns.get("attempt")?.status).toBe("ambiguous")
+  expect(restored.collections.httpTurnLegs.get("leg")?.cursor).toEqual(initialCursor())
+  expect((await restored.verifyState()).valid).toBe(true)
+})
+
+test.each(["network", "503", "storage_failed"])("recovery keeps an accepted turn unresolved during transient %s failure", async failure => {
+  const storage = memoryStorage(), store = await open(storage)
+  await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Hello", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+  await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
+  const restored = await open(storage), urls: string[] = []
+  const controller = controllerFor(restored, createAgentSeat(createWebAgent({ fetchImpl: async url => {
+    urls.push(String(url))
+    if (failure === "network") throw new Error("Offline")
+    return Response.json(failure === "503" ? { message: "Unavailable" } : { status: "error", code: "storage_failed" }, { status: 503 })
+  } })))
+  await until(() => urls.length === 1)
+  await controller.dispose()
+  expect(restored.collections.httpTurns.get("attempt")?.status).toBe("active")
+  expect(restored.session().phase).toBe("responding")
+  expect(urls).not.toContain(TURN_PATH)
+})

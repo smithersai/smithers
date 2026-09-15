@@ -1,7 +1,8 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
 import { command, expect, realApi, test as anonymousTest } from "./support/test"
-import { enableProductionVerbose, expectFlowOutcome } from "./repositories-github/local"
+import { expectFlowOutcome } from "./repositories-github/local"
+import { enableProductionVerbose } from "./repositories-github/production"
 
 const REPO = "smithersai/smithers"
 

@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as ExecutionFacts from "../src/ExecutionFacts.ts"
 import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -87,7 +88,14 @@ const withBarriers = (
  * around.
  */
 describe("engine state and journal lock order (memory)", () => {
-  for (const persistence of ["deferred completion", "clock schedule"] as const) {
+  for (
+    const persistence of [
+      "deferred completion",
+      "clock schedule",
+      "native cancellation",
+      "lineage cancellation"
+    ] as const
+  ) {
     it.live(`settles a cancellation racing a ${persistence}`, () =>
       withCrypto(
         Effect.scoped(Effect.gen(function*() {
@@ -122,7 +130,11 @@ describe("engine state and journal lock order (memory)", () => {
               deferredName,
               exit: Exit.void
             })
-            : persisted.scheduleClock(flow, { executionId, clock })
+            : persistence === "clock schedule"
+            ? persisted.scheduleClock(flow, { executionId, clock })
+            : ExecutionFacts.make({ runs: store, state, journal, sourceId: "lock-order-facts" })[
+              persistence === "native cancellation" ? "requestCancel" : "requestCancelLineage"
+            ](executionId, 10)
           const persistFiber = yield* work.pipe(
             Effect.provideService(Role, "persist"),
             Effect.forkChild({ startImmediately: true })
@@ -150,14 +162,14 @@ describe("engine state and journal lock order (memory)", () => {
           }
           expect(Option.isSome(settled)).toBe(true)
           if (Option.isNone(settled)) return
-          expect(settled.value.map(Exit.isSuccess)).toEqual([true, true])
+          expect(settled.value.map((exit) => exit._tag === "Success")).toEqual([true, true])
           expect((yield* store.get(executionId)).cancelRequestedAtMs).not.toBeNull()
           if (persistence === "deferred completion") {
             expect(
               Option.isSome(yield* state.deferred({ flowName: flow._tag, executionId, deferredName }))
             ).toBe(true)
             expect(resumes).toEqual([`${executionId}:deferred`])
-          } else {
+          } else if (persistence === "clock schedule") {
             expect(
               Option.isSome(
                 yield* state.clock({ flowName: flow._tag, executionId, clockName: clock.name })

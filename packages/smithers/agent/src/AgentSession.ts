@@ -50,11 +50,13 @@
  */
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import { ControlFacts } from "@smthrs/control"
 import { LaunchFailed, PersistenceError } from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
-import type { ApprovalPayload, Envelope, PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
+import type { Envelope, PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
 import * as Digest from "@smthrs/core/Digest"
+import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { DurableDeferred, Flow, FlowRuntime, WaitFor } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -95,6 +97,7 @@ import * as Stream from "effect/Stream"
 import { Agent } from "./Agent.ts"
 import type * as Budget from "./Budget.ts"
 import { agentOutcome } from "./internal/AgentOutcome.ts"
+import { callId } from "./internal/CallIdentity.ts"
 import { failureJson } from "./internal/FailureJson.ts"
 import { failureSummary } from "./internal/FailureSummary.ts"
 import type * as QuotaPolicy from "./QuotaPolicy.ts"
@@ -114,6 +117,10 @@ import * as StandardFlows from "./StandardFlows.ts"
  * @since 0.1.0
  */
 export interface Options {
+  /** Native host callback commits intent and facts to its captured engine journal.
+   * Standalone legacy compositions without it retain row-only cancellation.
+   */
+  readonly requestNativeCancel?: ControlExecutor.Service["requestCancel"] | undefined
   /**
    * Age at which an unanswered resume delegation may be adopted by another
    * host. Defaults to `Ownership.heartbeatStaleAfter`; the cutoff is inclusive.
@@ -267,12 +274,31 @@ export const traceIdentity = (
   eventType: string,
   payload: Readonly<Record<string, unknown>>
 ): JournalEvent.SourceSeq => {
+  // callId enriches the control projection of an identity the harness already
+  // carried. Keep old producer keys: resuming a pre-callId run must deduplicate
+  // its recorded prefix instead of publishing every call a second time.
+  const callEvent = eventType === "control.agent.cell-call-started" ||
+    eventType === "control.agent.cell-call-settled"
   const material = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => !observationOnly.has(key))
+    Object.entries(payload).filter(([key]) => !observationOnly.has(key) && !(callEvent && key === "callId"))
   )
   const digest = Digest.digest(CanonicalJson.stringify({ cell, eventType, frame, material, ordinal }))
   return JournalEvent.SourceSeq.make(Number.parseInt(digest.slice(0, 12), 16))
 }
+
+/**
+ * The durable identity shared by a cell call's start and settlement.
+ *
+ * CellTurn constructs the identity before dispatch and carries that exact
+ * value into both events. Hash those coordinates, never emission order or the
+ * flow name: concurrent calls may settle in any order, and replay must name
+ * the same call. The prefix versions this contract without changing the
+ * durable engine's activity keys.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+export { callId } from "./internal/CallIdentity.ts"
 
 /**
  * The largest free-text or value field one trail record carries.
@@ -426,12 +452,17 @@ export const trace = (
       // the call is as large as the one that settles it.
       return {
         eventType: "control.agent.cell-call-started",
-        payload: { flowName: event.call.flowName, input: tracedField(event.call.input) }
+        payload: {
+          callId: callId(event.call.identity),
+          flowName: event.call.flowName,
+          input: tracedField(event.call.input)
+        }
       }
     case "cell-call-settled":
       return {
         eventType: "control.agent.cell-call-settled",
         payload: {
+          callId: callId(event.identity),
           flowName: event.flowName,
           outcome: event.result.outcome,
           // A failure message is free text a handler chose, and a compiler or
@@ -935,8 +966,31 @@ export const readExecution = (
           })
         )
       )
+      // Old low-level rows may contain arbitrary JSON rather than a native
+      // RunState. Preserve their historical status observation, while declining
+      // normalized replay coverage; current writers require the full contract.
+      const hasNativeIdentity = (row: RunStore.RunRow): boolean => {
+        try {
+          const flowName = JSON.parse(row.stateJson)?.flowName
+          return typeof flowName === "string" && flowName.length > 0
+        } catch {
+          return false
+        }
+      }
+      const executionView = hasNativeIdentity(identity) && hasNativeIdentity(current) ?
+        {
+          root: yield* ExecutionFacts.observe(identity, state).pipe(Effect.orDie),
+          current: yield* ExecutionFacts.observe(current, state).pipe(Effect.orDie),
+          humanWaits: yield* Effect.forEach(pendingWaits, (wait) =>
+            runs.get(wait.runId).pipe(
+              Effect.flatMap((waitingRun) => ExecutionFacts.observe(waitingRun, state)),
+              Effect.orDie
+            ))
+        } :
+        undefined
       return {
         _tag: "Observed",
+        executionView,
         // An execution whose tree holds an open human wait is waiting on a
         // human, however nested the row that holds it and whether or not its
         // own row has flipped to `suspended` yet: a parent awaiting a
@@ -1200,23 +1254,6 @@ export const make = (
     const scope = yield* Effect.scope
     const services = yield* Effect.context<Services>()
 
-    const emit = (
-      runId: string,
-      eventType: string,
-      payload: unknown
-    ): Effect.Effect<void, unknown> =>
-      // Unfenced: a session is a client of the runs it traces, not their
-      // owner — its records are first-writer-wins admissions on the run's
-      // journal.
-      journal.emitDurableUnfenced(
-        new JournalEvent.Input({
-          runId: JournalEvent.RunId.make(runId),
-          sourceId,
-          eventType,
-          payload: JSON.parse(JSON.stringify(payload))
-        })
-      )
-
     /**
      * Emits one agent-trace event on the journal's lossy channel, under the
      * identity {@link traceIdentity} derived for it.
@@ -1229,6 +1266,11 @@ export const make = (
      * consumer accepts the event. Runs stalled silently at 0% CPU a few frames
      * in. `emitLossy` queues instead of joining the transaction, which is the
      * documented channel for exactly this.
+     *
+     * Native call invocation and recorded-result facts have a separate producer
+     * in ActionPersistence, inside the owning action transaction. That durable
+     * journal is the outbox; this consumer remains compatible telemetry and
+     * cannot establish a call's committed lifecycle by itself.
      *
      * The explicit sequence rides the same channel. It used to send the emit
      * through a preflight SELECT before admission, which reintroduced that
@@ -1277,37 +1319,19 @@ export const make = (
             digest: identity.digest,
             envelope: askEnvelope
           }
-          const token = yield* runtime.registerApproval(target).pipe(
-            Effect.mapError(
-              (cause) =>
-                new HarnessError.HarnessError({
-                  code: "engine_failed",
-                  message: "The approval request could not be registered with the control plane",
-                  cause
-                })
-            )
-          )
-          if (token._tag !== "Pending") return
-          const payload: ApprovalPayload = {
-            target,
-            scope: "run",
-            idempotencyKey: `approve:${identity.requestId}`
-          }
-          yield* emit(runId, "control.approval.requested", {
+          const token = yield* ControlFacts.commitApprovalRequest(journal, runtime, {
             runId,
             requestId: identity.requestId,
             question: input.question,
-            payload
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new HarnessError.HarnessError({
-                  code: "engine_failed",
-                  message: "The approval request could not be journaled",
-                  cause
-                })
-            )
-          )
+            payload: { target, scope: "run", idempotencyKey: `approve:${identity.requestId}` }
+          }, sourceId).pipe(Effect.mapError((cause) =>
+            new HarnessError.HarnessError({
+              code: "engine_failed",
+              message: "The approval request and token could not be committed",
+              cause
+            })
+          ))
+          if (token._tag !== "Pending") return
           // Classify the park before taking it. Without this the engine derived
           // the reason from durable state and an in-run `ask` — which arms no
           // clock — parked under `event`, the reason `Control.steer` treats as
@@ -1408,24 +1432,30 @@ export const make = (
      * `smithers status` diagnosis reads, so the reason a run died belongs in it.
      */
     const writeStatus = (runId: string, status: RunStatus, detail?: string) =>
-      Effect.gen(function*() {
-        const fence = yield* runtime.claimFence(runId)
-        yield* runtime.writeStatus(runId, fence, status)
-        if (parks(status)) parkFences.set(runId, fence)
-        else parkFences.delete(runId)
-        yield* emit(
-          runId,
+      Effect.suspend(() => {
+        let fence: string
+        return ControlFacts.commitRun(
+          journal,
+          Effect.gen(function*() {
+            fence = yield* runtime.claimFence(runId)
+            return yield* runtime.writeStatus(runId, fence, status)
+          }),
+          sourceId,
           `control.run.${status}`,
-          detail === undefined ? { runId, status } : { runId, status, cause: detail.slice(0, 4096) }
+          detail === undefined ? {} : { cause: detail.slice(0, 4096) }
         ).pipe(
-          Effect.catchCause((cause) =>
-            Effect.annotateLogs(
-              Effect.logWarning("An agent run lifecycle event could not be journaled"),
-              { runId, status, cause: Cause.pretty(cause) }
-            )
-          )
+          Effect.tap(() =>
+            Effect.sync(() => {
+              if (parks(status)) parkFences.set(runId, fence)
+              else parkFences.delete(runId)
+            })
+          ),
+          Effect.asVoid
         )
       })
+
+    const claimForResume = (runId: string) =>
+      ControlFacts.commitRun(journal, runtime.resume(runId), sourceId, "control.run.claimed")
 
     /**
      * Settles the control-plane status from one execution attempt's exit. A
@@ -2019,7 +2049,7 @@ export const make = (
         if (!parked) return "unknown" as const
         const hosted = yield* hostsPark(runId, uptake)
         if (!hosted) return "unknown" as const
-        const claimed = yield* runtime.resume(runId).pipe(
+        const claimed = yield* claimForResume(runId).pipe(
           Effect.as(true),
           // A lost claim is a live peer holding the run, and the delegation
           // stays standing for it. Answering "resuming" here would clear a
@@ -2109,7 +2139,7 @@ export const make = (
             })
             return yield* Flow.suspend(instance)
           }
-          yield* runtime.resume(payload.runId)
+          yield* claimForResume(payload.runId)
         }
         const fiber = yield* Effect.forkChild(
           body(payload, instance).pipe(
@@ -2269,7 +2299,9 @@ export const make = (
     return ControlExecutor.make({
       readExecution: (runId) => Effect.provide(readExecution(runId), services),
       launch: Effect.fn("AgentSession.launch")(launch),
-      requestCancel: Effect.fn("AgentSession.requestCancel")((input) => Effect.provide(requestCancel(input), services)),
+      requestCancel: Effect.fn("AgentSession.requestCancel")((input) =>
+        options.requestNativeCancel?.(input) ?? Effect.provide(requestCancel(input), services)
+      ),
       deliverSignal: Effect.fn("AgentSession.deliverSignal")((input) => Effect.provide(deliverSignal(input), services)),
       resumeRun: Effect.fn("AgentSession.resumeRun")((input) =>
         takeUpResume(input.runId, (runId) => Effect.asVoid(Effect.forkIn(resumeExecution(runId), scope)), {

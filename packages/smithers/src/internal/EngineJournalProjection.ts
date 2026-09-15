@@ -20,6 +20,8 @@ export interface Options {
   readonly engineJournal: Journal.Service
   readonly controlJournal: Journal.Service
   readonly engineState: Pick<DurableEngineState.Service, "runChildren">
+  /** Native trampoline membership, separate from spawn edges. Legacy adapters may omit it. */
+  readonly runLineage?: RunStore.Service["lineage"] | undefined
 }
 
 interface Position {
@@ -198,6 +200,17 @@ export const make = (options: Options) =>
       })
 
     const catchUp = gate.withPermits(1)(Effect.gen(function*() {
+      // Additive binding preserves every existing copied-envelope producer ID.
+      // Only the supervisor's validated native root can create this association.
+      yield* options.controlJournal.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId: target,
+          sourceId: producer(["binding", options.controlRunId, options.executionId]),
+          sourceSeq: 0 as JournalEvent.SourceSeq,
+          eventType: "control.engine.bound",
+          payload: { version: 1, controlRunId: options.controlRunId, executionId: options.executionId }
+        })
+      )
       const seen = new Set<string>()
       const pending = [options.executionId]
       for (let index = 0; index < pending.length; index++) {
@@ -205,6 +218,27 @@ export const make = (options: Options) =>
         if (seen.has(executionId)) continue
         seen.add(executionId)
         yield* readRun(executionId)
+        if (options.runLineage !== undefined) {
+          const rounds = yield* options.runLineage(executionId)
+          const member = rounds.find((row) => row.runId === executionId)
+          if (member === undefined) {
+            return yield* Effect.fail(
+              new Journal.JournalError({
+                code: "decode_failed",
+                message: "Native lineage omitted its requested member"
+              })
+            )
+          }
+          const lineage = member.lineageId ?? member.runId
+          for (const round of rounds) {
+            if ((round.lineageId ?? round.runId) !== lineage) {
+              return yield* Effect.fail(
+                new Journal.JournalError({ code: "decode_failed", message: "Native lineage returned a foreign member" })
+              )
+            }
+            if (!seen.has(round.runId)) pending.push(round.runId)
+          }
+        }
         const children = yield* options.engineState.runChildren(executionId)
         for (const edge of children) {
           if (edge.parentId !== executionId) {

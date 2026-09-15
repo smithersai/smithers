@@ -23,7 +23,7 @@ export interface Options {
   readonly engineJournal: Journal.Service
   readonly controlJournal: Journal.Service
   readonly engineState: Pick<DurableEngineState.Service, "runChildren" | "runParents">
-  readonly runs: Pick<RunStore.Service, "get">
+  readonly runs: Pick<RunStore.Service, "get"> & Partial<Pick<RunStore.Service, "lineage">>
   readonly control: Pick<ControlRuntime.Service, "getRun" | "listRuns">
 }
 
@@ -196,6 +196,7 @@ export const make = (options: Options) =>
         }
         const projection = yield* Projection.make({
           ...options,
+          runLineage: options.runs.lineage,
           controlRunId: id,
           executionId: id
         })

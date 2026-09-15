@@ -14,6 +14,28 @@ const snapshot: StorageRecoverySnapshot = {
 }
 
 describe("the shared private recovery action and Flow", () => {
+  test("reset finishes a pending private download before erasing and blocks a later capture", async () => {
+    const captured = Promise.withResolvers<StorageRecoverySnapshot>()
+    const started = Promise.withResolvers<void>()
+    const order: string[] = []
+    const action = createStorageRecoveryAction({
+      read: async () => { order.push("read"); started.resolve(); return captured.promise },
+      download: () => { order.push("download") },
+      reset: async () => { order.push("erase") }
+    }, "user")
+    try {
+      await action.reset()
+      const downloading = action.run()
+      await started.promise
+      const resetting = action.reset()
+      expect(action.run()).toBe(resetting)
+      expect(order).toEqual(["read"])
+      captured.resolve(snapshot)
+      await Promise.all([downloading, resetting])
+      expect(order).toEqual(["read", "download", "erase"])
+    } finally { captured.resolve(snapshot); await action.dispose() }
+  })
+
   test("the human's download receives bytes, but the state and Flow result never do", async () => {
     const downloads: string[] = []
     const action = createStorageRecoveryAction({

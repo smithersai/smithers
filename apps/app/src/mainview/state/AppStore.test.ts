@@ -1,3 +1,5 @@
+import { Effect } from "effect"
+import { makeCollectionJournal } from "../chain/CollectionJournal"
 import { describe, expect, test } from "bun:test"
 import { cardFrameId, DEFAULT_BRANCH_ID, initialGuide, type Card } from "./AppState"
 import { createAppStore } from "./AppStore"
@@ -8,6 +10,8 @@ import { createWorkflowController } from "./controller/workflows"
 import type { AppStore } from "./AppStore"
 import { memoryStorage } from "./TestFixtures"
 import { retiredLineageKey } from "../chain/LineageRetirement"
+import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
+import { SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
 
 /** Each test gets its own storage so cases never observe another case's writes. */
 describe("createAppStore with the localStorage fallback backend", () => {
@@ -385,11 +389,14 @@ describe("runtime-owned pending approvals", () => {
     const workflows = createWorkflowController(ctx, () => 1, async () => {})
     let forwarded: Card | undefined
     let submitted: Promise<void> | undefined
+    let forwarding!: () => void
+    const forwardingStarted = new Promise<void>(resolve => { forwarding = resolve })
     const turns = createTurnController(ctx, {
       settleTurnBilling: () => {}, nextOrdinal: () => 1, surfaceCommandFailure: () => {},
       forwardApprovalDecision: (card, decision) => {
         forwarded = card
         submitted = workflows.forwardApprovalDecision(card, decision)
+        forwarding()
         return submitted
       },
       forwardInboxApprovalDecision: workflows.forwardInboxApprovalDecision
@@ -412,6 +419,7 @@ describe("runtime-owned pending approvals", () => {
       expect(store.collections.cards.get(gate.id)).toMatchObject(gate)
       expect(store.collections.cards.get("forged-approval")).toBeUndefined()
       turns.decideApproval(gate.id, "approved")
+      await forwardingStarted
       await submitted
       expect(forwarded).toMatchObject(gate)
       expect(calls).toHaveLength(1)
@@ -543,8 +551,17 @@ describe("persisted account ownership", () => {
         await identity(first, "signed-in", "alice")
         await first.dispatch({ type: "composer.changed", actor: "user", draft: "Alice legacy draft" }).isPersisted.promise
         if (legacyState === "unavailable") await identity(first, "unavailable")
-        await first.collections.identitySessions.update("identity", (draft) => { delete draft.accountOwnerLogin }).isPersisted.promise
         await first.dispose?.()
+        // A legacy installation had mutable rows and no authoritative app journal.
+        const legacy = parseStorageEnvelope(storage.getItem(ENVELOPE_STORAGE_KEY)!)!
+        for (const id of ["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
+          delete legacy.entries[`smithers-mvp.${id}`]
+        }
+        const identities = JSON.parse(legacy.entries["smithers-mvp.app-identity-sessions"]!) as Record<string, { data: { accountOwnerLogin?: string | null } }>
+        for (const row of Object.values(identities)) delete row.data.accountOwnerLogin
+        legacy.entries["smithers-mvp.app-identity-sessions"] = JSON.stringify(identities)
+        storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(legacy))
+        storage.setItem(SCHEMA_VERSION_STORAGE_KEY, "11")
         const reopened = await createAppStore({ kind: "localStorage", storage })
         await identity(reopened, "unavailable")
         await identity(reopened, "unavailable")
@@ -671,7 +688,7 @@ describe("the run-event journal is bounded oldest-lineage-first", () => {
   const aMomentLater = () => new Promise((resolve) => setTimeout(resolve, 4))
 
   test("writing past the budget evicts the oldest lineage and tombstones it", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { journalBudgetBytes: 700 })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { journalBudgetBytes: 1400 })
     await appendEvents(store, "old", 3)
     await aMomentLater()
     await appendEvents(store, "middle", 3)
@@ -693,6 +710,48 @@ describe("the run-event journal is bounded oldest-lineage-first", () => {
         .sort((left, right) => left - right)
       expect(seqs).toEqual([...seqs.keys()])
     }
+  })
+
+  test("a failed append commits neither lineage eviction nor its retirement tombstone", async () => {
+    const durable = memoryStorage()
+    let failing = false
+    const storage = { ...durable, setItem: (key: string, value: string) => {
+      if (failing && key === ENVELOPE_STORAGE_KEY) throw new Error("retention commit refused")
+      durable.setItem(key, value)
+    } }
+    const store = await createAppStore({ kind: "localStorage", storage }, { journalBudgetBytes: 700 })
+    await appendEvents(store, "old", 3)
+    failing = true
+    await expect(store.dispatch({ type: "chain.event.appended", actor: "system", lineageId: "new", seq: 0,
+      event: { kind: "step", note: "n".repeat(64) } }).isPersisted.promise).rejects.toThrow("retention commit refused")
+    expect(lineagesOf(store)).toEqual(["old"])
+    expect(store.collections.retiredChainLineages.has(retiredLineageKey("old"))).toBe(false)
+    failing = false
+    await store.dispose?.()
+    const reopened = await createAppStore({ kind: "localStorage", storage }, { journalBudgetBytes: 700 })
+    try {
+      expect(lineagesOf(reopened)).toEqual(["old"])
+      expect(reopened.collections.retiredChainLineages.has(retiredLineageKey("old"))).toBe(false)
+      expect((await reopened.verifyState()).valid).toBe(true)
+    } finally { await reopened.dispose?.() }
+  })
+
+  test("retirement and its budget survive event compaction and reopening with a different host budget", async () => {
+    const storage = memoryStorage()
+    const first = await createAppStore({ kind: "localStorage", storage }, { journalBudgetBytes: 700 })
+    await appendEvents(first, "old", 3)
+    await appendEvents(first, "live", 3)
+    expect(first.collections.retiredChainLineages.has(retiredLineageKey("old"))).toBe(true)
+    expect((await first.verifyState()).valid).toBe(true)
+    await first.compactEvents()
+    await first.dispose?.()
+    const reopened = await createAppStore({ kind: "localStorage", storage }, { journalBudgetBytes: 64 * 1024 })
+    try {
+      expect(lineagesOf(reopened)).toEqual(["live"])
+      expect(reopened.collections.retiredChainLineages.has(retiredLineageKey("old"))).toBe(true)
+      expect((await reopened.verifyState()).valid).toBe(true)
+      await expect(Effect.runPromise(makeCollectionJournal({ store: reopened, lineageId: "old" }).read)).rejects.toThrow("retired")
+    } finally { await reopened.dispose?.() }
   })
 
   test("a journal inside its budget keeps every lineage and retires none", async () => {

@@ -43,6 +43,85 @@ const events = [
 ]
 
 describe("durable run progress projection", () => {
+  it("upgrades telemetry to native call facts without double counting or retaining an incorrect outcome", () => {
+    const callId = `cell-call-v1:${"a".repeat(64)}`
+    const telemetry = [
+      event(1, "control.agent.cell-call-started", { callId, flowName: "lint" }),
+      event(2, "control.agent.cell-call-settled", { callId, flowName: "lint", outcome: "success" })
+    ]
+    const native = (phase: "invoked" | "settled") =>
+      event(3, "control.engine.event", {
+        version: 1,
+        executionId: "native",
+        generation: 0,
+        sequence: 3,
+        emittedAtMs: 30,
+        sourceSequence: 0,
+        sourceId: `call-fact-v1:${callId}:${phase}`,
+        eventType: "flows.harness.call-fact.v1",
+        payload: {
+          version: 1,
+          phase,
+          callId,
+          identity: { runId: "run-test", frame: 0, cell: "cell", ordinal: 0, declaration: "d", layers: [] },
+          flowName: "lint",
+          ...(phase === "invoked" ? { input: {} } : { outcome: "failure", value: null, message: "timeout" })
+        }
+      })
+    let state = RunProgress.initial()
+    for (const input of [...telemetry, native("invoked"), native("settled"), native("settled"), telemetry[1]!]) {
+      state = RunProgress.project(state, input).state
+    }
+    expect(state).toMatchObject({ started: 1, failed: 1, completed: 0, active: [] })
+    let onlyFacts = RunProgress.initial()
+    for (const input of [native("invoked"), native("settled")]) onlyFacts = RunProgress.project(onlyFacts, input).state
+    expect(onlyFacts).toMatchObject({ started: 1, failed: 1, completed: 0, active: [] })
+  })
+
+  it("uses call identity for overlapping active calls and counts each lifecycle event once", () => {
+    const first = { flowName: "lint", callId: "first" }
+    const second = { flowName: "lint", callId: "second" }
+    let state = RunProgress.initial()
+    const before = state
+    for (
+      const entry of [
+        event(1, "control.agent.cell-call-started", first),
+        event(2, "control.agent.cell-call-started", second),
+        event(3, "control.agent.cell-call-started", first),
+        event(4, "control.agent.cell-call-settled", { ...second, outcome: "failure" })
+      ]
+    ) state = RunProgress.project(state, entry).state
+    expect(state).toMatchObject({ started: 2, failed: 1, completed: 0, active: ["lint"], activeCallIds: ["first"] })
+    const duplicate = RunProgress.project(
+      state,
+      event(5, "control.agent.cell-call-settled", { ...second, outcome: "failure" })
+    )
+    expect(duplicate).toEqual({ state, lines: [] })
+    const done = RunProgress.project(
+      state,
+      event(6, "control.agent.cell-call-settled", { ...first, outcome: "success" })
+    )
+    expect(done.state).toMatchObject({ started: 2, failed: 1, completed: 1, active: [], activeCallIds: [] })
+    expect(before).toEqual(RunProgress.initial())
+  })
+
+  it("keeps identified active calls when an unknown or legacy settlement arrives", () => {
+    let state = RunProgress.project(
+      RunProgress.initial(),
+      event(1, "control.agent.cell-call-started", { flowName: "lint", callId: "first" })
+    ).state
+    state = RunProgress.project(
+      state,
+      event(2, "control.agent.cell-call-settled", { flowName: "lint", callId: "unknown", outcome: "success" })
+    ).state
+    state = RunProgress.project(
+      state,
+      event(3, "control.agent.cell-call-settled", { flowName: "lint", outcome: "success" })
+    ).state
+    expect(state.activeCallIds).toEqual(["first"])
+    expect(state.active).toEqual(["lint"])
+  })
+
   it("prints the recorded provider cause when an attached run fails", () => {
     const result = RunProgress.project(
       RunProgress.initial(),

@@ -1,6 +1,6 @@
 import { Author, Authorize, Catalog, Chain, Event, ScriptRunner } from "@smthrs/chain"
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
@@ -18,6 +18,14 @@ const memoryStorage = (): StorageApi => {
     }
   }
 }
+
+const opened: AppStore[] = []
+const openStore = async (storage: StorageApi): Promise<AppStore> => {
+  const store = await createAppStore({ kind: "localStorage", storage })
+  opened.push(store)
+  return store
+}
+afterEach(async () => { for (const store of opened.splice(0)) await store.dispose?.() })
 
 const source = (body: string): string => `\`\`\`flow\n${body}\n\`\`\``
 
@@ -42,6 +50,12 @@ const run = (store: AppStore, lineageId: string, scripts: string[], entries: Cat
 
 // These are real append transactions, not a mocked retention predicate. The
 // unrelated lineage remains active while the older lineages are replayed.
+// Each of the 1,006 commits serializes the growing localStorage envelope before
+// this proof reopens and replays it. Give that stress workload the same budget
+// as AppStore.events.test.ts's real rebuild proof under workspace gate load;
+// exact retention, replay equality and effect counts remain the assertions.
+const retentionProofTimeoutMs = 120_000
+
 const addTraffic = async (store: AppStore): Promise<void> => {
   const journal = makeCollectionJournal({ store, lineageId: "later-traffic" })
   await Effect.runPromise(journal.append({ _tag: "ChainStarted", goal: "traffic", envelope: null }, 0))
@@ -58,7 +72,7 @@ const addTraffic = async (store: AppStore): Promise<void> => {
 describe("authoritative chain journal retention", () => {
   test("account replacement removes private events but permanently refuses their lineage IDs", async () => {
     const storage = memoryStorage()
-    const first = await createAppStore({ kind: "localStorage", storage })
+    const first = await openStore(storage)
     await first.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -90,7 +104,7 @@ describe("authoritative chain journal retention", () => {
       scopesPlain: null
     }).isPersisted.promise
     expect(first.collections.chainEvents.size).toBe(0)
-    const reopened = await createAppStore({ kind: "localStorage", storage })
+    const reopened = await openStore(storage)
     await expect(run(reopened, "old-account-lineage", scripts, entries)).rejects.toThrow("retired")
     expect(effects).toBe(1)
     expect((await run(reopened, "new-account-lineage", scripts, entries))._tag).toBe("Done")
@@ -99,7 +113,7 @@ describe("authoritative chain journal retention", () => {
 
   test("a completed edit survives >1000 unrelated commits and reload without re-execution", async () => {
     const storage = memoryStorage()
-    const first = await createAppStore({ kind: "localStorage", storage })
+    const first = await openStore(storage)
     let edits = 0
     const entries = [{
       name: "edit",
@@ -117,8 +131,8 @@ describe("authoritative chain journal retention", () => {
     const original = await Effect.runPromise(makeCollectionJournal({ store: first, lineageId: "completed-edit" }).read)
     await addTraffic(first)
     expect(first.collections.chainEvents.size).toBeGreaterThan(1_000)
-    first.dispose?.()
-    const reopened = await createAppStore({ kind: "localStorage", storage })
+    await first.dispose?.()
+    const reopened = await openStore(storage)
     try {
       expect(await Effect.runPromise(makeCollectionJournal({ store: reopened, lineageId: "completed-edit" }).read))
         .toEqual(original)
@@ -126,13 +140,13 @@ describe("authoritative chain journal retention", () => {
       expect(await run(reopened, "completed-edit", [], entries)).toEqual(outcome)
       expect(edits).toBe(1)
     } finally {
-      reopened.dispose?.()
+      await reopened.dispose?.()
     }
-  }, 30_000)
+  }, retentionProofTimeoutMs)
 
   test("interleaved approval-parked lineages retain their settled prefixes through traffic and restart", async () => {
     const storage = memoryStorage()
-    const first = await createAppStore({ kind: "localStorage", storage })
+    const first = await openStore(storage)
     let prefixEdits = 0
     let protectedEdits = 0
     const entries = [
@@ -167,8 +181,8 @@ describe("authoritative chain journal retention", () => {
     expect(prefixEdits).toBe(2)
     expect(protectedEdits).toBe(0)
     await addTraffic(first)
-    first.dispose?.()
-    const reopened = await createAppStore({ kind: "localStorage", storage })
+    await first.dispose?.()
+    const reopened = await openStore(storage)
     try {
       for (const lineage of ["parked-b", "parked-a"]) {
         expect((await run(reopened, lineage, [], entries))._tag).toBe("Done")
@@ -181,7 +195,7 @@ describe("authoritative chain journal retention", () => {
       expect(traffic).toHaveLength(1_006)
       expect(traffic[0]?._tag).toBe("ChainStarted")
     } finally {
-      reopened.dispose?.()
+      await reopened.dispose?.()
     }
-  }, 30_000)
+  }, retentionProofTimeoutMs)
 })

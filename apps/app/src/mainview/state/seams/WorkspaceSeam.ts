@@ -918,7 +918,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const failOnCard = (
     workspace: CloudWorkspaceInput,
     refusal: string | { readonly error: string; readonly code: string | null; readonly refusal?: Refusal }
-  ): string => {
+  ): string | Promise<string> => {
     if (typeof refusal !== "string" && refusal.refusal?.rawCode === "plan_limit_exceeded") {
       return renderPlanLimit(ctx.store, refusal.refusal, ctx.checkout ?? true, ctx.actor())
     }
@@ -1107,6 +1107,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const openWorkspace: WorkspaceSeam["openWorkspace"] = async (bookmark, repo, kind) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
     /*
@@ -1141,6 +1142,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
      * registered for kind desktop") is the honest state of the system, so it
      * reads as plue wrote it.
      */
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in created) {
       if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       for (const row of ctx.store.collections.cloudWorkspaces.values()) {
@@ -1204,10 +1206,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   ): Promise<string | void | { readonly value: string }> => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
     const answer = await sendJson("POST", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}/${verb}`))
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return failOnCard(workspace, answer)
     /*
      * The act's body is the updated workspace when plue writes one; when it
@@ -1235,12 +1239,14 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const forkWorkspace: WorkspaceSeam["forkWorkspace"] = async (workspaceId, name) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
     const forked = await sendJson("POST", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}/fork`), {
       name: name ?? ""
     })
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in forked) return failOnCard(workspace, forked)
     const fork = parseWorkspaceWire(forked.body, workspace.repoId)
     if (fork === null) return `Smithers Cloud's answer for the fork of ${workspace.id} was malformed.`
@@ -1299,9 +1305,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const forkFromSnapshot: WorkspaceSeam["forkFromSnapshot"] = async (snapshotId, workspaceId) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
     const resolved = resolveRepo(workspaceId)
     if ("error" in resolved) return resolved.error
     const created = await sendJson("POST", repoPath(resolved.repo, "/workspaces"), { snapshot_id: snapshotId })
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in created) {
       if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
@@ -1817,6 +1825,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const openDesktopBox: WorkspaceSeam["openDesktopBox"] = async (bookmark, repo) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
     /* The same default `workspace.open` applies: the repository's head bookmark, never an invented one. */
@@ -1826,6 +1835,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       ...(source === undefined ? {} : { source_bookmark: source }),
       kind: "desktop"
     })
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     if ("error" in created) {
       if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
       /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */

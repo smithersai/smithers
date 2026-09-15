@@ -10,6 +10,7 @@ import type { FrameHistoryPort } from "../../runtime/FrameHistory"
 import { DEFAULT_BRANCH_ID, DEFAULT_WORKSPACE_ID, MessageSchema, rootFrameId, WorldDocumentSchema } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+import { writeLegacyCollection } from "../TestFixtures"
 import { archiveNotice } from "../ConversationArchive"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
@@ -44,15 +45,12 @@ const response = (notes: unknown = [note]) =>
     ].map((frame) => JSON.stringify(frame)).join("\n") + "\n"
   )
 
-const fixture = async (
-  fetchImpl: FetchLike = async () => {
-    throw new Error("No network allowed")
-  },
+const attachWorld = (
+  store: AppStore,
+  fetchImpl: FetchLike,
   cancelTurn: (id: string) => Promise<void> = async () => {},
   frameHistory?: FrameHistoryPort
 ) => {
-  const storage = host()
-  const store = await createAppStore({ kind: "localStorage", storage })
   const ctx = createControllerContext(store, {
     available: false,
     pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unavailable" })
@@ -69,6 +67,19 @@ const fixture = async (
       content: message.text
     }))
   const world = createWorldController(ctx, { nextOrdinal: () => 0 })
+  return { ctx, world }
+}
+
+const fixture = async (
+  fetchImpl: FetchLike = async () => {
+    throw new Error("No network allowed")
+  },
+  cancelTurn: (id: string) => Promise<void> = async () => {},
+  frameHistory?: FrameHistoryPort
+) => {
+  const storage = host()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const { ctx, world } = attachWorld(store, fetchImpl, cancelTurn, frameHistory)
   await store.dispatch({ type: "message.appended", actor: "system", text: "Keep this original conversation" })
     .isPersisted.promise
   return { storage, store, ctx, world }
@@ -366,6 +377,8 @@ describe("local archive and append-only summary notes", () => {
     expect(state(store)).toEqual(before)
     expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(committed)
     storage.heal()
+    ctx.dispose()
+    await store.dispose?.()
     const reopened = await createAppStore({ kind: "localStorage", storage })
     // Boot deliberately marks a persisted first-time tutorial as started and
     // paused; every archived projection still equals the pre-failure state.
@@ -373,8 +386,10 @@ describe("local archive and append-only summary notes", () => {
       ...before,
       session: { ...before.session, guide: { ...before.session.guide!, autoPaused: true, completed: ["tutorial.started"] } }
     })
-    expect(await world.clearConversation({ summarize: true })).toBeUndefined()
-    ctx.dispose()
+    const retry = attachWorld(reopened, async () => response())
+    expect(await retry.world.clearConversation({ summarize: true })).toBeUndefined()
+    retry.ctx.dispose()
+    await reopened.dispose?.()
   })
 })
 
@@ -401,9 +416,9 @@ describe("one archive transaction across SQLite projections", () => {
         ...adapter,
         storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} }
       }
-      const store = await createAppStore(source)
-      await store.dispatch({ type: "message.appended", actor: "system", text: "Original" }).isPersisted.promise
-      await store.collections.messages.insert({
+      // This row belongs to a pre-journal conversation tab. Import it before
+      // opening the authority, rather than bypassing a live transition stream.
+      writeLegacyCollection(adapter.storage, "app-messages", [MessageSchema.parse({
         id: "legacy",
         role: "user",
         text: "Legacy conversation",
@@ -411,7 +426,10 @@ describe("one archive transaction across SQLite projections", () => {
         createdAt: 0,
         ordinal: 0,
         tabId: "legacy-tab"
-      }).isPersisted.promise
+      })])
+      await adapter.flush()
+      const store = await createAppStore(source)
+      await store.dispatch({ type: "message.appended", actor: "system", text: "Original" }).isPersisted.promise
       await store.dispatch({
         type: "card.upsert",
         actor: "user",

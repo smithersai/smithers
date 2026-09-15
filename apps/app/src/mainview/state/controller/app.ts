@@ -25,7 +25,7 @@ export interface AppShellController {
   /** The download URL this page offers: the composition root's, else the shared constant; null when no native build is published. */
   readonly downloadUrl: string | null
   /** The `app.download` handler: open the download page; an honest refusal string when no door opened. */
-  readonly openDownload: () => Promise<string | void>
+  readonly openDownload: (reservedOpen?: (url: string) => Promise<boolean>) => Promise<string | void>
   /**
    * The `app.download.prompt` handler: the refusal card for the flow it is
    * given, classified against the registry so it never stamps "not in the web
@@ -61,9 +61,9 @@ export const downloadUrlOf = (services: AppServices): string | null =>
 export const createAppShellController = (ctx: ControllerContext): AppShellController => {
   const downloadUrl = downloadUrlOf(ctx.services)
 
-  const openDownload = async (): Promise<string | void> => {
+  const openDownload = async (reservedOpen?: (url: string) => Promise<boolean>): Promise<string | void> => {
     if (downloadUrl === null) return NOT_DOWNLOADABLE_TEXT
-    const openExternal = ctx.services.openExternal
+    const openExternal = reservedOpen ?? ctx.services.openExternal
     if (openExternal !== undefined) {
       const opened = await openExternal(downloadUrl)
       return opened ? undefined : `The system browser did not open — the download page is ${downloadUrl}`

@@ -674,7 +674,7 @@ describe("stop contract", () => {
     await waitFor(() => !alive(pid), 5_000)
   })
 
-  it("stops a cooperative server within the grace period", async () => {
+  it("completes cooperative server cleanup after preserving the explicit grace", async () => {
     const port = await freePort()
     let pid = -1
     let releaseStarted = 0
@@ -683,14 +683,18 @@ describe("stop contract", () => {
         const supervisor = yield* ServiceSupervisor.make
         const handle = yield* supervisor.acquire(serverSpec("//x:cooperative", port, [], {
           readiness: { port },
-          stop: { signal: "SIGTERM", grace: "20s" }
+          stop: { signal: "SIGTERM", grace: "400ms" }
         }))
         pid = handle.pid
         releaseStarted = Date.now()
       }))
     }))
-    // Release settled on the child's exit, not by waiting out the full grace.
-    expect(Date.now() - releaseStarted).toBeLessThan(10_000)
+    // platform-node/docs/concepts/process-containment.md: an explicit stop
+    // retains its deadline after target exit so descendant cleanup keeps the
+    // accepted signal and grace. Only natural completion may take a shortcut.
+    const releaseElapsed = Date.now() - releaseStarted
+    expect(releaseElapsed).toBeGreaterThanOrEqual(400)
+    expect(releaseElapsed).toBeLessThan(10_000)
     await waitFor(() => !alive(pid), 5_000)
   })
 

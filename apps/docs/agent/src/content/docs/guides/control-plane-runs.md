@@ -133,6 +133,35 @@ Fields larger than `maxTracedBytes` (65,536) are replaced with a truncation
 marker carrying the byte count and digest. Completion outputs are bounded in
 both the cell settlement and the applied transition.
 
+### Durable call correlation
+
+The harness creates a `Cell.CallIdentity` before dispatch and carries it in
+both `CellCallStarted.call.identity` and `CellCallSettled.identity`. The
+control journal preserves it as an additive `callId` on
+`control.agent.cell-call-started` and `control.agent.cell-call-settled`.
+`AgentSession.callId` hashes canonical JSON containing `session`, `frame`,
+`cell`, `ordinal`, `declaration`, and `layers`, and prefixes the SHA-256 digest
+with `cell-call-v1:`. Layers are already sorted and unique at the producer.
+The ID describes the dispatch, so concurrent calls of the same flow remain
+distinct even when their settlements arrive in reverse order.
+
+This is a compatible enrichment of the existing control event payloads; it
+does not rename their event kinds, change the journal version, or alter the
+engine's activity keys. `traceIdentity` excludes the new `callId` field only
+for these two lifecycle kinds so a resumed run still deduplicates a prefix
+written by the older producer. Existing journal rows are never rewritten.
+
+Readers join identified calls by ID and keep the first observation of each
+start or settlement. Legacy records without IDs retain their name-based FIFO
+fallback, restricted to unidentified starts. A new settlement can close an
+old unidentified start after an upgrade, but it cannot steal another
+identified call. Exact correlation for overlapping legacy calls remains
+unrecoverable; see [Gateway projections](https://smithers.sh/docs/gateway/concepts/projections/).
+
+The ID fixes correlation once an event is journaled. The trail still uses
+the buffered lossy channel described above; it does not by itself guarantee
+that every observed event survives a process crash or a failed journal write.
+
 ## Resume across processes
 
 Resumption is event-driven and durable at once. The executor follows the

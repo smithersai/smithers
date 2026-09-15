@@ -13,7 +13,7 @@ test("a repository boot never primes chat with a seeded or previously started tu
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } }).isPersisted.promise
   expect(isPracticeContext(store)).toBe(false)
   // A stale practice selection also cannot override the visible repository page.
-  store.collections.sessions.update(store.session().id, draft => { draft.activeRepoKey = PRACTICE_REPO })
+  await store.dispatch({ type: "repo.selected", actor: "user", id: PRACTICE_REPO }).isPersisted.promise
   expect(practiceContextMessage(store)).toBeUndefined()
 })
 
@@ -24,8 +24,6 @@ test("only a mounted, started, unfinished practice beat primes chat", async () =
   expect(isPracticeContext(store)).toBe(false)
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } }).isPersisted.promise
   expect(practiceContextMessage(store)).toContain("The repository on screen is practice:")
-  const reloaded = await createAppStore({ kind: "localStorage", storage })
-  expect(isPracticeContext(reloaded)).toBe(false)
   for (const guide of [
     { ...store.session().guide!, step: 10 },
     { ...store.session().guide!, finished: true },
@@ -36,4 +34,9 @@ test("only a mounted, started, unfinished practice beat primes chat", async () =
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } }).isPersisted.promise
   await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false }).isPersisted.promise
   expect(practiceContextMessage(store)).toBeUndefined()
+  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
+  await store.dispose?.()
+  const reloaded = await createAppStore({ kind: "localStorage", storage })
+  expect(isPracticeContext(reloaded)).toBe(false)
+  await reloaded.dispose?.()
 })

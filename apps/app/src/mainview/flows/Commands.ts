@@ -1,4 +1,6 @@
 import { preloadViewModule } from "../ViewModules"
+import { FlowGesture, type CommandGesture } from "./CommandGesture"
+import type { CommandLifecycle, PendingCommandInput, PendingFormInput } from "./CommandLifecycle"
 /*
  * The registry runtime: one dispatch path for every trigger.
  *
@@ -68,7 +70,7 @@ export type CommandOutcome =
     readonly reason: string
     readonly action: "app.download.prompt" | null
   }
-  | { readonly status: "failed"; readonly error: string }
+  | { readonly status: "failed"; readonly error: string; readonly persistenceFailed?: true }
   /**
    * THE FORM LAW (apps/app/AGENTS.md): the invocation lacked required input,
    * so nothing ran and the flow's form card is rendered instead — prefilled
@@ -129,6 +131,8 @@ export interface FlowSubmission {
   /** The equivalent slash line, for display and the trace only. */
   readonly display?: string
   readonly invocation?: AgentInvocation
+  /** A form's original browser gesture, never serialized into its card. */
+  readonly gesture?: CommandGesture
 }
 
 export interface CommandRegistry {
@@ -153,13 +157,13 @@ export interface CommandRegistry {
   readonly slashTree: (needle: string) => Array<SlashRow<CatalogItem>>
   readonly recommended: () => CatalogItem
   readonly preload?: (name: string, args?: string) => Promise<void>
-  readonly run: (name: string, args?: string) => Promise<CommandOutcome>
+  readonly run: (name: string, args?: string, source?: "automatic") => Promise<CommandOutcome>
   /**
    * `run` at the agent boundary (requirement axis): an unmet requirement is an
    * honest failure carrying the reason — never a deferral, because a model must
    * not enqueue work that fires after its turn ends.
    */
-  readonly runAsAgent: (name: string, args?: string) => Promise<CommandOutcome>
+  readonly runAsAgent: (name: string, args?: string, httpCall?: AgentToolCall["httpCall"]) => Promise<CommandOutcome>
   /**
    * The agent's entry point: one call through the identical run path buttons
    * and slash use. The result is an honest string that round-trips to the model.
@@ -227,7 +231,7 @@ const valueOf = (value: unknown): string | undefined => {
   return typeof carried === "string" ? carried : undefined
 }
 
-export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions): CommandRegistry => {
+export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions, lifecycle?: CommandLifecycle): CommandRegistry => {
   const defaultPolicy = createChainPolicy().layerFor("app")
   const unscopedInvocation: AgentInvocation = {
     slot: { chain: "app", link: 0, ordinal: 0 },
@@ -310,12 +314,14 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
   const invoke = async (
     entry: FlowEntry,
     payload: Record<string, unknown>,
-    invocation?: AgentInvocation
+    invocation?: AgentInvocation,
+    gesture?: CommandGesture
   ): Promise<CommandOutcome> => {
     const name = nameOf(entry)
     const settled = await Effect.runPromise(
       Effect.result(entry.binding.run(callFor(entry, payload, invocation))).pipe(
-        Effect.provideService(FlowCancellation, invocation?.signal)
+        Effect.provideService(FlowCancellation, invocation?.signal),
+        Effect.provideService(FlowGesture, gesture)
       ),
       // Controller promises receive the signal but retain their result when a
       // write cannot abort. Effect-native bindings use fiber interruption.
@@ -351,7 +357,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
    * store renders the record only while verbose is on.
    */
   const trace = (
-    invoker: "user" | "agent",
+    invoker: "user" | "agent" | "system",
     name: string,
     args: string | undefined,
     startedAt: number,
@@ -382,7 +388,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const sensitive = name === "env.set" || name === "form.set" || name === "form.submit"
     actions.traceFlow({
       type: "flow.invoked",
-      actor: invoker === "agent" ? "smithers" : "user",
+      actor: invoker === "agent" ? "smithers" : invoker,
       name,
       args: tracedArgs,
       hidden: find(name)?.metadata.hidden === true,
@@ -393,16 +399,59 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
   }
 
   const runAs = async (
-    invoker: "user" | "agent",
+    invoker: "user" | "agent" | "system",
     name: string,
     args?: string,
     seen: ReadonlySet<string> = new Set(),
     invocation?: AgentInvocation,
-    named?: Record<string, unknown>
+    named?: Record<string, unknown>,
+    httpCall?: AgentToolCall["httpCall"],
+    inheritedGesture?: CommandGesture
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
+    const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
+      source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
+    const gesture = inheritedGesture?.name === name ? inheritedGesture
+      : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
+    // Only the human's local form edit has a synchronous recovery preparation.
+    // Agent input waits for capability authorization in settle before dispatch.
+    let pendingFormInput: PendingFormInput | undefined
+    if (invoker === "user" && name === "form.set") {
+      const entry = find(name)
+      if (entry !== undefined && unmetRequirements(entry.metadata, actions.snapshot(), flowRequirements).length === 0) {
+        const parsed = named === undefined ? payloadFor(name, args, entry.metadata.grammar, actions.knownRepositories()) : { payload: named }
+        if (!("error" in parsed)) {
+          const { cardId, field, value } = parsed.payload
+          if (typeof cardId === "string" && typeof field === "string" && typeof value === "string") pendingFormInput = { cardId, field, value }
+        }
+      }
+    }
+    let pendingInput: PendingCommandInput | undefined
+    try {
+    const acceptance = lifecycle === undefined ? undefined : await lifecycle.accept(request, pendingFormInput)
+    if (acceptance !== undefined && "receipt" in acceptance) pendingInput = acceptance.pendingInput
+    if (acceptance !== undefined && "refusal" in acceptance) return {
+      status: "failed", error: acceptance.refusal, ...(acceptance.persistenceFailed ? { persistenceFailed: true } : {})
+    }
+    if (acceptance !== undefined && lifecycle?.canExecute?.(acceptance.receipt, request) === false) {
+      return { status: "failed", error: "The command's controller, account, or turn closed before execution.", persistenceFailed: true }
+    }
+    // Cancellation while the intent commit was pending must not reach a binding.
+    invocation?.signal?.throwIfAborted()
     const startedAt = Date.now()
-    const outcome = await settle(invoker, name, args, seen, startedAt, invocation, named)
+    let authorizationRefused = false
+    const execution = { invoked: false }
+    const scopedInvocation = invocation === undefined ? undefined : { ...invocation, refused: (error: Parameters<AgentInvocation["refused"]>[0]) => {
+      authorizationRefused = true
+      invocation.refused(error)
+    } }
+    let outcome: CommandOutcome
+    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution) }
+    catch { outcome = { status: "failed", error: "The command did not finish. Check its result before trying again." } }
+    const retryableAuthorization = authorizationRefused && (!execution.invoked || name === "form.submit")
+    if (acceptance !== undefined && lifecycle !== undefined && !await lifecycle.settle(acceptance.receipt, outcome, retryableAuthorization)) {
+      return { status: "failed", error: "The command's outcome could not be saved. Check its result before trying again.", persistenceFailed: true }
+    }
     trace(
       invoker,
       name,
@@ -421,17 +470,23 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         : null
     )
     return outcome
+    } finally {
+      pendingInput?.clear()
+      if (gesture !== inheritedGesture) gesture?.release()
+    }
   }
 
   const settle = async (
-    invoker: "user" | "agent",
+    invoker: "user" | "agent" | "system",
     name: string,
     args: string | undefined,
     seen: ReadonlySet<string>,
     startedAt: number,
     invocation?: AgentInvocation,
     /** The payload a named submission already carries; absent for a text invocation. */
-    named?: Record<string, unknown>
+    named?: Record<string, unknown>,
+    gesture?: CommandGesture,
+    execution?: { invoked: boolean }
   ): Promise<CommandOutcome> => {
     const entry = find(name)
     if (entry === undefined) {
@@ -486,7 +541,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       actions.deferCommand(nameOf(target), args ?? null, unmet.id)
       // The deferral is its own trace; the fulfilling flow traces itself below.
       trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
-      return runAs("user", unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]))
+      return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]))
     }
     /*
      * The composer boundary: argument text becomes the flow's typed payload
@@ -515,7 +570,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       const rendered = acting.renderFlowForm({
         name: nameOf(target),
         args,
-        via: invoker,
+        via: invoker === "agent" ? "agent" : "user",
         invocation: invocation === undefined ? undefined : { ...invocation, authorized: undefined, signal: undefined },
         input: target.input,
         ...(target.metadata.form === undefined ? {} : { hints: target.metadata.form })
@@ -568,7 +623,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       }
     }
     invocation?.signal?.throwIfAborted()
-    const settledOutcome = await invoke(target, parsed.payload, invocation)
+    if (execution !== undefined) execution.invoked = true
+    const settledOutcome = await invoke(target, parsed.payload, invocation, gesture)
     /*
      * The agent reads a refusal as its next act: a handler that points the
      * human at a slash the model cannot run (`/cloud.sign-in`) points the
@@ -585,7 +641,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     return outcome
   }
 
-  const run = (name: string, args?: string): Promise<CommandOutcome> => runAs("user", name, args)
+  const run = (name: string, args?: string, source?: "automatic"): Promise<CommandOutcome> => runAs(source === "automatic" ? "system" : "user", name, args)
 
   const callable = (): ReadonlyArray<FlowEntry> => entries().filter(modelInvocable)
 
@@ -615,7 +671,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     run,
     // Preserve the native host's direct tool path. Form continuations
     // still enter runForAgent below and must bring authority or fail closed.
-    runAsAgent: (name, args) => runAs("agent", name, args),
+    runAsAgent: (name, args, httpCall) => runAs("agent", name, args, new Set(), undefined, undefined, httpCall),
     executeForAgent: (call) => executeAgentToolCall(registry, call),
     runForAgent: async (name, args, invocation, signal) => {
       const clean = canonicalCommandName(name)
@@ -628,9 +684,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         signal: signal ?? invocation?.signal
       })
     },
-    submit: async ({ name, payload, actor, display, invocation }) => {
+    submit: async ({ name, payload, actor, display, invocation, gesture }) => {
       const clean = canonicalCommandName(name)
-      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload)
+      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture)
       const target = find(clean)
       if (target !== undefined && !modelInvocable(target)) {
         return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }

@@ -41,6 +41,7 @@ const scopeOf = (ctx: SeamContext) => JSON.stringify([
 /** Mutations and identity changes discard speculative reads, including in-flight results. */
 export function disposePreparedViews(store: SeamContext["store"]) {
   scopes.get(store)?.active.clear()
+  scopes.get(store)?.cache.clear()
   scopes.delete(store)
 }
 
@@ -51,6 +52,7 @@ export function invalidatePreparedViews(store: SeamContext["store"]) {
 /** One read feeds intent preloading and activation. Only activation publishes application state. */
 export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (...args: A) => ViewPlan | DirectView | string): ViewAction<A> & { readonly preload: (...args: A) => Promise<void> } {
   const state = stateFor(ctx)
+  const live = () => scopes.get(ctx.store) === state
   const request = (plan: ViewPlan, scope: string) => {
     const key = JSON.stringify([scope, plan.key ?? plan.id])
     const existing = state.cache.get(key)
@@ -70,6 +72,7 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     return promise
   }
   const run = async (...args: A) => {
+    if (!live()) return
     const plan = resolve(...args)
     if (typeof plan === "string") return plan
     if ("run" in plan) return plan.run()
@@ -81,7 +84,7 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     const key = plan.key ?? plan.id
     const token = Symbol()
     state.active.set(id, token)
-    const valid = () => state.active.get(id) === token && scopeOf(ctx) === activeScope && ctx.store.collections.cards.has(id)
+    const valid = () => live() && state.active.get(id) === token && scopeOf(ctx) === activeScope && ctx.store.collections.cards.has(id)
     const current = () => valid() && ctx.store.collections.cards.get(id)?.viewKey === key
     const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: plan.pane && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: previous?.tabId }
     const pending: Card = previous?.viewKey === key && !previous.loading && previous.status !== "error"
@@ -108,8 +111,8 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
       if (valid()) ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
       throw error
     } finally {
-      const interrupted = ctx.store.collections.cards.get(id)
-      if (state.active.get(id) === token && scopeOf(ctx) !== activeScope && interrupted?.loading && interrupted.viewKey === key) {
+      const interrupted = live() ? ctx.store.collections.cards.get(id) : undefined
+      if (live() && state.active.get(id) === token && scopeOf(ctx) !== activeScope && interrupted?.loading && interrupted.viewKey === key) {
         ctx.dispatch({ type: "card.view.loaded", actor, card: { ...interrupted, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
       }
       if (state.active.get(id) === token) state.active.delete(id)
@@ -117,6 +120,7 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     }
   }
   return Object.assign(run, { preload: async (...args: A) => {
+    if (!live()) return
     const plan = resolve(...args)
     if (typeof plan !== "string" && !("run" in plan)) {
       if ([...state.cache.values()].filter(entry => !entry.settled).length >= 4) return

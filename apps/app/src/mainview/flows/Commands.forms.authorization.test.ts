@@ -21,6 +21,7 @@ const fixture = () => {
     dispatch: (event: { type: string; card?: Card; id?: string; patch?: Partial<Card> }) => {
       if (event.type === "card.upsert") cards.set(event.card!.id, event.card!)
       if (event.type === "card.updated") Object.assign(cards.get(event.id!)!, event.patch)
+      return { isPersisted: { promise: Promise.resolve() } }
     }
   }
   let forms: ReturnType<typeof createFormsController>

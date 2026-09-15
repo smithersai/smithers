@@ -188,3 +188,6 @@ export * as Migrations from "./Migrations.ts"
  * @since 1.0.0
  */
 export * as Health from "./Health.ts"
+
+/** Versioned control lifecycle producer and projection contract. */
+export * as ControlFacts from "./ControlFacts.ts"

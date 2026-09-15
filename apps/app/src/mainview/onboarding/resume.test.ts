@@ -45,11 +45,27 @@ test("new tutorials and legacy entry cursors open practice; replay ignores old a
 
 test("explicit tutorial entries replay finished guides, while repository and auth returns preserve progress", () => {
   const finished = { ...initialGuide(), finished: true, step: 14 }
-  expect(shouldReplayTutorial("onboarding", "?tutorial", finished)).toBe(true)
-  expect(shouldReplayTutorial("onboarding", "", finished)).toBe(true)
-  expect(shouldReplayTutorial("onboarding", "?tutorial", { ...finished, finished: false, step: 4 })).toBe(false)
-  expect(shouldReplayTutorial("repo", "", finished)).toBe(false)
+  expect(shouldReplayTutorial("onboarding", "?tutorial", finished, "/")).toBe(true)
+  expect(shouldReplayTutorial("onboarding", "", finished, "/")).toBe(true)
+  expect(shouldReplayTutorial("onboarding", "?tutorial", { ...finished, finished: false, step: 4 }, "/")).toBe(false)
+  expect(shouldReplayTutorial("repo", "", finished, "/")).toBe(false)
   for (const query of ["?signed-in=github", "?auth=failed", "?auth=error", "?installation_id=1&setup_action=install"]) {
-    expect(shouldReplayTutorial("onboarding", query, finished)).toBe(false)
+    expect(shouldReplayTutorial("onboarding", query, finished, "/")).toBe(false)
+  }
+})
+
+
+test("durable frame reloads resume completed guides instead of treating the shell as a replay request", () => {
+  const finished = { ...initialGuide(), finished: true, step: 14, playthrough: 3 }
+  for (const pathname of [
+    "/w/workspace-main/b/branch-main/f/frame-root:branch-main",
+    "/w/workspace-main/b/branch-main/f/frame-card%3Abranch-main%3Atheme",
+    "/w/workspace-main/b/branch-archive/f/frame-root:branch-archive",
+  ]) {
+    expect(shouldReplayTutorial("onboarding", "", finished, pathname)).toBe(false)
+    expect(shouldReplayTutorial("onboarding", "?signed-in=github", finished, pathname)).toBe(false)
+    // An explicit tutorial request remains a replay door even at a saved address.
+    expect(shouldReplayTutorial("onboarding", "?tutorial", finished, pathname)).toBe(true)
+    expect(shouldReplayTutorial("onboarding", "?tutorial&auth=error", finished, pathname)).toBe(false)
   }
 })

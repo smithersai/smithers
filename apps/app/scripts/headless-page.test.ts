@@ -1,3 +1,4 @@
+import { fixtureProtocolId } from "../e2e/real/support/values"
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test"
 import { createHeadlessBrowser, type HeadlessBrowser } from "./headless-page.ts"
 import { runChecklist } from "../src/launch-checklist/Runner.ts"
@@ -31,7 +32,7 @@ beforeEach(() => {
   FakeSocket.respond = (command) => ({ result:
     command.method === "Target.createBrowserContext" ? { browserContextId: `context-${command.id}` } :
     command.method === "Target.createTarget" ? { targetId: `target${command.id}` } :
-    command.method === "Target.attachToTarget" ? { sessionId: `session-${command.id}` } :
+    command.method === "Target.attachToTarget" ? { sessionId: fixtureProtocolId(`session-${command.id}`) } :
     command.method === "Runtime.evaluate" ? { result: { type: "boolean", value: true } } : {}
   })
   const socket = spyOn(globalThis as unknown as { WebSocket: (...args: any[]) => any }, "WebSocket").mockImplementation(((url: string | URL) => new FakeSocket(url)) as any)

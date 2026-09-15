@@ -11,7 +11,6 @@ import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
 
-const createAppController = scopedControllers()
 
 /*
  * Wave 10, DOM half: the derived pill row (§2a/§2f), the admin-only
@@ -35,6 +34,8 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
+const createAppController = scopedControllers()
+
 const mount = (controller: AppControllerType): { host: HTMLElement; markup: () => string } => {
   const host = document.createElement("div")
   document.body.append(host)
@@ -53,8 +54,12 @@ const mount = (controller: AppControllerType): { host: HTMLElement; markup: () =
   return { host, markup: () => host.innerHTML }
 }
 
-const act = (work: () => void): void => {
-  flushSync(work)
+const act = async (work: () => unknown): Promise<void> => {
+  let pending: unknown
+  flushSync(() => { pending = work() })
+  await pending
+  await settled()
+  flushSync(() => {})
 }
 
 const signedIn = async (store: AppStore, admin = false): Promise<void> => {
@@ -131,10 +136,10 @@ describe("wave 10 — admin-only affordances are absent, not hidden (§2/§2b)",
     expect(host.querySelector(".corner-reset-btn")).toBeNull()
     expect(controller.commands.find("admin.reset.ask")).toBeDefined()
     expect(host.querySelector(".devtools-panel")).toBeNull()
-    act(() => void controller.runCommand("admin.devtools"))
+    await act(() => controller.commands.run("admin.devtools"))
     expect(host.querySelector(".devtools-panel")).not.toBeNull()
     expect(host.querySelector(".devtools-registry")?.textContent).toContain("flow.list")
-    act(() => void controller.runCommand("admin.devtools"))
+    await act(() => controller.commands.run("admin.devtools"))
     expect(host.querySelector(".devtools-panel")).toBeNull()
   })
 })
@@ -165,14 +170,14 @@ describe("wave 10 — the maximize transition (§2d′)", () => {
 
     const button = host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")
     expect(button).not.toBeNull()
-    act(() => button?.click())
+    await act(() => button?.click())
     const maximizedCard = host.querySelector<HTMLElement>(".smithers-card[data-kind=\"status\"]")
     // Element identity persists across the transition — the same node morphed.
     expect(maximizedCard).toBe(card)
     expect(maximizedCard?.dataset.maximized).toBe("true")
     expect(host.querySelector(".card-maximize-backdrop")).not.toBeNull()
 
-    act(() => void controller.runCommand("card.minimize"))
+    await act(() => controller.commands.run("card.minimize"))
     expect(host.querySelector<HTMLElement>(".smithers-card[data-kind=\"status\"]")?.dataset.maximized).toBe("false")
     expect(host.querySelector<HTMLElement>(".smithers-card[data-kind=\"status\"]")).toBe(card)
   })

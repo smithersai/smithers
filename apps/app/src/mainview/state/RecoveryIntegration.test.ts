@@ -65,7 +65,7 @@ describe("recovery through the real controller and registry", () => {
       expect(reads).toBe(0)
       expect(downloads).toEqual([])
       const result = await controller.commands.run("storage.recovery.export")
-      expect(result.status).toBe("executed")
+      expect(result).toMatchObject({ status: "executed" })
       expect(reads).toBe(1)
       expect(downloads).toHaveLength(1)
       expect(JSON.parse(downloads[0]!).localStorage).toContainEqual({

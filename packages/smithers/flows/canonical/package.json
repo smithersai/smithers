@@ -27,7 +27,8 @@
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
     "./IssuePath": "./src/IssuePath.ts",
-    "./ReadonlyMap": "./src/ReadonlyMap.ts"
+    "./ReadonlyMap": "./src/ReadonlyMap.ts",
+    "./Serializer": "./src/Serializer.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -111,6 +112,16 @@
         "require": {
           "types": "./dist/cjs/ReadonlyMap.d.ts",
           "default": "./dist/cjs/ReadonlyMap.js"
+        }
+      },
+      "./Serializer": {
+        "import": {
+          "types": "./dist/esm/Serializer.d.ts",
+          "default": "./dist/esm/Serializer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Serializer.d.ts",
+          "default": "./dist/cjs/Serializer.js"
         }
       }
     }

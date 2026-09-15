@@ -33,6 +33,6 @@ export const formFlows = (actions: CommandActions, invocation?: AgentInvocation)
     hidden: true,
     args: "<cardId>",
     input: CardTarget,
-    handler: ({ cardId }) => actions.submitForm(cardId, invocation)
+    handler: ({ cardId }, _signal, _call, gesture) => actions.submitForm(cardId, invocation, gesture)
   })
 ]

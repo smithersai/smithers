@@ -1,3 +1,4 @@
+import { memoryStorage } from "./TestFixtures"
 import { describe, expect, test } from "bun:test"
 import { cardFrameId, rootFrameId, sharedCopyIdOf } from "./AppState"
 import type { Card, CloudWorkspaceInput } from "./AppState"
@@ -102,7 +103,7 @@ test("one workspace update drives both live views while frame captures remain fi
 test("full rows supersede legacy inventory; leaving the scope captures the last live card facts", async () => {
   const store = await createAppStore({
     kind: "localStorage",
-    storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+    storage: memoryStorage()
   })
   await store.dispatch({
     type: "workingcopies.workspaces.loaded",

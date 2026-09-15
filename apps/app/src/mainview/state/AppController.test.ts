@@ -156,6 +156,7 @@ describe("the controller's command surface", () => {
     const compositionRoot = [
       "store",
       "controlFocus",
+      "observeGuideVisibility",
       "storageRecoveryState",
       "downloadUrl",
       "features",

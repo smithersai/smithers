@@ -210,3 +210,38 @@ describe("the trace model", () => {
     expect(durationWords(201_000)).toBe("3m21s")
   })
 })
+
+
+test("identified same-flow calls settle in reverse order; unidentified output cannot consume an identified start", () => {
+  const model = traceFromJournal(RUN, [
+    at(1, "control.agent.cell-call-started", { flowName: "read", callId: "first", input: "a" }, 1),
+    at(2, "control.agent.cell-call-started", { flowName: "read", callId: "second", input: "b" }, 2),
+    at(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "unidentified" }, 3),
+    at(4, "control.agent.cell-call-settled", { flowName: "read", callId: "second", outcome: "success", value: "B" }, 4),
+    at(5, "control.agent.cell-call-settled", { flowName: "read", callId: "first", outcome: "success", value: "A" }, 5)
+  ])
+  expect(model.rows.filter(row => row.kind === "call").map(row => [row.id, row.detail.input, row.detail.output, row.endedAt])).toEqual([
+    ["call-1", "a", "A", 5], ["call-2", "b", "B", 4]
+  ])
+})
+
+test("native call facts upgrade telemetry through the gateway's shared normalization without a second span", () => {
+  const callId = `cell-call-v1:${"a".repeat(64)}`
+  const native = (phase: "invoked" | "settled", sequence: number): JournalRecord => ({
+    runId: RUN.runId, sequence, occurredAt: sequence, kind: "control.engine.event", payload: {
+      version: 1, sequence, eventType: "flows.harness.call-fact.v1", executionId: "execution", generation: 0, emittedAtMs: sequence,
+      sourceSequence: 0, sourceId: `call-fact-v1:${callId}:${phase}`, payload: {
+        version: 1, phase, callId, identity: { runId: RUN.runId, frame: 0, cell: "cell", ordinal: 0, declaration: "read", layers: [] },
+        flowName: "read", input: { path: "a" }, ...(phase === "settled" ? { outcome: "success", value: "recorded" } : {})
+      }
+    }
+  })
+  const model = traceFromJournal(RUN, [
+    at(1, "control.agent.cell-call-started", { callId, flowName: "read", input: { truncated: true } }, 1),
+    at(2, "control.agent.cell-call-settled", { callId, flowName: "read", outcome: "success", value: "telemetry" }, 2),
+    native("invoked", 3), native("settled", 4)
+  ])
+  const calls = model.rows.filter(row => row.kind === "call")
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ id: "call-1", detail: { input: { path: "a" }, output: "recorded" } })
+})

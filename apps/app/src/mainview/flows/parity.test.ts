@@ -77,6 +77,27 @@ const handlers = (source: string): Array<HandlerRef> => {
   return found
 }
 
+/** Literal JSX bindings, excluding comments, text, and selectors used to find controls. */
+const literalBindings = (source: string): Array<{ readonly prop: string; readonly name: string }> => {
+  const tree = ts.createSourceFile("surface.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const found: Array<{ readonly prop: string; readonly name: string }> = []
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node)) {
+      const prop = node.name.getText(tree)
+      if (prop === "data-flow" || prop === "closeCommand") {
+        const value = node.initializer && ts.isJsxExpression(node.initializer)
+          ? node.initializer.expression : node.initializer
+        if (value && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value))) {
+          found.push({ prop, name: value.text })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  return found
+}
+
 /**
  * Handlers that legitimately do NOT dispatch a command, with the reason each
  * is not a launch-law violation. Anything not listed here MUST route through
@@ -138,6 +159,7 @@ const PRESENTATION_ONLY = [
 // to its component so a similarly named handler cannot inherit the exception.
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../onboarding/GuideShell.tsx": ["onClick={advanceGuidance}"], // advances transient introductory help, without invoking a capability
+  "../onboarding/IntroSlides.tsx": ["dispatch(\"intro-"], // IntroSlidesShell binds its three typed actions to onboarding.act; pinned below.
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App and GuideShell bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
@@ -195,6 +217,17 @@ describe("launch-law parity: every affordance is a command", () => {
     }
     expect(files["../cards/LiveTutorialRunBody.tsx"]).toContain("const scoped=runSourceCommand(card.id,onRunCommand)")
     expect(files["../cards/WorkflowCards.tsx"]).toContain("onRunCommand: sendRunCommand")
+    const intro = files["../onboarding/IntroSlides.tsx"]
+    expect(intro).toMatch(/const dispatch = useCallback<IntroDispatch>\(\(action\) => \{\s*controller\.runCommand\("onboarding\.act", action\)/)
+    expect(intro).toContain("<IntroSlides kind={open.kind} index={open.index} guide={guide} dispatch={dispatch} />")
+    expect(literalBindings(intro)).toEqual(Array.from({ length: 3 }, () => ({ prop: "data-flow", name: "onboarding.act" })))
+    // Visibility is a host lifecycle observation, not a button or a command.
+    const guide = files["../onboarding/GuideShell.tsx"]
+    const hostBinding = guide.slice(guide.indexOf("const bindInputs"), guide.indexOf("if (guide.finished)"))
+    expect(hostBinding).toContain("controller.observeGuideVisibility(true)")
+    expect(hostBinding).toContain("controller.observeGuideVisibility(false)")
+    expect(hostBinding).not.toContain("runCommand")
+    expect(read("./entries/Declare.ts")).toContain('| "observeGuideVisibility"')
   })
 
   test("the expected affordances are all present (removal fails loudly too)", () => {
@@ -207,6 +240,7 @@ describe("launch-law parity: every affordance is a command", () => {
     )
     expect(counts).toEqual({
       "../onboarding/GuideShell.tsx": 11, // Toast dismissal is owned by ToastStack; includes dock Close and dictation controls.
+      "../onboarding/IntroSlides.tsx": 3, // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
       /*
@@ -226,7 +260,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../TranscriptMessage.tsx": 4,
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
-      "../WorldSurface.tsx": 8,
+      "../WorldSurface.tsx": 7,
+      "../WikiDeleteDialog.tsx": 1, // The Wiki confirmation moved to the shared shell; its command remains wiki.delete.confirm.
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
       "../SessionNavigation.tsx": 2,
@@ -566,6 +601,28 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(violations).toEqual([])
   })
 
+  test("binding discovery reads JSX declarations, never focus-return selectors or comments", () => {
+    const source = [
+      '// <button data-flow="comment.only" />',
+      'const selector = `[data-flow="${flow}"]`',
+      'const description = \'closeCommand="text.only"\'',
+      'const view = <><button data-flow="onboarding.act" /><button data-flow={"missing.command"} />',
+      '<button data-flow={`missing.template`} /><SurfaceHeader closeCommand="missing.close" />',
+      '<button data-flow={action.flow} />{/* <button data-flow="comment.only" /> */}</>'
+    ].join("\n")
+    const bindings = literalBindings(source)
+    expect(bindings).toEqual([
+      { prop: "data-flow", name: "onboarding.act" },
+      { prop: "data-flow", name: "missing.command" },
+      { prop: "data-flow", name: "missing.template" },
+      { prop: "closeCommand", name: "missing.close" }
+    ])
+    const declared = new Set(["onboarding.act"])
+    expect(bindings.filter(({ name }) => !declared.has(name)).map(({ name }) => name)).toEqual([
+      "missing.command", "missing.template", "missing.close"
+    ])
+  })
+
   test("every data-flow binding names a registered command, and the app exposes the registry manifest", () => {
     // The launch checklist reads the DOM, not the source: `.app-shell`
     // carries the live registry manifest (data-flows) and every
@@ -584,18 +641,11 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(declared.size).toBeGreaterThan(0)
     const violations: Array<string> = []
     for (const [file, source] of Object.entries(files)) {
-      for (const match of source.matchAll(/data-flow="([^"]+)"/g)) {
-        const name = match[1]
-        if (name !== undefined && !declared.has(name)) {
-          violations.push(`${file}: data-flow="${name}" is not a registered command`)
-        }
-      }
       // SurfaceHeader renders its close affordance's data-flow from
       // closeCommand, so the literal lives at the call site and is gated here.
-      for (const match of source.matchAll(/closeCommand="([^"]+)"/g)) {
-        const name = match[1]
-        if (name !== undefined && !declared.has(name)) {
-          violations.push(`${file}: closeCommand="${name}" is not a registered command`)
+      for (const { prop, name } of literalBindings(source)) {
+        if (!declared.has(name)) {
+          violations.push(`${file}: ${prop}="${name}" is not a registered command`)
         }
       }
     }

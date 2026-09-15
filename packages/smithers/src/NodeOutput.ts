@@ -10,7 +10,10 @@
  * plane into a store.
  *
  * A node's identity is `<flowName>#<ordinal>`, the ordinal counting that
- * flow's calls within the run from 1. The identity is stable for a settled
+ * flow's distinct calls within the run from 1. Durable `callId` joins starts
+ * and settlements; legacy name/FIFO matching applies only to idless starts.
+ * Repeated identified lifecycle events do not renumber later nodes.
+ * The public node identity is stable for a settled
  * run — the journal is append-only and the ordinal is its order — which is
  * what a reference in a report or a follow-up command needs. The reserved id
  * `result` names the run's final assistant output.
@@ -18,7 +21,7 @@
  * @since 1.0.0
  */
 import type { ControlSchema } from "@smthrs/control"
-import { asRecord, asString } from "@smthrs/gateway/Diagnosis"
+import { asRecord, asString, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 
 /**
  * The reserved node id for the run's final output.
@@ -37,6 +40,8 @@ export const resultNodeId = "result"
 export interface Node {
   readonly nodeId: string
   readonly flowName: string
+  /** Durable dispatch identity; absent on legacy journal records. */
+  readonly callId?: string | undefined
   readonly outcome: "success" | "failure" | "pending"
   readonly input?: unknown
   readonly value?: unknown
@@ -76,7 +81,7 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
   let finalAt: number | undefined
   let finalSequence: number | undefined
 
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     const payload = asRecord(event.payload)
     if (event.kind === "control.agent.cell-call-started") {
       const flowName = asString(payload["flowName"]) ?? "?"
@@ -85,6 +90,7 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
       const node: Node = {
         nodeId: `${flowName}#${ordinal}`,
         flowName,
+        ...(typeof payload["callId"] === "string" ? { callId: payload["callId"] } : {}),
         outcome: "pending",
         input: payload["input"],
         startedAt: event.occurredAt,
@@ -96,9 +102,10 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
     }
     if (event.kind === "control.agent.cell-call-settled") {
       const flowName = asString(payload["flowName"]) ?? "?"
-      // The oldest unsettled call of this flow is the one that settled: calls
-      // settle in the order they were made within a frame.
-      const index = open.findIndex((node) => node.flowName === flowName)
+      // Dispatch identity survives concurrent same-name calls. Legacy
+      // fallback may claim only an unidentified start, including old runs
+      // that resume with a newly identified settlement after an upgrade.
+      const index = openCallIndex(open, asString(payload["callId"]), flowName)
       if (index < 0) continue
       const [node] = open.splice(index, 1)
       const position = nodes.indexOf(node!)

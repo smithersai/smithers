@@ -299,6 +299,11 @@ describe("CellTurn", () => {
     })
 
     const identities = engine.recorder.calls.map((call) => call.identity)
+    expect(
+      engine.recorder.records.filter((boundary) => boundary.name === "cell-call").map((boundary) =>
+        boundary.call?.identity
+      )
+    ).toEqual(identities)
     // Identical arguments and declaration; only the position differs.
     expect(identities.map((identity) => [identity.frame, identity.ordinal])).toEqual([[0, 0], [0, 1], [1, 0]])
     expect(new Set(identities.map((identity) => identity.cell)).size).toBe(2)

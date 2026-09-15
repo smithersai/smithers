@@ -29,7 +29,7 @@ const toBase64 = (bytes: Uint8Array): string => {
   return btoa(binary)
 }
 
-const fromBase64 = (value: string): Uint8Array => {
+const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
   const binary = atob(value)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
@@ -44,7 +44,7 @@ const subtle = (): Effect.Effect<SubtleCrypto, Unavailable> =>
       : Effect.succeed(available.subtle)
   })
 
-const randomNonce = (): Effect.Effect<Uint8Array, Unavailable> =>
+const randomNonce = (): Effect.Effect<Uint8Array<ArrayBuffer>, Unavailable> =>
   Effect.suspend(() => {
     const available = globalThis.crypto as Crypto | undefined
     return available?.getRandomValues === undefined
@@ -52,7 +52,7 @@ const randomNonce = (): Effect.Effect<Uint8Array, Unavailable> =>
       : Effect.succeed(available.getRandomValues(new Uint8Array(nonceBytes)))
   })
 
-const encodeContext = (context: CredentialCipher.Context): Effect.Effect<Uint8Array, Unavailable> =>
+const encodeContext = (context: CredentialCipher.Context): Effect.Effect<Uint8Array<ArrayBuffer>, Unavailable> =>
   Effect.try({
     try: () => {
       // Canonical JSON names and escapes each field, so embedded delimiters
@@ -99,7 +99,7 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
     })
     if (raw.length !== 32) return yield* Effect.fail(CredentialCipher.unavailable())
     const key = yield* Effect.tryPromise({
-      try: () => crypto.importKey("raw", raw as BufferSource, algorithm, false, ["encrypt", "decrypt"]),
+      try: () => crypto.importKey("raw", raw, algorithm, false, ["encrypt", "decrypt"]),
       catch: CredentialCipher.unavailable
     })
 
@@ -110,9 +110,9 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
         const ciphertext = yield* Effect.tryPromise({
           try: () =>
             crypto.encrypt(
-              { name: algorithm, iv: nonce as BufferSource, additionalData: additionalData as BufferSource },
+              { name: algorithm, iv: nonce, additionalData: additionalData },
               key,
-              new TextEncoder().encode(Redacted.value(plaintext)) as BufferSource
+              new TextEncoder().encode(Redacted.value(plaintext))
             ),
           catch: CredentialCipher.unavailable
         })
@@ -125,11 +125,11 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
             crypto.decrypt(
               {
                 name: algorithm,
-                iv: fromBase64(sealed.nonce) as BufferSource,
-                additionalData: additionalData as BufferSource
+                iv: fromBase64(sealed.nonce),
+                additionalData: additionalData
               },
               key,
-              fromBase64(sealed.ciphertext) as BufferSource
+              fromBase64(sealed.ciphertext)
             ),
           catch: CredentialCipher.unavailable
         })

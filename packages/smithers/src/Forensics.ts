@@ -27,7 +27,8 @@ import {
   digest as diagnose,
   duration,
   firstLine,
-  timeOf
+  timeOf,
+  uniqueCallEvents
 } from "@smthrs/gateway/Diagnosis"
 import { causeLine, terminalSafe } from "./internal/Failure.ts"
 
@@ -132,7 +133,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
   const flowCounts = new Map<string, number>()
   const seen = new Map<string, number>()
 
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     const payload = asRecord(event.payload)
     if (event.kind === "control.agent.cell-call-started") {
       const flowName = asString(payload.flowName) ?? "?"
@@ -386,7 +387,7 @@ export const renderTranscript = (events: ReadonlyArray<ControlSchema.ControlEven
     } in / ${d.outputTokens.toLocaleString("en-US")} out tok`
   ]
   let turn = 0
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     if (event.kind === "control.agent.turn-opened") {
       turn += 1
       lines.push("", `=== turn ${turn} · ${field(asRecord(event.payload).seat, "")} ===`)

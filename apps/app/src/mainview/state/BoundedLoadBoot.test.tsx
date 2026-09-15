@@ -1,148 +1,86 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import App from "../App"
-import { ControllerTestProvider } from "../ControllerContext"
-import { scopedControllers } from "./ControllerTestScope"
+import { StartupErrorBoundary } from "../StartupBoundary"
 import { createAppStore, PERSISTED_COLLECTION_SPECS } from "./AppStore"
-import type { AppStore } from "./AppStore"
-import type { Card } from "./AppState"
-import { unavailableAgent, unavailableRepositories } from "./TestFixtures"
 import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
-import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
+import { openSqliteRowStorage, OversizedSqliteCollectionError, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
-
-/*
- * A partial load is a boot that survived, so it has to end in a shell the human
- * can use.
- *
- * smithers.sh build 5136850c (2026-09-15 16:50Z), on a browser profile whose
- * OPFS `smithers-mvp.sqlite` had grown past the load budget:
- *
- *   Smithers: the persisted store is larger than one launch loads; older rows
- *   stayed on disk. {budgetBytes: 67108864, loaded: 260, skipped: 455,
- *   collections: Array(1)}
- *
- * and then the page showed nothing but the 384-character entrance wordmark —
- * no composer, no cards, and no error panel, because nothing had thrown. This
- * pins the whole path: a store several times its budget opens, the store boots,
- * and the shell renders its composer with the rows that did load.
- */
-
-const createAppController = scopedControllers()
+import { readSqliteRecovery } from "../chain/StorageRecovery"
+import { RECOVERY_DOWNLOAD_LABEL, RECOVERY_RESET_LABEL } from "./StorageRecoveryContract"
 
 GlobalRegistrator.register()
-
-/* bun test shares one process; keep these globals inside this file's run. */
 afterAll(async () => {
-  for (let tick = 0; tick < 3; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise(resolve => setTimeout(resolve, 0))
   await GlobalRegistrator.unregister()
 })
 
-const mounted: Array<() => void> = []
-afterEach(() => {
-  while (mounted.length > 0) mounted.pop()?.()
-})
+/* A rejected use(bootPromise) reaches the startup boundary as this render throw. */
+const RejectedBoot = ({ error }: { readonly error: unknown }) => { throw error }
 
-const database = () => {
-  const sqlite = new Database(":memory:")
-  const host: SqliteRowDatabase = {
-    execute: async <TRow,>(sql: string, params: ReadonlyArray<unknown> = []) => {
-      const statement = sqlite.query(sql)
-      if (/^\s*(?:SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<TRow>
-      statement.run(...params as [])
-      return []
-    }
-  }
-  return { sqlite, host }
-}
-
-/** The OPFS-shaped backend AppStore resolves in a browser, over bun:sqlite. */
-const backendOf = (sqlite: Awaited<ReturnType<typeof openSqliteRowStorage>>) => ({
-  kind: "opfs" as const,
-  storage: sqlite.storage,
-  beginBatch: sqlite.beginBatch,
-  commitBatch: sqlite.commitBatch,
-  abortBatch: sqlite.abortBatch,
-  flush: sqlite.flush,
-  close: sqlite.close,
-  readRecovery: sqlite.readRecovery,
-  applyRows: sqlite.applyRows,
-  readRows: sqlite.readRows,
-  load: sqlite.loadReport
-})
-
-const bigCard = (index: number): Card => ({
-  id: `approval-run-${index}`,
-  kind: "approval",
-  title: `Approve run ${index}`,
-  status: "active",
-  createdAt: 1_700_000_000_000 + index,
-  ordinal: index + 1,
-  payload: {
-    capability: "deploy:production",
-    detail: "d".repeat(200_000),
-    runId: `run-${index}`,
-    requestId: "approve",
-    approval: { target: { _tag: "Node", runId: `run-${index}`, requestId: "approve" }, scope: "run", idempotencyKey: `k${index}` }
-  }
-} as Card)
-
-const render = (store: AppStore): string => {
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent)
-  const host = document.createElement("div")
-  document.body.append(host)
-  const root = createRoot(host)
-  flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
-  const markup = host.innerHTML
-  mounted.push(() => {
-    flushSync(() => root.unmount())
-    host.remove()
+test("an oversized app refuses with recovery actions and leaves complete authority available", async () => {
+  const db = new Database(":memory:")
+  const host: SqliteRowDatabase = { execute: async <T,>(sql: string, params: ReadonlyArray<unknown> = []) => {
+    const statement = db.query(sql)
+    if (/^\s*(?:SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<T>
+    statement.run(...params as [])
+    return []
+  } }
+  const open = (budgetBytes?: number) => openSqliteRowStorage(host, {
+    collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION,
+    ...(budgetBytes === undefined ? {} : { budgetBytes })
   })
-  return markup
-}
-
-describe("a store larger than one launch loads still boots a usable shell", () => {
-  test("the composer renders, the loaded rows are there, and the notice says what stayed on disk", async () => {
-    const db = database()
-    const open = (budgetBytes?: number) =>
-      openSqliteRowStorage(db.host, {
-        collections: PERSISTED_COLLECTION_SPECS,
-        schemaVersion: APP_SCHEMA_VERSION,
-        ...(budgetBytes === undefined ? {} : { budgetBytes })
-      })
-
-    const seeded = await createAppStore(backendOf(await open()) as never, { seedWiki: false })
-    for (let index = 0; index < 30; index += 1) {
-      await seeded.dispatch({ type: "card.upsert", actor: "system", card: bigCard(index) } as never).isPersisted.promise
-    }
-    await seeded.settled?.()
-    await seeded.dispose?.()
-    const stored = Number(
-      (db.sqlite.query(`SELECT SUM(LENGTH(value)) AS bytes FROM ${ROW_TABLE_NAME}`).get() as { bytes: number }).bytes
-    )
-
-    const budgetBytes = 2 * 1024 * 1024
-    const bounded = await open(budgetBytes)
-    // The production shape: several times the budget on disk, one launch's worth loaded.
-    expect(stored).toBeGreaterThan(budgetBytes * 3)
-    expect(bounded.loadReport.skipped).toBeGreaterThan(0)
-
-    const store = await createAppStore(backendOf(bounded) as never, { seedWiki: false })
-    expect(store.persistedLoad.skipped).toBe(bounded.loadReport.skipped)
-    // The partial load is said once, in the same durable vocabulary as every
-    // other system notice — and it never claims the skipped rows were deleted.
-    const notice = store.collections.toasts.get("toast-store.truncated")
-    expect(notice?.status).toBe("failed")
-    expect(notice?.detail).toContain("older history is available in the recovery file")
-
-    const markup = render(store)
-    expect(markup).toContain("smithers-composer")
-    expect(markup).toContain("smithers-transcript")
-    // The rows that did load are the app's content, not an empty surface.
-    expect(store.collections.cards.size).toBeGreaterThan(0)
-    await store.dispose?.()
-  }, 120_000)
-})
+  const boot = async (budgetBytes?: number) => createAppStore({ kind: "opfs", ...await open(budgetBytes),
+    storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} } }, { seedWiki: false })
+  const element = document.createElement("div")
+  document.body.append(element)
+  const root = createRoot(element)
+  try {
+    expect(PERSISTED_COLLECTION_SPECS.every(spec => spec.partialLoad === "refuse")).toBe(true)
+    const seeded = await boot()
+    try {
+      for (let index = 0; index < 6; index += 1) await seeded.dispatch({ type: "card.upsert", actor: "user", card: {
+        id: `file-${index}`, kind: "file", title: `source-${index}.ts`, status: "active", createdAt: index + 1, ordinal: index,
+        payload: { repo: "org/repo", path: `source-${index}.ts`, content: "private source 😀".repeat(8_000), truncated: false }
+      } }).isPersisted.promise
+      expect((await seeded.verifyState()).valid).toBe(true)
+    } finally { await seeded.dispose?.() }
+    const before = JSON.stringify(await readSqliteRecovery(host))
+    const budgetBytes = 256 * 1024
+    const bytes = (db.query(`SELECT SUM(length(CAST(value AS BLOB))) AS bytes FROM ${ROW_TABLE_NAME}`).get() as { bytes: number }).bytes
+    expect(bytes).toBeGreaterThan(budgetBytes * 3)
+    let refused: unknown
+    try { const unexpected = await boot(budgetBytes); await unexpected.dispose?.() }
+    catch (error) { refused = error }
+    expect(refused).toBeInstanceOf(OversizedSqliteCollectionError)
+    let reported: unknown
+    const consoleError = console.error
+    console.error = () => {}
+    try {
+      flushSync(() => root.render(<StartupErrorBoundary onError={error => { reported = error }}>
+        <RejectedBoot error={refused} />
+      </StartupErrorBoundary>))
+    } finally { console.error = consoleError }
+    expect(reported).toBe(refused)
+    expect(element.textContent).toContain("Smithers failed to start")
+    expect(element.textContent).toContain("source was preserved")
+    const buttons = [...element.querySelectorAll("button")]
+    expect(buttons.map(button => button.textContent)).toEqual(expect.arrayContaining([RECOVERY_DOWNLOAD_LABEL, RECOVERY_RESET_LABEL]))
+    expect(buttons.every(button => !button.disabled)).toBe(true)
+    expect(element.textContent).not.toContain("private source")
+    expect(element.querySelector(".smithers-composer")).toBeNull()
+    // Raw recovery reads the same complete source even though bounded boot refused.
+    expect(JSON.stringify(await readSqliteRecovery(host))).toBe(before)
+    const recovered = await boot()
+    try {
+      expect(recovered.collections.cards.size).toBe(6)
+      expect((await recovered.verifyState()).valid).toBe(true)
+    } finally { await recovered.dispose?.() }
+  } finally {
+    flushSync(() => root.unmount())
+    element.remove()
+    db.close()
+  }
+}, 60_000)

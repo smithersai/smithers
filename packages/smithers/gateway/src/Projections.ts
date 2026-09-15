@@ -16,9 +16,9 @@
  * selector's rows from the accumulated events rather than patching them: a
  * projection is a reproducible fold (`@smthrs/journal` `Projection`), and
  * recomputation is the only delta that cannot disagree with a fresh snapshot.
- * The two append-only projections, `run-events` and `transcript`, are the
- * exception: their rows never change once folded, so a delta carries only the
- * rows one event appended. Events accumulate in the stream, so each delta
+ * `run-events` appends immutable rows. `transcript` normally appends too, but
+ * sends an existing snapshot reset when a committed native call fact upgrades
+ * previously delivered telemetry. Events accumulate in the stream, so each delta
  * folds without re-reading history. Resuming a historical run summary first
  * rebuilds its compacted health prefix once through durable follow replay.
  *
@@ -39,6 +39,7 @@ import { Context, Effect, Layer, Schema, Stream } from "effect"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
+import { callEventKey, nativeCallEvent } from "./internal/callEvents.ts"
 
 /**
  * How often an idle subscription emits a keepalive frame.
@@ -698,10 +699,13 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     run: ControlSchema.RunSummary,
     event: ControlSchema.ControlEvent,
     events: ReadonlyArray<ControlSchema.ControlEvent>,
-    turnsBefore: number
+    turnsBefore: number,
+    duplicateCall: boolean
   ): Effect.Effect<ReadonlyArray<unknown>, GatewayError> => {
     if (selector._tag === "run-events") return Effect.succeed([event])
-    if (selector._tag === "transcript") return Effect.succeed(transcriptAppend(event, turnsBefore))
+    if (selector._tag === "transcript") {
+      return Effect.succeed(duplicateCall ? [] : transcriptAppend(event, turnsBefore))
+    }
     return Effect.succeed(rowsOfRun(selector, { run, events }, now()))
   }
 
@@ -710,6 +714,8 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     readonly observed: CursorPosition | undefined
     /** Turns the transcript has opened so far; zero for every other selector. */
     readonly turns: number
+    /** Derived once from the cursor prefix, then extended in constant time. */
+    readonly reportedCalls: Map<string, boolean>
   }
 
   interface RunDelta {
@@ -718,6 +724,8 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     readonly events: ReadonlyArray<ControlSchema.ControlEvent>
     readonly position: CursorPosition
     readonly turnsBefore: number
+    readonly duplicateCall: boolean
+    readonly replaceTranscript: boolean
   }
 
   /**
@@ -767,7 +775,17 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
           (): RunFollowState => ({
             buffer: initial,
             observed: undefined,
-            turns: selector._tag === "transcript" ? turnsOpened(initial.events) : 0
+            turns: selector._tag === "transcript" ? turnsOpened(initial.events) : 0,
+            reportedCalls: (() => {
+              const seen = new Map<string, boolean>()
+              if (selector._tag === "transcript") {
+                for (const event of initial.events) {
+                  const key = callEventKey(event)
+                  if (key !== undefined) seen.set(key, seen.get(key) === true || nativeCallEvent(event) !== undefined)
+                }
+              }
+              return seen
+            })()
           }),
           (state, candidate): Effect.Effect<
             readonly [RunFollowState, ReadonlyArray<RunDelta>],
@@ -796,6 +814,15 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                     : Effect.succeed([nextState, [] as ReadonlyArray<RunDelta>] as const)
                 }
                 const turnsBefore = state.turns
+                // A resumed follower must also suppress duplicates of calls
+                // reported before its cursor, without re-folding that prefix.
+                const callKey = selector._tag === "transcript" ? callEventKey(event) : undefined
+                const duplicateCall = callKey !== undefined && state.reportedCalls.has(callKey)
+                const authoritative = nativeCallEvent(event) !== undefined
+                const replaceTranscript = duplicateCall && authoritative && state.reportedCalls.get(callKey) === false
+                if (callKey !== undefined) {
+                  state.reportedCalls.set(callKey, authoritative || state.reportedCalls.get(callKey) === true)
+                }
                 const turns = selector._tag === "transcript"
                   ? transcriptAppend(event, turnsBefore).at(-1)?.turn ?? turnsBefore
                   : 0
@@ -808,8 +835,21 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                       appendEvent(state.buffer, event, `${message}: event history is invalid`, run),
                       (buffer) =>
                         [
-                          { buffer, observed: position, turns } satisfies RunFollowState,
-                          [{ run, event, events: buffer.events, position, turnsBefore }] satisfies ReadonlyArray<
+                          {
+                            buffer,
+                            observed: position,
+                            turns,
+                            reportedCalls: state.reportedCalls
+                          } satisfies RunFollowState,
+                          [{
+                            run,
+                            event,
+                            events: buffer.events,
+                            position,
+                            turnsBefore,
+                            duplicateCall,
+                            replaceTranscript
+                          }] satisfies ReadonlyArray<
                             RunDelta
                           >
                         ] as const
@@ -818,16 +858,27 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
               }
             )
         ),
-        Stream.mapEffect(({ run, event, events, position, turnsBefore }) =>
-          Effect.flatMap(deltaRows(selector, run, event, events, turnsBefore), (rows) =>
-            Effect.flatMap(boundedRows(selector, rows), (delta) =>
-              frameOf({
-                _tag: "delta",
-                selector,
-                cursor: cursorOf(selector, position),
-                delta
-              })))
-        )
+        Stream.mapEffect(({ run, event, events, position, turnsBefore, duplicateCall, replaceTranscript }) =>
+          replaceTranscript
+            ? Effect.flatMap(boundedRows(selector, GatewayProjection.transcript(events)), (rows) =>
+              Effect.forEach([
+                { _tag: "snapshot-start", selector, cursor: cursorOf(selector, position) },
+                ...rows.map((row) => ({ _tag: "row", selector, cursor: cursorOf(selector, position), row })),
+                { _tag: "snapshot-end", selector, cursor: cursorOf(selector, position) }
+              ], frameOf))
+            : Effect.flatMap(deltaRows(selector, run, event, events, turnsBefore, duplicateCall), (rows) =>
+              Effect.flatMap(boundedRows(selector, rows), (delta) =>
+                Effect.map(
+                  frameOf({
+                    _tag: "delta",
+                    selector,
+                    cursor: cursorOf(selector, position),
+                    delta
+                  }),
+                  (frame) => [frame]
+                )))
+        ),
+        Stream.flattenIterable
       )))
   }
 

@@ -2742,6 +2742,8 @@ describe("the browser tool route (§2d)", () => {
       ["POST", "/api/linear"],
       ["POST", "/api/linear/7/ops/9/retry"],
       ["GET", "/api/notifications/list"],
+      ["GET", "/api/billing"],
+      ["GET", "/api/billing/plans"],
       ["POST", "/api/billing/checkout"],
       ["POST", "/api/billing/portal"]
     ]
@@ -3075,6 +3077,75 @@ describe("the /api/cloud bridge", () => {
     calls.filter((call) => call.url.startsWith("https://cloud.test"))
   const jsonAnswer = (body: unknown): Response =>
     new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+
+  test("billing catalog reads use the account platform proxy through both route forms", async () => {
+    const catalog = { current_plan_key: "free", plans: [] }
+    for (const prefix of ["", "/api/cloud"]) {
+      for (const path of ["/api/billing", "/api/billing/plans"]) {
+        await withUpstreams(() => jsonAnswer(catalog), async (calls) => {
+          const response = await worker.fetch(new Request(`https://mvp.test${prefix}${path}`, { headers: {
+            cookie: "smithers_session=sealed", authorization: "Bearer renderer-token"
+          } }), { ...signedInEnv, BILLING_UPSTREAM_URL: "https://product-billing.test" })
+          expect(response.status).toBe(200)
+          expect(await response.json()).toEqual(catalog)
+          const forwarded = cloudCalls(calls)
+          expect(forwarded).toHaveLength(1)
+          expect(forwarded[0]?.url).toBe(`https://cloud.test${path}`)
+          expect(forwarded[0]?.headers.get("authorization")).toBe("Bearer cloud-token-1")
+          expect(forwarded[0]?.headers.has("cookie")).toBe(false)
+          expect(calls.some(call => call.url.startsWith("https://product-billing.test"))).toBe(false)
+        })
+      }
+    }
+  })
+
+  test("plan-limit metadata passes through both platform proxy routes without retry", async () => {
+    const refusal = {
+      code: "plan_limit_exceeded", message: "Upgrade or suspend a sandbox.",
+      plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro"
+    }
+    for (const prefix of ["", "/api/cloud"]) {
+      await withUpstreams(() => new Response(JSON.stringify(refusal), {
+        status: 402, headers: { "content-type": "application/json" }
+      }), async (calls) => {
+        const response = await worker.fetch(new Request(`https://mvp.test${prefix}/api/user/workspaces`, {
+          headers: { cookie: "smithers_session=sealed" }
+        }), signedInEnv)
+        expect(response.status).toBe(402)
+        expect(await response.json()).toEqual({ status: "error", ...refusal })
+        expect(cloudCalls(calls)).toHaveLength(1)
+      })
+    }
+  })
+
+  test("SSE reconnects preserve the upstream cursor and streamed bytes through both platform routes", async () => {
+    const frames = 'id: 1007\nevent: issue.fact\ndata: {"sequence":1007}\n\nevent: stream.error\ndata: {"retryable":true}\n\n'
+    for (const prefix of ["", "/api/cloud"]) {
+      for (const path of ["/api/repos/will/smithers/issues/state-events/stream", "/api/notifications/events/stream"]) {
+        await withUpstreams(() => new Response(frames, { headers: {
+          "content-type": "text/event-stream", "set-cookie": "upstream=private", "access-control-allow-origin": "*"
+        } }), async (calls) => {
+          const response = await worker.fetch(new Request(`https://mvp.test${prefix}${path}?after=12`, { headers: {
+            cookie: "smithers_session=sealed", authorization: "Bearer renderer-token",
+            accept: "text/event-stream", "Last-Event-ID": "1006"
+          } }), signedInEnv)
+          expect(response.status).toBe(200)
+          const [forwarded] = cloudCalls(calls)
+          expect(cloudCalls(calls)).toHaveLength(1)
+          expect(forwarded?.url).toBe(`https://cloud.test${path}?after=12`)
+          expect(forwarded?.headers.get("last-event-id")).toBe("1006")
+          expect(forwarded?.headers.get("accept")).toBe("text/event-stream")
+          expect(forwarded?.headers.get("authorization")).toBe("Bearer cloud-token-1")
+          expect(forwarded?.headers.has("cookie")).toBe(false)
+          expect(response.headers.get("content-type")).toBe("text/event-stream")
+          expect(response.headers.get("cache-control")).toBe("private, no-store")
+          expect(response.headers.has("set-cookie")).toBe(false)
+          expect(response.headers.has("access-control-allow-origin")).toBe(false)
+          expect(await response.text()).toBe(frames)
+        })
+      }
+    }
+  })
 
   test("wiki CRDT updates carry the full 1 MiB binary envelope through direct and cloud routes", async () => {
     const body = JSON.stringify({

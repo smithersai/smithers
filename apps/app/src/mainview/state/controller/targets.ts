@@ -125,8 +125,6 @@ export const createTargetsController = (
 
   const loadTargets = async (repo: Repo): Promise<void> => {
     const id = targetsCardId(repo.id)
-    /* The Featured view's second source beside the declarations' own `featured`: this user's stars for the path. */
-    const starred = starsFor(repo.path)
     upsert({
       id,
       kind: "targets",
@@ -134,7 +132,7 @@ export const createTargetsController = (
       status: "active",
       createdAt: Date.now(),
       ordinal: nextOrdinal(),
-      payload: { repoId: repo.id, repoName: repo.name, status: "pending", targets: [], warnings: [], starred }
+      payload: { repoId: repo.id, repoKey: repoKeyOf(repo.path), repoName: repo.name, status: "pending", targets: [], warnings: [] }
     })
     let response: Response
     try {
@@ -189,14 +187,6 @@ export const createTargetsController = (
     const parsed = RunHistoryResponseSchema.safeParse(await response.json().catch(() => undefined))
     if (!parsed.success) return
     patch(targetsCardId(repoId), "targets", (card) => ({ payload: { ...card.payload, runs: parsed.data.runs } }))
-  }
-
-  const starsFor = (path: string): Array<string> => {
-    const repoKey = repoKeyOf(path)
-    return [...store.collections.starredTargets.values()]
-      .filter((star) => star.repoKey === repoKey)
-      .map((star) => star.label)
-      .sort()
   }
 
   const patchView = (repoId: string, update: (view: TargetsView) => TargetsView): string | void => {

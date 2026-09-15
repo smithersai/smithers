@@ -16,6 +16,8 @@ export interface DurableBatch {
 /** One committed row transition. An absent `versionKey` removes the row. */
 export interface DurableRowDelta {
   readonly key: string
+  /** The row version this mutation read; undefined requires an absent row. */
+  readonly expectedVersionKey?: string | undefined
   readonly versionKey: string | undefined
   readonly data: unknown
 }
@@ -33,13 +35,16 @@ export interface DurableRowSink {
   readonly readRows?: (collectionId: string) => ReadonlyMap<string, StoredItem>
 }
 
-interface PersistedTransaction {
+export interface PersistedTransaction {
+  readonly id?: string | undefined
   readonly mutations: ReadonlyArray<{
     readonly collection: { readonly id: string }
     readonly key: string | number
     readonly type: "insert" | "update" | "delete"
     readonly original: unknown
     readonly modified: unknown
+    /** Keep an unchanged row in the durable CAS read set (for authority fences). */
+    readonly retainUnchanged?: boolean
   }>
 }
 
@@ -70,14 +75,17 @@ export class StaleDurableMutationError extends Error {
   }
 }
 
-/**
- * TanStack's historical loader also accepts unprefixed string keys. Normalize
- * them before mutation lookup and the next durable rewrite.
- */
+/** A different writer committed after this adapter loaded its base. */
+export class DurableStorageConflictError extends Error {
+  constructor(readonly boundary: string) {
+    super(`Stored state changed at ${boundary}. This stale writer was refused; reload the current state before retrying.`)
+    this.name = "DurableStorageConflictError"
+  }
+}
+
 const normalizedRowKey = (key: string): string => key.startsWith("s:") || key.startsWith("n:") ? key : rowKey(key)
 
-const readStringRows = (storage: StorageApi, id: string): Map<string, StoredItem> => {
-  const raw = storage.getItem(storageKey(id))
+const readStringRows = (storage: StorageApi, id: string, raw = storage.getItem(storageKey(id))): Map<string, StoredItem> => {
   if (raw === null) return new Map()
   const parsed: unknown = JSON.parse(raw)
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`Invalid persisted collection ${id}.`)
@@ -110,11 +118,17 @@ export const createCollectionPersistence = (options: {
   readonly flush?: () => Promise<void>
   /** Given a normalized host, commits carry row deltas instead of collection JSON. */
   readonly rows?: DurableRowSink
+  /** Refuse writes that did not enter through the owner's transition protocol. */
+  readonly authorize?: (transaction: PersistedTransaction) => void
 }): CollectionPersistence => {
   const registered = new Set<string>()
   // The registered projection of every durable row, so neither the stale-state
   // check nor a commit has to reparse a whole collection out of the store.
   const projected = new Map<string, Map<string, StoredItem>>()
+  // A local collection's encoded string is immutable evidence of its exact
+  // rows. Re-read that string on every transaction, but do not parse an
+  // unchanged collection again. These maps never escape through register().
+  const localCache = new Map<string, { readonly raw: string | null; readonly rows: Map<string, StoredItem> }>()
   let tail: Promise<void> = Promise.resolve()
   let generation = 0
   let priorFailure: unknown
@@ -127,6 +141,15 @@ export const createCollectionPersistence = (options: {
     return rows
   }
 
+  const localProjection = (id: string): Map<string, StoredItem> => {
+    const raw = options.storage.getItem(storageKey(id))
+    const cached = localCache.get(id)
+    if (cached !== undefined && cached.raw === raw) return cached.rows
+    const rows = readStringRows(options.storage, id, raw)
+    localCache.set(id, { raw, rows })
+    return rows
+  }
+
   const persist = (transaction: PersistedTransaction): Promise<void> => {
     const acceptedGeneration = generation
     const mutations = transaction.mutations.filter((mutation) => registered.has(mutation.collection.id))
@@ -134,6 +157,7 @@ export const createCollectionPersistence = (options: {
       // Already queued transitions may have been derived from the failed
       // optimistic state. Reject them too; a later fresh dispatch may retry.
       if (acceptedGeneration !== generation) throw priorFailure
+      options.authorize?.(transaction)
       const deltas = new Map<string, Array<DurableRowDelta>>()
       const localRows = new Map<string, Map<string, StoredItem>>()
       // The projection advances in place; a refused commit rewinds these.
@@ -142,7 +166,7 @@ export const createCollectionPersistence = (options: {
         for (const mutation of mutations) {
           const id = mutation.collection.id
           const rows = options.rows === undefined
-            ? localRows.get(id) ?? readRows(options, id)
+            ? localRows.get(id) ?? localProjection(id)
             : projection(id)
           localRows.set(id, rows)
           const key = rowKey(mutation.key)
@@ -154,17 +178,16 @@ export const createCollectionPersistence = (options: {
             throw new StaleDurableMutationError(id, mutation.key)
           }
           /*
-           * An update that changes nothing costs nothing. The run pump re-reads
-           * a run every three seconds and re-dispatches the card it already
-           * holds; without this, each identical re-read rewrote the row and
-           * every byte of its payload (chain/PersistenceBudget.ts). The row on
-           * disk already IS this value, so skipping is not a deferred write.
+           * An identical update preserves the existing stored row and version.
+           * Previously, repeated run polling rewrote unchanged card payloads;
+           * this also suppresses redundant writes from other callers. Explicit
+           * authority fences still enter the physical CAS read set.
            */
-          if (prior !== undefined && mutation.type === "update" && comparableJson(prior.data) === comparableJson(mutation.modified)) continue
+          if (mutation.retainUnchanged !== true && prior !== undefined && mutation.type === "update" && comparableJson(prior.data) === comparableJson(mutation.modified)) continue
           applied.push({ rows, key, prior })
           const delta: DurableRowDelta = mutation.type === "delete"
-            ? { key, versionKey: undefined, data: undefined }
-            : { key, versionKey: crypto.randomUUID(), data: JSON.parse(JSON.stringify(mutation.modified)) as unknown }
+            ? { key, expectedVersionKey: prior?.versionKey, versionKey: undefined, data: undefined }
+            : { key, expectedVersionKey: prior?.versionKey, versionKey: crypto.randomUUID(), data: JSON.parse(JSON.stringify(mutation.modified)) as unknown }
           if (delta.versionKey === undefined) rows.delete(key)
           else rows.set(key, { versionKey: delta.versionKey, data: delta.data })
           const changed = deltas.get(id) ?? []
@@ -183,6 +206,12 @@ export const createCollectionPersistence = (options: {
           else for (const [id, rowDeltas] of deltas) options.rows.applyRows(id, rowDeltas)
           options.batch?.commitBatch()
           await options.flush?.()
+          // Cache only accepted bytes. A failed/partially committed host is
+          // detected by the next raw-string read, and applied maps roll back.
+          if (options.rows === undefined) for (const [key, raw] of writes) {
+            const id = key.slice("smithers-mvp.".length)
+            localCache.set(id, { raw, rows: localRows.get(id)! })
+          }
         } catch (error) {
           options.batch?.abortBatch()
           throw error

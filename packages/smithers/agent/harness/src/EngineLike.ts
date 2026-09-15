@@ -139,6 +139,8 @@ export interface RecordBoundary<A> {
   readonly identity: BoundaryIdentity
   readonly success: DurableSchema<A>
   readonly execute: Effect.Effect<A, HarnessError>
+  /** Exact call whose delivered result this existing cell-call boundary records. */
+  readonly call?: Cell.Call | undefined
 }
 
 /**

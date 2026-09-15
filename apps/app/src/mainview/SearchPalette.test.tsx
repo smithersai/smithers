@@ -188,7 +188,9 @@ describe("§3 the keyboard contract", () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       const button = view.host.querySelector<HTMLButtonElement>('.app-chat-controls [data-flow="chat.open"]')!
       button.focus()
-      flushSync(() => button.click())
+      // The click records its intent before opening; focus belongs to that
+      // opening render after the durable command has been admitted.
+      await view.act(() => button.click())
       expect(document.activeElement === textarea(view.host)).toBe(true)
       await view.act(() => view.controller.closePalette())
     }

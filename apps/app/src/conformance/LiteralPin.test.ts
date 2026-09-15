@@ -20,6 +20,7 @@
 import { describe, expect, test } from "bun:test"
 import { relative } from "node:path"
 import { RUN_LAUNCH_COMMANDS } from "../mainview/state/RunClaims"
+import { fixtureRepositoryName } from "../../e2e/real/support/values"
 import {
   dataAttributesIn,
   DOTTED_IDENTIFIER,
@@ -189,6 +190,16 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "data-selected-line",
     file: "e2e/playwright/code-intel.spec.ts",
     reason: "stamped on the anchored line by the pierre renderer inside @smthrs/ui's code view, not by app JSX; src/mainview/cards/FileCards.test.tsx pins the same attribute against the real renderer"
+  },
+  {
+    literal: "data-selected-line",
+    file: "e2e/real/files-code.spec.ts",
+    reason: "stamped on the anchored line by the same pierre renderer; FileCards.test.tsx verifies this real shadow-DOM attribute, which is not app JSX"
+  },
+  {
+    literal: "navigation-storage-",
+    file: "e2e/real/navigation-frames/storage.ts",
+    reason: "test-owned request IDs on the shipped SQLite worker protocol; the worker echoes them for request correlation and they are never card IDs"
   }
 ]
 
@@ -220,7 +231,11 @@ const vocabularies: Vocabularies = {
   cardObjectFields: cardObjectFields(),
   idVocabularySegments: idVocabularySegments()
 }
-const literals = literalsUnder(TREES)
+// These two files implement/test the test-source parser. Their strings name
+// framework calls and synthetic coverage evidence, not application actions.
+// Actual real-E2E scenarios, helpers and coverage declarations remain scanned.
+const sourceParserFiles = new Set(["e2e/real/coverage/gate.ts", "e2e/real/coverage/gate.test.ts"])
+const literals = literalsUnder(TREES).filter(literal => !sourceParserFiles.has(shortPath(literal.file)))
 const violations = literals.flatMap((literal) => [...violationsOf(literal, vocabularies)])
 
 describe("the vocabularies are derived from the app and are never empty", () => {
@@ -415,6 +430,118 @@ test("composed form test ids require both live prefixes and a registered flow", 
     expect(extractLiterals("/fixture/form.spec.ts", source).flatMap(value => [...violationsOf(value, vocabularies)]).length)
       .toBeGreaterThan(0)
   }
+})
+
+test("real scenario IDs and owned repository names do not excuse product assertions", () => {
+  const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
+    .flatMap(literal => [...violationsOf(literal, vocabularies)])
+  const imports = 'import { scenario as evidence } from "./coverage/types"; import { createOwnedLocalRepo as owned } from "./support/test";'
+  expect(check(imports + 'evidence("workflow.create", { coverage: [] }); owned({name: `chat-fixture-${nonce}`});')).toEqual([])
+  for (const statement of [
+    'runCommand("workflow.create")',
+    'page.locator("[data-flow=\\\"workflow.create\\\"]")',
+    'value.startsWith("chat-fixture-")',
+    'other({name: `chat-fixture-${nonce}`})',
+    'scenario("workflow.create", {})'
+  ]) expect(check(imports + statement).length).toBeGreaterThan(0)
+  expect(check('import { scenario } from "./unrelated"; scenario("workflow.create", {})').length).toBeGreaterThan(0)
+  expect(check('import { scenario } from "./coverage/types"; scenario("case", { flow: "workflow.create" })').length).toBeGreaterThan(0)
+  expect(check(imports + 'function nested(evidence) { evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
+  expect(check(imports + 'function nested(owned) { owned({name: `chat-fixture-${nonce}`}) }').length).toBeGreaterThan(0)
+  expect(check(imports + 'function nested() { function evidence() {} evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
+  expect(check(imports + 'try {} catch(evidence) { evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
+})
+
+test("fixture value provenance is import-bound and cannot hide nested or aliased product claims", () => {
+  const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
+    .flatMap(literal => [...violationsOf(literal, vocabularies)])
+  const imports = 'import { fixtureCommentBody as comment, fixtureRepositoryName as repository, fixtureAttachmentName as attachment } from "./support/values"; import { attachProductionJson as evidence } from "./repositories-github/production";'
+  expect(check(imports + [
+    'const body = comment(`practice-comment-${nonce}`); textbox.fill(body); expect(card).toContainText(body);',
+    'const name = repository(`smithers-e2e-import-pr-${nonce}`);',
+    'const uniqueRepositoryName = () => repository(`smithers-e2e-import-s12-${nonce}`);',
+    'evidence(testInfo, attachment(`owned-workflow-run-cleanup-${runId}`), { runId });'
+  ].join("\n"))).toEqual([])
+  for (const source of [
+    'const body = comment(`workflow-run-${nonce}`); const alias = body; page.getByTestId(alias);',
+    'const body = comment("workflow.create"); runCommand(body);',
+    'runCommand(comment("workflow.create"));',
+    'page.getByTestId(repository(`workflow-run-${nonce}`));',
+    'card.id.startsWith(comment("workflow-run-"));',
+    'page.locator(attachment("[data-flow=\\\"workflow.create\\\"]"));',
+    'const body = comment("[data-kind=\\\"workflow-run\\\"]");',
+    'const body = comment("[data-command]");',
+    'const frame = { id: "x", kind: comment("workflow-run"), title: "x", status: "active" };',
+    'function nested(comment) { const value = comment(`workflow-run-${nonce}`) }',
+    'function nested() { function comment() {} const value = comment(`workflow-run-${nonce}`) }',
+    'try {} catch (comment) { const value = comment(`workflow-run-${nonce}`) }',
+    'other(testInfo, attachment(`workflow-run-${nonce}`), {});',
+    'evidence(testInfo, attachment(`workflow-run-${nonce}`), { kind: "workflow-run", id: "x", title: "x", status: "active" });'
+  ]) expect(check(imports + source).length, source).toBeGreaterThan(0)
+  expect(check('import { fixtureCommentBody as comment } from "./unrelated"; const body = comment(`workflow-run-${nonce}`);').length).toBeGreaterThan(0)
+  expect(fixtureRepositoryName("smithers-e2e-import-s12-abc-123")).toBe("smithers-e2e-import-s12-abc-123")
+  for (const name of ["canary-sandbox", "../smithers-e2e-import-x", "smithers-e2e-import-"]) {
+    expect(() => fixtureRepositoryName(name)).toThrow("owned cleanup namespace")
+  }
+})
+
+test("fixture workflow input and protocol IDs preserve explicit product checks", () => {
+  const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
+    .flatMap(literal => [...violationsOf(literal, vocabularies)])
+  const imports = 'import { fixtureInputText as input, fixtureProtocolId as protocol } from "./support/values";'
+  expect(check(imports + 'const text = input(`s15-input-${nonce}`); field.fill(text); const response = { sessionId: protocol(`session-${id}`) };')).toEqual([])
+  for (const statement of [
+    'const id = protocol(`missing-card-${nonce}`); const alias = id; page.getByTestId(alias);',
+    'const name = input("workflow.create"); runCommand(name);',
+    'runCommand(input("workflow.create"));',
+    'page.locator(protocol("[data-kind=\\\"workflow-run\\\"]"));',
+    'const card = { kind: input("workflow-run"), id: "x", title: "x", status: "active" };',
+    'function nested(input) { const text = input(`missing-card-${nonce}`) }',
+    'function nested() { function protocol() {} const id = protocol(`missing-card-${nonce}`) }',
+    'try {} catch (protocol) { const id = protocol(`missing-card-${nonce}`) }'
+  ]) expect(check(imports + statement).length, statement).toBeGreaterThan(0)
+  expect(check('import { fixtureInputText as input } from "./unrelated"; const text = input(`s15-input-${nonce}`);').length).toBeGreaterThan(0)
+})
+
+test("fixture input provenance follows a local factory's selected return field", () => {
+  const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
+    .flatMap(literal => [...violationsOf(literal, vocabularies)])
+  const imports = 'import { fixtureInputText as input } from "./support/values";'
+  expect(check(imports + [
+    'const make = async (text, serverId) => { await submit(text); const id = await accepted(serverId); return { text, id }; };',
+    'const text = input(`missing-card-${nonce}`); const row = await make(text, observedId);',
+    'page.getByTestId(row.id);'
+  ].join("\n"))).toEqual([])
+  for (const factory of [
+    'const make = (text) => ({ id: text });',
+    'const make = async (text) => { const alias = text; return { id: alias }; };',
+    'const make = (text) => { const id = decorate(text); return { id }; };',
+    'const make = (text) => ({ text, id: text });',
+    'const make = (text) => { runCommand(text); return { id: observedId }; };',
+    'const make = (text) => { if (flag) return { id: text }; return { id: observedId }; };',
+    'const make = (text) => ({ id: observedId, ...text });',
+    'const make = (text) => external(text);',
+    'import { make } from "./external";'
+  ]) {
+    const source = imports + factory + 'const text = input(`missing-card-${nonce}`); const row = await make(text); page.getByTestId(row.id);'
+    expect(check(source).length, factory).toBeGreaterThan(0)
+  }
+  expect(check(imports + 'const make = (text) => ({ id: text }); const text = input(`missing-card-${nonce}`); const a = make(observedId); const b = make(text); page.getByTestId(a.id); page.getByTestId(b.id);').length).toBeGreaterThan(0)
+  expect(check(imports + 'const text = input(`missing-card-${nonce}`); const row = { id: text }; page.getByTestId(row.id);').length).toBeGreaterThan(0)
+  expect(check(imports + 'const text = input(`missing-card-${nonce}`); page.getByTestId(decorate(text));').length).toBeGreaterThan(0)
+  expect(check(imports + 'const make = () => { const text = input(`missing-card-${nonce}`); return { id: text }; }; const row = make(); page.getByTestId(row.id);').length).toBeGreaterThan(0)
+})
+
+test("only a positive same-receiver delta guard removes a non-card kind claim", () => {
+  const check = (source: string) => extractLiterals("/fixture/frames.ts", source)
+    .flatMap(literal => [...violationsOf(literal, vocabularies)])
+  expect(check('frames.filter(frame => frame.type === "delta" && frame.kind === "text")')).toEqual([])
+  for (const source of [
+    'frame.type !== "delta" && frame.kind === "text"',
+    'frame.type === "delta" || frame.kind === "text"',
+    'other.type === "delta" && frame.kind === "text"',
+    'frame.kind === "text"'
+  ]) expect(check(source).map(value => value.rule)).toContain("card-kind")
 })
 
 describe("the pin catches the 2026-08-15 rename it was built for", () => {

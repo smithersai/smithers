@@ -188,6 +188,11 @@ export const createRunsController = (
     ])
     if (listed.status !== "ok" && !attention) return listed.message
     const observed = listed.status === "ok" ? listed.value : []
+    for (const summary of observed) await store.dispatch({ type: "gateway.run.observed", actor: "system",
+      observation: { scope: { repo, ...binding, runId: summary.runId }, summary } }).isPersisted.promise
+    if (inbox?.status === "ok") for (const runId of new Set(inbox.value.map(row => row.runId))) {
+      await reconcileRunApprovals(store, { repo, ...binding, runId }, inbox.value.filter(row => row.runId === runId))
+    }
     const pending = inbox?.status === "ok" ? inbox.value.filter(row => row.status === "pending") : []
     const errors = [listed.status === "error" ? listed.message : undefined, inbox?.status === "error" ? inbox.message : undefined]
       .filter((error): error is string => error !== undefined)
@@ -250,6 +255,9 @@ export const createRunsController = (
     if (summary.status !== "ok") return summary.message
     if (summary.value === undefined) return `There's no run ${runId} on ${repo}.`
     const row = summary.value
+    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope: target, summary: row, summaryCursor: summary.cursor
+    } }).isPersisted.promise
     workflows.upsertRunCard({
       runId,
       repo,
@@ -399,16 +407,20 @@ export const createRunsController = (
     const following = follow === true ? card.payload.follow !== true : false
     const transcript = await gateway.transcript(target.repo, runId, { workspaceId: target.workspaceId })
     if (transcript.status !== "ok") return transcript.message
+    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope: target, transcript: [...transcript.value], transcriptCursor: transcript.cursor
+    } }).isPersisted.promise
     patchRunCard(target, {
       facet: "transcript",
       follow: following,
-      transcriptRows: transcript.value.map((row) => ({
+      transcriptAtRevision: following ? undefined : store.session().revision,
+      ...(following ? {} : { transcriptRows: transcript.value.map((row) => ({
         sequence: row.sequence,
         ...(row.turn === undefined ? {} : { turn: row.turn }),
         ...(row.at === undefined ? {} : { at: row.at }),
         kind: row.kind,
         text: row.text
-      }))
+      })) })
     })
     if (following) pokeRun(target)
     return { value: following ? `following run=${runId}` : `transcript run=${runId}` }
@@ -437,9 +449,11 @@ export const createRunsController = (
     if (card === undefined) return `Open the run first (runs.open ${runId}) — the events live on its card.`
     const events = await gateway.runEvents(target.repo, runId, { workspaceId: target.workspaceId })
     if (events.status !== "ok") return events.message
+    await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope: target, journal: { mode: "full", events: [...events.value] }
+    } }).isPersisted.promise
     patchRunCard(target, {
-      facet: "events",
-      events: events.value.map((event) => ({ ...(event as unknown as Record<string, unknown>) }))
+      facet: "events"
     })
     return { value: `events run=${runId}` }
   }
@@ -613,7 +627,7 @@ export const createRunsController = (
     if (provisioned !== true) return provisioned
     const inbox = await gateway.approvalsInbox(repo, binding)
     if (inbox.status !== "ok") return inbox.message
-    for (const runId of new Set(inbox.value.map((row) => row.runId))) reconcileRunApprovals(store, { repo, runId, ...binding }, inbox.value)
+    for (const runId of new Set(inbox.value.map((row) => row.runId))) await reconcileRunApprovals(store, { repo, runId, ...binding }, inbox.value.filter(row => row.runId === runId))
     const pending = inbox.value.filter((row) => row.status === "pending")
     const cardId = `approvals-inbox-${repo}${binding.workspaceId === undefined ? "" : `-${binding.workspaceId}`}`
     const existing = store.collections.cards.get(cardId)
@@ -669,7 +683,7 @@ export const createRunsController = (
     if (provisioned !== true) return provisioned
     const approvals = await gateway.approvals(repo, runId, binding)
     if (approvals.status !== "ok") return approvals.message
-    reconcileRunApprovals(store, target, approvals.value)
+    await reconcileRunApprovals(store, target, approvals.value)
     const alreadyOpen = [...store.collections.cards.values()].filter(
       (card) =>
         store.approvalRequest(card.id) !== undefined && card.kind === "approval" && card.payload.runId === runId &&

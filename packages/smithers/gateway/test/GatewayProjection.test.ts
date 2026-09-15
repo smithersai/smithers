@@ -18,8 +18,11 @@
  * no open call, a settled call whose value is not a string.
  */
 import type { ControlSchema } from "@smthrs/control"
+import { ExecutionFact } from "@smthrs/journal"
+import * as Schema from "effect/Schema"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
+import * as Diagnosis from "../src/Diagnosis.ts"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 
 let sequence = 0
@@ -49,6 +52,57 @@ const run: ControlSchema.RunSummary = {
 }
 
 describe("GatewayProjection.runSummary", () => {
+  it("maps the bound native round's pending, waiting and terminal state without inventing missing evidence", () => {
+    const binding = event("control.engine.bound", { version: 1, controlRunId: run.runId, executionId: "native" })
+    for (
+      const [status, reason, expected] of [
+        ["pending", null, "accepted"],
+        ["suspended", "event", "parked"],
+        ["suspended", null, "parked"],
+        ["failed", null, "failed"]
+      ] as const
+    ) {
+      const observation = Schema.decodeUnknownSync(ExecutionFact.Observation)({
+        executionId: "native",
+        flowName: "agent/run",
+        status,
+        createdAtMs: 1,
+        startedAtMs: null,
+        finishedAtMs: status === "failed" ? 2 : null,
+        parentRunId: "parent",
+        lineageId: "native",
+        roundOrdinal: 0,
+        cancelRequestedAtMs: null,
+        waiting: reason === null ? null : { reason, wakeAtMs: null, tokenDigest: null }
+      })
+      const fact = event("control.engine.event", {
+        version: 1,
+        executionId: "native",
+        generation: 0,
+        sequence: 0,
+        eventType: "flows.engine.run-decision",
+        payload: { decision: "created", executionFact: { version: 1, baseline: "created", observation } }
+      })
+      const summary = GatewayProjection.runSummary({
+        ...run,
+        executionObservation: "observed",
+        executionView: { root: observation, current: observation }
+      }, [binding, fact])
+      expect(summary).toMatchObject({
+        status: expected,
+        parentRunId: "parent",
+        executionProvenance: { source: "events" }
+      })
+      expect(summary.waitingReason).toBe(reason ?? undefined)
+    }
+    const missing = GatewayProjection.runSummary({ ...run, executionObservation: "observed" }, [binding])
+    expect(missing.status).toBe(run.status)
+    expect(missing.executionProvenance?.source).toBe("legacy-observation")
+    const unbound = GatewayProjection.runSummary({ ...run, executionObservation: "observed" }, [])
+    expect(unbound.status).toBe(run.status)
+    expect(unbound.executionProvenance).toBeUndefined()
+  })
+
   it("carries only the optional fields the run actually has", () => {
     const row = GatewayProjection.runSummary(run, [])
     expect(row).toMatchObject({ runId: "run-1", flowId: "deploy", status: "running", createdAt: 10, updatedAt: 20 })
@@ -87,6 +141,100 @@ describe("GatewayProjection.runSummary", () => {
 })
 
 describe("GatewayProjection.runTree", () => {
+  it("correlates same-name overlapping calls that settle in reverse order, including failure", () => {
+    const events = [
+      event("control.agent.cell-call-started", { callId: "first", flowName: "write", input: { path: "a" } }, 1),
+      event("control.agent.cell-call-started", { callId: "second", flowName: "write", input: { path: "b" } }, 2),
+      event("control.agent.cell-call-settled", {
+        callId: "second",
+        flowName: "write",
+        outcome: "failure",
+        message: "b locked"
+      }, 3),
+      event("control.agent.cell-call-settled", {
+        callId: "first",
+        flowName: "write",
+        outcome: "success",
+        value: "a written"
+      }, 4)
+    ]
+    expect(GatewayProjection.runTree(run, events)).toMatchObject([
+      { nodeId: "call-1", label: "write", status: "completed", startedAt: 1, endedAt: 4 },
+      { nodeId: "call-2", label: "write", status: "failed", startedAt: 2, endedAt: 3 }
+    ])
+    expect(GatewayProjection.nodeOutput(events)).toMatchObject([
+      { nodeId: "call-2", outcome: "failure", output: "b locked", settledAt: 3 },
+      { nodeId: "call-1", outcome: "success", output: "a written", settledAt: 4 }
+    ])
+    expect(GatewayProjection.transcript(events).map((row) => row.callId)).toEqual([
+      "first",
+      "second",
+      "second",
+      "first"
+    ])
+  })
+
+  it("ignores identified duplicates without changing node keys, outputs, transcript or counts", () => {
+    const first = event("control.agent.cell-call-started", { callId: "first", flowName: "write" }, 1)
+    const failed = event("control.agent.cell-call-settled", {
+      callId: "first",
+      flowName: "write",
+      outcome: "failure",
+      message: "locked"
+    }, 2)
+    const second = event("control.agent.cell-call-started", { callId: "second", flowName: "write" }, 3)
+    const events = [first, first, failed, second, failed, first]
+    expect(GatewayProjection.runTree(run, events)).toMatchObject([
+      { nodeId: "call-1", status: "failed", endedAt: 2 },
+      { nodeId: "call-2", status: "running" }
+    ])
+    expect(GatewayProjection.nodeOutput(events)).toHaveLength(1)
+    expect(GatewayProjection.transcript(events)).toHaveLength(3)
+    expect(Diagnosis.digest(events)).toMatchObject({ calls: 2, callsFailed: 1, editsAttempted: 2 })
+  })
+
+  it("never lets unknown or idless settlements steal an identified same-name call", () => {
+    const events = [
+      event("control.agent.cell-call-started", { callId: "actual", flowName: "write" }),
+      event("control.agent.cell-call-settled", { callId: "unknown", flowName: "write", outcome: "failure" }),
+      event("control.agent.cell-call-settled", { flowName: "write", outcome: "success" })
+    ]
+    expect(GatewayProjection.runTree(run, events)).toMatchObject([{ nodeId: "call-1", status: "running" }])
+    expect(GatewayProjection.nodeOutput(events)).toEqual([])
+  })
+
+  it("keeps legacy FIFO and allows a resumed identified settlement to close only a legacy start", () => {
+    const events = [
+      event("control.agent.cell-call-started", { callId: "current", flowName: "write" }, 1),
+      event("control.agent.cell-call-started", { flowName: "write" }, 2),
+      event("control.agent.cell-call-started", { flowName: "write" }, 3),
+      event("control.agent.cell-call-settled", {
+        callId: "resumed",
+        flowName: "write",
+        outcome: "success",
+        value: "legacy first"
+      }, 4),
+      event("control.agent.cell-call-settled", {
+        callId: "resumed",
+        flowName: "write",
+        outcome: "success",
+        value: "duplicate"
+      }, 5),
+      event("control.agent.cell-call-settled", { flowName: "write", outcome: "failure", message: "legacy second" }, 6),
+      event("control.agent.cell-call-settled", {
+        callId: "current",
+        flowName: "write",
+        outcome: "success",
+        value: "current"
+      }, 7)
+    ]
+    expect(GatewayProjection.nodeOutput(events)).toMatchObject([
+      { nodeId: "call-2", output: "legacy first", settledAt: 4 },
+      { nodeId: "call-3", output: "legacy second", settledAt: 6 },
+      { nodeId: "call-1", output: "current", settledAt: 7 }
+    ])
+  })
+
   it("keys each call by the ordinal it opened on, because the emitter names no node", () => {
     const rows = GatewayProjection.runTree(run, [
       event("control.agent.turn-opened", { seat: "opus", contextDigest: "ctx" }),
@@ -227,6 +375,30 @@ describe("GatewayProjection.approvals", () => {
     })
     // Submitted back unchanged; `requestId` is what `Control.signal` routes on.
     expect(row.payload.target).toMatchObject({ _tag: "Node", runId: "run-1", requestId: "coding-clarification#1" })
+  })
+
+  it("binds decisions over observed human waits to their exact request and digest", () => {
+    const summary = { ...run, status: "waiting-approval" as const, pendingWaits: [humanWait] }
+    const target = {
+      _tag: "Node" as const,
+      runId: "run-1",
+      requestId: "coding-clarification#1",
+      digest: humanWait.token,
+      envelope: { capabilities: [], flows: [], budget: {} }
+    }
+    const decision = (digest: string) =>
+      event("control.approval.approved", {
+        factVersion: 1,
+        tokenId: target.requestId,
+        approvalTarget: { ...target, digest }
+      })
+    expect(GatewayProjection.approvals([decision("other-wait")], summary)[0]?.status).toBe("pending")
+    expect(GatewayProjection.approvals([event("control.approval.denied", {})], summary)[0]?.status).toBe("pending")
+    expect(GatewayProjection.approvals([decision(humanWait.token)], summary)[0]).toMatchObject({
+      status: "approved",
+      waitRunId: humanWait.runId,
+      requestId: target.requestId
+    })
   })
 
   it("still renders a wait that declared no question", () => {

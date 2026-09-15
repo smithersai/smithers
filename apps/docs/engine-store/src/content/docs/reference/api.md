@@ -237,6 +237,24 @@ that snapshot when the effect fails or dies, and treats a nested call on the
 same fiber as a savepoint. It is not durable: a process crash loses the whole
 in-memory state, not only the uncommitted part.
 
+When engine state and the journal participate together, `StateTransaction`
+takes the engine-state boundary first and the journal writer inside it. Native
+lifecycle admission, direct cancellation, deferred completion and clock
+scheduling share this order. A refused park or owner transition rolls both
+stores back, including a preexisting memory waiting marker. The memory commit
+callback releases its gate at SQL commit, before post-commit subscribers or
+compaction capture can read it. Failure after publication starts cannot undo
+committed state.
+
+`ExecutionFacts` captures the semantic native lifecycle inside the same write.
+Its additive `treeVersion: 1` metadata includes parent attachment policy and a
+redacted waiting question plus its named point. Opaque wake tokens remain in
+the operational waiting row; the fact carries only their digest. The native
+fact fold derives attached descendant human waits and compares them with a
+coherent executor observation. Old v1 facts without the tree extension retain
+legacy tree-wait provenance. Raw waiting request JSON is available through the
+protected execution snapshot reader, independently of its redacted event view.
+
 ### Addresses, rows, and outcomes
 
 | Export                    | Shape                                                                                                |
@@ -245,8 +263,8 @@ in-memory state, not only the uncommitted part.
 | `DeferredRow`             | the address plus `exit: unknown` and optional `metadata`                                             |
 | `ClockAddress`            | `{ flowName, executionId, clockName }`                                                               |
 | `ClockRow`                | the address plus `deferredName`, an absolute due time, and `completedAtMs: number \| null`           |
-| `Waiting`                 | `{ reason, wakeAt?, token? }`                                                                        |
-| `WaitingRow`              | `{ runId, reason, wakeAt: number \| null, token: string \| null }`                                   |
+| `Waiting`                 | `{ reason, wakeAt?, token?, request?: string }`                                                      |
+| `WaitingRow`              | `{ runId, reason, wakeAt: number \| null, token: string \| null, request?: Json }`                   |
 | `WaitingReason`           | a non-empty string; the open taxonomy the driver writes (`timer`, `event`, `released`, `quarantine`) |
 | `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |

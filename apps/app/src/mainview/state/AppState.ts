@@ -1,4 +1,8 @@
 import { BillingPlanSchema, SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
+import type { PendingRecoveryScope } from "./PendingRecovery"
+import type { CommandIntent } from "./CommandIntent"
+import type { RuntimeScope, RuntimeRunObservation, RuntimeApprovalSubmission } from "./RuntimeProjection"
+import type { ApprovalRow } from "@smthrs/gateway/GatewayProjection"
 import { INPUT_MODES, type InputMode } from "./InputMode"
 import {
   CardPatchSchema,
@@ -22,6 +26,7 @@ import type { LocalRepositoryInspection, RepositoryAccess } from "@smthrs/rpc/Na
 import { z } from "zod"
 import { FLOW_NAMES } from "../flows/FlowName"
 import { CloudWikiState } from "../wiki/CloudWikiState"
+import { PRACTICE_REPO } from "./practice/PracticeRepository"
 
 export {
   CardPatchSchema,
@@ -453,6 +458,9 @@ export const repoIdFromRemote = (remote: string | null | undefined): string | nu
 export const parseRepoSelection = (
   token: string
 ): { readonly repoId: string; readonly copyId?: string } | { readonly localCopyId: string } | null => {
+  // The bundled repository is a real context source outside onboarding too.
+  // Other namespaced values are not repository identifiers or native paths.
+  if (token === PRACTICE_REPO) return { repoId: token }
   const hash = token.indexOf("#")
   const head = hash === -1 ? token : token.slice(0, hash)
   if (/^[\w.-]+\/[\w.-]+$/.test(head)) {
@@ -1148,6 +1156,20 @@ export const CardHistorySchema = z.object({ id: z.string(), index: z.number().in
 export type CardHistory = z.infer<typeof CardHistorySchema>
 
 export type AppTransition =
+  | { type: "gateway.run.observed"; actor: "system"; observation: RuntimeRunObservation }
+  | { type: "gateway.run.observer.changed"; actor: "system"; scope: RuntimeScope; observer: { state: "connected" | "reconnecting" | "quiet" | "stopped"; action?: "retry"; error?: string; quietForMs?: number } }
+  | { type: "gateway.approvals.observed"; actor: "system"; scope: RuntimeScope; rows: ReadonlyArray<ApprovalRow> }
+  | { type: "gateway.approval.submission.changed"; actor: "user" | "system"; submission: RuntimeApprovalSubmission }
+  | { type: "approval.answer.changed"; actor: "user"; id: string; question: string; text: string }
+  | { type: "http.turn.started"; actor: "user" | "smithers"; attemptId: string; turnId: string; text: string; retry: boolean; journal: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalRequest }
+  | { type: "http.leg.prepared"; actor: "system"; attemptId: string; journal: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalRequest }
+  | { type: "http.leg.accepted"; actor: "system"; attemptId: string; legId: string; cursor: import("@smthrs/rpc/AgentTurnJournal").AgentTurnCursor }
+  | { type: "http.turn.batch.received"; actor: "system"; attemptId: string; legId: string; batch: import("@smthrs/rpc/AgentTurnJournal").AgentTurnBatch }
+  | { type: "http.tool.started"; actor: "smithers"; attemptId: string; legId: string }
+  | { type: "http.tool.settled"; actor: "smithers"; attemptId: string; legId: string; result: string }
+  | { type: "http.turn.interrupted"; actor: "user" | "system"; attemptId: string; status: "failed" | "cancelled" | "ambiguous"; detail: string; silent?: boolean }
+  | { type: "command.intent.accepted"; actor: Actor; id: string; name: string; source: CommandIntent["source"]; invocationKey?: string }
+  | { type: "command.intent.settled"; actor: Actor; id: string; outcome: NonNullable<CommandIntent["outcome"]>; retryable?: boolean }
   | { type: "practice.issue.updated"; actor: Actor; id: string; card: Extract<Card, { kind: "issue" }> }
   | { type: "repo.update.observed"; actor: Actor; context: import("./RepositoryContext").RepositoryContext; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
   | { type: "repo.update.published"; actor: Actor; card: Extract<Card, { kind: "repo-update" }>; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
@@ -1157,10 +1179,10 @@ export type AppTransition =
   | { type: "card.view.loaded"; actor: Actor; card: Card }
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
   /** Boot-only restoration of one crash-recorded card projection and its local history. */
-  | { type: "card.recovered"; actor: "system"; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory; explicitTutorial?: true }
+  | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory; explicitTutorial?: true }
   | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
-  | { type: "composer.changed"; actor: Actor; draft: string }
+  | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string }
   | {
     type: "message.response.delta"
@@ -1272,7 +1294,7 @@ export type AppTransition =
      * as a transition; rendered as a transcript trace line only while verbose.
      */
     type: "flow.invoked"
-    actor: "user" | "smithers"
+    actor: Actor
     name: string
     args: string | null
     hidden: boolean
@@ -1404,6 +1426,7 @@ export type AppTransition =
   | {
     type: "world.document.upserted"
     actor: Actor
+    recoveryScope?: PendingRecoveryScope
     document: Omit<WorldDocument, "updatedAt" | "updatedBy" | "revision">
     /*
      * false = write without stealing the world surface's selection. The

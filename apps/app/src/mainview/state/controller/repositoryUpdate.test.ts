@@ -1,10 +1,11 @@
+import { projectRepositoryUpdate } from "../CardProjection"
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { memoryStorage } from "../TestFixtures"
 import { createIssuesSeam } from "../seams/IssuesSeam"
 import { createLandingsSeam } from "../seams/LandingsSeam"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { initialGuide } from "../AppState"
+import { CardSchema, initialGuide } from "../AppState"
 import { createRepositoryUpdate } from "./repositoryUpdate"
 import type { SeamContext } from "../seams/SeamContext"
 import { PRACTICE_REPO } from "../practice/PracticeRepository"
@@ -63,6 +64,21 @@ test("background reads persist observations without announcing or displaying the
   expect([...restored.store.collections.cards.values()]).toEqual([overview])
 })
 
+test("startup's repository read discards its pending result once its controller closes", async () => {
+  const { store, ctx } = await setup()
+  let disposed = false
+  const actions = createRepositoryUpdate(ctx, () => disposed)
+  const before = store.session().revision
+  const pending = actions.updateRepo(PRACTICE_REPO)
+  disposed = true
+  await store.dispose?.()
+  expect(await pending).toBe("The controller is closed.")
+  expect(store.session().revision).toBe(before)
+  expect(store.collections.repositoryContexts.size).toBe(0)
+  expect(store.collections.repositoryNotifications.size).toBe(0)
+  expect(await actions.updateRepo(PRACTICE_REPO)).toBe("The controller is closed.")
+})
+
 
 test("successful issue and PR navigation marks their exact versions read, including Back and reload", async () => {
   const { store, ctx, actions, storage } = await setup()
@@ -72,7 +88,8 @@ test("successful issue and PR navigation marks their exact versions read, includ
   const issue = [...store.collections.repositoryNotifications.values()].find(row => row.kind === "issue" && row.number === 3)!
   expect(issue.readVersion).toBe(issue.version)
   await store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
-  const returned = store.collections.cards.get(overview.id)
+  const saved = store.collections.cards.get(overview.id)
+  const returned = saved?.kind === "repo-update" ? projectRepositoryUpdate(saved, [...store.collections.repositoryNotifications.values()], [...store.collections.notificationReceipts.values()]) : saved
   expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 3)?.read).toBe(true)
   expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 2)?.read).toBe(false)
   await createLandingsSeam(ctx).viewLanding(4, PRACTICE_REPO)
@@ -80,7 +97,8 @@ test("successful issue and PR navigation marks their exact versions read, includ
   expect(pr.readVersion).toBe(pr.version)
   const restored = await setup(storage)
   await restored.store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
-  const persisted = restored.store.collections.cards.get(overview.id)
+  const restoredCard = restored.store.collections.cards.get(overview.id)
+  const persisted = restoredCard?.kind === "repo-update" ? projectRepositoryUpdate(restoredCard, [...restored.store.collections.repositoryNotifications.values()], [...restored.store.collections.notificationReceipts.values()]) : restoredCard
   expect(persisted?.kind === "repo-update" && persisted.payload.items.find(item => item.number === 4)?.read).toBe(true)
 })
 
@@ -93,10 +111,18 @@ test("failed detail reads do not consume a matching repository notification", as
     return Response.json([])
   })
   await actions.showRepoOverview("org/repo")
+  const overview = [...store.collections.cards.values()].find(card => card.kind === "repo-update")!
   expect(await createIssuesSeam(ctx).viewIssue(3, "org/repo")).toBe("Unavailable")
   const row = [...store.collections.repositoryNotifications.values()][0]!
   expect(row.readVersion).toBeUndefined()
-  expect([...store.collections.cards.values()][0]?.kind).toBe("repo-update")
+  expect([...store.collections.notificationReceipts.values()]).toEqual([])
+  // The attempted view owns its honest error location; Back retains the unread overview.
+  expect(store.collections.cards.get(overview.id)).toMatchObject({ kind: "status", status: "error", loading: false, body: "Unavailable" })
+  const history = store.collections.cardHistories.get(overview.id)!
+  expect(history.entries.find(card => card.kind === "repo-update")).toMatchObject(CardSchema.parse(overview))
+  await store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
+  const restored = store.collections.cards.get(overview.id)!
+  expect(restored.kind === "repo-update" && projectRepositoryUpdate(restored, [...store.collections.repositoryNotifications.values()], [...store.collections.notificationReceipts.values()]).payload.items[0]?.read).toBe(false)
 })
 
 test("a new notification version arriving during a slow detail read remains unread", async () => {

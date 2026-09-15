@@ -21,7 +21,10 @@ import {
   CHAT_TURN_PATH,
   HEALTH_PATH,
   IDENTITY_ROUTE_PREFIX,
-  TURN_PATH
+  TURN_PATH,
+  TURN_REPLAY_PATH,
+  TURN_RETIRE_PATH,
+  TURN_ERASE_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as Health from "@smthrs/control/Health"
@@ -52,6 +55,8 @@ import {
   LOCAL_SESSION_META
 } from "@smthrs/rpc/LocalSession"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
+import { createNativeTurnJournal } from "./NativeTurnJournal"
 import { createChatStub } from "./ChatStub"
 import { handleBrowserFetch } from "./BrowserFetch"
 import { createCloudAgent } from "./CloudAgent"
@@ -735,6 +740,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const repositoryAuthority = createRepositoryAuthority()
 
   const writers = new Map<string, TurnWriter>()
+  const turnJournal = createNativeTurnJournal(options.stateDir)
   const publishFrame = (frame: AgentTurnFrame): void => writers.get(frame.runId)?.write(frame)
   const agent: CloudAgent | undefined = options.chatStub === true
     ? createChatStub(publishFrame)
@@ -797,16 +803,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       sandbox: { platform: process.platform, enforced: sandboxEnforced(sandboxHost) }
     }))
 
-  const handleChatTurn: RouteHandler = async ({ request }) => {
+  const startChatTurn = (body: StartAgentTurnRequest): Response => {
     if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
-    // Bounded by bytes received, not by a declared length: a chunked turn
-    // carries no Content-Length and would otherwise be read whole.
-    const parsed = await readJson(request, MAX_BODY_BYTES)
-    if ("error" in parsed) return parsed.error
-    if (!isStartTurnRequest(parsed.body)) {
-      return jsonError("invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
-    }
-    const body = parsed.body
     const runId = body.runId
     if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
     // The writer exists before the agent starts, so a frame published before
@@ -865,8 +863,24 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
     })
   }
+  const handleChatTurn: RouteHandler = async ({ request }) => {
+    // Bound actual bytes; a chunked request carries no Content-Length.
+    const parsed = await readJson(request, MAX_BODY_BYTES)
+    if ("error" in parsed) return parsed.error
+    if (!isStartTurnRequest(parsed.body)) {
+      return jsonError("invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
+    }
+    const body = parsed.body
+    if (body.journal === undefined) return startChatTurn(body)
+    const journal = AgentTurnJournalRequestSchema.safeParse(body.journal)
+    if (!journal.success) return jsonError("invalid_request", "The recorded turn identity is invalid.")
+    return turnJournal.start(request, { ...body, journal: journal.data }, () => startChatTurn(body))
+  }
   router.add("POST", TURN_PATH, handleChatTurn)
   router.add("POST", CHAT_TURN_PATH, handleChatTurn)
+  router.add("POST", TURN_REPLAY_PATH, ({ request }) => turnJournal.access(request, false))
+  router.add("POST", TURN_RETIRE_PATH, ({ request }) => turnJournal.access(request, true))
+  router.add("POST", TURN_ERASE_PATH, ({ request }) => turnJournal.access(request, true, true))
 
   const handleChatCancel: RouteHandler = async ({ request }) => {
     if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
@@ -1445,6 +1459,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         () => repoTargets.stop(),
         () => repositoryAuthority.clear()
       ].map(async (cleanup) => cleanup()))
+      // Producer cancellation runs before the journal closes. Await stream
+      // finalizers so their terminal observations survive this host restart.
+      results.push(...await Promise.allSettled([turnJournal.close()]))
       const errors = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
       if (errors.length > 0) throw new AggregateError(errors, "Local server shutdown failed.")
     }

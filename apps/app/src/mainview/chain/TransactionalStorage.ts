@@ -1,7 +1,9 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import type { StorageApi } from "@tanstack/db"
+import { DurableStorageConflictError } from "./DurableCollection"
 import { retainRecoveryCopy } from "./RecoveryCopy"
 import { decodeStoredRow } from "./StoredRowDecoder"
+import { eraseLocalRecoveryCopies, privacyStorage, permittedRows, type PermittedStorageRows } from "./PrivacyRetirement"
 
 /*
  * The transactional storage host for the localStorage backend (see
@@ -26,9 +28,47 @@ export const STAGED_ENVELOPE_STORAGE_KEY = `${ENVELOPE_STORAGE_KEY}.staged`
 /** The envelope shape version this build writes. */
 export const ENVELOPE_VERSION = 1
 
-/** Raw envelopes retained outside the live namespace (never deleted). */
+/** Raw envelopes retained until an explicit durable privacy retirement. */
 export const ENVELOPE_QUARANTINE_PREFIX = "smithers-mvp-quarantine.store."
 export const ROW_QUARANTINE_PREFIX = "smithers-mvp-quarantine.row."
+
+export interface StorageWriterLease {
+  /** Release only after the AppStore has stopped accepting and flushed writes. */
+  readonly release: () => Promise<void>
+}
+
+/** Injectable protocol; production passes the browser's origin-wide Web Locks manager. */
+export interface StorageWriterLockManager {
+  readonly request: (
+    name: string,
+    options: { readonly mode: "exclusive"; readonly ifAvailable: true },
+    callback: (lock: object | null) => Promise<void>
+  ) => Promise<void>
+}
+
+/**
+ * Hold one browser writer for the complete AppStore lifetime, including open,
+ * migration and synchronous envelope commits. CAS without this lock is not
+ * atomic across tabs. An isolated injected host can instead serialize itself.
+ * The caller must release on boot failure and after store disposal, and must
+ * never select a different persistent backend when acquisition is refused.
+ */
+export const acquireLocalStorageWriter = async (
+  locks: StorageWriterLockManager | undefined = globalThis.navigator?.locks
+): Promise<StorageWriterLease> => {
+  if (locks === undefined) {
+    throw new Error("This browser cannot safely own local storage without Web Locks. Opening was refused.")
+  }
+  const acquired = Promise.withResolvers<StorageWriterLease>()
+  const released = Promise.withResolvers<void>()
+  const request = locks.request(`${ENVELOPE_STORAGE_KEY}.writer`, { mode: "exclusive", ifAvailable: true }, async (lock) => {
+    if (lock === null) throw new DurableStorageConflictError("localStorage writer ownership")
+    acquired.resolve({ release: async () => { released.resolve(); await request } })
+    await released.promise
+  })
+  void request.catch(acquired.reject)
+  return acquired.promise
+}
 
 export class UnsupportedStorageEnvelopeError extends Error {
   constructor(readonly found: number, readonly supported: number) {
@@ -42,8 +82,15 @@ export interface LegacyCollectionSpec {
   readonly schema: StandardSchemaV1
   /** Execution evidence cannot be removed by generic row quarantine. */
   readonly invalidRows?: "quarantine" | "refuse"
+  /** Never admit an incomplete authority or snapshot as a new baseline. */
+  readonly partialLoad?: "refuse"
   readonly validateKey?: (key: string, data: unknown) => boolean
+  /** Only projected caches may opt in. Verify complete independent authority;
+   * absence, invalid authority or an exception must never authorize recovery. */
+  readonly verifyRecoveryAuthority?: (rows: ValidatedStorageRows) => boolean
 }
+
+export type ValidatedStorageRows = ReadonlyMap<string, ReadonlyArray<unknown>>
 
 export class AuthoritativeStorageError extends Error {
   constructor(readonly collectionId: string) {
@@ -53,6 +100,27 @@ export class AuthoritativeStorageError extends Error {
 
 export const assertRowRecoveryPolicy = (collection: LegacyCollectionSpec, rejected: number): void => {
   if (rejected > 0 && collection.invalidRows === "refuse") throw new AuthoritativeStorageError(collection.id)
+}
+
+/** Run before any repair writes, against the exact candidate snapshot. Strict
+ * evidence always wins over a cache's optional, pure authority verifier. */
+export const assertStoredRowsRecovery = (
+  collections: ReadonlyArray<LegacyCollectionSpec>,
+  rows: ValidatedStorageRows,
+  rejected: ReadonlySet<string>
+): void => {
+  for (const collection of collections) {
+    if (rejected.has(collection.id) && collection.verifyRecoveryAuthority === undefined) {
+      assertRowRecoveryPolicy(collection, 1)
+    }
+  }
+  const verified = new Map<NonNullable<LegacyCollectionSpec["verifyRecoveryAuthority"]>, boolean>()
+  for (const collection of collections) {
+    if (!rejected.has(collection.id) || collection.invalidRows !== "refuse") continue
+    const verify = collection.verifyRecoveryAuthority
+    if (verify !== undefined && !verified.has(verify)) verified.set(verify, verify(rows))
+    if (verify === undefined || verified.get(verify) !== true) assertRowRecoveryPolicy(collection, 1)
+  }
 }
 
 /** App entities use string IDs; historical keys may omit TanStack's prefix. */
@@ -89,6 +157,8 @@ export interface TransactionalStorage {
   readonly recovery: RecoveryOutcome
   /** The quarantine keys this open wrote for unreadable or unsupported shapes. */
   readonly quarantinedKeys: ReadonlyArray<string>
+  /** After a verified privacy checkpoint, discard unknown entries and all old raw copies. */
+  readonly retireRecoveryCopies: (bookkeeping: ReadonlySet<string>, permitted: PermittedStorageRows) => void
 }
 
 export const parseStorageEnvelope = (raw: string): Envelope | undefined => {
@@ -221,12 +291,15 @@ export const openTransactionalStorage = async (
   // or unsupported envelope is authoritative: never resurrect older host keys.
   const adoptLegacy = raw === null || parseStorageEnvelope(raw)?.version === 0
   let normalized = false
+  const decodedRows = new Map<string, ReadonlyArray<unknown>>()
+  const rejectedCollections = new Set<string>()
   for (const collection of options.collections) {
     const key = `smithers-mvp.${collection.id}`
     const collectionRaw = entries[key] ?? (adoptLegacy ? readSource(key) : null)
     if (collectionRaw === null || collectionRaw === undefined) continue
     const validated = await validateStoredRows(collectionRaw, collection.schema, collection.validateKey)
-    assertRowRecoveryPolicy(collection, validated.rejected.length)
+    decodedRows.set(collection.id, [...validated.rows.values()].map(row => row.data))
+    if (validated.rejected.length > 0) rejectedCollections.add(collection.id)
     normalized ||= validated.normalized
     entries[key] = JSON.stringify(Object.fromEntries(validated.rows))
     for (const rejected of validated.rejected) {
@@ -236,6 +309,7 @@ export const openTransactionalStorage = async (
       quarantineWrites.push({ key: quarantineKey, raw: rejected.raw })
     }
   }
+  assertStoredRowsRecovery(options.collections, decodedRows, rejectedCollections)
   // Legacy keys remain untouched as recovery copies. The committed envelope
   // records adoption, including empty collections, so deletion stays deleted.
   if (normalized && raw !== null) {
@@ -252,11 +326,28 @@ export const openTransactionalStorage = async (
   }
 
   let base = new Map<string, string>(Object.entries(entries))
+  // Exact committed bytes include every collection row's version. Reading
+  // through this adapter's mirror cannot detect another adapter's commit.
+  let committedRaw = raw
   let pending: Map<string, string | null> | undefined
   let batchDepth = 0
 
-  const serialize = (next: ReadonlyMap<string, string>): string =>
-    JSON.stringify({ version: ENVELOPE_VERSION, entries: Object.fromEntries(next) })
+  // Most collection strings do not change in a commit. Their JSON escaping is
+  // pure work over immutable bytes; retain only the current encoding per key.
+  // Object.keys preserves JSON's ordering for numeric-looking legacy keys too.
+  const encodedEntries = new Map<string, { readonly raw: string; readonly encoded: string }>()
+  const serialize = (next: ReadonlyMap<string, string>): string => {
+    for (const key of encodedEntries.keys()) if (!next.has(key)) encodedEntries.delete(key)
+    const entries = Object.keys(Object.fromEntries(next)).map(key => {
+      const raw = next.get(key)!
+      const cached = encodedEntries.get(key)
+      if (cached?.raw === raw) return cached.encoded
+      const encoded = `${JSON.stringify(key)}:${JSON.stringify(raw)}`
+      encodedEntries.set(key, { raw, encoded })
+      return encoded
+    })
+    return `{"version":${ENVELOPE_VERSION},"entries":{${entries.join(",")}}}`
+  }
 
   /*
    * The one commit point. Stage the next envelope, commit it with a single
@@ -273,8 +364,12 @@ export const openTransactionalStorage = async (
    */
   const commit = (next: Map<string, string>): void => {
     const serialized = serialize(next)
+    if (host.getItem(ENVELOPE_STORAGE_KEY) !== committedRaw) {
+      throw new DurableStorageConflictError(ENVELOPE_STORAGE_KEY)
+    }
     host.setItem(STAGED_ENVELOPE_STORAGE_KEY, serialized)
     host.setItem(ENVELOPE_STORAGE_KEY, serialized)
+    committedRaw = serialized
     base = next
     // The durable commit point already succeeded. A failed cleanup must not
     // report rollback to the collections; boot can clear the matching stage.
@@ -368,5 +463,19 @@ export const openTransactionalStorage = async (
   // boot and keeps every open's end state committed by construction.
   commit(base)
 
-  return { storage, beginBatch, commitBatch, abortBatch, batch, recovery, quarantinedKeys }
+  const retireRecoveryCopies = (bookkeeping: ReadonlySet<string>, permitted: PermittedStorageRows): void => {
+    if (batchDepth !== 0) throw new Error("Finish the active persistence batch before privacy cleanup.")
+    const raw = privacyStorage(host)
+    const next = new Map<string, string>()
+    for (const collection of options.collections) {
+      const key = `smithers-mvp.${collection.id}`
+      const rows = new Map<string, { readonly versionKey: string }>(Object.entries(JSON.parse(base.get(key) ?? "{}")))
+      const accepted = permitted.get(collection.id)
+      if (accepted === undefined) throw new Error("Privacy cleanup requires every declared collection.")
+      next.set(key, JSON.stringify(Object.fromEntries(permittedRows(rows, accepted))))
+    }
+    commit(next)
+    eraseLocalRecoveryCopies(raw, new Set([...bookkeeping, ENVELOPE_STORAGE_KEY]))
+  }
+  return { storage, beginBatch, commitBatch, abortBatch, batch, recovery, quarantinedKeys, retireRecoveryCopies }
 }

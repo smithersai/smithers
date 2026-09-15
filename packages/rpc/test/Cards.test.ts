@@ -522,11 +522,19 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { capability: "network" },
     full: {
       capability: "network",
-      question: { kind: "confirm", prompt: "Continue?" },
       detail: "POST https://api.github.com",
       runId: "run-1",
       requestId: "gate-1",
       approval: { _tag: "ApprovalTarget.Node", node: "call-3" },
+      answerDraft: { question: "a".repeat(64), text: "The scheduler owns the budget." },
+      question: {
+        kind: "select",
+        prompt: "Which environment?",
+        name: "environment",
+        options: ["staging", "production"],
+        attempt: 1,
+        maxAttempts: 3
+      },
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
@@ -654,6 +662,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       facet: "transcript",
       follow: true,
       transcriptRows: [{ sequence: 1, turn: 1, at: 1_757_000_000_000, kind: "message", text: "reading" }],
+      transcriptAtRevision: 17,
       events: [{ seq: 1, type: "call.started" }],
       selection: "span-3",
       cursorSeq: 41,
@@ -750,6 +759,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         requestId: "gate-1",
         title: "POST https://api.github.com",
         approval: { _tag: "ApprovalTarget.Node", node: "call-3" },
+        answerDraft: { question: "b".repeat(64), text: "Ship the canary first." },
         requestedAt: 1_757_000_000_000,
         decision: "denied",
         decidedAt: 1_757_000_060_000,
@@ -1418,6 +1428,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { repoId: "repo-1", repoName: "smithers", status: "pending", targets: [], warnings: [] },
     full: {
       repoId: "repo-1",
+      repoKey: "/work/smithers",
       repoName: "smithers",
       status: "done",
       targets: [{
@@ -1995,7 +2006,7 @@ const payloadFields = (kind: string): Record<string, z.ZodType> | null => {
 /** True when the schema accepts the field's absence — the "optional so older cards parse" promise. */
 const optional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success
 
-/** Union payloads have variant coverage; object payloads participate in the field audit. */
+/** Union payloads have branch-specific compatibility checks below. */
 const objectKinds = kinds.filter((kind) => payloadFields(kind) !== null)
 
 describe("every persisted card kind", () => {
@@ -2003,7 +2014,7 @@ describe("every persisted card kind", () => {
     expect(Object.keys(FIXTURES).sort()).toEqual([...kinds].sort())
   })
 
-  test("agent and repo-onboarding carry union payloads; other kinds participate in the field audit", () => {
+  test("every union payload has an explicit branch audit below", () => {
     expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent", "repo-onboarding"])
   })
 
@@ -2136,5 +2147,85 @@ describe("the repo-onboarding stages", () => {
   test("a stage outside the four, and a stage missing its own required field, are refused", () => {
     expect(CardSchema.safeParse(card("repo-onboarding", { stage: "abandon", repo: "o/r" })).success).toBe(false)
     expect(CardSchema.safeParse(card("repo-onboarding", { stage: "contribute", repo: "o/r" })).success).toBe(false)
+  })
+})
+
+/** Cloud observations retain routing, unknown provider, and transcript identity through persistence. */
+const cloudAgentFixtures: KindFixtures = {
+  minimal: {
+    cloud: true,
+    displayName: "Agent session",
+    sessionId: "session-1",
+    repo: "org/repo",
+    provider: null,
+    workspaceId: null,
+    state: "active",
+    transcript: []
+  },
+  full: {
+    cloud: true,
+    statusRollup: statusRollup("session:session-1", "completed", "idle"),
+    displayName: "Review the change",
+    sessionId: "session-1",
+    repo: "org/repo",
+    provider: "codex",
+    workspaceId: "workspace-1",
+    state: "completed",
+    task: "Review the change",
+    transcript: [{
+      id: 7,
+      role: "assistant",
+      sequence: 2,
+      createdAt: "2026-09-15T00:00:00Z",
+      parts: [{ type: "text", text: "The change is ready." }]
+    }],
+    error: "The status refresh failed"
+  }
+}
+
+describe("the persisted local and cloud agent variants", () => {
+  const schema = CardSchema.options.find((option) => option.shape.kind.value === "agent")!.shape.payload
+  const variants = [{ name: "local", fixture: FIXTURES.agent }, { name: "cloud", fixture: cloudAgentFixtures }]
+
+  test("each union arm has one fixture, including every declared optional field", () => {
+    expect(schema).toBeInstanceOf(z.ZodUnion)
+    if (!(schema instanceof z.ZodUnion)) throw new Error("Agent variants must be explicit")
+    expect(schema.options).toHaveLength(variants.length)
+    for (const branch of schema.options) {
+      expect(branch).toBeInstanceOf(z.ZodObject)
+      if (!(branch instanceof z.ZodObject)) throw new Error("Agent variant must be an object")
+      const matches = variants.filter(({ fixture }) => branch.safeParse(fixture.minimal).success)
+      expect(matches).toHaveLength(1)
+      const { minimal, full } = matches[0]!.fixture
+      const fields = branch.shape as Record<string, z.ZodType>
+      expect(Object.keys(full).sort()).toEqual(Object.keys(fields).sort())
+      expect(Object.keys(minimal).sort()).toEqual(
+        Object.keys(fields).filter((field) => !optional(fields[field]!)).sort()
+      )
+    }
+  })
+
+  test.each(variants)("$name rows survive card, patch and snapshot decoding without invented fields", ({ fixture }) => {
+    for (const payload of [fixture.minimal, fixture.full]) {
+      const encoded = JSON.parse(JSON.stringify(card("agent", payload)))
+      const parsed = CardSchema.parse(encoded)
+      expect(parsed.payload).toEqual(payload)
+      expect(CardSchema.parse(parsed)).toEqual(parsed)
+      expect(CardPatchSchema.parse({ kind: "agent", payload })).toEqual({ kind: "agent", payload })
+      expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [encoded] }).cards).toEqual([parsed])
+    }
+  })
+
+  test("cloud observations require their discriminator, routing, and transcript identity", () => {
+    for (const field of ["cloud", "repo", "sessionId", "transcript"]) {
+      const payload = { ...cloudAgentFixtures.minimal }
+      delete payload[field]
+      expect(CardSchema.safeParse(card("agent", payload)).success).toBe(false)
+    }
+    expect(CardSchema.safeParse(card("agent", { ...cloudAgentFixtures.minimal, provider: "guessed" })).success).toBe(
+      false
+    )
+    expect(CardSchema.safeParse(card("agent", { ...cloudAgentFixtures.minimal, transcript: [{ id: "7" }] })).success)
+      .toBe(false)
   })
 })

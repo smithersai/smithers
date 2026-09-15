@@ -42,3 +42,21 @@ it("fails a drifted approved module explicitly instead of parking it on an ordin
   expect(result).toBeDefined()
   expect(JSON.parse(result!)).toMatchObject({ runtime: "node", drift: true, passed: true })
 }, 1_205_000)
+
+for (const runtime of ["node", "bun"]) {
+  it(
+    `${runtime} commits direct native cancellation intent before publishing it through the control bridge`,
+    async () => {
+      const { stdout } = await execute(runtime, [
+        ...(runtime === "node" ? ["--experimental-strip-types"] : []),
+        fixture,
+        runtime,
+        "cancel"
+      ], { timeout: 1_200_000, maxBuffer: 1024 * 1024 })
+      const result = stdout.trim().split("\n").findLast((line) => line.startsWith("{\"runtime\""))
+      expect(result).toBeDefined()
+      expect(JSON.parse(result!)).toMatchObject({ runtime, cancel: true, passed: true })
+    },
+    1_205_000
+  )
+}

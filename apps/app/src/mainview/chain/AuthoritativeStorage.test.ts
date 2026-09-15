@@ -44,7 +44,15 @@ describe("localStorage recovery cannot discard execution authority", () => {
         if (collection === "app-retired-chain-lineages") {
           await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
         }
+        await store.dispose?.()
         const envelope = JSON.parse(storage.getItem(ENVELOPE_STORAGE_KEY)!)
+        // This fixture represents legacy execution authority. A current store's
+        // verified app journal can rebuild these two projected caches; removing
+        // its four authority collections keeps this refusal test about the
+        // older store whose chain evidence is its only accepted source.
+        for (const id of ["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
+          delete envelope.entries[`smithers-mvp.${id}`]
+        }
         const key = `smithers-mvp.${collection}`
         const rows = JSON.parse(envelope.entries[key]) as Record<string, { versionKey: unknown; data: { id: string } }>
         if (corruption === "invalid-row") Object.values(rows)[0]!.versionKey = 123

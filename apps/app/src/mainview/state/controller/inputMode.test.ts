@@ -1,3 +1,4 @@
+import { memoryStorage } from '../TestFixtures'
 import { expect, test } from 'bun:test'
 import { createAppStore } from '../AppStore'
 import { createInputModeController } from './inputMode'
@@ -31,7 +32,7 @@ test('mode persists without opening Chat; only the next Chat gesture starts dict
 })
 
 test('closing Chat while its open persists cannot start the microphone later', async () => {
-  const store = await createAppStore({ kind: 'localStorage', storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
+  const store = await createAppStore({ kind: 'localStorage', storage: memoryStorage() })
   let finish!: () => void, starts = 0
   const pending = new Promise<void>(resolve => { finish = resolve })
   const modes = createInputModeController(store, {
@@ -48,7 +49,7 @@ test('closing Chat while its open persists cannot start the microphone later', a
 })
 
 test('an unavailable persisted Dictation preference falls back to Normal and never fails Chat', async () => {
-  const store = await createAppStore({ kind: 'localStorage', storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
+  const store = await createAppStore({ kind: 'localStorage', storage: memoryStorage() })
   let starts = 0
   const modes = createInputModeController(store, {
     actor: () => 'user', cancelDictation: () => {}, startDictation: () => { starts++; return 'unavailable' },

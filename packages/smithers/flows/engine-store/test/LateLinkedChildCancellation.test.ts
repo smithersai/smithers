@@ -297,6 +297,8 @@ describe("the order the cancellation transaction writes in", () => {
     Effect.gen(function*() {
       const order = yield* run(Effect.gen(function*() {
         const engineState = yield* DurableEngineState.DurableEngineState
+        const actual = yield* RunStore.RunStore
+        yield* actual.create("ordering-parent", stateJson)
         const observed: Array<string> = []
         const observing: DurableEngineState.Service = {
           ...engineState,
@@ -306,14 +308,14 @@ describe("the order the cancellation transaction writes in", () => {
               return []
             })
         }
-        const store = RunStore.makeNoop({
+        const store: RunStore.Service = {
+          ...actual,
           lineage: () => Effect.succeed([]),
           requestCancel: (runId, nowMs) =>
             Effect.sync(() => {
               observed.push(`request:${runId}`)
-              return { _tag: "CancelRequested" as const, requestedAtMs: nowMs }
-            })
-        })
+            }).pipe(Effect.andThen(actual.requestCancel(runId, nowMs)))
+        }
         const driver = yield* makeDriver("ordering").pipe(
           Effect.provideService(DurableEngineState.DurableEngineState, observing),
           Effect.provideService(RunStore.RunStore, store)
@@ -330,6 +332,8 @@ describe("the order the cancellation transaction writes in", () => {
     Effect.gen(function*() {
       const requested = yield* run(Effect.gen(function*() {
         const engineState = yield* DurableEngineState.DurableEngineState
+        const actual = yield* RunStore.RunStore
+        yield* Effect.forEach(["parent", "left", "right", "leaf"], (runId) => actual.create(runId, stateJson))
         const graph: Readonly<Record<string, ReadonlyArray<DurableEngineState.RunParentEdge>>> = {
           parent: [
             { parentId: "parent", childId: "left", seq: 1 },
@@ -344,14 +348,14 @@ describe("the order the cancellation transaction writes in", () => {
           runChildren: (parentId) => Effect.succeed(graph[parentId] ?? [])
         }
         const observed: Array<string> = []
-        const store = RunStore.makeNoop({
+        const store: RunStore.Service = {
+          ...actual,
           lineage: () => Effect.succeed([]),
           requestCancel: (runId, nowMs) =>
             Effect.sync(() => {
               observed.push(runId)
-              return { _tag: "CancelRequested" as const, requestedAtMs: nowMs }
-            })
-        })
+            }).pipe(Effect.andThen(actual.requestCancel(runId, nowMs)))
+        }
         const driver = yield* makeDriver("diamond-cycle").pipe(
           Effect.provideService(DurableEngineState.DurableEngineState, cyclic),
           Effect.provideService(RunStore.RunStore, store)

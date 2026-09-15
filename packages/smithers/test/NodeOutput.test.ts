@@ -24,6 +24,44 @@ const settled = (flowName: string, outcome: string, value: unknown, message?: st
   event("control.agent.cell-call-settled", { flowName, outcome, value, message })
 
 describe("the projection", () => {
+  it("joins concurrent calls by ID in reverse settlement order and ignores duplicate deliveries", () => {
+    const first = { callId: "first", flowName: "write", input: { path: "a" } }
+    const second = { callId: "second", flowName: "write", input: { path: "b" } }
+    const failure = { callId: "second", flowName: "write", outcome: "failure", message: "denied" }
+    const start = event("control.agent.cell-call-started", first)
+    const nodes = NodeOutput.project([
+      start,
+      event("control.agent.cell-call-started", second),
+      event("control.agent.cell-call-started", first),
+      event("control.agent.cell-call-settled", failure),
+      event("control.agent.cell-call-settled", { callId: "first", flowName: "write", outcome: "success", value: "a" }),
+      event("control.agent.cell-call-settled", failure)
+    ])
+    expect(nodes).toHaveLength(2)
+    expect(nodes[0]).toMatchObject({
+      nodeId: "write#1",
+      callId: "first",
+      input: { path: "a" },
+      value: "a",
+      outcome: "success",
+      startedSequence: start.sequence
+    })
+    expect(nodes[1]).toMatchObject({ nodeId: "write#2", callId: "second", outcome: "failure", message: "denied" })
+    expect(nodes[0]!.settledSequence).toBeGreaterThan(nodes[1]!.settledSequence!)
+  })
+
+  it("allows upgraded legacy settlements without letting unknown IDs steal identified starts", () => {
+    const nodes = NodeOutput.project([
+      event("control.agent.cell-call-started", { callId: "current", flowName: "read" }),
+      event("control.agent.cell-call-settled", { callId: "unknown", flowName: "read", value: "orphan" }),
+      started("read"),
+      event("control.agent.cell-call-settled", { callId: "resumed", flowName: "read", value: "legacy" }),
+      settled("read", "success", "cannot steal current")
+    ])
+    expect(nodes[0]).toMatchObject({ nodeId: "read#1", outcome: "pending" })
+    expect(nodes[1]).toMatchObject({ nodeId: "read#2", outcome: "success", value: "legacy" })
+  })
+
   it("numbers each flow's calls from one and records what they produced", () => {
     const nodes = NodeOutput.project([
       started("read", { path: "a.ts" }),

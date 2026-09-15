@@ -4,9 +4,10 @@ import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { Ownership } from "@smthrs/run-store"
 import { Duration } from "effect"
-import { LiveTutorialRunSchema, type LiveTutorialRun, type LiveTutorialOperation, type LiveTutorialStart } from "@smthrs/rpc/LiveTutorial"
+import type { LiveTutorialRun, LiveTutorialOperation, LiveTutorialStart } from "@smthrs/rpc/LiveTutorial"
 import type { Executor } from "../../tutorial-executor/src/KubernetesExecutor"
 import type { AgentAnswer } from "./agent"
+import { TutorialJournal } from "./TutorialJournal"
 
 export interface Dependencies {
   ensure(session:string):Promise<Executor>
@@ -25,22 +26,24 @@ export function parseDiff(patch:string):NonNullable<LiveTutorialRun["diff"]>{
 export class Coordinator {
   readonly db:DatabaseSync
   private busy=new Set<string>()
+  private readonly ownerId=randomUUID()
   readonly directory:string
   readonly deps:Dependencies
+  readonly journal:TutorialJournal
   constructor(directory:string,deps:Dependencies){
     this.directory=directory;this.deps=deps
     this.db=new DatabaseSync(join(directory,"coordinator.sqlite"))
     this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, session TEXT NOT NULL, playthrough INTEGER NOT NULL, key TEXT NOT NULL, plan TEXT, body TEXT NOT NULL, input TEXT NOT NULL, UNIQUE(session,playthrough,key)); CREATE TABLE IF NOT EXISTS checkpoints (run TEXT NOT NULL,name TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(run,name));")
+    this.journal=new TutorialJournal(this.db)
   }
-  get(session:string,id:string){const row=this.db.prepare("SELECT body FROM runs WHERE id=? AND session=?").get(id,session) as {body:string}|undefined;return row?LiveTutorialRunSchema.parse(JSON.parse(row.body)):undefined}
-  private save(run:LiveTutorialRun){run.updatedAt=Date.now();this.db.prepare("UPDATE runs SET body=? WHERE id=?").run(JSON.stringify(LiveTutorialRunSchema.parse(run)),run.runId)}
+  get(session:string,id:string){return this.journal.get(session,id)}
+  private save(run:LiveTutorialRun){this.journal.save(run)}
   private latest(session:string,playthrough:number,operation:LiveTutorialOperation){
-    const rows=this.db.prepare("SELECT body FROM runs WHERE session=? AND playthrough=? ORDER BY rowid DESC").all(session,playthrough) as {body:string}[]
-    return rows.map(row=>LiveTutorialRunSchema.parse(JSON.parse(row.body))).find(run=>run.operation===operation&&run.phase==="completed")
+    return this.journal.all().reverse().find(({run,input})=>run.sessionId===session&&input.playthrough===playthrough&&run.operation===operation&&run.phase==="completed")?.run
   }
   start(session:string,operation:LiveTutorialOperation,input:LiveTutorialStart):LiveTutorialRun{
-    const prior=this.db.prepare("SELECT body FROM runs WHERE session=? AND playthrough=? AND key=?").get(session,input.playthrough,input.idempotencyKey) as {body:string}|undefined
-    if(prior){const run=LiveTutorialRunSchema.parse(JSON.parse(prior.body));if(run.operation!==operation)throw new Error("The request key belongs to another tutorial action");this.schedule(run,input);return run}
+    const prior=this.journal.all().find(row=>row.run.sessionId===session&&row.input.playthrough===input.playthrough&&row.input.idempotencyKey===input.idempotencyKey)
+    if(prior){const run=prior.run;if(run.operation!==operation)throw new Error("The request key belongs to another tutorial action");this.schedule(run,prior.input);return run}
     if(operation==="implement"){
       const plan=this.latest(session,input.playthrough,"plan")?.plan
       if(!plan||plan.id!==input.planId)throw new Error("Review the latest plan before starting implementation")
@@ -49,34 +52,33 @@ export class Coordinator {
     }
     if(operation==="plan"&&!this.latest(session,input.playthrough,"research"))throw new Error("Research the issue before planning the implementation")
     if(operation==="change"&&!this.latest(session,input.playthrough,"implement"))throw new Error("Finish a verified implementation before creating its Change")
-    const active=this.db.prepare("SELECT body FROM runs WHERE session=? AND playthrough=?").all(session,input.playthrough) as {body:string}[]
-    if(active.some(row=>["queued","running"].includes(JSON.parse(row.body).phase)))throw new Error("The previous tutorial action is still running")
+    const active=this.journal.all().filter(row=>row.run.sessionId===session&&row.input.playthrough===input.playthrough)
+    if(active.some(row=>["queued","running"].includes(row.run.phase)))throw new Error("The previous tutorial action is still running")
     const now=Date.now(),run:LiveTutorialRun={sessionId:session,runId:randomUUID(),operation,phase:"queued",createdAt:now,updatedAt:now,events:[]}
-    this.db.prepare("INSERT INTO runs(id,session,playthrough,key,plan,body,input) VALUES(?,?,?,?,?,?,?)").run(run.runId,session,input.playthrough,input.idempotencyKey,input.planId??null,JSON.stringify(run),JSON.stringify(input))
+    this.journal.create(run,input)
     this.schedule(run,input);return run
   }
   async prune(now=Date.now()){
-    const rows=this.db.prepare("SELECT body,input FROM runs").all() as {body:string,input:string}[]
+    const rows=this.journal.all()
     const retained=new Set<string>(),expired:Array<{run:LiveTutorialRun,scope:string}>=[]
     for(const row of rows){
-      const run=LiveTutorialRunSchema.parse(JSON.parse(row.body)),input=JSON.parse(row.input) as LiveTutorialStart
+      const {run,input}=row
       const scope=createHash("sha256").update(`${run.sessionId}:${input.playthrough}${run.operation === "poc" ? `:poc:${run.runId}` : ""}`).digest("hex")
       if(!this.busy.has(run.runId)&&["completed","failed"].includes(run.phase)&&now-run.updatedAt>2*60*60*1000)expired.push({run,scope})
       else retained.add(scope)
     }
     for(const {run,scope} of expired){
-      this.db.prepare("DELETE FROM checkpoints WHERE run=?").run(run.runId)
-      this.db.prepare("DELETE FROM runs WHERE id=?").run(run.runId)
+      this.journal.remove(run)
       if(!retained.has(scope))await rm(join(this.directory,scope),{recursive:true,force:true})
     }
     if(expired.length)this.db.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
   }
-  resume(){for(const row of this.db.prepare("SELECT body,input FROM runs").all() as {body:string,input:string}[]){const run=LiveTutorialRunSchema.parse(JSON.parse(row.body));if(run.phase==="queued"||run.phase==="running")this.schedule(run,JSON.parse(row.input),Duration.toMillis(Ownership.heartbeatStaleAfter)+1000)}}
-  private schedule(run:LiveTutorialRun,input:LiveTutorialStart,delay=0){if(this.busy.has(run.runId)||!["queued","running"].includes(run.phase))return;this.busy.add(run.runId);void (delay?new Promise<void>(resolve=>setTimeout(resolve,delay)):Promise.resolve()).then(()=>this.execute(run,input)).finally(()=>this.busy.delete(run.runId))}
+  resume(){for(const {run,input} of this.journal.all()){if(run.phase==="queued"||run.phase==="running")this.schedule(run,input,Duration.toMillis(Ownership.heartbeatStaleAfter)+1000)}}
+  private schedule(run:LiveTutorialRun,input:LiveTutorialStart,delay=0){if(this.busy.has(run.runId)||!["queued","running"].includes(run.phase))return;if(!this.journal.claim(run,this.ownerId))return;this.busy.add(run.runId);void (delay?new Promise<void>(resolve=>setTimeout(resolve,delay)):Promise.resolve()).then(()=>this.execute(run,input)).catch(error=>console.error("Tutorial journal did not accept run progress",error)).finally(()=>this.busy.delete(run.runId))}
   private async checkpoint<T>(run:LiveTutorialRun,name:string,work:()=>Promise<T>):Promise<T>{
-    const existing=this.db.prepare("SELECT value FROM checkpoints WHERE run=? AND name=?").get(run.runId,name) as {value:string}|undefined
-    if(existing)return JSON.parse(existing.value)
-    const value=await work();this.db.prepare("INSERT OR IGNORE INTO checkpoints(run,name,value) VALUES(?,?,?)").run(run.runId,name,JSON.stringify(value));return value
+    const existing=this.journal.checkpoint(run,name)
+    if(existing!==undefined)return JSON.parse(existing)
+    const value=await work();this.journal.recordCheckpoint(run,name,JSON.stringify(value));return value
   }
   private async step<T>(run:LiveTutorialRun,id:string,label:string,work:()=>Promise<T>):Promise<T>{
     let event=run.events.find(e=>e.id===id)

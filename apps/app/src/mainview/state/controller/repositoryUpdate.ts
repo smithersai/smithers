@@ -11,9 +11,10 @@ type UpdateCard = Extract<Card, { kind: "repo-update" }>
 export function repositoryUpdateScope(ctx: SeamContext, repo: string): string {
   return repositoryScope(ctx.store, repo)
 }
-export function createRepositoryUpdate(ctx: SeamContext) {
+export function createRepositoryUpdate(ctx: SeamContext, disposed: () => boolean = () => false) {
   const pending = new Map<string, Promise<string | { value: string }>>()
   const readUpdate = async (explicit?: string, show = false): Promise<string | { value: string }> => {
+    if (disposed()) return "The controller is closed."
     const target = isPracticeRepo(explicit) ? { repo: PRACTICE_REPO } : resolveTargetRepo(ctx.store, explicit)
     if ("error" in target) return target.error
     const { repo } = target
@@ -27,6 +28,7 @@ export function createRepositoryUpdate(ctx: SeamContext) {
     if (prior) return prior
     const work = (async () => {
       const snapshot = await readRepositoryUpdate(ctx, repo)
+      if (disposed()) return "The controller is closed."
       const current = ctx.store.session()
       if (JSON.stringify([repositoryUpdateScope(ctx, repo), conversationTabIdOf(current), current.activeRepoKey, current.activeWorkspaceId, current.activeBranchId]) !== context) return "The repository or account changed while its update was loading."
       const at = Date.now()
@@ -54,6 +56,7 @@ export function createRepositoryUpdate(ctx: SeamContext) {
       await ctx.dispatch({ type: "repo.update.observed", actor: ctx.actor(),
         context: { id: key, scope, conversation, data }, notifications: processed.rows
       }).isPersisted.promise
+      if (disposed()) return "The controller is closed."
       if (!show) return readResult(JSON.stringify(data))
       const id = `repo-update-${encodeURIComponent(key)}`
       const existing = ctx.store.collections.cards.get(id)

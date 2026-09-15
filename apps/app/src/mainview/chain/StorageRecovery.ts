@@ -1,5 +1,6 @@
 import { PERSISTED_KEY_PREFIX, SCHEMA_QUARANTINE_PREFIX } from "./SchemaVersion"
 import type { SqliteRowDatabase } from "./SqliteRowStorage"
+import { PRIVACY_RETIREMENT_KEY, RESET_ERASURE_OUTBOX_KEY } from "./PrivacyRetirement"
 
 /** A local recovery artifact, not a database restore command or a telemetry payload. */
 export interface StorageRecoverySnapshot {
@@ -80,7 +81,7 @@ export const readLocalStorageRecovery = (
     if (length > 100_000) throw new StorageRecoveryError("limit")
     for (let index = 0; index < length; index += 1) {
       const key = storage.key(index)
-      if (key !== null && (key.startsWith(PERSISTED_KEY_PREFIX) || key.startsWith(SCHEMA_QUARANTINE_PREFIX))) {
+      if (key !== null && key !== PRIVACY_RETIREMENT_KEY && key !== RESET_ERASURE_OUTBOX_KEY && (key.startsWith(PERSISTED_KEY_PREFIX) || key.startsWith(SCHEMA_QUARANTINE_PREFIX))) {
         keys.add(key)
       }
     }

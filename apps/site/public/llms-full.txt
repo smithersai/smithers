@@ -15040,6 +15040,10 @@ import type { CanonicalErrorCode } from "@smthrs/canonical"
 The schema is also importable as `@smthrs/canonical/Canonical`. The shape guard is importable as `@smthrs/canonical/Record`. Private paths `@smthrs/canonical/internal/*` and `@smthrs/canonical/*/index` are
 blocked in the export map.
 
+`@smthrs/canonical/Serializer` exports the same `canonicalize`, `CanonicalError`,
+and `CanonicalErrorCode` without loading Effect. Wire contracts can use that
+entry point while retaining identical canonical bytes and error identities.
+
 The behavior every entry below shares is on
 [The serialization contract](https://canonical.smithers.sh/serialization/).
 [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) is the normative format
@@ -21018,6 +21022,24 @@ that snapshot when the effect fails or dies, and treats a nested call on the
 same fiber as a savepoint. It is not durable: a process crash loses the whole
 in-memory state, not only the uncommitted part.
 
+When engine state and the journal participate together, `StateTransaction`
+takes the engine-state boundary first and the journal writer inside it. Native
+lifecycle admission, direct cancellation, deferred completion and clock
+scheduling share this order. A refused park or owner transition rolls both
+stores back, including a preexisting memory waiting marker. The memory commit
+callback releases its gate at SQL commit, before post-commit subscribers or
+compaction capture can read it. Failure after publication starts cannot undo
+committed state.
+
+`ExecutionFacts` captures the semantic native lifecycle inside the same write.
+Its additive `treeVersion: 1` metadata includes parent attachment policy and a
+redacted waiting question plus its named point. Opaque wake tokens remain in
+the operational waiting row; the fact carries only their digest. The native
+fact fold derives attached descendant human waits and compares them with a
+coherent executor observation. Old v1 facts without the tree extension retain
+legacy tree-wait provenance. Raw waiting request JSON is available through the
+protected execution snapshot reader, independently of its redacted event view.
+
 ### Addresses, rows, and outcomes
 
 | Export                    | Shape                                                                                                |
@@ -21026,8 +21048,8 @@ in-memory state, not only the uncommitted part.
 | `DeferredRow`             | the address plus `exit: unknown` and optional `metadata`                                             |
 | `ClockAddress`            | `{ flowName, executionId, clockName }`                                                               |
 | `ClockRow`                | the address plus `deferredName`, an absolute due time, and `completedAtMs: number \| null`           |
-| `Waiting`                 | `{ reason, wakeAt?, token? }`                                                                        |
-| `WaitingRow`              | `{ runId, reason, wakeAt: number \| null, token: string \| null }`                                   |
+| `Waiting`                 | `{ reason, wakeAt?, token?, request?: string }`                                                      |
+| `WaitingRow`              | `{ runId, reason, wakeAt: number \| null, token: string \| null, request?: Json }`                   |
 | `WaitingReason`           | a non-empty string; the open taxonomy the driver writes (`timer`, `event`, `released`, `quarantine`) |
 | `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |
@@ -27222,6 +27244,33 @@ be quiescent and pending lossy admissions flushed before truncation.
 scope. `SqlJournal` registers automatically, and `SqlTimeTravelStore.archiveAndTruncate`
 notifies after commit for the parent and attached descendants. Re-emitting an
 archived lossy source identity is then admitted against the retained history.
+
+## Native execution facts and human waits
+
+`ExecutionFact.fold` verifies native run-local sequence/generation evidence and
+reconstructs root identity, current trampoline lifecycle, and attached descendant
+human waits. Current observations include the additive `treeVersion: 1`,
+`parentPolicy`, and redacted `waiting.request`/`waiting.point` metadata. Detached
+subtrees do not roll their questions into an ancestor's status. A settled wait
+leaves the derived open-wait set.
+
+`Provenance.humanWaits` distinguishes covered events from legacy or unverified
+observations. Old version-1 facts lacking these fields cannot establish tree-wait
+coverage. `humanWaitSources` records separate generation and baseline sequence
+bounds for each native execution in the derived tree, so upgrading an old stream
+does not claim question history before the extension first appeared. A missing
+child stream, explicit gap, incompatible metadata, or question that differs from
+the coherent observed tree refuses that coverage. The wait set compares by
+execution identity and exact semantic values; adapter enumeration order does not
+change coverage. The derived list orders by depth, creation time, and lexical ID.
+The root/current semantic provenance also declines a complete event claim when
+the requested tree comparison fails.
+
+The fact is display evidence. Its token digest does not authorize a signal or
+reconstruct an opaque resolver token. The gateway joins a verified question to
+a currently observed wait with the same execution identity and digest, then
+uses that current wait's existing submission envelope. A historical question
+alone cannot make a gate answerable after the live wait has ended.
 
 ---
 
@@ -34211,7 +34260,7 @@ const capture: <C extends Readonly<Record<string, unknown>>, Args extends Readon
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [core admission algorithm](../../core/docs/api.md#nodecapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [core admission algorithm](https://core.smithers.sh/reference/api/#nodecapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
 
 Plan uses the capture and function-identity implementation from `@smthrs/core/Node`. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 

@@ -163,11 +163,13 @@ test("operator docs describe the declared soak, PR evidence upload, and factory 
   assert.match(soakRow, /reliability\.yml/, "the soak row cites its workflow")
   assert.match(soakRow, /not run evidence|declaration, not/, "the soak row keeps the declaration-only caveat")
 
-  const ci = read(".github/workflows/ci.yml")
-  const collect = /- name: Collect ci-test-tier-evidence\n\s+if: (\S+)/.exec(ci)?.[1]
-  const upload = /- name: Upload ci-test-tier-evidence\n\s+if: (\S+)/.exec(ci)?.[1]
-  assert.equal(collect, "always()")
-  assert.equal(upload, "always()")
+  const ci = parseWorkflow(read(".github/workflows/ci.yml"))
+  const steps = Object.values(ci.jobs).flatMap((job) => job.steps ?? [])
+  for (const name of ["Collect ci-test-tier-evidence", "Upload ci-test-tier-evidence"]) {
+    const matching = steps.filter((step) => step.name === name)
+    assert.equal(matching.length, 1, `one ${name} step`)
+    assert.equal(matching[0].if, "always()")
+  }
   const bench = read("scripts/bench/README.md")
   assert.doesNotMatch(bench, /collects\s+evidence only after successful steps/, "stale success-only claim")
   assert.match(bench, /`if: always\(\)`/, "the bench guide states the always() upload")

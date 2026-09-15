@@ -25,7 +25,8 @@ import { refuseCloudSignIn } from "./CloudSignIn"
  * carries only the new status word (active → completed | failed | cancelled)
  * and no `id:` line. Keep-alive lines are SSE comments.
  *
- * THE TRANSCRIPT READS AS SSE, NOT POLLING — the honest option, verified in
+ * SSE carries live transcript updates; bounded snapshot reads repair initial
+ * connection races and missed status wakeups. Streaming is verified in
  * both proxies the app rides: the Worker's platform proxy (apps/server/src/
  * proxies.ts handlePlatformProxy) passes the upstream body through untouched
  * and preserves the content type, and its fetch deadline covers the headers
@@ -104,7 +105,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const textOrNull = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null)
 
 const intOrNull = (value: unknown): number | null =>
-  typeof value === "number" && Number.isInteger(value) ? value : null
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null
 
 /** One session row; null when the entry carries no usable session id. */
 const parseSession = (value: unknown): AgentSessionRow | null => {
@@ -222,12 +223,43 @@ export interface AgentSessionSeam {
   readonly dispose: () => void
 }
 
-export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
+export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly repairIntervalMs?: number } = {}): AgentSessionSeam => {
   const { url: cloud, get, send: sendJson } = createCloudClient(ctx)
+  const identitySnapshot = (): string => JSON.stringify([
+    ctx.store.collections.cloudSessions.get("cloud"),
+    ctx.store.collections.identitySessions.get("identity")
+  ])
   /* Streams share one holder across the user/agent actor pair, like the workspace seam's watches. */
-  const shared = actorSharedState(ctx, "agentSession", () => ({
-    streams: new Map<string, AbortController>()
-  }))
+  const shared = actorSharedState(ctx, "agentSession", () => {
+    const state = {
+      streams: new Map<string, AbortController>(),
+      disposed: false,
+      generation: 0,
+      subscriptions: [] as Array<{ unsubscribe(): void }>
+    }
+    let owner = identitySnapshot()
+    const retire = (): void => {
+      const next = identitySnapshot()
+      if (next === owner) return
+      owner = next
+      state.generation += 1
+      for (const controller of state.streams.values()) controller.abort()
+      state.streams.clear()
+    }
+    // A response belongs to the authentication generation that admitted it.
+    // Include identity changes even when the cloud-session refresh is pending.
+    state.subscriptions.push(
+      ctx.store.collections.cloudSessions.subscribeChanges(retire),
+      ctx.store.collections.identitySessions.subscribeChanges(retire)
+    )
+    return state
+  })
+  const currentOperation = (): (() => boolean) => {
+    const generation = shared.generation
+    const identity = identitySnapshot()
+    return () => !shared.disposed && shared.generation === generation && identitySnapshot() === identity
+      && ctx.store.collections.cloudSessions.get("cloud")?.state === "signed-in"
+  }
 
   const sessionsPath = (repo: string, rest = ""): string => {
     const [owner = "", name = ""] = repo.split("/")
@@ -259,12 +291,12 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
   /* ---- the card ---- */
 
   /** The card as one upsert; the live window's facts come from the arguments, never invented. */
-  const renderSession = (
+  const renderSession = async (
     session: { readonly id: string; readonly title: string; readonly status: string; readonly workspaceId: string | null },
     facts: { readonly repo: string; readonly provider: AgentProvider | null },
     overrides: Partial<Pick<AgentCloudPayload, "transcript" | "error" | "task">> & { readonly clearError?: boolean } = {},
     actor: "user" | "smithers" | "system" = ctx.actor()
-  ): void => {
+  ): Promise<void> => {
     const id = cardIdOf(session.id)
     const existing = ctx.store.collections.cards.get(id)
     const prior = existing?.kind === "agent" && "cloud" in existing.payload ? existing.payload : undefined
@@ -290,24 +322,24 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
       payload
     }
-    ctx.dispatch({ type: "card.upsert", actor, card })
+    await ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
   }
 
   /** The refusal rides the card too, so it stays visible beside the transcript. */
-  const failOnCard = (sessionId: string, error: string): void => {
+  const failOnCard = async (sessionId: string, error: string): Promise<void> => {
     const existing = ctx.store.collections.cards.get(cardIdOf(sessionId))
     if (existing?.kind !== "agent" || !("cloud" in existing.payload)) return
-    ctx.dispatch({
+    await ctx.dispatch({
       type: "card.upsert",
       actor: ctx.actor(),
       card: { ...existing, payload: { ...existing.payload, error } }
-    })
+    }).isPersisted.promise
   }
 
   /* ---- the stream ---- */
 
   /** Apply one parsed `agent.session` event to the card; a terminal status ends the stream. */
-  const applyStreamEvent = (sessionId: string, frame: SseFrame, close: () => void): void => {
+  const applyStreamEvent = async (sessionId: string, frame: SseFrame, close: () => void): Promise<void> => {
     if (frame.event !== "agent.session") return
     let parsed: unknown
     try {
@@ -320,79 +352,154 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
     if (existing?.kind !== "agent" || !("cloud" in existing.payload)) return
     if (parsed.action === "message") {
       const message = parseMessage(parsed.message)
-      if (message === null) return
+      if (message === null || message.sessionId !== sessionId || (frame.id !== null && frame.id !== String(message.id))) return
       const payload = existing.payload
-      ctx.dispatch({
+      await ctx.dispatch({
         type: "card.upsert",
         actor: "system",
         card: { ...existing, payload: { ...payload, transcript: [...appendRow(payload.transcript, rowOf(message))] } }
-      })
+      }).isPersisted.promise
       return
     }
     if (parsed.action === "status") {
       const status = textOrNull(parsed.status)
       if (status === null) return
       const payload = existing.payload
-      ctx.dispatch({
+      await ctx.dispatch({
         type: "card.upsert",
         actor: "system",
         card: { ...existing, payload: { ...payload, state: status } }
-      })
+      }).isPersisted.promise
       /* The session is over: no message follows a terminal status, so the stream's work is done. */
       if (AGENT_SESSION_TERMINAL.has(status)) close()
     }
   }
 
-  /**
-   * Attach the session's SSE stream: transcript rows append as `message`
-   * events land, a `status` event advances the state word, and a terminal
-   * status closes the stream. The Last-Event-ID replay and the messages read
-   * redeliver rows by id, and the card dedupes on it. A stream that cannot
-   * open leaves the card at its last read — the card never claimed liveness.
-   */
+  // The route clamps to 100 even though its service allows 200. Read up to
+  // three aligned pages around the session's observed count to retain the last
+  // 200 rows, including for terminal sessions that will never open SSE.
+  const readWindow = async (repo: string, session: AgentSessionRow, current: () => boolean, signal?: AbortSignal): Promise<TranscriptRow[] | string | undefined> => {
+    const size = 100
+    const start = Math.floor(Math.max(0, session.messageCount - AGENT_TRANSCRIPT_ROW_CAP) / size) * size
+    const end = Math.max(start + size, Math.ceil(session.messageCount / size) * size)
+    let rows: ReadonlyArray<TranscriptRow> = []
+    for (let offset = start; offset < end && current(); offset += size) {
+      const path = sessionsPath(repo, `/${encodeURIComponent(session.id)}/messages?limit=${size}${offset === 0 ? "" : `&cursor=${offset}`}`)
+      const read = await get(path, undefined, signal)
+      if (!current()) return
+      if ("error" in read) return featureRefusal(read, repo, session.id)
+      if (!Array.isArray(read.body)) return `Smithers Cloud answered the messages of agent session ${session.id} with an unreadable payload`
+      for (const value of read.body) {
+        const message = parseMessage(value)
+        if (message === null || message.sessionId !== session.id) return `Smithers Cloud answered the messages of agent session ${session.id} with an unreadable payload`
+        rows = appendRow(rows, rowOf(message))
+      }
+      if (read.body.length < size) break
+    }
+    return [...rows]
+  }
+
+  /** One owned watcher serializes SSE and repair observations through receipts. */
   const attachStream = (repo: string, sessionId: string): void => {
     const streamFetch = ctx.stream
-    if (streamFetch === undefined || shared.streams.has(sessionId)) return
+    const authorized = currentOperation()
+    if (!authorized() || streamFetch === undefined || shared.streams.has(sessionId)) return
     const controller = new AbortController()
     shared.streams.set(sessionId, controller)
+    const current = (): boolean => authorized() && !controller.signal.aborted && shared.streams.get(sessionId) === controller
+    const interval = options.repairIntervalMs ?? 15_000
+    let queued = Promise.resolve()
     const detach = (): void => {
-      if (shared.streams.get(sessionId) === controller) {
-        shared.streams.delete(sessionId)
-        controller.abort()
+      if (shared.streams.get(sessionId) === controller) shared.streams.delete(sessionId)
+      controller.abort()
+    }
+    const observe = (action: () => Promise<void>): Promise<void> => {
+      const next = queued.then(() => current() ? action() : undefined)
+      // Persistence rejection stops the watcher, including optimistic cursors.
+      queued = next.catch(detach)
+      return next
+    }
+    const refresh = async (): Promise<void> => {
+      const answer = await get(sessionsPath(repo, `/${encodeURIComponent(sessionId)}`), undefined, controller.signal)
+      if (!current() || "error" in answer) return
+      const session = parseSession(answer.body)
+      if (session === null || session.id !== sessionId) return
+      const rows = await readWindow(repo, session, current, controller.signal)
+      if (!current() || rows === undefined || typeof rows === "string") return
+      const card = ctx.store.collections.cards.get(cardIdOf(sessionId))
+      if (card?.kind !== "agent" || !("cloud" in card.payload)) return
+      const transcript = rows.reduce<ReadonlyArray<TranscriptRow>>((prior, row) => appendRow(prior, row), card.payload.transcript)
+      const displayName = session.title === "" ? "Agent session" : session.title
+      if (card.payload.state !== session.status || card.payload.displayName !== displayName || card.payload.workspaceId !== session.workspaceId || JSON.stringify(card.payload.transcript) !== JSON.stringify(transcript)) {
+        await renderSession(session, { repo, provider: card.payload.provider }, { transcript: [...transcript] }, "system")
+      }
+      if (current() && AGENT_SESSION_TERMINAL.has(session.status)) detach()
+    }
+    const pause = (): Promise<void> => new Promise(resolve => {
+      if (!current()) { resolve(); return }
+      const finish = (): void => { clearTimeout(timer); controller.signal.removeEventListener("abort", finish); resolve() }
+      const timer = setTimeout(finish, interval)
+      timer.unref?.()
+      controller.signal.addEventListener("abort", finish, { once: true })
+    })
+    const repairs = async (): Promise<void> => {
+      while (current()) {
+        await pause()
+        if (current()) await observe(refresh)
       }
     }
-    const run = async (): Promise<void> => {
+    const connection = async (): Promise<void> => {
+      const card = ctx.store.collections.cards.get(cardIdOf(sessionId))
+      const rows = card?.kind === "agent" && "cloud" in card.payload ? card.payload.transcript : []
+      const cursor = Math.max(0, ...rows.map(row => row.id))
       let response: Response
       try {
         response = await streamFetch(cloud(sessionsPath(repo, `/${encodeURIComponent(sessionId)}/stream`)), {
-          headers: { accept: "text/event-stream" },
-          signal: controller.signal
+          headers: { accept: "text/event-stream", "Last-Event-ID": String(cursor) }, signal: controller.signal
         })
-      } catch {
-        return
-      }
+      } catch { return }
       const contentType = response.headers.get("content-type") ?? ""
-      if (!response.ok || response.body === null || !contentType.includes("text/event-stream")) {
+      if (!current() || !response.ok || response.body === null || !contentType.includes("text/event-stream")) {
         await response.body?.cancel().catch(() => {})
         return
       }
       const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
+      const cancel = (): void => { void reader.cancel().catch(() => {}) }
+      controller.signal.addEventListener("abort", cancel, { once: true })
       try {
-        for (;;) {
+        // Plue's cursor 0 starts at its connection head. Only a read after
+        // readiness covers rows committed between an empty read and that head.
+        // Status has no durable SSE ID, so this also repairs a missed terminal.
+        await observe(refresh)
+        const decoder = new TextDecoder()
+        let buffer = ""
+        while (current()) {
           const chunk = await reader.read()
-          if (chunk.done) break
+          if (chunk.done || !current()) break
           buffer += decoder.decode(chunk.value, { stream: true })
           const split = splitFrames(buffer)
           buffer = split.rest
-          for (const frame of split.frames) applyStreamEvent(sessionId, frame, detach)
+          for (const frame of split.frames) {
+            if (!current()) break
+            await observe(() => applyStreamEvent(sessionId, frame, detach))
+          }
         }
-      } catch {
-        /* An aborted read is the detach or the controller's dispose; either way the stream is over. */
+      } finally {
+        controller.signal.removeEventListener("abort", cancel)
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
       }
     }
-    void run().finally(detach)
+    const run = async (): Promise<void> => {
+      void repairs().catch(detach)
+      try {
+        while (current()) {
+          await connection()
+          if (current()) await pause()
+        }
+      } finally { detach() }
+    }
+    void run().catch(detach)
   }
 
   const detachStream = (sessionId: string): void => {
@@ -405,23 +512,32 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
   /* ---- the acts ---- */
 
   const newSession: AgentSessionSeam["newSession"] = async (repoArg, provider, task) => {
+    if (shared.disposed) return
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const current = currentOperation()
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
     const title = task.trim()
     const created = await sendJson("POST", sessionsPath(repo), { title })
+    if (!current()) return
     if ("error" in created) return featureRefusal(created, repo)
     const session = parseSession(created.body)
     if (session === null) return "Smithers Cloud answered the new agent session with an unreadable payload"
+    // Keep the accepted session identity before the second POST launches a run.
+    await renderSession(session, { repo, provider }, { task: title, clearError: true })
+    if (!current()) return
     /* The first message is what dispatches the run (routes/agent_sessions.go PostMessage). */
     const posted = await postMessage(repo, session.id, title, provider)
+    if (!current()) return
     if (typeof posted === "string") {
-      renderSession(session, { repo, provider }, { error: posted })
-      return `The agent session was created on ${repo}, but the first message was refused: ${posted}`
+      await renderSession(session, { repo, provider }, { error: posted })
+      if (!current()) return
+      return `The agent session was created on ${repo}, but the first message did not return a confirmed result: ${posted}`
     }
-    renderSession(session, { repo, provider }, { transcript: [rowOf(posted)], task: title, clearError: true })
+    await renderSession(session, { repo, provider }, { transcript: [rowOf(posted)], task: title, clearError: true })
+    if (!current()) return
     attachStream(repo, session.id)
     return {
       value: `Agent session ${session.id} started on ${repo} with ${provider} — the card streams its transcript. Follow up with agent.session.say ${session.id} <text>; stop it with agent.session.stop ${session.id}.`
@@ -442,16 +558,19 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
     })
     if ("error" in answer) return answer.error
     const message = parseMessage(answer.body)
-    return message ?? "Smithers Cloud answered the posted message with an unreadable payload"
+    return message !== null && message.sessionId === sessionId ? message : "Smithers Cloud answered the posted message with an unreadable payload"
   }
 
   const listSessions: AgentSessionSeam["listSessions"] = async (repoArg) => {
+    if (shared.disposed) return
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const current = currentOperation()
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
     const answer = await get(`${sessionsPath(repo)}?limit=100`, sessionsPath(repo))
+    if (!current()) return
     if ("error" in answer) return featureRefusal(answer, repo)
     if (!Array.isArray(answer.body)) return `Smithers Cloud answered agent sessions for ${repo} with an unreadable payload`
     const sessions = answer.body.flatMap((entry) => {
@@ -474,29 +593,28 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
         ),
         `Open one with /agent.session.view <id> ${repo}; stop one with /agent.session.stop <id> ${repo}.`
       ].join("\n")
-    ctx.dispatch({ type: "message.appended", actor: "system", text: listing })
+    await ctx.dispatch({ type: "message.appended", actor: "system", text: listing }).isPersisted.promise
+    if (!current()) return
     return readResult(listing)
   }
 
   const viewSession: AgentSessionSeam["viewSession"] = async (sessionId, repoArg) => {
+    if (shared.disposed) return
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const current = currentOperation()
     const target = resolveSessionRepo(sessionId, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    detachStream(sessionId)
     const answer = await get(sessionsPath(repo, `/${encodeURIComponent(sessionId)}`))
+    if (!current()) return
     if ("error" in answer) return featureRefusal(answer, repo, sessionId)
     const session = parseSession(answer.body)
-    if (session === null) return `Smithers Cloud answered agent session ${sessionId} with an unreadable payload`
-    const read = await get(sessionsPath(repo, `/${encodeURIComponent(sessionId)}/messages?limit=${AGENT_TRANSCRIPT_ROW_CAP}`))
-    if ("error" in read) return featureRefusal(read, repo, sessionId)
-    if (!Array.isArray(read.body)) return `Smithers Cloud answered the messages of agent session ${sessionId} with an unreadable payload`
-    const transcript = read.body
-      .flatMap((entry) => {
-        const parsed = parseMessage(entry)
-        return parsed === null ? [] : [rowOf(parsed)]
-      })
-      .slice(-AGENT_TRANSCRIPT_ROW_CAP)
+    if (session === null || session.id !== sessionId) return `Smithers Cloud answered agent session ${sessionId} with an unreadable payload`
+    const transcript = await readWindow(repo, session, current)
+    if (!current() || transcript === undefined) return
+    if (typeof transcript === "string") return transcript
     /*
      * The provider is per-message on the wire, never on the session DTO: what
      * the card already knows stands, and a session first met here states none
@@ -504,7 +622,8 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
      */
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const provider = prior?.kind === "agent" && "cloud" in prior.payload ? prior.payload.provider : null
-    renderSession(session, { repo, provider }, { transcript, clearError: true })
+    await renderSession(session, { repo, provider }, { transcript, clearError: true })
+    if (!current()) return
     if (!AGENT_SESSION_TERMINAL.has(session.status)) attachStream(repo, session.id)
     return {
       value: `Agent session ${session.id} on ${repo}: ${session.title === "" ? "(untitled)" : session.title} — ${session.status}, ${transcript.length} message${transcript.length === 1 ? "" : "s"} shown. The card ${AGENT_SESSION_TERMINAL.has(session.status) ? "holds the transcript" : "streams the transcript live"}.`
@@ -512,8 +631,10 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
   }
 
   const sayToSession: AgentSessionSeam["sayToSession"] = async (sessionId, text) => {
+    if (shared.disposed) return
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const current = currentOperation()
     const message = text.trim()
     if (message === "") return "Write a message before sending it."
     /*
@@ -527,22 +648,27 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
       return `Smithers doesn't know which repository agent session ${sessionId} is on — view it first with /agent.session.view ${sessionId} <owner/repo>.`
     }
     const repo = target.repo
+    detachStream(sessionId)
     /* The follow-up keeps the session's provider; only the card remembers it (the wire carries it per message, never on the DTO). */
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const provider = prior?.kind === "agent" && "cloud" in prior.payload ? (prior.payload.provider ?? undefined) : undefined
     const posted = await postMessage(repo, sessionId, message, provider)
+    if (!current()) return
     if (typeof posted === "string") {
-      failOnCard(sessionId, posted)
+      await failOnCard(sessionId, posted)
+      if (!current()) return
+      attachStream(repo, sessionId)
       return posted
     }
     const existing = ctx.store.collections.cards.get(cardIdOf(sessionId))
     if (existing?.kind === "agent" && "cloud" in existing.payload) {
       const payload = existing.payload
-      ctx.dispatch({
+      await ctx.dispatch({
         type: "card.upsert",
         actor: ctx.actor(),
         card: { ...existing, payload: { ...payload, transcript: [...appendRow(payload.transcript, rowOf(posted))] } }
-      })
+      }).isPersisted.promise
+      if (!current()) return
     }
     /* The message dispatches the session's next run: the card streams again from here. */
     attachStream(repo, sessionId)
@@ -552,16 +678,22 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
   }
 
   const stopSession: AgentSessionSeam["stopSession"] = async (sessionId, repoArg) => {
+    if (shared.disposed) return
     const refusal = gate()
     if (refusal !== undefined) return refusal
+    const current = currentOperation()
     const target = resolveSessionRepo(sessionId, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    detachStream(sessionId)
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const priorState = prior?.kind === "agent" && "cloud" in prior.payload ? prior.payload.state : undefined
     const answer = await sendJson("DELETE", sessionsPath(repo, `/${encodeURIComponent(sessionId)}`))
+    if (!current()) return
     if ("error" in answer) {
-      failOnCard(sessionId, answer.error)
+      await failOnCard(sessionId, answer.error)
+      if (!current()) return
+      if (priorState !== undefined && !AGENT_SESSION_TERMINAL.has(priorState)) attachStream(repo, sessionId)
       return answer.error
     }
     detachStream(sessionId)
@@ -572,19 +704,21 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
      * terminal word; one already terminal keeps the word it earned — deleting
      * the record changes neither.
      */
-    if (prior?.kind === "agent" && "cloud" in prior.payload) {
-      const payload = prior.payload
-      ctx.dispatch({
+    const latest = ctx.store.collections.cards.get(cardIdOf(sessionId))
+    if (latest?.kind === "agent" && "cloud" in latest.payload) {
+      const payload = latest.payload
+      await ctx.dispatch({
         type: "card.upsert",
         actor: ctx.actor(),
         card: {
-          ...prior,
+          ...latest,
           payload: {
             ...payload,
             state: AGENT_SESSION_TERMINAL.has(payload.state) ? payload.state : "cancelled"
           }
         }
-      })
+      }).isPersisted.promise
+      if (!current()) return
     }
     return {
       value: priorState !== undefined && AGENT_SESSION_TERMINAL.has(priorState)
@@ -614,6 +748,10 @@ export const createAgentSessionSeam = (ctx: SeamContext): AgentSessionSeam => {
     sayToSession,
     stopSession,
     dispose: () => {
+      if (shared.disposed) return
+      shared.disposed = true
+      shared.generation += 1
+      for (const subscription of shared.subscriptions) subscription.unsubscribe()
       for (const controller of shared.streams.values()) controller.abort()
       shared.streams.clear()
     }

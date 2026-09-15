@@ -1,7 +1,89 @@
 # UI persistence
 
-The UI has one logical state machine and two persistence implementations. The
-backend changes durability, not collection shape or reducer behavior.
+The UI derives its state from a versioned local event stream. The same pure
+projector drives live dispatch, replay and verification; TanStack collections
+are materialized views. SQLite and the localStorage fallback commit the event,
+its projection changes and applied head together. See
+[state events and verification](state-events.md) for the cross-system migration
+contract and remaining work.
+
+## Event authority and recovery
+
+`AppProjection.ts` owns the 43 domain projections (41 persisted and two
+per-launch collections) and their 132 validated transition types. `AppTransitionValidation.ts` validates the input and actor;
+`AppEventStream.ts` gives an accepted event its stream identity, position,
+versions, recorded time and SHA-256 integrity linkage. `EventValue.ts` preserves
+explicit `undefined` clears in patches. A missing field is a different input.
+Replay never invokes the dispatcher, network, model, host appearance or clock.
+
+Four private persisted collections support the stream:
+
+| Storage ID | Purpose |
+| --- | --- |
+| `app-events` | Accepted semantic facts after the covered checkpoint |
+| `app-event-heads` | Applied position, event hash and projected-state hash |
+| `app-event-checkpoints` | Verified baseline or compacted projection and its coverage |
+| `app-event-retirements` | Content-free hashes of retired stream identities |
+
+The app schema is now 13. Existing installations receive an explicit
+`legacy-baseline` checkpoint of validated current state. It does not claim to
+reconstruct earlier missing history. Once a journal exists, boot replays its
+checkpoint and complete suffix, then repairs disposable materializations.
+Missing positions, conflicting identities, unsupported versions or broken
+hashes refuse recovery; cached rows cannot replace damaged event authority.
+The two per-launch caches are cleared by a recorded boot projection.
+
+`store.eventHistory()` returns a detached host-only checkpoint, suffix and head.
+`store.verifyState()` replays committed evidence and compares it with current
+collections, returning hashes and row identities for discrepancies without
+row payloads. Neither method is included in model context. Hashes detect
+inconsistency; they are not signatures or protection against an actor who can
+rewrite the entire database and its hashes.
+
+`store.compactEvents()` verifies the projection, writes a covering checkpoint
+and deletes the covered suffix in one commit. It defers while a prepared form
+input still needs an older verified prefix; retry after that command settles.
+The diagnostic 500-transition
+and 250-tool-call limits never delete uncovered authoritative app events.
+There is no automatic compaction timer. Signout, account replacement and app
+reset rotate the journal to a checkpoint of permitted state, erase old live
+event bytes and retain retired identities. Chain execution tombstones survive
+reset, so erased execution bytes cannot become a new runnable lineage.
+
+Direct collection writes are refused. Draft keystrokes can replace one
+provisional event before its commit starts; after acceptance that fact is
+immutable. Its receipt resolves only after the final draft is saved. Disposal
+flushes accepted writes before releasing the store and rejects later dispatch.
+
+Pending composer, Wiki and supported entity recovery records live separately
+in origin localStorage. They carry actor, command/input identity, stream and
+verified-prefix binding, plus workspace/branch/conversation scope. Boot admits
+validated pending input through semantic events before exposing it; those
+records cannot replace authoritative history. Human form fields can prepare
+validated input before their command receipt, but form submission remains
+receipt-gated. See the [state architecture guide](state-architecture.md) for
+rapid edits, inactive-branch recovery and privacy boundaries.
+
+SQLite checks expected row versions and bytes inside its write transaction.
+Even a repair or compaction includes the head in its compare-and-swap read
+set. A stale independent writer is refused, along with its dependent work.
+The actual browser localStorage fallback additionally holds an exclusive Web
+Lock for its lifetime and refuses to open a second writer or run without the
+locking API. Its envelope checks the previous committed bytes. Explicitly
+injected isolated test stores use their host contract and the same stale-base
+checks.
+
+The degraded memory backend is explicitly nonsaving. It uses the same event
+and projection functions, but a receipt only acknowledges an in-memory write.
+Commands are not categorically blocked in this mode; local intent history and
+chat replay capabilities do not survive reload. The warning shown for this
+mode is therefore part of its contract, not a physical durability guarantee.
+
+This stream records local intent and backend observations. It does not make
+unreceived chat frames replayable, certify remote command acceptance, or replace
+the Wiki CRDT, runtime execution store, native process manager or Plue's domain
+authorities. Those migration boundaries remain explicit in the state-events
+completion ledger.
 
 ## Backend selection
 
@@ -116,7 +198,12 @@ rows are encoded and written. The coordinator retains committed rows for
 stale-state checks and rewinds tentative changes after a refused commit.
 Retained collection history is neither parsed nor serialized on an append.
 localStorage and older injected hosts without `applyRows` retain the full
-collection envelope path.
+collection envelope path. Their coordinator re-reads each touched collection's
+exact stored string before every transaction. An unchanged immutable string
+may reuse its private parsed rows; a changed string, including a same-version
+external edit, is parsed again. The cache advances only after successful
+persistence and is never shared with collection registration callers. This
+removes repeated parsing without skipping stale-row checks or durable writes.
 The store remains the only write authority: UI components project collections
 and mutations enter through the controller/dispatcher.
 
@@ -128,44 +215,56 @@ collection as one JSON string. A profile with 890 MB of OPFS SQLite could not
 start at all — `prepare runtime and persisted state: Invalid string length`,
 with a recovery download as the only offered action.
 
-`SqliteRowStorage.ts` therefore loads in two passes. The first reads addressing
-and sizes only — `rowid`, `collection_id`, `row_key`, `LENGTH(value)` — in
-chunks of 512, newest first (descending rowid), and admits at most
-`PERSISTED_COLLECTION_BUDGET_BYTES` (64 MiB) per collection. The second reads
-the values of the admitted rows alone, in pages bounded by
-`PERSISTED_LOAD_PAGE_BYTES` (4 MiB) as well as by row count; a single row larger
-than one page is read alone rather than split.
+`SqliteRowStorage.ts` loads in two passes. It first reads metadata in chunks
+of 512 rows, newest first (descending rowid), and counts UTF-8 key/value bytes
+in SQLite before transferring any normalized values into JavaScript. Admission
+is limited to `PERSISTED_COLLECTION_BUDGET_BYTES` (64 MiB) per collection.
+The second pass fetches admitted values in pages of at most 512 rows and
+`PERSISTED_LOAD_PAGE_BYTES` (4 MiB of UTF-8 key/value bytes). An admitted row
+larger than the page target is read alone. Both passes hold one SQLite writer
+transaction, so the source cannot change between size admission and decoding.
+No whole collection is serialized for the TanStack adapter: `DurableCollection.ts` uses detached `readRows` instead.
+The localStorage envelope and older injected hosts retain their string view.
 
-The budget bounds what the page READS, not only what it keeps. The first
-bounded loader selected every row's value and discarded the ones over budget,
-so opening a 567,535,882-byte profile still marshalled the whole store out of
-the wa-sqlite worker before admitting one budget of it — smithers.sh build
-5136850c (2026-09-15 16:50Z) logged `the persisted store is larger than one
-launch loads` with `{budgetBytes: 67108864, loaded: 260, skipped: 455}` and
-then rendered nothing but the 384-character entrance wordmark: no composer, no
-cards, no error panel, because nothing had thrown. A fresh profile booted
-normally.
+Every persisted app collection requires a complete load. If any collection
+exceeds the budget, boot refuses before repairs or a new baseline; the source
+stays intact. This includes heads, checkpoints, events, retirement tombstones,
+and projected rows. A partial cache must never become an invented legacy
+baseline, and a missing terminal suffix cannot be treated as a fresh run.
+Explicit app event compaction can reduce a retained event suffix before it
+reaches this limit; it cannot shrink a checkpoint whose domain state is itself
+oversized. There is no automatic app event compaction timer or streaming replay
+of an oversized checkpoint. An oversized store requires recovery or an explicit
+human reset. Recovery downloads have their own size limit and may also refuse;
+refusal does not delete the database.
 
-Rows below the line stay on disk: they are not parsed, not deleted, and the
-recovery download still reaches them. Skipping is a size decision, so it never
-consults the row-recovery policy or the quarantine table, and a skipped row
-still counts as physically present so the legacy importer cannot reinsert an
-older copy underneath it.
-
-`openSqliteRowStorage` returns a `loadReport` naming the loaded and skipped
-counts per collection. A partial load logs one structured warning (collection
-ids and counts, never row content), is readable as `store.persistedLoad`, and
-boot resolves a `store.truncated` toast with "Recovered N of M persisted
-segments; older history is available in the recovery file." Boot completes.
-
-A truncated journal lineage is not replayed as if it were whole:
-`CollectionJournal.ts` already refuses a lineage whose sequence has a hole.
-
-`DurableCollection.ts` reads through the host's `readRows` when it has one, so
-a normalized host is never serialized to a string and parsed straight back. The
-localStorage envelope and older injected hosts keep the string view.
+Generic hosts may opt into partial admission for disposable collections.
+Their `loadReport` reports admitted/skipped counts without row contents, and
+skipped rows stay on disk for recovery. AppStore's complete-load policy never
+silently enters this partial mode. Its load report and existing notice remain
+available for explicitly injected hosts.
 
 ## Recovery actions
+
+Reset first disposes the complete production AppStore, fences late dispatches,
+and releases its writer lease. It then reacquires the same origin-wide lease
+before deleting any bytes. Another tab's ownership refuses the erase. A pending
+private download finishes before reset, and new downloads are fenced while the
+erase runs. Before deleting raw local sources, reset copies any already-validated remote
+turn deletion proofs into `smithers-mvp.resetErasures` and verifies the written
+bytes. This separate delete-only queue survives both raw reset and subsequent
+privacy sweeps. It carries no app baseline, old privacy marker, read token or
+approval capability, and recovery downloads omit it. The normal erasure worker
+drains it after fresh boot alongside current retirement obligations; only an
+exact typed retirement receipt removes a proof. Failed staging prevents erasure,
+and failed acknowledgement leaves the obligation for retry. Raw reset cannot
+reconstruct unknown remote identities from corrupt authority or an unreadable
+old privacy marker. That limit differs from event-driven `app.reset`, which
+stages proofs from its verified current HTTP legs before erasure.
+
+Filesystem erasure is not a multi-file transaction: an I/O failure
+can leave a partial reset, so the failure copy never claims unchanged bytes.
+
 
 The startup failure panel offers two acts, both flows with their actor recorded
 (`state/StorageRecoveryAction.ts`, `flows/StorageRecoveryFlow.ts`), never DOM
@@ -347,6 +446,14 @@ point), then removes `.staged`. On boot:
 A failed stage cleanup after the live write still reports a successful commit;
 its matching stage is recoverable on the next open.
 
+Unchanged collection strings may also reuse their JSON escaping inside the
+envelope serializer. The complete staged/live bytes remain identical to
+`JSON.stringify({ version, entries })`, including numeric-looking keys and
+Unicode escaping. Only the current string/encoding per key is retained; removed
+keys are evicted. Every accepted transition still commits its full envelope.
+Projected chain caches use the verified-authority recovery exception described
+below; the four application-journal collections remain strict.
+
 Legacy per-collection keys (or a historical version-zero envelope) are
 migrated through the same schema registry. Every known collection is also
 validated when opening a current envelope. Invalid rows retain their original
@@ -438,6 +545,129 @@ preserved. There is no automatic restore, backend chooser, or streaming/native
 large-export path yet. Recovery also needs the app's recovery bundle and an
 answering storage worker; a never-answering worker remains a lifecycle limit.
 
+### Privacy retirement of recovery copies
+
+Schema 13 makes account signout, definitive account replacement and app reset
+retire application-accessible recovery copies as well as rotate the live event
+journal. The browser owner holds the same origin Web Lock before opening either
+backend and until its writes and close finish. The durable, private
+`smithers-mvp.privacyRetirement` boot marker names an operation, account/reset
+policy, selected backend and target stream, plus pending delete-only remote
+capabilities. It is written and reread **before**
+the privacy checkpoint is committed. It never contains an account name,
+transcript, saved projection, raw execution lineage label or remote read token.
+
+The accepted target stream/checkpoint proves whether rotation committed. After
+that commit, cleanup rewrites the active store from exactly the verified
+permitted collection values plus its event authority and retirement tombstones.
+It preserves row version identities needed by the current persistence owner,
+and removes unknown current entries, legacy localStorage keys, every quarantine
+variant, SQLite key/value and registry source tables, old schemas/views and
+SQLite analysis samples. SQLite recreates its fixed two-table live schema in
+one transaction; the inactive app database is emptied. LocalStorage deletes
+only the two app-owned namespaces. Public version/backend/appearance stamps
+are written from explicit current values, not copied from opaque old bytes.
+Account boundaries preserve verified machine-owned local notes and resources;
+app reset applies its existing stronger cleanup. An inactive old envelope is
+never merged into the permitted state.
+
+Only successful local cleanup leaves the marker's `pending` phase. There is no
+transaction spanning SQLite and localStorage: a crash or unavailable inactive
+backend leaves the marker pending, and startup/recovery cannot adopt or export
+those copies.
+Reload retries the same retirement. If rotation did not commit, boot first
+verifies existing event authority and applies the pending safe cleanup policy;
+missing/corrupt authority refuses instead of importing an older backup. Once
+locally erased, the marker pins the selected backend and current stream against stale
+backend adoption. Unknown marker versions refuse. Older schema-aware clients
+must refuse schema 13; an already-running older writer is not retroactively
+covered by the new lease protocol.
+
+A failed privacy receipt blocks further writes and public state/model reads in
+that owner until reload. A degraded-memory session can persist a pending intent
+for its unavailable OPFS backend but cannot report completed erasure. When the
+boot record itself cannot be written, durable privacy completion cannot be
+claimed. Production always supplies the privacy host capability; an explicitly
+injected legacy storage host without it retains that host's own lifecycle
+contract and is not evidence of browser-wide retirement.
+
+The marker's second phase is `remote-pending`. Before raw HTTP capabilities
+leave the verified projection, the same atomic intent stores one deletion
+obligation for every known `httpTurnLeg`, including prepared legs whose initial
+POST might still arrive. The proof is
+`SHA256(agentTurnJournalDigestInput("access", readToken))`; it cannot replay
+output. New boundaries atomically merge older unacknowledged obligations with
+new legs. When a degraded intent could not read its original backend, boot adds
+the verified legs before rotating away their tokens. The private intent key is
+excluded from recovery files and never enters app events or model context.
+
+After local erasure, the clean app and a new owner can proceed offline. A small
+owner-scoped worker sends up to 32 delete requests per pass, with a five-second
+pass budget and ten-second retry interval. It starts during browser boot using
+the existing same-origin fetch host, independently of account login or agent
+startup. `/api/agent/turn/erase` accepts only `{runId, legId, retirementProof}`
+and installs an absent-leg tombstone, so delayed initial acceptance cannot
+create output after erasure. The older authenticated retire route remains a
+separate compatibility path. A 404, unknown success body, lost response or
+network failure keeps the obligation pending; only typed `retired` success
+removes the exact scoped proof from the current durable intent. An old response
+cannot overwrite a newly merged intent. Lost acknowledgement writes retry the
+same idempotent erasure. Disposal aborts the worker and waits before releasing
+the storage lease; late responses cannot mutate a released owner.
+
+`complete` means both local cleanup and all staged remote acknowledgements are
+durable. `privacyRetirementStatus()` exposes only the phase and pending count;
+it does not expose scope IDs or proofs. Remote failure alone does not reject
+signout or block the clean local state. Scope coverage is the verified current
+HTTP leg history, not unidentified remote journals whose capability was already
+lost before this protocol existed.
+
+Recovery captures check the marker before reading and again after reading; the
+same capture guard runs immediately before browser download. A signout/reset
+invalidates already-captured old bytes even if retirement completed before the
+download callback. Pending Blob URLs are revoked on same-document retirement
+and cross-document storage events. The browser's recovery path refuses if it
+cannot read the durable privacy fence.
+
+Boot validates the complete stored candidate before repairing chain-event or
+lineage-retirement materializations. Those two collections remain strict unless
+an independent proof finds exactly one application head and checkpoint, rejects
+a retired current stream, and verifies the checkpoint digest, complete event
+suffix, projection hashes and final head through `replayAppEvents`. The four
+application journal collections never opt into generic row recovery. Missing,
+malformed, future, inconsistent or incomplete authority refuses opening before
+cache repair; a legacy installation without a verified baseline cannot discard
+execution evidence or invent that baseline from damaged rows.
+
+SQLite performs this proof and cache quarantine/removal inside the same
+`BEGIN IMMEDIATE` transaction. The localStorage adapter verifies its captured
+source and rechecks all observed bytes immediately before synchronous repair;
+the production AppStore holds its origin writer lease across both adapter open
+and boot. Existing raw/quarantine copies remain governed by privacy retirement.
+AppStore then independently replays the journal and atomically reconstructs
+the projected caches before exposing the store. An interruption between adapter
+repair and AppStore reconstruction leaves the authority intact for the next
+boot. Unreadable physical row metadata and decoder exceptions still refuse;
+the recovery permission applies to explicitly rejected cache values/keys only.
+
+This is logical erasure of app-addressable data, not forensic disk erasure.
+SQLite free pages/WAL remnants, browser internals, OS snapshots and backups are
+outside the claim. Previously returned JavaScript values cannot be recalled;
+new guarded public reads refuse a failed retirement. User-downloaded files
+cannot be deleted or recalled by this protocol, and revoking a Blob URL does
+not undo a completed download. The retained current lineage tombstones prevent
+reusing those execution identities; erasure does not invent replay evidence
+for an opaque inactive history that was never admitted as the current authority.
+
+`PrivacyRetirement.test.ts` uses synthetic storage and isolated SQLite to cover
+intent/checkpoint/completion failures, restart repair, inactive-store failure,
+unknown rows/columns and legacy/quarantine copies, rollback, permitted notes,
+reset/tombstones, capture races and Blob URL invalidation. No real user storage
+is touched by these tests.
+`RemoteRetirement.test.ts` covers pre-acceptance legs, interrupted/merged
+outboxes, lost acknowledgements, offline and unknown responses, bounded passes,
+worker disposal and proof exclusion. These tests use fake network hosts.
+
 ## Recommendations
 
 The `app-recommendations` collection persists one `current` row validated by
@@ -448,6 +678,26 @@ creation timestamp. `src/mainview/state/controller/recommend.ts` dispatches
 server answer when available. `App.tsx` projects the stored suggestions; before
 that row exists it uses the repository-step fallback. Reload retains the last
 recommendation while regeneration is pending.
+
+## HumanTask answer drafts
+
+Human question input enters through `form.set` with `answer:<questionHash>`.
+The field key binds the currently displayed question, and the shared handler
+checks the independently retained runtime approval before changing text.
+`approval.answer.changed` records the human actor; the pure projector derives
+`runtimeApprovals.answerDraft`. A matching grant envelope is never inferred
+from the draft, and typing never submits a decision.
+
+Before its command receipt, a human edit synchronously prepares only the
+normalized gate ID, question fingerprint and text in `EntityRecovery`.
+Reopen checks the same verified stream ancestor, command identity and active
+workspace/branch/conversation scope used by other pending inputs. It also
+requires the same still-pending question. Newer typing and explicit empty text
+survive older acknowledgements; failed persistence removes its pending slot.
+A changed question, decision, account or command outcome cannot resurrect it.
+The pending record contains no approval request, resolver token or capability
+envelope. Explicit event compaction defers when this input still needs an
+older event hash to prove its origin.
 
 ## Retention
 
@@ -476,41 +726,43 @@ Diagnostic compaction is part of the same dispatch as the append. The store
 keeps the newest 500 transition records and 250 tool-call records. Entity
 collections are not time-trimmed.
 
-A transition record is also bounded in size. It stores the transition's input,
-and 500 of them are kept, so every byte a record carries is paid five hundred
-times over. `MAX_TRANSITION_PAYLOAD_BYTES` (2 KiB) caps one record: a larger
-payload keeps its shape and its short scalar fields — the key, title, status,
-name, id, message and detail every diagnostic read looks at — and elides the
-long strings and long arrays that made it large, naming what was dropped. A
-payload still too wide after elision is stored as `{"elided": <bytes>}`.
+Each diagnostic transition payload is capped at 2 KiB of UTF-8 bytes by
+`TransitionDiagnostics.journalPayload`. Larger payloads preserve short scalar
+fields and elide long strings and arrays; a still-wide payload records only
+its original byte size. These are the bounded `transitions` rows used for
+recent diagnostics. The canonical `appEvents` input stays complete, so a large
+file, transcript or run observation can still be replayed exactly.
 
-This is the writer's half of the growth the load budget was catching. The run
-pump (`controller/workflow-pump.ts`) re-dispatches a run card's whole payload —
-its full engine event list — on every poll, and the journal stored those bytes
-verbatim. A smithers.sh profile wiped to 0 bytes at 13:55Z on 2026-09-15 held
-567,535,882 bytes by 16:50Z, about 190 MB/h, with nothing running but a client
-polling run-summary / run-events every ~3 s for a handful of runs. Two bounds
-close it: the record cap above, and `DurableCollection.ts` skipping a durable
-write for a row whose content did not change, so an unchanged re-read costs
-nothing. The pump likewise does not dispatch a patch that changes nothing.
-Measured against a 264,769-byte run card: 270,879 bytes of store per idle poll
-cycle before, 889 after, and a store that stops growing once the journal's 500
-records have turned over. The 64 MiB load budget is a ceiling, not a steady
-state.
+Unchanged run polling is filtered at the normalized observation boundary,
+after validation and before dispatch. New transcript suffixes are anchored to
+the applied transcript length and optional cursor; a changed base refuses.
+Health changes caused by crossing an observed expiry remain recorded facts.
+Identical generic collection updates avoid redundant physical writes, while
+explicit application-head guards retain their compare-and-swap check.
 
-`chainEvents` is bounded by bytes, not by count, and never row by row. Both
-active and completed chain journals must retain their full prefixes: without
-them a resume can repeat model calls or external effects. So the journal is
-compacted whole-lineage, oldest lineage first, until it is back under
-`MAX_CHAIN_EVENT_BYTES` — the same 64 MiB the loader admits
-(`chain/PersistenceBudget.ts`), so a store the writer accepts is always a store
-the reader can open. Each evicted lineage leaves the durable pointer that keeps
-replay consistent: the retirement tombstone `CollectionJournal.ts` already
-refuses to replay past. The lineage being appended to is never evicted, so the
-live run always keeps its own full prefix; if it alone exceeds the budget the
-store logs that rather than truncating it. Compaction runs inside the appending
-transaction, like the diagnostic logs. Clearing/archiving a chat still does not
-delete execution evidence.
+An idle poll that learns nothing adds no event. An explicit accepted command
+still adds a durable fact even if its visible value is unchanged. The 500-row
+diagnostic limit therefore does not bound the canonical event history;
+verified checkpoints and event compaction handle that history separately.
+The 64 MiB load budget is an admission ceiling, not a steady-state size target.
+
+`chainEvents` uses a 64 MiB retention target measured as UTF-8 stored key/value
+bytes. The pure projector retires whole lineages, oldest last activity first,
+and writes their retirement tombstones in the same app event transaction.
+`CollectionJournal.ts` refuses retired identities so they cannot replay as new
+work. The lineage being appended to always keeps its complete prefix, even if
+it alone exceeds the target; the bounded loader will then refuse a later boot.
+Other lineages can be retired regardless of whether they are terminal, so a
+subsequent resume of an evicted run explicitly refuses instead of repeating its
+effects. This is retention, not a guarantee that every old run remains resumable.
+
+The byte budget is sealed in each new event as `journalBudgetBytes`; replay
+uses that recorded input. Historical events without the field keep their
+original non-compacting semantics. Changing a host's current budget never
+reinterprets accepted events. App event compaction separately writes a verified
+checkpoint covering both surviving chain rows and retirement tombstones before
+removing its covered application event suffix. Clearing/archiving a chat still
+does not delete execution evidence.
 
 Drafts, settings, notes, the Wiki and every other entity collection are
 untouched by this bound.
@@ -562,6 +814,9 @@ does not claim a cross-tab/database lease or exactly-once external effects.
   stale optimistic state rejection, independent overlapping SQLite commits,
   direct collection writes, and query metadata during pending persistence.
 - `AppStore.test.ts` and controller suites: reducer projections and retention.
+- `AppStore.cacheRecovery.test.ts`: complete authority before chain-cache repair,
+  missing/corrupt/retired/future authority refusal, legacy import, interrupted
+  reconstruction, local source replacement and real SQLite writer exclusion.
 - `e2e/playwright/frames.spec.ts`: durable frame URL/history/reload behavior.
 - `StorageRecovery.test.ts`, `BrowserStorageRecovery.test.ts`, and
   `RecoveryIntegration.test.ts`: raw capture, host cleanup, actor refusal, and
@@ -571,3 +826,9 @@ does not claim a cross-tab/database lease or exactly-once external effects.
 - `e2e/playwright/storage-refusal.spec.ts`: physical OPFS refusal/reopen,
   unstamped legacy adoption/ambiguity, and actual recovery downloads from both
   failed boot and a running app.
+
+### Native target run receipts
+
+The native target topic publishes only after the run journal has accepted and fsynced the corresponding frame. `TargetRunHistory.event` returns the exact retained frame, so live and replay readers receive the same redacted output and the same journal-cap marker; a capped frame or failed append returns no publishable frame. Once an append fails, later frames cannot hide the missing suffix, and `flush` rejects. Startup refuses to overwrite an existing journal, and append refuses to recreate a missing prefix. Cancel and shutdown await pending terminal receipts. Output logs remain bounded (including explicit truncation); lifecycle frames remain retained.
+
+New exit events include `at`, making terminal status/time a pure reduction of the initial run metadata and accepted events. The trailing RunRecord is a compatibility cache: deleting or changing it cannot override a timestamped exit. Legacy untimed exits still use their final record. This is a filesystem journal, with each accepted append fsynced; it is not a remote transactional execution guarantee. Execution that happened before a failed append is not fabricated into successful replay history.

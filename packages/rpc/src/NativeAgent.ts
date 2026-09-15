@@ -64,6 +64,8 @@ export interface AgentToolSpec {
  */
 export interface StartAgentTurnRequest {
   readonly runId: string
+  /** Stable per-leg identity and private replay capability, written locally before the POST. */
+  readonly journal?: import("./AgentTurnJournal.js").AgentTurnJournalRequest
   readonly messages: ReadonlyArray<AgentChatMessage>
   readonly instructions: string
   /** The tool specs offered this turn; the worker forwards them untouched. */

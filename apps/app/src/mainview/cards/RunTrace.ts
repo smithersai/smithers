@@ -15,10 +15,12 @@
  *
  * Pure: the card renders the model, the tests read it from a fixture.
  */
+import { uniqueCallEvents, openCallIndex } from "@smthrs/gateway/Diagnosis"
 import { engineTraceFromJournal } from "./EngineTrace"
 
 /** One control journal record, as the run card stores it (the run-events projection's row shape). */
 export interface JournalRecord {
+  readonly runId?: string
   readonly sequence?: number
   readonly kind?: string
   readonly occurredAt?: number
@@ -151,23 +153,13 @@ const builder = (
   detail: SpanDetail
 ): Builder => ({ id, kind, label, status, startedAt, children: [], detail })
 
-/** A settlement takes the oldest open call with its flow name; an unnamed one takes the oldest open call. */
-const takeOpenCall = (
-  open: Array<{ readonly flowName: string; readonly span: Builder }>,
-  flowName: string | undefined
-) => {
-  if (flowName === undefined) return open.shift()
-  const found = open.findIndex((call) => call.flowName === flowName)
-  return found < 0 ? undefined : open.splice(found, 1)[0]
-}
-
 /**
  * Folds a run's journal into its trace.
  *
  * Frames open on `turn-opened` and close when the next opens or the run ends;
  * cells open on `cell-produced` and close on `cell-settled`; calls open on
  * `cell-call-started` under the open cell (or the frame, when a call is
- * journaled outside a cell) and settle by flow name the way the gateway's own
+ * journaled outside a cell) and settle by stable call identity the way the gateway's own
  * `run-tree` pairs them, so a call's `call-N` id is the node id the
  * `node-output` projection knows it by. A journal with no records yields the
  * run root alone, wearing the run's status: the honest empty trace.
@@ -176,7 +168,8 @@ const takeOpenCall = (
  * @param records the run's journal, in sequence order
  */
 export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRecord>): TraceModel => {
-  const ordered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+  const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+  const ordered = uniqueCallEvents(rawOrdered)
   const firstAt = ordered.length === 0 ? 0 : timeOf(ordered[0]!, asRecord(ordered[0]!.payload))
   const root = builder(`run:${run.runId}`, "run", `run ${run.runId} · ${run.flowId}`, run.status, firstAt, {
     ...(run.kind === undefined ? {} : { fields: { kind: run.kind } })
@@ -187,7 +180,7 @@ export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRe
   let calls = 0
   let seat: string | undefined
   let lastAt = firstAt
-  const openCalls: Array<{ readonly flowName: string; readonly span: Builder }> = []
+  const openCalls: Array<{ readonly flowName: string; readonly callId?: string; readonly span: Builder }> = []
   const approvals = new Map<string, Builder>()
 
   /** Where a new span attaches: the open cell, else the open frame, else the run. */
@@ -286,12 +279,13 @@ export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRe
           input: payload.input,
           fields: restOf(payload, ["flowName", "input"])
         })
-        openCalls.push({ flowName, span })
+        openCalls.push({ flowName, callId: asString(payload.callId), span })
         parent().children.push(span)
         break
       }
       case "control.agent.cell-call-settled": {
-        const settled = takeOpenCall(openCalls, asString(payload.flowName))
+        const index = openCallIndex(openCalls, asString(payload.callId), asString(payload.flowName))
+        const settled = index < 0 ? undefined : openCalls.splice(index, 1)[0]
         if (settled === undefined) break
         const failed = asString(payload.outcome) === "failure"
         settled.span.endedAt = at
@@ -391,7 +385,7 @@ export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRe
       }
     }
   }
-  root.children.push(...engineTraceFromJournal(ordered))
+  root.children.push(...engineTraceFromJournal(rawOrdered))
   // A settled run leaves no frame open: the last frame ends where the journal does.
   if (TERMINAL_RUN.has(run.status)) {
     closeFrame(lastAt)

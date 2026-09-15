@@ -4,6 +4,8 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
+import { createGuideController } from "./controller/guide"
+import type { AppStore } from "./AppStore"
 
 const createAppController = scopedControllers()
 
@@ -41,6 +43,91 @@ const deferred = () => {
 }
 
 describe("controller shutdown has an awaitable completion boundary", () => {
+  test("immediate shutdown joins automatic startup without late writes or model/tool starts", async () => {
+    const actual = await store()
+    let shuttingDown = false
+    const lateWrites: string[] = []
+    let starts = 0
+    const observed: AppStore = {
+      ...actual,
+      dispatch: transition => {
+        if (shuttingDown) lateWrites.push(transition.type)
+        return actual.dispatch(transition)
+      }
+    }
+    const controller = createAppController(observed, repositories, {
+      ...agent,
+      startTurn: async () => { starts++; return { status: "error", message: "unexpected model start" } }
+    }, {
+      fetchImpl: async () => { starts++; throw new Error("unexpected network/tool start") }
+    })
+    const before = actual.session().revision
+    shuttingDown = true
+    await controller.dispose()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(lateWrites).toEqual([])
+    expect(starts).toBe(0)
+    expect(actual.session().revision).toBe(before)
+    expect([...actual.collections.repositoryContexts.values()]).toEqual([])
+    await expect(controller.commands.run("onboarding.act", "start")).resolves.toEqual({ status: "failed", error: "The controller is closed." })
+    expect(lateWrites).toEqual([])
+  })
+
+  test("shutdown waits for a pending startup receipt and prevents its repository follow-up", async () => {
+    const actual = await store()
+    const entered = deferred()
+    const receipt = deferred()
+    let shuttingDown = false
+    let hostClosed = false
+    const lateWrites: string[] = []
+    const observed: AppStore = {
+      ...actual,
+      dispatch: transition => {
+        if (shuttingDown) lateWrites.push(transition.type)
+        const transaction = actual.dispatch(transition)
+        if (transition.type !== "guide.changed") return transaction
+        entered.resolve()
+        return new Proxy(transaction, {
+          get: (target, property, receiver) => property === "isPersisted"
+            ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => receipt.promise) }
+            : Reflect.get(target, property, receiver)
+        })
+      },
+      dispose: async () => { await actual.dispose?.(); hostClosed = true }
+    }
+    const controller = createAppController(observed, repositories, agent)
+    await entered.promise
+    shuttingDown = true
+    const closing = controller.dispose()
+    try {
+      await Promise.resolve()
+      expect(hostClosed).toBe(false)
+      expect(lateWrites).toEqual([])
+    } finally {
+      receipt.resolve()
+      await closing
+    }
+    expect(hostClosed).toBe(true)
+    expect(lateWrites).toEqual([])
+    expect([...actual.collections.repositoryContexts.values()]).toEqual([])
+  })
+
+  test("a guide whose queued action resumes after disposal cannot dispatch or call its next effect", async () => {
+    const actual = await store()
+    const context = createControllerContext(actual, repositories, agent, {})
+    context.onDispose(() => actual.dispose?.())
+    const before = actual.session().revision
+    let followups = 0
+    const guide = createGuideController(context, async () => { followups++ })
+    const pending = guide.guideAct("start")
+    const closing = context.dispose()
+    expect(context.disposed).toBe(true)
+    await Promise.all([pending, closing])
+    expect(actual.session().revision).toBe(before)
+    expect(followups).toBe(0)
+  })
+
   test("asynchronous failures and pump-stop failures are collected without skipping other resources", async () => {
     const context = createControllerContext(await store(), repositories, agent, {})
     const releaseError = new Error("resource failed")

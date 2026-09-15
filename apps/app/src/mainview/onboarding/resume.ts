@@ -49,9 +49,14 @@ export function resumeTutorial(guide: GuideState, cards: Iterable<Card>, hasMess
 }
 
 
-/** Start Here and ?tutorial replay a finished guide; redirects resume the session they left. */
-export function shouldReplayTutorial(mode: "onboarding" | "repo" | undefined, search: string, guide: GuideState | undefined): boolean {
+/**
+ * Root/Start Here and ?tutorial are explicit tutorial entries. A durable frame
+ * address resumes its stored view even though it uses the same onboarding shell;
+ * rendering mode is not permission to restart a finished playthrough.
+ */
+export function shouldReplayTutorial(mode: "onboarding" | "repo" | undefined, search: string, guide: GuideState | undefined, pathname: string): boolean {
   if (mode !== "onboarding" || !guide?.finished) return false
   const params = new URLSearchParams(search)
+  if (!params.has("tutorial") && pathname !== "/") return false
   return !params.has("signed-in") && !params.has("installation_id") && !["failed", "error"].includes(params.get("auth") ?? "")
 }

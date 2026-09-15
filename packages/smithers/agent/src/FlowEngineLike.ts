@@ -59,6 +59,7 @@ import * as Cell from "@smthrs/harness/Cell"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as HarnessError from "@smthrs/harness/HarnessError"
 import type * as Plan from "@smthrs/harness/Plan"
+import { CallFact } from "@smthrs/journal"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import type * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
@@ -79,6 +80,7 @@ import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
+import { callId } from "./internal/CallIdentity.ts"
 import { normalizeRecordedModelStep, recordModelStep } from "./internal/FlowEngineLike.ts"
 import * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as WorkspaceObservation from "./WorkspaceObservation.ts"
@@ -789,6 +791,18 @@ const boundaryKey = (
     Effect.mapError((cause) => engineFailed(`Boundary ${name} could not be keyed`, cause))
   )
 
+/** Public coordinates name the logical run explicitly; the source harness
+ * calls it session, which must not be confused with an authentication token. */
+const factCall = (call: Cell.Call): CallFact.Call => {
+  const { session, ...identity } = call.identity
+  return {
+    callId: callId(call.identity),
+    identity: { runId: session, ...identity },
+    flowName: call.flowName,
+    input: call.input
+  }
+}
+
 /**
  * Constructs the durable harness engine port.
  *
@@ -973,6 +987,10 @@ export const make = (
           tier: decoded.effects.tier,
           idempotencyKey: key,
           metadata: callBoundary(decoded),
+          annotations: Context.make(CallFact.Annotation, {
+            phase: "invoked",
+            call: factCall(decoded)
+          }),
           // Admission is separate from the schema whose representation is
           // durable key material. Validate before persistence, including
           // instances a host mutated after construction, with a typed cause.
@@ -995,6 +1013,12 @@ export const make = (
           error: HarnessError.HarnessError,
           tier: "irreversible",
           idempotencyKey: key,
+          ...(boundary.name !== "cell-call" || boundary.call === undefined ? {} : {
+            annotations: Context.make(CallFact.Annotation, {
+              phase: "settled",
+              call: factCall(boundary.call)
+            })
+          }),
           execute: boundary.execute
         })
       }).pipe(Effect.provide(context))

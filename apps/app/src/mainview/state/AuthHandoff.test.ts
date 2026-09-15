@@ -40,6 +40,7 @@ interface Harness {
   readonly opened: string[]
   readonly requests: string[]
   readonly signIn: () => Promise<unknown>
+  readonly dispose: () => Promise<void>
 }
 
 const harness = async (options: {
@@ -92,7 +93,7 @@ const harness = async (options: {
   }
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
   await signedOut(store)
-  return { store, opened, requests, signIn: () => controller.commands.run("auth.sign-in") }
+  return { store, opened, requests, signIn: () => controller.commands.run("auth.sign-in"), dispose: async () => { await controller.dispose() } }
 }
 
 describe("the native sign-in handoff", () => {
@@ -235,4 +236,16 @@ describe("the native sign-in handoff", () => {
     )
     expect(h.requests.filter((line) => line.includes("claim"))).toHaveLength(0)
   })
+})
+
+
+test("disposing a pending native handoff aborts and joins its poll before releasing the store", async () => {
+  const h = await harness({ claims: [{ status: 200, body: { status: "pending" } }] })
+  await h.signIn()
+  expect(h.opened).toHaveLength(1)
+  await h.dispose()
+  const requests = [...h.requests]
+  await settled()
+  await settled()
+  expect(h.requests).toEqual(requests)
 })

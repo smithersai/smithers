@@ -2,9 +2,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
+import { act } from "react"
 import { CardView, type CardViewProps } from "./ChatCards"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { practiceIssue } from "./state/practice/PracticeRepository"
+import { createAppStore } from "./state/AppStore"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
@@ -42,6 +44,23 @@ test("Escape restores the same card through its minimize callback and does not e
   expect(host.querySelector(".card-maximize-backdrop")).toBeNull()
 })
 
+test("focus follows a card command whose durable receipt arrives after an animation frame", async () => {
+  let maximizations = 0
+  let minimizations = 0
+  const { host, render } = mount({ onMaximize: () => { maximizations++ }, onMinimize: () => { minimizations++ } })
+  host.querySelector<HTMLButtonElement>('[data-flow="card.maximize"]')!.click()
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  expect(maximizations).toBe(1)
+  render({ maximized: true })
+  const restore = host.querySelector<HTMLButtonElement>('[data-flow="card.minimize"]')!
+  expect(document.activeElement).toBe(restore)
+  restore.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  expect(minimizations).toBe(1)
+  render({ maximized: false })
+  expect(document.activeElement).toBe(host.querySelector('[data-flow="card.maximize"]'))
+})
+
 test("a maximized frame with local history has one navigation pair bound to that history", () => {
   const calls: unknown[] = []
   const { host } = mount({ maximized: true, card: { ...issue, navigation: { index: 1, length: 2 } }, onRunCommand: (...args) => { calls.push(args) } })
@@ -61,4 +80,94 @@ test("an Open issue has no internal DONE details; completed runs retain their De
   render({ card: run })
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Status")
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Created")
+})
+
+test("mounted target frames derive star changes from the live store without replacing their saved cards", async () => {
+  const rows = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => rows.get(key) ?? null, setItem: (key, value) => { rows.set(key, value) }, removeItem: key => { rows.delete(key) }
+  } })
+  const reactEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT
+  reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true
+  const card = CardSchema.parse({ id: "targets-live", kind: "targets", title: "Targets", status: "active", ordinal: 1, createdAt: 1,
+    payload: { repoId: "old-host", repoKey: "local:/project", repoName: "Project", status: "done", warnings: [],
+      targets: [{ id: "test", label: "//:test", target: "Shell.Test", kinds: ["test"], package: "//", name: "test", workspace: "." }],
+      view: { mode: "all" }, starred: [] } })
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+  const saved = store.collections.cards.get(card.id)!
+  const current = mount({ card: saved, projectionStore: store })
+  // A detached historical card is rendered by the same body and live decoration join.
+  const historical = mount({ card: structuredClone(saved), projectionStore: store, maximized: true })
+  const pressed = () => [current, historical].map(({ host }) => host.querySelector('[data-testid="targets-star-//:test"]')?.getAttribute("aria-pressed"))
+  try {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(pressed()).toEqual(["false", "false"])
+    await act(async () => {
+      await store.dispatch({ type: "target.starred", actor: "user", repoId: "replacement-host", star: {
+        id: "local:/project:://:test", repoKey: "local:/project", label: "//:test", starredAt: 2
+      } }).isPersisted.promise
+    })
+    expect(pressed()).toEqual(["true", "true"])
+    expect(store.collections.cards.get(card.id)).toEqual(saved)
+    await act(async () => {
+      await store.dispatch({ type: "target.unstarred", actor: "user", repoId: "replacement-host", id: "local:/project:://:test" }).isPersisted.promise
+    })
+    expect(pressed()).toEqual(["false", "false"])
+    expect((await store.verifyState()).valid).toBe(true)
+  } finally {
+    while (cleanups.length) cleanups.pop()!()
+    await store.dispose?.()
+    if (previousActEnvironment === undefined) delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT
+    else reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment
+  }
+})
+
+test("mounted repository updates derive versioned reads and current tags for saved and historical cards", async () => {
+  const rows = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => rows.get(key) ?? null, setItem: (key, value) => { rows.set(key, value) }, removeItem: key => { rows.delete(key) }
+  } }, { seedWiki: false })
+  const reactEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT
+  reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true
+  const notification = { id: "notice", scope: "github:one", repo: "org/repo", source: "smithers" as const, sourceId: "1", kind: "issue" as const,
+    number: 1, title: "An issue", state: "open", updatedAt: "v1", version: "v1", tags: ["original"], processedAt: 1 }
+  const observe = (version: string) => store.dispatch({ type: "repo.update.observed", actor: "system",
+    context: { id: "context", scope: "github:one", data: { repo: "org/repo", checkedAt: 1, openIssues: 1, openPrs: 0, problems: [], items: [], truncated: false } },
+    notifications: [{ ...notification, version, updatedAt: version, tags: version === "v1" ? ["original"] : ["original", "follow-up"] }]
+  }).isPersisted.promise
+  const card = CardSchema.parse({ id: "activity-live", kind: "repo-update", title: "Activity", status: "active", ordinal: 1, createdAt: 1,
+    payload: { scope: "github:one", repo: "org/repo", checkedAt: 1, summary: "One update", openIssues: 1, openPrs: 0, problems: [],
+      items: [{ id: "notice", version: "v1", source: "smithers", kind: "issue", number: 1, title: "An issue", state: "open", tags: ["original"], read: false }] } })
+  await observe("v1")
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+  const saved = store.collections.cards.get(card.id)!
+  const current = mount({ card: saved, projectionStore: store })
+  const historical = mount({ card: structuredClone(saved), projectionStore: store, maximized: true })
+  const reads = () => [current, historical].map(({ host }) => host.querySelector(".repo-update-item")?.getAttribute("data-read"))
+  try {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(reads()).toEqual(["false", "false"])
+    await act(async () => {
+      await store.dispatch({ type: "notifications.read", actor: "user", receipts: [{ id: "notice", version: "v1" }] }).isPersisted.promise
+      await store.dispatch({ type: "notification.tagged", actor: "user", id: "notice", tag: "follow-up" }).isPersisted.promise
+    })
+    expect(reads()).toEqual(["true", "true"])
+    for (const { host } of [current, historical]) {
+      expect(host.textContent).toContain("follow-up")
+      expect(host.querySelector(".repo-update-unread")).toBeNull()
+      expect(host.querySelector('[data-flow="notifications.read-update"]')).toBeNull()
+    }
+    await act(async () => { await observe("v2") })
+    expect(reads()).toEqual(["true", "true"])
+    expect(store.collections.cards.get(card.id)).toEqual(saved)
+    expect(store.collections.repositoryNotifications.get("notice")?.readVersion).toBeUndefined()
+    expect((await store.verifyState()).valid).toBe(true)
+  } finally {
+    while (cleanups.length) cleanups.pop()!()
+    await store.dispose?.()
+    if (previousActEnvironment === undefined) delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT
+    else reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment
+  }
 })

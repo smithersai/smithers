@@ -61,6 +61,8 @@ export interface GatewayWorkspaceBinding {
 /** How the seam reaches the relay. */
 export interface GatewayTransport {
   readonly baseUrl: string
+  /** Capture ownership at request admission; a late answer cannot cross an account boundary. */
+  readonly observationGuard?: () => () => boolean
   readonly bindingFor?: (repo: string, runId?: string) => GatewayWorkspaceBinding | { readonly error: string }
   readonly fetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly errorMessageOf: (response: Response, fallback: string) => Promise<string>
@@ -152,6 +154,8 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
     payload: unknown,
     binding?: GatewayWorkspaceBinding
   ): Promise<GatewayResult<unknown>> => {
+    const stillOwned = transport.observationGuard?.() ?? (() => true)
+    if (!stillOwned()) return { status: "error", message: "This workspace request no longer belongs to the current session." }
     const candidate = asRecord(payload)
     const runId = candidate.runId ?? asRecord(candidate.selector).runId ?? asRecord(candidate.target).runId
     const target = binding ?? transport.bindingFor?.(repo, typeof runId === "string" ? runId : undefined) ?? {}
@@ -170,6 +174,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
     } catch {
       return { status: "error", message: "The workspace didn't answer: the flow service is unreachable." }
     }
+    if (!stillOwned()) return { status: "error", message: "This workspace response belongs to a previous session." }
     if (body?.ok === true) return { status: "ok", value: body.payload }
     if (body?.ok === false) {
       const error = asRecord(body.error)

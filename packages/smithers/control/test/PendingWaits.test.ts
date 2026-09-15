@@ -6,6 +6,7 @@
  * observation port, when it does not — which is what a deployed host runs.
  * This is the one definition both call.
  */
+import * as Sha256 from "@smthrs/crypto/Sha256"
 import { describe, expect, it } from "vitest"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 
@@ -27,6 +28,7 @@ describe("pendingWaitOf", () => {
       flowId: "coding/PreparePlan",
       reason: "approval",
       token: token("WaitFor/coding-clarification#1"),
+      tokenDigest: Sha256.digestSync(token("WaitFor/coding-clarification#1")),
       name: "coding-clarification",
       attempt: 1,
       request: { kind: "ask", prompt: "Which service?" },

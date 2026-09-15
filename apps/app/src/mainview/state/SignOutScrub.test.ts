@@ -275,33 +275,32 @@ const seedPrivateRoster = async (store: AppStore): Promise<void> => {
       authorName: "Alice", timestamp: null, hasConflict: false, parentChangeIds: [], currentSeq: null, revisionCount: null
     }
   }).isPersisted.promise
-  await store.collections.linearIntegrations.insert({
+  await store.dispatch({ type: "linear.integrations.loaded", actor: "system", integrations: [{
     id: "private", teamId: "team", teamName: "Private", teamKey: "ALICE", repoOwner: "alice", repoName: "private",
-    active: true, remediation: null, lastSyncAt: null, createdAt: null, updatedAt: 1, revision: 1
-  }).isPersisted.promise
-  await store.collections.githubAppStatuses.insert({
+    active: true, remediation: null, lastSyncAt: null, createdAt: null
+  }] }).isPersisted.promise
+  await store.dispatch({ type: "github.app-status.loaded", actor: "system", status: {
     repo: "alice/private", installed: true, configured: true, installationId: 1, installUrl: null, rateLimit: null,
-    updatedAt: 1, revision: 1
+  } }).isPersisted.promise
+  await store.dispatch({ type: "recommendations.updated", actor: "smithers",
+    suggestions: [{ id: "private", label: "Alice private", flow: "issues.create", args: "ALICE_PRIVATE", emphasis: "primary" }],
+    source: "agent", revision: store.session().revision
   }).isPersisted.promise
-  await store.collections.recommendations.insert({
-    id: "current", suggestions: [{ id: "private", label: "Alice private", flow: "issues.create", args: "ALICE_PRIVATE", emphasis: "primary" }],
-    source: "agent", revision: 1, createdAt: 1
+  await store.dispatch({ type: "tab.opened", actor: "user", tab: {
+    id: "private-card-tab", kind: "card", title: "Alice private card", cardId: "balance"
+  } }).isPersisted.promise
+  await store.dispatch({ type: "tab.opened", actor: "user", tab: {
+    id: "private-terminal", kind: "terminal", title: "Alice private workspace", sessionId: "private-session",
+    workspaceId: "private", repo: "alice/private"
+  } }).isPersisted.promise
+  await store.dispatch({ type: "palette.toggled", actor: "user", open: false, lastQuery: "ALICE_PRIVATE_QUERY" }).isPersisted.promise
+  await store.dispatch({ type: "palette.item.opened", actor: "user", ref: "alice/private", kind: "repository", at: 1 }).isPersisted.promise
+  await store.dispatch({ type: "tab.selected", actor: "user", id: "private-terminal" }).isPersisted.promise
+  await store.dispatch({ type: "repo-tree.failed", actor: "system", copyId: "workspace:private", path: "", error: "ALICE_PRIVATE_PATH"
   }).isPersisted.promise
-  await store.collections.tabs.insert({ id: "private-card-tab", kind: "card", title: "Alice private card", cardId: "balance", ordinal: 1 }).isPersisted.promise
-  await store.collections.tabs.insert({ id: "private-terminal", kind: "terminal", title: "Alice private workspace", sessionId: "private-session",
-    workspaceId: "private", repo: "alice/private", ordinal: 2 }).isPersisted.promise
-  await store.collections.sessions.update("main", (draft) => {
-    draft.paletteLastQuery = "ALICE_PRIVATE_QUERY"
-    draft.paletteRecents = [{ ref: "alice/private", kind: "repository", count: 1, lastSeen: 1 }]
-    draft.activeTabId = "private-terminal"
+  await store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: "alice/private",
+    flows: [{ id: "private", description: "ALICE_PRIVATE_FLOW", summary: null, featured: true, modelInvocable: true }]
   }).isPersisted.promise
-  store.collections.repoTree.insert({
-    id: "workspace:private#", copyId: "workspace:private", path: "", expanded: true, state: "failed", entries: [],
-    error: "ALICE_PRIVATE_PATH", loadedAt: 1
-  })
-  store.collections.repositoryFlows.insert({
-    id: "alice/private", flows: [{ id: "private", description: "ALICE_PRIVATE_FLOW", summary: null, featured: true, modelInvocable: true }], loadedAt: 1
-  })
 }
 
 const privateRosterSizes = (store: AppStore) => ({
@@ -346,7 +345,11 @@ for (const next of ["logout", "replacement"] as const) {
     await loadIdentity(reopened, "signed-in", "bob")
     const controller = createAppController(reopened, unavailableRepositories, unavailableAgent, backend({}))
     controller.resumeDeferredCommand()
+    // Let the controller's automatic onboarding flow finish before closing its
+    // store owner; a disposed store correctly refuses late trace writes.
+    await settled()
     expect([...reopened.collections.toasts.values()].some((toast) => toast.key === "command.resume.issues.create")).toBe(false)
+    await controller.dispose()
     await reopened.dispose?.()
   })
 }

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { stubTutorialHost } from "./tutorial-stubs"
 
 /*
@@ -8,6 +8,28 @@ import { stubTutorialHost } from "./tutorial-stubs"
  * picker provides a deterministic card without depending on repository I/O.
  */
 test.skip(process.env.SMITHERS_CHAT_STUB === "0", "the deterministic local-app lane")
+
+const openWorkspaceChat = async (page: Page): Promise<void> => {
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
+  const chat = page.getByRole("button", { name: "Chat", exact: true })
+  await expect(chat).toBeVisible()
+  const skip = page.getByRole("button", { name: "Skip tutorial", exact: true })
+  if (await skip.isVisible()) {
+    await skip.click()
+    await page.getByRole("button", { name: "Not now", exact: true }).click()
+    await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
+    await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  }
+}
+
+const sendSlash = async (page: Page, line: string): Promise<void> => {
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
+  await page.getByTestId("composer-input").fill(line)
+  await page.getByTestId("composer-send").click()
+  await expect(page.getByTestId("composer-input")).toHaveValue("")
+  await page.getByTestId("composer-input").press("Escape")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+}
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -25,6 +47,7 @@ test("a tutorial Issue maximizes in place with one header, a viewport backdrop, 
   await page.goto("/")
   await page.locator('.guide-actions [data-flow="issues.list"]').click()
   await page.locator('.guide-actions [data-flow="issues.view"]').click()
+  await expect(page.getByRole("region", { name: "Lesson 3", exact: true })).toBeVisible()
   const card = page.locator('[data-tutorial-cards] .smithers-card[data-kind="issue"]')
   await expect(card).toBeVisible()
   const node = await card.elementHandle()
@@ -64,24 +87,23 @@ test("clear archives locally and its recovery link restores the conversation aft
     await route.fulfill({ status: 503, body: "offline" })
   })
   await page.goto("/")
-  await page.getByTestId("composer-input").fill("/appearance.theme")
-  await page.getByTestId("composer-send").click()
+  await openWorkspaceChat(page)
+  await sendSlash(page, "/appearance.theme")
   const card = page.getByTestId("transcript").locator('.smithers-card[data-kind="theme-picker"]')
   await expect(card).toBeVisible()
   const cardId = await card.getAttribute("data-testid")
   const originalUrl = page.url()
-  await page.getByTestId("composer-input").fill("/chat.clear")
-  await page.getByTestId("composer-send").click()
+  await sendSlash(page, "/chat.clear")
   await expect(page.getByRole("link", { name: "Open the archived conversation" })).toBeVisible()
   await expect(card).toHaveCount(0)
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(page).not.toHaveURL(originalUrl)
   const newUrl = page.url()
   await page.reload()
   await page.getByRole("link", { name: "Open the archived conversation" }).click()
   await expect(page).toHaveURL(originalUrl)
   await expect(page.getByTestId(cardId!)).toBeVisible()
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(newUrl)
   await expect(page.getByRole("link", { name: "Open the archived conversation" })).toBeVisible()
@@ -90,8 +112,8 @@ test("clear archives locally and its recovery link restores the conversation aft
 
 test("frame URLs survive reload, traverse history, preserve the card node, and fork", async ({ page }) => {
   await page.goto("/")
-  await page.getByTestId("composer-input").fill("/appearance.theme")
-  await page.getByTestId("composer-send").click()
+  await openWorkspaceChat(page)
+  await sendSlash(page, "/appearance.theme")
 
   const card = page.locator('.smithers-card[data-kind="theme-picker"]')
   await expect(card).toBeVisible()
@@ -110,8 +132,7 @@ test("frame URLs survive reload, traverse history, preserve the card node, and f
   )).toBe("preserved")
 
   const maximizedUrl = page.url()
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-  await page.getByTestId("composer-input").click()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 
   await page.getByTestId("frame-back").click()
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname))
@@ -124,12 +145,12 @@ test("frame URLs survive reload, traverse history, preserve the card node, and f
   await page.reload()
   await expect(page).toHaveURL(maximizedUrl)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 
   await page.getByTestId("frame-fork").click()
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname))
     .toMatch(/^\/w\/workspace-main\/b\/branch-[^/]+\/f\/frame-card:branch-[^:]+:/)
-  expect(page.url()).not.toBe(maximizedUrl)
+  await expect(page).not.toHaveURL(maximizedUrl)
   await expect(card).toHaveAttribute("data-maximized", "true")
 
   await page.goBack()
@@ -139,8 +160,8 @@ test("frame URLs survive reload, traverse history, preserve the card node, and f
 
 test("open-in-tab returns the address bar to the root frame and Escape minimizes a pointer-maximized card", async ({ page }) => {
   await page.goto("/")
-  await page.getByTestId("composer-input").fill("/appearance.theme")
-  await page.getByTestId("composer-send").click()
+  await openWorkspaceChat(page)
+  await sendSlash(page, "/appearance.theme")
 
   const card = page.getByTestId("transcript").locator('.smithers-card[data-kind="theme-picker"]')
   await expect(card).toBeVisible()
@@ -168,13 +189,12 @@ test("open-in-tab returns the address bar to the root frame and Escape minimizes
 })
 
 test("booted from a repository path, the address bar keeps it while back and forward still switch frames", async ({ page }) => {
-  // The local origin carries no public catalog; the pinned address bar does not depend on the selection.
-  await page.route("**/api/public/repos", (route) => route.fulfill({ status: 404, body: "no catalog" }))
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.goto("/smithersai/smithers")
   const repoUrl = page.url()
   expect(new URL(repoUrl).pathname).toBe("/smithersai/smithers")
-  await page.getByTestId("composer-input").fill("/appearance.theme")
-  await page.getByTestId("composer-send").click()
+  await openWorkspaceChat(page)
+  await sendSlash(page, "/appearance.theme")
 
   const card = page.getByTestId("transcript").locator('.smithers-card[data-kind="theme-picker"]')
   await expect(card).toBeVisible()
@@ -195,5 +215,5 @@ test("booted from a repository path, the address bar keeps it while back and for
 
   await page.reload()
   await expect(page).toHaveURL(repoUrl)
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 })

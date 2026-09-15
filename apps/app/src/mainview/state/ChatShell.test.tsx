@@ -10,7 +10,6 @@ import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { memoryStorage, settled, unavailableAgent, unavailableRepositories } from "./TestFixtures"
 
-const createAppController = scopedControllers()
 
 /*
  * The chat-first contract: World and Connectors are embedded panes inside the
@@ -45,11 +44,13 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
+const createAppController = scopedControllers()
+
 interface Mount {
   readonly host: HTMLElement
   readonly markup: () => string
   /** Run a state change and flush React, the way a real click does. */
-  readonly act: (change: () => void) => Promise<void>
+  readonly act: (change: () => unknown) => Promise<void>
 }
 
 /** Client-render the app into a fresh DOM node and keep the root live. */
@@ -72,7 +73,9 @@ const mount = (controller: AppControllerType): Mount => {
     host,
     markup: () => host.innerHTML,
     act: async (change) => {
-      flushSync(change)
+      let pending: unknown
+      flushSync(() => { pending = change() })
+      await pending
       // Collection subscriptions land on a microtask; flush what they queued.
       await new Promise((resolve) => setTimeout(resolve, 0))
       flushSync(() => {})
@@ -97,13 +100,13 @@ describe("chat-first shell: panes never replace the conversation", () => {
     const before = [...store.collections.messages.values()].map((message) => message.id)
     controller.changeDraft("a draft that must survive")
 
-    expect(controller.runCommand("world")).toBe(true)
+    expect((await controller.commands.run("world")).status).toBe("executed")
     expect(store.session().surface).toBe("chat")
     expect(store.collections.cards.get("world-embedded")?.kind).toBe("world")
     expect([...store.collections.messages.values()].map((message) => message.id)).toEqual(before)
     expect(store.session().draft).toBe("a draft that must survive")
 
-    expect(controller.runCommand("connect")).toBe(true)
+    expect((await controller.commands.run("connect")).status).toBe("executed")
     expect(store.session().surface).toBe("connectors")
     expect([...store.collections.messages.values()].map((message) => message.id)).toEqual(before)
     expect(store.session().draft).toBe("a draft that must survive")
@@ -115,7 +118,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
 
     store.dispatch({ type: "surface.changed", actor: "user", surface: "world" })
     expect(store.session().surface).toBe("world")
-    expect(controller.runCommand("chat")).toBe(true)
+    expect((await controller.commands.run("chat")).status).toBe("executed")
     expect(store.session().surface).toBe("chat")
   })
 
@@ -144,7 +147,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
 
   test("with the Connectors pane open the transcript and composer still render", async () => {
     const { controller } = await harness()
-    controller.runCommand("connect")
+    await controller.commands.run("connect")
 
     const markup = renderApp(controller)
     expect(markup).toContain("connectors-surface")
@@ -155,8 +158,8 @@ describe("chat-first shell: panes never replace the conversation", () => {
   test("closing the pane returns to the conversation with nothing lost", async () => {
     const { store, controller } = await harness()
     controller.changeDraft("still here")
-    controller.runCommand("connect")
-    controller.runCommand("chat")
+    await controller.commands.run("connect")
+    await controller.commands.run("chat")
 
     const markup = renderApp(controller)
     expect(store.session().surface).toBe("chat")
@@ -171,12 +174,12 @@ describe("chat-first shell: panes never replace the conversation", () => {
     controller.send("remember this message")
     await settled()
 
-    controller.runCommand("world")
+    await controller.commands.run("world")
     const openMarkup = renderApp(controller)
     expect(openMarkup).toContain("remember this message")
     expect(openMarkup).toContain("world-card-workspace")
 
-    controller.runCommand("chat")
+    await controller.commands.run("chat")
     const closedMarkup = renderApp(controller)
     expect(closedMarkup).toContain("remember this message")
     expect(closedMarkup).not.toContain("world-surface")
@@ -203,7 +206,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
     for (const pane of ["connect", "world"] as const) {
       await view.act(() => {
         if (pane === "world") store.dispatch({ type: "surface.changed", actor: "user", surface: "world" })
-        else controller.runCommand(pane)
+        else controller.commands.run(pane)
       })
       expect(store.session().surface).toBe(pane === "connect" ? "connectors" : "world")
       expect(view.host.querySelector(".embedded-pane")).not.toBeNull()
@@ -212,7 +215,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
       expect(view.host.querySelector("textarea")).toBe(composer)
       expect(view.markup()).toContain("a message that must outlive every pane")
 
-      await view.act(() => void controller.runCommand("chat"))
+      await view.act(() => void controller.commands.run("chat"))
       expect(store.session().surface).toBe("chat")
       expect(view.host.querySelector(".embedded-pane")).toBeNull()
       expect(view.host.querySelector(".smithers-transcript")).toBe(transcript)
@@ -229,12 +232,12 @@ describe("chat-first shell: panes never replace the conversation", () => {
     const composer = view.host.querySelector("textarea")
     expect(composer?.value).toBe("half-written thought")
 
-    await view.act(() => void controller.runCommand("world"))
+    await view.act(() => void controller.commands.run("world"))
     expect(view.host.querySelector("textarea")).toBe(composer)
     expect(composer?.value).toBe("half-written thought")
     expect(store.session().draft).toBe("half-written thought")
 
-    await view.act(() => void controller.runCommand("chat"))
+    await view.act(() => void controller.commands.run("chat"))
     expect(composer?.value).toBe("half-written thought")
     expect(store.session().draft).toBe("half-written thought")
   })
@@ -242,7 +245,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
   test("the pane's close affordance is a real, registered, back-to-conversation button", async () => {
     const { store, controller } = await harness()
     const view = mount(controller)
-    await view.act(() => void controller.runCommand("connect"))
+    await view.act(() => void controller.commands.run("connect"))
 
     const close = view.host.querySelector<HTMLButtonElement>(
       ".embedded-pane [data-flow=\"chat\"]"

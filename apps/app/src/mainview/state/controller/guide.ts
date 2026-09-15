@@ -30,6 +30,7 @@ const revisitingCompletedBeat = (guide: GuideState): boolean => {
 export function createGuideController(ctx: ControllerContext, onStart?: () => Promise<unknown>, onFinish?: (repo: string) => Promise<string | void>, onFinished?: () => void) {
   /** Revisit the persisted frame result without executing the action that produced it. */
   const restoreLessonCard = async (guide: GuideState, back = false) => {
+    if (ctx.disposed) return
     const stage = GUIDE_STAGES[guide.step]
     if (stage?.kind !== "do") return
     const stackBack = back && stage.completion === "change.opened"
@@ -52,6 +53,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       if (index < 0) continue
       const delta = index > history.index ? 1 : -1
       for (let count = Math.abs(index - history.index); count > 0; count--) {
+        if (ctx.disposed) return
         await ctx.store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id: history.id, delta }).isPersisted.promise
       }
       return
@@ -70,6 +72,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     const repo = signedIn && !guide.declined?.some(choice => choice === "login" || choice === "install")
       && active && !active.startsWith("practice:") ? active : "smithersai/smithers"
     const refusal = await onFinish?.(repo)
+    if (ctx.disposed) return
     if (refusal) return refusal
     for (const toast of ctx.store.collections.toasts.values()) {
       if (["reel-notify-", "reel-wait-", "guide-hello-", "guide-tip-"].some(prefix => toast.key.startsWith(prefix))) {
@@ -79,19 +82,23 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
   }
   const reelAct = createReelController(ctx)
   const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {
+    if (ctx.disposed) return
     /*
      * Restore the demonstration's borrowed resources (theme, composer, its
      * example wait) before ordinary navigation or replay reads the guide.
      */
     if (["back", "finish", "restart"].includes(action) && ctx.store.session().guide?.reelIndex !== undefined) {
       await reelAct("reel-exit", "")
+      if (ctx.disposed) return
       if (action === "back") return
     }
     /* Reducer cases: reel-start, reel-next <epoch:index>, reel-demo <demo>, reel-exit. */
     const beforeReel = ctx.store.session().guide
     const completingReel = action === "reel-next" && beforeReel?.reelIndex === REEL_STAGES.length - 1
       && value === `${beforeReel.reelEpoch ?? 0}:${beforeReel.reelIndex}`
-    if (await reelAct(action, value)) {
+    const handledByReel = await reelAct(action, value)
+    if (ctx.disposed) return
+    if (handledByReel) {
       if (completingReel) return applyGuideAction("finish")
       return
     }
@@ -291,7 +298,11 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
       default:
         return `Unknown onboarding action: ${action}`
     }
+    if (ctx.disposed) return
     await ctx.store.dispatch({ type: "guide.changed", actor: action === "advance" ? "system" : ctx.commandActor, guide }).isPersisted.promise
+    // The receipt may settle after shutdown began. It never grants a closed
+    // controller permission to launch the next repository read or navigation.
+    if (ctx.disposed) return
     if (action === "finish") onFinished?.()
     if (action === "start" || action === "restart") {
       await onStart?.()
@@ -303,7 +314,13 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     if (action !== "start") return applyGuideAction(action, value)
     return starting ??= applyGuideAction(action, value).finally(() => { starting = undefined })
   }
-  return { guideAct }
+  // Mount visibility is a host observation, independent of the command actor.
+  // A late React ref cleanup cannot reopen a controller whose lifetime ended.
+  const observeGuideVisibility = (visible: boolean): void => {
+    if (ctx.disposed) return
+    ctx.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible })
+  }
+  return { guideAct, observeGuideVisibility }
 }
 
 /** Map old lessons by their durable completion signals; an update never erases progress. */

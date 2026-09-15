@@ -6,8 +6,11 @@ import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
 import { questionOf } from "../../cards/ApprovalQuestion"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
-import { expireStatus } from "../HealthStatus"
 import { runFailure } from "../RunFailure"
+import { AppEventIntegrityError } from "../AppEventStream"
+import { changedRuntimeRunObservation, RuntimeProjectionIntegrityError, runtimeRunKey, runtimeScopeOf } from "../RuntimeProjection"
+import type { RuntimeRun, RuntimeRunObservation } from "../RuntimeProjection"
+import { canonicalEventValue } from "../EventValue"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -47,7 +50,6 @@ export const createWorkflowPumpController = (
    * the journal appends the suffix after the card's retained position.
    */
   const RUN_POLL_MS = workflowPollMs
-  const RUN_STEPS_TAIL = 8
   /*
    * The generous bound. A run the workspace never finishes is a real state,
    * and polling it until the tab closes is neither honest nor kind to the
@@ -59,7 +61,7 @@ export const createWorkflowPumpController = (
   const liveRunCards = (): Array<Extract<Card, { kind: "run-trace" }>> =>
     [...store.collections.cards.values()].filter(
       (card) =>
-        card.kind === "run-trace" &&
+        card.kind === "run-trace" && card.runtimeView?.revision === undefined &&
         // A practice run (state/practice) is a bundled replay: no workspace to ask.
         !card.payload.repo.startsWith("practice:") &&
         (card.payload.phase === "launching" ||
@@ -89,21 +91,16 @@ export const createWorkflowPumpController = (
     status?: Card["status"]
   ): void => {
     const card = store.collections.cards.get(cardId)
-    if (card === undefined || card.kind !== "run-trace") return
-    const payload = { ...card.payload, ...patch }
-    /*
-     * A poll that learned nothing writes nothing. This patch carries the run's
-     * WHOLE payload — its full engine event list — and the pump re-reads every
-     * three seconds, so an unchanged re-read used to journal that payload again
-     * on every cycle (state/AppStore.ts MAX_TRANSITION_PAYLOAD_BYTES).
-     */
-    if ((status === undefined || status === card.status) && JSON.stringify(payload) === JSON.stringify(card.payload)) return
-    store.dispatch({
-      type: "card.updated",
-      actor: "system",
-      id: cardId,
-      patch: { payload, ...(status === undefined ? {} : { status }) }
-    })
+    if (ctx.disposed || card === undefined || card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
+    // Execution comes from the gateway observation. Watcher state is local
+    // evidence and must not overwrite a run verdict or fan out to card copies.
+    void status
+    const state = patch.phase === "reconnecting" || patch.phase === "quiet" || patch.phase === "stopped" ? patch.phase : "connected"
+    const scope = runtimeScopeOf(card)
+    if (scope === undefined) return
+    const observer: NonNullable<RuntimeRun["observer"]> = { state, ...(patch.observationError === undefined ? {} : { error: patch.observationError }), ...(patch.quietForMs === undefined ? {} : { quietForMs: patch.quietForMs }) }
+    if (canonicalEventValue(store.committedRuntimeRun(runtimeRunKey(scope))?.observer) === canonicalEventValue(observer)) return
+    store.dispatch({ type: "gateway.run.observer.changed", actor: "system", scope, observer })
   }
 
   /**
@@ -122,8 +119,9 @@ export const createWorkflowPumpController = (
   }
 
   /** The approval cards a run is waiting on, bound to the existing round trip. */
-  const upsertRunApprovals = (runId: string, repo: string, workspaceId: string | undefined, rows: ReadonlyArray<ApprovalRow>): number => {
-    reconcileRunApprovals(store, { repo, runId, workspaceId }, rows)
+  const upsertRunApprovals = async (runId: string, repo: string, workspaceId: string | undefined, rows: ReadonlyArray<ApprovalRow>): Promise<number> => {
+    await reconcileRunApprovals(store, { repo, runId, workspaceId }, rows)
+    if (ctx.disposed) return 0
     let found = 0
     for (const approval of rows) {
       if (approval.runId !== runId || approval.status !== "pending") continue
@@ -169,7 +167,7 @@ export const createWorkflowPumpController = (
    * stops silently.
    */
   const pumpWorkflowRun = async (cardId: string, observeOnce = false): Promise<void> => {
-    if (ctx.runPumps.has(cardId)) return
+    if (ctx.disposed || ctx.runPumps.has(cardId)) return
     const pump = { stopped: false }
     ctx.runPumps.set(cardId, pump)
     let failures = 0
@@ -188,7 +186,7 @@ export const createWorkflowPumpController = (
       for (;;) {
         if (pump.stopped) return
         const card = store.collections.cards.get(cardId)
-        if (card === undefined || card.kind !== "run-trace") return
+        if (ctx.disposed || card === undefined || card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
         const alreadyTerminal = TERMINAL_PHASES.has(card.payload.phase)
         const projectionPending = engineProjectionPending(card.payload.events)
         if (
@@ -216,10 +214,11 @@ export const createWorkflowPumpController = (
         const binding = { workspaceId }
         // A resume or an explicit inspection may supply a new full prefix.
         // Recover its position from the tail, without scanning old history.
-        if (card.payload.events !== retainedJournal) {
+        const normalized = store.committedRuntimeRun(runtimeRunKey(card.payload))
+        if (normalized?.events !== retainedJournal) {
           const previousLength = retainedJournal?.length ?? 0
           const previousCursor = journalCursor
-          retainedJournal = card.payload.events
+          retainedJournal = normalized?.events
           const sequence = retainedJournal?.at(-1)?.sequence
           journalCursor = undefined
           if (typeof sequence === "number" && retainedJournal !== undefined) {
@@ -266,7 +265,7 @@ export const createWorkflowPumpController = (
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           // Keep asking until the gate is actually in hand: a parked run can
           // be readable a beat before its approval row is.
-          if (approvals.status === "ok" && upsertRunApprovals(runId, repo, card.payload.workspaceId, approvals.value) > 0) {
+          if (approvals.status === "ok" && await upsertRunApprovals(runId, repo, card.payload.workspaceId, approvals.value) > 0) {
             approvalPending = false
           }
         }
@@ -278,19 +277,16 @@ export const createWorkflowPumpController = (
          * the card already pays for. Unfollowing stops the merge, and a
          * terminal run keeps its last transcript standing.
          */
-        let transcriptRows: Extract<Card, { kind: "run-trace" }>["payload"]["transcriptRows"]
+        let transcriptObservation: RuntimeRunObservation["transcript"]
+        let transcriptCursor: ProjectionCursor | undefined
+        let transcriptRead = false
         if (card.payload.follow === true && (!wasFollowing || revision === undefined || revision !== transcriptRevision)) {
           const transcript = await gateway.transcript(repo, runId, binding)
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           if (transcript.status === "ok") {
-            transcriptRevision = revision
-            transcriptRows = transcript.value.map((line) => ({
-              sequence: line.sequence,
-              turn: line.turn,
-              at: line.at,
-              kind: line.kind,
-              text: line.text
-            }))
+            transcriptObservation = [...transcript.value]
+            transcriptCursor = transcript.cursor
+            transcriptRead = true
           }
         }
 
@@ -301,118 +297,99 @@ export const createWorkflowPumpController = (
          * A failed read does not acknowledge the summary revision, so the
          * next cycle retries even when the run has not moved again.
          */
-        let events: Extract<Card, { kind: "run-trace" }>["payload"]["events"]
+        let journalObservation: RuntimeRunObservation["journal"]
+        let journalRead = false
+        let journalAdvanced = false
         let eventReadError: string | undefined
         // A native projection can append after its control verdict settled,
         // without changing the summary cursor. Its own marker closes this read.
         if (revision === undefined || revision !== journalRevision || projectionPending) {
           const journal = await gateway.runEvents(repo, runId, binding, journalCursor)
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
-          const current = store.collections.cards.get(cardId)
+          const current = store.committedRuntimeRun(runtimeRunKey(card.payload))
           // An inspection that won this race already replaced our prefix.
           // Reconcile its cursor next cycle instead of appending twice.
-          if (journal.status === "ok" && current?.kind === "run-trace" && current.payload.events === retainedJournal) {
+          if (journal.status === "ok" && current?.events === retainedJournal) {
+            journalObservation = { mode: journalCursor === undefined ? "full" : "suffix", after: journalCursor, events: [...journal.value] }
             // Empty journals and a first sequence-zero event share cursor
             // 0:0. Keep reading until at least one row establishes a prefix.
-            journalRevision = journalCursor !== undefined || journal.value.length > 0 ? revision : undefined
-            if (journal.value.length > 0) {
-              // Preserve old event identities and never mutate a dispatched prefix.
-              events = [...(retainedJournal ?? []), ...journal.value.map((event) => ({ ...event }))]
-              retainedJournal = events
-              for (const event of journal.value) {
-                journalCursor = {
-                  selector: { _tag: "run-events", runId }, projection: "run-events", runId,
-                  value: event.sequence,
-                  offset: journalCursor?.value === event.sequence ? journalCursor.offset + 1 : 0
-                }
-              }
-            }
+            journalRead = true
+            journalAdvanced = journal.value.length > 0
           } else if (journal.status !== "ok") eventReadError = journal.message
+        }
+        try {
+          const committed = store.committedRuntimeRun(runtimeRunKey(card.payload))
+          // Another local observer can commit while this read is in flight.
+          // Retry that race from its applied cursor, not as an upstream conflict.
+          if (committed?.revision !== normalized?.revision) {
+            observeOnce = true
+            await pokeableWait(cardId, RUN_POLL_MS)
+            continue
+          }
+          const complete: RuntimeRunObservation = {
+            scope: { repo, runId, ...(workspaceId === undefined ? {} : { workspaceId }) }, summary: row, summaryCursor: summary.cursor,
+            ...(transcriptObservation === undefined ? {} : { transcript: transcriptObservation, transcriptCursor }),
+            ...(journalObservation === undefined ? {} : { journal: { mode: "full", events: journalObservation.mode === "full" ? journalObservation.events : [...(committed?.events ?? []), ...journalObservation.events] } })
+          }
+          const observation = changedRuntimeRunObservation(committed, complete, Date.now())
+          // Accepted commands remain immutable facts. An idle transport read
+          // enters no command at all; meaningful reads retain only new evidence.
+          if (observation !== undefined) {
+            const live = store.collections.runtimeRuns.get(runtimeRunKey(card.payload))
+            let prepared: RuntimeRunObservation | undefined
+            try {
+              prepared = changedRuntimeRunObservation(live, complete, Date.now())
+            } catch (error) {
+              if (!(error instanceof RuntimeProjectionIntegrityError) || live?.revision === committed?.revision) throw error
+              observeOnce = true
+              await pokeableWait(cardId, RUN_POLL_MS)
+              continue
+            }
+            // If identical evidence is merely optimistic, a small truthful
+            // summary receipt still waits behind it and propagates its failure.
+            await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: prepared ?? {
+              scope: complete.scope, summary: row, summaryCursor: summary.cursor
+            } }).isPersisted.promise
+          }
+        } catch (error) {
+          if (!(error instanceof RuntimeProjectionIntegrityError) && !(error instanceof AppEventIntegrityError && error.reason === "event")) throw error
+          patchRunCard(cardId, { observationError: "The workspace returned a conflicting recorded prefix. The last verified evidence was preserved.", phase: "stopped" })
+          return
+        }
+        if (pump.stopped || ctx.disposed || ctx.runPumps.get(cardId) !== pump) return
+        // A transport response is not an applied cursor. Advance acknowledgments
+        // only after persistence, including a validated read that changed nothing.
+        if (transcriptRead) transcriptRevision = revision
+        if (journalRead) {
+          const applied = store.committedRuntimeRun(runtimeRunKey(card.payload))
+          retainedJournal = applied?.events
+          journalCursor = applied?.cursor
+          journalRevision = journalCursor === undefined ? undefined : revision
         }
         // Only a nonempty, prefix-matched suffix assigns events. A higher
         // offset at the same sequence is also actual observation progress.
-        if (events !== undefined) lastProgressAt = Date.now()
-
-        /*
-         * Why the run is not moving, in the control plane's word. `accepted`
-         * reads "executor" — the CLI's own render-time convention for a run
-         * nothing is driving yet — and a parked run names its wait. A moving
-         * run names nothing.
-         */
-        const waiting = row.status === "accepted"
-          ? "executor"
-          : row.status === "parked"
-          ? row.waitingReason ?? "parked"
-          : undefined
-        const steeringPending = (row.steeringPending ?? 0) > 0
+        if (journalAdvanced) lastProgressAt = Date.now()
 
         const phase = PHASE_OF_STATUS[row.status]
-        const statusRollup = row.statusRollup?.subjectId === `run:${row.runId}` && row.statusRollup.state === row.status
-          ? expireStatus(row.statusRollup, Date.now()) : undefined
         if (TERMINAL_PHASES.has(phase)) {
-          const steps = [...card.payload.steps, ...newSteps].slice(-RUN_STEPS_TAIL)
-          const observationError = eventReadError === undefined ? { observationError: undefined } : {
+          if (eventReadError !== undefined) patchRunCard(cardId, {
             observationError: `The run has settled, but its recorded engine evidence could not be read: ${eventReadError}`
-          }
-          if (phase === "completed") {
-            // The run summary's own verdict, which is what `whatHappened`
-            // used to answer out of the engine database.
-            const result = row.verdict
-            patchRunCard(cardId, { phase, statusRollup, steps, lastSeq: row.updatedAt, result, waiting: undefined, steeringPending, error: undefined, ...observationError, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }) }, "acted")
-            await ctx.finishTutorialChange(cardId)
-            if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: result })
-          } else {
-            // Raw diagnosis stays on the card under Technical details.
-            const detail = row.status === "failed" ? row.verdict : undefined
-            const message = phase === "failed"
-              ? `The run failed: ${runFailure(detail).message}`
-              : "The run was cancelled."
-            patchRunCard(
-              cardId,
-              { phase, statusRollup, steps, lastSeq: row.updatedAt, waiting: undefined, steeringPending, ...(transcriptRows === undefined ? {} : { transcriptRows }), ...(events === undefined ? {} : { events }), ...(detail === undefined ? {} : { error: detail }), ...observationError },
-              "error"
-            )
-            if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: message })
-          }
-          if (eventReadError === undefined && (events === undefined ? projectionPending : engineProjectionPending(events))) {
+          })
+          if (phase === "completed") await ctx.finishTutorialChange(cardId)
+          if (ctx.disposed || pump.stopped || ctx.runPumps.get(cardId) !== pump) return
+          if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
+            ? "The run was cancelled." : `The run failed: ${runFailure(row.verdict).message}` })
+          if (eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
             previous = row
             await pokeableWait(cardId, RUN_POLL_MS)
             continue
           }
           return
         }
-
-        /*
-         * Real movement resets the quiet clock: new activity, or a run that
-         * CHANGED what it says about itself. A summary that keeps answering
-         * the same "running" is not progress — that is precisely the state the
-         * quiet bound exists for.
-         */
-        if (newSteps.length > 0 || events !== undefined || previous === undefined || row.status !== previous.status) {
-          lastProgressAt = Date.now()
-        }
-        const summaryChanged = JSON.stringify(previous) !== JSON.stringify(row)
+        // Movement uses recorded counters and appended events, never a successful
+        // transport response by itself. Unchanged polling cannot postpone quiet.
+        if (newSteps.length > 0 || journalAdvanced || previous === undefined || row.status !== previous.status) lastProgressAt = Date.now()
         previous = row
-
-        const nextPhase = card.payload.phase === "launching" && newSteps.length === 0 && row.status === "accepted"
-          ? card.payload.phase
-          : runAwaitsApproval(card.payload)
-          ? "waiting-approval"
-          : phase
-        if (summaryChanged || events !== undefined ||
-          (transcriptRows !== undefined && JSON.stringify(transcriptRows) !== JSON.stringify(card.payload.transcriptRows)) ||
-          nextPhase !== card.payload.phase || waiting !== card.payload.waiting || steeringPending !== card.payload.steeringPending) {
-          patchRunCard(cardId, {
-            phase: nextPhase,
-            statusRollup,
-            steps: [...card.payload.steps, ...newSteps].slice(-RUN_STEPS_TAIL),
-            lastSeq: row.updatedAt,
-            waiting,
-            steeringPending,
-            ...(transcriptRows === undefined ? {} : { transcriptRows }),
-            ...(events === undefined ? {} : { events })
-          })
-        }
         await pokeableWait(cardId, RUN_POLL_MS)
       }
     } finally {
@@ -435,7 +412,7 @@ export const createWorkflowPumpController = (
    */
   const runCardFor = (cardId: string): Extract<Card, { kind: "run-trace" }> | undefined => {
     const card = store.collections.cards.get(cardId)
-    return card?.kind === "run-trace" ? card : undefined
+    return card?.kind === "run-trace" && card.runtimeView?.revision === undefined ? card : undefined
   }
 
   /**
@@ -452,27 +429,24 @@ export const createWorkflowPumpController = (
     if (pump !== undefined) pump.stopped = true
     ctx.runPumps.delete(cardId)
     ctx.pumpPokes.get(cardId)?.()
-    void gateway.cancel(card.payload.repo, card.payload.runId, reason, { workspaceId: card.payload.workspaceId }).then((cancelled) => {
-      patchRunCard(cardId, {
-        phase: cancelled.status === "ok" ? "cancelled" : "stopped",
-        steps: [
-          ...card.payload.steps,
-          cancelled.status === "ok" ? "Cancelled this run." : "Stopped watching this run."
-        ].slice(-RUN_STEPS_TAIL)
-      })
-    })
+    void gateway.cancel(card.payload.repo, card.payload.runId, reason, { workspaceId: card.payload.workspaceId }).then(async (cancelled) => {
+      if (ctx.disposed) return
+      if (cancelled.status !== "ok") {
+        patchRunCard(cardId, { phase: "stopped", observationError: cancelled.message })
+        return
+      }
+      // A cancel receipt records accepted intent. Read the resulting gateway
+      // lifecycle before rendering a terminal execution outcome.
+      patchRunCard(cardId, { phase: "running" })
+      await pumpWorkflowRun(cardId, true)
+    }).catch(() => {})
     return undefined
   }
 
   const retryRunWatch = (cardId: string): string | void => {
     const card = runCardFor(cardId)
     if (card === undefined) return "That isn't a run card."
-    patchRunCard(cardId, {
-      phase: TERMINAL_PHASES.has(card.payload.phase) ? card.payload.phase : "running",
-      ...(TERMINAL_PHASES.has(card.payload.phase) ? {} : { error: undefined }),
-      observationError: undefined,
-      steps: [...card.payload.steps, "Checking the run again…"].slice(-RUN_STEPS_TAIL)
-    })
+    store.dispatch({ type: "gateway.run.observer.changed", actor: "system", scope: runtimeScopeOf(card)!, observer: { state: "connected", action: "retry" } })
     void pumpWorkflowRun(cardId, true)
     return undefined
   }
@@ -484,6 +458,7 @@ export const createWorkflowPumpController = (
     // client could have committed the decision before its answer was lost.
     const scopes: RunScope[] = []
     for (const card of store.collections.cards.values()) {
+      if (card.runtimeView?.revision !== undefined) continue
       const runIds = card.kind === "approval" && card.payload.chain !== true && card.payload.decision === undefined && card.payload.runId !== undefined
         ? [card.payload.runId]
         : card.kind === "approvals-inbox" ? card.payload.approvals.filter((row) => row.decision === undefined).map((row) => row.runId) : []
@@ -492,9 +467,9 @@ export const createWorkflowPumpController = (
         if (scope !== undefined && !scopes.some((prior) => sameRunScope(prior, scope))) scopes.push(scope)
       }
     }
-    for (const scope of scopes) void gateway.approvals(scope.repo, scope.runId, { workspaceId: scope.workspaceId }).then((result) => {
-      if (result.status === "ok") reconcileRunApprovals(store, scope, result.value)
-    })
+    for (const scope of scopes) void gateway.approvals(scope.repo, scope.runId, { workspaceId: scope.workspaceId }).then(async result => {
+      if (result.status === "ok" && !ctx.disposed) await reconcileRunApprovals(store, scope, result.value)
+    }).catch(() => {})
   }
   ctx.resumeWorkflowRuns = resumeWorkflowRuns
 

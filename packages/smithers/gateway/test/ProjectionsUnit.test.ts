@@ -9,6 +9,7 @@
  * real control plane cannot be asked to produce them on demand.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { ControlFacts } from "@smthrs/control"
 import type { Service as ControlService } from "@smthrs/control/Control"
 import { PersistenceError, Unavailable } from "@smthrs/control/ControlError"
 import type { ControlEvent, ListResponse, RunSummary } from "@smthrs/control/ControlSchema"
@@ -942,7 +943,25 @@ describe("Projections subscriptions", () => {
         const relevant = index % 2 === 0
         summaries.set(runId, { ...run, runId, status: relevant ? "waiting-approval" : "completed" })
         const first = relevant
-          ? { ...approvalRequested, runId }
+          ? {
+            ...approvalRequested,
+            runId,
+            payload: {
+              ...approvalRequested.payload as Record<string, unknown>,
+              runId,
+              payload: {
+                target: {
+                  _tag: "Node",
+                  runId,
+                  requestId: "gate",
+                  digest: "d",
+                  envelope: { capabilities: [], flows: [], budget: {} }
+                },
+                scope: "run",
+                idempotencyKey: "k"
+              }
+            } as ControlEvent["payload"]
+          }
           : { ...event(1, "control.run.completed", null), runId }
         histories.set(runId, [first])
         followed.push(first)
@@ -1835,6 +1854,214 @@ describe("Projections delta cost", () => {
       expect(sent).toEqual(GatewayProjection.transcript([...history, ...following]))
       expect(sent).toHaveLength(2)
       expect(sent).toEqual(expect.arrayContaining([expect.objectContaining({ turn: 1 })]))
+    }))
+
+  it.effect("keeps resumed transcript deltas equivalent to a fold when identified calls repeat", () =>
+    Effect.gen(function*() {
+      const first = { runId: "run-1", flowName: "write", callId: "first", input: { path: "a" } }
+      const second = { ...first, callId: "second", input: { path: "b" } }
+      const history = [
+        event(1, "control.agent.turn-opened", { runId: "run-1", seat: "opus" }),
+        event(2, "control.agent.cell-call-started", first)
+      ]
+      const following = [
+        event(3, "control.agent.cell-call-started", first),
+        event(4, "control.agent.cell-call-started", second),
+        event(5, "control.agent.cell-call-settled", { ...second, outcome: "failure", message: "denied" }),
+        event(6, "control.agent.cell-call-settled", { ...first, outcome: "success", value: "done" }),
+        event(7, "control.agent.cell-call-settled", { ...second, outcome: "failure", message: "denied" }),
+        event(8, "control.agent.cell-call-started", { runId: "run-1", flowName: "read", input: {} }),
+        event(9, "control.agent.cell-call-started", { runId: "run-1", flowName: "read", input: {} }),
+        event(10, "control.agent.turn-opened", { runId: "run-1", seat: "opus" })
+      ]
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) => Stream.fromIterable(filter.follow === true ? following : history)
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const selector = { _tag: "transcript", runId: "run-1" } as const
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 2)))
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      const sent = deltas.flatMap((frame) => frame._tag === "delta" ? [...frame.delta] : [])
+      expect([...GatewayProjection.transcript(history), ...sent])
+        .toEqual(GatewayProjection.transcript([...history, ...following]))
+      expect(deltas.map((frame) => frame._tag === "delta" ? frame.delta.length : -1))
+        .toEqual([0, 1, 1, 1, 0, 1, 1, 1])
+      expect(sent.at(-1)).toMatchObject({ turn: 2 })
+    }))
+
+  it.effect("resets a followed transcript when a committed call fact corrects already-delivered telemetry", () =>
+    Effect.gen(function*() {
+      const callId = `cell-call-v1:${"a".repeat(64)}`
+      const history = [
+        event(1, "control.agent.turn-opened", {}),
+        event(2, "control.agent.cell-call-started", { callId, flowName: "write" }),
+        event(3, "control.agent.cell-call-settled", {
+          callId,
+          flowName: "write",
+          outcome: "success",
+          value: "telemetry"
+        })
+      ]
+      const following = [event(4, "control.engine.event", {
+        version: 1,
+        executionId: "native",
+        generation: 0,
+        sequence: 1,
+        emittedAtMs: 40,
+        sourceSequence: 0,
+        sourceId: `call-fact-v1:${callId}:settled`,
+        eventType: "flows.harness.call-fact.v1",
+        payload: {
+          version: 1,
+          phase: "settled",
+          callId,
+          identity: { runId: "run-1", frame: 0, cell: "cell", ordinal: 0, declaration: "d", layers: [] },
+          flowName: "write",
+          outcome: "failure",
+          value: null,
+          message: "timeout"
+        }
+      })]
+      const selector = { _tag: "transcript", runId: "run-1" } as const
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) => Stream.fromIterable(filter.follow ? following : history)
+        })
+      )
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 3)))
+      let rows = [...GatewayProjection.transcript(history)]
+      for (const frame of frames) {
+        if (frame._tag === "snapshot-start") rows = []
+        if (frame._tag === "row") rows.push(frame.row)
+        if (frame._tag === "delta") rows.push(...frame.delta)
+      }
+      const fresh = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: () => Stream.fromIterable([...history, ...following])
+        })
+      )
+      expect(rows).toEqual((yield* fresh.snapshot(selector)).rows)
+      expect(rows.at(-1)?.text).toContain("FAIL timeout")
+      expect(frames.map((frame) => frame._tag)).toEqual(["snapshot-start", "row", "row", "row", "snapshot-end"])
+    }))
+
+  it.effect("keeps native lifecycle replay and observations equal across resumed subscriptions and fresh snapshots", () =>
+    Effect.gen(function*() {
+      const accepted = { ...run, status: "accepted" as const, updatedAt: 1 }
+      const nativeRoot = {
+        executionId: "native" as never,
+        flowName: "agent/run",
+        status: "completed" as const,
+        createdAtMs: 1 as never,
+        startedAtMs: 2 as never,
+        finishedAtMs: 3 as never,
+        parentRunId: null,
+        lineageId: "native" as never,
+        roundOrdinal: 0 as never,
+        cancelRequestedAtMs: null,
+        waiting: null
+      }
+      const current = {
+        ...nativeRoot,
+        executionId: "round" as never,
+        status: "suspended" as const,
+        roundOrdinal: 1 as never,
+        parentRunId: "native" as never,
+        finishedAtMs: null,
+        waiting: { reason: "approval", tokenDigest: "digest", wakeAtMs: null }
+      }
+      const observed = {
+        ...accepted,
+        status: "waiting-approval" as const,
+        executionObservation: "observed" as const,
+        executionView: { root: nativeRoot, current }
+      }
+      const nativeEvent = (sequence: number, observation: typeof nativeRoot | typeof current) =>
+        event(sequence, "control.engine.event", {
+          version: 1,
+          executionId: observation.executionId,
+          generation: 0,
+          sequence: 0,
+          eventType: "flows.engine.run-decision",
+          payload: { decision: "created", executionFact: { version: 1, baseline: "created", observation } }
+        })
+      const history = [
+        event(1, "control.run.accepted", ControlFacts.runFact(accepted, "created")),
+        event(2, "control.engine.bound", { version: 1, controlRunId: run.runId, executionId: "native" }),
+        nativeEvent(3, nativeRoot)
+      ]
+      const following = [nativeEvent(4, current)]
+      let refreshed = false
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [observed] }),
+          watch: (filter) =>
+            Stream.fromIterable(filter.follow ? following : refreshed ? [...history, ...following] : history)
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const selector = { _tag: "run-summary", runId: run.runId } as const
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 3)))
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      refreshed = true
+      const snapshot = yield* projections.snapshot(selector)
+      expect(deltas.at(-1)?.delta).toEqual(snapshot.rows)
+      expect(snapshot.rows[0]).toMatchObject({
+        status: "waiting-approval",
+        waitingReason: "approval",
+        lineageId: "native",
+        roundOrdinal: 0,
+        lifecycleProvenance: { control: "events", execution: "engine-observed" },
+        executionProvenance: { source: "events", rootExecutionId: "native", currentExecutionId: "round" }
+      })
+    }))
+
+  it.effect("keeps current control lifecycle and approval deltas equal to fresh snapshots", () =>
+    Effect.gen(function*() {
+      const accepted = { ...run, status: "accepted" as const, updatedAt: 1 }
+      const completed = { ...run, status: "completed" as const, updatedAt: 5 }
+      const requestPayload = approvalRequested.payload as Record<string, unknown>
+      const request = event(2, "control.approval.requested", { ...requestPayload, factVersion: 1 })
+      const history = [event(1, "control.run.accepted", ControlFacts.runFact(accepted, "created")), request]
+      const following = [
+        event(3, "control.approval.approved", {
+          factVersion: 1,
+          tokenId: "gate",
+          approvalTarget: (requestPayload.payload as { target: unknown }).target
+        }),
+        { ...request, sequence: 4 },
+        event(5, "control.run.completed", ControlFacts.runFact(completed))
+      ]
+      let refreshed = false
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [completed] }),
+          watch: (filter) =>
+            Stream.fromIterable(filter.follow ? following : refreshed ? [...history, ...following] : history)
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      for (
+        const selector of [{ _tag: "run-summary", runId: run.runId }, { _tag: "approvals", runId: run.runId }] as const
+      ) {
+        refreshed = false
+        const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 2)))
+        const deltas = frames.filter((frame) => frame._tag === "delta")
+        refreshed = true
+        const snapshot = yield* projections.snapshot(selector)
+        expect(deltas.at(-1)?.delta).toEqual(snapshot.rows)
+        if (selector._tag === "run-summary") {
+          expect(snapshot.rows[0]).toMatchObject({
+            status: "completed",
+            lifecycleProvenance: { control: "events", baseline: "created", throughSequence: 5 }
+          })
+        } else expect(snapshot.rows[0]).toMatchObject({ requestId: "gate", status: "approved" })
+      }
     }))
 
   it.effect("appends transcript rows instead of re-sending the folded history", () =>

@@ -12,9 +12,10 @@ import { flowAction } from "../flows/FlowAction"
  * listed under Unresolved with no door: there is nothing to open.
  */
 import { Button } from "@smthrs/ui"
-import { Suspense } from "react"
-import type { Card } from "../state/AppState"
+import { Suspense, useMemo } from "react"
+import type { Card, WorldDocument } from "../state/AppState"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "../state/AppState"
+import { projectWikiGraph, projectWikiLinks } from "../state/WikiProjection"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
@@ -23,6 +24,8 @@ type WikiGraphCard = Extract<Card, { kind: "wiki-graph" }>
 
 export interface WikiCardActions {
   readonly onRunCommand: RunCommand
+  /** Omitted only by isolated snapshot previews; an empty bound vault is authoritative. */
+  readonly worldDocuments?: ReadonlyArray<WorldDocument>
 }
 
 
@@ -65,8 +68,8 @@ const NoteRows = ({
   </section>
 )
 
-export const WikiLinksCardBody = ({ card, onRunCommand }: { readonly card: WikiLinksCard } & WikiCardActions) => {
-  const { payload } = card
+export const WikiLinksCardBody = ({ card, onRunCommand, worldDocuments }: { readonly card: WikiLinksCard } & WikiCardActions) => {
+  const { payload } = useMemo(() => worldDocuments === undefined ? card : projectWikiLinks(card, worldDocuments), [card, worldDocuments])
   return (
     <div className="world-card-list wiki-links">
       <div className="world-card-row">
@@ -98,8 +101,8 @@ export const WikiLinksCardBody = ({ card, onRunCommand }: { readonly card: WikiL
   )
 }
 
-export const WikiGraphCardBody = ({ card, onRunCommand }: { readonly card: WikiGraphCard } & WikiCardActions) => {
-  const { payload } = card
+export const WikiGraphCardBody = ({ card, onRunCommand, worldDocuments }: { readonly card: WikiGraphCard } & WikiCardActions) => {
+  const { payload } = useMemo(() => worldDocuments === undefined ? card : projectWikiGraph(card, worldDocuments), [card, worldDocuments])
   const missing = payload.notes.filter((note) => note.missing).length
   return (
     <div className="world-card-list wiki-graph">
@@ -145,11 +148,11 @@ export const WikiGraphCardBody = ({ card, onRunCommand }: { readonly card: WikiG
 /** The family slice: the two kinds this file owns. */
 export const wikiCardFamily: CardFamily<"wiki-links" | "wiki-graph"> = {
   "wiki-links": {
-    render: (card, actions) => <WikiLinksCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <WikiLinksCardBody card={card} onRunCommand={actions.onRunCommand} worldDocuments={actions.projectionStore === undefined ? undefined : actions.worldDocuments} />,
     pill: settledPill
   },
   "wiki-graph": {
-    render: (card, actions) => <WikiGraphCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <WikiGraphCardBody card={card} onRunCommand={actions.onRunCommand} worldDocuments={actions.projectionStore === undefined ? undefined : actions.worldDocuments} />,
     pill: settledPill
   }
 }

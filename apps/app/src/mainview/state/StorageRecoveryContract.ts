@@ -21,7 +21,7 @@ export const RECOVERY_RESET_HUMAN_ONLY =
   "Erasing this browser's saved data requires the human's browser gesture. Render the reset step with storage.recovery."
 /** A page that still owns wa-sqlite's sync access handles cannot remove the files. */
 export const RECOVERY_RESET_HELD =
-  "This browser's saved data is still open in another Smithers tab, so it was not erased. Close the other tabs and try again."
+  "This browser's saved data is still open in another Smithers tab, so the reset did not finish. Close the other tabs and try again."
 
 /**
  * The one failure the erase can name precisely. It lives here, with the rest
@@ -35,4 +35,4 @@ export class HeldBrowserStorageError extends Error {
   }
 }
 export const RECOVERY_RESET_FAILED =
-  "This browser's saved data could not be erased. Nothing was changed; reload and try again."
+  "This browser's saved data could not be erased. The reset did not finish; reload and try again."

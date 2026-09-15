@@ -462,7 +462,7 @@ describe("the executor's control-store seam", () => {
     // The run failed rather than parking: an ask whose token was never
     // registered has no park for an operator to resume from.
     expect(result.status).toBe("failed")
-    expect(causeOf(record)).toContain("The approval request could not be registered with the control plane")
+    expect(causeOf(record)).toContain("The approval request and token could not be committed")
   })
 
   it("reports a journal that cannot record the approval request as a typed harness failure", async () => {
@@ -483,7 +483,7 @@ describe("the executor's control-store seam", () => {
     })
 
     expect(result.status).toBe("failed")
-    expect(causeOf(record)).toContain("The approval request could not be journaled")
+    expect(causeOf(record)).toContain("The approval request and token could not be committed")
   })
 
   it("reports an unreadable approval decision instead of inventing an answer", async () => {

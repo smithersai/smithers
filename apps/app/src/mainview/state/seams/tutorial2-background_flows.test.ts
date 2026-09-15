@@ -1,10 +1,11 @@
+import { memoryStorage } from "../TestFixtures"
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { createHistorySeam } from "./HistorySeam"
 import type { SeamContext } from "./SeamContext"
 
 test("bootstrap delegates directly to the durable host, without pretending a history read generated it", async () => {
-  const store = await createAppStore({ kind: "localStorage", storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const ctx: SeamContext = { store, dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => 1,
     baseUrl: "", http: async () => { throw new Error("Bootstrap must not read history to claim generation") } }
   const calls: string[] = []

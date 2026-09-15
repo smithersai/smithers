@@ -189,7 +189,9 @@ for (const adapter of ["sqlite", "memory"] as const) {
           const row = yield* store.get(executionId)
           const waiting = yield* state.waiting(executionId)
           const afterBytes = yield* bytes
-          expect(markerReads).toBe(0)
+          // A committed release observes its own waiting marker for the
+          // lifecycle fact. A refusal must never inspect a replacement's row.
+          expect(markerReads).toBe(replacement === undefined && !refuseTransition ? 1 : 0)
           expect(markerClears).toBe(0)
           expect(parksInSqlTransaction).toBe(journalOwnsTransaction ? 1 : 0)
           if (replacement !== undefined) {

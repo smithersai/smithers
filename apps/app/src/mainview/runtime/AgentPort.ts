@@ -1,4 +1,17 @@
 import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnCursor, AgentTurnJournalDelivery, AgentTurnJournalReply, AgentTurnJournalRequest } from "@smthrs/rpc/AgentTurnJournal"
+
+export interface AgentJournalAccess { readonly runId: string; readonly journal: AgentTurnJournalRequest; readonly after?: AgentTurnCursor | null }
+/** A readable response that cannot establish a trustworthy replay boundary. */
+export class AgentJournalIntegrityError extends Error {}
+export interface AgentJournalPort {
+  /** Each delivery is acknowledged only after the subscriber's local commit. */
+  readonly subscribe: (listener: (delivery: AgentTurnJournalDelivery) => Promise<void>) => () => void
+  readonly read: (access: AgentJournalAccess) => Promise<AgentTurnJournalReply>
+  readonly retire: (access: AgentJournalAccess) => Promise<void>
+  /** Disconnect this browser without cancelling the accepted server computation. */
+  readonly disconnect: (runId: string) => void
+}
 
 /**
  * The agent contract every host implements: the HTTP agent against the app
@@ -9,6 +22,7 @@ import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from
  */
 export interface AgentPort {
   readonly available: boolean
+  readonly journal?: AgentJournalPort
   readonly startTurn: (request: StartAgentTurnRequest) => Promise<StartAgentTurnResult>
   readonly cancelTurn: (runId: string) => Promise<void>
   /**

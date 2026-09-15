@@ -308,6 +308,8 @@ describe("execution snapshots", () => {
             "waiting_reason = ''",
             "waiting_wake_at_ms = 2",
             "waiting_token = 'token'",
+            "waiting_request = '{}'",
+            "waiting_reason = 'approval', waiting_request = 'not-json'",
             "owner_host_id = 'foreign'",
             "parent_run_id = run_id",
             "state_json = '{}'",

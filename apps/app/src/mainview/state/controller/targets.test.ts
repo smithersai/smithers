@@ -1,3 +1,4 @@
+import { projectTargetStars } from "../CardProjection"
 import type { StorageApi } from "@tanstack/db"
 import { expect, test } from "bun:test"
 import type { TargetRunFrame } from "@smthrs/rpc/LocalApp"
@@ -269,7 +270,7 @@ test("target.filter mode= switches the view and drops an unknown mode", async ()
   expect(card().payload.view?.mode).toBeUndefined()
 })
 
-test("a star lands in app-starred-targets keyed by the repository path and mirrors onto the card; unstar removes both", async () => {
+test("a star lands once by repository path and the card projection joins it; unstar changes that projection", async () => {
   const { controller, card, store } = await routedWithStore()
   store.dispatch({
     type: "repos.loaded",
@@ -285,11 +286,11 @@ test("a star lands in app-starred-targets keyed by the repository path and mirro
   })
   expect(controller.starTarget("repo-1", "//:lint", true)).toBeUndefined()
   expect([...store.collections.starredTargets.values()]).toMatchObject([{ id: "local:/tmp/repo:://:lint", repoKey: "local:/tmp/repo", label: "//:lint" }])
-  expect(card().payload.starred).toEqual(["//:lint"])
+  expect(projectTargetStars(card(), [...store.collections.repos.values()], [...store.collections.starredTargets.values()]).payload.starred).toEqual(["//:lint"])
   expect(controller.starTarget("repo-1", "//:nope", true)).toBe("//:nope is not a target of repo.")
   expect(controller.starTarget("repo-1", "//:lint", false)).toBeUndefined()
   expect([...store.collections.starredTargets.values()]).toEqual([])
-  expect(card().payload.starred).toEqual([])
+  expect(projectTargetStars(card(), [...store.collections.repos.values()], [...store.collections.starredTargets.values()]).payload.starred).toEqual([])
 })
 
 test("expand, pick and run-set act on a name group; run-set runs one target.run per picked member", async () => {
@@ -355,7 +356,7 @@ test("expand, pick and run-set act on a name group; run-set runs one target.run 
   expect(runsRequested).toEqual(["a", "a", "b"])
   // A group label can be starred like any target.
   expect(controller.starTarget("repo-1", "//...:lint", true)).toBeUndefined()
-  expect(card().payload.starred).toEqual(["//...:lint"])
+  expect(projectTargetStars(card(), [...store.collections.repos.values()], [...store.collections.starredTargets.values()]).payload.starred).toEqual(["//...:lint"])
 })
 
 /*

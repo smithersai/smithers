@@ -233,7 +233,7 @@ test("open in sidebar shares unfinished wiki state and persists both the session
   await expect(openInSidebar).toHaveAttribute("data-flow", "tab.card")
   await openInSidebar.click()
 
-  const tab = page.getByTestId("tab-card-form-wiki.open")
+  const tab = page.getByTestId(`tab-${WIKI_FORM_CARD_ID}`)
   const tabCard = page.locator(".card-tab").getByTestId(WIKI_FORM_CARD_ID)
   await expect(tab).toHaveAttribute("data-active", "true")
   await expect(tabCard).toHaveAttribute("data-maximized", "false")

@@ -25,6 +25,7 @@ import * as Scope from "effect/Scope"
 import * as DurableEngineState from "../DurableEngineState.ts"
 import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
 import { EventTypes } from "../EventTypes.ts"
+import * as ExecutionFacts from "../ExecutionFacts.ts"
 import { type OnParentExit, RunState } from "../RunState.ts"
 import * as WakeBus from "../WakeBus.ts"
 import * as ActionPersistence from "./ActionPersistence.ts"
@@ -514,6 +515,20 @@ export const make = (
      * `roundOrdinal` in the decision payload, which is what walks a whole
      * trampoline chain.
      */
+    const executionFacts = ExecutionFacts.make({
+      runs: store,
+      state: engineState,
+      journal,
+      sourceId: dependencies.journalSource
+    })
+    const requestCancellation = (runId: string, at: number) =>
+      executionFacts.requestCancel(runId, at).pipe(
+        Effect.catchIf(
+          (error) => error._tag === "@smthrs/journal/JournalError" || error instanceof DatabaseError,
+          Effect.die
+        )
+      )
+
     const decisionRecord = (runId: string, payload: unknown, sourceId: string) =>
       // Unfenced by design: a decision record commits in the SAME transaction
       // as the store-level owner CAS that is its fence (`transitionOwned`,
@@ -548,7 +563,18 @@ export const make = (
       payload: unknown,
       sourceId = dependencies.journalSource
     ): Effect.Effect<void> =>
-      journal.emitDurableUnfenced(decisionRecord(runId, payload, sourceId)).pipe(Effect.asVoid, Effect.orDie)
+      Effect.gen(function*() {
+        const decision = payload as Readonly<Record<string, unknown>>
+        const authoritative = sourceId === dependencies.journalSource && decision.decision !== "wake-scheduled" &&
+          decision.decision !== "child-policy-applied"
+        const recorded = authoritative
+          ? {
+            ...decision,
+            executionFact: yield* executionFacts.fact(runId, decision.decision === "created" ? "created" : "legacy")
+          }
+          : payload
+        yield* journal.emitDurableUnfenced(decisionRecord(runId, recorded, sourceId))
+      }).pipe(Effect.orDie)
 
     /**
      * Records evidence ABOUT a run this driver does not own, and never raises
@@ -645,11 +671,11 @@ export const make = (
       decision: unknown,
       guard?: RunStore.TransitionGuard | undefined,
       afterTransitioned?: Effect.Effect<void> | undefined,
-      waiting?: DurableEngineState.Waiting | undefined
+      waiting?: DurableEngineState.Waiting | null | undefined
     ): Effect.Effect<RunStore.TransitionOutcome> =>
       transactState(
         Effect.gen(function*() {
-          if (waiting !== undefined) {
+          if (waiting !== undefined && waiting !== null) {
             const parked = yield* engineState.park(runId, waiting, dependencies.owner)
             if (parked._tag === "NotFound") {
               return yield* Effect.fail({ _tag: "TransitionRefused" as const, outcome: parked })
@@ -665,6 +691,8 @@ export const make = (
           if (transitioned._tag !== "Transitioned") {
             return yield* Effect.fail({ _tag: "TransitionRefused" as const, outcome: transitioned })
           }
+          if (waiting === null) yield* engineState.wake(runId)
+          if (afterTransitioned !== undefined) yield* afterTransitioned
           // The decision carries the state it committed, so run state at a
           // frame is DERIVED by replaying decisions rather than read off the
           // run row's current `state_json`
@@ -672,7 +700,6 @@ export const make = (
           // `ndc/state_rebuilder.go` is the model). Without it a fork at an
           // early frame silently inherited the parent's *latest* state.
           yield* emitDecision(runId, { ...(decision as object), state: JSON.parse(stateJson) })
-          if (afterTransitioned !== undefined) yield* afterTransitioned
           return transitioned
         })
       ).pipe(
@@ -785,7 +812,7 @@ export const make = (
         // The activation CAS and the decision recording it commit together:
         // a crash between them left a run durably running under this owner
         // with no journal entry saying who took it.
-        const activation = yield* journal.transact(
+        const activation = yield* transactState(
           Effect.gen(function*() {
             const activation = yield* store.activate(
               row.runId,
@@ -878,7 +905,7 @@ export const make = (
         const descendants = yield* descendantsOf(runId)
         yield* Effect.forEach(
           descendants,
-          (childId) => store.requestCancel(childId, nowMs),
+          (childId) => requestCancellation(childId, nowMs),
           { discard: true }
         )
         return descendants
@@ -968,7 +995,7 @@ export const make = (
         }
         yield* Effect.forEach(
           cancelled,
-          (childId) => store.requestCancel(childId, nowMs),
+          (childId) => requestCancellation(childId, nowMs),
           { discard: true }
         )
         return { cancelled, detached }
@@ -1058,7 +1085,7 @@ export const make = (
           // The parent's own request timestamp, so the inherited request reads
           // as the same operator intent rather than as a later, independent one.
           const nowMs = cancelled.cancelRequestedAtMs ?? (yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor)))
-          yield* store.requestCancel(childId, nowMs).pipe(Effect.orDie)
+          yield* requestCancellation(childId, nowMs).pipe(Effect.orDie)
           return
         }
         // The same interleaving, for the other way a parent stops: a parent
@@ -1073,7 +1100,7 @@ export const make = (
         // runs inside the transaction that just wrote the child's row, so the
         // state on disk is the state the caller is holding.
         if (onParentExit === "detach") return
-        yield* store.requestCancel(childId, yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))).pipe(
+        yield* requestCancellation(childId, yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))).pipe(
           Effect.orDie
         )
       })
@@ -1135,6 +1162,7 @@ export const make = (
                 outcome: "cancelled",
                 interruptedAtMs,
                 owner: dependencies.owner,
+                executionFact: yield* executionFacts.fact(runId),
                 ...(cascaded.length === 0 ? {} : { cascadedTo: cascaded })
               })
             ).pipe(Effect.orDie)
@@ -1730,19 +1758,15 @@ export const make = (
           // The activation transition carries the cancel guard: a run whose
           // cancellation was durably requested while it was parked must cancel
           // here instead of re-executing flow side effects (issue #27).
-          const cleared = yield* transactState(Effect.gen(function*() {
-            const transitioned = yield* store.transitionOwned(
-              executionId,
-              dependencies.owner,
-              "running",
-              yield* encodeState(activeState),
-              { cancelRequested: "absent" }
-            ).pipe(Effect.orDie)
-            // Only a successful owner fence permits clearing a previous wait.
-            // Commit both together so takeover cannot interleave before wake.
-            if (transitioned._tag === "Transitioned") yield* engineState.wake(executionId)
-            return transitioned
-          })).pipe(Effect.orDie)
+          const cleared = yield* transitionAndRecord(
+            executionId,
+            "running",
+            yield* encodeState(activeState),
+            { decision: "resumed", status: "running" },
+            { cancelRequested: "absent" },
+            undefined,
+            null
+          )
           if (cleared._tag === "GuardFailed") {
             return yield* cancelOwned(executionId, withoutResult(state))
           }
@@ -1903,7 +1927,7 @@ export const make = (
                 : Exit.isSuccess(result.exit)
                 ? "completed"
                 : "failed"
-              let waiting: DurableEngineState.Waiting | undefined
+              let waiting: DurableEngineState.Waiting | null = null
               if (status === "suspended") {
                 // Park atomically with the suspended transition while this
                 // process still owns the row (`park` is owner-fenced). The
@@ -2175,9 +2199,10 @@ export const make = (
         // false FlowCycleDetected if the execution id was later reused
         // under an inverted topology. The stores' own writes become
         // savepoints of this transaction, so either both commit or neither.
-        yield* engineState.transaction(Effect.gen(function*() {
+        yield* transactState(Effect.gen(function*() {
+          let parentRecorded = false
           if (options.parent !== undefined) {
-            yield* engineState.recordRunParent(
+            const parentEdge = yield* engineState.recordRunParent(
               options.executionId,
               options.parent.executionId
             ).pipe(
@@ -2187,6 +2212,7 @@ export const make = (
                 )
               )
             )
+            parentRecorded = parentEdge._tag === "Recorded"
           }
           const round = options.round ?? FlowEngine.Round.initial(options.executionId)
           const previousExecutionId = options.round?.previousExecutionId
@@ -2289,8 +2315,16 @@ export const make = (
               options.executionId,
               onParentExit
             )
+            if (parentRecorded) {
+              yield* emitDecision(options.executionId, {
+                decision: "parent-recorded",
+                parentExecutionId: options.parent.executionId
+              })
+            }
           }
-        }))
+        })).pipe(
+          Effect.catchIf((error) => error instanceof Journal.JournalError || error instanceof DatabaseError, Effect.die)
+        )
       })
 
     const readResult = (flow: Flow.Any, executionId: string) =>
@@ -2419,7 +2453,7 @@ export const make = (
         // other way.
         const requested = yield* transactState(
           Effect.gen(function*() {
-            yield* store.requestCancel(executionId, nowMs)
+            yield* requestCancellation(executionId, nowMs)
             return [executionId, ...yield* requestCancelDescendants(executionId, nowMs)]
           }),
           // Capture the shared writer directly. SqlJournal.transact catches a

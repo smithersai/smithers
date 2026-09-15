@@ -2,8 +2,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
+import { useLiveQuery } from "@tanstack/react-db"
 import type { Card } from "../state/AppState"
-import { WikiGraphCardBody, WikiLinksCardBody } from "./WikiCards"
+import { createAppStore } from "../state/AppStore"
+import { projectWikiGraph, projectWikiLinks } from "../state/WikiProjection"
+import { WikiGraphCardBody, WikiLinksCardBody, wikiCardFamily } from "./WikiCards"
 
 GlobalRegistrator.register()
 
@@ -40,6 +43,56 @@ const mount = (node: React.ReactNode) => {
 }
 
 describe("WikiLinksCardBody", () => {
+  test("bound cards derive changed links from durable documents without rewriting saved cards, and reopen the same view", async () => {
+    const rows = new Map<string, string>()
+    const storage = { getItem: (key: string) => rows.get(key) ?? null, setItem: (key: string, value: string) => { rows.set(key, value) }, removeItem: (key: string) => { rows.delete(key) } }
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const note = (id: string, title: string, targets: string[]) => ({ id, path: `${id}.md`, title, body: targets.map(target => `[[${target}]]`).join(" "), links: targets, tags: [], sources: ["user:world-editor"], confidence: 1 })
+    const put = async (id: string, title: string, targets: string[]) => {
+      await store.dispatch({ type: "world.document.upserted", actor: "user", select: false, document: note(id, title, targets) }).isPersisted.promise
+      await new Promise(resolve => setTimeout(resolve, 0))
+      flushSync(() => {})
+    }
+    await put("Plans", "Plans", [])
+    await put("World", "First title", ["Plans"])
+    await store.dispatch({ type: "card.upsert", actor: "system", card: links }).isPersisted.promise
+    const recorded = structuredClone(store.collections.cards.get(links.id))
+    const previousDocuments = [...store.collections.worldDocuments.values()]
+    const previousProjection = projectWikiLinks(links, previousDocuments)
+    const noop = () => {}
+    const Bound = () => {
+      const { data: worldDocuments } = useLiveQuery(store.collections.worldDocuments)
+      return wikiCardFamily["wiki-links"].render(links, { projectionStore: store, worldDocuments, onRunCommand: noop,
+        onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop, onQueueApprove: noop,
+        onConnectGitHub: noop, onConnectLocal: noop, onRunWorkflow: noop, onStopRun: noop,
+        onRetryRun: noop, onChooseWorkflowRepo: noop, onChangeWorldDocument: noop })
+    }
+    const { host, unmount } = mount(<Bound />)
+    try {
+      expect(host.querySelector('[data-testid="wiki-open-World.md"]')?.textContent).toBe("First title")
+      await put("World", "Renamed", ["Plans"])
+      expect(host.querySelector('[data-testid="wiki-open-World.md"]')?.textContent).toBe("Renamed")
+      await put("Plans", "Plans", ["Ghost"])
+      expect(host.querySelector('[data-testid="wiki-links-unresolved"]')?.textContent).toContain("Ghost")
+      await put("Ghost", "Found", [])
+      expect(host.querySelector('[data-testid="wiki-links-unresolved"]')).toBeNull()
+      expect(host.querySelector('[data-testid="wiki-links-links-out"]')?.textContent).toContain("Found")
+      await store.dispatch({ type: "world.document.removed", actor: "user", id: "World" }).isPersisted.promise
+      await new Promise(resolve => setTimeout(resolve, 0))
+      flushSync(() => {})
+      expect(host.querySelector('[data-testid="wiki-open-World.md"]')).toBeNull()
+      expect(store.collections.cards.get(links.id)).toEqual(recorded)
+      expect(projectWikiLinks(links, previousDocuments)).toEqual(previousProjection)
+      const expected = projectWikiLinks(links, [...store.collections.worldDocuments.values()])
+      unmount()
+      await store.dispose?.()
+      const reopened = await createAppStore({ kind: "localStorage", storage })
+      try {
+        expect(projectWikiLinks(links, [...reopened.collections.worldDocuments.values()])).toEqual(expected)
+        expect(reopened.collections.cards.get(links.id)).toEqual(recorded)
+      } finally { await reopened.dispose?.() }
+    } finally { unmount(); host.remove(); await store.dispose?.() }
+  })
   test("every note row is the button door of wiki.open with the note's path as its args; an unresolved target has no door", () => {
     const calls: Array<[string, string | undefined]> = []
     const { host, unmount } = mount(<WikiLinksCardBody card={links} onRunCommand={(name, args) => calls.push([name, args])} />)
@@ -70,6 +123,20 @@ describe("WikiGraphCardBody", () => {
       notes,
       links: notes.flatMap((note) => note.linksOut.map((target) => ({ source: note.path, target })))
     }
+  })
+
+  test("graph decoration uses the supplied document revision; missing focus never expands scope", () => {
+    const document = { id: "Plans", path: "Plans.md", title: "Plans", body: "[[Ghost]]", links: ["Ghost"], tags: [], sources: [], confidence: 1, updatedAt: 1, updatedBy: "user" as const, revision: 1 }
+    const card = graph([], "Plans.md")
+    const projected = projectWikiGraph(card, [document])
+    expect(projected.payload.notes).toHaveLength(2)
+    expect(projected.payload.notes.find(note => note.path === "Ghost.md")?.missing).toBe(true)
+    expect(projected.payload.links).toEqual([{ source: "Plans.md", target: "Ghost.md" }])
+    expect(projectWikiGraph(card, [])?.payload.notes).toEqual([])
+    expect(card.payload.notes).toEqual([])
+    const { host, unmount } = mount(<WikiGraphCardBody card={projected} worldDocuments={[]} onRunCommand={() => {}} />)
+    expect(host.querySelector('[data-testid="wiki-graph-empty"]')).not.toBeNull()
+    unmount()
   })
 
   test("an empty Wiki says so instead of drawing nothing", () => {

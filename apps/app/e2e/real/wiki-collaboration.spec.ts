@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, openApp, test } from "./support"
+import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
 test.use({ actionTimeout: 20_000 })
@@ -36,8 +37,10 @@ test(
   }),
   async ({ page, context }) => {
     await boot(page)
-    const first = await createNote(page, `first-note-${Date.now()}`)
-    const second = await createNote(page, `second-note-${Date.now()}`)
+    const firstBody = fixtureInputText(`first-note-${Date.now()}`)
+    const secondBody = fixtureInputText(`second-note-${Date.now()}`)
+    const first = await createNote(page, firstBody)
+    const second = await createNote(page, secondBody)
     await page.getByTestId("chrome-wiki").click()
     const pane = page.getByRole("region", { name: "Smithers Wiki state" })
     await expect(pane).toBeVisible()
@@ -52,7 +55,7 @@ test(
     await restarted.getByTestId("chrome-wiki").click()
     const restartedPane = restarted.getByRole("region", { name: "Smithers Wiki state" })
     await expect(restartedPane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
-    await expect(restartedPane.getByText(`second-note-`, { exact: false })).toBeVisible()
+    await expect(restartedPane.getByText(secondBody, { exact: false })).toBeVisible()
     await restarted.close()
   }
 )

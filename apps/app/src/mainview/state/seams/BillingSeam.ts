@@ -11,7 +11,7 @@ import type { AppStore } from "../AppStore"
  * multi src/smithersCloud/billing.ts.
  */
 import type { SeamContext } from "./SeamContext"
-import { readErrorMessage } from "./SeamContext"
+import { readErrorMessage, readResult } from "./SeamContext"
 
 export interface BillingSeam {
   readonly showBillingPlans: () => Promise<string | { readonly value: string }>
@@ -44,7 +44,8 @@ const openSession = async (
   path: string,
   init: RequestInit,
   what: string,
-  announce: (url: string) => string
+  announce: (url: string) => string,
+  current: () => boolean
 ): Promise<string | void> => {
   let response: Response
   try {
@@ -54,31 +55,36 @@ const openSession = async (
   }
   if (!response.ok) return readErrorMessage(response, `${what} couldn't start right now.`)
   const body = (await response.json().catch(() => undefined)) as unknown
+  if (!current()) return "The account changed while billing was loading."
   const url = sessionUrl(body)
   if (url === undefined) return `${what} couldn't start — the billing service didn't return a URL.`
   if (!isHttps(url)) return `${what} was refused — the billing service answered with a non-https URL.`
-  if (typeof window !== "undefined") window.open(url, "_blank", "noopener")
-  ctx.dispatch({ type: "message.appended", actor: "system", text: announce(url) })
+  await ctx.dispatch({ type: "message.appended", actor: "system", text: announce(url) }).isPersisted.promise
+  if (current() && typeof window !== "undefined") window.open(url, "_blank", "noopener")
 }
 
 /** A refusal can precede workspace creation; its upgrade door still embeds in the transcript. */
-export const renderPlanLimit = (store: AppStore, refusal: Refusal, checkout: boolean, actor: "user" | "smithers") => {
+export const renderPlanLimit = async (store: AppStore, refusal: Refusal, checkout: boolean, actor: "user" | "smithers") => {
   const account = store.collections.billingAccounts.get("billing")
-  store.dispatch({ type: "card.upsert", actor, card: {
+  await store.dispatch({ type: "card.upsert", actor, card: {
     id: "billing-plan-limit", kind: "billing-plans", title: "Sandbox limit", status: "active",
     createdAt: Date.now(), ordinal: store.nextOrdinal(), payload: {
       planKey: refusal.plan_key ?? account?.planKey ?? null,
       sandbox: account?.sandbox ?? null, plans: account?.plans ?? [], checkout,
       refusal: storedRefusal(refusal)
     }
-  } })
+  } }).isPersisted.promise
   return refusalSentence(refusal)
 }
 
-export const createBillingSeam = (ctx: SeamContext, checkout = true): BillingSeam => ({
-  showBillingPlans: async () => {
+export const createBillingSeam = (ctx: SeamContext, checkout = true, disposed: () => boolean = () => false): BillingSeam => {
+  const currentAccount = () => {
     const identity = ctx.store.collections.identitySessions.get("identity")
-    const current = () => ctx.store.collections.identitySessions.get("identity") === identity
+    return () => !disposed() && ctx.store.collections.identitySessions.get("identity") === identity
+  }
+  return {
+  showBillingPlans: async () => {
+    const current = currentAccount()
     try {
       const [overviewResponse, plansResponse] = await Promise.all([
         ctx.http(`${ctx.baseUrl}${BILLING_OVERVIEW_PATH}`), ctx.http(`${ctx.baseUrl}${BILLING_PLANS_PATH}`)
@@ -96,20 +102,21 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true): BillingSea
       }
       const planKey = wire.plan_key
       const plans = catalog.data.plans
-      ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans })
-      ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+      await ctx.dispatch({ type: "billing.plans.loaded", actor: ctx.actor(), planKey, sandbox, plans }).isPersisted.promise
+      if (!current()) return "The account changed while plans were loading."
+      await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
         id: "billing-plans", kind: "billing-plans", title: "Plans", status: "active",
         createdAt: Date.now(), ordinal: ctx.nextOrdinal(), payload: { planKey, sandbox, plans, checkout }
-      } })
-      return { value: `Current plan: ${planKey}. Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}. Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}` }
+      } }).isPersisted.promise
+      if (!current()) return "The account changed while plans were loading."
+      return readResult(`Current plan: ${planKey}. Running sandboxes: ${sandbox.concurrentInUse} / ${sandbox.concurrentSandboxes}. Sandbox-hours today: ${sandbox.secondsUsedToday / 3600} / ${sandbox.hoursPerDay === -1 ? "unlimited" : sandbox.hoursPerDay}. Resets at ${sandbox.dayResetsAt}. Plans: ${plans.map(plan => `${plan.display_name} $${plan.price_cents / 100}`).join(", ")}.${checkout ? "" : " Checkout is not open yet."}`)
     } catch {
-      return "Your plans couldn't be refreshed — the billing service didn't answer."
+      return "Your plans couldn't be refreshed and saved right now."
     }
   },
   startCheckout: (plan) => {
     if (!checkout) {
-      ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." })
-      return Promise.resolve()
+      return ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." }).isPersisted.promise.then(() => undefined)
     }
     return openSession(
       ctx,
@@ -120,20 +127,22 @@ export const createBillingSeam = (ctx: SeamContext, checkout = true): BillingSea
         body: JSON.stringify(plan === undefined ? {} : { plan })
       },
       "Checkout",
-      (url) => `Checkout is ready: ${url}`
+      (url) => `Checkout is ready: ${url}`,
+      currentAccount()
     )
   },
   openBillingPortal: () => {
     if (!checkout) {
-      ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." })
-      return Promise.resolve()
+      return ctx.dispatch({ type: "message.appended", actor: ctx.actor(), text: "Checkout is not open yet." }).isPersisted.promise.then(() => undefined)
     }
     return openSession(
       ctx,
       "/api/billing/portal",
       { method: "POST" },
       "The billing portal",
-      (url) => `Your billing portal: ${url}`
+      (url) => `Your billing portal: ${url}`,
+      currentAccount()
     )
   }
-})
+  }
+}

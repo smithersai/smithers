@@ -32,6 +32,18 @@ export * as JournalEvent from "./JournalEvent.ts"
 export * as EngineEvent from "./EngineEvent.ts"
 
 /**
+ * @category events
+ * @since 1.0.0
+ */
+export * as ExecutionFact from "./ExecutionFact.ts"
+
+/**
+ * @category events
+ * @since 1.0.0
+ */
+export * as CallFact from "./CallFact.ts"
+
+/**
  * @category services
  * @since 0.1.0
  */

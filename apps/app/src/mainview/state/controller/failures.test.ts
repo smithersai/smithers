@@ -1,5 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { initialGuide } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
@@ -22,13 +22,23 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
+const disposeContexts = new Set<() => Promise<void>>()
+afterEach(async () => {
+  for (const dispose of disposeContexts) await dispose()
+  disposeContexts.clear()
+})
+
 const fakeContext = async (options?: {
   readonly toastDebounceMs?: number
   readonly toastAutoDismissMs?: number
 }): Promise<{ ctx: ControllerContext; store: Awaited<ReturnType<typeof createAppStore>> }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let disposed = false
+  const cleanups: Array<() => void> = []
   const ctx = {
     store,
+    get disposed() { return disposed },
+    onDispose: (cleanup: () => void) => { cleanups.push(cleanup) },
     toastRuns: new Map<string, number>(),
     toastDebounceMs: options?.toastDebounceMs ?? 0,
     toastAutoDismissMs: options?.toastAutoDismissMs ?? 0,
@@ -38,6 +48,11 @@ const fakeContext = async (options?: {
     } },
     unref: () => {}
   } as unknown as ControllerContext
+  disposeContexts.add(async () => {
+    disposed = true
+    for (const cleanup of cleanups) cleanup()
+    await store.dispose?.()
+  })
   return { ctx, store }
 }
 

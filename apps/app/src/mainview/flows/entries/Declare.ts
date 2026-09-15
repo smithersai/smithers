@@ -8,6 +8,7 @@ import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Effect, Schema } from "effect"
 import { FlowCancellation } from "../FlowCancellation"
+import { FlowGesture, type CommandGesture } from "../CommandGesture"
 import type { RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import type { AppController } from "../../state/AppController"
 import type { CommandState, FlowEntry, FlowMetadata } from "../registry"
@@ -32,6 +33,8 @@ export type CommandActions =
     | "store"
     // Control focus is the composition root's DOM-owned projection, never a flow's act.
     | "controlFocus"
+    // The mounted guide reports host visibility independently of command admission.
+    | "observeGuideVisibility"
     | "storageRecoveryState"
     | "nativeAgentAvailable"
     | "nativeRepositoriesAvailable"
@@ -109,7 +112,7 @@ export interface Declaration<I extends Payload> extends FlowMetadata {
   readonly input: I
   /** The call identity is available for destination-side idempotency. */
   readonly prepare?: (payload: I["Type"]) => void | Promise<void>
-  readonly handler: (payload: I["Type"], signal: AbortSignal, call: Cell.Call) => CommandResult | Promise<CommandResult>
+  readonly handler: (payload: I["Type"], signal: AbortSignal, call: Cell.Call, gesture?: CommandGesture) => CommandResult | Promise<CommandResult>
   /** Capability claims; the free `app:act` default when omitted. */
   readonly capabilities?: ReadonlyArray<string>
   /**
@@ -156,7 +159,7 @@ export const flow = <I extends Payload>(declaration: Declaration<I>): FlowEntry 
         modelInvocable: userOnly !== true,
         publicError: (message) => typeof message === "string" ? message : undefined,
         handler: (payload, call) => Effect.flatMap(FlowCancellation, (cancellation) =>
-          act((signal) => handler(payload, cancellation ?? signal, call)))
+          Effect.flatMap(FlowGesture, gesture => act((signal) => handler(payload, cancellation ?? signal, call, gesture))))
       })
     },
     metadata,

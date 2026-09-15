@@ -50,6 +50,21 @@ export interface FailureController {
 }
 
 export const createFailureController = (ctx: ControllerContext): FailureController => {
+  const timers = new Set<ReturnType<typeof setTimeout>>()
+  const later = (work: () => void, delay: number): ReturnType<typeof setTimeout> => {
+    const timer = setTimeout(() => {
+      timers.delete(timer)
+      if (!ctx.disposed) work()
+    }, delay)
+    timers.add(timer)
+    ctx.unref(timer)
+    return timer
+  }
+  ctx.onDispose(() => {
+    for (const timer of timers) clearTimeout(timer)
+    timers.clear()
+    ctx.toastRuns.clear()
+  })
   /*
    * The one place an ok toast learns to leave. The sign-in handoff's
    * "Signed in" (2026-09-01) dispatched toast.resolved directly, so nothing
@@ -60,6 +75,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
    * owner dismisses its own.
    */
   const resolveToast: FailureController["resolveToast"] = (key, outcome) => {
+    if (ctx.disposed) return
     const id = `toast-${key}`
     if (ctx.store.collections.toasts.get(id) === undefined) return
     ctx.store.dispatch({
@@ -73,12 +89,11 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     })
     if (outcome.status !== "ok" && outcome.autoDismissMs === undefined) return
     const resolvedAt = ctx.store.collections.toasts.get(id)?.updatedAt
-    const dismiss = setTimeout(() => {
+    later(() => {
       const current = ctx.store.collections.toasts.get(id)
       if (current === undefined || current.status !== outcome.status || current.updatedAt !== resolvedAt) return
       ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })
     }, outcome.autoDismissMs ?? ctx.toastAutoDismissMs)
-    ctx.unref(dismiss)
   }
   /*
    * The 300ms toast law (2026-08-09): background work not settled within
@@ -112,12 +127,11 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     const run = nextRun
     ctx.toastRuns.set(key, run)
     let shown = false
-    const debounce = setTimeout(() => {
+    const debounce = later(() => {
       if (ctx.toastRuns.get(key) !== run) return
       shown = true
       ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title })
     }, ctx.toastDebounceMs)
-    ctx.unref(debounce)
     let outcome: T | string
     try {
       outcome = await work()
@@ -126,9 +140,10 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       outcome = `${title.replace(/…$/, "")} didn't finish — the app hit an unexpected error.`
     } finally {
       clearTimeout(debounce)
+      timers.delete(debounce)
     }
     // A newer run of the same flow owns the toast now; this one reports nothing.
-    if (ctx.toastRuns.get(key) !== run) return outcome
+    if (ctx.disposed || ctx.toastRuns.get(key) !== run) return outcome
     // Superseded work has no result to state: whatever it read belongs to an
     // account the app no longer has open, so the notice leaves silently
     // rather than resolving into a doneTitle nothing backs.
@@ -166,6 +181,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
   }
 
   const dismissToast = (id: string): void => {
+    if (ctx.disposed) return
     ctx.store.dispatch({ type: "toast.dismissed", actor: "user", id })
   }
 
@@ -180,6 +196,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
    * same refusal.
    */
   const surfaceCommandFailure = (name: string, outcome: CommandOutcome): void => {
+    if (ctx.disposed) return
     if (outcome.status === "form") {
       /*
        * THE FORM LAW: the slash line lacked its input, so the form card is in

@@ -11,6 +11,7 @@ import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
 import { canPaintTutorialBeforeIdentity, loadControllerBootInputs } from "./ControllerBootMemo"
+import { createTurnEraser } from "./runtime/TurnErasure"
 
 const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
   Effect.tryPromise({
@@ -43,10 +44,13 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
+    const entryPathname = yield* Effect.sync(() => window.location.pathname)
     const http = yield* Effect.sync(() => createAppFetch())
     const bootstrapRead = loadBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
-      loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, { seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => true) })))
+      loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, {
+        seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => true), eraseTurn: createTurnEraser(http)
+      })))
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,
@@ -72,7 +76,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     )
 
     // Start Here and ?tutorial are explicit entries, including after a finished playthrough.
-    if (shouldReplayTutorial(options.mode, entrySearch, store.session().guide)) {
+    if (shouldReplayTutorial(options.mode, entrySearch, store.session().guide, entryPathname)) {
       yield* promiseEffect("replay introduction", () => controller.guideAct("restart"))
     }
     if (!hasCapability(bootstrap, "identity")) {

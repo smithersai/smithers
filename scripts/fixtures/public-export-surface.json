@@ -13,14 +13,15 @@
       "reason": "Shared bounded explicit-column process-table probes for real-process tests; a separate Node-only subpath keeps browser test hosts independent of child_process."
     },
     {
-      "name": "@smthrs/control",
-      "subpath": "./Health",
-      "development": "./src/Health.ts",
+      "name": "@smthrs/canonical",
+      "subpath": "./Serializer",
+      "development": "./src/Serializer.ts",
       "published": {
-        "import": { "types": "./dist/esm/Health.d.ts", "default": "./dist/esm/Health.js" },
-        "require": { "types": "./dist/cjs/Health.d.ts", "default": "./dist/cjs/Health.js" }
+        "types": "./dist/esm/Serializer.d.ts",
+        "import": "./dist/esm/Serializer.js",
+        "require": "./dist/cjs/Serializer.js"
       },
-      "reason": "Documented public Health namespace for Effect checks, bounded observation policies, provenance and shared status rollup, re-exported by control/src/index.ts and consumed by gateway. This adds the public contract without exposing private projection state or changing prior runtime entries."
+      "reason": "Runtime-free entry for the existing exact canonical serializer and errors, used by browser and Worker wire contracts without importing the Effect schema. No digest algorithm or output change; the package tests prove a dependency-free browser bundle."
     },
     {
       "name": "@smthrs/platform-node",
@@ -285,6 +286,44 @@
         "require": "./dist/cjs/bun/BunGateway.js"
       },
       "reason": "Bun adapter already exposed by current main for the authenticated gateway; it preserves the same protocol and policy as the Node host."
+    },
+    {
+      "name": "@smthrs/control",
+      "subpath": "./Health",
+      "development": "./src/Health.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Health.d.ts",
+          "default": "./dist/esm/Health.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Health.d.ts",
+          "default": "./dist/cjs/Health.js"
+        }
+      },
+      "reason": "Documented public Health namespace for Effect checks, bounded observation policies, provenance and shared status rollup, re-exported by control/src/index.ts and consumed by gateway. This adds the public contract without exposing private projection state or changing prior runtime entries."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./IssuePath",
+      "development": "./src/IssuePath.ts",
+      "published": {
+        "types": "./dist/esm/IssuePath.d.ts",
+        "import": "./dist/esm/IssuePath.js",
+        "require": "./dist/cjs/IssuePath.js"
+      },
+      "reason": "Existing main export centralizing Effect Schema issue-path formatting used by control validation. Retains the previous validation-path behavior; record the shared entry without changing the original baseline."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./ReadonlyMap",
+      "development": "./src/ReadonlyMap.ts",
+      "published": {
+        "types": "./dist/esm/ReadonlyMap.d.ts",
+        "import": "./dist/esm/ReadonlyMap.js",
+        "require": "./dist/cjs/ReadonlyMap.js"
+      },
+      "reason": "Existing main export for a copied immutable map facade used by filesystem and plugin views. It preserves read semantics without exposing source-map mutation; record the shared entry in the explicit surface audit."
     }
   ],
   "removed": [

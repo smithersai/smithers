@@ -24,7 +24,7 @@ export interface AuthBillingController {
   readonly handleAuthReturn: (search: string) => boolean
   readonly adoptSession: (session: ResolvedSession) => Promise<void>
   readonly loadSession: () => Promise<void>
-  readonly signIn: () => void
+  readonly signIn: (reservedOpen?: (url: string) => Promise<boolean>) => Promise<void> | void
   readonly signOut: () => Promise<string | void>
   readonly requestAccess: () => Promise<string | void>
   readonly refreshBalance: () => Promise<void>
@@ -70,6 +70,18 @@ export const createAuthBillingController = (
   const withToast = ctx.withToast
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
+  // A definitive owner change revokes the old turn before any asynchronous
+  // follow-up can deliver frames or restart a pending leg. Availability alone
+  // does not revoke ownership: the persisted owner survives an outage.
+  const fenceAccountTurn = (nextOwner: string | null, force = false): void => {
+    const identity = store.collections.identitySessions.get("identity")
+    const owner = identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
+      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
+    if (!force && owner === nextOwner) return
+    const turn = ctx.activeTurn
+    ctx.activeTurn = undefined
+    if (turn !== undefined) void ctx.agent.cancelTurn(turn.id).catch(() => {})
+  }
   /**
    * Returning from a failed OAuth redirect is a chat message, never a bare
    * page. Returning from a finished one carries `?signed-in=github` on
@@ -123,10 +135,11 @@ export const createAuthBillingController = (
   }
 
   const dispatchSignedOut = async (epoch: number, signal?: AbortSignal): Promise<void> => {
-    if (signal?.aborted) return
+    if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
+    fenceAccountTurn(null)
     const scopesPlain = await fetchScopesPlain(signal)
-    if (ctx.accountEpoch !== epoch || signal?.aborted) return
-    store.dispatch({
+    if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
+    await store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
       state: "signed-out",
@@ -134,11 +147,12 @@ export const createAuthBillingController = (
       allowlisted: false,
       admin: false,
       scopesPlain
-    })
+    }).isPersisted.promise
     await refreshCloudSession?.()
   }
 
   const dispatchUnavailable = (): void => {
+    if (ctx.disposed) return
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -154,6 +168,8 @@ export const createAuthBillingController = (
     session: Pick<ResolvedSession, "login" | "allowlisted" | "admin">,
     previous: ReturnType<typeof store.collections.identitySessions.get>
   ): Promise<void> => {
+    if (ctx.disposed) return
+    fenceAccountTurn(session.login)
     const epoch = ctx.accountEpoch
     const persisted = store.dispatch({
       type: "identity.session.loaded",
@@ -164,11 +180,10 @@ export const createAuthBillingController = (
       admin: session.admin,
       scopesPlain: null
     })
-    void persisted.isPersisted.promise.then(() => {
-      if (ctx.accountEpoch !== epoch) return
-      validatedLogin = session.login ?? undefined
-      completeLoginLesson()
-    }).catch(() => { /* Failed persistence cannot complete the lesson. */ })
+    await persisted.isPersisted.promise
+    if (ctx.disposed || ctx.accountEpoch !== epoch) return
+    validatedLogin = session.login ?? undefined
+    completeLoginLesson()
     if (previous?.state !== "signed-in" || previous.login !== session.login) ctx.identityChanged()
     // The balance read is driven by the session answer, not fired blind at
     // boot: signed out it could only come back 401 — the expected state,
@@ -189,6 +204,7 @@ export const createAuthBillingController = (
   }
 
   const adoptSession = async (session: ResolvedSession): Promise<void> => {
+    if (ctx.disposed) return
     validatedLogin = undefined
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
@@ -211,7 +227,7 @@ export const createAuthBillingController = (
   }
 
   const loadSession = async (signal?: AbortSignal): Promise<void> => {
-    if (signal?.aborted) return
+    if (ctx.disposed || signal?.aborted) return
     validatedLogin = undefined
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
@@ -314,9 +330,10 @@ export const createAuthBillingController = (
     }
     const generation = ++handoffGeneration
     // A superseded loop never writes: only the newest handoff's outcome is the truth.
-    const current = (): boolean => pendingHandoff?.generation === generation
+    const current = (): boolean => !ctx.disposed && pendingHandoff?.generation === generation
     const abort = new AbortController()
     let wake: (() => void) | undefined
+    let polling: Promise<void> | undefined
     const settle = (status: "ok" | "failed", title: string, detail: string): void => {
       if (!current()) return
       pendingHandoff = undefined
@@ -330,13 +347,14 @@ export const createAuthBillingController = (
     // Reserve the slot before the first await so a second click during the
     // start request joins this handoff instead of racing it.
     pendingHandoff = { generation, url: "" }
-    ctx.onDispose(() => {
-      if (current()) {
+    ctx.onDispose(async () => {
+      if (pendingHandoff?.generation === generation) {
         handoffGeneration += 1
         pendingHandoff = undefined
       }
       wake?.()
       abort.abort()
+      await polling
     })
     if (!current()) return
     store.dispatch({ type: "toast.shown", actor: "system", key, title: "Finishing sign-in in your browser…" })
@@ -367,86 +385,94 @@ export const createAuthBillingController = (
       fail("Your browser couldn't be opened. Try again.")
       return
     }
-    // ~5 minutes of patience: OAuth in another app takes as long as it takes.
-    let consecutiveErrors = 0
-    for (let attempt = 0; attempt < 150 && current(); attempt += 1) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => wake?.(), handoffPollMs)
-        wake = () => {
-          clearTimeout(timer)
-          wake = undefined
-          resolve()
-        }
-        unref(timer)
-      })
-      if (!current()) return
-      // The session may arrive by another door (a sibling tab, a focus
-      // re-read): a signed-in identity ends the wait as success, not timeout.
-      if (store.collections.identitySessions.get("identity")?.state === "signed-in") {
-        settle("ok", "Signed in", `Connected as ${store.collections.identitySessions.get("identity")?.login ?? "you"}.`)
-        return
-      }
-      let claim: Response
-      try {
-        claim = await http(`${baseUrl}${AUTH_NATIVE_CLAIM_PATH}`, {
-          method: "POST",
-          signal: abort.signal,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ handoffId: start.handoffId, pollSecret: start.pollSecret })
+    // The command settles when its handoff has opened. Authentication itself
+    // is a separately observed session outcome. Keep the poll owned and joined
+    // by this controller, so another sign-in gesture can reopen the same slot.
+    const poll = async (): Promise<void> => {
+      // ~5 minutes of patience: OAuth in another app takes as long as it takes.
+      let consecutiveErrors = 0
+      for (let attempt = 0; attempt < 150 && current(); attempt += 1) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => wake?.(), handoffPollMs)
+          wake = () => {
+            clearTimeout(timer)
+            wake = undefined
+            resolve()
+          }
+          unref(timer)
         })
-      } catch {
-        continue // A dropped poll is not a failed sign-in.
-      }
-      if (!current()) return
-      if (claim.status === 404) {
-        fail("That sign-in expired — try again.")
-        return
-      }
-      const body = (await claim.json().catch(() => undefined)) as
-        | { status?: unknown; message?: unknown }
-        | undefined
-      if (!current()) return
-      if (!claim.ok) {
-        /*
-         * An erroring claim used to read as "pending" and poll for the full
-         * five minutes. Three in a row is an answer: the seam is refusing,
-         * and the toast says what it said.
-         */
-        consecutiveErrors += 1
-        if (consecutiveErrors >= 3) {
-          fail(
-            typeof body?.message === "string"
-              ? `Sign-in couldn't be confirmed: ${body.message}`
-              : `Sign-in couldn't be confirmed — the identity service answered ${claim.status}.`
-          )
+        if (!current()) return
+        // The session may arrive by another door (a sibling tab, a focus
+        // re-read): a signed-in identity ends the wait as success, not timeout.
+        if (store.collections.identitySessions.get("identity")?.state === "signed-in") {
+          settle("ok", "Signed in", `Connected as ${store.collections.identitySessions.get("identity")?.login ?? "you"}.`)
           return
         }
-        continue
-      }
-      consecutiveErrors = 0
-      if (body?.status === "pending") continue
-      if (body?.status === "ready") {
-        // The claim's Set-Cookie should now be in the jar; only the session probe can say so.
-        await loadSession(abort.signal)
-        if (!current()) return
-        const identity = store.collections.identitySessions.get("identity")
-        if (identity?.state === "signed-in") {
-          settle("ok", "Signed in", `Connected as ${identity.login ?? "you"}.`)
-        } else {
-          fail(
-            "Your browser finished the GitHub sign-in, but this app didn't receive the session — the sign-in cookie never reached it. Try again; if it repeats, that is a bug to report."
-          )
+        let claim: Response
+        try {
+          claim = await http(`${baseUrl}${AUTH_NATIVE_CLAIM_PATH}`, {
+            method: "POST",
+            signal: abort.signal,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ handoffId: start.handoffId, pollSecret: start.pollSecret })
+          })
+        } catch {
+          continue // A dropped poll is not a failed sign-in.
         }
+        if (!current()) return
+        if (claim.status === 404) {
+          fail("That sign-in expired — try again.")
+          return
+        }
+        const body = (await claim.json().catch(() => undefined)) as
+          | { status?: unknown; message?: unknown }
+          | undefined
+        if (!current()) return
+        if (!claim.ok) {
+          /*
+           * An erroring claim used to read as "pending" and poll for the full
+           * five minutes. Three in a row is an answer: the seam is refusing,
+           * and the toast says what it said.
+           */
+          consecutiveErrors += 1
+          if (consecutiveErrors >= 3) {
+            fail(
+              typeof body?.message === "string"
+                ? `Sign-in couldn't be confirmed: ${body.message}`
+                : `Sign-in couldn't be confirmed — the identity service answered ${claim.status}.`
+            )
+            return
+          }
+          continue
+        }
+        consecutiveErrors = 0
+        if (body?.status === "pending") continue
+        if (body?.status === "ready") {
+          // The claim's Set-Cookie should now be in the jar; only the session probe can say so.
+          await loadSession(abort.signal)
+          if (!current()) return
+          const identity = store.collections.identitySessions.get("identity")
+          if (identity?.state === "signed-in") {
+            settle("ok", "Signed in", `Connected as ${identity.login ?? "you"}.`)
+          } else {
+            fail(
+              "Your browser finished the GitHub sign-in, but this app didn't receive the session — the sign-in cookie never reached it. Try again; if it repeats, that is a bug to report."
+            )
+          }
+          return
+        }
+        if (body?.status === "failed") {
+          fail(typeof body.message === "string" ? body.message : "Sign-in didn't finish. Try again.")
+          return
+        }
+        fail("Sign-in couldn't be confirmed — the identity service answered in an unexpected shape.")
         return
       }
-      if (body?.status === "failed") {
-        fail(typeof body.message === "string" ? body.message : "Sign-in didn't finish. Try again.")
-        return
-      }
-      fail("Sign-in couldn't be confirmed — the identity service answered in an unexpected shape.")
-      return
+      fail("Sign-in timed out — try again whenever you're ready.")
     }
-    fail("Sign-in timed out — try again whenever you're ready.")
+    polling = poll()
+    void polling.catch(() => {})
+
   }
 
   /*
@@ -458,7 +484,8 @@ export const createAuthBillingController = (
    * navigating: the webview page survives, and passkeys work in the real
    * browser.
    */
-  const signIn = (): void => {
+  const signIn = (reservedOpen?: (url: string) => Promise<boolean>): Promise<void> | void => {
+    if (ctx.disposed) return
     const identity = store.collections.identitySessions.get("identity")
     const toast = (key: string, title: string, detail: string): void => {
       store.dispatch({ type: "toast.shown", actor: "system", key, title })
@@ -490,18 +517,17 @@ export const createAuthBillingController = (
     }
     // Reserve the popup synchronously in the keyboard/button gesture. OAuth
     // finishes on the upstream; the claim transfers its cookie to this origin.
-    const popup = services.openExternal === undefined && services.bootstrap?.host === "local" && typeof window !== "undefined"
+    const popup = reservedOpen === undefined && services.openExternal === undefined && services.bootstrap?.host === "local" && typeof window !== "undefined"
       ? window.open("about:blank", "smithers-github-sign-in") : null
     if (popup) popup.opener = null
-    const openExternal = services.openExternal ?? (services.bootstrap?.host === "local"
+    const openExternal = reservedOpen ?? services.openExternal ?? (services.bootstrap?.host === "local"
       ? async (url: string) => {
         if (!popup || popup.closed) return false
         popup.location.href = url
         return true
       } : undefined)
     if (openExternal !== undefined) {
-      void nativeSignIn(openExternal)
-      return
+      return nativeSignIn(openExternal)
     }
     if (typeof window === "undefined") return
     // A sign-in from a repository page comes back to that page (the server
@@ -509,7 +535,7 @@ export const createAuthBillingController = (
     const returnTo = signInReturnTo(window.location)
     const query = returnTo === null ? "" : `?${AUTH_RETURN_TO_PARAM}=${encodeURIComponent(returnTo)}`
     // The hop leaves the page: let the durable queue settle, or the state this click just changed is lost.
-    void store.settled?.().finally(() => { window.location.assign(`${baseUrl}${AUTH_SIGN_IN_PATH}${query}`) })
+    return Promise.resolve(store.settled?.()).then(() => { if (!ctx.disposed) window.location.assign(`${baseUrl}${AUTH_SIGN_IN_PATH}${query}`) })
   }
 
   /*
@@ -528,7 +554,12 @@ export const createAuthBillingController = (
       return "Signing out didn't go through — the identity service didn't answer. You are still signed in."
     }
     ctx.accountEpoch += 1
-    store.dispatch({ type: "identity.session.cleared", actor: "user" })
+    fenceAccountTurn(null, true)
+    try {
+      await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+    } catch {
+      return "Signed out, but local privacy cleanup is incomplete. Reload to retry before opening saved state or preparing recovery."
+    }
     ctx.identityChanged()
   }
 

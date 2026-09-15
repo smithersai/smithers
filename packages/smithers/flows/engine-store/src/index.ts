@@ -159,3 +159,9 @@ export * as RunCatalogRead from "./RunCatalogRead.ts"
  * @category constants
  */
 export { EventTypes } from "./EventTypes.ts"
+
+/**
+ * @since 1.0.0
+ * @category operations
+ */
+export * as ExecutionFacts from "./ExecutionFacts.ts"

@@ -42,6 +42,7 @@
   "devDependencies": {
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/vitest": "4.0.0-rc.115",
+    "@smthrs/jj": "workspace:*",
     "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",
     "esbuild": "0.28.2",

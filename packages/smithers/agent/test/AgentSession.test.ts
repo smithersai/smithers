@@ -930,6 +930,23 @@ describe("AgentSession", () => {
       (entry.payload as { readonly flowName?: unknown }).flowName === "ask"
     )
     expect(asks).toHaveLength(1)
+    // The live producer carries its durable dispatch identity through start,
+    // permission park, replay and settlement; the control adapter must retain
+    // it rather than correlating repeated flow names by timing.
+    const callStarts = outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.cell-call-started")
+    const callSettlements = outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.cell-call-settled")
+    const ids = callStarts.map((entry) => (entry.payload as { readonly callId: string }).callId)
+    expect(ids.every((id) => /^cell-call-v1:[0-9a-f]{64}$/.test(id))).toBe(true)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(callSettlements).toHaveLength(callStarts.length)
+    for (const entry of callSettlements) {
+      const settled = entry.payload as { readonly callId: string; readonly flowName: string }
+      const matching = callStarts.filter((start) =>
+        (start.payload as { readonly callId: string }).callId === settled.callId
+      )
+      expect(matching).toHaveLength(1)
+      expect((matching[0]!.payload as { readonly flowName: string }).flowName).toBe(settled.flowName)
+    }
     expect((asks[0]!.payload as { readonly value: { readonly approved: boolean } }).value.approved).toBe(true)
     for (const eventType of ["cell-printed", "cell-settled", "transition-applied"]) {
       expect(outcome.agentTrail.filter((entry) => entry.eventType === `control.agent.${eventType}`)).toHaveLength(2)

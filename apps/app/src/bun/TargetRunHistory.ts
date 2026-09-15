@@ -1,4 +1,5 @@
-import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises"
+import { constants } from "node:fs"
+import { mkdir, open, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { RunRecordSchema, TargetRunEventSchema } from "@smthrs/rpc/TargetGraph"
@@ -21,10 +22,6 @@ interface StoredRun {
   journalChars: number
   /** The truncation marker was written; later log frames are dropped. */
   truncated: boolean
-  /** Log characters enqueued for append and not yet written or failed. */
-  pendingChars: number
-  /** Callers waiting for `pendingChars` to fall back under MAX_PENDING_LOG_CHARS. */
-  readonly waiters: Array<() => void>
 }
 
 export interface TargetRunHistory {
@@ -32,12 +29,12 @@ export interface TargetRunHistory {
   readonly flush: () => Promise<void>
   readonly start: (run: TargetRun) => Promise<void>
   /**
-   * Queues the frame for the journal. Resolves at once while the run's
-   * unwritten log backlog is under MAX_PENDING_LOG_CHARS, otherwise when it
-   * drains under it; a producer that awaits it paces itself to the disk.
-   * Never rejects: an append failure is recorded on the run and by `flush`.
+   * Resolves only after this frame has been appended and fsynced. The receipt
+   * is the exact redacted/retained frame safe to publish, or null when the
+   * frame was omitted or the journal failed. An append failure is retained on
+   * the run and makes `flush` reject; subsequent frames cannot hide the gap.
    */
-  readonly event: (run: TargetRun, event: TargetRunEvent) => Promise<void>
+  readonly event: (run: TargetRun, event: TargetRunEvent) => Promise<TargetRunEvent | null>
   readonly list: (repoId: string, repo: string) => Promise<ReadonlyArray<RunRecord>>
   readonly replay: (runId: string, repos?: ReadonlyArray<{ readonly id: string; readonly path: string }>) => Promise<RunReplayResponse | undefined>
 }
@@ -53,9 +50,8 @@ export interface TargetRunHistory {
 export const MAX_RETAINED_LOG_CHARS = 1_000_000
 
 /*
- * The unwritten log backlog one run may hold before `event` stops resolving at
- * once. A child can outrun the disk by orders of magnitude; without a high
- * water mark the append chain grows with every frame the child ever wrote.
+ * Historical backlog threshold, retained for callers sizing their buffers.
+ * Every event receipt now waits for its own commit, including small frames.
  */
 export const MAX_PENDING_LOG_CHARS = 4_000_000
 
@@ -82,6 +78,12 @@ export const MAX_JOURNAL_LOADS = 4
 const uiDir = (repo: string): string => join(repo, ".flows", "ui")
 const runsDir = (repo: string): string => join(uiDir(repo), "runs")
 const encode = (line: HistoryLine): string => `${JSON.stringify(line)}\n`
+
+const writeCommitted = async (path: string, value: string, initialize = false): Promise<void> => {
+  // Append must never recreate a missing journal and silently lose its prefix.
+  const file = await open(path, initialize ? "wx" : constants.O_WRONLY | constants.O_APPEND, 0o600)
+  try { await file.writeFile(value); await file.sync() } finally { await file.close() }
+}
 
 /*
  * Build and test output routinely carries a credential a failing tool printed,
@@ -135,7 +137,7 @@ const applyEvent = (record: RunRecord, event: TargetRunEvent, endedAt: number): 
   if (event.type === "started") return { ...record, status: "running" }
   if (event.type === "summary") return { ...record, summary: event.summary }
   if (event.type === "exit") return {
-    ...record, status: event.code === 0 ? "done" : "failed", endedAt, exitCode: event.code
+    ...record, status: event.code === 0 ? "done" : "failed", endedAt: event.at ?? endedAt, exitCode: event.code
   }
   return record
 }
@@ -148,6 +150,7 @@ const applyEvent = (record: RunRecord, event: TargetRunEvent, endedAt: number): 
  */
 const readJournal = async (path: string, repoId: string, keep: boolean): Promise<{ record: RunRecord | undefined } & Tail> => {
   let record: RunRecord | undefined
+  let terminalFromEvent = false
   const tail: Tail = { events: [], logChars: 0 }
   try {
     for await (const line of readJournalLines(path)) {
@@ -156,14 +159,17 @@ const readJournal = async (path: string, repoId: string, keep: boolean): Promise
         const parsed = JSON.parse(line) as { type?: unknown; record?: unknown; event?: unknown }
         if (parsed.type === "record") {
           const checked = RunRecordSchema.safeParse(parsed.record)
-          if (checked.success && checked.data.repoId === repoId) record = checked.data
+          if (checked.success && checked.data.repoId === repoId && !terminalFromEvent) record = checked.data
         } else if (parsed.type === "event") {
           const checked = TargetRunEventSchema.safeParse(parsed.event)
           if (checked.success) {
             if (keep) retain(tail, checked.data)
-            // Terminal status/time comes from the final record. Rebuild the
-            // durable prefix's other facts even when that record is missing.
-            if (record !== undefined && checked.data.type !== "exit") record = applyEvent(record, checked.data, 0)
+            // Timestamped exit facts are sufficient to rebuild terminal state.
+            // Older exits still need the legacy final record's terminal time.
+            if (record !== undefined && (checked.data.type !== "exit" || checked.data.at !== undefined)) {
+              record = applyEvent(record, checked.data, 0)
+              if (checked.data.type === "exit") terminalFromEvent = true
+            }
           }
         }
       } catch { /* A partial final line after a crash is ignored. */ }
@@ -234,18 +240,11 @@ export const createTargetRunHistory = (options: {
       }
       // A run started in this process is already registered; its live state wins.
       if (runs.has(record.runId)) return
-      runs.set(record.runId, { record, events: undefined, path, queue: Promise.resolve(), logChars: 0, journalChars: 0, truncated: false, pendingChars: 0, waiters: [] })
+      runs.set(record.runId, { record, events: undefined, path, queue: Promise.resolve(), logChars: 0, journalChars: 0, truncated: false })
     }
     await Promise.all(Array.from({ length: MAX_JOURNAL_LOADS }, async () => {
       for (let name = pending.shift(); name !== undefined; name = pending.shift()) await load(name)
     }))
-  }
-
-  const release = (stored: StoredRun, chars: number): void => {
-    stored.pendingChars -= chars
-    if (stored.pendingChars > MAX_PENDING_LOG_CHARS) return
-    const waiters = stored.waiters.splice(0)
-    for (const wake of waiters) wake()
   }
 
   return {
@@ -256,6 +255,7 @@ export const createTargetRunHistory = (options: {
       if (errors.length > 0) throw new AggregateError(errors, "Target run journal append failed.")
     },
     start: async (run) => {
+      if (runs.has(run.runId)) throw new Error(`Target run ${run.runId} is already registered.`)
       const dir = runsDir(run.repo)
       const record: RunRecord = {
         runId: run.runId, repoId: run.repoId, label: run.label, labels: [...run.labels], status: "pending", startedAt: run.startedAt
@@ -267,9 +267,14 @@ export const createTargetRunHistory = (options: {
         await mkdir(dir, { recursive: true, mode: 0o700 })
         // Run output is local state: keep every journal out of commits.
         await writeFile(join(uiDir(run.repo), ".gitignore"), "*\n")
-        await writeFile(path, encode({ type: "record", record }), { mode: 0o600 })
+        await writeCommitted(path, encode({ type: "record", record }), true)
+        // Persist newly created directory entries as well as the file itself.
+        for (const path of [dir, uiDir(run.repo), join(run.repo, ".flows"), run.repo]) {
+          const directory = await open(path, "r")
+          try { await directory.sync() } finally { await directory.close() }
+        }
       })
-      const stored: StoredRun = { record, events: [], path, queue: initialized, logChars: 0, journalChars: 0, truncated: false, pendingChars: 0, waiters: [] }
+      const stored: StoredRun = { record, events: [], path, queue: initialized, logChars: 0, journalChars: 0, truncated: false }
       runs.set(run.runId, stored)
       touch(stored)
       try {
@@ -284,25 +289,25 @@ export const createTargetRunHistory = (options: {
     },
     event: (run, raw) => {
       const stored = runs.get(run.runId)
-      if (stored === undefined) return Promise.resolve()
+      if (stored === undefined) return Promise.resolve(null)
       const endedAt = Date.now()
-      const chars = logChars(raw)
-      stored.pendingChars += chars
+      const input = TargetRunEventSchema.parse(raw)
+      const chars = logChars(input)
+      let committed: TargetRunEvent | null = null
       stored.queue = stored.queue.then(async () => {
         // A missing frame must never be followed by an apparently complete
         // journal. Keep the first error and the last acknowledged prefix.
         if (stored.appendError !== undefined) return
         if (chars > 0 && stored.truncated) return
-        // Redacting here, inside the queue, lets the pending budget pace a
-        // producer by the redactor's cost as well as the disk's.
-        const received = raw.type === "stdout" || raw.type === "stderr" ? { ...raw, data: redact(raw.data) } : raw
+        const received = input.type === "stdout" || input.type === "stderr" ? { ...input, data: redact(input.data) } :
+          input.type === "exit" ? { ...input, at: input.at ?? endedAt } : input
         const written = logChars(received)
         const event: TargetRunEvent = chars > 0 && stored.journalChars + written > maxJournalLogChars
-          ? { type: "stderr", data: JOURNAL_TRUNCATED_MARKER, ...(raw.seq === undefined ? {} : { seq: raw.seq }) }
+          ? { type: "stderr", data: JOURNAL_TRUNCATED_MARKER, ...(input.seq === undefined ? {} : { seq: input.seq }) }
           : received
         const record = applyEvent(stored.record, event, endedAt)
         const line = encode({ type: "event", event }) + (event.type === "exit" ? encode({ type: "record", record }) : "")
-        await appendFile(stored.path, line)
+        await writeCommitted(stored.path, line)
         stored.record = record
         if (event !== received) stored.truncated = true
         else stored.journalChars += written
@@ -314,6 +319,7 @@ export const createTargetRunHistory = (options: {
         }
         // The exit frame settles the run; from here its tail may be evicted.
         if (event.type === "exit") touch(stored)
+        committed = event
       }).catch((error: unknown) => {
         if (stored.appendError !== undefined) return
         const message = `Target run ${run.runId} journal append failed: ${error instanceof Error ? error.message : String(error)}`
@@ -326,15 +332,14 @@ export const createTargetRunHistory = (options: {
         // Logging is diagnostic; even a throwing logger cannot erase the
         // failure retained for list/replay and the rejecting flush boundary.
         try { (options.log ?? console.error)(message) } catch { /* Error remains on the record. */ }
-      }).finally(() => release(stored, chars))
-      if (stored.pendingChars <= MAX_PENDING_LOG_CHARS) return Promise.resolve()
-      return new Promise<void>((resolve) => stored.waiters.push(resolve))
+      })
+      return stored.queue.then(() => structuredClone(committed))
     },
     list: async (repoId, repo) => {
       await loadRepo(repoId, repo)
       const selected = [...runs.values()].filter((stored) => stored.record.repoId === repoId)
       await Promise.all(selected.map((stored) => stored.queue))
-      return selected.map((stored) => stored.record).sort((a, b) => b.startedAt - a.startedAt)
+      return selected.map((stored) => structuredClone(stored.record)).sort((a, b) => b.startedAt - a.startedAt)
     },
     replay: async (runId, repos = []) => {
       for (const repo of repos) await loadRepo(repo.id, repo.path)
@@ -354,7 +359,7 @@ export const createTargetRunHistory = (options: {
       const events = stored.events.map((event, index) => ({ event, index }))
         .sort((a, b) => (a.event.seq ?? a.index) - (b.event.seq ?? b.index) || a.index - b.index)
         .map(({ event }) => event)
-      return { run: stored.record, events }
+      return structuredClone({ run: stored.record, events })
     }
   }
 }

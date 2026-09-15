@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
@@ -640,6 +641,7 @@ describe("registration does not re-arm a settled run (B-03)", () => {
             // the one that can still make progress is offered to the sweep.
             const pendingBefore = yield* state.pendingClocks({ flowName: B03Flow._tag })
             const completionsBefore = yield* state.completedDeferreds(B03Flow._tag)
+            const changes = yield* journal.changes
 
             // The restart: a fresh engine over the same storage, registering
             // the flow for the first time in this incarnation.
@@ -649,6 +651,18 @@ describe("registration does not re-arm a settled run (B-03)", () => {
               isAlive: () => Effect.succeed(false)
             })
             yield* engine.register(B03Flow as never, (() => Effect.succeed("ok")) as never)
+            // Registration schedules the drive; flushing today's queue is not
+            // a receipt for the drive's future writes. Wait for the actual
+            // post-commit terminal event without starting another drive.
+            yield* Stream.fromSubscription(changes).pipe(
+              Stream.filter((entry) =>
+                entry.runId === "b03-live" &&
+                entry.eventType === "flows.engine.run-decision" &&
+                (entry.payload as { readonly status?: string }).status === "completed"
+              ),
+              Stream.take(1),
+              Stream.runDrain
+            )
             yield* journal.flush
 
             const recordsOf = (runId: string) =>

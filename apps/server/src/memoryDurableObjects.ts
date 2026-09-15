@@ -4,12 +4,12 @@ import { runDurable } from "./Boundary"
 import { configLayer } from "./Config"
 import type { ServerConfig, ServerEnvVars } from "./Config"
 import { storageLayer } from "./DurableStorage"
-import type { NativeNamespace } from "./DurableStorage"
+import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { gatewayResolutionsLayer, gatewaySessionRequest, makeGatewayResolutions } from "./gateway"
 import type { GatewayRecord } from "./gateway"
 import { TransportLive } from "./Http"
 import type { Transport } from "./Http"
-import { turnCancelRequest } from "./turns"
+import { TurnCancelRegistry } from "./turns"
 
 /*
  * Test fixture: the Worker's two required Durable Object bindings driven
@@ -37,7 +37,7 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   const gatewayData = new Map<string, Map<string, unknown>>()
   const gatewayObjects = new Map<string, Layer.Layer<any>>()
   const cancelData = new Map<string, Map<string, unknown>>()
-  const cancelObjects = new Map<string, Layer.Layer<any>>()
+  const cancelObjects = new Map<string, TurnCancelRegistry>()
   const retained = (maps: Map<string, Map<string, unknown>>, name: string): Map<string, unknown> => {
     let data = maps.get(name)
     if (data === undefined) {
@@ -48,14 +48,18 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   }
   // The fixture's map IS the object's storage: recreating the object (a
   // Worker restart) keeps the rows, like a Durable Object keeps its SQLite.
-  const storageOver = (data: Map<string, unknown>) =>
-    storageLayer({
-      get: <T>(key: string) => Promise.resolve(data.get(key) as T | undefined),
+  const nativeStorageOver = (data: Map<string, unknown>): NativeStorage => ({
+      get: <T>(key: string) => Promise.resolve(structuredClone(data.get(key)) as T | undefined),
       put: (key: string, value: unknown) => {
-        data.set(key, value)
+        data.set(key, structuredClone(value))
+        return Promise.resolve()
+      },
+      delete: (key: string) => {
+        data.delete(key)
         return Promise.resolve()
       }
     })
+  const storageOver = (data: Map<string, unknown>) => storageLayer(nativeStorageOver(data))
   const GATEWAY_SESSIONS: NativeNamespace = {
     idFromName: (name) => name,
     get: (id) => {
@@ -76,11 +80,11 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
       const name = String(id)
       let object = cancelObjects.get(name)
       if (object === undefined) {
-        object = storageOver(retained(cancelData, name))
+        object = new TurnCancelRegistry({ storage: nativeStorageOver(retained(cancelData, name)) })
         cancelObjects.set(name, object)
       }
-      const layers = object
-      return { fetch: (request) => runDurable(turnCancelRequest(request).pipe(Effect.provide(layers))) }
+      const registry = object
+      return { fetch: (request) => registry.fetch(request) }
     }
   }
   return {

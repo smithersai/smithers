@@ -1064,17 +1064,21 @@ describe("the chrome-actions footer's download button", () => {
     expect(order.indexOf("app.download")).toBeGreaterThan(order.indexOf("auth.sign-in"))
     expect(order.indexOf("app.download")).toBeLessThan(order.indexOf("appearance.dark-mode"))
     const opened: Array<ReadonlyArray<unknown>> = []
+    const popup = { opener: {} as unknown, closed: false, location: { href: "about:blank" }, close: () => { popup.closed = true } }
     const original = window.open
     window.open = ((...args: ReadonlyArray<unknown>) => {
       opened.push(args)
-      return null
+      return popup as unknown as Window
     }) as typeof window.open
     try {
       await act(() => button?.click())
     } finally {
       window.open = original
     }
-    expect(opened).toEqual([[RELEASE_URL, "_blank", "noopener"]])
+    expect(opened).toEqual([["about:blank", "_blank"]])
+    expect(popup.opener).toBeNull()
+    expect(popup.location.href).toBe(RELEASE_URL)
+    expect(popup.closed).toBe(false)
   })
 
   test("host cloud renders no download button while no native release carries an asset — the product default today", async () => {

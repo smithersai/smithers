@@ -479,7 +479,7 @@ describe("approval round trip", () => {
     expect(card.status).toBe("acted")
     expect(card.payload.decision).toBe("denied")
     expect(card.payload.decidedAt).toBeUndefined()
-    expect([...store.collections.transitions.values()].filter((event) => event.type === "card.approval.observed").map((event) => event.actor)).toEqual(["system"])
+    expect([...store.collections.transitions.values()].filter((event) => event.type === "gateway.approvals.observed").map((event) => event.actor)).toEqual(["system"])
   })
 
   test("an idempotent receipt settles the same human decision without another resume request", async () => {

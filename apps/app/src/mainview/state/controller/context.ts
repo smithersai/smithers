@@ -19,6 +19,8 @@ export interface PendingToolCall {
 
 export interface ActiveTurn {
   readonly id: string
+  /** HTTP attempts own durable turn/leg projections; other adapters retain their own runtime. */
+  readonly httpAttemptId?: string
   receivedText: boolean
   /** Executed tool legs of this logical turn (capped at MAX_TOOL_LEGS). */
   toolLegs: number
@@ -70,6 +72,8 @@ export interface ControllerContext {
   readonly onDispose: (finalizer: () => void | Promise<void>) => void | Promise<void>
   /** Release in reverse order, awaiting each resource; repeated calls share the completion/failure. */
   readonly dispose: () => Promise<void>
+  /** Becomes true synchronously when disposal begins, before asynchronous finalizers run. */
+  readonly disposed: boolean
   readonly toastDebounceMs: number
   readonly toastAutoDismissMs: number
   readonly workflowPollMs: number
@@ -186,6 +190,7 @@ export const createControllerContext = (
     withToast: undefined as unknown as ControllerContext["withToast"],
     resolveToast: undefined as unknown as ControllerContext["resolveToast"],
     unref,
+    get disposed() { return disposed },
     onDispose: (finalizer) => {
       // Registering after disposal runs the finalizer at once, so a late
       // acquisition never leaks either.
@@ -369,6 +374,10 @@ export const createControllerContext = (
    */
   ctx.gateway = createGatewaySeam({
     baseUrl: ctx.baseUrl,
+    observationGuard: () => {
+      const generation = netGeneration, owner = networkOwner()
+      return () => !ctx.disposed && generation === netGeneration && owner === networkOwner()
+    },
     bindingFor: (repo, runId) => gatewayBindingFor(ctx.store, repo, runId),
     fetch: (url, init) => ctx.boundedFetch(url, init),
     errorMessageOf: (response, fallback) => ctx.errorMessageOf(response, fallback)

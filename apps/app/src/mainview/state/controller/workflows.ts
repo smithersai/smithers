@@ -14,6 +14,7 @@ import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
 import type { FormsController } from "./forms"
 import { flowArgs } from "../../flows/FlowArgs"
+import { projectRuntimeCard, runtimeApprovalIdOf, runtimeApprovalKey } from "../RuntimeProjection"
 
 /**
  * A launch the workspace refused, in the wire's own words and shape: the
@@ -175,11 +176,14 @@ export const createWorkflowController = (
   }
 
   const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | string> => {
+    const identity = store.collections.identitySessions.get("identity")
+    const current = () => !ctx.disposed && store.collections.identitySessions.get("identity") === identity
     // The Worker absorbs the upstream 409 and answers 200 `{ status: "provisioning" }`
     // while a workspace is mid-provision (apps/server/src/index.ts): poll that
     // body to a bounded deadline, never stampede. Any non-2xx here is a failure.
     const deadline = Date.now() + 180_000
     for (;;) {
+      if (!current()) return "The account changed while the workspace was being prepared."
       if (signal?.aborted) return "Workspace preparation took longer than 3 minutes. Try again."
       let body: { status?: unknown; message?: unknown } | undefined
       try {
@@ -191,12 +195,14 @@ export const createWorkflowController = (
         })
         if (!response.ok) {
           const failure = await cloudFailure(response, "The workspace couldn't be prepared.")
+          if (!current()) return "The account changed while the workspace was being prepared."
           if (failure.refusal.rawCode === "plan_limit_exceeded") {
             return renderPlanLimit(store, failure.refusal, ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, ctx.commandActor)
           }
           return failure.error
         }
         body = (await response.json().catch(() => undefined)) as typeof body
+        if (!current()) return "The account changed while the workspace was being prepared."
       } catch {
         return "The workspace couldn't be prepared: the flow service didn't answer in time."
       }
@@ -558,7 +564,7 @@ export const createWorkflowController = (
   const forwardApprovalDecision = async (
     card: Extract<Card, { kind: "approval" }>,
     decision: "approved" | "denied",
-    answer?: unknown
+    humanAnswer?: unknown
   ): Promise<void> => {
     const trusted = store.approvalRequest(card.id)
     if (trusted?.kind !== "approval") return
@@ -574,17 +580,36 @@ export const createWorkflowController = (
     }
     const binding = trusted.payload.workspaceId !== undefined ? { workspaceId: trusted.payload.workspaceId }
       : trusted.payload.runId === undefined ? {} : { workspaceId: runScopeFromCard(store, trusted, trusted.payload.runId)?.workspaceId }
+    const normalizedId = runtimeApprovalIdOf({ ...trusted, payload: { ...trusted.payload, ...binding } })
+    const normalized = normalizedId === undefined ? undefined : store.collections.runtimeApprovals.get(normalizedId)
+    if (normalized !== undefined) {
+      if (!normalized.pending || normalized.submissionId === undefined || normalized.row.status !== "pending") return
+      const submissionId = normalized.submissionId
+      const answer = await gateway.submitApproval(repo, normalized.row.payload, decision === "approved" ? "approve" : "deny", binding, humanAnswer)
+      if (ctx.disposed || store.collections.runtimeApprovals.get(normalized.id)?.submissionId !== submissionId) return
+      if (answer.status !== "ok" || answer.value.decision._tag === "Terminal") {
+        const observed = await gateway.approvals(repo, normalized.scope.runId, binding)
+        if (ctx.disposed) return
+        if (observed.status === "ok") await reconcileRunApprovals(store, normalized.scope, observed.value)
+      }
+      if (ctx.disposed || store.collections.runtimeApprovals.get(normalized.id)?.submissionId !== submissionId) return
+      await store.dispatch({ type: "gateway.approval.submission.changed", actor: answer.status === "ok" && answer.value.decision._tag !== "Terminal" ? "user" : "system",
+        submission: { id: normalized.id, submissionId, state: answer.status === "ok" && answer.value.decision._tag !== "Terminal" ? decision : "failed",
+          ...(answer.status === "ok" && answer.value.decision._tag !== "Terminal" ? { decidedAt: Date.now() } : { error: answer.status === "error" ? answer.message : "This run has finished. The workspace has not confirmed a decision for this approval." }) }
+      }).isPersisted.promise
+      return
+    }
     const submitted = await gateway.submitApproval(
       repo,
       approval as Parameters<typeof gateway.submitApproval>[1],
       decision === "approved" ? "approve" : "deny",
       binding,
-      answer
+      humanAnswer
     )
     if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
       if (trusted.payload.runId !== undefined) {
         const observed = await gateway.approvals(repo, trusted.payload.runId, binding)
-        if (observed.status === "ok") reconcileRunApprovals(store, { repo, runId: trusted.payload.runId, ...binding }, observed.value)
+        if (observed.status === "ok") await reconcileRunApprovals(store, { repo, runId: trusted.payload.runId, ...binding }, observed.value)
       }
       const current = store.collections.cards.get(card.id)
       if (current?.kind === "approval" && current.payload.decision !== undefined) return
@@ -619,9 +644,10 @@ export const createWorkflowController = (
     requestId: string,
     decision: "approved" | "denied",
     runId?: string,
-    answer?: unknown
+    humanAnswer?: unknown
   ): Promise<void> => {
-    const card = store.collections.cards.get(cardId)
+    const raw = store.collections.cards.get(cardId)
+    const card = raw === undefined ? undefined : projectRuntimeCard(raw, [...store.collections.runtimeRuns.values()], [...store.collections.runtimeApprovals.values()])
     if (card === undefined || card.kind !== "approvals-inbox") return
     const trusted = store.approvalRequest(cardId)
     if (trusted?.kind !== "approvals-inbox") return
@@ -631,6 +657,28 @@ export const createWorkflowController = (
     const row = matches[0]!
     const displayed = card.payload.approvals.find((entry) => sameApproval(entry, row))
     if (row === undefined || displayed === undefined || displayed.decision !== undefined || displayed.pending === true) return
+    const scope = runScopeFromCard(store, trusted, row.runId)
+    const digest = (row.approval.target as { digest?: unknown } | undefined)?.digest
+    const normalized = scope === undefined || typeof digest !== "string" ? undefined : store.collections.runtimeApprovals.get(runtimeApprovalKey(scope, row.requestId, digest))
+    if (normalized !== undefined) {
+      if (normalized.row.status !== "pending" || normalized.pending) return
+      const submissionId = crypto.randomUUID()
+      await store.dispatch({ type: "gateway.approval.submission.changed", actor: "user", submission: { id: normalized.id, submissionId, state: "pending" } }).isPersisted.promise
+      if (ctx.disposed || store.collections.runtimeApprovals.get(normalized.id)?.submissionId !== submissionId) return
+      const binding = { workspaceId: normalized.scope.workspaceId }
+      const answer = await gateway.submitApproval(normalized.scope.repo, normalized.row.payload, decision === "approved" ? "approve" : "deny", binding, humanAnswer)
+      if (ctx.disposed || store.collections.runtimeApprovals.get(normalized.id)?.submissionId !== submissionId) return
+      if (answer.status !== "ok" || answer.value.decision._tag === "Terminal") {
+        const observed = await gateway.approvals(normalized.scope.repo, normalized.scope.runId, binding)
+        if (ctx.disposed) return
+        if (observed.status === "ok") await reconcileRunApprovals(store, normalized.scope, observed.value)
+      }
+      if (ctx.disposed || store.collections.runtimeApprovals.get(normalized.id)?.submissionId !== submissionId) return
+      const applied = answer.status === "ok" && answer.value.decision._tag !== "Terminal"
+      await store.dispatch({ type: "gateway.approval.submission.changed", actor: applied ? "user" : "system", submission: { id: normalized.id, submissionId,
+        state: applied ? decision : "failed", ...(applied ? { decidedAt: Date.now() } : { error: answer.status === "error" ? answer.message : "This run has finished. The workspace has not confirmed a decision for this approval." }) } }).isPersisted.promise
+      return
+    }
     store.dispatch({
       type: "card.updated",
       actor: "user",
@@ -649,11 +697,11 @@ export const createWorkflowController = (
       row.approval as Parameters<typeof gateway.submitApproval>[1],
       decision === "approved" ? "approve" : "deny",
       binding,
-      answer
+      humanAnswer
     )
     if (submitted.status !== "ok" || submitted.value.decision._tag === "Terminal") {
       const observed = await gateway.approvals(trusted.payload.repo, row.runId, binding)
-      if (observed.status === "ok") reconcileRunApprovals(store, { repo: trusted.payload.repo, runId: row.runId, ...binding }, observed.value)
+      if (observed.status === "ok") await reconcileRunApprovals(store, { repo: trusted.payload.repo, runId: row.runId, ...binding }, observed.value)
     }
     const latest = store.collections.cards.get(cardId)
     if (latest === undefined || latest.kind !== "approvals-inbox") return

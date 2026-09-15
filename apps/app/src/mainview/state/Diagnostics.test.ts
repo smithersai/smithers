@@ -91,6 +91,7 @@ describe("app diagnostics without a repository", () => {
     await controller.tappedFetch("https://user:private-password@app.test/failing?token=private-token#private-fragment")
     await controller.tappedFetch("/healthy")
     await controller.tappedFetch("/offline").catch(() => {})
+    await store.dispatch({ type: "message.submitted", actor: "user", turnId: "turn", text: "A request" }).isPersisted.promise
     await store.dispatch({ type: "message.response.failed", actor: "system", turnId: "turn", message: "Chat request failed" }).isPersisted.promise
     await store.dispatch({ type: "toolcall.recorded", actor: "smithers", turnId: "turn", name: "files.read", arguments: "private arguments", result: "private content mentions error" }).isPersisted.promise
     await store.dispatch({ type: "toolcall.recorded", actor: "smithers", turnId: "turn", name: "files.list", arguments: "private arguments", result: "failed: Access denied" }).isPersisted.promise

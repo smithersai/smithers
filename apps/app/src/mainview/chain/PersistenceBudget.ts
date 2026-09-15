@@ -13,15 +13,16 @@
  * `-journal` and `.ahp-*` access-handle files). The only offered action was a
  * full recovery download; a fresh profile booted fine.
  *
- * One number bounds both directions, so a store the writer accepts is always a
- * store the reader can open:
+ * Normalized loading reads metadata pages, then only values admitted by their
+ * UTF-8 byte counts. App collections require complete admission: over-budget
+ * authority or snapshots refuse before repair, never become a partial baseline.
+ * Generic disposable collections may leave older rows on disk with a report.
  *
- * - the loader reads each collection in chunks, newest row first, and stops
- *   admitting rows for that collection once this many bytes are in hand;
- * - the writer compacts run events down to the same bound as it appends.
- *
- * 64 MiB is an eighth of the string ceiling, so even a single collection
- * serialized whole for a legacy host stays an order of magnitude clear of it.
+ * Chain retention targets the same byte count with whole-lineage tombstones.
+ * A live lineage can exceed it and must then refuse bounded boot. Application
+ * event history has separate explicit verified checkpoint compaction; it has
+ * no automatic timer. This is a per-collection load bound, not a promise of
+ * bounded total browser memory or that every written store can reopen.
  */
 export const PERSISTED_COLLECTION_BUDGET_BYTES = 64 * 1024 * 1024
 
@@ -34,9 +35,9 @@ export const PERSISTED_LOAD_CHUNK_ROWS = 512
  * A row bound alone does not bound a statement result: 512 rows of a run
  * card's event payload is half a gigabyte in one answer, which is the whole
  * store again. The loader therefore plans the load from sizes only and then
- * reads the admitted values in pages no larger than this, so what crosses the
- * OPFS worker boundary at once stays small whatever a single row grew to. A
- * row larger than this page on its own is still read alone, never split.
+ * reads admitted values in pages up to this UTF-8 key/value byte target. A
+ * single admitted row larger than this target is read alone, never split; it
+ * remains subject to the collection admission limit above.
  */
 export const PERSISTED_LOAD_PAGE_BYTES = 4 * 1024 * 1024
 

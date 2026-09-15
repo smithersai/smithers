@@ -18,6 +18,23 @@ export const TURN_PATH = "/api/agent/turn"
  */
 export const CANCEL_PATH = "/api/agent/turn/cancel"
 
+/** Read committed turn output without starting inference or spending another turn.
+ * @since 1.0.0
+ * @category constants
+ */
+export const TURN_REPLAY_PATH = "/api/agent/turn/replay"
+
+/** Retire one accepted leg and erase its retained output.
+ * @since 1.0.0
+ * @category constants
+ */
+export const TURN_RETIRE_PATH = "/api/agent/turn/retire"
+/** Delete-only capability endpoint, available after account sign-out.
+ * @since 1.0.0
+ * @category constants
+ */
+export const TURN_ERASE_PATH = "/api/agent/turn/erase"
+
 /*
  * The product Worker's backend seams: auth/identity proxy routes and the
  * billing proxy routes, both proxied wholesale.

@@ -1,3 +1,6 @@
+import { observeRuntimeRun, projectRuntimeCard, runtimeRunKey, type RuntimeRun } from "../RuntimeProjection"
+import { canonicalEventValue } from "../EventValue"
+import type { RuntimeRunObservation } from "../RuntimeProjection"
 import { expect, test } from "bun:test"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
@@ -25,6 +28,11 @@ const poll = async (cycles: Cycle[], options: {
     payload: { repo: "o/r", runId: "run-1", workflow: "test", phase: "running", steps: [], result: null, lastSeq: 0, events: options.initialEvents }
   }
   const cards = new Map([[card.id, card]])
+  const scope = { repo: "o/r", runId: "run-1" }, key = runtimeRunKey(scope)
+  const runtimeRuns = new Map<string, RuntimeRun>()
+  if (options.initialEvents) runtimeRuns.set(key, observeRuntimeRun(undefined, {
+    scope, journal: { mode: "full", events: options.initialEvents }
+  }, Date.now(), 0))
   let iteration = -1
   let rowsRequested = 0
   const journalRequests: unknown[] = []
@@ -41,7 +49,7 @@ const poll = async (cycles: Cycle[], options: {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
-      let rows: unknown[] = [{ ...summary, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
+      let rows: unknown[] = [{ ...summary, updatedAt: cycle.status === undefined ? summary.updatedAt : summary.updatedAt + iteration + 1, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
       if (projection === "run-events") {
         journalRequests.push(payload.after)
         let offset = 0
@@ -52,7 +60,8 @@ const poll = async (cycles: Cycle[], options: {
         })
         rowsRequested += rows.length
         if (options.inspectAt === iteration) {
-          card = { ...card, payload: { ...card.payload, events: cycle.events } }
+          runtimeRuns.set(key, observeRuntimeRun(runtimeRuns.get(key), { scope, journal: { mode: "full", events: cycle.events } }, Date.now(), iteration + 1))
+          card = projectRuntimeCard(card, [...runtimeRuns.values()], []) as typeof card
           cards.set(card.id, card)
         }
       }
@@ -65,13 +74,21 @@ const poll = async (cycles: Cycle[], options: {
   })
   const ctx = {
     finishTutorialChange: async () => {},
-    store: { collections: { cards }, dispatch: (action: any) => {
+    store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, collections: { cards, runtimeRuns, runtimeApprovals: new Map() }, dispatch: (action: any) => {
       if (action.type === "message.appended") messages.push(action.text)
-      if (action.type !== "card.updated") return
-      card = { ...card, ...action.patch }
-      if (options.cloneStored) card = structuredClone(card)
-      cards.set(card.id, card)
-      updates.push(card)
+      const previous = runtimeRuns.get(key)
+      let next = previous
+      if (action.type === "gateway.run.observed") next = observeRuntimeRun(previous, action.observation as RuntimeRunObservation, Date.now(), iteration + 1)
+      if (action.type === "gateway.run.observer.changed" && canonicalEventValue(previous?.observer) !== canonicalEventValue(action.observer)) {
+        next = { ...(previous ?? { id: key, scope, events: [], steps: [], revision: 0 }), observer: action.observer, observedAt: Date.now() }
+      }
+      if (next !== undefined && next !== previous) {
+        runtimeRuns.set(key, options.cloneStored ? structuredClone(next) : next)
+        card = projectRuntimeCard(card, [...runtimeRuns.values()], []) as typeof card
+        cards.set(card.id, card)
+        updates.push(card)
+      }
+      return { isPersisted: { promise: Promise.resolve() } }
     } },
     gateway, runPumps: new Map<string, { stopped: boolean }>(), pumpPokes: new Map<string, () => void>(),
     workflowPollMs: 1, services: {},
@@ -155,7 +172,7 @@ test("a resumed pump starts after the journal already retained on the card", asy
   expect(result.journalRequests).toEqual([cursor("run-events", 0, 1)])
   expect(result.rowsRequested).toBe(1)
   expect(result.card.payload.events).toEqual(events)
-  expect(result.card.payload.events![0]).toBe(initialEvents[0])
+  expect(result.card.payload.events![0]).toEqual(initialEvents[0])
 })
 
 test("a full inspection arriving during a suffix read does not duplicate events", async () => {

@@ -284,7 +284,7 @@ describe("cloud Wiki controller", () => {
     const frames = createFramesController(f.ctx, undefined)
     frames.maximizeCard(`wiki-open-${id}`)
     await until(() => f.store.session().maximizedCardId !== null)
-    frames.forkFrame()
+    await frames.forkFrame()
     await until(() => f.store.session().activeBranchId !== sourceBranch)
     expect(f.store.collections.worldDocuments.get(id)?.cloud?.phase).toBe("cached")
     expect(await f.wiki.editCloudWiki(id, "# Attempted historical edit")).toContain("Refresh")

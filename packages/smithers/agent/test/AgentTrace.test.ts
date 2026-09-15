@@ -27,6 +27,70 @@ const identity = new Cell.CallIdentity({
   layers: ["layer-a"]
 })
 
+describe("durable call identity", () => {
+  it("joins starts and both settlement outcomes by dispatch coordinates, independent of emission order", () => {
+    const first = new Cell.Call({ ...call, identity })
+    const second = new Cell.Call({ ...call, identity: new Cell.CallIdentity({ ...identity, ordinal: 2 }) })
+    const start = (value: Cell.Call) =>
+      AgentSession.trace(
+        new AgentEvent.CellCallStarted({
+          eventType: "flows.harness.cell-call-started.v1",
+          call: value
+        })
+      )!.payload as Record<string, unknown>
+    const settle = (value: Cell.Call, outcome: "success" | "failure") =>
+      AgentSession.trace(
+        new AgentEvent.CellCallSettled({
+          eventType: "flows.harness.cell-call-settled.v1",
+          flowName: value.flowName,
+          identity: value.identity,
+          result: new Cell.CallResult({ outcome, value: null })
+        })
+      )!.payload as Record<string, unknown>
+
+    const opened = [start(first), start(second)]
+    const closed = [settle(second, "failure"), settle(first, "success")]
+    expect(opened[0]!.callId).toMatch(/^cell-call-v1:[0-9a-f]{64}$/)
+    expect(opened[0]!.callId).not.toBe(opened[1]!.callId)
+    expect(closed.map((event) => event.callId)).toEqual([opened[1]!.callId, opened[0]!.callId])
+    expect(start(new Cell.Call({ ...first, identity: new Cell.CallIdentity({ ...identity }) }))).toEqual(opened[0])
+  })
+
+  it("distinguishes every durable dispatch coordinate", () => {
+    const original = AgentSession.callId(identity)
+    // This versioned identity is a persisted wire contract, not an internal
+    // hash callers may change without migrating their event readers.
+    expect(original).toBe("cell-call-v1:18b4aad60dd9bbc9875dda2124e7dde13cc960181ebcb84729df8e461b1a2929")
+    const changed = [
+      { session: "another-session" },
+      { frame: 3 },
+      { cell: "another-cell" },
+      { ordinal: 2 },
+      { declaration: "another-declaration" },
+      { layers: ["layer-b"] }
+    ]
+    expect(
+      new Set(changed.map((change) => AgentSession.callId(new Cell.CallIdentity({ ...identity, ...change })))).size
+    )
+      .toBe(changed.length)
+    for (const change of changed) {
+      expect(AgentSession.callId(new Cell.CallIdentity({ ...identity, ...change })))
+        .not.toBe(original)
+    }
+  })
+
+  it("keeps legacy producer dedup keys when callId is added during a resumed run", () => {
+    for (const kind of ["control.agent.cell-call-started", "control.agent.cell-call-settled"]) {
+      const legacy = { flowName: "write", input: {}, outcome: "success", value: "written" }
+      expect(AgentSession.traceIdentity(2, 4, "cell", kind, { ...legacy, callId: AgentSession.callId(identity) }))
+        .toBe(AgentSession.traceIdentity(2, 4, "cell", kind, legacy))
+    }
+    // This migration rule applies only to call lifecycle records.
+    expect(AgentSession.traceIdentity(2, 4, "cell", "control.agent.cell-printed", { callId: "a" }))
+      .not.toBe(AgentSession.traceIdentity(2, 4, "cell", "control.agent.cell-printed", { callId: "b" }))
+  })
+})
+
 const call = new Cell.Call({
   flowName: "notes/save",
   input: { text: "Remember this." },
@@ -300,7 +364,7 @@ describe("trace", () => {
         new AgentEvent.CellCallStarted({ eventType: "flows.harness.cell-call-started.v1", call }),
         {
           eventType: "control.agent.cell-call-started",
-          payload: { flowName: "notes/save", input: { text: "Remember this." } }
+          payload: { callId: AgentSession.callId(identity), flowName: "notes/save", input: { text: "Remember this." } }
         }
       ],
       [
@@ -314,6 +378,7 @@ describe("trace", () => {
         {
           eventType: "control.agent.cell-call-settled",
           payload: {
+            callId: AgentSession.callId(identity),
             flowName: "notes/save",
             outcome: "failure",
             message: "The note was locked",
@@ -483,6 +548,7 @@ describe("trace", () => {
     expect(projected).toEqual({
       eventType: "control.agent.cell-call-settled",
       payload: {
+        callId: AgentSession.callId(identity),
         flowName: "read",
         outcome: "success",
         message: undefined,
@@ -506,7 +572,13 @@ describe("trace", () => {
       )
     ).toEqual({
       eventType: "control.agent.cell-call-settled",
-      payload: { flowName: "read", outcome: "success", message: undefined, value: small }
+      payload: {
+        callId: AgentSession.callId(identity),
+        flowName: "read",
+        outcome: "success",
+        message: undefined,
+        value: small
+      }
     })
   })
 
@@ -526,6 +598,7 @@ describe("trace", () => {
     expect(projected).toEqual({
       eventType: "control.agent.cell-call-started",
       payload: {
+        callId: AgentSession.callId(identity),
         flowName: "write",
         input: {
           truncated: true,
@@ -552,6 +625,7 @@ describe("trace", () => {
     expect(projected).toEqual({
       eventType: "control.agent.cell-call-settled",
       payload: {
+        callId: AgentSession.callId(identity),
         flowName: "test/run",
         outcome: "failure",
         message: {

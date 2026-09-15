@@ -55,6 +55,7 @@ describe("the encoded projection rows", () => {
       runId: "run-1",
       flowId: "deploy",
       status: "completed",
+      lifecycleProvenance: { control: "legacy-snapshot", execution: "control" },
       /*
        * `statusRollup` joined the row in 1.0.0-rc.0 as an additive change:
        * the schema declares it optional, every field that was on the wire
@@ -127,6 +128,7 @@ describe("the encoded projection rows", () => {
       runId: "run-1",
       flowId: "deploy",
       status: "running",
+      lifecycleProvenance: { control: "legacy-snapshot", execution: "control" },
       statusRollup: {
         subjectId: "run:run-1",
         state: "running",
@@ -235,6 +237,25 @@ describe("the encoded projection rows", () => {
       requestedAt: 1_000,
       status: "pending"
     }])
+  })
+
+  it("round-trips the additive call identity while accepting legacy transcript rows", () => {
+    const rows = GatewayProjection.transcript([
+      event(1, "control.agent.cell-call-started", { callId: "cell-call-v1:example", flowName: "write" })
+    ])
+    const wire = {
+      runId: "run-1",
+      sequence: 1,
+      turn: 0,
+      at: 1000,
+      kind: "control.agent.cell-call-started",
+      callId: "cell-call-v1:example",
+      text: "call write"
+    }
+    expect(encode(GatewayProjection.TranscriptRow, rows[0]!)).toEqual(wire)
+    expect(Schema.decodeUnknownSync(GatewayProjection.TranscriptRow)(wire)).toEqual(rows[0])
+    const { callId: _, ...legacy } = wire
+    expect(Schema.decodeUnknownSync(GatewayProjection.TranscriptRow)(legacy)).toEqual(legacy)
   })
 
   it("freezes a transcript row", () => {

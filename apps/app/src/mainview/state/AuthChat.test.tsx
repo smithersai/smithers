@@ -521,10 +521,10 @@ for (const guide of [false, true]) {
     if (guide) await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } }).isPersisted.promise
     controller.deferCommand("secrets.list", null, "signed-in")
     await store.dispatch({ type: "command.deferral.cleared", actor: "system" }).isPersisted.promise
+    const { host } = mount(controller, guide)
     await controller.commands.runForAgent("auth.prompt")
     await settled()
     const prompt = [...store.collections.messages.values()].at(-1)!
-    const { host } = mount(controller, guide)
     expect(host.querySelector('[data-flow="auth.sign-in"]')).not.toBeNull()
     signedIn = true
     await controller.loadSession()
@@ -532,7 +532,7 @@ for (const guide of [false, true]) {
     flushSync(() => {})
     expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
     expect(document.querySelectorAll('.toast-action[data-flow="auth.sign-in"]').length).toBe(0)
-    expect(document.querySelector('.toast-stack')?.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
+    expect(document.querySelector('.toast-stack')?.textContent ?? "").not.toContain("Signed in with GitHub as @codeplanesmithers.")
     expect(host.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
     expect(host.textContent).toContain(prompt.text)
     expect(store.collections.messages.get(prompt.id)?.text).toBe(prompt.text)

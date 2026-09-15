@@ -5,6 +5,8 @@
  * prints SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:<port> when listening.
  */
 import { defaultDistDir, startLocalServer } from "./server"
+import { join, resolve } from "node:path"
+import { nativeStateDirectory } from "./NativeState"
 
 const port = Number(Bun.env.SMITHERS_LOCAL_PORT ?? "0")
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -15,6 +17,10 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 const server = await startLocalServer({
   port,
   distDir: defaultDistDir(import.meta.dir),
+  // Dev/headless state has its own directory, separate from the native app.
+  stateDir: Bun.env.SMITHERS_LOCAL_STATE_DIR?.trim()
+    ? resolve(Bun.env.SMITHERS_LOCAL_STATE_DIR)
+    : join(nativeStateDirectory(), "headless"),
   chatStub: Bun.env.SMITHERS_CHAT_STUB === "1",
   cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "hybrid" ? "hybrid" : "offline",
   // This process has no native picker. Manual path entry is an explicit

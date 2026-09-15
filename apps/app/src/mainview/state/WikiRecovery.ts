@@ -1,3 +1,4 @@
+import { PendingRecoveryAuthoritySchema, type PendingRecoveryAuthority } from "./PendingRecovery"
 import type { StorageApi } from "@tanstack/db"
 import { PERSISTED_KEY_PREFIX } from "../chain/SchemaVersion"
 import { WorldDocumentSchema, type WorldDocument } from "./AppState"
@@ -11,6 +12,7 @@ export interface WikiRecoveryRecord {
   readonly raw: string
   readonly revision: number
   readonly document: WorldDocumentInput
+  readonly authority?: PendingRecoveryAuthority
 }
 
 export const readWikiRecovery = (storage: StorageApi | undefined): WikiRecoveryRecord | undefined => {
@@ -19,10 +21,12 @@ export const readWikiRecovery = (storage: StorageApi | undefined): WikiRecoveryR
     if (raw === null || raw === undefined) return undefined
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== "object" || parsed === null) return undefined
-    const record = parsed as { readonly version?: unknown; readonly revision?: unknown; readonly document?: unknown }
+    const record = parsed as { readonly version?: unknown; readonly revision?: unknown; readonly document?: unknown; readonly authority?: unknown }
     if (record.version !== 1 || !Number.isSafeInteger(record.revision) || (record.revision as number) < 1) return undefined
+    const authority = record.authority === undefined ? undefined : PendingRecoveryAuthoritySchema.safeParse(record.authority)
+    if (authority && !authority.success) return undefined
     const document = WorldDocumentInputSchema.safeParse(record.document)
-    return document.success ? { raw, revision: record.revision as number, document: document.data } : undefined
+    return document.success ? { raw, revision: record.revision as number, document: document.data, ...(authority?.success ? { authority: authority.data } : {}) } : undefined
   } catch {
     return undefined
   }
@@ -31,9 +35,10 @@ export const readWikiRecovery = (storage: StorageApi | undefined): WikiRecoveryR
 export const writeWikiRecovery = (
   storage: StorageApi | undefined,
   revision: number,
-  document: WorldDocumentInput
+  document: WorldDocumentInput,
+  authority?: PendingRecoveryAuthority
 ): string | undefined => {
-  const raw = JSON.stringify({ version: 1, revision, document })
+  const raw = JSON.stringify({ version: 1, revision, document, ...(authority === undefined ? {} : { authority }) })
   try {
     storage?.setItem(WIKI_RECOVERY_STORAGE_KEY, raw)
     return storage === undefined ? undefined : raw

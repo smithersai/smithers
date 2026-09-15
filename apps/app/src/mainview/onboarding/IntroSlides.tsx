@@ -223,7 +223,7 @@ export function IntroSlides({ kind, index, guide, dispatch }: {
       <section className="guide-intro-card">
         <header className="guide-intro-head">
           <span className="guide-intro-chip" role="status" data-phase={phase ?? "building"}>{chip}</span>
-          <GuideButton className="guide-intro-close" data-intro-close="" shortcut="Escape" aria-label="Close introduction"
+          <GuideButton className="guide-intro-close" data-intro-close="" data-flow="onboarding.act" shortcut="Escape" aria-label="Close introduction"
             onClick={() => dispatch("intro-close")}>
             <X size={15} aria-hidden="true" />
           </GuideButton>
@@ -237,11 +237,11 @@ export function IntroSlides({ kind, index, guide, dispatch }: {
           {slides.map((entry, dot) => <span key={entry.id} data-current={dot === index || undefined} />)}
         </div>
         <div className="guide-intro-controls">
-          <GuideButton className="guide-intro-back" data-intro-back="" shortcut={GUIDE_KEYS.back} disabled={index === 0}
+          <GuideButton className="guide-intro-back" data-intro-back="" data-flow="onboarding.act" shortcut={GUIDE_KEYS.back} disabled={index === 0}
             onClick={() => dispatch("intro-back")}>
             Back
           </GuideButton>
-          <GuideButton className="guide-primary guide-intro-next" data-intro-next="" shortcut="ArrowRight"
+          <GuideButton className="guide-primary guide-intro-next" data-intro-next="" data-flow="onboarding.act" shortcut="ArrowRight"
             onClick={() => dispatch("intro-next")}>
             {last ? "Back to tutorial" : "Next"}
           </GuideButton>

@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
 import { layerCollection } from "./CollectionJournal"
+import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "./TransactionalStorage"
 
 /** Each test gets its own storage so cases never observe another case's writes. */
 const memoryStorage = (): StorageApi => {
@@ -70,6 +71,29 @@ const runChain = (options: {
   )
 
 describe("CollectionJournal", () => {
+  test("a malformed execution cache rebuilt from app authority replays without model calls or effects", async () => {
+    const storage = memoryStorage()
+    const first = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
+    try {
+      const outcome = await runChain({ store: first, lineageId: "cache-recovery", author: Author.layerMock(scripts),
+        entries: [countingEntry("grep", { files: ["a.ts"] }).entry, countingEntry("edit", { ok: true }).entry] })
+      expect(outcome._tag).toBe("Done")
+    } finally { await first.dispose?.() }
+    const envelope = parseStorageEnvelope(storage.getItem(ENVELOPE_STORAGE_KEY)!)!
+    envelope.entries["smithers-mvp.app-chain-events"] = "damaged materialization"
+    envelope.entries["smithers-mvp.app-retired-chain-lineages"] = "damaged materialization"
+    storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(envelope))
+    const second = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
+    try {
+      const grep = countingEntry("grep", { files: ["should-not-execute"] }), edit = countingEntry("edit", { ok: false })
+      const replayed = await runChain({ store: second, lineageId: "cache-recovery", author: Author.layerMock([]), entries: [grep.entry, edit.entry] })
+      expect(replayed._tag).toBe("Done")
+      expect(grep.count()).toBe(0)
+      expect(edit.count()).toBe(0)
+      expect((await second.verifyState()).valid).toBe(true)
+    } finally { await second.dispose?.() }
+  })
+
   test("a chain writes its journal into the chainEvents collection, in order", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const grep = countingEntry("grep", { files: ["a.ts"] })

@@ -104,19 +104,24 @@ describe("/verbose", () => {
   })
 
   test("the logger writes every trace to the console only while on", async () => {
-    const { controller } = await fresh()
+    const { store, controller } = await fresh()
     const logged: Array<string> = []
     console.debug = (...args: Array<unknown>) => {
       logged.push(String(args[0]))
     }
     await controller.commands.run("appearance.dark-mode")
+    await store.settled?.()
     expect(logged).toEqual([])
     await controller.commands.run("debug.verbose")
+    await store.settled?.()
     await controller.commands.run("appearance.dark-mode")
+    await store.settled?.()
     expect(logged.some((line) => line.includes("ran /appearance.dark-mode"))).toBe(true)
     const count = logged.length
     await controller.commands.run("debug.verbose")
+    await store.settled?.()
     await controller.commands.run("appearance.dark-mode")
+    await store.settled?.()
     expect(logged.length).toBe(count)
   })
 })
@@ -160,6 +165,8 @@ describe("sensitive flow traces", () => {
         expect(rows).toHaveLength(1)
         expect(JSON.stringify(rows)).not.toContain(secret)
         expect(JSON.stringify([...persisted])).not.toContain(secret)
+        const loggedBeforeReopen = logged.length
+        await store.dispose?.()
         const restored = await createAppStore({ kind: "localStorage", storage: {
           getItem: (key) => persisted.get(key) ?? null,
           setItem: (key, value) => { persisted.set(key, value) },
@@ -168,6 +175,7 @@ describe("sensitive flow traces", () => {
         expect([...restored.collections.transitions.values()].filter((row) => row.type === "flow.invoked")).toHaveLength(1)
         expect(JSON.stringify([...restored.collections.transitions.values()])).not.toContain(secret)
         expect(JSON.stringify(logged)).not.toContain(secret)
+        expect(logged.length).toBe(loggedBeforeReopen)
         if (verbose) {
           expect(logged.length).toBeGreaterThan(0)
           expect(traces(store).join("\n")).toContain("DATABASE_PASSWORD=[REDACTED]")

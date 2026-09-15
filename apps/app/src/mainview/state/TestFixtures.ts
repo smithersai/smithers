@@ -17,6 +17,13 @@ export const memoryStorage = (): StorageApi => {
   }
 }
 
+/** Seed a pre-journal installation before opening the store; never bypass a live dispatcher. */
+export const writeLegacyCollection = (storage: StorageApi, collectionId: string, rows: ReadonlyArray<{ readonly id: string }>): void => {
+  storage.setItem(`smithers-mvp.${collectionId}`, JSON.stringify(Object.fromEntries(rows.map(row => [
+    `s:${row.id}`, { versionKey: "legacy-fixture", data: row }
+  ]))))
+}
+
 export const unavailableRepositories: NativeRepositories = {
   available: false,
   pickLocalRepository: async () => ({

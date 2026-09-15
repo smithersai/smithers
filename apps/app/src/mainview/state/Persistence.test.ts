@@ -1,3 +1,5 @@
+import { ENTITY_RECOVERY_STORAGE_KEY, writeEntityRecovery } from "./EntityRecovery"
+import { WIKI_RECOVERY_STORAGE_KEY, writeWikiRecovery } from "./WikiRecovery"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
@@ -7,9 +9,7 @@ import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import type { ChainEventRecord, ToolCallRecord, TransitionRecord } from "./AppState"
 import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from "./AppStore"
 import { DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery, writeDraftRecovery } from "./DraftRecovery"
-import { ENTITY_RECOVERY_STORAGE_KEY, writeEntityRecovery } from "./EntityRecovery"
-import { memoryStorage } from "./TestFixtures"
-import { WIKI_RECOVERY_STORAGE_KEY, writeWikiRecovery } from "./WikiRecovery"
+import { memoryStorage, writeLegacyCollection } from "./TestFixtures"
 
 /*
  * Ruling A, store level (docs/persistence.md): a dispatch is one atomic
@@ -40,25 +40,30 @@ const crashableStorage = (): StorageApi & { crashCommit: () => void; heal: () =>
 
 describe("an atomic commit point per logical transition", () => {
   test("boot replays a pending card, Wiki edit, and later draft against the original durable revision", async () => {
-    const recovery = memoryStorage()
+    const recovery = memoryStorage(), durableStorage = memoryStorage()
+    const original = await createAppStore({ kind: "localStorage", storage: durableStorage })
+    const { head } = await original.eventHistory()
+    await original.dispose?.()
+    const authority = { streamId: head.streamId, baseSequence: head.sequence, baseEventHash: head.eventHash, actor: "user" as const,
+      intentId: "pending-input", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null }
     const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
     let store: Awaited<ReturnType<typeof createAppStore>> | undefined
     const card = {
       id: "pending-card", kind: "flow-form" as const, title: "Pending form", status: "active" as const, createdAt: 1, ordinal: 1,
       payload: { flow: "wiki.open", via: "user" as const, fields: [], draft: { path: "Recovered.md" }, given: {} }
     }
-    writeEntityRecovery(recovery, { key: `card:workspace-main:branch-main:${card.id}`, revision: 1,
+    writeEntityRecovery(recovery, { key: `card:workspace-main:branch-main:${card.id}`, revision: head.revision + 1, authority,
       value: { kind: "card", workspaceId: "workspace-main", branchId: "branch-main", id: card.id, card } })
-    writeWikiRecovery(recovery, 2, {
+    writeWikiRecovery(recovery, head.revision + 2, {
       id: "world-home", path: "World.md", title: "World", body: "# Recovered Wiki\n", links: [], tags: [],
       sources: ["user:world-editor"], confidence: 1
-    })
-    writeDraftRecovery(recovery, 3, "recovered later draft")
+    }, { ...authority, intentId: "pending-wiki" })
+    writeDraftRecovery(recovery, head.revision + 3, "recovered later draft", { ...authority, intentId: "pending-draft" })
     Object.defineProperty(globalThis, "window", { configurable: true, value: {
       localStorage: recovery, matchMedia: () => ({ matches: false })
     } })
     try {
-      store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      store = await createAppStore({ kind: "localStorage", storage: durableStorage })
       const recoveredCard = store.collections.cards.get(card.id)
       expect(recoveredCard?.kind).toBe("flow-form")
       if (recoveredCard?.kind !== "flow-form") throw new Error("Recovered card did not retain its form projection")
@@ -215,6 +220,62 @@ const countingStorage = (): StorageApi & { readonly commits: () => number } => {
 }
 
 describe("composer drafts", () => {
+  test("a pending draft with a verified prefix is admitted as a new event before boot exposure", async () => {
+    const recovery = memoryStorage(), storage = memoryStorage()
+    ;(globalThis as any).window = { localStorage: recovery, matchMedia: () => ({ matches: false }) }
+    try {
+      const first = await createAppStore({ kind: "localStorage", storage })
+      const { head } = await first.eventHistory()
+      await first.dispose?.()
+      writeDraftRecovery(recovery, head.revision + 1, "pending input", {
+        streamId: head.streamId, baseSequence: head.sequence, baseEventHash: head.eventHash, actor: "user",
+        intentId: "pending-test", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null
+      })
+      const reopened = await createAppStore({ kind: "localStorage", storage })
+      expect(reopened.session().draft).toBe("pending input")
+      const history = await reopened.eventHistory()
+      expect(history.events.at(-1)).toMatchObject({ type: "composer.changed", actor: "user", streamId: head.streamId })
+      expect((await reopened.verifyState()).valid).toBe(true)
+      expect(recovery.getItem(DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
+      await reopened.dispose?.()
+    } finally { delete (globalThis as any).window }
+  })
+
+  for (const mismatch of ["stream", "prefix", "unscoped", "already-committed"] as const) test(`draft recovery refuses ${mismatch} input`, async () => {
+    const recovery = memoryStorage(), storage = memoryStorage()
+    ;(globalThis as any).window = { localStorage: recovery, matchMedia: () => ({ matches: false }) }
+    try {
+      const first = await createAppStore({ kind: "localStorage", storage })
+      await first.dispatch({ type: "composer.changed", actor: "user", draft: "verified input" }).isPersisted.promise
+      const { head } = await first.eventHistory()
+      await first.dispose?.()
+      writeDraftRecovery(recovery, head.revision + (mismatch === "already-committed" ? 0 : 1), "stale private input", mismatch === "unscoped" ? undefined : {
+        streamId: mismatch === "stream" ? "retired-stream" : head.streamId, baseSequence: head.sequence,
+        baseEventHash: mismatch === "prefix" ? "0".repeat(64) : head.eventHash, actor: "user",
+        intentId: "pending-test", workspaceId: "workspace-main", branchId: "branch-main", conversationTabId: null
+      })
+      const reopened = await createAppStore({ kind: "localStorage", storage })
+      expect(reopened.session().draft).toBe("verified input")
+      expect((await reopened.eventHistory()).events.some(event => JSON.stringify(event.input).includes("stale private input"))).toBe(false)
+      await reopened.dispose?.()
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("an explicitly refused draft commit clears its pending recovery input", async () => {
+    const recovery = memoryStorage(), storage = crashableStorage()
+    ;(globalThis as any).window = { localStorage: recovery, matchMedia: () => ({ matches: false }) }
+    try {
+      const store = await createAppStore({ kind: "localStorage", storage })
+      storage.crashCommit()
+      const transaction = store.dispatch({ type: "composer.changed", actor: "user", draft: "refused input" })
+      expect(readDraftRecovery(recovery)?.draft).toBe("refused input")
+      await expect(transaction.isPersisted.promise).rejects.toThrow()
+      expect(recovery.getItem(DRAFT_RECOVERY_STORAGE_KEY)).toBeNull()
+      storage.heal()
+      await store.dispose?.()
+    } finally { delete (globalThis as any).window }
+  })
+
   test("the fallback recovery slot follows every edit in a coalesced batch", async () => {
     const recovery = memoryStorage()
     ;(globalThis as unknown as { window?: { readonly localStorage: StorageApi; readonly matchMedia: () => { readonly matches: boolean } } }).window = {
@@ -333,7 +394,7 @@ describe("overlapping OPFS dispatches", () => {
 
 describe("retention bounds", () => {
   test("transitions compact to the newest 500 inside the appending transaction", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const storage = memoryStorage()
     const seeded: TransitionRecord[] = Array.from({ length: MAX_TRANSITION_RECORDS + 10 }, (_, index) => ({
       id: `transition-seed-${index}`,
       revision: index + 1,
@@ -342,7 +403,8 @@ describe("retention bounds", () => {
       payload: "{}",
       createdAt: index + 1
     }))
-    await store.collections.transitions.insert(seeded).isPersisted.promise
+    writeLegacyCollection(storage, "app-transitions", seeded)
+    const store = await createAppStore({ kind: "localStorage", storage })
     await store.dispatch({ type: "composer.changed", actor: "user", draft: "x" }).isPersisted.promise
     const remaining = [...store.collections.transitions.values()]
     expect(remaining.length).toBe(MAX_TRANSITION_RECORDS)
@@ -351,7 +413,7 @@ describe("retention bounds", () => {
   })
 
   test("tool-call records compact to the newest 250", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const storage = memoryStorage()
     const seeded: ToolCallRecord[] = Array.from({ length: MAX_TOOL_CALL_RECORDS + 5 }, (_, index) => ({
       id: `toolcall-seed-${index}`,
       turnId: "turn",
@@ -360,7 +422,8 @@ describe("retention bounds", () => {
       result: "ok",
       createdAt: index + 1
     }))
-    await store.collections.toolCalls.insert(seeded).isPersisted.promise
+    writeLegacyCollection(storage, "app-tool-calls", seeded)
+    const store = await createAppStore({ kind: "localStorage", storage })
     await store.dispatch({ type: "composer.changed", actor: "user", draft: "x" }).isPersisted.promise
     const remaining = [...store.collections.toolCalls.values()]
     expect(remaining.length).toBe(MAX_TOOL_CALL_RECORDS)
@@ -369,7 +432,7 @@ describe("retention bounds", () => {
   })
 
   test("unrelated transitions never trim authoritative chain-event records", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const storage = memoryStorage()
     const seeded: ChainEventRecord[] = Array.from({ length: 1_005 }, (_, index) => ({
       id: `chain-seed-${index}`,
       lineageId: "lineage",
@@ -377,7 +440,8 @@ describe("retention bounds", () => {
       event: { kind: "tick" },
       createdAt: index + 1
     }))
-    await store.collections.chainEvents.insert(seeded).isPersisted.promise
+    writeLegacyCollection(storage, "app-chain-events", seeded)
+    const store = await createAppStore({ kind: "localStorage", storage })
     await store.dispatch({ type: "composer.changed", actor: "user", draft: "x" }).isPersisted.promise
     const remaining = [...store.collections.chainEvents.values()]
     expect(remaining.length).toBe(seeded.length)

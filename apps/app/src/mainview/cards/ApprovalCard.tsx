@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 /*
  * The approval card: a capability the run asked the human to allow. The
  * decision rides onDecideApproval; the stamp says what was decided and when.
@@ -18,14 +19,16 @@ import type { ApprovalState } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { ApprovalAnswerForm } from "./ApprovalAnswer"
 import { timeLabel as clockLabel } from "../Timestamps"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 const ApprovalCardBody = ({
   card,
-  onDecideApproval
+  onDecideApproval,
+  onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "approval" }>
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const payload = card.payload
   const pending = payload.pending === true
@@ -46,15 +49,20 @@ const ApprovalCardBody = ({
           <li>{payload.capability}</li>
         </ul>
       </ConfirmationRequest>
-      {pending ? <p className="sui-approval-pending">Sending your decision…</p> : payload.question !== undefined ?
+      {pending ? <p className="sui-approval-pending">Sending your decision…</p> : card.status === "acted" ? null : payload.question !== undefined ?
         (
           /* A gate that asks a question rather than for a grant: the run is
            * stuck on something only a person knows, and approve/deny answer
            * none of it. */
           <ApprovalAnswerForm
+            key={payload.answerDraft?.question}
             question={payload.question}
+            draft={payload.answerDraft}
+            onDraft={value => {
+              if (payload.answerDraft !== undefined) onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field: `answer:${payload.answerDraft.question}`, value }))
+            }}
             disabled={false}
-            onAnswer={(answer) => onDecideApproval(card.id, "approved", answer)}
+            onAnswer={(answer) => onDecideApproval(card.id, "approved", answer, payload.answerDraft?.question)}
           />
         ) :
         (
@@ -85,7 +93,7 @@ const ApprovalCardBody = ({
 
 export const approvalCardFamily: CardFamily<"approval"> = {
   approval: {
-    render: (card, actions) => <ApprovalCardBody card={card} onDecideApproval={actions.onDecideApproval} />,
+    render: (card, actions) => <ApprovalCardBody card={card} onDecideApproval={actions.onDecideApproval} onRunCommand={actions.onRunCommand} />,
     pill: (card) => {
       if (card.status === "acted") return card.payload.decision ?? "approved"
       return "waiting-approval"

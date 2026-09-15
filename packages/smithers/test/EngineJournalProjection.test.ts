@@ -1,11 +1,14 @@
 import { NodeCrypto } from "@effect/platform-node"
+import * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
+import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
+import { CallFact } from "@smthrs/journal"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { Context, Deferred, Effect, Fiber, Layer, Schedule } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer, Schedule, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -44,11 +47,126 @@ const emit = (journal: Journal.Service, runId: string, payload: unknown, sourceI
 const rows = (journal: Journal.Service) =>
   Effect.map(
     journal.entries({ runId: "control-root" as JournalEvent.RunId, limit: 1000 }),
-    (page) => page.entries
+    (page) => page.entries.filter((entry) => entry.eventType !== "control.engine.bound")
   )
 const record = (entry: JournalEvent.Entry) => entry.payload as Record<string, unknown>
 
 describe("private engine journal projection", () => {
+  it("reopens both SQLite files and converges a committed call outbox after a lost destination receipt", () =>
+    Effect.runPromise(Effect.acquireUseRelease(
+      Effect.promise(() => mkdtemp(join(tmpdir(), "call-outbox-"))),
+      (directory) =>
+        Effect.gen(function*() {
+          const open = Effect.gen(function*() {
+            const native = yield* Layer.build(Layer.fresh(TestStores.layerAt(join(directory, "native.db"))))
+            const control = yield* Layer.build(Layer.fresh(TestStores.layerAt(join(directory, "control.db"))))
+            return {
+              engineJournal: Context.get(native, Journal.Journal),
+              controlJournal: Context.get(control, Journal.Journal),
+              engineState: Context.get(native, DurableEngineState.DurableEngineState),
+              controlRunId: "control-root",
+              executionId: "native-root"
+            }
+          }).pipe(Effect.provide(NodeCrypto.layer))
+          const callId = `cell-call-v1:${"a".repeat(64)}`
+          yield* Effect.scoped(Effect.gen(function*() {
+            const ports = yield* open
+            for (const phase of ["invoked", "settled"] as const) {
+              yield* ports.engineJournal.emitDurableUnfenced(
+                new JournalEvent.Input({
+                  runId: "native-root" as JournalEvent.RunId,
+                  sourceId: `call-fact-v1:${callId}:${phase}` as JournalEvent.SourceId,
+                  sourceSeq: 0 as JournalEvent.SourceSeq,
+                  eventType: CallFact.eventType,
+                  payload: {
+                    version: 1,
+                    phase,
+                    callId,
+                    identity: {
+                      runId: "control-root",
+                      frame: 1,
+                      cell: "cell",
+                      ordinal: 0,
+                      declaration: "d",
+                      layers: []
+                    },
+                    flowName: "write",
+                    ...(phase === "invoked"
+                      ? { input: { token: "private-input", path: "a" } }
+                      : { outcome: "failure", value: null, message: "timeout" })
+                  }
+                })
+              )
+            }
+            let lost = false
+            const controlJournal: Journal.Service = {
+              ...ports.controlJournal,
+              emitDurableUnfenced: (input) =>
+                ports.controlJournal.emitDurableUnfenced(input).pipe(Effect.flatMap((receipt) => {
+                  if (input.eventType !== Projection.eventKind || lost) return Effect.succeed(receipt)
+                  lost = true
+                  return Effect.fail(
+                    new Journal.JournalError({ code: "sink_failed", message: "lost receipt after commit" })
+                  )
+                }))
+            }
+            expect((yield* Effect.result((yield* Projection.make({ ...ports, controlJournal })).catchUp))._tag).toBe(
+              "Failure"
+            )
+            expect(yield* rows(ports.controlJournal)).toHaveLength(1)
+          }))
+          yield* Effect.scoped(Effect.gen(function*() {
+            const ports = yield* open
+            yield* (yield* Projection.make(ports)).catchUp
+            const committed = yield* rows(ports.controlJournal)
+            expect(committed).toHaveLength(2)
+            yield* (yield* Projection.make(ports)).catchUp
+            expect(yield* rows(ports.controlJournal)).toEqual(committed)
+            expect(JSON.stringify(committed)).not.toContain("private-input")
+            const events = committed.map((entry) =>
+              Schema.decodeUnknownSync(ControlSchema.ControlEvent)({
+                runId: "control-root",
+                sequence: entry.seq as number,
+                kind: entry.eventType,
+                occurredAt: entry.emittedAtMs as number,
+                payload: entry.payload
+              })
+            )
+            expect(GatewayProjection.nodeOutput(events)).toMatchObject([{
+              nodeId: "call-1",
+              outcome: "failure",
+              output: "timeout"
+            }])
+            expect(GatewayProjection.transcript(events)).toHaveLength(2)
+          }))
+        }),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+    )))
+
+  it("commits one trusted binding and follows trampoline membership without rewriting copied identities", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: {} })
+      yield* f.runs.create("native-root", state)
+      yield* f.runs.create("round-1", state, { lineageId: "native-root", roundOrdinal: 1, parentRunId: "native-root" })
+      yield* emit(f.engineJournal, "native-root", { root: true })
+      yield* emit(f.engineJournal, "round-1", { round: true })
+      expect(yield* f.engineState.runChildren("native-root")).toEqual([])
+      const projector = yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })
+      yield* projector.catchUp
+      const first = yield* f.controlJournal.entries({ runId: "control-root" as JournalEvent.RunId, limit: 100 })
+      expect(first.entries.filter((entry) => entry.eventType === "control.engine.bound").map(record)).toEqual([
+        { version: 1, controlRunId: "control-root", executionId: "native-root" }
+      ])
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
+        "native-root",
+        "round-1"
+      ])
+      yield* (yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })).catchUp
+      expect((yield* f.controlJournal.entries({ runId: "control-root" as JournalEvent.RunId, limit: 100 })).entries)
+        .toEqual(first.entries)
+    }))))
+
   it("does not invent missing evidence from native sequence reservations abandoned on rollback", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const f = yield* setup

@@ -191,6 +191,8 @@ const cardBaseShape = {
   viewKey: z.string().optional(),
   viewRepo: z.string().optional(),
   loading: z.boolean().optional(),
+  /** Runtime views join current normalized facts; a revision pins an immutable historical checkpoint. */
+  runtimeView: z.object({ version: z.literal(1), revision: z.number().int().nonnegative().optional() }).optional(),
   navigation: z.object({ index: z.number().int().nonnegative(), length: z.number().int().positive() }).optional(),
   id: z.string(),
   title: z.string(),
@@ -780,6 +782,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         attempt: z.number().int().positive().optional(),
         maxAttempts: z.number().int().positive().optional()
       }).optional(),
+      /** Read projection of the human's draft, bound to the exact pending question. */
+      answerDraft: z.object({ question: z.string().regex(/^[0-9a-f]{64}$/), text: z.string() }).optional(),
       /** The loaded repository whose per-user gateway the run lives on. */
       repo: z.string().optional(),
       /** Owning gateway; omission keeps legacy cards unbound. */
@@ -1022,6 +1026,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** Whether the transcript keeps following the live run. */
       follow: z.boolean().optional(),
       /** The transcript tab's rows, merged from the transcript projection while the card follows. */
+      transcriptAtRevision: z.number().int().nonnegative().optional(),
       transcriptRows: z
         .array(
           z.object({
@@ -1221,6 +1226,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
             attempt: z.number().int().positive().optional(),
             maxAttempts: z.number().int().positive().optional()
           }).optional(),
+          /** Read projection of the human's draft, bound to the exact pending question. */
+          answerDraft: z.object({ question: z.string().regex(/^[0-9a-f]{64}$/), text: z.string() }).optional(),
           decision: z.enum(["approved", "denied"]).optional(),
           /** When the decision was submitted, never when the gate was raised; absent until one is made, so a row states only the time it knows. */
           decidedAt: z.number().optional(),
@@ -2202,6 +2209,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("targets"),
     payload: z.object({
       repoId: z.string(),
+      /** Stable local repository identity for joining stars across reopen. */
+      repoKey: z.string().optional(),
       repoName: z.string(),
       status: z.enum(["pending", "done", "failed"]),
       targets: z.array(TargetSchema),
@@ -2214,7 +2223,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       runs: z.array(RunRecordSchema).optional(),
       /** Per-label facts the drawer read (declaration site, plan, deps/rdeps), keyed by label. */
       details: z.record(z.string(), TargetDetailSchema).optional(),
-      /** The labels this user starred for the repository (target.star), mirrored from app-starred-targets. */
+      /** Legacy saved snapshot only; current cards derive labels from app-starred-targets. */
       starred: z.array(z.string()).optional()
     })
   }),

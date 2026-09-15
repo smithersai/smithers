@@ -9,7 +9,7 @@ import { flowAction } from "./flows/FlowAction"
  */
 import { Button, StatusPill } from "@smthrs/ui"
 import { ArrowLeft, ArrowRight, GitFork, Maximize2, Minimize2, PanelTop } from "lucide-react"
-import { memo, useRef } from "react"
+import { memo, useCallback, useRef } from "react"
 import type { CardActions } from "./cards/CardFamily"
 import { pillStatus, renderCardBody } from "./cards/CardRenderers"
 import { Component, type ErrorInfo, type ReactNode } from "react"
@@ -88,6 +88,7 @@ export const CardView = memo(function CardView({
   onRunCommand,
   debugVerbose,
   workflowCatalogs,
+  projectionStore,
   signedOut
 }: CardViewProps) {
   /*
@@ -108,15 +109,28 @@ export const CardView = memo(function CardView({
   const statusNode = card.kind === "agent" || card.kind === "run-trace" ?
     <StatusDetails status={health} fallback={fallback} /> :
     fallback === "" ? null : <StatusPill status={fallback} />
-  const maximizeRef = useRef<HTMLButtonElement>(null)
-  const minimizeRef = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<"maximize" | "minimize" | null>(null)
+  // A durable command can settle after the next animation frame. Transfer
+  // focus when its replacement button actually mounts, not on a guessed tick.
+  const maximizeRef = useCallback((node: HTMLButtonElement | null) => {
+    if (node !== null && pendingFocus.current === "maximize") {
+      pendingFocus.current = null
+      node.focus()
+    }
+  }, [])
+  const minimizeRef = useCallback((node: HTMLButtonElement | null) => {
+    if (node !== null && pendingFocus.current === "minimize") {
+      pendingFocus.current = null
+      node.focus()
+    }
+  }, [])
   const maximizeThenFocus = (): void => {
+    pendingFocus.current = "minimize"
     onMaximize(card.id)
-    requestAnimationFrame(() => minimizeRef.current?.focus())
   }
   const minimizeThenFocus = (): void => {
+    pendingFocus.current = "maximize"
     onMinimize()
-    requestAnimationFrame(() => maximizeRef.current?.focus())
   }
   return (
     <>
@@ -269,6 +283,7 @@ export const CardView = memo(function CardView({
             onRunCommand,
             debugVerbose,
             workflowCatalogs,
+            projectionStore,
             signedOut
           })}
           </CardBodyBoundary>

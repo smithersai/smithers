@@ -127,3 +127,70 @@ could not project a journal a different engine wrote.
 - [Run lineage](/concepts/lineage/): what a `control.run.lineage` delta says.
 - [Steer a running agent](/guides/steer-a-run/): the two moments a steer
   has, and their two writers.
+
+## Versioned lifecycle and approval producer contract
+
+`ControlFacts` exports the version-1 control producer contract and the shared
+pure run/approval fold consumed by gateway snapshots and subscriptions. This
+version is independent of the harness transcript's `journalVersion` and of
+journal cursor generations. Existing event kind names and source identities
+remain unchanged; old consumers can continue reading their original fields.
+
+A lifecycle fact adds `{factVersion: 1, baseline, run}` to the usual event
+payload. `run` is the complete, detached `RunSummary` returned by that fenced
+control write. `control.run.accepted` starts a `created` baseline. A first
+upgraded status, resume claim, pending handoff, or reconciliation starts a
+`legacy` baseline at its own committed sequence. Earlier history is retained
+without claiming that lost transitions have been reconstructed. Unknown or
+missing lifecycle facts invalidate continuous coverage until another complete
+snapshot establishes a new legacy baseline. No read fabricates migration events.
+
+`ControlFacts.commitRun` commits a control write and its fact with
+`Journal.transact`. `AgentSession` uses it for terminal/parked status and resume
+claims; failure does not leave a newer status with no event. `ControlLive`'s
+normal admission, resume, steer, and cancellation transactions carry the same
+facts, and its exceptional launch settlement and terminal reconciliation also
+join a journal transaction. Low-level `ControlRuntime` calls remain available
+for ownership mechanics and legacy integrations; calling them outside these
+producer boundaries does not establish event coverage.
+
+`commitApprovalRequest` validates and captures the full request, then commits
+its token registration and `control.approval.requested` event together. A
+resolved token does not emit a new pending request. Decisions add
+`{factVersion: 1, tokenId, approvalTarget}` to their existing payload and commit
+with the decision, grant, idempotency receipt, and durable node-resume intent.
+The pure fold joins current requests and decisions by run/request identity and
+digest. Repeated requests do not reopen a decision. Legacy records retain their
+historical read contract; only legacy requests are eligible for unnamed legacy
+decision fallback.
+
+These atomic guarantees require the SQL control runtime and journal to share
+the same database/writer, as the production control composition does. The
+in-memory test runtime has no transactional rollback protocol. `SqlJournal`
+publishes committed rows after the owning writer's COMMIT; a failed insert or
+outer transaction publishes no fact. Followers also replay from disk, so a
+process dying after commit and before an in-process notification does not lose
+the recorded transition.
+
+This is a control-plane boundary, not a claim that all runtime state is now a
+control-event fold. Native lifecycle observations commit with their own fenced
+state in the engine database. The durable engine bridge copies those facts and
+an authenticated `control.engine.bound` root binding into the control journal.
+Gateway snapshots and subscriptions use the shared `ExecutionFact` fold to
+compare that evidence with the executor's coherent root/current-round view.
+The separate `executionProvenance` reports native `events`, `legacy-observation`
+or `unverified-observation`; `lifecycleProvenance` still labels the executor
+overlay `engine-observed` rather than calling it control replay. Bridge lag,
+missing bindings, generation gaps and unknown versions retain explicit fallback.
+The two databases do not become one transaction, and operational ownership,
+heartbeats and protected resolver credentials retain their native authorities.
+
+Authorized native cell calls also commit `flows.harness.call-fact.v1` invocation
+and controller-result facts in their owning action transactions. The immutable
+native journal is their outbox through that same bridge. Shared call projections
+prefer committed facts over matching identified telemetry while preserving
+display identities. Legacy trace producer hashes remain unchanged; unidentified
+calls keep their limited fallback, and low-level custom ports without these
+annotations remain legacy. Model deltas, printed output and other trace records
+still use the best-effort channel. Durable call facts do not reconstruct missing
+trace history or promise exactly-once external effects.

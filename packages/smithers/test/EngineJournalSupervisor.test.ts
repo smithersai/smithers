@@ -79,7 +79,9 @@ const setup = Effect.gen(function*() {
         yield* sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = ${id}`
       })),
     rows: (id = "root") =>
-      controlJournal.entries({ runId: id as JournalEvent.RunId, limit: 1000 }).pipe(Effect.map((page) => page.entries))
+      controlJournal.entries({ runId: id as JournalEvent.RunId, limit: 1000 }).pipe(
+        Effect.map((page) => page.entries.filter((entry) => entry.eventType !== "control.engine.bound"))
+      )
   }
 }).pipe(Effect.provide(NodeCrypto.layer))
 
@@ -193,7 +195,7 @@ describe("private native journal supervision", () => {
           )?.payload
         ).toMatchObject({
           generation: 1,
-          detail: "invalid_run: Previously observed native wrapper was removed"
+          detail: "decode_failed: Native lineage omitted its requested member"
         })
         expect(isSettled(rows)).toBe(false)
       }))),

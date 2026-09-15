@@ -10,9 +10,8 @@ import * as VaultAdapter from "../wiki/VaultAdapter"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
-
-const createAppController = scopedControllers()
+import { isMaterialTransition } from "./Recommend"
+import { memoryStorage, unavailableAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 /*
  * The composer hot path.
@@ -49,6 +48,8 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
+const createAppController = scopedControllers()
+
 interface Counted {
   readonly controller: AppControllerType
   /** How many times App has rendered since mount. */
@@ -63,6 +64,15 @@ interface Counted {
 const mountCounted = async (sidebar = false): Promise<Counted> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const real = createAppController(store, unavailableRepositories, unavailableAgent, { recommender: { debounceMs: 0 } })
+  // Initial onboarding now crosses a durable command receipt. Finish that
+  // material update before measuring renders caused by later keystrokes.
+  await waitFor(() => [...store.collections.transitions.values()].some(row =>
+    row.type === "flow.invoked" && JSON.parse(row.payload).name === "onboarding.act"))
+  // That startup observation also schedules the rule recommendation. Its
+  // first row belongs to boot, so do not count it as a keystroke render.
+  const bootRevision = Math.max(0, ...[...store.collections.transitions.values()].filter(row => isMaterialTransition(row.type)).map(row => row.revision))
+  await waitFor(() => [...store.collections.recommendations.values()].some(row => row.revision >= bootRevision))
+  await store.settled?.()
   let count = 0
   const controller: AppControllerType = {
     ...real,
@@ -90,7 +100,6 @@ const mountCounted = async (sidebar = false): Promise<Counted> => {
   )
   mounted.push(() => {
     flushSync(() => root.unmount())
-    controller.dispose()
     host.remove()
   })
   const act = async (change: () => unknown): Promise<void> => {

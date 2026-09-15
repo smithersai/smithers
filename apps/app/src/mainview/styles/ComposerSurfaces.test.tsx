@@ -54,11 +54,11 @@ test('palette and Mode use the opaque house surface, independent of blur', () =>
   expect(mode).toMatch(/\.input-mode-menu\s*\{[^}]*background:\s*var\(--surface\);/)
 })
 
-test('coarse pointers give the hint bar space back to the list', () => {
+test('coarse pointers give the hint bar space back while the palette preserves transcript space', () => {
   expect(cards).toMatch(/@media\s*\(pointer: coarse\)\s*\{\s*\.palette-foot\s*\{\s*display:\s*none;/)
   const layer = /\.guide-composer-layer\s*\{([^}]*)\}/.exec(guide)![1]!
   expect(layer).not.toContain('40dvh')
-  expect(layer).toContain('max-height: 100%;')
+  expect(layer).toContain('max-height: min(70dvh, calc(100dvh - var(--g-strip) - 100px));')
   expect(cards).toMatch(/\.slash-menu-item\s*\{[^}]*flex-shrink:\s*0;/)
 })
 

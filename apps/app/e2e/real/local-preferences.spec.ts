@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { command, expect, openApp, openComposer, test } from "./support"
+import { DRAFT_RECOVERY_STORAGE_KEY } from "../../src/mainview/state/DraftRecovery"
 
 const boot = async (page: Page): Promise<void> => {
   await openApp(page)
@@ -89,7 +90,7 @@ test(
     await boot(page)
     await openComposer(page)
     await page.getByTestId("composer-input").fill("durable baseline")
-    await page.waitForFunction(() => localStorage.getItem("smithers-mvp.composer-draft-recovery") === null)
+    await page.waitForFunction(key => localStorage.getItem(key) === null, DRAFT_RECOVERY_STORAGE_KEY)
     await page.reload()
     await expect(page.getByTestId("composer-input")).toBeHidden()
     await page.getByRole("button", { name: "Chat", exact: true }).click()

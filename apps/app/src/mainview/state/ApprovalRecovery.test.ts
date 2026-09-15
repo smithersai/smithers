@@ -63,7 +63,7 @@ describe("approval observation recovery", () => {
     expect(read(reopened, "a").payload.error).toContain("outcome is unknown")
     expect(readInbox(reopened, "inbox").payload.approvals.every((entry) => entry.pending !== true && entry.decision === undefined)).toBe(true)
     expect(reopened.approvalRequest("a")).toEqual(trusted)
-    reconcileRunApprovals(reopened, { repo, workspaceId: workspaceA, runId: "run" }, [row("run", "deploy", "approved")])
+    await reconcileRunApprovals(reopened, { repo, workspaceId: workspaceA, runId: "run" }, [row("run", "deploy", "approved")])
     expect(read(reopened, "a").payload.decision).toBe("approved")
     expect(read(reopened, "a").payload.decidedAt).toBeUndefined()
     await reopened.dispose?.()
@@ -77,16 +77,16 @@ describe("approval observation recovery", () => {
     }
     const original = row("run", "deploy", "approved")
     const wrongDigest = { ...original, payload: { ...original.payload, target: { ...original.payload.target, digest: "different" } } }
-    reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run" }, [wrongDigest])
+    await reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run" }, [wrongDigest])
     expect(read(store, "a").payload.decision).toBeUndefined()
-    reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run" }, [row("run", "deploy", "denied")])
+    await reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run" }, [row("run", "deploy", "denied")])
     expect(read(store, "a").payload.decision).toBe("denied")
     expect(read(store, "b").payload.decision).toBeUndefined()
     expect(read(store, "other").payload.decision).toBeUndefined()
-    reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run-b" }, [row("run-b", "deploy", "approved")])
+    await reconcileRunApprovals(store, { repo, workspaceId: workspaceA, runId: "run-b" }, [row("run-b", "deploy", "approved")])
     expect(readInbox(store, "inbox-a").payload.approvals.map((entry) => entry.decision)).toEqual([undefined, "approved"])
     expect(readInbox(store, "inbox-b").payload.approvals.map((entry) => entry.decision)).toEqual([undefined, undefined])
-    expect([...store.collections.transitions.values()].filter((event) => event.type === "card.approval.observed")).toHaveLength(1)
+    expect([...store.collections.transitions.values()].filter((event) => event.type === "gateway.approvals.observed")).toHaveLength(3)
     await store.dispose?.()
   })
 
@@ -101,7 +101,7 @@ describe("approval observation recovery", () => {
     let reads = 0
     const ctx = { store, services: {}, workflowPollMs: 1, unref: () => {},
       runPumps: new Map(), pumpPokes: new Map(), finishTutorialChange: async () => {}, gateway: {
-        run: async () => ({ status: "ok", value: { status: "completed", updatedAt: 2, turns: 1, calls: 1, callsFailed: 0, verdict: "done" } }),
+        run: async () => ({ status: "ok", value: { runId: "run", flowId: "test", status: "completed", createdAt: 1, updatedAt: 2, turns: 1, calls: 1, callsFailed: 0, verdict: "done", diagnosis: "done", editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0 } }),
         approvals: async (actualRepo: string, actualRun: string, binding: unknown) => {
           expect([actualRepo, actualRun, binding]).toEqual([repo, "run", { workspaceId: workspaceA }])
           reads++

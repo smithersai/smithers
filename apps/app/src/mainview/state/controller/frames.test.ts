@@ -5,7 +5,7 @@ import type { AgentPort } from "../../runtime/AgentPort"
 import type { FrameHistoryPort, FrameLocation } from "../../runtime/FrameHistory"
 import { createAppController } from "../AppController"
 import { createAppStore } from "../AppStore"
-import { cardFrameId, DEFAULT_BRANCH_ID, DEFAULT_WORKSPACE_ID, rootFrameId } from "../AppState"
+import { cardFrameId, DEFAULT_BRANCH_ID, DEFAULT_WORKSPACE_ID, initialGuide, rootFrameId } from "../AppState"
 
 const storage = (): StorageApi => {
   const rows = new Map<string, string>()
@@ -67,6 +67,92 @@ const memoryHistory = (): FrameHistoryPort & { readonly value: () => FrameLocati
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe("durable frame navigation", () => {
+  for (const signOut of [false, true]) test(signOut
+    ? "sign-out suppresses a late fork completion even when its root branch survives"
+    : "the shared fork flow publishes its address and completion only after the fork receipt", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: storage() })
+    await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const history = memoryHistory()
+    const controller = createAppController({ ...store, dispatch: transition => {
+      const transaction = store.dispatch(transition)
+      if (transition.type !== "frame.forked") return transaction
+      entered()
+      return new Proxy(transaction, { get: (target, property, receiver) => property === "isPersisted"
+        ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) }
+        : Reflect.get(target, property, receiver) })
+    } }, repositories, agent, { frameHistory: history })
+    const original = history.value()
+    const pending = controller.commands.run("frame.fork")
+    try {
+      await started
+      expect(history.value()).toEqual(original)
+      expect(store.collections.toasts.get("toast-frame.fork")).toBeUndefined()
+      expect([...store.collections.commandIntents.values()].find(row => row.name === "frame.fork"))
+        .toMatchObject({ actor: "user", status: "accepted" })
+      if (signOut) {
+        const fork = store.session().activeBranchId
+        await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+        // Privacy drops the branch's private snapshot but retains its root address.
+        expect(store.session().activeBranchId).toBe(fork)
+        expect(store.session().activeFrameId).toBe(rootFrameId(fork!))
+      }
+      release()
+      expect(await pending).toMatchObject({ status: "executed" })
+      if (signOut) {
+        expect(history.value()).toEqual(original)
+        expect(store.collections.toasts.get("toast-frame.fork")).toBeUndefined()
+      } else {
+        expect(history.value()?.branchId).not.toBe(original?.branchId)
+        expect(store.collections.toasts.get("toast-frame.fork")).toMatchObject({ title: "Created Fork 1", status: "ok" })
+      }
+      expect((await store.verifyState()).valid).toBe(true)
+    } finally {
+      release()
+      await pending
+      await controller.dispose()
+    }
+  })
+
+  test("a failed fork commit preserves its original branch and emits no successful address or notice", async () => {
+    const bytes = storage()
+    let refuse = false
+    const host: StorageApi = { ...bytes, setItem: (key, value) => {
+      if (refuse) throw new Error("fork persistence refused")
+      bytes.setItem(key, value)
+    } }
+    const store = await createAppStore({ kind: "localStorage", storage: host })
+    await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
+    const history = memoryHistory()
+    const controller = createAppController({ ...store, dispatch: transition => {
+      if (transition.type === "frame.forked") refuse = true
+      return store.dispatch(transition)
+    } }, repositories, agent, { frameHistory: history })
+    const original = history.value()
+    try {
+      expect(await controller.commands.run("frame.fork")).toMatchObject({ status: "failed", persistenceFailed: true })
+      expect(history.value()).toEqual(original)
+      expect(store.session().activeBranchId).toBe(DEFAULT_BRANCH_ID)
+      expect(store.collections.branches.size).toBe(1)
+      expect(store.collections.toasts.get("toast-frame.fork")).toBeUndefined()
+    } finally {
+      await Promise.resolve(controller.dispose()).catch(() => {})
+    }
+    refuse = false
+    const reopened = await createAppStore({ kind: "localStorage", storage: host })
+    try {
+      expect(reopened.session().activeBranchId).toBe(DEFAULT_BRANCH_ID)
+      expect(reopened.collections.branches.size).toBe(1)
+      expect(reopened.collections.toasts.get("toast-frame.fork")).toBeUndefined()
+      expect((await reopened.verifyState()).valid).toBe(true)
+    } finally { await reopened.dispose?.() }
+  })
+
   test("forked cards, messages and world notes are independent and survive branch switching and reload", async () => {
     const host = storage()
     const history = memoryHistory()
@@ -78,7 +164,7 @@ describe("durable frame navigation", () => {
     controller.maximizeCard(card.id)
     await settle()
     const originalLocation = history.value()!
-    controller.forkFrame()
+    await controller.forkFrame()
     await settle()
     const forkLocation = history.value()!
     expect([...store.collections.toasts.values()]).toContainEqual(expect.objectContaining({ title: "Created Fork 1", status: "ok" }))
@@ -138,7 +224,7 @@ describe("durable frame navigation", () => {
     } }).isPersisted.promise
     controller.frameBack()
     await settle()
-    controller.forkFrame()
+    await controller.forkFrame()
     await settle()
     expect(store.collections.branches.get(store.session().activeBranchId!)?.forkedAtRevision).toBe(source.stateRevision)
     expect(store.collections.worldDocuments.get("later")).toBeUndefined()
@@ -184,7 +270,7 @@ describe("durable frame navigation", () => {
     expect(store.session().activeFrameId).toBe(mainFrameId)
 
     const original = structuredClone(store.collections.frames.get(mainFrameId))
-    controller.forkFrame()
+    await controller.forkFrame()
     await settle()
     const forkLocation = history.value()
     expect(forkLocation?.branchId).not.toBe(DEFAULT_BRANCH_ID)

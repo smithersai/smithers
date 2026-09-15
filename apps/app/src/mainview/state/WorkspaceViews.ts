@@ -1,7 +1,8 @@
-import { and, BTreeIndex, createLiveQueryCollection, eq, isUndefined } from "@tanstack/db"
+import { and, BTreeIndex, createLiveQueryCollection, createCollection, eq, isUndefined } from "@tanstack/db"
 import { sharedCopyIdOf } from "./AppState"
 import type { Card, CloudRepository, CloudWorkspaceInput, CloudWorkspaceRow, WorkingCopy } from "./AppState"
 import type { StoredCollections } from "./AppStore"
+import { projectRuntimeCard } from "./RuntimeProjection"
 
 /** The workspace row owns header facts; the card owns its loaded facets. */
 export const workspaceCardFacts = (workspace: CloudWorkspaceInput) => ({
@@ -92,6 +93,7 @@ export const workingCopyLabel = (copy: Pick<WorkingCopy, "kind" | "label" | "sta
 }
 /** Approval wording and authority always project from the runtime record. */
 const projectApprovalCard = (card: Card, request: Card | undefined): Card => {
+  if (card.runtimeView?.revision !== undefined) return card
   if (card.kind === "approval" && request?.kind === "approval") {
     return { ...card, title: request.title, body: request.body, payload: {
       ...request.payload,
@@ -116,35 +118,54 @@ const projectApprovalCard = (card: Card, request: Card | undefined): Card => {
 
 /** Materialized views, never persisted or written by reducers. */
 export const createWorkspaceViews = (
-  stored: Pick<StoredCollections, "cards" | "workingCopies" | "cloudWorkspaces" | "repositories" | "approvalRequests">
+  stored: Pick<StoredCollections, "cards" | "workingCopies" | "cloudWorkspaces" | "repositories" | "approvalRequests" | "runtimeRuns" | "runtimeApprovals">
 ) => {
   stored.cloudWorkspaces.createIndex((workspace) => workspace.id, { indexType: BTreeIndex })
   stored.approvalRequests.createIndex((request) => request.id, { indexType: BTreeIndex })
+  const bindings = createLiveQueryCollection({
+    id: "app-card-bindings", startSync: true, gcTime: Infinity, getKey: card => card.id,
+    query: q => q.from({ entry: q.from({ card: stored.cards }).fn.select(({ card }) => ({
+      card, workspaceId: card.kind === "workspace" ? card.payload.workspaceId : undefined
+    })) })
+      .leftJoin({ workspace: stored.cloudWorkspaces }, ({ entry, workspace }) => eq(entry.workspaceId, workspace.id))
+      .leftJoin({ request: stored.approvalRequests }, ({ entry, request }) => eq(entry.card.id, request.id))
+      .fn.select(({ entry, workspace, request }): Card => projectApprovalCard(projectWorkspaceCard(entry.card, workspace), request))
+  })
+  // A read index, never a persisted collection or a writable domain authority.
+  // Keep one pure selector for single cards and their list memberships. Nested
+  // query includes cannot feed an outer fn.select reactively in this DB version.
+  const cards = createCollection<Card, string>({
+    id: "app-live-cards", startSync: true, gcTime: Infinity, getKey: card => card.id,
+    sync: { sync: ({ begin, write, commit, markReady }) => {
+      const published = new Map<string, Card>()
+      const refresh = (ids: Iterable<string>) => {
+        begin({ immediate: true })
+        const runs = [...stored.runtimeRuns.values()], approvals = [...stored.runtimeApprovals.values()]
+        for (const id of new Set(ids)) {
+          const previous = published.get(id), binding = bindings.get(id)
+          if (binding === undefined) {
+            if (previous !== undefined) { write({ type: "delete", value: previous }); published.delete(id) }
+            continue
+          }
+          const next = projectRuntimeCard(binding, runs, approvals)
+          if (next === previous) continue
+          write({ type: previous === undefined ? "insert" : "update", value: next })
+          published.set(id, next)
+        }
+        commit()
+      }
+      const bindingsSubscription = bindings.subscribeChanges(changes => refresh(changes.map(change => change.value.id)), { includeInitialState: true })
+      const forRepos = (repos: Set<string>) => refresh([...bindings.values()]
+        .filter(card => ["run-trace", "run-list", "approval", "approvals-inbox"].includes(card.kind) && "repo" in card.payload && typeof card.payload.repo === "string" && repos.has(card.payload.repo))
+        .map(card => card.id))
+      const runsSubscription = stored.runtimeRuns.subscribeChanges(changes => forRepos(new Set(changes.map(change => change.value.scope.repo))))
+      const approvalsSubscription = stored.runtimeApprovals.subscribeChanges(changes => forRepos(new Set(changes.map(change => change.value.scope.repo))))
+      markReady()
+      return () => { bindingsSubscription.unsubscribe(); runsSubscription.unsubscribe(); approvalsSubscription.unsubscribe(); void bindings.cleanup() }
+    } }
+  })
   return {
-    cards: createLiveQueryCollection({
-      id: "app-live-cards",
-      startSync: true,
-      gcTime: Infinity,
-      getKey: (card) => card.id,
-      query: (q) =>
-        q
-          .from({
-            entry: q.from({ card: stored.cards }).fn.select(({ card }) => ({
-              card,
-              workspaceId: card.kind === "workspace" ? card.payload.workspaceId : undefined
-            }))
-          })
-          .leftJoin(
-            { workspace: stored.cloudWorkspaces },
-            ({ entry, workspace }) => eq(entry.workspaceId, workspace.id)
-          )
-          .leftJoin(
-            { request: stored.approvalRequests },
-            ({ entry, request }) => eq(entry.card.id, request.id)
-          )
-          .fn.select(({ entry, workspace, request }): Card =>
-            projectApprovalCard(projectWorkspaceCard(entry.card, workspace), request))
-    }),
+    cards,
     workingCopies: createLiveQueryCollection({
       id: "app-live-working-copies",
       startSync: true,

@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createAppStore } from "../state/AppStore"
+import { writeLegacyCollection } from "../state/TestFixtures"
 import { makeCollectionJournal } from "./CollectionJournal"
 import { retiredLineageKey } from "./LineageRetirement"
 import { APP_SCHEMA_VERSION } from "./SchemaVersion"
@@ -245,14 +246,15 @@ describe("CollectionJournal commit and position contract", () => {
 
   for (const sequences of [[1], [0, 2], [0, 0]]) {
     test(`refuses a missing prefix/gap/duplicate sequence ${JSON.stringify(sequences)}`, async () => {
-      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-      await store.collections.chainEvents.insert(sequences.map((seq, index) => ({
+      const storage = memoryStorage()
+      writeLegacyCollection(storage, "app-chain-events", sequences.map((seq, index) => ({
         id: `raw-${index}`,
         lineageId: "corrupt",
         seq,
         event: started,
         createdAt: index
-      }))).isPersisted.promise
+      })))
+      const store = await createAppStore({ kind: "localStorage", storage })
       const journal = makeCollectionJournal({ store, lineageId: "corrupt" })
       expect(await Effect.runPromise(Effect.flip(journal.read))).toBeInstanceOf(Journal.JournalError)
       expect(await Effect.runPromise(Effect.flip(journal.append(started, sequences.length)))).toBeInstanceOf(

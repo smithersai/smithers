@@ -19,6 +19,36 @@
  * @since 1.0.0
  */
 import { ControlSchema } from "@smthrs/control"
+import { uniqueCallEvents } from "./internal/callEvents.ts"
+
+/**
+ * Keeps one start and settlement per durable call identity, preferring a
+ * committed native fact over telemetry at the first observation's position.
+ * Unidentified legacy events remain distinct because their identity cannot
+ * be recovered from flow names and inputs. Shared with CLI call counts.
+ *
+ * @since 1.0.0
+ * @category projections
+ */
+export { uniqueCallEvents }
+
+/**
+ * The deduplication key for an identified call start or settlement, if any.
+ * Incremental CLI readers retain these keys to match the full history fold.
+ *
+ * @since 1.0.0
+ * @category projections
+ */
+export { callEventKey, nativeCallEvent } from "./internal/callEvents.ts"
+
+/**
+ * Finds an open call by ID, with name/FIFO fallback only for legacy starts.
+ * Shared by gateway node output and the CLI's compatible flow/ordinal IDs.
+ *
+ * @since 1.0.0
+ * @category projections
+ */
+export { openCallIndex } from "./internal/callEvents.ts"
 
 /**
  * The run statuses a digest may report.
@@ -247,7 +277,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
     endedAt = endedAt === undefined ? at : Math.max(endedAt, at)
   }
 
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     const payload = asRecord(event.payload)
     const at = timeOf(event)
     const handler = Object.hasOwn(handlers, event.kind) ? handlers[event.kind] : undefined

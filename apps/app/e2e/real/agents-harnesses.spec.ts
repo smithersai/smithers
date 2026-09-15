@@ -470,8 +470,9 @@ test("a real model tool request cannot remove a role before the human confirms",
   await closeComposer(page)
   // A real provider may request confirmation more than once in the same turn.
   // Every request must remain inert; activate the latest exactly bound action.
-  const confirmation = page.locator(`button[data-flow="agent.remove"][data-flow-args="${id}"]`, { hasText: `Confirm: remove the agent ${id}` }).last()
+  const confirmation = page.getByRole("button", { name: `Confirm: remove the agent ${id}`, exact: true }).last()
   await expect(confirmation).toBeVisible({ timeout: 150_000 })
+  await expect(confirmation).toHaveAttribute("data-flow", "agent.remove")
   await expect(page.getByTestId("transcript")).toHaveAttribute("aria-busy", "false", { timeout: 150_000 })
   expect(toolExecution(parseTurnFrames(await traffic.read()), "agent.remove"))
     .toMatchObject({ action: "execute", name: "agent.remove", args: id })

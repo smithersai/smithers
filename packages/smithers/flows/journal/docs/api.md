@@ -523,3 +523,30 @@ be quiescent and pending lossy admissions flushed before truncation.
 scope. `SqlJournal` registers automatically, and `SqlTimeTravelStore.archiveAndTruncate`
 notifies after commit for the parent and attached descendants. Re-emitting an
 archived lossy source identity is then admitted against the retained history.
+
+## Native execution facts and human waits
+
+`ExecutionFact.fold` verifies native run-local sequence/generation evidence and
+reconstructs root identity, current trampoline lifecycle, and attached descendant
+human waits. Current observations include the additive `treeVersion: 1`,
+`parentPolicy`, and redacted `waiting.request`/`waiting.point` metadata. Detached
+subtrees do not roll their questions into an ancestor's status. A settled wait
+leaves the derived open-wait set.
+
+`Provenance.humanWaits` distinguishes covered events from legacy or unverified
+observations. Old version-1 facts lacking these fields cannot establish tree-wait
+coverage. `humanWaitSources` records separate generation and baseline sequence
+bounds for each native execution in the derived tree, so upgrading an old stream
+does not claim question history before the extension first appeared. A missing
+child stream, explicit gap, incompatible metadata, or question that differs from
+the coherent observed tree refuses that coverage. The wait set compares by
+execution identity and exact semantic values; adapter enumeration order does not
+change coverage. The derived list orders by depth, creation time, and lexical ID.
+The root/current semantic provenance also declines a complete event claim when
+the requested tree comparison fails.
+
+The fact is display evidence. Its token digest does not authorize a signal or
+reconstruct an opaque resolver token. The gateway joins a verified question to
+a currently observed wait with the same execution identity and digest, then
+uses that current wait's existing submission envelope. A historical question
+alone cannot make a gate answerable after the live wait has ended.

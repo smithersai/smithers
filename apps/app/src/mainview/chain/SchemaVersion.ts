@@ -33,7 +33,7 @@ import { parseSchemaStamp } from "./SchemaStamp"
  * The shape version of everything AppStore persists. Bump it whenever a
  * persisted schema changes in a way an older row cannot satisfy.
  */
-export const APP_SCHEMA_VERSION = 11
+export const APP_SCHEMA_VERSION = 13
 
 /** The prefix AppStore gives every persisted collection's storage key. */
 export const PERSISTED_KEY_PREFIX = "smithers-mvp."
@@ -90,6 +90,10 @@ export const recordBackend = (storage: StorageApi, backend: PersistenceBackendKi
  * than leave a stale key behind after an explicit reset.
  */
 export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
+  "app-events",
+  "app-event-heads",
+  "app-event-checkpoints",
+  "app-event-retirements",
   "app-sessions",
   "app-messages",
   "app-connectors",
@@ -98,10 +102,16 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
   "app-cards",
   "app-card-histories",
   "app-repository-notifications",
+  "app-notification-receipts",
   "app-repository-contexts",
   "app-practice-issues",
   "app-approval-requests",
   "app-transitions",
+  "app-command-intents",
+  "app-http-turns",
+  "app-http-turn-legs",
+  "app-runtime-runs",
+  "app-runtime-approvals",
   "app-identity-sessions",
   "app-billing-accounts",
   "app-toasts",

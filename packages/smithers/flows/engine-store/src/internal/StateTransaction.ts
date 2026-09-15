@@ -42,7 +42,7 @@ import type * as DurableEngineState from "../DurableEngineState.ts"
  * @since 0.1.0
  */
 export const make = (
-  state: DurableEngineState.Service,
+  state: Pick<DurableEngineState.Service, "transaction">,
   journal: Journal.Service
 ) =>
 <A, E, R>(

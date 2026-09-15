@@ -2656,7 +2656,9 @@ describe("the one-command desktop open", () => {
     } finally {
       seam.dispose()
     }
-  })
+  // All 60 real state commits must finish before checking the attempt bound.
+  // This runner budget does not change the production wait or its assertions.
+  }, 30_000)
 
   test("the card names the stage while it waits, and Stop ends the wait without touching the box", async () => {
     const { seam, store, requests } = await harness({

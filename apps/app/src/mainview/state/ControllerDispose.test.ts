@@ -4,6 +4,8 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
+import { createFailureController } from "./controller/failures"
+import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import { memoryStorage, unavailableRepositories } from "./TestFixtures"
 
 /*
@@ -32,6 +34,25 @@ const countingAgent = (): { agent: AgentPort; listeners: Set<(frame: AgentTurnFr
 }
 
 describe("disposing a controller releases what it opened", () => {
+  test("toast timers and late work cannot write after their owner closes", async () => {
+    const storage = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const { agent } = countingAgent()
+    const context = createControllerContext(store, unavailableRepositories, agent, { toastDebounceMs: 20, toastAutoDismissMs: 20 })
+    const failures = createFailureController(context)
+    await store.dispatch({ type: "toast.shown", actor: "system", key: "done", title: "Finished" }).isPersisted.promise
+    failures.resolveToast("done", { status: "ok", detail: "" })
+    let release!: (value: boolean) => void
+    const pending = failures.withToast("late", "Waiting…", "Finished", () => new Promise<boolean>(resolve => { release = resolve }))
+    await context.dispose()
+    const closedBytes = storage.getItem(ENVELOPE_STORAGE_KEY)
+    await new Promise(resolve => setTimeout(resolve, 40))
+    release(true)
+    expect(await pending).toBe(true)
+    expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(closedBytes)
+    expect(context.toastRuns.size).toBe(0)
+  })
+
   test("scope finalizers release in reverse acquisition order and a failure cannot skip later releases", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const { agent } = countingAgent()

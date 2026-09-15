@@ -1,3 +1,4 @@
+import { projectRepositoryUpdate } from "../state/CardProjection"
 import { expect, test } from "bun:test"
 import { scopedControllers } from "../state/ControllerTestScope"
 import { createAppStore } from "../state/AppStore"
@@ -24,11 +25,13 @@ test("repo update, read receipts, and tags execute through their registered slas
   expect(first.read).toBe(false)
   expect((await controller.commands.run("notifications.tag",`${first.id} needs research`)).status).toBe("executed")
   expect(store.collections.repositoryNotifications.get(first.id)?.tags).toContain("needs research")
-  const tagged = store.collections.cards.get(card.id)
+  const rawTagged = store.collections.cards.get(card.id)
+  const tagged = rawTagged?.kind === "repo-update" ? projectRepositoryUpdate(rawTagged, [...store.collections.repositoryNotifications.values()], [...store.collections.notificationReceipts.values()]) : rawTagged
   expect(tagged?.kind === "repo-update" && tagged.payload.items[0]?.tags).toContain("needs research")
   expect((await controller.commands.run("notifications.read-update",card.id)).status).toBe("executed")
   expect(store.collections.repositoryNotifications.get(first.id)?.readVersion).toBe(first.version)
-  const read = store.collections.cards.get(card.id)
+  const rawRead = store.collections.cards.get(card.id)
+  const read = rawRead?.kind === "repo-update" ? projectRepositoryUpdate(rawRead, [...store.collections.repositoryNotifications.values()], [...store.collections.notificationReceipts.values()]) : rawRead
   expect(read?.kind === "repo-update" && read.payload.items.every(item=>item.read)).toBe(true)
   expect((await controller.commands.run("repo.overview",PRACTICE_REPO)).status).toBe("executed")
   const refreshed = store.collections.cards.get(card.id)

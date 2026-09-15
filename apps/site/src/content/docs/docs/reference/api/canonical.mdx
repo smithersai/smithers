@@ -18,6 +18,10 @@ import type { CanonicalErrorCode } from "@smthrs/canonical"
 The schema is also importable as `@smthrs/canonical/Canonical`. The shape guard is importable as `@smthrs/canonical/Record`. Private paths `@smthrs/canonical/internal/*` and `@smthrs/canonical/*/index` are
 blocked in the export map.
 
+`@smthrs/canonical/Serializer` exports the same `canonicalize`, `CanonicalError`,
+and `CanonicalErrorCode` without loading Effect. Wire contracts can use that
+entry point while retaining identical canonical bytes and error identities.
+
 The behavior every entry below shares is on
 [The serialization contract](https://canonical.smithers.sh/serialization/).
 [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) is the normative format

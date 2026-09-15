@@ -1,3 +1,4 @@
+import { fixtureInputText } from "./support/values"
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, test } from "./support/test"
@@ -246,7 +247,7 @@ workflowTest(
     await row.getByRole("button", { name: "Run", exact: true }).press("Enter")
     const form = page.locator('form[data-flow-name="flow.run"]').last()
     const message = form.locator('[data-field="message"] input, [data-field="message"] textarea').first()
-    const inputMarker = `s15-input-${Date.now().toString(36)}`
+    const inputMarker = fixtureInputText(`s15-input-${Date.now().toString(36)}`)
     await expect(message).toBeVisible()
     await message.fill(inputMarker)
     const [executeRunId] = await Promise.all([

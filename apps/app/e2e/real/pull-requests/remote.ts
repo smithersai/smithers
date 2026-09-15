@@ -1,5 +1,6 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { command, expect, realApi } from "../support/test"
+import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
 import { expectFlowOutcome } from "../repositories-github/local"
 import {
   attachProductionJson,
@@ -188,7 +189,7 @@ export const provisionOwnedPullRequestRepo = async (
   expect(login).toBe("codeplanesmithers")
   await requireImportPreflight(page, request, testInfo)
   const marker = `${purpose}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const name = `smithers-e2e-import-pr-${marker}`
+  const name = fixtureRepositoryName(`smithers-e2e-import-pr-${marker}`)
   const fullName = `${login}/${name}`
   const branch = `pr-${marker}`
   await attachProductionJson(testInfo, "owned-pull-request-intent", { fullName, branch, purpose, created: false, imported: false })
@@ -462,7 +463,7 @@ export const attachPullRequestEvidence = (
   testInfo: TestInfo,
   name: string,
   value: unknown
-): Promise<void> => attachProductionJson(testInfo, `pull-request-${name}`, value)
+): Promise<void> => attachProductionJson(testInfo, fixtureAttachmentName(`pull-request-${name}`), value)
 
 export const withOwnedPullRequestRepo = async <T>(
   page: Page,

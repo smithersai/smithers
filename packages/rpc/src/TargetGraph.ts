@@ -220,7 +220,8 @@ export type RunSummary = z.infer<typeof RunSummarySchema>
  */
 /**
  * `seq` is the run-local monotonic frame number the backend assigns to every
- * frame it records (0-based, gap-free). Replay orders by `seq`, never by
+ * frame it observes (0-based). Retained output may have gaps after the
+ * explicit journal-cap marker. Replay orders by `seq`, never by
  * `at`, so two frames in one millisecond stay ordered; it is optional only
  * for frames produced before the backend recorded them.
  */
@@ -235,7 +236,9 @@ const frameSeq = { seq: z.number().int().nonnegative().optional() }
 export const TargetRunEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stdout"), data: z.string(), label: z.string().optional(), ...frameSeq }),
   z.object({ type: z.literal("stderr"), data: z.string(), label: z.string().optional(), ...frameSeq }),
-  z.object({ type: z.literal("exit"), code: z.number().nullable(), ...frameSeq }),
+  // New writers record terminal time in the fact; legacy journals may only
+  // carry it on their final RunRecord.
+  z.object({ type: z.literal("exit"), code: z.number().nullable(), at: z.number().optional(), ...frameSeq }),
   z.object({ type: z.literal("error"), message: z.string(), ...frameSeq }),
   z.object({
     type: z.literal("started"),

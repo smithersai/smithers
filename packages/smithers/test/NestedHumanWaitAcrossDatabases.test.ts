@@ -27,7 +27,7 @@ import { Control } from "@smthrs/control/Control"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { layerNoopAuth } from "@smthrs/control/ControlRpcs"
-import type { PlanCard } from "@smthrs/control/ControlSchema"
+import type { ControlEvent, PlanCard } from "@smthrs/control/ControlSchema"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
@@ -41,6 +41,9 @@ import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
 import { GatewayRpcs } from "@smthrs/gateway/GatewayRpcs"
 import * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import * as Projections from "@smthrs/gateway/Projections"
+import { ExecutionFact } from "@smthrs/journal"
+import * as Journal from "@smthrs/journal/Journal"
+import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Jj } from "@smthrs/kernel"
@@ -53,6 +56,7 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import { Context, Effect, Layer, Schema } from "effect"
 import { RpcTest } from "effect/unstable/rpc"
 import { describe, expect, it } from "vitest"
+import * as EngineJournalProjection from "../src/internal/EngineJournalProjection.ts"
 
 const prompt = "Which service owns the retry budget?"
 const flowId = "coding/Request"
@@ -130,6 +134,7 @@ const engineDatabase = Layer.fresh(
  * test.
  */
 class Engine extends Context.Service<Engine, {
+  readonly copyTo: (runId: string, journal: Journal.Service) => Effect.Effect<void>
   readonly start: (runId: string) => Effect.Effect<void>
   readonly observe: (runId: string) => Effect.Effect<ControlExecutor.ExecutionObservation>
   readonly deliverSignal: (input: ControlExecutor.Signal) => Effect.Effect<ControlExecutor.SignalDelivery>
@@ -142,6 +147,7 @@ class Engine extends Context.Service<Engine, {
 const engineLayer = Layer.effect(Engine)(
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
+    const engineJournal = yield* Journal.Journal
     const runs = yield* RunStore.RunStore
     const services = yield* Effect.context<Effect.Services<ReturnType<typeof Request.execute>>>()
     const settled = (runId: string, attempts = 4_000): Effect.Effect<string> =>
@@ -164,13 +170,30 @@ const engineLayer = Layer.effect(Engine)(
         return yield* parkedBelow(runId, attempts - 1)
       })
     return {
+      copyTo: (runId: string, controlJournal: Journal.Service) =>
+        Effect.gen(function*() {
+          const bridge = yield* EngineJournalProjection.make({
+            executionId: runId,
+            controlRunId: runId,
+            engineJournal,
+            controlJournal,
+            engineState: state,
+            runLineage: runs.lineage
+          })
+          yield* bridge.catchUp.pipe(Effect.orDie)
+        }),
       start: (runId: string) =>
         Effect.provideContext(
           Effect.asVoid(Request.execute({}, { executionId: runId, discard: true })),
           services
         ) as Effect.Effect<void>,
       observe: (runId: string) =>
-        Effect.orDie(AgentSession.readExecution(runId)) as Effect.Effect<
+        Effect.orDie(
+          AgentSession.readExecution(runId).pipe(
+            Effect.provideService(RunStore.RunStore, runs),
+            Effect.provideService(DurableEngineState.DurableEngineState, state)
+          )
+        ) as Effect.Effect<
           ControlExecutor.ExecutionObservation
         >,
       deliverSignal: (input: ControlExecutor.Signal) =>
@@ -276,6 +299,61 @@ const parked = Effect.gen(function*() {
 })
 
 describe("a host whose control plane and engine keep separate databases", () => {
+  it("replays the nested question and status, then removes the answered wait without replaying its authority", async () => {
+    await run(Effect.gen(function*() {
+      const control = yield* Control
+      const engine = yield* Engine
+      const journal = yield* Journal.Journal
+      const { runId } = yield* parked
+      const read = Effect.gen(function*() {
+        yield* engine.copyTo(runId, journal)
+        const page = yield* journal.entries({ runId: runId as JournalEvent.RunId, limit: 1000 })
+        const events: ReadonlyArray<ControlEvent> = page.entries.map((entry) => ({
+          runId,
+          sequence: entry.seq,
+          occurredAt: entry.emittedAtMs,
+          kind: entry.eventType,
+          payload: entry.payload as ControlEvent["payload"]
+        }))
+        const listed = yield* control.list({ _tag: "runs", filters: { runId } })
+        if (listed._tag !== "runs" || listed.items[0] === undefined) return yield* Effect.die("missing root")
+        return { events, summary: listed.items[0] }
+      })
+      const before = yield* read
+      const folded = ExecutionFact.foldControl(before.events, runId, before.summary.executionView)
+      expect(folded?.provenance).toMatchObject({ source: "events", humanWaits: "events" })
+      expect(folded?.view).toEqual(before.summary.executionView)
+      expect(folded?.view?.humanWaits?.[0]?.waiting?.request).toMatchObject({ prompt, kind: "ask" })
+      expect(GatewayProjection.runSummary(before.summary, before.events).status).toBe("waiting-approval")
+      const approvals = GatewayProjection.approvals(before.events, before.summary)
+      expect(approvals[0]).toMatchObject({ title: prompt, questionProvenance: "events", status: "pending" })
+      // Historical facts cannot recreate an answerable row after its current
+      // opaque wake address has gone. Only the live observation supplies it.
+      expect(GatewayProjection.approvals(before.events, { ...before.summary, pendingWaits: undefined })).toEqual([])
+      const receipt = yield* control.signal({
+        runId,
+        signal: { name: approvals[0]!.requestId, payload: "the scheduler owns it" },
+        idempotencyKey: `verified-signal:${runId}`
+      })
+      expect(receipt._tag).toBe("Accepted")
+      let after = yield* read
+      for (
+        let attempt = 0;
+        attempt < 4000 &&
+        (after.summary.executionView?.humanWaits?.length !== 0 ||
+          ExecutionFact.foldControl(after.events, runId, after.summary.executionView)?.provenance.source !== "events");
+        attempt++
+      ) {
+        yield* Effect.yieldNow
+        after = yield* read
+      }
+      const settled = ExecutionFact.foldControl(after.events, runId, after.summary.executionView)
+      expect(settled?.provenance).toMatchObject({ source: "events", humanWaits: "events" })
+      expect(settled?.view?.humanWaits).toEqual([])
+      expect(GatewayProjection.approvals(after.events, after.summary)).toEqual([])
+    }))
+  })
+
   it("lists the root run as waiting-approval with the nested question", async () => {
     const observed = await run(Effect.gen(function*() {
       const control = yield* Control

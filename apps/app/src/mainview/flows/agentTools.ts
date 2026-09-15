@@ -21,6 +21,7 @@ export type { AgentToolSpec }
 export interface AgentToolCall {
   readonly name: string
   readonly arguments: string
+  readonly httpCall?: { readonly turnId: string; readonly callId: string; readonly attemptId?: string; readonly legId?: string }
 }
 
 /**
@@ -200,7 +201,8 @@ export const executeAgentToolCall = async (
    */
   const outcome = await registry.runAsAgent(
     name,
-    typeof input.args === "string" ? input.args : undefined
+    typeof input.args === "string" ? input.args : undefined,
+    call.httpCall
   )
   switch (outcome.status) {
     case "executed":

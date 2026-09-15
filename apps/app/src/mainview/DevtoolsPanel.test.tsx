@@ -61,8 +61,14 @@ interface View {
   readonly act: (change: () => void) => Promise<void>
 }
 
-const mount = async (): Promise<View> => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+const mount = async (onWorldRowsRead?: () => void): Promise<View> => {
+  const source = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  // Instrument the reader supplied to this view without mutating the public
+  // collection facade or weakening its write boundary.
+  const worldDocuments = onWorldRowsRead === undefined ? source.collections.worldDocuments : new Proxy(source.collections.worldDocuments, {
+    get: (target, property) => property === "values" ? () => { onWorldRowsRead(); return target.values() } : Reflect.get(target, property)
+  })
+  const store: AppStore = { ...source, collections: { ...source.collections, worldDocuments } }
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
     fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
   })
@@ -120,14 +126,9 @@ describe("the dev-tools panel's per-dispatch render cost", () => {
   })
 
   test("a closed collection dump copies no rows, and opening it dumps them", async () => {
-    const view = await mount()
-    const collection = view.store.collections.worldDocuments as unknown as { values: () => Iterable<unknown> }
     let copies = 0
-    const values = collection.values.bind(collection)
-    collection.values = () => {
-      copies += 1
-      return values()
-    }
+    const view = await mount(() => { copies += 1 })
+    copies = 0
     await streamTokens(view, 5)
     expect(copies).toBe(0)
     const details = dumpFor(view.host, "worldDocuments")

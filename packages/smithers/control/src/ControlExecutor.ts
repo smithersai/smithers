@@ -5,6 +5,8 @@
  *
  * @since 0.1.0
  */
+import * as Sha256 from "@smthrs/crypto/Sha256"
+import type { ExecutionFact } from "@smthrs/journal"
 import { Context, Effect, Layer } from "effect"
 import type { LaunchFailed, PersistenceError } from "./ControlError.ts"
 import type { StoredPlan } from "./ControlRuntime.ts"
@@ -154,6 +156,7 @@ export type ExecutionObservation =
   | { readonly _tag: "Missing" }
   | {
     readonly _tag: "Observed"
+    readonly executionView?: ExecutionFact.View | undefined
     readonly status: "accepted" | "running" | "parked" | "waiting-approval" | "completed" | "failed" | "cancelled"
     readonly waitingReason?: string | undefined
     readonly parentRunId?: string | undefined
@@ -243,6 +246,7 @@ export const pendingWaitOf = (row: {
     runId: row.runId,
     reason: row.reason,
     token: row.token,
+    tokenDigest: Sha256.digestSync(row.token),
     createdAt: row.createdAt,
     ...(row.flowId === undefined ? {} : { flowId: row.flowId }),
     ...waitPointOf(row.token),

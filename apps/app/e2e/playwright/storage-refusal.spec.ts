@@ -20,7 +20,7 @@ const downloadRecovery = async (page: Page): Promise<StorageRecoverySnapshot> =>
 // Test-only access to the shipped worker protocol. No application debug API is
 // added: mutations target only this test's isolated browser-profile database.
 type ProbeWindow = Window & typeof globalThis & {
-  sqliteProbe?: { readonly worker: Worker; readonly url: string; readonly options?: WorkerOptions }
+  sqliteProbe?: { readonly worker?: Worker; readonly url: string; readonly options?: WorkerOptions }
 }
 
 const trackDatabaseWorker = (page: Page) =>
@@ -51,12 +51,15 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
     const probe = (window as ProbeWindow).sqliteProbe
     if (probe === undefined) throw new Error("The app never opened its SQLite worker")
     const worker = reopen ? new Worker(probe.url, probe.options) : probe.worker
+    if (worker === undefined) throw new Error("The live app worker is closed; explicitly reopen the physical database")
     const send = (request: Record<string, unknown>): Promise<unknown> =>
       new Promise((resolve, reject) => {
         const requestId = `storage-test-${crypto.randomUUID()}`
         const cleanup = () => {
           clearTimeout(timer)
           worker.removeEventListener("message", receive)
+          worker.removeEventListener("error", failed)
+          worker.removeEventListener("messageerror", unreadable)
         }
         const receive = (event: MessageEvent) => {
           if (event.data.requestId !== requestId) return
@@ -64,11 +67,21 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
           if (event.data.ok) resolve(event.data.rows ?? [])
           else reject(new Error(event.data.error))
         }
+        const failed = (event: ErrorEvent) => {
+          cleanup()
+          reject(new Error(`SQLite test worker failed: ${event.message}`))
+        }
+        const unreadable = () => {
+          cleanup()
+          reject(new Error("SQLite test worker returned an unreadable response"))
+        }
         const timer = setTimeout(() => {
           cleanup()
           reject(new Error("SQLite test request timed out"))
         }, 10_000)
         worker.addEventListener("message", receive)
+        worker.addEventListener("error", failed)
+        worker.addEventListener("messageerror", unreadable)
         try {
           worker.postMessage({ ...request, requestId })
         } catch (error) {
@@ -76,13 +89,17 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
           reject(error)
         }
       })
+    let initialized = !reopen
     try {
-      if (reopen) await send({ type: "init", databaseName: "smithers-mvp.sqlite", vfsName: "opfs" })
+      if (reopen) {
+        await send({ type: "init", databaseName: "smithers-mvp.sqlite", vfsName: "opfs" })
+        initialized = true
+      }
       return await send({ type: "execute", sql, params: [] })
     } finally {
       if (reopen) {
         try {
-          await send({ type: "close" })
+          if (initialized) await send({ type: "close" })
         } finally {
           worker.terminate()
         }
@@ -90,13 +107,45 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
     }
   }, { sql, reopen })
 
-test("a newer physical OPFS store refuses the normal app boot without replacing its version", async ({ page }) => {
+/** End the app's writer lifetime before injecting a committed physical change.
+ * Sending raw SQL to its live worker could accidentally join an app transaction
+ * and then roll back with that transaction when the page reloads. */
+const closeAppForPhysicalMutation = async (appPage: Page): Promise<Page> => {
+  const descriptor = await appPage.evaluate(() => {
+    const probe = (window as ProbeWindow).sqliteProbe
+    if (probe === undefined) throw new Error("The app never opened its SQLite worker")
+    return { url: probe.url, options: probe.options }
+  })
+  const context = appPage.context()
+  // Navigation can retain the outgoing document and its worker in BFCache.
+  // Closing its Page ends that owner before a different Page opens SQLite.
+  await appPage.close()
+  const page = await context.newPage()
   await trackDatabaseWorker(page)
+  await page.route("**/__storage-mutation-fixture", route => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    // Match the native document policy. Adding isolation headers here blocks
+    // its unchanged worker response before SQLite can initialize.
+    headers: { "Cache-Control": "no-store" },
+    body: "<!doctype html><title>Isolated storage fixture</title>"
+  }))
+  await page.goto("/__storage-mutation-fixture")
+  await page.evaluate(descriptor => { (window as ProbeWindow).sqliteProbe = descriptor }, descriptor)
+  return page
+}
+
+test("a newer physical OPFS store refuses the normal app boot without replacing its version", async ({ page: appPage }) => {
+  await trackDatabaseWorker(appPage)
+  await appPage.goto("/")
+  await expect(appPage.getByTestId("composer-input")).toBeAttached()
+  expect(await appPage.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+  const page = await closeAppForPhysicalMutation(appPage)
+  await queryDatabase(page, "UPDATE smithers_metadata SET value = '2147483647' WHERE key = 'schema-version'", true)
+  // The separate reader proves the independent writer committed before boot.
+  expect(await queryDatabase(page, "SELECT value FROM smithers_metadata WHERE key = 'schema-version'", true))
+    .toEqual([{ value: "2147483647" }])
   await page.goto("/")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
-  await queryDatabase(page, "UPDATE smithers_metadata SET value = '2147483647' WHERE key = 'schema-version'")
-  await page.reload()
   await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
   await expect(page.getByTestId("composer-input")).toHaveCount(0)
   expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
@@ -110,29 +159,92 @@ test("a newer physical OPFS store refuses the normal app boot without replacing 
     .toEqual([{ value: "2147483647" }])
 })
 
-test("corrupt physical OPFS execution evidence survives failed boot and is never displayed as an error payload", async ({ page }) => {
-  await trackDatabaseWorker(page)
-  await page.goto("/")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+test("verified OPFS application authority repairs malformed chain caches without displaying their private bytes", async ({ page: appPage }) => {
+  await trackDatabaseWorker(appPage)
+  await appPage.goto("/")
+  await expect(appPage.getByTestId("composer-input")).toBeAttached()
+  expect(await appPage.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+  const page = await closeAppForPhysicalMutation(appPage)
+  const before = await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-event-heads'", true) as Array<{ value: string }>
   await queryDatabase(
     page,
-    "INSERT INTO smithers_collection_rows VALUES ('app-chain-events', 's:private-fixture', 'v1', 'private raw recovery fixture')"
+    "INSERT INTO smithers_collection_rows VALUES ('app-chain-events', 's:private-fixture', 'v1', 'private raw recovery fixture'), ('app-retired-chain-lineages', 's:private-fixture', 'v1', 'private raw retirement fixture')",
+    true
   )
-  await page.reload()
+  expect(await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE row_key = 's:private-fixture' ORDER BY collection_id", true))
+    .toEqual([{ value: "private raw recovery fixture" }, { value: "private raw retirement fixture" }])
+  await page.goto("/")
+  await expect(page.getByTestId("composer-input")).toBeAttached()
+  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toHaveCount(0)
+  await expect(page.locator("body")).not.toContainText("private raw recovery fixture")
+  await expect(page.locator("body")).not.toContainText("private raw retirement fixture")
+  expect(await queryDatabase(page, "SELECT collection_id FROM smithers_collection_rows WHERE collection_id IN ('app-chain-events', 'app-retired-chain-lineages')"))
+    .toEqual([])
+  const after = await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-event-heads'") as Array<{ value: string }>
+  expect(JSON.parse(after[0]!.value).streamId).toBe(JSON.parse(before[0]!.value).streamId)
+  expect(await queryDatabase(page, "SELECT value FROM smithers_row_quarantine WHERE row_key = 's:private-fixture' ORDER BY collection_id"))
+    .toEqual([{ value: "private raw recovery fixture" }, { value: "private raw retirement fixture" }])
+})
+
+for (const authority of ["corrupt", "missing"] as const) test(`${authority} OPFS application authority preserves damaged execution evidence through refused boot`, async ({ page: appPage }) => {
+  await trackDatabaseWorker(appPage)
+  await appPage.goto("/")
+  await expect(appPage.getByTestId("composer-input")).toBeAttached()
+  expect(await appPage.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+  const page = await closeAppForPhysicalMutation(appPage)
+  await queryDatabase(page, "INSERT INTO smithers_collection_rows VALUES ('app-chain-events', 's:private-fixture', 'v1', 'private raw recovery fixture')", true)
+  await queryDatabase(page, authority === "corrupt"
+    ? "UPDATE smithers_collection_rows SET value = 'private invalid authority fixture' WHERE collection_id = 'app-event-heads'"
+    : "DELETE FROM smithers_collection_rows WHERE collection_id IN ('app-events', 'app-event-heads', 'app-event-checkpoints', 'app-event-retirements')", true)
+  const original = await queryDatabase(page, "SELECT * FROM smithers_collection_rows ORDER BY collection_id, row_key", true)
+  expect(JSON.stringify(original)).toContain("private raw recovery fixture")
+  if (authority === "corrupt") expect(JSON.stringify(original)).toContain("private invalid authority fixture")
+  else expect(await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-event-heads'", true)).toEqual([])
+  await page.goto("/")
   await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
   await expect(page.getByTestId("composer-input")).toHaveCount(0)
   await expect(page.locator("body")).not.toContainText("private raw recovery fixture")
-  expect(
-    await queryDatabase(
-      page,
-      "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-chain-events' AND row_key = 's:private-fixture'",
-      true
-    )
-  )
-    .toEqual([{ value: "private raw recovery fixture" }])
+  await expect(page.locator("body")).not.toContainText("private invalid authority fixture")
+  expect(await queryDatabase(page, "SELECT * FROM smithers_collection_rows ORDER BY collection_id, row_key", true)).toEqual(original)
+  expect(await queryDatabase(page, "SELECT value FROM smithers_row_quarantine WHERE row_key = 's:private-fixture'", true)).toEqual([])
   expect(JSON.stringify((await downloadRecovery(page)).sqlite)).toContain("private raw recovery fixture")
   await expect(page.locator("body")).not.toContainText("private raw recovery fixture")
+})
+
+for (const authority of ["verified", "corrupt", "missing"] as const) test(`${authority} localStorage authority controls cache recovery without revealing private fixture bytes`, async ({ page }) => {
+  await page.addInitScript(() => { localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage") })
+  await page.goto("/")
+  await expect(page.getByTestId("composer-input")).toBeAttached()
+  const original = await page.evaluate(authority => {
+    const key = "smithers-mvp.store", envelope = JSON.parse(localStorage.getItem(key)!) as { version: number; entries: Record<string, string> }
+    envelope.entries["smithers-mvp.app-chain-events"] = "private local execution fixture"
+    envelope.entries["smithers-mvp.app-retired-chain-lineages"] = "private local retirement fixture"
+    if (authority === "corrupt") envelope.entries["smithers-mvp.app-event-heads"] = "private local authority fixture"
+    if (authority === "missing") for (const id of ["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
+      delete envelope.entries[`smithers-mvp.${id}`]
+    }
+    const raw = JSON.stringify(envelope)
+    localStorage.setItem(key, raw)
+    return raw
+  }, authority)
+  await page.reload()
+  if (authority === "verified") {
+    await expect(page.getByTestId("composer-input")).toBeAttached()
+    await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toHaveCount(0)
+    const repaired = await page.evaluate(() => JSON.parse(localStorage.getItem("smithers-mvp.store")!) as { entries: Record<string, string> })
+    expect(repaired.entries["smithers-mvp.app-chain-events"]).toBe("{}")
+    expect(repaired.entries["smithers-mvp.app-retired-chain-lineages"]).toBe("{}")
+    const head = (raw: string) => Object.values(JSON.parse(raw) as Record<string, { data: { streamId: string } }>)[0]!.data.streamId
+    expect(head(repaired.entries["smithers-mvp.app-event-heads"]!)).toBe(head(JSON.parse(original).entries["smithers-mvp.app-event-heads"]))
+  } else {
+    await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
+    await expect(page.getByTestId("composer-input")).toHaveCount(0)
+    expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.store"))).toBe(original)
+    expect((await downloadRecovery(page)).localStorage).toContainEqual({ key: "smithers-mvp.store", value: original })
+  }
+  for (const fixture of ["private local execution fixture", "private local retirement fixture", "private local authority fixture"]) {
+    await expect(page.locator("body")).not.toContainText(fixture)
+  }
 })
 
 test("an unreadable localStorage envelope stops boot without erasing the original or displaying its contents", async ({ page }) => {
@@ -154,6 +266,7 @@ test("an unreadable localStorage envelope stops boot without erasing the origina
 })
 
 test("a pre-backend-stamp localStorage conversation survives boot without creating fresh OPFS history", async ({ page }) => {
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.addInitScript(() => {
     if (sessionStorage.getItem("legacy-fixture-created") === null) {
       localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage")
@@ -161,8 +274,15 @@ test("a pre-backend-stamp localStorage conversation survives boot without creati
     }
   })
   await page.goto("/")
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
+  await page.getByRole("button", { name: "Not now", exact: true }).click()
+  await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill("/appearance.theme")
   await page.getByTestId("composer-send").click()
+  await expect(page.getByTestId("composer-input")).toHaveValue("")
+  await page.getByTestId("composer-input").press("Escape")
   const card = page.getByTestId("transcript").locator(".smithers-card[data-kind=\"theme-picker\"]")
   await expect(card).toBeVisible()
   const cardId = await card.getAttribute("data-testid")
@@ -186,7 +306,7 @@ test("a pre-backend-stamp localStorage conversation survives boot without creati
 test("two unstamped stores refuse an arbitrary choice and leave the legacy original alone", async ({ page }) => {
   await trackDatabaseWorker(page)
   await page.goto("/")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeAttached()
   expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
   await page.evaluate(() => {
     localStorage.setItem("smithers-mvp.app-messages", "separate legacy original")
@@ -206,13 +326,21 @@ test("two unstamped stores refuse an arbitrary choice and leave the legacy origi
 })
 
 test("the running app offers the same private download through an embedded slash reply", async ({ page }) => {
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.goto("/")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeAttached()
   await page.evaluate(() =>
     localStorage.setItem("smithers-mvp-quarantine.private-test", "older quarantined private fixture")
   )
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
+  await page.getByRole("button", { name: "Not now", exact: true }).click()
+  await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill("/storage.recovery")
   await page.getByTestId("composer-send").click()
+  await expect(page.getByTestId("composer-input")).toHaveValue("")
+  await page.getByTestId("composer-input").press("Escape")
   const recovered = await downloadRecovery(page)
   expect(recovered.session).toBe("opfs")
   expect(recovered.localStorage).toContainEqual({
@@ -220,6 +348,32 @@ test("the running app offers the same private download through an embedded slash
     value: "older quarantined private fixture"
   })
   expect(recovered.sqlite?.some((table) => table.name === "smithers_collection_rows")).toBe(true)
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeAttached()
   await expect(page.locator("body")).not.toContainText("older quarantined private fixture")
+})
+
+test("oversized physical event authority refuses without loading its bytes and the human reset reopens a fresh OPFS store", async ({ page: appPage }) => {
+  await trackDatabaseWorker(appPage)
+  await appPage.goto("/")
+  await expect(appPage.getByTestId("composer-input")).toBeAttached()
+  const page = await closeAppForPhysicalMutation(appPage)
+  const bytes = 64 * 1024 * 1024 + 1
+  await queryDatabase(page, `INSERT INTO smithers_collection_rows (collection_id, row_key, version_key, value)
+    VALUES ('app-events', 's:oversized-evidence', 'oversized-v1', CAST(zeroblob(${bytes}) AS TEXT))`, true)
+  const sizeQuery = "SELECT length(CAST(value AS BLOB)) AS bytes, version_key FROM smithers_collection_rows WHERE collection_id = 'app-events' AND row_key = 's:oversized-evidence'"
+  expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
+  await page.goto("/")
+  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
+  await expect(page.getByText("The app-events store exceeds", { exact: false })).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toHaveCount(0)
+  expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
+  await page.getByRole("button", { name: "Reset local state and reload", exact: true }).click()
+  await expect(page.getByRole("button", { name: "Confirm reset — this erases local data", exact: true })).toBeVisible()
+  // Arming the action alone does not change the committed physical source.
+  expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
+  await page.getByRole("button", { name: "Confirm reset — this erases local data", exact: true }).click()
+  await expect(page.getByTestId("composer-input")).toBeAttached()
+  expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
+  expect(await queryDatabase(page, sizeQuery)).toEqual([])
+  await page.close()
 })

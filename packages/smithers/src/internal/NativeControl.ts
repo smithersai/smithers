@@ -14,12 +14,14 @@ import { Rule } from "@smthrs/capability/Permission"
 import {
   ApprovalAuthority,
   Control,
+  ControlError,
   ControlExecutor,
   ControlRuntime,
   SqlControlRuntime,
   SystemFlows
 } from "@smthrs/control"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
+import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -59,7 +61,7 @@ import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as SyncAuth from "@smthrs/sync/SyncAuth"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
-import { Cause, Context, Effect, FileSystem, Layer } from "effect"
+import { Cause, Clock, Context, Effect, Fiber, FileSystem, Layer } from "effect"
 import type { Crypto, Path, Scope } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/unstable/sql/SqlClient"
@@ -671,7 +673,40 @@ export const make = (
                   .pipe(Effect.as(false))
             )
           )
+        // Capture native ports and a transaction-free host context BEFORE the
+        // session selects its control journal. A different Journal service alone
+        // would not remove an inherited control SQL transaction from a caller.
+        const nativeFacts = ExecutionFacts.make({
+          runs: yield* RunStore.RunStore,
+          state: yield* DurableEngineState.DurableEngineState,
+          journal: yield* Journal.Journal,
+          sourceId: "native-control:execution-facts:v1"
+        })
+        const nativeHost = yield* Effect.context<never>()
+        const requestNativeCancel: ControlExecutor.Service["requestCancel"] = (input) =>
+          Effect.acquireUseRelease(
+            Effect.sync(() =>
+              Effect.runForkWith(nativeHost)(Effect.gen(function*() {
+                const at = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+                const outcome = yield* nativeFacts.requestCancelLineage(input.runId, at).pipe(Effect.mapError((cause) =>
+                  new ControlError.PersistenceError({
+                    operation: "NativeControl.requestCancel",
+                    message: "Cannot commit native cancellation intent",
+                    cause
+                  })
+                ))
+                if (outcome._tag === "Terminal") return { _tag: "Terminal", status: outcome.status } as const
+                if (outcome._tag === "NotFound") {
+                  return "unknown" as const
+                }
+                return outcome._tag === "AlreadyRequested" ? "already-requested" as const : "recorded" as const
+              }))
+            ),
+            Fiber.join,
+            Fiber.interrupt
+          )
         const session = AgentSession.make({
+          requestNativeCancel,
           canExecute,
           flows: sources,
           limits: cellLimits,

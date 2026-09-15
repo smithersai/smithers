@@ -8,6 +8,7 @@ import { createLibrarianRunsController, LIBRARIAN_SIGNAL, librarianLaunchTiming,
 import { guideActionState } from "../../onboarding/actionState"
 import { LIBRARIAN_UNCONFIRMED } from "../LibrarianLaunch"
 import { lessonMessage } from "../../onboarding/lessons"
+import { DurableStorageConflictError } from "../../chain/DurableCollection"
 
 const fixture = async () => {
   const data = new Map<string, string>()
@@ -16,6 +17,7 @@ const fixture = async () => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12 } }).isPersisted.promise
   let repo = "will/demo", next = 0, refused = false
+  let launchStore = store
   const disposals: Array<() => void> = []
   const ctx = { store, commandActor: "user", onDispose: (dispose: () => void) => { disposals.push(dispose) } } as unknown as ControllerContext
   const launches: string[] = []
@@ -28,11 +30,12 @@ const fixture = async () => {
       launches.push(runId)
       const card: Card = { id: `flow-run-${runId}`, kind: "run-trace", title: args.title, status: "active", createdAt: Date.now(), ordinal: next,
         payload: { repo: args.repo, runId, workflow: args.workflow, input: args.input, phase: "running", steps: [], result: null, lastSeq: 0 } }
-      await store.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
+      await launchStore.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
       return { runId }
     }
   } satisfies LibrarianRunHost
   return { store, storage, launches, ctx, runs, dispose: () => disposals.splice(0).forEach(dispose => dispose()), controller: createLibrarianRunsController(ctx, runs),
+    rebind: (nextStore: typeof store) => { launchStore = nextStore; return createLibrarianRunsController({ ...ctx, store: nextStore }, runs) },
     select: (value: string) => { repo = value }, refuse: () => { refused = true } }
 }
 
@@ -163,13 +166,18 @@ for (const step of [13, 14]) test(`failure at beat ${step} posts one typed Retry
   expect(lessonMessage(14, f.store.session().guide!)).not.toContain("land soon")
   await changePhase(f, 1, "failed")
   expect([...f.store.collections.toasts.values()][0]?.updatedAt).toBe(toasts[0]?.updatedAt)
+  f.dispose()
+  await f.store.dispose?.()
   const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
-  await createLibrarianRunsController({ ...f.ctx, store: reloaded }, f.runs).recoverLaunches()
+  const resumed = f.rebind(reloaded)
+  await resumed.recoverLaunches()
   expect(lessonMessage(14, reloaded.session().guide!)).not.toContain("land soon")
   expect([...reloaded.collections.toasts.values()]).toHaveLength(1)
-  await f.controller.bootstrapHistory("will/demo")
+  await resumed.bootstrapHistory("will/demo")
   expect(f.launches).toHaveLength(3)
-  expect([...f.store.collections.toasts.values()]).toHaveLength(0)
+  expect([...reloaded.collections.toasts.values()]).toHaveLength(0)
+  f.dispose()
+  await reloaded.dispose?.()
 })
 
 test("returning to beat 12 after a background failure restores its inline explanation", async () => {
@@ -238,6 +246,9 @@ test("reload during preparation reports the interrupted launch instead of losing
   const host = { ...f.runs, provisionWorkspace: () => new Promise<true>(resolve => { ready = resolve }) }
   const controller = createLibrarianRunsController(f.ctx, host)
   const running = controller.createWiki("will/demo")
+  // This fixture deliberately leaves the old realm alive while opening the
+  // replacement. A late old writer must be fenced before launching work.
+  const staleOutcome = running.then(() => undefined, error => error)
   await new Promise(resolve => setTimeout(resolve, 10))
   expect(f.store.session().guide?.notice).toContain("Preparing your will/demo workspace…")
   const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
@@ -246,7 +257,9 @@ test("reload during preparation reports the interrupted launch instead of losing
   expect(reloaded.session().guide?.noticeDetail).toBe("Workspace preparation was interrupted by a reload. Try again.")
   expect(f.launches).toEqual([])
   ready(true)
-  await running
+  expect(await staleOutcome).toBeInstanceOf(DurableStorageConflictError)
+  expect(f.launches).toEqual([])
+  await reloaded.dispose?.()
 })
 test("a thrown provision failure is visible and a retry can launch", async () => {
   const f = await fixture()
@@ -329,8 +342,11 @@ test("reload before launch acknowledgement preserves the instruction to check Ru
   const entry = guide.librarianLaunches![0]!
   await f.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...guide,
     librarianLaunches: [{ ...entry, kind: "history", phase: "launching" }] } }).isPersisted.promise
+  f.dispose()
+  await f.store.dispose?.()
   const reloaded = await createAppStore({ kind: "localStorage", storage: f.storage })
-  await createLibrarianRunsController({ ...f.ctx, store: reloaded }, f.runs).recoverLaunches()
+  const resumed = f.rebind(reloaded)
+  await resumed.recoverLaunches()
   expect(reloaded.session().guide?.notice).toContain("may have started. Check Runs before retrying")
   expect(reloaded.session().guide?.librarianLaunches?.[0]?.phase).toBe("failed")
   expect(f.launches).toHaveLength(1)

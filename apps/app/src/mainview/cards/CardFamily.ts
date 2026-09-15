@@ -13,6 +13,7 @@ import type { ReactNode } from "react"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { FlowName } from "../flows/FlowName"
 import type { Card, WorldDocument } from "../state/AppState"
+import type { AppStore } from "../state/AppStore"
 
 /**
  * A card's act: the flow it names, and the slash line the flow's grammar
@@ -25,19 +26,20 @@ export type RunCommand = (name: FlowName, args?: string) => void
 /** The card of one kind. */
 export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
 
+/** The exact collection subscriptions used by card decoration joins. */
+export interface CardProjectionAuthority {
+  readonly collections: Pick<AppStore["collections"], "repos" | "starredTargets" | "repositoryNotifications" | "notificationReceipts" | "runtimeRuns" | "runtimeApprovals">
+}
+
 /**
  * Every act a card body may raise. Each is a flow the App binds at the
  * CardView mount; the body never owns application state.
  */
 export interface CardActions {
-  /**
-   * Decide a gate, or ANSWER one.
-   *
-   * `answer` is present only for a gate that asks a question — a HumanTask
-   * waiting on a person — where approve and deny say nothing the run can use.
-   * It carries what the person wrote, already shaped for the question's kind.
-   */
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
+  /** Read authority for derived decorations; absent only in isolated static previews. */
+  readonly projectionStore?: CardProjectionAuthority
+  /** Structured answers carry what the human wrote, already shaped for the question. */
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
   readonly onGrantConfirm: (id: string) => void
   readonly onGrantCancel: (id: string) => void
   readonly onQueueApprove: (login: string) => void

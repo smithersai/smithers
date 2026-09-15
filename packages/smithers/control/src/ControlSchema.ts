@@ -3,6 +3,7 @@
  *
  * @since 0.1.0
  */
+import { ExecutionFact } from "@smthrs/journal"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import * as PersistedPlan from "@smthrs/plan/Plan"
 import { DiscoveryWarning } from "@smthrs/registry/Descriptor"
@@ -394,6 +395,8 @@ export const PendingWait = Schema.Struct({
   reason: Schema.String,
   /** The durable wait address a decision is routed to. */
   token: Schema.String,
+  /** Digest used to join replayed display facts to this current operational address. */
+  tokenDigest: Schema.optional(Schema.String),
   /** The wait point's own name, when the token addresses a named one. */
   name: Schema.optional(Schema.String),
   /** Which attempt of a re-asked question this is, counting from 1. */
@@ -422,6 +425,8 @@ export type PendingWait = typeof PendingWait.Type
 export const RunSummary = Schema.Struct({
   /** Whether lifecycle fields were observed in the engine or no engine row was visible. */
   executionObservation: Schema.optional(Schema.Literals(["observed", "missing"])),
+  /** Exact native semantic observation; never a control-stream fact. */
+  executionView: Schema.optional(ExecutionFact.View),
   runId: RunId,
   flowId: FlowId,
   status: RunStatus,

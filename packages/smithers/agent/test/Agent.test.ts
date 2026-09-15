@@ -474,6 +474,8 @@ describe("Agent.run", () => {
     // The declared layer set and session reach the call identity, which is what
     // the durable key is derived from.
     const started = events.filter((event) => event._tag === "cell-call-started")
+    const settlements = events.filter((event) => event._tag === "cell-call-settled")
+    expect(settlements.map((event) => event.identity)).toEqual(started.map((event) => event.call.identity))
     expect(started.map((event) => event._tag === "cell-call-started" ? event.call.identity.session : "")).toEqual([
       "session-2",
       "session-2"

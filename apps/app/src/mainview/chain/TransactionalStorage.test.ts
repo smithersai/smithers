@@ -1,15 +1,18 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { z } from "zod"
+import { DurableStorageConflictError } from "./DurableCollection"
 import {
   ENVELOPE_QUARANTINE_PREFIX,
   ENVELOPE_STORAGE_KEY,
   ENVELOPE_VERSION,
+  acquireLocalStorageWriter,
   openTransactionalStorage,
   ROW_QUARANTINE_PREFIX,
   UnsupportedStorageEnvelopeError,
   STAGED_ENVELOPE_STORAGE_KEY
 } from "./TransactionalStorage"
+import type { StorageWriterLockManager } from "./TransactionalStorage"
 
 /*
  * Crash-injection coverage for the write-ahead commit protocol
@@ -52,6 +55,46 @@ const liveEntries = (host: StorageApi): Record<string, string> => {
 }
 
 describe("the write-ahead commit protocol", () => {
+  test("cached escaping preserves exact envelope bytes through edits, rollback and unusual keys", async () => {
+    const host = scriptableHost(), store = await open(host)
+    const expected = new Map<string, string>([
+      ["ordinary", "quotes \" and slash \\ and newline\n"], ["12", "numeric"], ["2", "ordered first"],
+      ["__proto__", "own key"], ["toJSON", "ordinary string"], ["unicode", "雪\ud800"]
+    ])
+    const exact = () => JSON.stringify({ version: ENVELOPE_VERSION, entries: Object.fromEntries(expected) })
+    store.batch(() => { for (const [key, value] of expected) store.storage.setItem(key, value) })
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).toBe(exact())
+    host.crashOnSet = ENVELOPE_STORAGE_KEY
+    expect(() => store.storage.setItem("ordinary", "rejected replacement")).toThrow("crash")
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).toBe(exact())
+    host.crashOnSet = undefined
+    expected.set("ordinary", "accepted replacement")
+    expected.delete("unicode")
+    store.batch(() => { store.storage.setItem("ordinary", "accepted replacement"); store.storage.removeItem("unicode") })
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).toBe(exact())
+    expected.set("unicode", "new owner value")
+    store.storage.setItem("unicode", "new owner value")
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).toBe(exact())
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).not.toContain("rejected replacement")
+  })
+
+  test("a second adapter cannot replace a newer committed envelope from its stale base", async () => {
+    const host = scriptableHost()
+    const winner = await open(host)
+    winner.storage.setItem("keep", "base")
+    const stale = await open(host)
+    winner.storage.setItem("keep", "winner")
+    const committed = host.getItem(ENVELOPE_STORAGE_KEY)
+    expect(() => stale.batch(() => {
+      stale.storage.setItem("keep", "stale")
+      stale.storage.setItem("other", "must not merge")
+    })).toThrow(DurableStorageConflictError)
+    expect(host.getItem(ENVELOPE_STORAGE_KEY)).toBe(committed)
+    expect(host.getItem(STAGED_ENVELOPE_STORAGE_KEY)).toBeNull()
+    expect(stale.storage.getItem("keep")).toBe("base")
+    expect(() => stale.storage.removeItem("keep")).toThrow(DurableStorageConflictError)
+  })
+
   test("a clean commit leaves no staged bytes behind", async () => {
     const host = scriptableHost()
     const store = await open(host)
@@ -172,6 +215,32 @@ describe("the write-ahead commit protocol", () => {
     expect(reopened.recovery).toBe("complete")
     expect(reopened.storage.getItem("keep")).toBe("after")
     expect(host.getItem(STAGED_ENVELOPE_STORAGE_KEY)).toBe(null)
+  })
+})
+
+describe("browser localStorage writer ownership", () => {
+  test("two browser contexts cannot both hold the writer through a commit", async () => {
+    const held = new Set<string>()
+    const context = (): StorageWriterLockManager => ({
+      request: async (name, options, callback) => {
+        expect(options).toEqual({ mode: "exclusive", ifAvailable: true })
+        if (held.has(name)) return callback(null)
+        held.add(name)
+        try { await callback({ name }) } finally { held.delete(name) }
+      }
+    })
+    const first = await acquireLocalStorageWriter(context())
+    expect(held.size).toBe(1)
+    await expect(acquireLocalStorageWriter(context())).rejects.toBeInstanceOf(DurableStorageConflictError)
+    await first.release()
+    const reopened = await acquireLocalStorageWriter(context())
+    await reopened.release()
+    expect(held.size).toBe(0)
+  })
+
+  test("a rejected Web Lock request refuses open", async () => {
+    await expect(acquireLocalStorageWriter({ request: async () => { throw new Error("locks unavailable") } }))
+      .rejects.toThrow("locks unavailable")
   })
 })
 

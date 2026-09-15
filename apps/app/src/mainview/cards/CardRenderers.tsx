@@ -1,4 +1,6 @@
 import { repositoryUpdateCardFamily } from "./RepositoryUpdateCard"
+import { useLiveQuery } from "@tanstack/react-db"
+import { projectRepositoryUpdate, projectTargetStars } from "../state/CardProjection"
 /*
  * The card renderer map: every card kind, from the family that owns it.
  *
@@ -17,7 +19,7 @@ import { anonymousCeilingCardFamily } from "./AnonymousCeilingCard"
 import { approvalCardFamily } from "./ApprovalCard"
 import { billingCardFamily } from "./BillingCards"
 import { branchesCardFamily } from "./BranchesCard"
-import type { CardActions, CardFamily, CardFamilyEntry } from "./CardFamily"
+import type { CardActions, CardFamily, CardFamilyEntry, CardProjectionAuthority } from "./CardFamily"
 import { changeCardFamily } from "./ChangeCards"
 import { commitPickCardFamily } from "./CommitPickCard"
 import { commitCardFamily } from "./CommitCards"
@@ -172,4 +174,29 @@ export const pillStatus = (card: Card): string => {
 }
 
 /** The card's body, from the family that owns its kind. */
-export const renderCardBody = (card: Card, actions: CardActions) => cardRenderer(card.kind).render(card, actions)
+const ProjectedTargetsBody = ({ card, actions, store }: {
+  readonly card: Extract<Card, { kind: "targets" }>
+  readonly actions: CardActions
+  readonly store: CardProjectionAuthority
+}) => {
+  const { data: repos } = useLiveQuery(store.collections.repos)
+  const { data: stars } = useLiveQuery(store.collections.starredTargets)
+  return cardRenderer("targets").render(projectTargetStars(card, repos, stars), actions)
+}
+
+export const renderCardBody = (card: Card, actions: CardActions) =>
+  card.kind === "targets" && actions.projectionStore !== undefined
+    ? <ProjectedTargetsBody card={card} actions={actions} store={actions.projectionStore} />
+    : card.kind === "repo-update" && actions.projectionStore !== undefined
+    ? <ProjectedRepositoryUpdateBody card={card} actions={actions} store={actions.projectionStore} />
+    : cardRenderer(card.kind).render(card, actions)
+
+const ProjectedRepositoryUpdateBody = ({ card, actions, store }: {
+  readonly card: Extract<Card, { kind: "repo-update" }>
+  readonly actions: CardActions
+  readonly store: CardProjectionAuthority
+}) => {
+  const { data: notifications } = useLiveQuery(store.collections.repositoryNotifications)
+  const { data: receipts } = useLiveQuery(store.collections.notificationReceipts)
+  return cardRenderer("repo-update").render(projectRepositoryUpdate(card, notifications, receipts), actions)
+}

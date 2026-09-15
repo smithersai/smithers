@@ -17,6 +17,8 @@ import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunProgress from "./RunProgress.ts"
 
+export { cancelAll }
+
 const options = Bridge.connectionOptions
 const runArgs = z.object({ run: z.string().min(1).describe("Durable run ID") })
 const flowArgs = z.object({ flow: z.string().min(1).describe("Discovered flow name") })
@@ -130,14 +132,6 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
         guard(c, async () =>
           Bridge.invoke(["run", await payload(c.args.approval)], c.options, runtime))
     })
-
-/**
- * Collects every page before cancelling, keeping one Control service for the
- * whole operation and preserving the single-run cancellation keys and receipts.
- * @category constructors
- * @since 1.0.0
- */
-export { cancelAll }
 
 /**
  * Canonical commands for existing durable run records.

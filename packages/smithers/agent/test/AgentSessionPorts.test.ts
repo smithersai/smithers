@@ -606,8 +606,17 @@ describe("durable signal admission and engine observation", () => {
       expect(refusals).toBe(1)
       expect((yield* runtime.signalCommand("transient-failure"))?.state).toBe("pending")
       expect((yield* runtime.signalCommand("independent-command"))?.state).toBe("delivered")
-      expect(yield* statusOf(first)).toBe("suspended")
-      yield* AgentSession.drainRecordedSignals
+      // A concurrent parked-run sweep may have reactivated the unresolved
+      // wait. The command remains pending and the execution cannot complete.
+      expect(["running", "suspended"]).toContain(yield* statusOf(first))
+      for (
+        let attempt = 0;
+        attempt < 2_000 && (yield* runtime.signalCommand("transient-failure"))?.state === "pending";
+        attempt++
+      ) {
+        yield* AgentSession.drainRecordedSignals
+        yield* Effect.yieldNow
+      }
       expect((yield* runtime.signalCommand("transient-failure"))?.state).toBe("delivered")
       expect(yield* settled(first)).toBe("completed")
       expect(yield* settled(second)).toBe("completed")

@@ -1,3 +1,4 @@
+import { observeRuntimeRun, projectRuntimeCard, runtimeRunKey, type RuntimeRun, type RuntimeRunObservation } from "./RuntimeProjection"
 import { expect, spyOn, test } from "bun:test"
 import type { Card } from "@smthrs/rpc/Cards"
 import type { ControllerContext } from "./controller/context"
@@ -21,12 +22,18 @@ test("same-sequence suffix offsets reset the quiet bound until native observatio
     { sequence: 1, occurredAt: 7, kind: "control.engine.projection-settled", payload: marker }
   ]
   const runPumps = new Map<string, { stopped: boolean }>()
+  const scope = { repo: card.payload.repo, workspaceId: card.payload.workspaceId, runId }, key = runtimeRunKey(scope)
+  const runtimeRuns = new Map<string, RuntimeRun>()
   const ctx = {
     finishTutorialChange: async () => {},
-    store: { collections: { cards: { get: () => card, values: () => [card].values() } },
-      dispatch: (event: { type: string; patch?: Partial<Card>; text?: string }) => {
-        if (event.type === "card.updated") card = { ...card, ...event.patch } as typeof card
+    store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, collections: { cards: { get: () => card, values: () => [card].values() }, runtimeRuns, runtimeApprovals: new Map() },
+      dispatch: (event: { type: string; observation?: RuntimeRunObservation; text?: string }) => {
+        if (event.type === "gateway.run.observed") {
+          runtimeRuns.set(key, observeRuntimeRun(runtimeRuns.get(key), event.observation!, now, reads))
+          card = projectRuntimeCard(card, [...runtimeRuns.values()], []) as typeof card
+        }
         if (event.type === "message.appended") messages.push(event.text!)
+        return { isPersisted: { promise: Promise.resolve() } }
       } },
     gateway: {
       run: async () => ({ status: "ok", cursor: { selector: { _tag: "run-summary", runId }, projection: "run-summary", runId, value: 1, offset: 0 },

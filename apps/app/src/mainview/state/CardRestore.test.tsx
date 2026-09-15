@@ -10,7 +10,6 @@ import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
 
-const createAppController = scopedControllers()
 
 /*
  * Ask 8 (will, 2026-09-02): "when I maximize a file I have no way of
@@ -35,6 +34,8 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
+const createAppController = scopedControllers()
+
 const mount = (controller: AppControllerType): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
@@ -53,8 +54,12 @@ const mount = (controller: AppControllerType): HTMLElement => {
   return host
 }
 
-const act = (work: () => void): void => {
-  flushSync(work)
+const act = async (work: () => unknown): Promise<void> => {
+  let pending: unknown
+  flushSync(() => { pending = work() })
+  await pending
+  await settled()
+  flushSync(() => {})
 }
 
 /** A file card in the transcript: the card the ask was reported against. */
@@ -90,7 +95,7 @@ describe("a maximized card always states the way back (ask 8)", () => {
     const { store, controller } = await withFileCard()
     const host = mount(controller)
 
-    act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
+    await act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
     expect(fileCard(host)?.dataset.maximized).toBe("true")
 
     const restore = host.querySelector<HTMLButtonElement>("[data-testid=\"card-minimize-file-one\"]")
@@ -98,7 +103,7 @@ describe("a maximized card always states the way back (ask 8)", () => {
     expect(restore?.dataset.flow).toBe("card.minimize")
     expect(restore?.textContent).toContain("Restore")
 
-    act(() => restore?.click())
+    await act(() => restore?.click())
     expect(fileCard(host)?.dataset.maximized).toBe("false")
     expect(store.session().maximizedCardId).toBeNull()
     expect(host.querySelector(".card-maximize-backdrop")).toBeNull()
@@ -108,10 +113,10 @@ describe("a maximized card always states the way back (ask 8)", () => {
     const { store, controller } = await withFileCard()
     const host = mount(controller)
 
-    act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
+    await act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
     expect(store.session().maximizedCardId).toBe("file-one")
 
-    act(() => {
+    await act(() => {
       host.querySelector(".smithers-card[data-kind=\"file\"]")?.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
       )
@@ -124,11 +129,11 @@ describe("a maximized card always states the way back (ask 8)", () => {
     const { store, controller } = await withFileCard()
     const host = mount(controller)
 
-    act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
+    await act(() => host.querySelector<HTMLButtonElement>("[data-flow=\"card.maximize\"]")?.click())
     const backdrop = host.querySelector<HTMLElement>(".card-maximize-backdrop")
     expect(backdrop).not.toBeNull()
 
-    act(() => backdrop?.click())
+    await act(() => backdrop?.click())
     expect(store.session().maximizedCardId).toBeNull()
     expect(fileCard(host)?.dataset.maximized).toBe("false")
   })

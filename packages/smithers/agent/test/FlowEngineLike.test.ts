@@ -13,6 +13,7 @@ import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Plan from "@smthrs/harness/Plan"
+import { CallFact } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
@@ -26,6 +27,7 @@ import * as StdError from "@smthrs/std/StdError"
 import {
   Cause,
   Clock,
+  Context,
   Deferred,
   Effect,
   Exit,
@@ -1339,6 +1341,60 @@ describe("cell call identity across runs", () => {
         executed.push(`${call.flowName}#${call.identity.ordinal}`)
         return new Cell.CallResult({ outcome: "success", value: executed.length })
       })
+  })
+
+  it("annotates only authorized calls and their exact delivered record, without changing the action key", async () => {
+    const annotations: Array<CallFact.Annotation["Service"]> = []
+    let authorized = false
+    let executions = 0
+    const request = sharedCellCall("irreversible")
+    const outcome = await drive(Effect.gen(function*() {
+      const runtime = yield* FlowRuntime.FlowRuntime
+      const observed: FlowRuntime.FlowRuntime["Service"] = {
+        ...runtime,
+        actionExecute: (action, attempt) => {
+          const annotation = Context.getOption(action.annotations, CallFact.Annotation)
+          if (annotation._tag === "Some") {
+            expect(authorized).toBe(true)
+            annotations.push(annotation.value)
+          }
+          return runtime.actionExecute(action, attempt)
+        }
+      }
+      const port = yield* FlowEngineLike.make({
+        model: countingModel([]),
+        route: staticRoute(),
+        calls: {
+          authorize: () =>
+            authorized
+              ? Effect.void
+              : Effect.fail(new HarnessError({ code: "engine_failed", message: "not authorized" })),
+          run: () =>
+            Effect.sync(() => {
+              executions++
+              return new Cell.CallResult({ outcome: "success", value: "host" })
+            })
+        }
+      }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, observed))
+      expect((yield* Effect.exit(port.call(request)))._tag).toBe("Failure")
+      expect(annotations).toHaveLength(0)
+      authorized = true
+      yield* port.call(request)
+      const delivered = { outcome: "failure" as const, value: null, code: "timeout" as const, message: "deadline" }
+      return yield* port.record({
+        name: "cell-call",
+        call: request,
+        identity: { session: request.identity.session, frame: 0, boundary: "cell-call:cell-digest:0" },
+        success: Cell.CallResultVariant,
+        execute: Effect.succeed(delivered)
+      })
+    }))
+    expect(completed(outcome)).toMatchObject({ outcome: "failure", code: "timeout" })
+    expect(executions).toBe(1)
+    expect(annotations.map((annotation) => annotation.phase)).toEqual(["invoked", "settled"])
+    expect(annotations[0]?.call).toEqual(annotations[1]?.call)
+    const { session, ...identity } = request.identity
+    expect(annotations[0]?.call.identity).toEqual({ runId: session, ...identity })
   })
 
   it("keeps the sandbox cache key separate from the durable activity key", async () => {

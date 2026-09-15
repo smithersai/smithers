@@ -29,6 +29,8 @@ async function done(session:string,operation:'research'|'plan'|'implement'|'poc'
 try {
  assert.throws(()=>coordinator.start('a','plan',{playthrough:0,idempotencyKey:'too-early'}),/Research/)
  const research=await done('a','research','r');assert.equal(research.phase,'completed');assert.equal(research.tests?.exitCode,1);assert.equal(research.events.find(event=>event.id==='reproduce')?.detail,'protected regression output')
+ assert.equal(coordinator.journal.history(research.runId).filter(event=>event.fact.kind==='execution.claimed').length,1)
+ assert.equal(coordinator.journal.verify(research.runId),true)
  assert.equal(coordinator.get('b',research.runId),undefined)
  const plan=await done('a','plan','p');assert.equal(plan.phase,'completed')
  assert.throws(()=>coordinator.start('a','implement',{playthrough:0,idempotencyKey:'stale',planId:'wrong'}),/latest plan/)
@@ -41,6 +43,18 @@ try {
  const poc=await done('a','poc','poc');assert.equal(poc.phase,'completed');assert.equal(commits,1);assert.equal(scopes.size,2)
  failTests=true
  await done('b','research','r');const badPlan=await done('b','plan','p');const failed=await done('b','implement','i',{planId:badPlan.plan!.id});assert.equal(failed.phase,'failed');assert.equal(failed.tests?.exitCode,1);assert.equal(commits,1)
+ const gate=new Promise<never>(()=>{});let externalCalls=0
+ const held=new Coordinator(directory,{ensure:async()=>{externalCalls++;return gate},agent:async()=>{throw new Error('unexpected model call')}})
+ const heldRun=held.start('held','research',{playthrough:0,idempotencyKey:'held'})
+ for(let attempt=0;attempt<100&&externalCalls===0;attempt++)await new Promise(resolve=>setTimeout(resolve,5))
+ assert.equal(externalCalls,1)
+ const replacement=new Coordinator(directory,{ensure:async()=>{externalCalls++;return gate},agent:async()=>{throw new Error('unexpected model call')}})
+ assert.equal(replacement.start('held','research',{playthrough:0,idempotencyKey:'held'}).runId,heldRun.runId)
+ replacement.resume()
+ await new Promise(resolve=>setTimeout(resolve,0))
+ assert.equal(externalCalls,1)
+ assert.equal(replacement.journal.history(heldRun.runId).filter(event=>event.fact.kind==='execution.claimed').length,1)
+ replacement.db.close();held.db.close()
  await coordinator.prune(Date.now()+3*60*60*1000)
  assert.equal(coordinator.get('a',research.runId),undefined)
  console.log('Coordinator passed: research gate, session isolation, plan validation, actual artifacts, idempotent commit, selected commits, isolated POC, protected-test failure blocks commit')

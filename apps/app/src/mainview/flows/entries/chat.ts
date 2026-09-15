@@ -1,3 +1,4 @@
+import type { CommandGesture } from "../CommandGesture"
 /*
  * The `chat` flows. One module per namespace: a lane that adds or edits a
  * flow here touches no other flow module, and Flows.ts registers each block in
@@ -118,13 +119,13 @@ export const chatCopyFlows = (_actions: CommandActions): ReadonlyArray<FlowEntry
      * a POST to /api/client-errors, and the human who pressed Copy was told
      * nothing at all. The refusal is awaited and answered.
      */
-    handler: async ({ text }: { readonly text: string }) => {
+    handler: async ({ text }: { readonly text: string }, _signal: AbortSignal, _call: unknown, gesture?: CommandGesture) => {
       const clipboard = navigator.clipboard
       if (clipboard === undefined) {
         return "This browser won't give Smithers the clipboard — select the text and copy it yourself."
       }
       try {
-        await clipboard.writeText(text)
+        await (gesture?.copyText ? gesture.copyText(text) : clipboard.writeText(text))
         return { value: "Copied to clipboard." }
       } catch (cause) {
         return cause instanceof Error && cause.name === "NotAllowedError"

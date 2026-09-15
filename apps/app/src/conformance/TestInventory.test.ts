@@ -8,6 +8,7 @@ import ts from "typescript"
 import type { PlaywrightTestConfig } from "@playwright/test"
 import playwright from "../../playwright.config"
 import playwrightSite from "../../playwright.site.config"
+import playwrightReal from "../../playwright.real.config"
 
 const app = fileURLToPath(new URL("../../", import.meta.url))
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -47,6 +48,25 @@ const packagedTests = (): string[] => {
 }
 
 const packaged = packagedTests()
+// The real lane is a directly executable script, not a package.json alias.
+// Admit only its actual Playwright invocation, never a comment/config mention.
+const invokesRealPlaywright = (source: string): boolean => {
+  const parsed = ts.createSourceFile("run-real-e2e.ts", source, ts.ScriptTarget.Latest, true)
+  let found = false
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "run" &&
+      node.arguments[0] && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === "pnpm" &&
+      node.arguments[1] && ts.isArrayLiteralExpression(node.arguments[1])) {
+      const args = node.arguments[1].elements
+      found ||= ["exec", "playwright", "test", "--config", "playwright.real.config.ts"].every((value, index) =>
+        args[index] !== undefined && ts.isStringLiteral(args[index]) && args[index].text === value)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(parsed)
+  return found
+}
+const realRunner = invokesRealPlaywright(read("scripts/run-real-e2e.ts"))
 const matches = (path: string, patterns: string | RegExp | readonly (string | RegExp)[]): boolean =>
   (Array.isArray(patterns) ? patterns : [patterns]).some((pattern) =>
     typeof pattern === "string" ? new Bun.Glob(pattern).match(path) : pattern.test(path))
@@ -63,6 +83,7 @@ const owners = (path: string): string[] => {
   if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
   if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
+  if (realRunner && playwrightOwns(path, playwrightReal)) result.push("Playwright real")
   return result
 }
 
@@ -74,11 +95,20 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
   expect(owners("e2e/playwright/tutorial-tip.spec.ts")).toContain("Playwright site")
+  expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
+  expect(owners("e2e/real/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/site/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/Unassigned.spec.ts")).toEqual([])
   expect(owners("e2e/native/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/packaged/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/playwright/native/Unassigned.spec.ts")).toEqual([])
+})
+
+test("real runner ownership comes from executable argv, not prose or a different config", () => {
+  expect(realRunner).toBe(true)
+  expect(invokesRealPlaywright('// run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts"])')).toBe(false)
+  expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.site.config.ts"])')).toBe(false)
+  expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...args])')).toBe(true)
 })
 
 test("the target unit gate matches package discovery and CI executes browser OAuth", () => {
@@ -108,8 +138,8 @@ test("unit inputs include inspected sources, harnesses and configs", () => {
     console.log(JSON.stringify(paths))
   `)
   for (const path of [
-    "scripts/canary-restoration.ts", "scripts/run-pr-e2e.mjs", "scripts/README.md", "e2e/native/Probe.ts",
-    "PACKAGE.ts", "package.json", "tsconfig.json", "vite.config.ts", "playwright.config.ts", "playwright.site.config.ts",
+    "scripts/canary-restoration.ts", "scripts/run-pr-e2e.mjs", "scripts/run-real-e2e.ts", "scripts/README.md", "e2e/native/Probe.ts",
+    "PACKAGE.ts", "package.json", "tsconfig.json", "vite.config.ts", "playwright.config.ts", "playwright.site.config.ts", "playwright.real.config.ts",
     "electrobun.config.ts", "hutch.config.ts", "postcss.config.js", "tailwind.config.js"
   ]) expect(inputs).toContain(`apps/app/${path}`)
   for (const path of ["package.json", "pnpm-lock.yaml", "packages/rpc/src/Cards.ts", "packages/rpc/fixtures/force/graph.json",

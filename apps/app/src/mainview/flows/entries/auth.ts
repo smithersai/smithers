@@ -55,7 +55,7 @@ export const authFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     userOnly: true,
     userOnlyReason: "the GitHub OAuth redirect is the human's browser gesture; the agent renders the step with auth.prompt",
     input: NoPayload,
-    handler: () => actions.signIn()
+    handler: (_payload, _signal, _call, gesture) => actions.signIn(gesture?.openExternal)
   }),
   flow({
     /*

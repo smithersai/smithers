@@ -1,4 +1,5 @@
 import { scenario } from "./coverage/types"
+import { fixtureCommentBody } from "./support/values"
 import { authenticatedTest as test, readAuthenticatedSession } from "./auth-permissions/profile"
 import { command, expect, realApi, test as anonymousTest } from "./support/test"
 import {
@@ -126,7 +127,7 @@ test(
     await withOwnedPullRequestRepo(page, request, context, session!.login, testInfo, "review", async (owned) => {
       await importOwnedPullRequestRepo(page, request, owned)
       const created = await createPullRequestThroughUI(page, request, owned, `Real review ${owned.marker}`)
-      const comment = `review-note-${owned.marker}`
+      const comment = fixtureCommentBody(`review-note-${owned.marker}`)
 
       await command(page, `/prs.review ${created.number} comment ${comment} ${owned.fullName}`)
       await expectFlowOutcome(page, "prs.review", `${created.number} comment ${comment} ${owned.fullName}`, "executed")

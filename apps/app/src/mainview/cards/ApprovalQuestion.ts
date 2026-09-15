@@ -1,3 +1,5 @@
+import { digest } from "@smthrs/core/Digest"
+import { canonicalEventValue } from "../state/EventValue"
 /*
  * A gate that asks a QUESTION rather than for a grant.
  *
@@ -67,3 +69,13 @@ export const attemptWords = (question: ApprovalQuestion): string | undefined =>
     : question.maxAttempts === undefined
     ? `Attempt ${question.attempt}`
     : `Attempt ${question.attempt} of ${question.maxAttempts}`
+
+/** A draft belongs to one exact human wait, including re-asks with the same title. */
+export const approvalQuestionKey = (row: ApprovalRow): string | undefined => {
+  const question = questionOf(row)
+  return question === undefined ? undefined : digest(canonicalEventValue({
+    waitRunId: row.waitRunId,
+    request: row.request,
+    question
+  }))
+}

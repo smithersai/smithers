@@ -36,6 +36,7 @@ import * as CacheAgeHistory from "./CacheAgeHistory.ts"
 import * as CacheAgeVerdicts from "./CacheAgeVerdicts.ts"
 import * as CacheOutputPolicy from "./CacheOutputPolicy.ts"
 import * as CachePublication from "./CachePublication.ts"
+import * as CallFacts from "./CallFacts.ts"
 import * as CopiedRecord from "./CopiedRecord.ts"
 import * as EffectRecords from "./EffectRecords.ts"
 import * as HostReflection from "./HostReflection.ts"
@@ -795,6 +796,12 @@ export const make = (deps: Dependencies) => {
         journal.emitDurable(record, deps.owner).pipe(
           Effect.catch((error) => error.code === "fence_lost" ? Effect.interrupt : Effect.fail(error))
         )
+      const callFacts = CallFacts.make(input.action, deps.runId)
+      const emitCallInvoked = Effect.flatMap(callFacts.invoked, (record) =>
+        record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(record)))
+      const emitCallSettled = (outcome: unknown) =>
+        Effect.flatMap(callFacts.settled(outcome), (record) =>
+          record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(record)))
       /**
        * Commits an attempt/cache state transition and the lifecycle records
        * describing it in ONE write transaction.
@@ -813,7 +820,8 @@ export const make = (deps: Dependencies) => {
        * the Jj snapshot, and the boundary prepare/settle all stay outside so
        * the write transaction is never held across a host call.
        */
-      const atomically = <A, E, R>(effect: Effect.Effect<A, E, R>) => journal.transact(effect)
+      const atomically = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        journal.transact(effect)
       /**
        * Commits an attempt's terminal row and the lifecycle records describing
        * it as one unit, reporting whether the fenced write landed.
@@ -829,13 +837,25 @@ export const make = (deps: Dependencies) => {
       ) =>
         atomically(Effect.gen(function*() {
           const finished = yield* attempts.finish(row, deps.owner)
-          if (finished._tag !== "Finished") return false
-          yield* Effect.forEach(records, (record) => emitLifecycle(record), { discard: true })
+          if (finished._tag !== "Finished") {
+            return false
+          }
+          yield* Effect.forEach(records, (record) =>
+            emitLifecycle(record), { discard: true })
+          if (row.state === "succeeded" && callFacts.settles) {
+            const committed = yield* attempts.get(attemptId)
+            if (Option.isNone(committed)) {
+              return yield* Effect.die(new Error("Finished call outcome disappeared"))
+            }
+            yield* emitCallSettled(committed.value.outcome)
+          }
           return true
         }))
       const fencedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
       const heartbeat = yield* runs.heartbeat(deps.runId, deps.owner, fencedAtMs)
-      if (heartbeat._tag !== "Updated") return yield* Effect.interrupt
+      if (heartbeat._tag !== "Updated") {
+        return yield* Effect.interrupt
+      }
 
       if (input.tier === "irreversible" && input.attempt > 1 && deps.idempotencyKey === undefined) {
         return yield* Effect.fail(
@@ -1008,7 +1028,9 @@ export const make = (deps: Dependencies) => {
             noteUnshareable({ stage: "entry", message: `local cache publication failed: ${error.message}` }).pipe(
               Effect.as(undefined)
             )))
-          if (recording === undefined) return
+          if (recording === undefined) {
+            return
+          }
           // ENTRY LAST, AND OUTSIDE THE TRANSACTION. The local row and its
           // provenance record are now durable together; only here does the
           // entry become observable to other machines, which is the second half
@@ -1050,7 +1072,8 @@ export const make = (deps: Dependencies) => {
                   {
                     keyDigest,
                     action: "conflict_first_writer",
-                    recordedRunId: Option.getOrNull(Option.map(recorded, (value) => value.runId)),
+                    recordedRunId: Option.getOrNull(Option.map(recorded, (value) =>
+                      value.runId)),
                     recordedEventSeq: Option.getOrNull(Option.map(recorded, (value) => value.eventSeq))
                   }
                 )
@@ -1387,6 +1410,9 @@ export const make = (deps: Dependencies) => {
                 const verified = Option.isSome(measured) && StepBoundary.readSetMatches(measured.value)
                 if (verified) {
                   const evidence = candidate.evidence
+                  // Cache materialization is host work too. The authorized
+                  // invocation is durable before it, even without a new attempt.
+                  yield* emitCallInvoked
                   let materialized = yield* boundary.replayOutputs(evidence).pipe(Effect.exit)
                   if (
                     Exit.isFailure(materialized) &&
@@ -1584,6 +1610,7 @@ export const make = (deps: Dependencies) => {
           if (Option.isSome(existing)) {
             const row = existing.value
             if (row.state === "succeeded") {
+              yield* emitCallInvoked
               const meta = decodeMeta(row.meta)
               let corruptEvidence = false
               const outputDecision = meta?.boundary === undefined
@@ -1745,9 +1772,13 @@ export const make = (deps: Dependencies) => {
               yield* emitConverging(
                 JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "succeeded" })
               )
+              // Upgrade an older durable controller record without rerunning
+              // its handler; current records collapse to the original receipt.
+              yield* emitCallSettled(row.outcome)
               return row.outcome
             }
             if (row.state === "failed") {
+              yield* emitCallInvoked
               // Converge the journal before rethrowing (issue #109): the
               // violation kind survives in the row meta because the
               // persisted cause alone cannot distinguish a boundary
@@ -1835,6 +1866,7 @@ export const make = (deps: Dependencies) => {
            * `outcome` is the executable copy (see `AttemptMeta.effectCrossing`).
            */
           if (runningRow !== undefined && runningMeta?.effectCrossing === "succeeded") {
+            yield* emitCallInvoked
             const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
             // `outcome` and `meta` are deliberately omitted: `FinishAttempt`
             // leaves an omitted field as recorded, so the terminal transition
@@ -1930,6 +1962,9 @@ export const make = (deps: Dependencies) => {
             yield* emitLifecycle(
               JournalRecords.attemptStarted(attemptSource("started"), { ...attemptId, tier: input.tier })
             )
+            // Shares attempt admission's transaction. Refusal rolls admission
+            // back before a handler, snapshot, or sandbox can execute.
+            yield* emitCallInvoked
           }))
 
           const announceSnapshot = (snapshotId: string) =>
@@ -2024,7 +2059,9 @@ export const make = (deps: Dependencies) => {
                 JournalRecords.hardViolation(attemptSource("hard-violation"), { ...attemptId, error: cause }),
                 JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
               ])
-              if (!finished) return yield* Effect.interrupt
+              if (!finished) {
+                return yield* Effect.interrupt
+              }
               return yield* Effect.failCause(cause)
             })
           const boundary = input.tier === "sealed" && input.metadata !== undefined
@@ -2124,7 +2161,8 @@ export const make = (deps: Dependencies) => {
           const parked = (cause: Cause.Cause<unknown>) =>
             Effect.map(
               Effect.serviceOption(FlowRuntime.FlowInstance),
-              (instance) => Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause)
+              (instance) =>
+                Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause)
             )
           /**
            * The row's meta as this dispatch last wrote it. The crossing writes

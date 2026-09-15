@@ -53,16 +53,21 @@ test("directory listing and another repo never complete", async () => {
 })
 
 for (const change of ["replay", "repository", "account"] as const) test(`late read after ${change} never completes`, async () => {
-  let release!: (response: Response) => void
-  const { store, seam } = await setup(() => new Promise(resolve => { release = resolve }))
+  let release!: (response: Response) => void, markStarted!: () => void
+  const response = new Promise<Response>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { markStarted = resolve })
+  const { store, seam } = await setup(() => { markStarted(); return response })
   const pending = seam.readFile("answer.ts", "will/demo")
-  if (change === "replay") store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: store.session().guide!.step, playthrough: 1 } })
-  if (change === "repository") store.dispatch({ type: "repo.selected", actor: "user", id: "will/other" })
-  if (change === "account") store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
+  // Prepared reads start after their activation boundary; race an actual in-flight read.
+  await started
+  if (change === "replay") await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: store.session().guide!.step, playthrough: 1 } }).isPersisted.promise
+  if (change === "repository") await store.dispatch({ type: "repo.selected", actor: "user", id: "will/other" }).isPersisted.promise
+  if (change === "account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   release(Response.json({ content: "real text" }))
   await pending
   expect(store.session().guide?.completed ?? []).not.toContain("file.opened")
   expect(store.session().guide?.completed ?? []).not.toContain("issue.researched")
+  expect([...store.collections.cards.values()].some(card => card.kind === "file" && card.payload.content === "real text")).toBe(false)
 })
 
 test("chooser inventories actual nested files, excluding directories and unsafe entries", async () => {

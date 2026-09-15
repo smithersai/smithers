@@ -1,3 +1,4 @@
+import { decideApprovalAnswerInput } from "../ApprovalAnswerState"
 import { HarnessModelsResponseSchema, orderedAgentRoles } from "@smthrs/rpc/AgentRoles"
 import type { HarnessModelsResponse } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
@@ -5,6 +6,7 @@ import type { Harness } from "@smthrs/rpc/LocalApp"
 import { Schema } from "effect"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { AgentInvocation } from "../../flows/AgentInvocation"
+import type { CommandGesture } from "../../flows/CommandGesture"
 import type { CommandOutcome } from "../../flows/Commands"
 import { assembleArgs, declaredInput, draftFrom, formFieldsFor, missingFields, partialPayload, submissionPayload } from "../../flows/FlowForms"
 import type { FieldOption, FieldValue, FormDraft, FormField, FormHints, OptionProvider } from "../../flows/FlowForms"
@@ -59,7 +61,7 @@ export interface FormsController {
   /** `form.set <cardId> <field> [value]`: one draft update; blank clears. */
   readonly setFormField: (cardId: string, field: string, value: string) => Promise<string | void>
   /** `form.submit <cardId>`: run the form's flow with the draft, as the actor that asked for it. */
-  readonly submitForm: (cardId: string, invocation?: AgentInvocation) => Promise<string | void | { readonly value: string }>
+  readonly submitForm: (cardId: string, invocation?: AgentInvocation, gesture?: CommandGesture) => Promise<string | void | { readonly value: string }>
   /** `card.dismiss <cardId>`: drop a form card (the form's Cancel). */
   readonly dismissCard: (cardId: string) => string | void
 }
@@ -94,6 +96,48 @@ export const fetchHarnessModels = async (
   } catch (error) {
     return { harnessId: harness, models: [], source: "suggestions", reason: error instanceof Error ? error.message : String(error) }
   }
+}
+
+const coerce = (field: FormField, value: string): { readonly value: FieldValue } | { readonly error: string } => {
+  switch (field.kind) {
+    case "number": {
+      const number = Number(value)
+      return Number.isFinite(number) ? { value: number } : { error: `${field.label} is a number; ${value} is not one.` }
+    }
+    case "boolean":
+      return { value: ["true", "on", "yes", "1"].includes(value.toLowerCase()) }
+    case "select": {
+      const options = field.options ?? []
+      if (options.length === 0) return { value }
+      const option = options.find((candidate) => candidate.value === value)
+      if (option === undefined) return { error: `${field.label} offers ${options.map((candidate) => candidate.value).join(", ")}; ${value} is not one of them.` }
+      if (option.disabled === true) return { error: `${option.label} cannot be picked: ${option.reason ?? "it is not available here"}.` }
+      return { value }
+    }
+    default:
+      return { value }
+  }
+}
+
+/** Validate pending human input with the same decision used by the receipt-gated handler. */
+export const decideFormFieldInput = (
+  card: FlowFormCard | undefined, cardId: string, name: string, raw: string
+): { readonly card: FlowFormCard } | { readonly error: string } => {
+  if (card === undefined) return { error: `There is no form card ${cardId}.` }
+  if (card.status === "acted") return { error: `The form ${cardId} was already submitted.` }
+  if (card.payload.submitting === true) return { error: `The form ${cardId} is being submitted.` }
+  const field = card.payload.fields.find((candidate) => candidate.name === name)
+  if (field === undefined) return { error: `The form has no field ${name}; its fields are ${card.payload.fields.map((candidate) => candidate.name).join(", ")}.` }
+  const value = raw.trim()
+  const { [name]: _cleared, ...rest } = card.payload.draft
+  let draft: FormDraft = rest
+  if (value !== "") {
+    const coerced = coerce(field, value)
+    if ("error" in coerced) return { error: coerced.error }
+    draft = { ...rest, [name]: coerced.value }
+  }
+  const { error: _dropped, ...payload } = card.payload
+  return { card: { ...card, status: "active", payload: { ...payload, draft } } }
 }
 
 export const createFormsController = (ctx: ControllerContext, deps: FormsControllerDependencies): FormsController => {
@@ -201,11 +245,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       return options === undefined ? rest : { ...rest, options: [...options] }
     })
 
-  const patch = (card: FlowFormCard, payload: FlowFormCard["payload"], status: Card["status"]): void => {
+  const patch = (card: FlowFormCard, payload: FlowFormCard["payload"], status: Card["status"]): Promise<void> => {
     const invocation = continuationFor(card)
     // Replace the payload so clearing an optional parse error is durable; patches merge omitted keys.
-    store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload, status } })
+    const transaction = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload, status } })
     if (invocation !== undefined) continuations.set(card.id, { invocation, payload: JSON.stringify(payload) })
+    return transaction.isPersisted.promise.then(() => {})
   }
 
   /*
@@ -218,14 +263,15 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     if (card === undefined || !card.payload.fields.some((field) => field.optionsFrom === "harness-models")) return
     const harness = harnessOf(card.payload.draft)
     if (harness === undefined) return
+    if (ctx.disposed) return
     const answer = await fetchHarnessModels(ctx, harness)
-    if (answer.models.length === 0) return
+    if (ctx.disposed || answer.models.length === 0) return
     const current = formCard(cardId)
     if (current === undefined || harnessOf(current.payload.draft) !== harness) return
     const fields = current.payload.fields.map((field) =>
       field.optionsFrom === "harness-models" ? { ...field, options: answer.models.map((model) => ({ value: model, label: model })) } : field
     )
-    patch(current, { ...current.payload, fields }, current.status)
+    await patch(current, { ...current.payload, fields }, current.status)
   }
 
   /*
@@ -239,11 +285,13 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const repo = card.payload.draft["repo"] ?? card.payload.given["repo"]
     if (typeof repo !== "string") return
     const selection = store.session().activeRepoKey
+    if (ctx.disposed) return
     const answer = await fileOptions({ store, baseUrl: ctx.baseUrl, http: ctx.boundedFetch }, repo)
+    if (ctx.disposed) return
     const current = formCard(cardId)
     if (current !== card || store.session().activeRepoKey !== selection) return
     const { error: _previous, ...payload } = current.payload
-    patch(current, {
+    await patch(current, {
       ...payload,
       fields: payload.fields.map(field => field.optionsFrom === "files" ? { ...field, options: answer.options } : field),
       ...(answer.error === undefined ? {} : { error: answer.error })
@@ -318,7 +366,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       return { cardId, missing: missingFields(existing.payload.fields, existing.payload.draft) }
     }
     continuations.delete(cardId)
-    store.dispatch({
+    const rendered = store.dispatch({
       type: "card.upsert",
       actor: ctx.commandActor,
       card: {
@@ -341,49 +389,29 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
           ...(hints?.submitLabel === undefined ? {} : { submitLabel: hints.submitLabel }) })
       })
     }
-    void refreshModelList(cardId)
-    void refreshFileList(cardId)
+    // A failed card commit must not start the model/file provider read.
+    void rendered.isPersisted.promise.then(async () => {
+      if (ctx.disposed) return
+      await Promise.all([refreshModelList(cardId), refreshFileList(cardId)])
+    }).catch(() => {})
     const missing = missingFields(resolved, draft)
     return { cardId, missing: missing.length > 0 ? missing : resolved.map((field) => field.name) }
   }
 
-  const coerce = (field: FormField, value: string): { readonly value: FieldValue } | { readonly error: string } => {
-    switch (field.kind) {
-      case "number": {
-        const number = Number(value)
-        return Number.isFinite(number) ? { value: number } : { error: `${field.label} is a number; ${value} is not one.` }
-      }
-      case "boolean":
-        return { value: ["true", "on", "yes", "1"].includes(value.toLowerCase()) }
-      case "select": {
-        const options = field.options ?? []
-        if (options.length === 0) return { value }
-        const option = options.find((candidate) => candidate.value === value)
-        if (option === undefined) return { error: `${field.label} offers ${options.map((candidate) => candidate.value).join(", ")}; ${value} is not one of them.` }
-        if (option.disabled === true) return { error: `${option.label} cannot be picked: ${option.reason ?? "it is not available here"}.` }
-        return { value }
-      }
-      default:
-        return { value }
-    }
-  }
-
   const setFormField: FormsController["setFormField"] = async (cardId, name, raw) => {
-    const card = formCard(cardId)
-    if (card === undefined) return `There is no form card ${cardId}.`
-    if (card.status === "acted") return `The form ${cardId} was already submitted.`
-    if (card.payload.submitting === true) return `The form ${cardId} is being submitted.`
-    const field = card.payload.fields.find((candidate) => candidate.name === name)
-    if (field === undefined) return `The form has no field ${name}; its fields are ${card.payload.fields.map((candidate) => candidate.name).join(", ")}.`
-    const value = raw.trim()
-    const { [name]: _cleared, ...rest } = card.payload.draft
-    let draft: FormDraft = rest
-    if (value !== "") {
-      const coerced = coerce(field, value)
-      if ("error" in coerced) return coerced.error
-      draft = { ...rest, [name]: coerced.value }
+    if (name.startsWith("answer:")) {
+      if (ctx.commandActor !== "user") return "Approval answers belong to the human."
+      const answer = decideApprovalAnswerInput(store, cardId, name, raw)
+      if ("error" in answer) return answer.error
+      await store.dispatch({ type: "approval.answer.changed", actor: "user", ...answer }).isPersisted.promise
+      return
     }
-    const { error: _dropped, ...payload } = card.payload
+    const original = formCard(cardId)
+    const decided = decideFormFieldInput(original, cardId, name, raw)
+    if ("error" in decided) return decided.error
+    const card = original!
+    const { payload } = decided.card
+    const { draft } = payload
     /*
      * Options were supplied at render and stay as the card holds them; only a
      * field that can change WHICH harness the model list belongs to
@@ -391,7 +419,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      * another field never overwrites the list the harness answered with).
      */
     const dependency = ["harness", "harnessId", "id", "roleId"].includes(name)
-    patch(card, { ...payload, draft, fields: dependency ? withOptions(card.payload.fields, draft) : card.payload.fields }, "active")
+    await patch(card, { ...payload, draft, fields: dependency ? withOptions(card.payload.fields, draft) : card.payload.fields }, "active")
     if (dependency) await refreshModelList(cardId)
     if (name === "repo") await refreshFileList(cardId)
   }
@@ -412,7 +440,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     }
   }
 
-  const submitForm: FormsController["submitForm"] = async (cardId, invocation) => {
+  const submitForm: FormsController["submitForm"] = async (cardId, invocation, gesture) => {
     const card = formCard(cardId)
     if (card === undefined) return `There is no form card ${cardId}.`
     if (card.status === "acted") return `The form ${cardId} was already submitted.`
@@ -421,7 +449,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     if (missing.length > 0) {
       const labels = card.payload.fields.filter((field) => missing.includes(field.name)).map((field) => field.label)
       const error = `The form still needs: ${labels.join(", ")}.`
-      patch(card, { ...card.payload, error }, "error")
+      await patch(card, { ...card.payload, error }, "error")
       return error
     }
     const { flow, via } = card.payload
@@ -441,12 +469,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const submission = submissionPayload(input, card.payload.fields,
       nestedGiven !== null && typeof nestedGiven === "object" ? nestedGiven as Record<string, unknown> : {}, card.payload.draft)
     if ("error" in submission) {
-      patch(card, { ...card.payload, error: submission.error }, "error")
+      await patch(card, { ...card.payload, error: submission.error }, "error")
       return submission.error
     }
     if (nestedField !== undefined && !Schema.is(input)(submission.payload)) {
       const error = "These inputs do not match the flow's declaration. Check the field values before running."
-      patch(card, { ...card.payload, error }, "error")
+      await patch(card, { ...card.payload, error }, "error")
       return error
     }
     const represented = new Set(card.payload.fields.map((field) => field.name))
@@ -464,28 +492,30 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      */
     const asAgent = via === "agent" || actor === "smithers"
     const continuation = invocation ?? continuationFor(card)
-    patch(card, { ...card.payload, submitting: true }, "active")
+    await patch(card, { ...card.payload, submitting: true }, "active")
     let outcome: CommandOutcome
     try {
       outcome = await ctx.commands.submit({
         name: flow,
         payload,
         actor: asAgent ? "agent" : "user",
+        ...(!asAgent && gesture?.name === flow ? { gesture } : {}),
         ...(args === "" ? {} : { display: args }),
         ...(asAgent && continuation !== undefined ? { invocation: continuation } : {})
       })
     } catch (cause) {
       outcome = { status: "failed", error: cause instanceof Error ? cause.message : String(cause) }
     }
+    if (ctx.disposed || (outcome.status === "failed" && outcome.persistenceFailed)) return describe(outcome)
     const current = formCard(cardId) ?? card
     if (outcome.status === "executed") {
       continuations.delete(cardId)
       const { error: _dropped, ...payload } = current.payload
-      patch(current, { ...payload, submitting: false }, "acted")
+      await patch(current, { ...payload, submitting: false }, "acted")
       return { value: outcome.value ?? `submitted /${flow}${args === "" ? "" : ` ${args}`}` }
     }
     const error = describe(outcome)
-    patch(current, { ...current.payload, submitting: false, error }, "error")
+    await patch(current, { ...current.payload, submitting: false, error }, "error")
     // The card carries the refusal for the human; the agent reads it as its result.
     return actor === "smithers" ? error : undefined
   }

@@ -11,6 +11,7 @@ import {
   RECOVERY_RESET_HUMAN_ONLY,
   RECOVERY_RESET_RUNNING
 } from "./StorageRecoveryContract"
+import { assertRecoverySnapshotCurrent } from "./BrowserStorageRecovery"
 const CANCELED = "Recovery was canceled because the app closed. Saved data was not reset."
 
 const RecoveryStateSchema = z.object({
@@ -73,6 +74,7 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
     // the registry's modelInvocable filtering and invokes the binding directly.
     if (actor !== "user") return Promise.resolve(RECOVERY_HUMAN_ONLY)
     if (disposed) return Promise.resolve(CANCELED)
+    if (resetting !== undefined) return resetting
     if (pending !== undefined) return pending
     pending = (async () => {
       await state.preload()
@@ -85,6 +87,7 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
           return CANCELED
         }
         const json = encodeStorageRecovery(snapshot)
+        assertRecoverySnapshotCurrent(snapshot)
         await host.download(json)
         await dispatch("ready", "Recovery download prepared.")
       } catch (error) {
@@ -127,6 +130,10 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
         await dispatch("armed", RECOVERY_RESET_ARMED, "reset")
         return
       }
+      // Finish an already-authorized download before erasing its source. New
+      // downloads are fenced by resetting until this operation settles.
+      await pending
+      if (disposed) return CANCELED
       await dispatch("resetting", RECOVERY_RESET_RUNNING, "reset")
       try {
         await erase()

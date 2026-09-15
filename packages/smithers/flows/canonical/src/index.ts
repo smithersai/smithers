@@ -33,8 +33,8 @@
  * @slop
  */
 export * from "./Canonical.ts"
-export { CanonicalError, canonicalize } from "./internal/canonicalize.ts"
-export type { CanonicalErrorCode } from "./internal/canonicalize.ts"
+export { CanonicalError, canonicalize } from "./Serializer.ts"
+export type { CanonicalErrorCode } from "./Serializer.ts"
 
 /**
  * Object-shape guard for values crossing a wire boundary.

@@ -1352,7 +1352,8 @@ const issued = (
   callMs: number,
   flow: string,
   issue: Effect.Effect<Cell.CallResult, HarnessError>,
-  replaying: boolean
+  replaying: boolean,
+  call: Cell.Call
 ): Effect.Effect<Cell.CallResult, HarnessError> =>
   Effect.gen(function*() {
     if (replaying) {
@@ -1360,6 +1361,7 @@ const issued = (
       // directly, including per-call timeouts whose host activity never settled.
       return yield* engine.record({
         name: "cell-call",
+        call,
         identity: { session: state.session, frame: state.frame, boundary: `cell-call:${cell}:${ordinal}` },
         success: Cell.CallResultVariant,
         execute: Effect.fail(
@@ -1383,6 +1385,7 @@ const issued = (
     )
     return yield* engine.record({
       name: "cell-call",
+      call,
       identity: { session: state.session, frame: state.frame, boundary: `cell-call:${cell}:${ordinal}` },
       success: Cell.CallResultVariant,
       execute: Effect.succeed(settlement)
@@ -1626,7 +1629,8 @@ const callHandler = (
       callMs,
       invocation.flow,
       Effect.suspend(() => engine.call(call)),
-      replaying
+      replaying,
+      call
     )
     if (result.outcome === "success") ledger.push(...TruncatedOutput.captures(call.flowName, result.value))
     yield* emit(

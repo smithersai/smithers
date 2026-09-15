@@ -310,14 +310,14 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   // Ref ownership survives incidental renders (for example the auto-advance pause on keydown).
   const bindInputs = useCallback((node: HTMLDivElement | null) => {
     if (!node?.parentElement) return
-    controller.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
+    controller.observeGuideVisibility(true)
     const unbind = bindPressActions({ root: node.closest<HTMLElement>(".session-shell") ?? node.parentElement,
       resolveShortcut: event => inputHandlers.current.resolve(event),
       enabled: () => inputHandlers.current.enabled(),
     })
     return () => {
       unbind()
-      controller.store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false })
+      controller.observeGuideVisibility(false)
     }
   }, [controller, stage, guide.playthrough, guide.reelIndex])
   if (guide.finished) return <>{children}</>

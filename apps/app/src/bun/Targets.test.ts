@@ -373,7 +373,7 @@ describe("createTargetRunner", () => {
     expect(await runner.cancel(run.runId)).toBe(true)
     expect(sink.frames.map((entry) => entry.frame)).toEqual([
       { type: "error", message: "Cancelled before it started.", seq: 0 },
-      { type: "exit", code: null, seq: 1 }
+      { type: "exit", code: null, seq: 1, at: expect.any(Number) }
     ])
     expect(await runner.cancel(run.runId)).toBe(false)
     expect(await runner.cancel("nope")).toBe(false)
@@ -541,7 +541,7 @@ describe("createTargetRunner", () => {
     expect(pending.status).toBe("failed")
     expect(sink.frames.filter((entry) => entry.runId === pending.runId).map((entry) => entry.frame)).toEqual([
       { type: "error", message: "Cancelled: the app is shutting down.", seq: 0 },
-      { type: "exit", code: null, seq: 1 }
+      { type: "exit", code: null, seq: 1, at: expect.any(Number) }
     ])
     await runner.stop()
   })

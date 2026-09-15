@@ -12,9 +12,11 @@
  *
  * @since 1.0.0
  */
-import { ControlSchema, Health, Monitor } from "@smthrs/control"
+import { ControlFacts, ControlSchema, Health, Monitor } from "@smthrs/control"
+import { ExecutionFact } from "@smthrs/journal"
 import { Schema } from "effect"
 import * as Diagnosis from "./Diagnosis.ts"
+import { openCallIndex, uniqueCallEvents } from "./internal/callEvents.ts"
 
 /**
  * One run, everything a run card displays, and the diagnosis of what happened
@@ -32,6 +34,8 @@ export const RunSummaryRow = Schema.Struct({
   flowId: Schema.String,
   statusRollup: Schema.optional(Health.StatusRollup),
   status: ControlSchema.RunStatus,
+  lifecycleProvenance: Schema.optional(ControlFacts.LifecycleProvenance),
+  executionProvenance: Schema.optional(ExecutionFact.Provenance),
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
   planId: Schema.optional(Schema.String),
@@ -54,9 +58,9 @@ export const RunSummaryRow = Schema.Struct({
   /**
    * One line: the run row's status plus the reason that most explains it.
    *
-   * The status is the control plane's, not one folded from the journal: a
-   * fenced status write does not always journal an event, so a verdict read
-   * from events alone can name the run's previous state.
+   * Lifecycle provenance distinguishes a covered control fact from a legacy
+   * snapshot or a separate engine observation. Missing facts never silently
+   * replace a newer observed state with the last recorded status.
    */
   verdict: Schema.String,
   /** The whole diagnosis card, which the old wire called `whatHappened`. */
@@ -126,6 +130,7 @@ export const ApprovalRow = Schema.Struct({
    * an inbox can list one question once however many ancestors carry it.
    */
   waitRunId: Schema.optional(Schema.String),
+  questionProvenance: Schema.optional(Schema.Literals(["events", "legacy-observation", "unverified-observation"])),
   requestId: Schema.String,
   title: Schema.String,
   request: Schema.Json,
@@ -176,6 +181,8 @@ export const TranscriptRow = Schema.Struct({
   turn: Schema.Number,
   at: Schema.Number,
   kind: Schema.String,
+  /** Dispatch identity on current call records; absent on legacy history. */
+  callId: Schema.optional(Schema.String),
   text: Schema.String
 })
 
@@ -204,15 +211,38 @@ export const runSummary = (
   events: ReadonlyArray<ControlSchema.ControlEvent>,
   now: number = Math.max(run.updatedAt, events.at(-1)?.occurredAt ?? 0)
 ): RunSummaryRow => {
-  // The run row is the authority on status; the journal is the evidence for
-  // everything else. A status written under a fence does not always journal an
-  // event of its own, so a verdict folded from events alone can lag the row it
-  // describes by a whole transition.
+  const projected = ControlFacts.fold(events, run)
+  // Supplying a snapshot guarantees a run: uncovered facts retain that
+  // observation; only the event-only fold can return an absent run.
+  run = projected.run!
+  const native = ExecutionFact.foldControl(events, run.runId, run.executionView)
+  // The control fold remains control authority. Native lifecycle is independently
+  // replayed/verified against the coherent executor observation when available.
+  if (run.executionObservation === "observed" && native?.view !== undefined) {
+    const { root, current } = native.view
+    run = {
+      ...run,
+      status: current.status === "pending" ? "accepted" : current.status === "suspended"
+        ? current.waiting?.reason === "approval" ||
+            (native.view.humanWaits?.length ?? run.pendingWaits?.length ?? 0) > 0
+          ? "waiting-approval" :
+          "parked"
+        : current.status === "running" && (native.view.humanWaits?.length ?? run.pendingWaits?.length ?? 0) > 0
+        ? "waiting-approval" :
+        current.status,
+      waitingReason: current.status === "suspended" ? current.waiting?.reason : undefined,
+      parentRunId: root.parentRunId ?? undefined,
+      lineageId: root.lineageId,
+      roundOrdinal: root.roundOrdinal
+    }
+  }
   const facts = { ...Diagnosis.digest(events), status: run.status }
   return {
     runId: run.runId,
     flowId: run.flowId,
     status: run.status,
+    lifecycleProvenance: projected.provenance,
+    ...optional("executionProvenance", native?.provenance),
     statusRollup: statusRollup(run, events, now),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
@@ -239,16 +269,17 @@ export const runSummary = (
 }
 
 /**
- * Claims the open agent call a settlement belongs to. A named settlement
- * takes the oldest open call with that flow name and is dropped when none
- * matches. Only an unnamed settlement takes the oldest open call.
+ * Claims a call by its durable dispatch identity. Legacy history has no id:
+ * match only legacy starts by flow name (or FIFO when unnamed). A new
+ * settlement can close a legacy start after an old parked run resumes, but
+ * neither fallback may steal an identified call.
  */
-const takeOpenCall = <A extends { readonly flowName: string }>(
+const takeOpenCall = <A extends { readonly flowName: string; readonly callId: string | undefined }>(
   open: Array<A>,
+  callId: string | undefined,
   flowName: string | undefined
 ): A | undefined => {
-  if (flowName === undefined) return open.shift()
-  const found = open.findIndex((call) => call.flowName === flowName)
+  const found = openCallIndex(open, callId, flowName)
   return found < 0 ? undefined : open.splice(found, 1)[0]
 }
 
@@ -285,34 +316,39 @@ interface CallSettlement {
  * projections have to agree on that id; when they counted separately they
  * could disagree, and once did, because skipping an event before the ordinal
  * advanced shifted one fold's keys against the other's. The ordinal therefore
- * advances on every start, whatever else that event is missing.
+ * advances on every distinct start, whatever else that event is missing.
+ * Identified duplicate starts and settlements are ignored. Old idless rows
+ * retain their original ordinal/FIFO interpretation; their missing dispatch
+ * identity cannot be reconstructed when same-name calls overlapped.
  */
 const callHistory = (
   events: ReadonlyArray<ControlSchema.ControlEvent>
 ): ReadonlyArray<CallRecord> => {
   const calls = new Map<string, CallRecord>()
-  const open: Array<{ readonly flowName: string; readonly call: CallRecord }> = []
+  const open: Array<{ readonly callId: string | undefined; readonly flowName: string; readonly call: CallRecord }> = []
   let seat: string | undefined
   let ordinal = 0
   let settlements = 0
 
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     const payload = Diagnosis.asRecord(event.payload)
     if (event.kind === "control.agent.turn-opened") {
       seat = Diagnosis.asString(payload.seat) ?? seat
       continue
     }
     if (event.kind === "control.agent.cell-call-started") {
+      const callId = Diagnosis.asString(payload.callId)
       ordinal += 1
       const nodeId = `call-${ordinal}`
       const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
       const call: CallRecord = { nodeId, flowName, seat, startedAt: Diagnosis.timeOf(event), settlement: undefined }
-      open.push({ flowName, call })
+      open.push({ callId, flowName, call })
       calls.set(nodeId, call)
       continue
     }
     if (event.kind !== "control.agent.cell-call-settled") continue
-    const claimed = takeOpenCall(open, Diagnosis.asString(payload.flowName))
+    const callId = Diagnosis.asString(payload.callId)
+    const claimed = takeOpenCall(open, callId, Diagnosis.asString(payload.flowName))
     if (claimed === undefined) continue
     const failed = Diagnosis.asString(payload.outcome) === "failure"
     settlements += 1
@@ -346,12 +382,12 @@ const treeStatus = (settlement: CallSettlement | undefined): RunTreeRow["status"
  * A node opens on `control.agent.cell-call-started` and settles on the
  * matching `control.agent.cell-call-settled`.
  *
- * Neither record names a node: `@smthrs/agent` `AgentSession` journals
- * `{flowName, input}` when a call starts and `{flowName, outcome, message,
- * value}` when it settles. The ordinal the call opened on is therefore its
- * published key rather than a fallback, and a settlement is paired with the
- * oldest open call of the same flow name, which is the only pairing those
- * fields support.
+ * AgentSession journals the same `callId` from the harness's dispatch identity
+ * on both records. Settlements join on it even when same-name calls overlap
+ * and finish out of order. The distinct-start ordinal remains the published
+ * `call-N` node key, preserving existing node links. Legacy records without
+ * callId retain same-name FIFO pairing, restricted to other legacy records
+ * (including a newly identified settlement of an old parked call).
  *
  * The durable engine's own `flows.engine.*` records are not folded here, and
  * cannot be: a host keeps the control plane and the engine in two databases
@@ -408,15 +444,19 @@ const questionOf = (wait: ControlSchema.PendingWait): Record<string, unknown> =>
  */
 const humanWaitRow = (
   run: ControlSchema.RunSummary,
-  wait: ControlSchema.PendingWait
+  wait: ControlSchema.PendingWait,
+  projected?: ExecutionFact.Observation,
+  questionProvenance: "events" | "legacy-observation" | "unverified-observation" = "legacy-observation"
 ): ApprovalRow => {
-  const question = questionOf(wait)
+  const question = projected === undefined ? questionOf(wait) : Diagnosis.asRecord(projected.waiting?.request)
   const name = wait.name ?? Diagnosis.asString(question["name"]) ?? wait.token
   const requestId = wait.attempt === undefined ? name : `${name}#${wait.attempt}`
   const prompt = Diagnosis.asString(question["prompt"])
+  const waitFlowId = projected?.flowName ?? wait.flowId
   return {
     runId: run.runId,
     waitRunId: wait.runId,
+    questionProvenance,
     requestId,
     title: prompt ?? `Answer needed — ${name}`,
     request: {
@@ -424,7 +464,7 @@ const humanWaitRow = (
       kind: Diagnosis.asString(question["kind"]) ?? "ask",
       name,
       ...(wait.attempt === undefined ? {} : { attempt: wait.attempt }),
-      ...(wait.flowId === undefined ? {} : { waitFlowId: wait.flowId }),
+      ...(waitFlowId === undefined ? {} : { waitFlowId }),
       token: wait.token
     },
     payload: {
@@ -440,7 +480,7 @@ const humanWaitRow = (
       scope: "once",
       idempotencyKey: `answer:${run.runId}:${requestId}`
     },
-    requestedAt: wait.createdAt,
+    requestedAt: projected?.createdAtMs ?? wait.createdAt,
     status: "pending"
   }
 }
@@ -452,22 +492,21 @@ const humanWaitRow = (
  * matching `control.approval.approved` or `control.approval.denied` closes it
  * without discarding the request, so a decided gate stays readable.
  *
- * A HUMAN wait journals nothing, so the summary supplies it instead. A
- * `HumanTask` parks its execution and declares the question on the parked row;
- * `@smthrs/control` rolls the open ones in a run tree onto the root as
- * `pendingWaits`, and each becomes a pending row here. Without this the
- * approvals inbox folded an empty journal and reported no pending gates for a
- * run whose whole tree was waiting on a person (run-3,
- * `coding-clarification`). These rows come first because they are the ones
- * still owed an answer.
+ * A `HumanTask` declares its question on the parked row. Native execution
+ * facts carry the redacted question and token digest; verified facts supply
+ * its display metadata here. `@smthrs/control` rolls current open waits onto
+ * the root as `pendingWaits`, which supply each row's protected wake address.
+ * History alone cannot create an answerable human wait. Older observations
+ * remain visible with explicit question provenance when native fact coverage
+ * is unavailable. These rows come first because they still need an answer.
  *
  * A decision names the gate it closed by `tokenId`. `@smthrs/control`
  * `SqlControlRuntime.lookupApproval` mints that token id from the target, and
  * for the `Node` target a run parks on it is the request id itself, so the two
  * records join on one field. A decision whose `tokenId` or `requestId` names
- * no row is ignored. Only a decision that names neither field closes the
- * oldest pending row, because two gates open at once must not both flip on one
- * decision.
+ * no row is retained for an exact later request. Only a legacy decision that
+ * names neither field closes the oldest pending legacy row in that run.
+ * Current facts bind the target digest; duplicates cannot reopen a decision.
  *
  * @param events the run's ordered control events
  * @since 1.0.0
@@ -477,41 +516,27 @@ export const approvals = (
   events: ReadonlyArray<ControlSchema.ControlEvent>,
   run?: ControlSchema.RunSummary | undefined
 ): ReadonlyArray<ApprovalRow> => {
-  const rows = new Map<string, ApprovalRow>()
-  for (const wait of run?.pendingWaits ?? []) rows.set(wait.token, humanWaitRow(run!, wait))
-  for (const event of events) {
-    const payload = Diagnosis.asRecord(event.payload)
-    if (event.kind === "control.approval.requested") {
-      const requestId = Diagnosis.asString(payload.requestId)
-      const runId = Diagnosis.asString(payload.runId) ?? event.runId
-      const submitted = payload.payload
-      if (requestId === undefined || runId === undefined || submitted === undefined) continue
-      const question = Diagnosis.asString(payload.question) ?? `Approval needed — ${requestId}`
-      rows.set(requestId, {
-        runId,
-        requestId,
-        title: question,
-        request: payload as never,
-        payload: submitted as ControlSchema.ApprovalPayload,
-        requestedAt: Diagnosis.timeOf(event),
-        status: "pending"
-      })
-      continue
-    }
-    if (event.kind === "control.approval.approved" || event.kind === "control.approval.denied") {
-      const decided = event.kind === "control.approval.approved" ? "approved" as const : "denied" as const
-      const tokenId = Diagnosis.asString(payload.tokenId) ?? Diagnosis.asString(payload.requestId)
-      if (tokenId !== undefined) {
-        const named = rows.get(tokenId)
-        if (named === undefined) continue
-        rows.set(tokenId, { ...named, status: decided })
-        continue
-      }
-      const oldest = [...rows.entries()].find(([, row]) => row.status === "pending")
-      if (oldest !== undefined) rows.set(oldest[0], { ...oldest[1], status: decided })
-    }
-  }
-  return [...rows.values()]
+  const native = run === undefined ? undefined : ExecutionFact.foldControl(events, run.runId, run.executionView)
+  const observed = run?.pendingWaits?.map((wait) => {
+    const projected = native?.provenance.humanWaits === "events" ?
+      native.view?.humanWaits?.find((candidate) =>
+        candidate.executionId === wait.runId && candidate.waiting?.tokenDigest === wait.tokenDigest
+      ) :
+      undefined
+    return humanWaitRow(
+      run,
+      wait,
+      projected,
+      projected === undefined
+        ? native?.provenance.humanWaits === "events" ?
+          "unverified-observation" :
+          native?.provenance.humanWaits ?? "legacy-observation"
+        : "events"
+    )
+  })
+  // The current observation supplies wake authority. History supplies only the
+  // display metadata that verifies against that exact observed token digest.
+  return ControlFacts.fold(events, undefined, observed).approvals
 }
 
 /**
@@ -573,7 +598,7 @@ export const transcript = (
 ): ReadonlyArray<TranscriptRow> => {
   const rows: Array<TranscriptRow> = []
   let turn = 0
-  for (const event of events) {
+  for (const event of uniqueCallEvents(events)) {
     const payload = Diagnosis.asRecord(event.payload)
     const runId = Diagnosis.asString(payload.runId) ?? event.runId
     if (runId === undefined) continue
@@ -588,6 +613,7 @@ export const transcript = (
       turn,
       at: Diagnosis.timeOf(event),
       kind: event.kind,
+      ...optional("callId", Diagnosis.asString(payload.callId)),
       text: line(event.kind, payload)
     })
   }

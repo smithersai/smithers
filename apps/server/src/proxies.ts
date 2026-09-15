@@ -179,6 +179,10 @@ export const handlePlatformProxy = (
     if (contentType !== null) headers.set("content-type", contentType)
     const accept = request.headers.get("accept")
     if (accept !== null) headers.set("accept", accept)
+    // SSE reconnect positions belong to the committed upstream stream. The
+    // proxy must not turn a resumed read into an implicit read from zero.
+    const lastEventId = request.headers.get("last-event-id")
+    if (request.method === "GET" && lastEventId !== null) headers.set("last-event-id", lastEventId)
     const fetched = yield* Effect.result(
       fetchWithDeadline(
         "Smithers Cloud",

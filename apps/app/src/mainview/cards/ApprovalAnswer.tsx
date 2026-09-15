@@ -38,17 +38,28 @@ export const answerValue = (
 
 export const ApprovalAnswerForm = ({
   question,
+  draft,
+  onDraft,
   disabled,
   onAnswer
 }: {
   readonly question: ApprovalQuestion
+  readonly draft?: { readonly question: string; readonly text: string }
+  readonly onDraft?: (value: string) => void
   readonly disabled: boolean
   readonly onAnswer: (answer: unknown) => void
 }) => {
-  // Uncontrolled on purpose: the draft belongs to the box until it is sent,
-  // so typing costs no render and a card refresh cannot retype what the person
-  // wrote. Only the refusal is state, because it changes what is on screen.
+  // The DOM holds in-flight editing while form.set commits; the normalized
+  // question's event projection restores the text on remount or reload.
   const box = useRef<HTMLTextAreaElement>(null)
+  const pendingText = useRef<{ question: string | undefined; text: string } | undefined>(undefined)
+  const restoreDraft = (node: HTMLTextAreaElement | null): void => {
+    box.current = node
+    if (node === null || draft === undefined) return
+    if (pendingText.current?.question === draft.question && pendingText.current.text !== draft.text && node.ownerDocument.activeElement === node) return
+    pendingText.current = undefined
+    if (node.value !== draft.text) node.value = draft.text
+  }
   const [refusal, setRefusal] = useState<string | undefined>(undefined)
   const attempt = attemptWords(question)
 
@@ -103,7 +114,13 @@ export const ApprovalAnswerForm = ({
         (
           <>
             <Textarea
-              ref={box}
+              key={draft?.question}
+              ref={restoreDraft}
+              defaultValue={draft?.text ?? ""}
+              onInput={event => {
+                pendingText.current = { question: draft?.question, text: event.currentTarget.value }
+                onDraft?.(event.currentTarget.value)
+              }}
               aria-label={question.prompt}
               data-testid="approval-answer-text"
               disabled={disabled}

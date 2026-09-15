@@ -1,3 +1,4 @@
+import { memoryStorage } from "../state/TestFixtures"
 import { expect, test } from "bun:test"
 import { createAppStore } from "../state/AppStore"
 import { initialGuide } from "../state/AppState"
@@ -38,7 +39,7 @@ test("final reel Next marks the tutorial finished and clears borrowed UI", async
 
 
 for (const finish of ["finish", "reel-next"]) test(`${finish} clears tutorial notifications and prepares the destination before finishing`, async () => {
-  const store = await createAppStore({ kind: "localStorage", storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14,
     ...(finish === "reel-next" ? { reelIndex: REEL_STAGES.length - 1, reelEpoch: 1 } : {}) } }).isPersisted.promise
   for (const key of ["reel-notify-test", "reel-wait-test", "guide-hello-test", "real-wiki"]) {

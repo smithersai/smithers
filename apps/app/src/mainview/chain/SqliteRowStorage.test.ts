@@ -2,8 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { z } from "zod"
 import { PERSISTED_COLLECTION_BUDGET_BYTES, PERSISTED_LOAD_CHUNK_ROWS, PERSISTED_LOAD_PAGE_BYTES } from "./PersistenceBudget"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DurableStorageConflictError } from "./DurableCollection"
 import {
   FutureSqliteSchemaError,
+  OversizedSqliteCollectionError,
   METADATA_TABLE_NAME,
   openSqliteRowStorage,
   QUARANTINE_TABLE_NAME,
@@ -18,8 +23,8 @@ const collections = [
   { id: "notes", schema: NoteSchema }
 ]
 
-const database = (): { readonly sqlite: Database; readonly host: SqliteRowDatabase } => {
-  const sqlite = new Database(":memory:")
+const database = (path = ":memory:"): { readonly sqlite: Database; readonly host: SqliteRowDatabase } => {
+  const sqlite = new Database(path)
   const host: SqliteRowDatabase = {
     execute: async <TRow>(sql: string, params: ReadonlyArray<unknown> = []) => {
       const statement = sqlite.query(sql)
@@ -107,7 +112,7 @@ describe("normalized SQLite row storage", () => {
         const rows = await db.host.execute<TRow>(sql, params)
         for (const row of rows) {
           const value = (row as { readonly value?: unknown }).value
-          if (typeof value === "string") valueBytesRead += value.length
+          if (typeof value === "string") valueBytesRead += new TextEncoder().encode(value).byteLength
         }
         return rows
       }
@@ -131,20 +136,101 @@ describe("normalized SQLite row storage", () => {
     const bounded = await openSqliteRowStorage(metered, { collections, schemaVersion: 9, budgetBytes })
     expect(bounded.loadReport.skipped).toBe(91)
     // One budget, not ten. The planning pass reads sizes; only admitted rows
-    // hand over their value, so peak memory follows the budget, not the disk.
+    // hand over their value; unadmitted bodies never cross the worker boundary.
     expect(valueBytesRead).toBeLessThanOrEqual(budgetBytes)
     expect(bounded.readRows("notes").size).toBe(9)
+    await bounded.close()
+    await seeded.close()
+    db.sqlite.close()
   })
 
-  test("a single row larger than one read page is still read whole", async () => {
+  test("value pages obey UTF-8 bytes and row count without one query per admitted row", async () => {
     const db = database()
-    const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
-    const body = "b".repeat(PERSISTED_LOAD_PAGE_BYTES + 1_000)
-    seeded.applyRows("notes", [{ key: "s:huge", versionKey: "v1", data: { id: "huge", body } }])
-    await seeded.flush()
-    const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
-    expect(reopened.loadReport.skipped).toBe(0)
-    expect((reopened.readRows("notes").get("s:huge")?.data as { body: string }).body.length).toBe(body.length)
+    try {
+      const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      seeded.beginBatch()
+      for (let index = 0; index < 16; index += 1) seeded.applyRows("notes", [{
+        key: `s:note-${index}`, versionKey: "v1", data: { id: `note-${index}`, body: "😀".repeat(150_000) }
+      }])
+      for (let index = 0; index < 600; index += 1) seeded.applyRows("widgets", [{
+        key: `s:widget-${index}`, versionKey: "v1", data: { id: `widget-${index}`, label: "small" }
+      }])
+      seeded.commitBatch()
+      await seeded.flush()
+      const pages: Array<{ count: number; bytes: number }> = []
+      const reopened = await openSqliteRowStorage({ execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
+        const rows = await db.host.execute<T>(sql, params)
+        if (sql.includes("WHERE rowid IN")) {
+          const values = rows as ReadonlyArray<{ row_key: string; value: string }>
+          pages.push({ count: values.length, bytes: values.reduce((bytes, row) =>
+            bytes + new TextEncoder().encode(row.row_key).byteLength + new TextEncoder().encode(row.value).byteLength, 0) })
+        }
+        return rows
+      } }, { collections, schemaVersion: 13 })
+      expect(reopened.loadReport.loaded).toBe(616)
+      expect(pages.length).toBeGreaterThan(2)
+      expect(pages.length).toBeLessThan(10)
+      expect(Math.max(...pages.map(page => page.count))).toBe(PERSISTED_LOAD_CHUNK_ROWS)
+      for (const page of pages) {
+        expect(page.count).toBeLessThanOrEqual(PERSISTED_LOAD_CHUNK_ROWS)
+        expect(page.bytes).toBeLessThanOrEqual(PERSISTED_LOAD_PAGE_BYTES)
+      }
+      expect((reopened.readRows("notes").get("s:note-0")?.data as { body: string }).body).toBe("😀".repeat(150_000))
+    } finally { db.sqlite.close() }
+  })
+
+  test("complete metadata admission refuses before even an earlier admitted value is fetched", async () => {
+    const db = database()
+    try {
+      const complete = [{ id: "notes", schema: NoteSchema, partialLoad: "refuse" as const }]
+      const seeded = await openSqliteRowStorage(db.host, { collections: complete, schemaVersion: 13 })
+      // Newest row fits; older row forces refusal before the second pass begins.
+      seeded.applyRows("notes", [{ key: "s:old", versionKey: "v1", data: { id: "old", body: "😀".repeat(200) } },
+        { key: "s:new", versionKey: "v1", data: { id: "new", body: "fits" } }])
+      await seeded.flush()
+      const before = db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()
+      let pages = 0
+      await expect(openSqliteRowStorage({ execute: async (sql, params) => {
+        if (sql.includes("WHERE rowid IN")) pages += 1
+        return db.host.execute(sql, params)
+      } }, { collections: complete, schemaVersion: 13, budgetBytes: 500 })).rejects.toBeInstanceOf(OversizedSqliteCollectionError)
+      expect(pages).toBe(0)
+      expect(db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()).toEqual(before)
+    } finally { db.sqlite.close() }
+  })
+
+  test("a missing admitted value refuses instead of inventing a partial collection", async () => {
+    const db = database()
+    try {
+      const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      seeded.applyRows("notes", [{ key: "s:a", versionKey: "v1", data: { id: "a", body: "kept" } }])
+      await seeded.flush()
+      await expect(openSqliteRowStorage({ execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
+        const rows = await db.host.execute<T>(sql, params)
+        return sql.includes("WHERE rowid IN") ? [] : rows
+      } }, { collections, schemaVersion: 13 })).rejects.toThrow("normalized row metadata is unreadable")
+      expect((db.sqlite.query(`SELECT COUNT(*) AS count FROM ${ROW_TABLE_NAME}`).get() as { count: number }).count).toBe(1)
+    } finally { db.sqlite.close() }
+  })
+
+  test("a single row larger than one read page is read whole and alone", async () => {
+    const db = database()
+    try {
+      const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 9 })
+      const body = "b".repeat(PERSISTED_LOAD_PAGE_BYTES + 1_000)
+      seeded.applyRows("notes", [{ key: "s:huge", versionKey: "v1", data: { id: "huge", body } },
+        { key: "s:small", versionKey: "v1", data: { id: "small", body: "small" } }])
+      await seeded.flush()
+      const pages: ReadonlyArray<unknown>[] = []
+      const reopened = await openSqliteRowStorage({ execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
+        const rows = await db.host.execute<T>(sql, params)
+        if (sql.includes("WHERE rowid IN")) pages.push(rows)
+        return rows
+      } }, { collections, schemaVersion: 9 })
+      expect(reopened.loadReport.skipped).toBe(0)
+      expect(pages.map(page => page.length)).toEqual([1, 1])
+      expect((reopened.readRows("notes").get("s:huge")?.data as { body: string }).body).toBe(body)
+    } finally { db.sqlite.close() }
   })
 
   test("a whole store inside its budget loads completely and reports nothing skipped", async () => {
@@ -172,6 +258,131 @@ describe("normalized SQLite row storage", () => {
     expect(reopened.loadReport.loaded).toBe(total)
     expect(reopened.readRows("widgets").size).toBe(total)
     await reopened.close()
+  })
+
+  test("an oversized authoritative collection refuses before fetching its value and preserves every source byte", async () => {
+    const db = database()
+    try {
+      const complete = [{ id: "notes", schema: NoteSchema, partialLoad: "refuse" as const }]
+      const seeded = await openSqliteRowStorage(db.host, { collections: complete, schemaVersion: 13 })
+      seeded.applyRows("notes", [{ key: "s:private", versionKey: "v1", data: { id: "private", body: "😀".repeat(100) } }])
+      await seeded.flush()
+      const before = db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()
+      const reads: string[] = []
+      await expect(openSqliteRowStorage({ execute: async (sql, params) => {
+        reads.push(sql)
+        return db.host.execute(sql, params)
+      } }, { collections: complete, schemaVersion: 13, budgetBytes: 100 })).rejects.toBeInstanceOf(OversizedSqliteCollectionError)
+      expect(reads.some(sql => /SELECT[\s\S]*[, ]value FROM/.test(sql) && sql.includes("WHERE rowid"))).toBe(false)
+      expect(reads.at(-1)).toBe("ROLLBACK")
+      expect(db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()).toEqual(before)
+      expect(db.sqlite.query(`SELECT * FROM ${QUARANTINE_TABLE_NAME}`).all()).toEqual([])
+    } finally { db.sqlite.close() }
+  })
+
+  test("the first metadata page cannot silently omit a maximum-safe rowid", async () => {
+    const db = database()
+    try {
+      await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      db.sqlite.query(`INSERT INTO ${ROW_TABLE_NAME} (rowid, collection_id, row_key, version_key, value) VALUES (?, 'notes', 's:last', 'v1', ?)`).run(
+        Number.MAX_SAFE_INTEGER, JSON.stringify({ id: "last", body: "Complete snapshot" }))
+      const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      expect(reopened.readRows("notes").get("s:last")?.data).toEqual({ id: "last", body: "Complete snapshot" })
+    } finally { db.sqlite.close() }
+  })
+
+  test("chunked loading keeps exact stored bytes for normalization-aware compare-and-swap", async () => {
+    const db = database()
+    try {
+      const seeded = await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      seeded.applyRows("notes", [{ key: "s:a", versionKey: "v1", data: { id: "a", body: "before" } }])
+      await seeded.flush()
+      db.sqlite.query(`UPDATE ${ROW_TABLE_NAME} SET value = ? WHERE collection_id = 'notes'`).run('{ "id": "a", "body": "before" }')
+      const reopened = await openSqliteRowStorage(db.host, { collections, schemaVersion: 13 })
+      reopened.applyRows("notes", [{ key: "s:a", expectedVersionKey: "v1", versionKey: "v2", data: { id: "a", body: "after" } }])
+      await reopened.flush()
+      expect(JSON.parse((db.sqlite.query(`SELECT value FROM ${ROW_TABLE_NAME}`).get() as { value: string }).value).body).toBe("after")
+    } finally { db.sqlite.close() }
+  })
+
+  test("undeclared collection metadata carries the same stale-writer protection", async () => {
+    const db = database()
+    try {
+      const winner = await openSqliteRowStorage(db.host, { collections: [], schemaVersion: 9 })
+      winner.applyRows("private-heads", [{ key: "s:current", versionKey: "v1", data: { cursor: 1 } }])
+      await winner.flush()
+      const stale = await openSqliteRowStorage(db.host, { collections: [], schemaVersion: 9 })
+      expect(stale.storage.getItem("smithers-mvp.private-heads")).toContain('"cursor":1')
+      winner.applyRows("private-heads", [{ key: "s:current", expectedVersionKey: "v1", versionKey: "v2", data: { cursor: 2 } }])
+      await winner.flush()
+      stale.applyRows("private-heads", [{ key: "s:current", expectedVersionKey: "v1", versionKey: "v3", data: { cursor: 2 } }])
+      await expect(stale.flush()).rejects.toBeInstanceOf(DurableStorageConflictError)
+      expect(db.sqlite.query(`SELECT value FROM ${METADATA_TABLE_NAME} WHERE key = ?`).get("smithers-mvp.private-heads"))
+        .toEqual({ value: wire({ "s:current": { versionKey: "v2", data: { cursor: 2 } } }) })
+    } finally { db.sqlite.close() }
+  })
+
+  test("independent stale writers cannot overwrite a row or commit any sibling writes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "smithers-row-cas-"))
+    const first = database(join(root, "state.sqlite"))
+    const second = database(join(root, "state.sqlite"))
+    try {
+      const winner = await openSqliteRowStorage(first.host, { collections, schemaVersion: 9 })
+      winner.storage.setItem("smithers-mvp.widgets", wire({ "s:a": { versionKey: "v1", data: { id: "a", label: "before" } } }))
+      await winner.flush()
+      const observed: string[] = []
+      const stale = await openSqliteRowStorage({ execute: async (sql, params) => {
+        observed.push(sql)
+        return second.host.execute(sql, params)
+      } }, { collections, schemaVersion: 9 })
+      winner.applyRows("widgets", [{ key: "s:a", expectedVersionKey: "v1", versionKey: "v2", data: { id: "a", label: "winner" } }])
+      await winner.flush()
+      observed.length = 0
+      stale.beginBatch()
+      stale.applyRows("notes", [{ key: "s:n", versionKey: "n1", data: { id: "n", body: "must not write" } }])
+      stale.applyRows("widgets", [{ key: "s:a", expectedVersionKey: "v1", versionKey: "v3", data: { id: "a", label: "stale" } }])
+      stale.commitBatch()
+      // This queued operation depends on the same rejected writer snapshot.
+      stale.applyRows("notes", [{ key: "s:queued", versionKey: "n2", data: { id: "queued", body: "dependent" } }])
+      await expect(stale.flush()).rejects.toBeInstanceOf(DurableStorageConflictError)
+      expect(observed[0]).toBe("BEGIN IMMEDIATE")
+      expect(observed.at(-1)).toBe("ROLLBACK")
+      expect(observed.some((sql) => /^\s*(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false)
+      expect(first.sqlite.query(`SELECT collection_id, version_key, value FROM ${ROW_TABLE_NAME}`).all()).toEqual([
+        { collection_id: "widgets", version_key: "v2", value: JSON.stringify({ id: "a", label: "winner" }) }
+      ])
+    } finally {
+      first.sqlite.close()
+      second.sqlite.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("compatibility batches refuse concurrent inserts and updates that retained the old version", async () => {
+    const root = await mkdtemp(join(tmpdir(), "smithers-row-cas-"))
+    const first = database(join(root, "state.sqlite"))
+    const second = database(join(root, "state.sqlite"))
+    try {
+      const winner = await openSqliteRowStorage(first.host, { collections, schemaVersion: 9 })
+      const stale = await openSqliteRowStorage(second.host, { collections, schemaVersion: 9 })
+      const key = "smithers-mvp.widgets"
+      winner.storage.setItem(key, wire({ "s:a": { versionKey: "v1", data: { id: "a", label: "winner" } } }))
+      await winner.flush()
+      stale.storage.setItem(key, wire({ "s:a": { versionKey: "v1", data: { id: "a", label: "duplicate insert" } } }))
+      await expect(stale.flush()).rejects.toBeInstanceOf(DurableStorageConflictError)
+      const old = await openSqliteRowStorage(second.host, { collections, schemaVersion: 9 })
+      // A codec repair may keep the version while rewriting the value.
+      first.sqlite.query(`UPDATE ${ROW_TABLE_NAME} SET value = ? WHERE row_key = ?`).run(JSON.stringify({ id: "a", label: "normalized" }), "s:a")
+      old.storage.removeItem(key)
+      await expect(old.flush()).rejects.toBeInstanceOf(DurableStorageConflictError)
+      expect(first.sqlite.query(`SELECT version_key, value FROM ${ROW_TABLE_NAME}`).get()).toEqual({
+        version_key: "v1", value: JSON.stringify({ id: "a", label: "normalized" })
+      })
+    } finally {
+      first.sqlite.close()
+      second.sqlite.close()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   test("a rolled-back write prevents queued deltas from committing against its missing rows", async () => {

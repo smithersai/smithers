@@ -171,17 +171,17 @@ describe("AgentTurnFrame — chain family (DESIGN.md §14)", () => {
 
 /*
  * The dependency law of DESIGN.md §14: @smthrs/rpc mirrors chain vocabulary and
- * imports only the runtime-free canonical record guard. This keeps the Worker
+ * imports only runtime-free canonical entry points. This keeps the Worker
  * and both bridges free of Effect runtime imports.
  */
 describe("RPC sources stay runtime-free", () => {
-  test("only the runtime-free canonical record guard crosses the Smithers boundary", () => {
+  test("only runtime-free canonical record and serializer entry points cross the Smithers boundary", () => {
     const dir = join(import.meta.dirname, "../src")
     for (const file of readdirSync(dir)) {
       if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue
       const source = readFileSync(join(dir, file), "utf8")
       // Covers bare, subpath, single-quoted, and dynamic import specifiers.
-      expect(source).not.toMatch(/(from\s+|import\()\s*["']@smthrs\/(?!canonical\/Record["'])/)
+      expect(source).not.toMatch(/(from\s+|import\()\s*["']@smthrs\/(?!canonical\/(?:Record|Serializer)["'])/)
       expect(source).not.toMatch(/(from\s+|import\()\s*["']effect(["']|\/)/)
     }
   })

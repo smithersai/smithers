@@ -1,4 +1,6 @@
+import { enqueuedEventType } from "@smthrs/control/Steering"
 import { scenario } from "./coverage/types"
+import { fixtureInputText } from "./support/values"
 import { closeComposer, command, expect, realApi, test } from "./support/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import {
@@ -148,7 +150,7 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
   await bootOwnedWorkflow(page, repo)
-  const marker = `s16-inspect-${Date.now().toString(36)}`
+  const marker = fixtureInputText(`s16-inspect-${Date.now().toString(36)}`)
   const launched = await createFlowRun(page, repo, marker, workflowRepo)
 
   const terminal = await waitForTerminalRun(page, request, repo, launched.runId, 9 * 60_000, workflowRepo.workspaceId)
@@ -182,7 +184,8 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   await all.click()
   await expect(all).toHaveAttribute("data-on", "true")
 
-  const selectable = tree.locator('[data-trace-span]:not([data-kind="run"])').first()
+  // CallTree emits depth for every span; depth zero is the run root.
+  const selectable = tree.locator('[data-trace-span][data-depth]:not([data-depth="0"])').first()
   await expect(selectable).toBeVisible()
   const selectedSpan = await selectable.getAttribute("data-trace-span")
   expect(selectedSpan).toBeTruthy()
@@ -241,7 +244,7 @@ workflowTest("live message, thinking, and tool steering persist as real control 
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
   await bootOwnedWorkflow(page, repo)
-  const marker = `s16-steer-${Date.now().toString(36)}`
+  const marker = fixtureInputText(`s16-steer-${Date.now().toString(36)}`)
   const launched = await createFlowRun(page, repo, marker, workflowRepo)
   const liveStatuses = new Set(["accepted", "running", "parked", "waiting-approval"])
   let liveBefore: ReturnType<typeof runSummary> = undefined
@@ -308,7 +311,7 @@ workflowTest("live message, thinking, and tool steering persist as real control 
     const answer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
       selector: { _tag: "run-events", runId: launched.runId }
     }, workflowRepo.workspaceId)
-    controlEvents = projectionRows(answer).filter((event) => event.kind === "control.steer.enqueued")
+    controlEvents = projectionRows(answer).filter((event) => event.kind === enqueuedEventType)
     const ids = controlEvents.map((event) => (event.payload as ProjectionRow | undefined)?.messageId)
     return ids
   }, { timeout: 60_000, intervals: [250, 500, 1_000] }).toEqual(expect.arrayContaining(accepted.map((entry) => entry.messageId)))
@@ -353,7 +356,7 @@ workflowTest("run again creates a second real execution and both appear in the s
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
   await bootOwnedWorkflow(page, repo)
-  const marker = `s16-rerun-${Date.now().toString(36)}`
+  const marker = fixtureInputText(`s16-rerun-${Date.now().toString(36)}`)
   const first = await createFlowRun(page, repo, marker, workflowRepo)
   const firstTerminal = await waitForTerminalRun(page, request, repo, first.runId, 9 * 60_000, workflowRepo.workspaceId)
   expect(firstTerminal.status).toBe("completed")
@@ -403,13 +406,16 @@ workflowTest("stop all cancels two live owned runs, leaves a terminal sibling un
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
   await bootOwnedWorkflow(page, repo)
-  const terminalSibling = await createFlowRun(page, repo, `s16-terminal-${Date.now().toString(36)}`, workflowRepo)
+  const terminalMarker = fixtureInputText(`s16-terminal-${Date.now().toString(36)}`)
+  const terminalSibling = await createFlowRun(page, repo, terminalMarker, workflowRepo)
   await terminalSibling.card.getByTestId(`flow-run-stop-${terminalSibling.runId}`).click()
   const terminalBefore = await waitForTerminalRun(page, request, repo, terminalSibling.runId, 180_000, workflowRepo.workspaceId)
   expect(terminalBefore.status).toBe("cancelled")
 
-  const first = await createFlowRun(page, repo, `s16-stop-a-${Date.now().toString(36)}`, workflowRepo)
-  const second = await createFlowRun(page, repo, `s16-stop-b-${Date.now().toString(36)}`, workflowRepo)
+  const firstMarker = fixtureInputText(`s16-stop-a-${Date.now().toString(36)}`)
+  const secondMarker = fixtureInputText(`s16-stop-b-${Date.now().toString(36)}`)
+  const first = await createFlowRun(page, repo, firstMarker, workflowRepo)
+  const second = await createFlowRun(page, repo, secondMarker, workflowRepo)
   expect(new Set([terminalSibling.runId, first.runId, second.runId]).size).toBe(3)
 
   let beforeWorkspaceRows: ReadonlyArray<ProjectionRow> = []

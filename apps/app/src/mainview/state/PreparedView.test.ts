@@ -5,7 +5,7 @@ import { preparedView, invalidatePreparedViews, disposePreparedViews, type ViewR
 import type { SeamContext } from "./seams/SeamContext"
 
 const stores: AppStore[] = []
-afterEach(async () => { for (const store of stores.splice(0)) await store.dispose?.() })
+afterEach(async () => { for (const store of stores.splice(0)) { disposePreparedViews(store); await store.dispose?.() } })
 async function setup() {
   const values = new Map<string, string>()
   const store = await createAppStore({ kind: "localStorage", storage: {
@@ -145,4 +145,27 @@ test("preloading never provisions a workspace, and an error remains retryable", 
   expect(await open()).toEqual({ value: "a" })
   expect(provisions).toBe(1)
   expect(store.collections.cards.get("a")?.loading).toBe(false)
+})
+
+
+test("a late view result cannot read a closed owner or restart disposed preloads", async () => {
+  const { ctx, store } = await setup()
+  const read = deferred<ViewResult>()
+  const started = deferred<void>()
+  let resolves = 0, reads = 0
+  const open = preparedView(ctx, () => {
+    resolves++
+    return { id: "a", title: "Loading", read: () => { reads++; started.resolve(undefined); return read.promise } }
+  })
+  const pending = open()
+  await started.promise
+  expect(reads).toBe(1)
+  disposePreparedViews(store)
+  await store.dispose?.()
+  read.resolve(data("late"))
+  await expect(pending).resolves.toBeUndefined()
+  await expect(open.preload()).resolves.toBeUndefined()
+  await expect(open()).resolves.toBeUndefined()
+  expect(resolves).toBe(1)
+  expect(reads).toBe(1)
 })

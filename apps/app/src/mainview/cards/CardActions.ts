@@ -28,17 +28,15 @@ export const cardActions = (controller: AppController): CardBindings => {
   const cached = bound.get(controller)
   if (cached !== undefined) return cached
   const actions: CardBindings = {
-    onDecideApproval: (id, decision, answer) =>
-      // An answer is a value, not a word: it cannot ride a flow's argument
-      // string without being mangled, so it goes to the controller directly.
-      // Approve and deny keep their flows, which is what /approval.approve
-      // and the slash tree address.
+    projectionStore: controller.store,
+    onDecideApproval: (id, decision, answer, question) =>
+      // Structured human answers keep their value shape through the controller.
       answer === undefined
         ? controller.runCommand(
           decision === "approved" ? "approval.approve" : "approval.deny",
           id
         )
-        : controller.answerApproval(id, answer),
+        : controller.answerApproval(id, answer, question),
     onGrantConfirm: (id) => controller.runCommand("admin.grant.confirm", id),
     onGrantCancel: (id) => controller.runCommand("admin.grant.cancel", id),
     onQueueApprove: (login) => controller.runCommand("admin.queue.approve", login),

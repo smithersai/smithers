@@ -1,3 +1,4 @@
+import { fixtureRepositoryName } from "../support/values"
 import type { APIRequestContext, BrowserContext, Page, TestInfo } from "@playwright/test"
 import { authenticatedTest } from "../auth-permissions/profile"
 import { expect, realApi } from "../support/test"
@@ -113,7 +114,7 @@ const setup = async (
   testInfo: TestInfo
 ): Promise<{ readonly owned: OwnedGitHubRepository; readonly fixture: OwnedWorkflowRepository }> => {
   await bootProductionRepository(page)
-  const name = `smithers-e2e-import-s15-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const name = fixtureRepositoryName(`smithers-e2e-import-s15-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const owned = await createOwnedGitHubRepository(context, name)
   let importJobId: string | undefined
   let importStatus: number | undefined

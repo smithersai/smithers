@@ -638,12 +638,16 @@ describe("the Smithers Cloud seam", () => {
 
   test("/api/cloud/* forwards with the Bun-held bearer, the identity-proxy rewrites, and a trail line", async () => {
     const upstreamHeaders: Array<Headers> = []
+    const events = 'id: 1007\nevent: notification.fact\ndata: {"sequence":1007}\n\n'
     const upstream = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       fetch: (request) => {
         upstreamHeaders.push(request.headers)
         const { pathname } = new URL(request.url)
+        if (pathname === "/api/notifications/events/stream") {
+          return new Response(events, { headers: { "content-type": "text/event-stream" } })
+        }
         return pathname === "/api/user/repos"
           ? new Response(JSON.stringify([{ full_name: "will/smithers" }]), {
             headers: {
@@ -703,6 +707,15 @@ describe("the Smithers Cloud seam", () => {
       expect(cookie.toLowerCase()).not.toContain("domain=")
       expect(cookie.toLowerCase()).not.toContain("secure")
       expect(cloudLogs.some((line) => /^GET \/api\/cloud\/api\/user\/repos -> 200 in \d+ms$/.test(line))).toBe(true)
+      const resumed = await fetch(`${proxied.origin}/api/cloud/api/notifications/events/stream?after=12`, {
+        headers: { [LOCAL_SESSION_HEADER]: proxied.sessionToken, accept: "text/event-stream", "Last-Event-ID": "1006" }
+      })
+      expect(resumed.status).toBe(200)
+      expect(resumed.headers.get("content-type")).toBe("text/event-stream")
+      expect(await resumed.text()).toBe(events)
+      expect(upstreamHeaders[1]?.get("last-event-id")).toBe("1006")
+      expect(upstreamHeaders[1]?.get("authorization")).toBe("Bearer smithers_test_token")
+      expect(upstreamHeaders[1]?.has(LOCAL_SESSION_HEADER)).toBe(false)
       // The sign-in routes answer through the injected manager.
       const session = await fetch(`${proxied.origin}/api/cloud-auth/session`, {
         headers: { [LOCAL_SESSION_HEADER]: proxied.sessionToken }

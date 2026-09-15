@@ -610,7 +610,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     expect([...store.collections.messages.values()].some((message) => message.text.includes("failed"))).toBe(true)
   })
 
-  test("a failed run leads with the engine's own reason, never a shrug", async () => {
+  test("a failed run uses shared failure copy and retains the engine diagnosis on its card", async () => {
     /*
      * The old wire made the client infer failure from an event because
      * `getRun.status` lagged behind it. The rc.0 run summary carries the
@@ -631,10 +631,11 @@ describe("wave 11 — the run card never silently stalls", () => {
     const card = runCard(store)
     expect(card?.payload.phase).toBe("failed")
     expect(card?.payload.error).toContain("OPENROUTER_API_KEY is not set")
-    // The chat leads with the engine's reason, not a shrug.
-    expect(
-      [...store.collections.messages.values()].some((message) => message.text.includes("OPENROUTER_API_KEY"))
-    ).toBe(true)
+    // Uncoded infrastructure failures use shared human copy; the exact engine
+    // reason remains available in the card instead of becoming user blame.
+    const messages = [...store.collections.messages.values()].map(message => message.text)
+    expect(messages).toContain("The run failed: Something on Smithers' side failed. Not your fault, and nothing your request could have changed.")
+    expect(messages.some(message => message.includes("OPENROUTER_API_KEY"))).toBe(false)
   })
 
   test("a run parked on approval gets its card whichever parked status it reports", async () => {

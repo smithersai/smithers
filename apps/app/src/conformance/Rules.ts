@@ -234,6 +234,7 @@ export const violationsOf = (literal: ExtractedLiteral, vocabularies: Vocabulari
    */
   const affix = (literal.leadingArgumentOf !== undefined && AFFIX_CALLS.has(literal.leadingArgumentOf))
     || (literal.form === "template-head"
+      && literal.testOwnedContext === undefined
       && segmentsOf(literal.value).some((segment) => vocabularies.idVocabularySegments.has(segment)))
   if (
     affix && ID_PREFIX.test(literal.value) && !vocabularies.cardIdPrefixes.has(literal.value)
@@ -253,6 +254,7 @@ export const violationsOf = (literal: ExtractedLiteral, vocabularies: Vocabulari
     // Health checker IDs are supplied by pluggable monitors, not app commands.
     // This does not exempt the same literal in a runCommand or data-flow.
     && literal.propertyName !== "checkerId"
+    && literal.testOwnedContext === undefined
     && !vocabularies.dottedIdentifiers.has(literal.value)
     && !composedDotted(literal.value, vocabularies.composedDottedHeads, vocabularies.productStringLiterals)
     && !composedFlowTestId(literal, vocabularies)

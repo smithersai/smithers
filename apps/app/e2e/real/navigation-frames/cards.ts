@@ -1,7 +1,9 @@
 import type { Locator, Page } from "@playwright/test"
 import { appEntryPath, closeComposer, command, expect, openApp } from "../support/test"
+import type { FlowName } from "../../../src/mainview/flows/FlowName"
 
-export const WIKI_FORM_CARD_ID = "card-form-wiki.open"
+const WIKI_FORM_FLOW: FlowName = "wiki.open"
+export const WIKI_FORM_CARD_ID = `card-form-${WIKI_FORM_FLOW}`
 export const PRACTICE_REPOSITORY = "practice:smithersai/hello-server"
 export const LOCAL_REPOSITORY_PATH = "/smithersai/smithers"
 

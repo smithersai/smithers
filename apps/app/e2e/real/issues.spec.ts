@@ -1,4 +1,5 @@
 import { scenario } from "./coverage/types"
+import { fixtureCommentBody } from "./support/values"
 import type { Request, Response } from "@playwright/test"
 import { command, expect, openApp, realApi, test } from "./support/test"
 import { authenticatedTest } from "./auth-permissions/profile"
@@ -58,7 +59,7 @@ test(
     ]
   }),
   async ({ page }, testInfo) => {
-    const marker = `practice-comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    const marker = fixtureCommentBody(`practice-comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`)
     let card = await openPracticeIssue(page)
     const initiallyClosed = card.getByRole("button", { name: "Reopen issue", exact: true })
     if (await initiallyClosed.isVisible().catch(() => false)) {
@@ -324,7 +325,7 @@ authenticatedTest(
   async ({ page, context, request }, testInfo) => {
     await withOwnedImportedRepository({ page, context, request }, testInfo, async (fixture) => {
       const title = `sol12 lifecycle ${Date.now()} ${Math.random().toString(36).slice(2, 9)}`
-      const marker = `sol12-comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const marker = fixtureCommentBody(`sol12-comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`)
       const created = await createIssueThroughUi(fixture, title)
       expect(await readIssue(page, request, fixture.repo, created.number)).toMatchObject({
         number: created.number,

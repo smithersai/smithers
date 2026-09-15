@@ -149,6 +149,7 @@ const Row = Schema.Struct({
   waiting_reason: Schema.NullOr(Schema.NonEmptyString),
   waiting_wake_at_ms: Schema.NullOr(Natural),
   waiting_token: Schema.NullOr(Schema.NonEmptyString),
+  waiting_request: Schema.optional(Schema.NullOr(Schema.fromJsonString(Schema.Json))),
   revision: Natural,
   deleted: Schema.Literal(0)
 })
@@ -164,6 +165,7 @@ export interface Waiting {
   readonly reason: string
   readonly wakeAtMs: number | null
   readonly token: string | null
+  readonly request?: typeof Schema.Json.Type | undefined
 }
 
 const waitingKind = (reason: string): Waiting["kind"] => {
@@ -209,7 +211,8 @@ export const observed = (input: unknown, at: Position) =>
       !validOwner || row.revision === 0 || row.revision > at.revision ||
       parentRunId !== row.execution_parent_id || parentRunId === row.run_id ||
       (row.lineage_id === null) !== (row.round_ordinal === null) ||
-      (row.waiting_reason === null && (row.waiting_wake_at_ms !== null || row.waiting_token !== null)) ||
+      (row.waiting_reason === null && (row.waiting_wake_at_ms !== null || row.waiting_token !== null ||
+        row.waiting_request !== undefined && row.waiting_request !== null)) ||
       (row.cancel_acknowledgement_json !== null && row.cancel_requested_at_ms === null)
     ) {
       return yield* Effect.fail(
@@ -242,7 +245,8 @@ export const observed = (input: unknown, at: Position) =>
         kind: waitingKind(row.waiting_reason),
         reason: row.waiting_reason,
         wakeAtMs: row.waiting_wake_at_ms,
-        token: row.waiting_token
+        token: row.waiting_token,
+        ...(row.waiting_request === undefined || row.waiting_request === null ? {} : { request: row.waiting_request })
       }
     }
   })

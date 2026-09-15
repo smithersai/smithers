@@ -1,7 +1,10 @@
-import { CANCEL_PATH, TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { CANCEL_PATH, TURN_PATH, TURN_REPLAY_PATH, TURN_RETIRE_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { AgentTurnJournalDeliverySchema, AgentTurnJournalReplySchema } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnJournalDelivery } from "@smthrs/rpc/AgentTurnJournal"
 import { decodeAgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnResult, TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../runtime/AgentPort"
+import { AgentJournalIntegrityError } from "../runtime/AgentPort"
 
 const MAX_ERROR_BYTES = 320
 
@@ -158,6 +161,34 @@ const streamFrames = async (
   }
 }
 
+/** Journal delivery never turns a disconnected socket into a terminal model fact. */
+const streamJournal = async (body: ReadableStream<Uint8Array>, runId: string, legId: string,
+  publish: (delivery: AgentTurnJournalDelivery) => Promise<void>, terminal: () => void): Promise<void> => {
+  const reader = body.getReader(), decoder = new TextDecoder()
+  let buffer = "", done = false
+  try {
+    while (!done) {
+      const chunk = await reader.read()
+      buffer += decoder.decode(chunk.value, { stream: !chunk.done })
+      const lines = buffer.split("\n")
+      buffer = chunk.done ? "" : lines.pop() ?? ""
+      for (const line of lines) {
+        if (line.trim() === "") continue
+        const delivery = AgentTurnJournalDeliverySchema.parse(JSON.parse(line))
+        if (delivery.cursor.runId !== runId || delivery.cursor.legId !== legId) throw new Error("Wrong HTTP journal delivery identity")
+        if (delivery.type === "batch" && (delivery.cursor.batch !== delivery.batch.batch || delivery.cursor.hash !== delivery.batch.hash ||
+          delivery.cursor.position !== delivery.batch.from + delivery.batch.frames.length - 1)) throw new Error("HTTP journal cursor does not match its batch")
+        // Release before delivery: a committed terminal batch may start its next leg.
+        if ((delivery.type === "batch" && delivery.batch.frames.at(-1)?.type === "done") || (delivery.type === "caught-up" && delivery.terminal)) {
+          done = true; terminal()
+        }
+        await publish(delivery)
+      }
+      if (chunk.done) break
+    }
+  } finally { await reader.cancel().catch(() => {}) }
+}
+
 /**
  * The HTTP agent: POSTs turns to a same-origin boundary that keeps the
  * chat.smithers.sh URL and origin server-side, then renders the streamed
@@ -177,6 +208,7 @@ export const createWebAgent = (options: WebAgentOptions = {}): AgentPort => {
   const cancelPath = options.cancelPath ?? CANCEL_PATH
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis)
   const listeners = new Set<(frame: AgentTurnFrame) => void>()
+  const journalListeners = new Set<(delivery: AgentTurnJournalDelivery) => Promise<void>>()
   const activeTurns = new Map<string, AbortController>()
   const publish = (frame: AgentTurnFrame): void => {
     for (const listener of listeners) listener(frame)
@@ -184,6 +216,28 @@ export const createWebAgent = (options: WebAgentOptions = {}): AgentPort => {
 
   return {
     available: true,
+    journal: {
+      subscribe: listener => { journalListeners.add(listener); return () => { journalListeners.delete(listener) } },
+      read: async access => {
+        const response = await fetchImpl(`${baseUrl}${TURN_REPLAY_PATH}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(access) })
+        const parsed = AgentTurnJournalReplySchema.safeParse(await response.json().catch(() => null))
+        if (!parsed.success && response.status === 404) return { status: "error", code: "not-found" }
+        if (!parsed.success && (response.status === 401 || response.status === 403)) return { status: "error", code: "forbidden" }
+        if (!parsed.success && response.status === 410) return { status: "error", code: "retired" }
+        if (!parsed.success && response.status === 409) return { status: "error", code: "cursor" }
+        if (!parsed.success && response.status === 400) return { status: "error", code: "request_invalid" }
+        if (!parsed.success && [408, 429, 502, 503, 504].includes(response.status)) throw new Error("HTTP journal replay is temporarily unavailable")
+        if (!parsed.success || (!response.ok && parsed.data.status !== "error")) throw new AgentJournalIntegrityError("Invalid HTTP journal replay response")
+        return parsed.data
+      },
+      retire: async access => {
+        const response = await fetchImpl(`${baseUrl}${TURN_RETIRE_PATH}`, { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId: access.runId, journal: access.journal }) })
+        const reply = AgentTurnJournalReplySchema.parse(await response.json())
+        if (reply.status !== "retired") throw new Error("HTTP journal retirement was not committed")
+      },
+      disconnect: runId => { const active = activeTurns.get(runId); active?.abort(); if (active !== undefined) activeTurns.delete(runId) }
+    },
     startTurn: async (request): Promise<StartAgentTurnResult> => {
       if (activeTurns.has(request.runId)) {
         return { status: "error", message: "That Smithers turn is already running." }
@@ -231,6 +285,26 @@ export const createWebAgent = (options: WebAgentOptions = {}): AgentPort => {
           message: errorDetail(response.status, body),
           ...(refusal === undefined ? {} : { refusal })
         }
+      }
+      if (request.journal !== undefined) {
+        if (response.headers.get("content-type")?.includes("application/json")) {
+          const reply = AgentTurnJournalReplySchema.safeParse(await response.json())
+          release()
+          // An existing head is server progress, not proof this browser applied it.
+          if (reply.success && reply.data.status === "existing") return { status: "started" }
+          return { status: "error", message: "The accepted turn could not be resumed." }
+        }
+        if (response.headers.get("x-smithers-turn-journal") !== "1") {
+          release(); await response.body.cancel().catch(() => {})
+          return { status: "error", message: "This host did not provide a recoverable turn stream." }
+        }
+        void streamJournal(response.body, request.runId, request.journal.legId, async delivery => {
+          if (journalListeners.size === 0) throw new Error("No HTTP journal commit owner")
+          for (const listener of journalListeners) await listener(delivery)
+        }, release).catch(() => {
+          // Durable catch-up owns recovery. A transport exception is not a model done frame.
+        }).finally(release)
+        return { status: "started" }
       }
       void streamFrames(response.body, request.runId, publish, release)
         .catch((error: unknown) => {

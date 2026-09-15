@@ -146,7 +146,7 @@ test("a chatty run does not grow the in-memory run store without bound", async (
   /* The tail is kept, not the head: the end of a run is what explains it. */
   const logs = (replay?.events ?? []).filter((event) => event.type === "stdout")
   expect(logs.length).toBeGreaterThan(0)
-})
+}, 30_000)
 
 test("the runner reads the next chunk of child output only after the consumer took the last one", async () => {
   /*

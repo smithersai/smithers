@@ -371,6 +371,31 @@ describe("Forensics.digest boundaries", () => {
     expect(d.duplicateCalls).toBe(2)
   })
 
+  it("ignores redelivered call IDs while counting distinct calls with identical inputs", () => {
+    const first = { flowName: "write", input: { path: "a" }, callId: "first" }
+    const second = { ...first, callId: "second" }
+    const failure = { flowName: "write", callId: "second", outcome: "failure", message: "denied" }
+    const success = { flowName: "write", callId: "first", outcome: "success" }
+    const d = Forensics.digest([
+      event("control.agent.cell-call-started", first, 1),
+      event("control.agent.cell-call-started", second, 2),
+      event("control.agent.cell-call-started", first, 3),
+      event("control.agent.cell-call-settled", failure, 4),
+      event("control.agent.cell-call-settled", success, 5),
+      event("control.agent.cell-call-settled", failure, 6),
+      event("control.agent.cell-call-settled", success, 7)
+    ])
+    expect(d).toMatchObject({
+      calls: 2,
+      callsFailed: 1,
+      duplicateCalls: 1,
+      editsAttempted: 2,
+      editsSucceeded: 1,
+      flows: [["write", 2]],
+      refusals: [{ message: "denied", count: 1 }]
+    })
+  })
+
   it("counts every edit flow name and no other", () => {
     const d = Forensics.digest([
       call("write", {}, 1),
@@ -644,6 +669,17 @@ describe("Forensics.renderDiagnosis boundaries", () => {
 })
 
 describe("Forensics.renderTranscript boundaries", () => {
+  it("renders each identified call lifecycle event once", () => {
+    const started = event("control.agent.cell-call-started", { callId: "first", flowName: "read", input: {} }, 1)
+    const settled = event(
+      "control.agent.cell-call-settled",
+      { callId: "first", flowName: "read", outcome: "success" },
+      2
+    )
+    expect(Forensics.renderTranscript([started, started, settled, settled]))
+      .toBe(Forensics.renderTranscript([started, settled]))
+  })
+
   it("skips turn bookkeeping events and events outside the run and agent namespaces", () => {
     const text = Forensics.renderTranscript([
       event("control.agent.turn-opened", { seat: "s", at: 0 }, 0),

@@ -1,5 +1,6 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { expect, realApi } from "../support/test"
+import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
 import { runSlash } from "./local"
 import {
   attachProductionJson,
@@ -42,7 +43,7 @@ const errorOf = (message: string, cause: unknown): Error => new Error(message, {
 const TERMINAL_RUN_STATUSES = new Set(["cancelled", "completed", "failed"])
 
 export const uniqueRepositoryName = (): string =>
-  `smithers-e2e-import-s12-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  fixtureRepositoryName(`smithers-e2e-import-s12-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
 
 const issueNumberFrom = async (response: { readonly json: () => Promise<unknown> }): Promise<number> => {
   const body = await response.json().catch(() => undefined) as IssueWire | undefined
@@ -262,7 +263,7 @@ export const withOwnedImportedRepository = async (
       for (const run of trackedWorkflowRuns.values()) {
         try {
           const terminalStatus = await drainWorkflowRun(fixtures.page, fixtures.request, repo, run)
-          await attachProductionJson(testInfo, `owned-workflow-run-cleanup-${run.runId}`, {
+          await attachProductionJson(testInfo, fixtureAttachmentName(`owned-workflow-run-cleanup-${run.runId}`), {
             repo,
             runId: run.runId,
             terminalStatus

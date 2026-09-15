@@ -214,8 +214,10 @@ describe("non-retryable verdict durability across resume", () => {
               executionId: "non-retryable-run",
               payload: {},
               discard: true
-            }).pipe(Effect.forkChild({ startImmediately: true }))
-            yield* Effect.yieldNow
+            })
+            // Join the resumed drive's durable terminal commit. One scheduler
+            // yield is not a completion receipt; closing here otherwise
+            // interrupts a still-running drive and releases it as suspended.
           }))
           const store = yield* RunStore.RunStore
           return {

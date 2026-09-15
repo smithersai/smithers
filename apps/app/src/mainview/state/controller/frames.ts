@@ -13,7 +13,7 @@ export interface FramesController {
   readonly minimizeCard: () => void
   readonly frameBack: () => void
   readonly frameForward: () => void
-  readonly forkFrame: () => string | void
+  readonly forkFrame: () => Promise<string | void>
 }
 
 const sessionLocation = (ctx: ControllerContext): FrameLocation => {
@@ -82,8 +82,14 @@ export const createFramesController = (
     history?.push({ workspaceId, branchId, frameId: rootFrameId(branchId) })
   }
 
-  const forkFrame = (): string | void => {
+  const forkFrame: FramesController["forkFrame"] = async () => {
     if (ctx.store.session().phase === "responding") return "Wait for the current turn to finish before forking."
+    const accountEpoch = ctx.accountEpoch
+    const owner = () => {
+      const identity = ctx.store.collections.identitySessions.get("identity")
+      return identity?.accountOwnerLogin ?? identity?.login ?? null
+    }
+    const accountOwner = owner()
     const sourceLocation = sessionLocation(ctx)
     const source = ctx.store.collections.frames.get(sourceLocation.frameId)
     if (source === undefined) return "The current frame no longer exists."
@@ -142,7 +148,12 @@ export const createFramesController = (
         updatedAt: createdAt,
         revision
       }
-    ctx.store.dispatch({ type: "frame.forked", actor: "user", branch, rootFrame, selectedFrame })
+    await ctx.store.dispatch({ type: "frame.forked", actor: "user", branch, rootFrame, selectedFrame }).isPersisted.promise
+    // A failed write cannot publish a durable address or a completion notice.
+    // A later navigation or owner teardown also owns its own presentation.
+    if (ctx.disposed || ctx.accountEpoch !== accountEpoch || owner() !== accountOwner || !sameLocation(sessionLocation(ctx), {
+      workspaceId: source.workspaceId, branchId: id, frameId: selectedFrame.id
+    })) return
     history?.push({ workspaceId: source.workspaceId, branchId: id, frameId: selectedFrame.id })
     const key = "frame.fork"
     ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title: `Created ${branch.title}` })

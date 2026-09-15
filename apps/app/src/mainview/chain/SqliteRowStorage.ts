@@ -7,16 +7,20 @@ import {
   PERSISTED_LOAD_PAGE_BYTES
 } from "./PersistenceBudget"
 import type { PersistedCollectionLoad, PersistedLoadReport } from "./PersistenceBudget"
+import { DurableStorageConflictError } from "./DurableCollection"
 import { PERSISTED_KEY_PREFIX, SCHEMA_VERSION_STORAGE_KEY } from "./SchemaVersion"
 import { InvalidSchemaStampError, parseSchemaStamp } from "./SchemaStamp"
 import { sqliteRecoveryCopyId } from "./RecoveryCopy"
 import { readSqliteRecovery, StorageRecoveryError } from "./StorageRecovery"
 import type { RecoveryTable } from "./StorageRecovery"
 import { decodeStoredRow } from "./StoredRowDecoder"
+import { eraseSqliteRecoveryCopies } from "./SqlitePrivacyRetirement"
+import { permittedRows, type PermittedStorageRows } from "./PrivacyRetirement"
 import {
   ENVELOPE_STORAGE_KEY,
   ENVELOPE_VERSION,
   assertRowRecoveryPolicy,
+  assertStoredRowsRecovery,
   parseStorageEnvelope,
   validateStoredRows
 } from "./TransactionalStorage"
@@ -53,6 +57,7 @@ export interface SqliteRowStorage {
   readonly readRows: (collectionId: string) => ReadonlyMap<string, StoredItem>
   /** What the bounded load admitted, and what it left on disk for recovery. */
   readonly loadReport: PersistedLoadReport
+  readonly retireRecoveryCopies: (permitted: PermittedStorageRows) => Promise<void>
 }
 
 export interface SqliteRowStorageOptions {
@@ -63,6 +68,13 @@ export interface SqliteRowStorageOptions {
    * one; the product uses the single documented budget.
    */
   readonly budgetBytes?: number
+}
+
+export class OversizedSqliteCollectionError extends Error {
+  constructor(readonly collectionId: string, readonly budgetBytes: number) {
+    super(`The ${collectionId} store exceeds the ${budgetBytes}-byte load budget. Its complete history is required; opening was refused and its source was preserved.`)
+    this.name = "OversizedSqliteCollectionError"
+  }
 }
 
 export class FutureSqliteSchemaError extends Error {
@@ -77,20 +89,38 @@ export class UnreadableSqliteStateError extends Error {
   }
 }
 
+interface NormalizedRowMetadata {
+  readonly rid?: unknown
+  readonly collection_id?: unknown
+  readonly row_key?: unknown
+  readonly version_key?: unknown
+  readonly value_type?: unknown
+  readonly value_bytes?: unknown
+  readonly key_bytes?: unknown
+}
+
 interface StoredItem {
   readonly versionKey: string
   readonly data: unknown
+  /** Exact committed bytes also detect normalization that retains a version. */
+  readonly encoded?: string
 }
 
 /** One SQL statement's worth of scheduled work, resolved before it is queued. */
 type RowWrite =
-  | { readonly kind: "metadata"; readonly key: string; readonly value: string | null }
-  | { readonly kind: "row"; readonly collectionId: string; readonly rowKey: string; readonly row: { readonly versionKey: string; readonly value: string } | undefined }
+  | { readonly kind: "metadata"; readonly key: string; readonly expectedValue: string | null; readonly value: string | null }
+  | { readonly kind: "row"; readonly collectionId: string; readonly rowKey: string; readonly expectedVersionKey: string | undefined; readonly expectedValue: string | undefined; readonly row: { readonly versionKey: string; readonly value: string } | undefined }
 
 const SCHEMA_VERSION_KEY = "schema-version"
 const LEGACY_IMPORT_KEY = "legacy-import-complete"
 
 const collectionStorageKey = (id: string): string => `${PERSISTED_KEY_PREFIX}${id}`
+
+/** Encoded-looking string keys are actual keys, never legacy aliases. */
+const legacyRowKey = (key: string): string | undefined => {
+  const candidate = key.startsWith("s:") ? key.slice(2) : undefined
+  return candidate?.startsWith("s:") || candidate?.startsWith("n:") ? undefined : candidate
+}
 
 const parseStoredCollection = (raw: string | null): Map<string, StoredItem> => {
   if (raw === null || raw === "") return new Map()
@@ -115,7 +145,17 @@ const parseStoredCollection = (raw: string | null): Map<string, StoredItem> => {
 }
 
 const serializeStoredCollection = (rows: ReadonlyMap<string, StoredItem>): string =>
-  JSON.stringify(Object.fromEntries(rows))
+  JSON.stringify(Object.fromEntries([...rows].map(([key, { versionKey, data }]) => [key, { versionKey, data }])))
+
+const encodedRow = (row: StoredItem | undefined): string | undefined =>
+  row === undefined ? undefined : row.encoded ?? JSON.stringify(row.data)
+
+const writeRow = (collectionId: string, rowKey: string, prior: StoredItem | undefined, row: StoredItem | undefined): RowWrite => ({
+  kind: "row", collectionId, rowKey,
+  expectedVersionKey: prior?.versionKey,
+  expectedValue: encodedRow(prior),
+  row: row === undefined ? undefined : { versionKey: row.versionKey, value: JSON.stringify(row.data) }
+})
 
 const tableExists = async (database: SqliteRowDatabase, name: string): Promise<boolean> =>
   (await database.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [name])).length > 0
@@ -197,7 +237,6 @@ const readLegacyRows = async (database: SqliteRowDatabase, options: SqliteRowSto
       raw = serializeStoredCollection(stored)
     }
     const validated = await validateStoredRows(raw, collection.schema, collection.validateKey)
-    assertRowRecoveryPolicy(collection, validated.rejected.length)
     for (const [rowKey, item] of validated.rows) imported.push({ collectionId: collection.id, rowKey, item })
     for (const row of validated.rejected) rejected.push({ collectionId: collection.id, ...row })
   }
@@ -264,6 +303,7 @@ export const openSqliteRowStorage = async (
   const specs = new Map(options.collections.map((collection) => [collection.id, collection]))
   const byCollection = new Map<string, Map<string, StoredItem>>()
   const budget = options.budgetBytes ?? PERSISTED_COLLECTION_BUDGET_BYTES
+  if (!Number.isSafeInteger(budget) || budget <= 0) throw new Error("The persisted load budget must be a positive byte count.")
   const spent = new Map<string, { loaded: number; skipped: number; loadedBytes: number; skippedBytes: number }>()
   const accounting = (collectionId: string) => {
     const existing = spent.get(collectionId)
@@ -272,6 +312,7 @@ export const openSqliteRowStorage = async (
     spent.set(collectionId, fresh)
     return fresh
   }
+  const scheduledSqlMetadata = new Map<string, string>()
   // The sources validated below are the sources this transaction will change.
   // No concurrent writer may replace one while an async decoder is suspended.
   await database.execute("BEGIN IMMEDIATE")
@@ -301,42 +342,24 @@ export const openSqliteRowStorage = async (
       : await readLegacyRows(database, options)
 
     /*
-     * The bounded load (PersistenceBudget.ts), in two passes.
-     *
-     * The first pass reads addressing and sizes only — never a `value` — so
-     * planning a store costs a few hundred bytes per row however large the
-     * store is. That is the whole point: the budget has to bound what the page
-     * READS, not only what it keeps. A loader that selected every `value` and
-     * then discarded the ones over budget still marshalled the entire store out
-     * of the OPFS worker first, which is how a 567 MB profile spent its whole
-     * boot inside the load and left the app on the entrance wordmark
-     * (smithers.sh build 5136850c, 2026-09-15).
-     *
-     * Rows are admitted newest first (descending rowid is insertion order).
-     * A collection that has spent its budget stops admitting the older rows
-     * below the cursor: they stay on disk, unparsed and undeleted, reachable
-     * through the recovery download. Skipping is a size decision, never a
-     * validation one, so it does not consult the row-recovery policy.
-     *
-     * The second pass reads only the admitted rows, in pages bounded by BYTES
-     * as well as by row count, so no statement result and no decoded value ever
-     * approaches the 512 MiB string ceiling.
+     * Plan from metadata first, without transferring values from the worker.
+     * Complete app collections refuse before decoding or repair if any fact
+     * exceeds admission. Disposable collections may leave older rows on disk.
+     * Then fetch admitted values in byte- and count-bounded pages. A single
+     * admitted value larger than the page target is read alone, never split.
+     * The writer transaction keeps both passes on the same physical source.
      */
     const presentRows = new Set<string>()
     const invalid: Array<{ readonly collectionId: string; readonly rowKey: string; readonly raw: string }> = []
     const normalized: Array<{ readonly collectionId: string; readonly rowKey: string; readonly versionKey: string; readonly raw: string; readonly encoded: string }> = []
-    const admitted: Array<{ readonly rid: number; readonly size: number }> = []
-    let cursor = Number.MAX_SAFE_INTEGER
+    const admitted: Array<{ readonly rid: number; readonly size: number; readonly collectionId: string; readonly rowKey: string; readonly versionKey: string }> = []
+    let cursor: number | null = null
     for (;;) {
-      const chunk = await database.execute<{
-        readonly rid?: unknown
-        readonly collection_id?: unknown
-        readonly row_key?: unknown
-        readonly size?: unknown
-      }>(
-        `SELECT rowid AS rid, collection_id, row_key, LENGTH(value) AS size FROM ${ROW_TABLE_NAME}
-         WHERE rowid < ? ORDER BY rowid DESC LIMIT ?`,
-        [cursor, PERSISTED_LOAD_CHUNK_ROWS]
+      const chunk: ReadonlyArray<NormalizedRowMetadata> = await database.execute<NormalizedRowMetadata>(
+        `SELECT rowid AS rid, collection_id, row_key, version_key, typeof(value) AS value_type,
+                length(CAST(value AS BLOB)) AS value_bytes, length(CAST(row_key AS BLOB)) AS key_bytes FROM ${ROW_TABLE_NAME}
+         WHERE (? IS NULL OR rowid < ?) ORDER BY rowid DESC LIMIT ?`,
+        [cursor, cursor, PERSISTED_LOAD_CHUNK_ROWS]
       )
       if (chunk.length === 0) break
       for (const row of chunk) {
@@ -345,85 +368,96 @@ export const openSqliteRowStorage = async (
         if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
         const spec = specs.get(row.collection_id)
         if (spec === undefined) continue
-        if (typeof row.row_key !== "string" || typeof row.size !== "number" || !Number.isSafeInteger(row.size) || row.size < 0) {
+        if (
+          typeof row.row_key !== "string" || typeof row.version_key !== "string" || row.value_type !== "text" ||
+          typeof row.value_bytes !== "number" || !Number.isSafeInteger(row.value_bytes) || row.value_bytes < 0 ||
+          typeof row.key_bytes !== "number" || !Number.isSafeInteger(row.key_bytes) || row.key_bytes < 0 ||
+          !Number.isSafeInteger(row.key_bytes + row.value_bytes)
+        ) {
           assertRowRecoveryPolicy(spec, 1)
           throw new UnreadableSqliteStateError("normalized row")
         }
-        // A skipped row is still physically present: the legacy importer must
-        // not reinsert an older copy of it underneath this launch.
+        // A skipped row is physically present: legacy import cannot resurrect it.
         presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
-        const size = row.row_key.length + row.size
+        const size = row.key_bytes + row.value_bytes
         const account = accounting(row.collection_id)
         if (account.loadedBytes + size > budget) {
+          if (spec.partialLoad === "refuse" || spec.invalidRows === "refuse") throw new OversizedSqliteCollectionError(spec.id, budget)
           account.skipped += 1
           account.skippedBytes += size
           continue
         }
         account.loaded += 1
         account.loadedBytes += size
-        admitted.push({ rid: row.rid, size })
+        admitted.push({ rid: row.rid, size, collectionId: row.collection_id, rowKey: row.row_key, versionKey: row.version_key })
       }
       if (chunk.length < PERSISTED_LOAD_CHUNK_ROWS) break
     }
 
     for (let index = 0; index < admitted.length;) {
-      const page: Array<number> = []
+      const page = new Map<number, typeof admitted[number]>()
       let pageBytes = 0
       while (
-        index < admitted.length && page.length < PERSISTED_LOAD_CHUNK_ROWS &&
-        (page.length === 0 || pageBytes + admitted[index]!.size <= PERSISTED_LOAD_PAGE_BYTES)
+        index < admitted.length && page.size < PERSISTED_LOAD_CHUNK_ROWS &&
+        (page.size === 0 || pageBytes + admitted[index]!.size <= PERSISTED_LOAD_PAGE_BYTES)
       ) {
-        pageBytes += admitted[index]!.size
-        page.push(admitted[index]!.rid)
-        index += 1
+        const row = admitted[index++]!
+        pageBytes += row.size
+        page.set(row.rid, row)
       }
       const chunk = await database.execute<{
+        readonly rid?: unknown
         readonly collection_id?: unknown
         readonly row_key?: unknown
         readonly version_key?: unknown
         readonly value?: unknown
       }>(
-        `SELECT collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}
-         WHERE rowid IN (${page.map(() => "?").join(", ")})`,
-        page
+        `SELECT rowid AS rid, collection_id, row_key, version_key, value FROM ${ROW_TABLE_NAME}
+         WHERE rowid IN (${[...page.keys()].map(() => "?").join(", ")})`,
+        [...page.keys()]
       )
+      if (chunk.length !== page.size) throw new UnreadableSqliteStateError("normalized row")
       for (const row of chunk) {
-        if (typeof row.collection_id !== "string") throw new UnreadableSqliteStateError("normalized row")
-        const spec = specs.get(row.collection_id)
-        if (spec === undefined) continue
-        if (
-          typeof row.row_key !== "string" ||
-          typeof row.version_key !== "string" ||
-          typeof row.value !== "string"
-        ) {
-          assertRowRecoveryPolicy(spec, 1)
+        const expected = typeof row.rid === "number" ? page.get(row.rid) : undefined
+        if (expected === undefined || row.collection_id !== expected.collectionId ||
+          row.row_key !== expected.rowKey || row.version_key !== expected.versionKey || typeof row.value !== "string") {
           throw new UnreadableSqliteStateError("normalized row")
         }
+        page.delete(expected.rid)
+        const spec = specs.get(expected.collectionId)!
+        const value = row.value
         let data: unknown
         try {
-          data = JSON.parse(row.value)
+          data = JSON.parse(value)
         } catch {
-          invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
+          invalid.push({ collectionId: expected.collectionId, rowKey: expected.rowKey, raw: value })
           continue
         }
         // Validator/key-check exceptions refuse the open, not the row. Only
         // explicit schema issues can justify removing it into quarantine.
         const decoded = await decodeStoredRow(spec.schema, data)
-        if (!decoded.valid || (spec.validateKey !== undefined && !spec.validateKey(row.row_key, decoded.data))) {
-          invalid.push({ collectionId: row.collection_id, rowKey: row.row_key, raw: row.value })
+        if (!decoded.valid || (spec.validateKey !== undefined && !spec.validateKey(expected.rowKey, decoded.data))) {
+          invalid.push({ collectionId: expected.collectionId, rowKey: expected.rowKey, raw: value })
           continue
         }
-        const rows = byCollection.get(row.collection_id) ?? new Map<string, StoredItem>()
-        rows.set(row.row_key, { versionKey: row.version_key, data: decoded.data })
-        byCollection.set(row.collection_id, rows)
-        if (decoded.changed) normalized.push({ collectionId: row.collection_id, rowKey: row.row_key, versionKey: row.version_key, raw: row.value, encoded: decoded.encoded })
+        const rows = byCollection.get(expected.collectionId) ?? new Map<string, StoredItem>()
+        rows.set(expected.rowKey, { versionKey: expected.versionKey, data: decoded.data, encoded: decoded.changed ? decoded.encoded : value })
+        byCollection.set(expected.collectionId, rows)
+        if (decoded.changed) normalized.push({ collectionId: expected.collectionId, rowKey: expected.rowKey, versionKey: expected.versionKey, raw: value, encoded: decoded.encoded })
       }
     }
 
-    for (const row of [...(legacy?.rejected ?? []), ...invalid]) {
-      const spec = specs.get(row.collectionId)
-      if (spec !== undefined) assertRowRecoveryPolicy(spec, 1)
+    // Build exactly the rows this transaction would expose before any repair.
+    // A normalized row wins even when rejected; legacy must not resurrect it.
+    for (const row of legacy?.imported ?? []) {
+      if (presentRows.has(JSON.stringify([row.collectionId, row.rowKey]))) continue
+      const rows = byCollection.get(row.collectionId) ?? new Map<string, StoredItem>()
+      rows.set(row.rowKey, row.item)
+      byCollection.set(row.collectionId, rows)
     }
+    assertStoredRowsRecovery(options.collections,
+      new Map([...byCollection].map(([id, rows]) => [id, [...rows.values()].map(row => row.data)])),
+      new Set([...(legacy?.rejected ?? []), ...invalid].map(row => row.collectionId)))
 
     for (const row of legacy?.rejected ?? []) {
       await insertQuarantine(database, row.collectionId, row.rowKey, row.raw, "legacy-schema-validation")
@@ -436,9 +470,6 @@ export const openSqliteRowStorage = async (
          ON CONFLICT(collection_id, row_key) DO NOTHING`,
         [row.collectionId, row.rowKey, row.item.versionKey, JSON.stringify(row.item.data)]
       )
-      const rows = byCollection.get(row.collectionId) ?? new Map<string, StoredItem>()
-      rows.set(row.rowKey, row.item)
-      byCollection.set(row.collectionId, rows)
     }
     for (const row of invalid) {
       await insertQuarantine(database, row.collectionId, row.rowKey, row.raw, "schema-validation")
@@ -468,6 +499,9 @@ export const openSqliteRowStorage = async (
       )
     }
     await database.execute("COMMIT")
+    for (const [key, value] of metadata) scheduledSqlMetadata.set(key, value)
+    scheduledSqlMetadata.set(SCHEMA_VERSION_KEY, String(options.schemaVersion))
+    if (legacy !== undefined) scheduledSqlMetadata.set(LEGACY_IMPORT_KEY, "1")
   } catch (error) {
     await database.execute("ROLLBACK")
     throw error
@@ -501,7 +535,10 @@ export const openSqliteRowStorage = async (
     scheduledRows.set(collection.id, new Map(byCollection.get(collection.id) ?? []))
   }
   // Keep the StorageApi view aligned with the physical SQLite schema version.
-  const scheduledMetadata = new Map<string, string>([[SCHEMA_VERSION_STORAGE_KEY, String(options.schemaVersion)]])
+  const scheduledMetadata = new Map<string, string>([
+    ...scheduledSqlMetadata,
+    [SCHEMA_VERSION_STORAGE_KEY, String(options.schemaVersion)]
+  ])
 
   let pending: Map<string, string | null> | undefined
   let pendingRows: Map<string, Array<DurableRowDelta>> | undefined
@@ -517,6 +554,33 @@ export const openSqliteRowStorage = async (
   const persistChanges = async (writes: ReadonlyArray<RowWrite>): Promise<void> => {
     await database.execute("BEGIN IMMEDIATE")
     try {
+      // Check every read expectation after acquiring the database writer lock
+      // and before the first mutation. Independent adapters have independent
+      // mirrors; serializing their writes alone cannot prevent a stale commit.
+      const checked = new Set<string>()
+      for (const write of writes) {
+        const identity = write.kind === "metadata"
+          ? JSON.stringify(["metadata", write.key])
+          : JSON.stringify(["row", write.collectionId, write.rowKey])
+        // Later writes to the same row were derived from earlier writes in
+        // this batch. Only its first expectation names the committed base.
+        if (checked.has(identity)) continue
+        checked.add(identity)
+        if (write.kind === "metadata") {
+          const rows = await database.execute<{ readonly value: string }>(
+            `SELECT value FROM ${METADATA_TABLE_NAME} WHERE key = ?`, [write.key]
+          )
+          if ((rows[0]?.value ?? null) !== write.expectedValue) throw new DurableStorageConflictError(write.key)
+        } else {
+          const rows = await database.execute<{ readonly version_key: string; readonly value: string }>(
+            `SELECT version_key, value FROM ${ROW_TABLE_NAME} WHERE collection_id = ? AND row_key = ?`,
+            [write.collectionId, write.rowKey]
+          )
+          if (rows[0]?.version_key !== write.expectedVersionKey || rows[0]?.value !== write.expectedValue) {
+            throw new DurableStorageConflictError(`${write.collectionId}/${write.rowKey}`)
+          }
+        }
+      }
       for (const write of writes) {
         if (write.kind === "metadata") {
           if (write.value === null) {
@@ -558,11 +622,11 @@ export const openSqliteRowStorage = async (
     const before = scheduledRows.get(collectionId)
     const writes: Array<RowWrite> = []
     for (const rowKey of before?.keys() ?? []) {
-      if (next?.has(rowKey) !== true) writes.push({ kind: "row", collectionId, rowKey, row: undefined })
+      if (next?.has(rowKey) !== true) writes.push(writeRow(collectionId, rowKey, before?.get(rowKey), undefined))
     }
     for (const [rowKey, row] of next ?? []) {
-      if (before?.get(rowKey)?.versionKey === row.versionKey) continue
-      writes.push({ kind: "row", collectionId, rowKey, row: { versionKey: row.versionKey, value: JSON.stringify(row.data) } })
+      if (before?.get(rowKey)?.versionKey === row.versionKey && encodedRow(before?.get(rowKey)) === encodedRow(row)) continue
+      writes.push(writeRow(collectionId, rowKey, before?.get(rowKey), row))
     }
     if (next === undefined) scheduledRows.delete(collectionId)
     else scheduledRows.set(collectionId, next)
@@ -575,18 +639,24 @@ export const openSqliteRowStorage = async (
     for (const delta of deltas) {
       // DurableCollection accepts historical unprefixed string keys. Remove
       // that physical alias when its row changes, without scanning history.
-      const legacyKey = delta.key.startsWith("s:") ? delta.key.slice(2) : undefined
-      if (legacyKey !== undefined && !legacyKey.startsWith("s:") && !legacyKey.startsWith("n:") && rows.delete(legacyKey)) {
-        writes.push({ kind: "row", collectionId, rowKey: legacyKey, row: undefined })
+      const legacyKey = legacyRowKey(delta.key)
+      const legacy = legacyKey === undefined ? undefined : rows.get(legacyKey)
+      const before = rows.get(delta.key)
+      if ("expectedVersionKey" in delta && (before ?? legacy)?.versionKey !== delta.expectedVersionKey) {
+        failure = new DurableStorageConflictError(`${collectionId}/${delta.key}`)
+        throw failure
+      }
+      if (legacyKey !== undefined && rows.delete(legacyKey)) {
+        writes.push(writeRow(collectionId, legacyKey, legacy, undefined))
       }
       if (delta.versionKey === undefined) {
         if (!rows.delete(delta.key)) continue
-        writes.push({ kind: "row", collectionId, rowKey: delta.key, row: undefined })
+        writes.push(writeRow(collectionId, delta.key, before, undefined))
         continue
       }
       const row: StoredItem = { versionKey: delta.versionKey, data: delta.data }
       rows.set(delta.key, row)
-      writes.push({ kind: "row", collectionId, rowKey: delta.key, row: { versionKey: row.versionKey, value: JSON.stringify(row.data) } })
+      writes.push(writeRow(collectionId, delta.key, before, row))
     }
     scheduledRows.set(collectionId, rows)
     return writes
@@ -601,13 +671,22 @@ export const openSqliteRowStorage = async (
     const current = scheduledMetadata.get(key) ?? null
     const rows = parseStoredCollection(current)
     for (const delta of deltas) {
+      const legacyKey = legacyRowKey(delta.key)
+      const prior = rows.get(delta.key) ?? (legacyKey === undefined ? undefined : rows.get(legacyKey))
+      if ("expectedVersionKey" in delta && prior?.versionKey !== delta.expectedVersionKey) {
+        failure = new DurableStorageConflictError(`${collectionId}/${delta.key}`)
+        throw failure
+      }
+      if (legacyKey !== undefined) rows.delete(legacyKey)
       if (delta.versionKey === undefined) rows.delete(delta.key)
       else rows.set(delta.key, { versionKey: delta.versionKey, data: delta.data })
     }
     const value = serializeStoredCollection(rows)
     if (current === value) return []
     scheduledMetadata.set(key, value)
-    return [{ kind: "metadata", key, value }]
+    const expectedValue = scheduledSqlMetadata.get(key) ?? null
+    scheduledSqlMetadata.set(key, value)
+    return [{ kind: "metadata", key, expectedValue, value }]
   }
 
   const enqueue = (
@@ -623,7 +702,10 @@ export const openSqliteRowStorage = async (
         if ((scheduledMetadata.get(key) ?? null) === value) continue
         if (value === null) scheduledMetadata.delete(key)
         else scheduledMetadata.set(key, value)
-        writes.push({ kind: "metadata", key, value })
+        const expectedValue = scheduledSqlMetadata.get(key) ?? null
+        if (value === null) scheduledSqlMetadata.delete(key)
+        else scheduledSqlMetadata.set(key, value)
+        writes.push({ kind: "metadata", key, expectedValue, value })
         continue
       }
       writes.push(...replaceCollection(collectionId, value === null ? undefined : parseStoredCollection(value)))
@@ -746,8 +828,31 @@ export const openSqliteRowStorage = async (
     try { await flush() } finally { await database.close?.() }
   }
 
-  /** A copy, so a reader can never alias the scheduled rows a commit advances. */
-  const readRows = (collectionId: string): ReadonlyMap<string, StoredItem> => new Map(rowsView(collectionId) ?? [])
-
-  return { storage, beginBatch, commitBatch, abortBatch, applyRows, flush, close, readRecovery, readRows, loadReport }
+  const retireRecoveryCopies = (permitted: PermittedStorageRows): Promise<void> => {
+    if (closed || batchDepth !== 0) return Promise.reject(new Error("SQLite privacy cleanup requires an idle open writer."))
+    const metadata = new Map([[SCHEMA_VERSION_KEY, String(options.schemaVersion)], [LEGACY_IMPORT_KEY, "1"], [SCHEMA_VERSION_STORAGE_KEY, String(options.schemaVersion)]])
+    const cleanup = tail.then(async () => {
+      if (failure !== undefined) throw failure
+      const next = new Map<string, Map<string, StoredItem>>()
+      const rows: Array<readonly [string, string, string, string]> = []
+      for (const collection of options.collections) {
+        const accepted = permitted.get(collection.id)
+        if (accepted === undefined) throw new Error("Privacy cleanup requires every declared collection.")
+        const kept = permittedRows(scheduledRows.get(collection.id) ?? new Map(), accepted)
+        next.set(collection.id, kept)
+        for (const [key, row] of kept) rows.push([collection.id, key, row.versionKey, JSON.stringify(row.data)])
+      }
+      await eraseSqliteRecoveryCopies(database, { metadata, rows })
+      for (const [id, rows] of next) scheduledRows.set(id, rows)
+      for (const key of scheduledSqlMetadata.keys()) if (!metadata.has(key)) scheduledSqlMetadata.delete(key)
+      for (const key of scheduledMetadata.keys()) if (!metadata.has(key)) scheduledMetadata.delete(key)
+      for (const [key, value] of metadata) { scheduledSqlMetadata.set(key, value); scheduledMetadata.set(key, value) }
+    })
+    tail = cleanup.catch(error => { failure = error })
+    return cleanup
+  }
+  const readRows = (collectionId: string): ReadonlyMap<string, StoredItem> => new Map(
+    [...(rowsView(collectionId) ?? [])].map(([key, row]) => [key, structuredClone(row)])
+  )
+  return { storage, beginBatch, commitBatch, abortBatch, applyRows, flush, close, readRecovery, retireRecoveryCopies, readRows, loadReport }
 }

@@ -1,5 +1,10 @@
 import { encodeStorageRecovery, readLocalStorageRecovery, StorageRecoveryError } from "../chain/StorageRecovery"
 import type { EnumerableRecoveryStorage, RecoveryTable, StorageRecoverySnapshot } from "../chain/StorageRecovery"
+import { capturePrivacyGuard, PRIVACY_RETIREMENT_EVENT, PRIVACY_RETIREMENT_KEY } from "../chain/PrivacyRetirement"
+
+const snapshotGuards = new WeakMap<StorageRecoverySnapshot, () => void>()
+/** No guard/token/private bytes enter the downloadable artifact or state collections. */
+export const assertRecoverySnapshotCurrent = (snapshot: StorageRecoverySnapshot): void => snapshotGuards.get(snapshot)?.()
 
 export interface BrowserRecoverySources {
   readonly session: NonNullable<StorageRecoverySnapshot["session"]>
@@ -7,14 +12,23 @@ export interface BrowserRecoverySources {
   /** Undefined means the API is unavailable; an undefined result means the database does not exist. */
   readonly sqlite: (() => Promise<ReadonlyArray<RecoveryTable> | undefined>) | undefined
   readonly memory?: EnumerableRecoveryStorage
+  /** Browser app recovery must be able to check the durable cross-backend fence. */
+  readonly requirePrivacyBarrier?: boolean
+  readonly assertCurrent?: () => void
 }
 
 /** Capture each source separately, without choosing, importing or merging a history. */
 export const captureBrowserStorageRecovery = async (
   sources: BrowserRecoverySources
 ): Promise<StorageRecoverySnapshot> => {
+  if (sources.requirePrivacyBarrier && sources.localStorage === undefined) throw new StorageRecoveryError("unreadable")
+  const markerGuard = capturePrivacyGuard(sources.localStorage)
+  const guard = (): void => { markerGuard(); sources.assertCurrent?.() }
+  guard()
   const localStorage = sources.localStorage === undefined ? undefined : readLocalStorageRecovery(sources.localStorage)
-  const sqlite = await sources.sqlite?.()
+  // With no SQLite API the local capture is wholly synchronous; introducing
+  // an empty await would let the command's own next state write tear it.
+  const sqlite = sources.sqlite === undefined ? undefined : await sources.sqlite()
   // SQLite and localStorage have no shared transaction. Refuse observable edits
   // across the database read as well as edits during each individual local scan.
   if (
@@ -38,6 +52,8 @@ export const captureBrowserStorageRecovery = async (
   }
   // The complete artifact, not each source independently, must fit the limit.
   encodeStorageRecovery(snapshot)
+  guard()
+  snapshotGuards.set(snapshot, guard)
   return snapshot
 }
 
@@ -64,6 +80,11 @@ export const createRecoveryDownload = (documentTarget: Document = document, urlT
     pending.delete(url)
     urlTarget.revokeObjectURL(url)
   }
+  const invalidate = (): void => { for (const url of pending.keys()) release(url) }
+  const page = documentTarget.defaultView
+  const onStorage = (event: StorageEvent): void => { if (event.key === PRIVACY_RETIREMENT_KEY || event.key === null) invalidate() }
+  page?.addEventListener(PRIVACY_RETIREMENT_EVENT, invalidate)
+  page?.addEventListener("storage", onStorage)
   return {
     download: (json: string): void => {
       if (closed) throw new StorageRecoveryError("unreadable")
@@ -87,7 +108,10 @@ export const createRecoveryDownload = (documentTarget: Document = document, urlT
     },
     dispose: (): void => {
       closed = true
-      for (const url of pending.keys()) release(url)
-    }
+      invalidate()
+      page?.removeEventListener(PRIVACY_RETIREMENT_EVENT, invalidate)
+      page?.removeEventListener("storage", onStorage)
+    },
+    invalidate
   }
 }

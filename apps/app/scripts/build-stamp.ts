@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Plugin } from "vite"
 
@@ -16,19 +18,22 @@ import type { Plugin } from "vite"
  *
  * SMITHERS_BUILD_SHA wins so a release script stamps the sha it records;
  * GITHUB_SHA covers a CI build; otherwise the local checkout is asked. A tree
- * with no git answers "unknown".
+ * with no supported checkout answers "unknown".
  */
 export const BUILD_STAMP_ASSET = "__build.json"
 export const BUILD_STAMP_META = "smithers-build-sha"
 export const BUILD_STAMP_AT_META = "smithers-build-at"
 
-/** The apps/app package root, the checkout `git rev-parse` is asked from. */
+/** The apps/app package root, inside either a jj workspace or a Git checkout. */
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
 
 export const resolveBuildSha = (): string => {
   const fromEnv = process.env.SMITHERS_BUILD_SHA ?? process.env.GITHUB_SHA
   if (fromEnv !== undefined && fromEnv.trim() !== "") return fromEnv.trim()
   try {
+    if (existsSync(resolve(packageRoot, "../..", ".jj"))) {
+      return execFileSync("jj", ["--ignore-working-copy", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { cwd: packageRoot, encoding: "utf8" }).trim()
+    }
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: packageRoot, encoding: "utf8" }).trim()
   } catch {
     return "unknown"

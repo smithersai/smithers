@@ -150,10 +150,12 @@ export const RunListCardBody = ({
 
 export const ApprovalsInboxCardBody = ({
   card,
-  onDecideApproval
+  onDecideApproval,
+  onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "approvals-inbox" }>
-  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown) => void
+  readonly onDecideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
+  readonly onRunCommand?: RunCommand
 }) => {
   const { repo, approvals } = card.payload
   if (approvals.length === 0) {
@@ -190,9 +192,14 @@ export const ApprovalsInboxCardBody = ({
                 /* A gate that asks a question: the run needs a value, not a
                  * grant, so the row gets the box the answer is typed into. */
                 <ApprovalAnswerForm
+                  key={approval.answerDraft?.question}
                   question={approval.question}
+                  draft={approval.answerDraft}
+                  onDraft={value => {
+                    if (approval.answerDraft !== undefined) onRunCommand?.("form.set", flowArgs("form.set", { cardId: rowId, field: `answer:${approval.answerDraft.question}`, value }))
+                  }}
                   disabled={false}
-                  onAnswer={(answer) => onDecideApproval(rowId, "approved", answer)}
+                  onAnswer={(answer) => onDecideApproval(rowId, "approved", answer, approval.answerDraft?.question)}
                 />
               ) :
               (
@@ -230,7 +237,7 @@ export const runsCardFamily: CardFamily<"run-list" | "approvals-inbox"> = {
     pill: settledPill
   },
   "approvals-inbox": {
-    render: (card, actions) => <ApprovalsInboxCardBody card={card} onDecideApproval={actions.onDecideApproval} />,
+    render: (card, actions) => <ApprovalsInboxCardBody card={card} onDecideApproval={actions.onDecideApproval} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   }
 }

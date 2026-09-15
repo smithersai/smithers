@@ -29,7 +29,7 @@ export const appFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     userOnly: true,
     userOnlyReason: "a browser handoff the human clicks; the agent renders the step with app.download.prompt",
     input: NoPayload,
-    handler: () => actions.openDownload()
+    handler: (_payload, _signal, _call, gesture) => actions.openDownload(gesture?.openExternal)
   }),
   flow({
     name: "app.download.prompt",
