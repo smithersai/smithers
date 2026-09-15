@@ -469,10 +469,18 @@ workflowTest("stop all cancels two live owned runs, leaves a terminal sibling un
   const stillTerminal = await gatewayCall(page, request, repo, "Projection.Snapshot", {
     selector: { _tag: "run-summary", runId: terminalRunId }
   }, workflowRepo.workspaceId)
-  expect(runSummary(stillTerminal)?.status).toBe("cancelled")
+  expect(runSummary(stillTerminal)).toMatchObject({ runId: terminalRunId, status: "cancelled" })
+  const afterResume = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+    selector: { _tag: "workspace-runs" }
+  }, workflowRepo.workspaceId)
+  const afterResumeRows = projectionRows(afterResume)
+  expect(afterResumeRows.filter((row) => String(row.runId) === terminalRunId)).toEqual([
+    expect.objectContaining({ runId: terminalRunId, status: "cancelled" })
+  ])
+  expect(afterResumeRows.filter((row) => liveIds.includes(String(row.runId)))).toHaveLength(liveIds.length)
   await attachProductionJson(testInfo, "stop-all-owned-runs", {
     repo, acceptedIds: [terminalSibling.runId, first.runId, second.runId], terminalBefore,
     liveIds, beforeRows, beforeWorkspaceRows, stopped, afterRows, afterWorkspaceRows,
-    terminalAfter: runSummary(terminalAfter), resumeRefusal: refused
+    terminalAfter: runSummary(terminalAfter), resumeRefusal: refused, afterResumeRows
   })
 })
