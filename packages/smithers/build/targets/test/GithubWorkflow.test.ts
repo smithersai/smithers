@@ -644,7 +644,7 @@ describe("parseWorkflow", () => {
     const source = await readReal()
     const required = ["test", "apps-e2e", "rust", "wasm-repro", "browser", "packages"]
     expect(missingRequiredJobs(parseWorkflow(source), required)).toEqual([])
-    const skipped = source.replace(/^ {2}browser:$/m, "  browser:\n    if: false")
+    const skipped = source.replace(/^ {2}"browser":$/m, "  \"browser\":\n    if: false")
     expect(skipped).not.toBe(source)
     expect(missingRequiredJobs(parseWorkflow(skipped), required)).toEqual(["browser (conditional)"])
     // The gate pinned to that job goes with it.

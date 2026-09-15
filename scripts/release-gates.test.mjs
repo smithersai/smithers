@@ -41,6 +41,16 @@ const withRun = (source, job, name, run) => {
   copy.jobs[job].steps.push({ name, run })
   return stringify(copy)
 }
+// Insert by the parsed step name, then exercise both accepted scalar styles.
+// Quoting a generated job id or step name must not make a mutation vacuous.
+const withStepBefore = (source, job, anchor, step, style) => {
+  const copy = parse(source)
+  const steps = copy.jobs[job].steps
+  const matches = steps.flatMap((entry, index) => entry.name === anchor ? [index] : [])
+  assert.equal(matches.length, 1, job + " mutation anchor exists exactly once")
+  steps.splice(matches[0], 0, step)
+  return stringify(copy, { defaultKeyType: style, defaultStringType: style })
+}
 const missingFor = (job, source) => job === "publish"
   ? workflowGatesMissingFromInventory(releaseGates, source)
   : ciGatesMissingFromInventory(releaseGates, source, releaseGateExclusions)
@@ -385,21 +395,23 @@ for (const [spelling, prefix] of [
   ["legacy executable whitespace", "pnpm  exec smithers-build"]
 ]) {
   for (const [job, source, anchor] of [
-    ["publish", release, "      - name: Build all workspaces from clean artifacts"],
-    ["test", ci, "      - name: Target index drift"],
-    ["apps-e2e", ci, "      - name: UI unit tests"]
+    ["publish", release, "Build all workspaces from clean artifacts"],
+    ["test", ci, "Target index drift"],
+    ["apps-e2e", ci, "UI unit tests"]
   ]) {
     test(`${job} parity reports an unlisted gate with ${spelling}`, () => {
       const command = `${prefix} test '//unlisted:required' --verbose`
       const name = "Unlisted required gate"
-      assert.ok(source.includes(anchor), `${job} mutation anchor exists`)
-      const added = source.replace(anchor, `      - name: ${name}\n        run: |\n${command.split("\n").map(line => `          ${line}`).join("\n")}\n${anchor}`)
-      const steps = workflowGateSteps(added, job)
-      assert.equal(steps.length, workflowGateSteps(source, job).length + 1, "every added command is discovered")
-      const missing = job === "publish"
-        ? workflowGatesMissingFromInventory(releaseGates, added)
-        : ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions)
-      assert.deepEqual(missing, [{ ...(job === "publish" ? {} : { job }), name, command }], "the unlisted command fails parity closed with its full spelling")
+      for (const style of ["PLAIN", "QUOTE_DOUBLE"]) {
+        const added = withStepBefore(source, job, anchor, { name, run: command }, style)
+        const steps = workflowGateSteps(added, job)
+        assert.equal(steps.length, workflowGateSteps(source, job).length + 1, "every added command is discovered")
+        const missing = job === "publish"
+          ? workflowGatesMissingFromInventory(releaseGates, added)
+          : ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions)
+        assert.deepEqual(missing, [{ ...(job === "publish" ? {} : { job }), name, command }],
+          style + ": the unlisted command fails parity closed with its full spelling")
+      }
     })
   }
 }
@@ -447,11 +459,14 @@ test("the release proves every CI gate the exclusions do not name, and every exc
 
 test("a CI gate added outside the exclusions is reported, and an exclusion that names a mirrored gate or a missing job is stale", () => {
   const command = "pnpm exec smthrs test '//evals/new:suite' --verbose"
-  const anchor = "      - name: Target index drift"
-  assert.ok(ci.includes(anchor))
-  const added = ci.replace(anchor, `      - name: New eval suite\n        run: ${command}\n${anchor}`)
-  assert.deepEqual(ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions), [{ job: "test", name: "New eval suite", command }])
-  assert.deepEqual(ciGatesMissingFromInventory(releaseGates, added, [...releaseGateExclusions, { job: "test", commands: [command], reason: "declared" }]), [])
+  for (const style of ["PLAIN", "QUOTE_DOUBLE"]) {
+    const added = withStepBefore(ci, "test", "Target index drift", { name: "New eval suite", run: command }, style)
+    assert.equal(workflowGateSteps(added, "test").length, workflowGateSteps(ci, "test").length + 1)
+    assert.deepEqual(ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions),
+      [{ job: "test", name: "New eval suite", command }], style + ": an unlisted gate must fail parity")
+    assert.deepEqual(ciGatesMissingFromInventory(releaseGates, added,
+      [...releaseGateExclusions, { job: "test", commands: [command], reason: "declared" }]), [])
+  }
   // Dropping an inventory gate a mirrored CI job carries is a CI gap too.
   const mutated = releaseGates.filter((gate) => gate.target !== "//crates/flows-jj:buildScript")
   assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose"])

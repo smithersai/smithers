@@ -202,7 +202,7 @@ describe("GithubCiGen with a Nix environment", () => {
 
   it("installs Nix, installs the workspace inside the shell, and runs every step inside it", () => {
     const rendered = renderWorkflow(attrs(CiToolchain.Nix({ environment })))
-    expect(rendered).toContain(`uses: ${actions.nixInstallerDeterminate}`)
+    expect(rendered).toContain(`uses: "${actions.nixInstallerDeterminate}"`)
     expect(rendered).not.toContain("actions/setup-node")
     expect(rendered).not.toContain("pnpm/action-setup")
     expect(rendered).toContain("nix develop .#ci --command pnpm install --frozen-lockfile --ignore-scripts")
@@ -216,7 +216,7 @@ describe("GithubCiGen with a Nix environment", () => {
       substituter: Secret("NIX_CACHE_URL"),
       publicKey: Secret("NIX_CACHE_PUBLIC_KEY")
     })))
-    expect(rendered).toContain("extra-conf:")
+    expect(rendered).toContain("\"extra-conf\":")
     expect(rendered).toContain("extra-substituters = ${{ secrets.NIX_CACHE_URL }}")
     expect(rendered).toContain("extra-trusted-public-keys = ${{ secrets.NIX_CACHE_PUBLIC_KEY }}")
     const cachix = renderWorkflow(attrs(CiToolchain.Nix({
@@ -225,7 +225,7 @@ describe("GithubCiGen with a Nix environment", () => {
       substituter: Secret("NIX_CACHE_URL"),
       publicKey: Secret("NIX_CACHE_PUBLIC_KEY")
     })))
-    expect(cachix).toContain(`uses: ${actions.nixInstallerCachix}`)
-    expect(cachix).toContain("extra_nix_config:")
+    expect(cachix).toContain(`uses: "${actions.nixInstallerCachix}"`)
+    expect(cachix).toContain("\"extra_nix_config\":")
   })
 })
