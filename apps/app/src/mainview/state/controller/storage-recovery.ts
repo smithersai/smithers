@@ -1,4 +1,5 @@
 import { createRecoveryDownload } from "../BrowserStorageRecovery"
+import { resetLocalBrowserStorage } from "../AppStore"
 import { createStorageRecoveryAction } from "../StorageRecoveryAction"
 import {
   RECOVERY_DOWNLOAD_LABEL,
@@ -12,7 +13,8 @@ export const createStorageRecoveryController = (ctx: ControllerContext) => {
   const action = createStorageRecoveryAction(
     ctx.services.storageRecoveryHost ?? {
       read: () => ctx.store.readRecovery(),
-      download: (json) => (browserDownload ??= createRecoveryDownload()).download(json)
+      download: (json) => (browserDownload ??= createRecoveryDownload()).download(json),
+      reset: () => resetLocalBrowserStorage()
     },
     ctx.commandActor
   )
@@ -26,6 +28,7 @@ export const createStorageRecoveryController = (ctx: ControllerContext) => {
   return {
     storageRecoveryState: action.state,
     exportStorageRecovery: action.run,
+    resetStorageRecovery: action.reset,
     promptStorageRecovery: async (): Promise<void> => {
       await ctx.store.dispatch({
         type: "message.appended",

@@ -22,7 +22,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
-import { STORAGE_RECOVERY_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
+import { STORAGE_RECOVERY_USER_ONLY_REASON, STORAGE_RESET_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
 import { modelInvocable, nameOf } from "./registry"
 import { PALETTE_ACTIONS_REASON, PALETTE_OPEN_REASON } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON } from "./entries/plugins"
@@ -35,6 +35,7 @@ import { WIKI_HEADING_USER_ONLY_REASON } from "./entries/wiki"
  */
 const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "storage.recovery.export": STORAGE_RECOVERY_USER_ONLY_REASON,
+  "storage.recovery.reset": STORAGE_RESET_USER_ONLY_REASON,
   "chat.send": "the composer is the human's; the model is already the turn, and sending would nest one",
   "chat.stop": "stopping the model's own turn is the human's Escape key",
   "chat.copy-message": "the clipboard write is the human's browser gesture",

@@ -3,7 +3,7 @@
  * flow here touches no other flow module, and Flows.ts registers each block in
  * the aggregator order.
  */
-import { storageRecoveryExportFlow } from "../StorageRecoveryFlow"
+import { storageRecoveryExportFlow, storageRecoveryResetFlow } from "../StorageRecoveryFlow"
 import { flow, NoPayload } from "./Declare"
 import type { FlowEntry } from "../registry"
 import type { CommandActions } from "./Declare"
@@ -16,5 +16,6 @@ export const storageFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     input: NoPayload,
     handler: () => actions.promptStorageRecovery()
   }),
-  storageRecoveryExportFlow(actions.exportStorageRecovery)
+  storageRecoveryExportFlow(actions.exportStorageRecovery),
+  storageRecoveryResetFlow(actions.resetStorageRecovery)
 ]

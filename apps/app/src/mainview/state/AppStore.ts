@@ -17,6 +17,7 @@ import {
   APP_SCHEMA_VERSION,
   PERSISTED_KEY_PREFIX,
   PERSISTENCE_BACKEND_STORAGE_KEY,
+  SCHEMA_QUARANTINE_PREFIX,
   SCHEMA_VERSION_STORAGE_KEY,
   enforceSchemaVersion,
   readRecordedBackend,
@@ -38,6 +39,7 @@ import { captureBrowserStorageRecovery, recoveryStorage } from "./BrowserStorage
 import { createCollectionPersistence, durableCollectionOptions } from "../chain/DurableCollection"
 import type { DurableRowSink } from "../chain/DurableCollection"
 import { retiredLineageKey } from "../chain/LineageRetirement"
+import { HeldBrowserStorageError } from "./StorageRecoveryContract"
 import type { CollectionPersistence } from "../chain/DurableCollection"
 import { ENVELOPE_STORAGE_KEY, STAGED_ENVELOPE_STORAGE_KEY, matchesStoredStringId, openTransactionalStorage } from "../chain/TransactionalStorage"
 import type { TransactionalStorage } from "../chain/TransactionalStorage"
@@ -529,6 +531,74 @@ export const readUnopenedBrowserRecovery = (): Promise<StorageRecoverySnapshot> 
   sqlite: browserSqliteRecoveryReader()
 })
 
+/** The OPFS store this document opened, if it still holds its access handles. */
+let openBrowserStore: (() => Promise<void>) | undefined
+
+/**
+ * Every OPFS entry this app owns: the database, its `-wal`/`-journal`
+ * sidecars, and the `.ahp-*` access-handle pools wa-sqlite creates beside it.
+ * The origin's OPFS root holds nothing else of ours, and nothing of anyone
+ * else's is matched.
+ */
+const ownedOpfsEntry = (name: string): boolean =>
+  name === OPFS_DATABASE_NAME || name.startsWith(`${OPFS_DATABASE_NAME}-`) || name.startsWith(".ahp-")
+
+/** `FileSystemDirectoryHandle.keys()` is in the spec, not yet in this TS lib. */
+type OpfsDirectory = FileSystemDirectoryHandle & { readonly keys: () => AsyncIterableIterator<string> }
+
+const removeOpfsEntry = async (root: FileSystemDirectoryHandle, name: string): Promise<void> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await root.removeEntry(name, { recursive: true })
+      return
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") return
+      // A handle pool released a moment ago can still be held for a tick.
+      if (attempt >= 3 || !(error instanceof DOMException) || error.name !== "NoModificationAllowedError") {
+        if (error instanceof DOMException && error.name === "NoModificationAllowedError") throw new HeldBrowserStorageError()
+        throw error
+      }
+      await wait(100 * 2 ** attempt)
+    }
+  }
+}
+
+/**
+ * Erase this browser's saved Smithers data and reload.
+ *
+ * The store's own handles are released first: this document may be the page
+ * that holds them. Only this app's OPFS entries and only the app's own
+ * localStorage prefixes are removed; nothing else on the origin is touched.
+ * The reload is the caller's, so a test can observe the erase without one.
+ */
+export const resetLocalBrowserStorage = async (reload: () => void = () => window.location.reload()): Promise<void> => {
+  const release = openBrowserStore
+  openBrowserStore = undefined
+  if (release !== undefined) {
+    // A store that cannot flush is still a store whose handles must go: the
+    // erase is what the human asked for, and the bytes are about to be gone.
+    await release().catch((error: unknown) => {
+      console.warn("Smithers: the saved store could not be closed cleanly before the reset.", error)
+    })
+  }
+  if (typeof navigator !== "undefined" && typeof navigator.storage?.getDirectory === "function") {
+    const root = await navigator.storage.getDirectory() as OpfsDirectory
+    const owned: Array<string> = []
+    for await (const name of root.keys()) if (ownedOpfsEntry(name)) owned.push(name)
+    for (const name of owned) await removeOpfsEntry(root, name)
+  }
+  const record = bootRecordStorage() as (StorageApi & Partial<EnumerableRecoveryStorage>) | undefined
+  if (record !== undefined && typeof record.length === "number" && typeof record.key === "function") {
+    const keys: Array<string> = []
+    for (let index = 0; index < record.length; index += 1) {
+      const key = record.key(index)
+      if (key !== null && (key.startsWith(PERSISTED_KEY_PREFIX) || key.startsWith(SCHEMA_QUARANTINE_PREFIX))) keys.push(key)
+    }
+    for (const key of keys) record.removeItem(key)
+  }
+  reload()
+}
+
 /*
  * Choose the store this launch reads, and honour the choice the last launch
  * made (E3.6).
@@ -619,6 +689,20 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
     throw error
   })
   if (record !== undefined) stampBackend(record, "opfs")
+  /*
+   * wa-sqlite's OPFSCoopSyncVFS holds sync access handles for the life of the
+   * connection, and a page that still owns them cannot remove the files —
+   * `removeEntry` throws NoModificationAllowedError. Remember this document's
+   * one store so `resetLocalBrowserStorage` can release it before erasing.
+   */
+  const release = async (): Promise<void> => {
+    try {
+      await sqlite.close()
+    } finally {
+      if (openBrowserStore === release) openBrowserStore = undefined
+    }
+  }
+  openBrowserStore = release
   return {
     backend: {
       kind: "opfs",
@@ -628,7 +712,7 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
       commitBatch: sqlite.commitBatch,
       abortBatch: sqlite.abortBatch,
       flush: sqlite.flush,
-      close: sqlite.close,
+      close: release,
       readRecovery: sqlite.readRecovery,
       applyRows: sqlite.applyRows,
       readRows: sqlite.readRows,

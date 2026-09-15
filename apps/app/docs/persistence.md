@@ -149,6 +149,27 @@ A truncated journal lineage is not replayed as if it were whole:
 a normalized host is never serialized to a string and parsed straight back. The
 localStorage envelope and older injected hosts keep the string view.
 
+## Recovery actions
+
+The startup failure panel offers two acts, both flows with their actor recorded
+(`state/StorageRecoveryAction.ts`, `flows/StorageRecoveryFlow.ts`), never DOM
+code of their own:
+
+- `storage.recovery.export` prepares the private local recovery download.
+- `storage.recovery.reset` erases this browser's saved Smithers data and
+  reloads. It takes two presses: the first arms the act and says what it will
+  take with it, the second runs it.
+
+The erase releases this document's store handles first. wa-sqlite's
+OPFSCoopSyncVFS holds sync access handles for the life of the connection, and
+`removeEntry` from a page that still owns them throws
+`NoModificationAllowedError`; a pool released a moment ago can still be held
+for a tick, so removal retries with a short backoff before reporting that
+another tab holds the data. It then removes only this app's OPFS entries
+(`smithers-mvp.sqlite`, its `-wal`/`-journal` sidecars and the `.ahp-*` pools)
+and only the app's own localStorage prefixes. Nothing else on the origin is
+touched. Both acts are user-only, for the reason each names in the registry.
+
 Each durable commit is serialized with the others. A failed commit rolls back
 optimistic collection state; queued transitions derived from that failed state
 also reject. Each mutation checks its original row against durable data, so a

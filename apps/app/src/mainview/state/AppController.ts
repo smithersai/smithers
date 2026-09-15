@@ -143,6 +143,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly storageRecoveryState: StorageRecoveryAction["state"]
   readonly promptStorageRecovery: () => Promise<void>
   readonly exportStorageRecovery: () => Promise<string | void>
+  /** The two-press erase: the first invocation arms it, the second runs it. */
+  readonly resetStorageRecovery: () => Promise<string | void>
   readonly store: AppStore
   /** Control focus ("spotlight"): the one surface the human is driving right now (controller/controlFocus.ts). */
   readonly controlFocus: ControlFocusController
@@ -938,7 +940,7 @@ export const createAppController = (
     services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud") ? loadCloudSession : undefined))
   const { showPlugins, installPlugin, removePlugin, listPlugins } = actors.pair(ctx, createPluginsController)
   const { downloadUrl, openDownload, promptDownload, introduce } = actors.pair(ctx, (context) => createAppShellController(context))
-  const { storageRecoveryState, promptStorageRecovery, exportStorageRecovery } = actors.pair(ctx, createStorageRecoveryController)
+  const { storageRecoveryState, promptStorageRecovery, exportStorageRecovery, resetStorageRecovery } = actors.pair(ctx, createStorageRecoveryController)
 
   const {
     showChat,
@@ -1505,6 +1507,7 @@ export const createAppController = (
     toggleSidebar: async () => { await ctx.store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: !ctx.store.session().sidebarOpen }).isPersisted.promise },
     promptStorageRecovery,
     exportStorageRecovery,
+    resetStorageRecovery,
     bootstrap: services.bootstrap,
     repositoryApp: services.repositoryApp ?? null,
     repositoryFlows,

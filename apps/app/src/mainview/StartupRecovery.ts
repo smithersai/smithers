@@ -4,7 +4,10 @@ import type { StorageRecoveryHost } from "./state/StorageRecoveryAction"
 import {
   RECOVERY_DOWNLOAD_LABEL,
   RECOVERY_PRIVATE_WARNING,
-  STORAGE_RECOVERY_EXPORT
+  RECOVERY_RESET_CONFIRM_LABEL,
+  RECOVERY_RESET_LABEL,
+  STORAGE_RECOVERY_EXPORT,
+  STORAGE_RECOVERY_RESET
 } from "./state/StorageRecoveryContract"
 
 /** A non-React projection: the watchdog must also work when React never boots. */
@@ -17,7 +20,8 @@ export const createStartupRecovery = (
   const action = createStorageRecoveryAction(
     host ?? {
       read: async () => (await import("./state/AppStore")).readUnopenedBrowserRecovery(),
-      download: (json) => (download ??= createRecoveryDownload(documentTarget)).download(json)
+      download: (json) => (download ??= createRecoveryDownload(documentTarget)).download(json),
+      reset: async () => (await import("./state/AppStore")).resetLocalBrowserStorage()
     },
     "user"
   )
@@ -27,23 +31,43 @@ export const createStartupRecovery = (
   const button = documentTarget.createElement("button")
   button.type = "button"
   button.dataset.flow = STORAGE_RECOVERY_EXPORT
+  /*
+   * The second door out of a failed boot. A profile too large to load could
+   * only ever download itself; now it can also start over, without the human
+   * leaving the app to delete OPFS files from a different page.
+   */
+  const reset = documentTarget.createElement("button")
+  reset.type = "button"
+  reset.dataset.flow = STORAGE_RECOVERY_RESET
   const status = documentTarget.createElement("p")
   status.setAttribute("role", "status")
   status.setAttribute("aria-live", "polite")
+  const resetStatus = documentTarget.createElement("p")
+  resetStatus.setAttribute("role", "status")
+  resetStatus.setAttribute("aria-live", "polite")
   const render = (): void => {
     const row = action.state.get("recovery")
     button.disabled = row?.phase === "preparing"
     button.textContent = row?.phase === "preparing" ? "Preparing recovery file…" : RECOVERY_DOWNLOAD_LABEL
     status.textContent = row?.message ?? ""
+    const erase = action.state.get("reset")
+    reset.disabled = erase?.phase === "resetting"
+    reset.textContent = erase?.phase === "armed" ? RECOVERY_RESET_CONFIRM_LABEL : RECOVERY_RESET_LABEL
+    resetStatus.textContent = erase?.message ?? ""
   }
   const subscription = action.state.subscribeChanges(render)
   render()
-  button.onclick = () => {
-    // The startup shell must not initialize the engine before the app's async
-    // boot boundary. Load the binding only when the human takes this action.
-    void loadFlow().then(({ invokeStartupRecovery, storageRecoveryExportFlow }) =>
-      invokeStartupRecovery(storageRecoveryExportFlow(action.run))
-    ).catch(async () => {
+  /**
+   * Run one of this panel's flows. The startup shell must not initialize the
+   * engine before the app's async boot boundary, so the binding loads only
+   * when the human takes the action.
+   */
+  const invoke = (
+    pick: (module: Awaited<ReturnType<typeof loadFlow>>) => Parameters<
+      Awaited<ReturnType<typeof loadFlow>>["invokeStartupRecovery"]
+    >[0]
+  ): void => {
+    void loadFlow().then((module) => module.invokeStartupRecovery(pick(module))).catch(async () => {
       // The Flow normally returns a structured failure. An engine defect must
       // not turn raw host errors into browser error telemetry either.
       try {
@@ -53,12 +77,16 @@ export const createStartupRecovery = (
       }
     })
   }
-  element.append(warning, button, status)
+  button.onclick = () => invoke((module) => module.storageRecoveryExportFlow(action.run))
+  reset.onclick = () => invoke((module) => module.storageRecoveryResetFlow(action.reset))
+  element.append(warning, button, status, reset, resetStatus)
   let closing: Promise<void> | undefined
   const dispose = (): Promise<void> => {
     if (closing !== undefined) return closing
     button.onclick = null
     button.disabled = true
+    reset.onclick = null
+    reset.disabled = true
     subscription.unsubscribe()
     closing = action.dispose().finally(() => download?.dispose())
     return closing

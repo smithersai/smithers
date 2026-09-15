@@ -660,6 +660,7 @@ describe("command registry bindings", () => {
       "account.show",
       "storage.recovery",
       "storage.recovery.export",
+      "storage.recovery.reset",
       "cloud.sign-in",
       "cloud.prompt",
       "cloud.sign-out",

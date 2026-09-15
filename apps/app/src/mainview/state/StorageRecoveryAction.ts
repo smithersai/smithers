@@ -2,12 +2,21 @@ import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
 import { z } from "zod"
 import { encodeStorageRecovery, StorageRecoveryError } from "../chain/StorageRecovery"
 import type { StorageRecoverySnapshot } from "../chain/StorageRecovery"
-import { RECOVERY_HUMAN_ONLY } from "./StorageRecoveryContract"
+import {
+  HeldBrowserStorageError,
+  RECOVERY_HUMAN_ONLY,
+  RECOVERY_RESET_ARMED,
+  RECOVERY_RESET_FAILED,
+  RECOVERY_RESET_HELD,
+  RECOVERY_RESET_HUMAN_ONLY,
+  RECOVERY_RESET_RUNNING
+} from "./StorageRecoveryContract"
 const CANCELED = "Recovery was canceled because the app closed. Saved data was not reset."
 
 const RecoveryStateSchema = z.object({
-  id: z.literal("recovery"),
-  phase: z.enum(["idle", "preparing", "ready", "failed", "canceled"]),
+  /* "recovery" is the download; "reset" is the erase, armed by its first press. */
+  id: z.enum(["recovery", "reset"]),
+  phase: z.enum(["idle", "preparing", "armed", "resetting", "ready", "failed", "canceled"]),
   message: z.string().nullable(),
   actor: z.enum(["system", "user", "smithers"]),
   revision: z.number().int().nonnegative()
@@ -18,6 +27,11 @@ export interface StorageRecoveryHost {
   readonly read: () => Promise<StorageRecoverySnapshot>
   /** A local browser handoff, never an HTTP upload or model/tool output. */
   readonly download: (json: string) => void | Promise<void>
+  /**
+   * Release this document's store handles, erase this browser's saved Smithers
+   * data, and reload. Absent when the host cannot erase, and the act refuses.
+   */
+  readonly reset?: () => Promise<void>
 }
 
 /**
@@ -32,13 +46,21 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
     id: `storage-recovery-${crypto.randomUUID()}`,
     schema: RecoveryStateSchema,
     getKey: (row) => row.id,
-    initialData: [{ id: "recovery", phase: "idle", message: null, actor: "system", revision: 0 }]
+    initialData: [
+      { id: "recovery", phase: "idle", message: null, actor: "system", revision: 0 },
+      { id: "reset", phase: "idle", message: null, actor: "system", revision: 0 }
+    ]
   }))
   let disposed = false
   let pending: Promise<string | void> | undefined
+  let resetting: Promise<string | void> | undefined
   let closing: Promise<void> | undefined
-  const dispatch = async (phase: RecoveryState["phase"], message: string | null): Promise<void> => {
-    await state.update("recovery", (draft) => {
+  const dispatch = async (
+    phase: RecoveryState["phase"],
+    message: string | null,
+    row: RecoveryState["id"] = "recovery"
+  ): Promise<void> => {
+    await state.update(row, (draft) => {
       draft.phase = phase
       draft.message = message
       draft.actor = actor
@@ -80,12 +102,52 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
     return pending
   }
 
+  /*
+   * The erase, as a two-press act on one button. Deleting every local byte on
+   * a single click of a failure page is not a decision anyone makes on
+   * purpose, so the first press arms the act and says what it will take with
+   * it; the second runs it. Both presses are the same flow through the same
+   * dispatcher, with the actor recorded — never ad-hoc DOM.
+   */
+  const reset = (): Promise<string | void> => {
+    if (actor !== "user") return Promise.resolve(RECOVERY_RESET_HUMAN_ONLY)
+    if (disposed) return Promise.resolve(CANCELED)
+    if (resetting !== undefined) return resetting
+    const erase = host.reset
+    if (erase === undefined) return Promise.resolve(RECOVERY_RESET_FAILED)
+    resetting = (async () => {
+      await state.preload()
+      if (disposed) return CANCELED
+      if (state.get("reset")?.phase !== "armed") {
+        await dispatch("armed", RECOVERY_RESET_ARMED, "reset")
+        return
+      }
+      await dispatch("resetting", RECOVERY_RESET_RUNNING, "reset")
+      try {
+        await erase()
+        // A successful erase reloads the page; nothing after this is seen.
+      } catch (error) {
+        const message = disposed
+          ? CANCELED
+          : error instanceof HeldBrowserStorageError
+          ? RECOVERY_RESET_HELD
+          : RECOVERY_RESET_FAILED
+        await dispatch(disposed ? "canceled" : "failed", message, "reset")
+        return message
+      }
+    })().finally(() => {
+      resetting = undefined
+    })
+    return resetting
+  }
+
   const dispose = (): Promise<void> => {
     if (closing !== undefined) return closing
     disposed = true
     closing = (async () => {
       try {
         await pending
+        await resetting
       } finally {
         await state.cleanup()
       }
@@ -98,7 +160,7 @@ export const createStorageRecoveryAction = (host: StorageRecoveryHost, actor: "u
     await state.preload()
     if (!disposed) await dispatch("failed", new StorageRecoveryError("unreadable").message)
   }
-  return { state, run, dispose, bindingUnavailable }
+  return { state, run, reset, dispose, bindingUnavailable }
 }
 
 export type StorageRecoveryAction = ReturnType<typeof createStorageRecoveryAction>
