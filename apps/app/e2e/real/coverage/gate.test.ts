@@ -254,4 +254,36 @@ export const searchFlows = (actions) => [
     expect(codes).toContain("nonempty-is-not-success")
     expect(codes).toContain("refusal-is-not-success")
   })
+
+  test("requires per-test metadata for imported authenticated test aliases", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "auth.spec.ts"), valid + '\nimport { authenticatedTest as signedIn } from "./profile"\nsignedIn("missing identity", async () => {})\n')
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)).toContain("missing-per-test-scenario")
+  })
+
+  test.each(["skip", "fixme", "fail", "only", "describe.skip", "describe.only", "describe.parallel.only", "describe.serial.skip"])("rejects %s on derived real test variants", (method) => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "auth.spec.ts"), valid + `\nimport { authenticatedTest as signedIn } from "./profile"\nconst ordinary = signedIn.extend({})\nordinary.${method}(true)\n`)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)).toContain("forbidden-double")
+  })
+
+  test("keeps successful-path refusal checks active through imported and derived fixtures", () => {
+    const { real, flows } = fixture()
+    const source = valid.replace('import { test } from "./support"', 'import { authenticatedTest as signedIn } from "./profile"\nconst ordinary = signedIn.extend({})')
+      .replace('test("opens"', 'ordinary("opens"')
+      .replace('expect(await readDisk()).toBe("bytes")', 'await expect(page.locator("output")).toContainText("permission denied")')
+    writeFileSync(join(real, "auth.spec.ts"), source)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings).toContainEqual(expect.objectContaining({ code: "refusal-is-not-success", severity: "error" }))
+  })
+
+  test("accepts direct metadata on a derived fixture but rejects hidden metadata wrappers", () => {
+    const { real, flows } = fixture()
+    const file = join(real, "auth.spec.ts")
+    const source = valid.replace('import { test } from "./support"', 'import { authenticatedTest as signedIn } from "./profile"\nconst ordinary = signedIn.extend({})')
+      .replace('test("opens"', 'ordinary("opens"')
+    writeFileSync(file, source)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    writeFileSync(file, source.replace('scenario("repo.open.success",', 'wrap(scenario("repo.open.success",').replace('}), async', '})), async'))
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)).toContain("missing-per-test-scenario")
+  })
 })

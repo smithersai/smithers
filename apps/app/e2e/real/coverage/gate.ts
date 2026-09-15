@@ -159,8 +159,54 @@ const callPath = (node: ts.Expression): string => {
   return ""
 }
 
+const fixtureBindings = new WeakMap<ts.SourceFile, ReadonlySet<string>>()
+const testBindings = (source: ts.SourceFile): ReadonlySet<string> => {
+  const cached = fixtureBindings.get(source)
+  if (cached) return cached
+  const names = new Set(["test", "it"])
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly) continue
+    const bindings = statement.importClause?.namedBindings
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const binding of bindings.elements) {
+        const original = (binding.propertyName ?? binding.name).text
+        if (!binding.isTypeOnly && (original === "test" || original === "it" || original.endsWith("Test"))) names.add(binding.name.text)
+      }
+    } else if (bindings && ts.isNamespaceImport(bindings)) names.add(`${bindings.name.text}.test`)
+  }
+  // Follow fixture aliases and extend chains, including variants declared
+  // inside describe blocks. Their spelling cannot disable admission checks.
+  let changed = true
+  while (changed) {
+    changed = false
+    const visit = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        const initializer = node.initializer
+        const base = ts.isCallExpression(initializer) && ts.isPropertyAccessExpression(initializer.expression) && initializer.expression.name.text === "extend"
+          ? callPath(initializer.expression.expression) : callPath(initializer)
+        if (names.has(base) && !names.has(node.name.text)) { names.add(node.name.text); changed = true }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+  fixtureBindings.set(source, names)
+  return names
+}
+
+const canonicalCallPath = (expression: ts.Expression, source: ts.SourceFile): string => {
+  const path = callPath(expression)
+  for (const name of testBindings(source)) {
+    if (path === name || path.startsWith(`${name}.`)) return `test${path.slice(name.length)}`
+  }
+  return path
+}
+
 const forbiddenCalls = new Map<string, string>([
   ["test.skip", "skipped real scenario"], ["test.fixme", "disabled real scenario"],
+  ["test.fail", "expected-failure real scenario"], ["test.only", "focused real scenario"],
+  ["test.describe.skip", "skipped real scenarios"], ["test.describe.fixme", "disabled real scenarios"],
+  ["test.describe.only", "focused real scenarios"],
   ["describe.skip", "skipped real scenario"], ["it.skip", "skipped real scenario"],
   ["vi.mock", "module mock"], ["jest.mock", "module mock"], ["mock.module", "module mock"]
 ])
@@ -175,7 +221,7 @@ const refusal = /(?:sign in|not authorized|permission denied|unavailable|unsuppo
 const scenarioPathFor = (node: ts.Node): readonly string[] => {
   let current: ts.Node | undefined = node
   while (current) {
-    if (ts.isCallExpression(current) && ["test", "test.only"].includes(callPath(current.expression))) {
+    if (ts.isCallExpression(current) && ["test", "test.only"].includes(canonicalCallPath(current.expression, current.getSourceFile()))) {
       const details = current.arguments[1]
       if (details && ts.isCallExpression(details) && callPath(details.expression) === "scenario" && details.arguments[1] && ts.isObjectLiteralExpression(details.arguments[1])) {
         return (strings(objectProperty(details.arguments[1], "coverage")) ?? []).filter((token) => token.startsWith("path:")).map((token) => token.slice(5))
@@ -217,7 +263,9 @@ const scanFile = (file: string): readonly GateFinding[] => {
           }
         }
       }
-      const reason = forbiddenCalls.get(path)
+      const canonical = canonicalCallPath(node.expression, source)
+      const reason = forbiddenCalls.get(canonical) ?? (/^test\.describe\.(?:parallel|serial)\.(?:only|skip|fixme)$/.test(canonical)
+        ? "focused or disabled real scenarios" : undefined)
       if (reason) add("error", "forbidden-double", node, `${path} is ${reason}; real E2E code must use the real boundary`)
       if (ts.isPropertyAccessExpression(node.expression)) {
         const memberReason = forbiddenMemberCalls.get(node.expression.name.text)
@@ -310,7 +358,7 @@ export const scenarioDeclarations = (specs: readonly string[]): readonly Scenari
         const direct = parseScenarioCall(file, source, node)
         if (direct) scenarios.push(direct)
       }
-      if (ts.isCallExpression(node) && callPath(node.expression) === "test.use" && node.arguments[0] && ts.isObjectLiteralExpression(node.arguments[0])) {
+      if (ts.isCallExpression(node) && canonicalCallPath(node.expression, source) === "test.use" && node.arguments[0] && ts.isObjectLiteralExpression(node.arguments[0])) {
         const scenario = parseScenario(file, source, node.arguments[0])
         if (scenario) scenarios.push(scenario)
       }
@@ -325,7 +373,7 @@ const missingPerTestMetadata = (specs: readonly string[]): readonly GateFinding[
   const source = sourceFile(file)
   const findings: GateFinding[] = []
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ["test", "test.only"].includes(callPath(node.expression))) {
+    if (ts.isCallExpression(node) && ["test", "test.only"].includes(canonicalCallPath(node.expression, source))) {
       const details = node.arguments[1]
       if (!details || !ts.isCallExpression(details) || callPath(details.expression) !== "scenario") {
         findings.push({ severity: "error", code: "missing-per-test-scenario", file, line: lineOf(source, node), message: "Every real test requires scenario(id, metadata) as its Playwright details argument" })
