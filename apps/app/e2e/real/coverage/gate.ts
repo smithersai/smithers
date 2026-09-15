@@ -172,7 +172,7 @@ const forbiddenMemberCalls = new Map<string, string>([
 const forbiddenEnv = new Set(["SMITHERS_CHAT_STUB", "SMITHERS_E2E_CAPTURED_TARGETS", "SMITHERS_OFFLINE"])
 const refusal = /(?:sign in|not authorized|permission denied|unavailable|unsupported|refus(?:e|al)|could not|can't|cannot)/i
 
-const scenarioPathFor = (source: ts.SourceFile, node: ts.Node): readonly string[] => {
+const scenarioPathFor = (node: ts.Node): readonly string[] => {
   let current: ts.Node | undefined = node
   while (current) {
     if (ts.isCallExpression(current) && ["test", "test.only"].includes(callPath(current.expression))) {
@@ -210,7 +210,7 @@ const scanFile = (file: string): readonly GateFinding[] => {
           add("error", "nonempty-is-not-success", node, "A nonempty-text assertion cannot establish required completion")
         }
         if (refusal.test(text)) {
-          const paths = scenarioPathFor(source, node)
+          const paths = scenarioPathFor(node)
           add(paths.includes("success") ? "error" : "review", "refusal-is-not-success", node, paths.includes("success")
             ? "A refusal/failure message cannot satisfy a successful scenario"
             : "Refusal assertion is valid only when this error/permission scenario also proves the requested boundary behavior")

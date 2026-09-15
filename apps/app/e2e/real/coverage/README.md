@@ -86,3 +86,11 @@ service dependency to exclude them from production. Use `openApp(page)` from
 `support` instead of navigating to `/`: the deployed root is the marketing
 site. `SMITHERS_REAL_APP_PATH` selects a same-origin app repository path; its
 production default is `/codeplanesmithers/canary-sandbox`.
+
+The shared `scenario()` details also derive `@real-host:*` Playwright tags.
+The real config selects the current host before fixtures execute, so a
+production-only case is not a local preflight failure or a skipped test.
+Use `run-real-e2e.ts` for targeted `--grep` runs: it combines the requested
+name expression with the host filter instead of overriding it. Omitted
+applicable scenarios still appear as execution gaps; aggregate review still
+requires all declared hosts. Test discovery (`--list`) is not execution proof.

@@ -38,6 +38,7 @@ export interface RealScenarioDetailsMetadata {
 
 /** Canonical per-test details. The fixture and reporter consume these annotations. */
 export const scenario = (id: string, metadata: RealScenarioDetailsMetadata): TestDetails => ({
+  tag: metadata.coverage.filter((token) => token.startsWith("host:")).map((token) => `@real-${token}`),
   annotation: [
     { type: "real-scenario", description: id },
     ...(metadata.description === undefined ? [] : [{ type: "real-description", description: metadata.description }]),

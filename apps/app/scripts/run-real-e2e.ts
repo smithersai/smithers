@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { extractRequestedGrep } from "../e2e/real/coverage/selection"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -53,6 +54,8 @@ const serve = async (): Promise<never> => {
 if (args[0] === "serve") {
   await serve()
 } else {
+  const selection = extractRequestedGrep(args)
+  if (selection.grep !== undefined) process.env.SMITHERS_REAL_TEST_GREP = selection.grep
   if (process.env.SMITHERS_CHAT_STUB === "1") throw new Error("The real E2E runner refuses SMITHERS_CHAT_STUB=1.")
   if (!process.env.SMITHERS_REAL_E2E_REVISION) {
     for (const invocation of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
@@ -74,8 +77,8 @@ if (args[0] === "serve") {
   const evidence = process.env.SMITHERS_REAL_E2E_RESULTS ?? join(appDir, "test-results/real-e2e-evidence.json")
   process.env.SMITHERS_REAL_E2E_RESULTS = evidence
   await rm(evidence, { force: true })
-  const code = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...args])
+  const code = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...selection.args])
   if (args.includes("--list")) process.exit(code)
-  const gate = await run(process.execPath, ["scripts/check-real-e2e.ts", "--results", evidence])
+  const gate = await run(process.execPath, ["scripts/check-real-e2e.ts", "--results", evidence, "--expected-host", process.env.SMITHERS_REAL_E2E_HOST!, "--expected-revision", process.env.SMITHERS_REAL_E2E_REVISION!])
   process.exit(code || gate)
 }

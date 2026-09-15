@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test"
+import { hostGrep } from "./e2e/real/coverage/selection"
+import type { RealHost } from "./e2e/real/coverage/types"
 
 const PORT = Number(process.env.SMITHERS_REAL_PORT ?? "47321")
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error(`Invalid SMITHERS_REAL_PORT: ${process.env.SMITHERS_REAL_PORT}`)
@@ -14,6 +16,7 @@ if (!/^https?:$/.test(parsed.protocol)) throw new Error(`SMITHERS_REAL_BASE_URL 
 export default defineConfig({
   testDir: "e2e/real",
   testMatch: "**/*.spec.ts",
+  grep: hostGrep(expectedHost as RealHost, process.env.SMITHERS_REAL_TEST_GREP),
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
