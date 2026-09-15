@@ -45,3 +45,11 @@ test("finished workspaces exclude tutorial artifacts even without a repo selecti
   expect(workspaceTranscript(cards, null)).toEqual(cards.slice(4))
   expect(workspaceTranscript(cards, "acme/api")).toEqual(cards.slice(4))
 })
+
+
+test("an issue form keeps the practice provenance carried in its given fields", () => {
+  const practice = { id: "form-issue.add-flow", kind: "flow-form", payload: { given: { number: 3, repo: "practice:smithersai/hello-server" } } }
+  const workspace = { ...practice, id: "workspace-form", payload: { given: { number: 3, repo: "acme/api" } } }
+  expect(tutorialTranscript([practice, workspace])).toEqual([practice])
+  expect(workspaceTranscript([practice, workspace], null)).toEqual([workspace])
+})

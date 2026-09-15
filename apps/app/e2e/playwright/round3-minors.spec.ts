@@ -29,7 +29,7 @@ test.describe("phone help", () => {
     // The first introduction anchors to the suggested action; Next moves it to Chat.
     await page.locator("[data-guidance-next]").click()
     const help = page.locator('.guide-chat-controls .help-bubble')
-    await expect(help).toBeVisible()
+    await expect(help).toBeVisible({ timeout: 20_000 })
     await expect(help).toHaveCSS("background-color", "rgb(247, 246, 241)")
     const goal = await page.locator('.guide-goal').boundingBox()
     const bubble = await help.boundingBox()

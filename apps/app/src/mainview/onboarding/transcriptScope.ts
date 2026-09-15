@@ -60,9 +60,10 @@ export const workspaceTranscript = <Row extends { id?: string; payload: object }
     && (repo === null || !("repo" in card.payload) || typeof card.payload.repo !== "string" || card.payload.repo === repo))
 
 /** Practice frames retain their provenance even when an older payload lost its repo key. */
-export function isTutorialCard(card: { id?: string; payload: object }): boolean {
-  const payload = card.payload as { repo?: unknown; input?: { liveTutorial?: unknown } }
+export function isTutorialCard(card: { id?: string; kind?: string; payload: object }): boolean {
+  const payload = card.payload as { repo?: unknown; input?: { liveTutorial?: unknown }; given?: { repo?: unknown } }
   return typeof payload.repo === "string" && payload.repo.startsWith("practice:")
+    || (card.kind === "flow-form" && typeof payload.given?.repo === "string" && payload.given.repo.startsWith("practice:"))
     || payload.input?.liveTutorial !== undefined
     || /^(practice-|live-tutorial-|flow-run-practice-)/.test(card.id ?? "")
 }
