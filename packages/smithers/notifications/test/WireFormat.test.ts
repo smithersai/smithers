@@ -157,6 +157,30 @@ describe("the durable notification vocabulary", () => {
     ])
   })
 
+  it("preserves legacy fingerprints with numeric keys, omitted fields and escaped surrogates", async () => {
+    const notification: Notification = {
+      ...steer,
+      _tag: "system-event",
+      id: "wire-legacy-json",
+      delivery: "queue",
+      payload: { "2": "two", "10": "ten", "\ud800": ["\udead", "😀"] }
+    }
+    const fingerprint = await Effect.runPromise(
+      Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const journal = yield* Journal.Journal
+        yield* queue.admit("run", notification)
+        const page = yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })
+        return (page.entries[0]!.payload as { readonly fingerprint: string }).fingerprint
+      }).pipe(
+        Effect.provide(NotificationQueue.layer),
+        Effect.provide(TestJournal.layer()),
+        Effect.scoped
+      )
+    )
+    expect(fingerprint).toBe("c1aca20e6dd34b8234959ea05a16f2b855af81a2079abde56618ccaf40b3c445")
+  })
+
   it("keys an admission on the notification id and a drain on the lineage and boundary", async () => {
     const sources = await Effect.runPromise(
       Effect.gen(function*() {

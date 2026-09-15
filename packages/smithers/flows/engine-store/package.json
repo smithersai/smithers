@@ -401,6 +401,7 @@
   },
   "dependencies": {
     "@smthrs/artifacts": "1.0.0-rc.0",
+    "@smthrs/canonical": "1.0.0-rc.0",
     "@smthrs/crypto": "1.0.0-rc.0",
     "@smthrs/database": "1.0.0-rc.0",
     "@smthrs/engine": "1.0.0-rc.0",

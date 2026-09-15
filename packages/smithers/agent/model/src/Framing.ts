@@ -5,7 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
-import type * as Sse from "effect/unstable/encoding/Sse"
+import * as Sse from "effect/unstable/encoding/Sse"
 import { ModelError } from "./ModelError.ts"
 
 /**
@@ -116,24 +116,19 @@ export const makeSse = (limits: Limits = {}): Framing<string> => ({
   id: "sse",
   frame: (stream) =>
     Stream.suspend(() => {
-      let data: Array<string> = []
+      let frames: Array<string> = []
+      const parser = Sse.makeParser((event) => {
+        if (event._tag === "Event" && event.data !== "" && event.data !== "[DONE]") frames.push(event.data)
+      }, { maxEventSize: limits.maxRecordBytes ?? defaultMaxRecordBytes })
       return bounded(stream, true, limits).pipe(
         Stream.decodeText,
-        // The trailing sentinel never adds a blank line, so partial final events
-        // remain un-emitted. Complete events dispatch on their own blank line.
-        Stream.concat(Stream.make("\u0000")),
-        Stream.splitLines,
-        Stream.flatMap((line) => {
-          if (line !== "") {
-            if (line === "data") data.push("")
-            else if (line.startsWith("data:")) data.push(line.slice(line[5] === " " ? 6 : 5))
-            // id, event, retry and comments do not change provider frame data.
-            return Stream.empty
-          }
-          const frame = data.join("\n")
-          data = []
-          return frame === "" || frame === "[DONE]" ? Stream.empty : Stream.succeed(frame)
-        })
+        Stream.mapEffect((text) => {
+          const error = parser.feed(text)
+          const emitted = frames
+          frames = []
+          return error === undefined ? Effect.succeed(emitted) : Effect.fail(error)
+        }),
+        Stream.flattenIterable
       )
     })
 })

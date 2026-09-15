@@ -4205,6 +4205,9 @@ importers:
 
   packages/smithers/flows/engine:
     dependencies:
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../canonical
       '@smthrs/crypto':
         specifier: 1.0.0-rc.0
         version: link:../crypto
@@ -4278,6 +4281,9 @@ importers:
 
   packages/smithers/flows/engine-store:
     dependencies:
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../canonical
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.0
         version: link:../artifacts
@@ -5802,6 +5808,12 @@ importers:
 
   packages/smithers/notifications:
     dependencies:
+      '@smthrs/canonical':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/canonical
+      '@smthrs/crypto':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/crypto
       '@smthrs/journal':
         specifier: 1.0.0-rc.0
         version: link:../flows/journal

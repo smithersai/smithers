@@ -6,6 +6,8 @@
  *
  * @since 0.1.0
  */
+import { canonicalize } from "@smthrs/canonical"
+import { digestSync } from "@smthrs/crypto/Sha256"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Context, Effect, HashMap, Layer, Option, Schema, SchemaIssue, Semaphore } from "effect"
 import * as FoldCache from "./internal/foldCache.ts"
@@ -288,31 +290,12 @@ const validated = (
     )
   })
 
-/**
- * A stable rendering of a notification's content, used to tell a producer
- * retry from a reused id. Keys are sorted and absent values are dropped, so
- * two encodings of one notification compare equal whatever order their fields
- * were written in.
- */
-const canonical = (value: unknown): string => {
-  // Every value reaching here is a decoded notification, so each leaf is JSON
-  // and `JSON.stringify` returns a string for it.
-  if (value === null || typeof value !== "object") return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
-  const record = value as Readonly<Record<string, unknown>>
-  return `{${
-    Object.keys(record).sort().filter((key) => record[key] !== undefined).map((key) =>
-      `${JSON.stringify(key)}:${canonical(record[key])}`
-    ).join(",")
-  }}`
-}
+// Persisted notification JSON predates RFC 8785's rejection of lone surrogates.
+const canonical = (value: unknown): string => canonicalize(value, { loneSurrogates: "escape" })
 
 /** Fingerprint the validated input before the journal redacts its payload. */
 const fingerprint = (notification: NotificationModel.Notification): Effect.Effect<string> =>
-  Effect.promise(() => globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(notification))))
-    .pipe(
-      Effect.map((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""))
-    )
+  Effect.sync(() => digestSync(canonical(notification)))
 
 /** Freeze the decoded JSON graph before any queue output can expose it. */
 const freeze = (value: unknown): void => {

@@ -167,6 +167,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.0",
+    "@smthrs/crypto": "1.0.0-rc.0",
     "@smthrs/journal": "1.0.0-rc.0"
   },
   "devDependencies": {

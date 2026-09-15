@@ -25,7 +25,8 @@
     "./Canonical": "./src/Canonical.ts",
     "./index": "./src/index.ts",
     "./Record": "./src/Record.ts",
-    "./BoundedJson": "./src/BoundedJson.ts"
+    "./BoundedJson": "./src/BoundedJson.ts",
+    "./IssuePath": "./src/IssuePath.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -89,6 +90,16 @@
         "require": {
           "types": "./dist/cjs/BoundedJson.d.ts",
           "default": "./dist/cjs/BoundedJson.js"
+        }
+      },
+      "./IssuePath": {
+        "import": {
+          "types": "./dist/esm/IssuePath.d.ts",
+          "default": "./dist/esm/IssuePath.js"
+        },
+        "require": {
+          "types": "./dist/cjs/IssuePath.d.ts",
+          "default": "./dist/cjs/IssuePath.js"
         }
       }
     }

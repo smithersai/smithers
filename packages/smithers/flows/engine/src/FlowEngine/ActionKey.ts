@@ -4,6 +4,7 @@
  * @private
  * @since 0.1.0
  */
+import { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath"
 import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import type * as Crypto from "effect/Crypto"
@@ -12,7 +13,6 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as SchemaAST from "effect/SchemaAST"
-import type * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
 
 /**
@@ -73,52 +73,12 @@ export const ordinalScope = (
       : `${scope}/v:${action.implementationVersion.length}:${action.implementationVersion}`
   ))
 
-const renderIssuePath = (segments: ReadonlyArray<PropertyKey>): string =>
-  // The type argument is explicit because `"$"` is itself a `PropertyKey`, so
-  // inference picks the non-generic overload, types the accumulator as
-  // `PropertyKey`, and then refuses `+` on a symbol.
-  segments.reduce<string>(
-    (path, segment) => path + (typeof segment === "number" ? `[${segment}]` : `.${String(segment)}`),
-    "$"
-  )
-
 /**
- * Returns the first leaf's accumulated pointer path from a schema error.
- *
- * The walk is bounded so a pathological issue tree cannot diverge. It reads
- * only issue tags, pointer segments, and child links; rejected input values
- * are never copied into the returned diagnostic.
- *
- * @category utilities
+ * Finds the first rejected field without rendering its value.
  * @private
- * @since 1.0.0
+ * @since 0.1.0
  */
-export const schemaErrorPath = (error: Schema.SchemaError): string => {
-  const segments: Array<PropertyKey> = []
-  let issue: SchemaIssue.Issue = error.issue
-  for (let depth = 0; depth < 64; depth++) {
-    switch (issue._tag) {
-      case "Pointer":
-        segments.push(...issue.path)
-        issue = issue.issue
-        continue
-      case "Filter":
-      case "Encoding":
-        issue = issue.issue
-        continue
-      case "Composite":
-      case "AnyOf": {
-        const first = issue.issues[0]
-        if (first === undefined) return renderIssuePath(segments)
-        issue = first
-        continue
-      }
-      default:
-        return renderIssuePath(segments)
-    }
-  }
-  return renderIssuePath(segments)
-}
+export { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath"
 
 /**
  * A caller-declared identity carried material canonicalization rejects

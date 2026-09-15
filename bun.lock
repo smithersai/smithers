@@ -2099,6 +2099,7 @@
       "name": "@smthrs/engine",
       "version": "1.0.0-rc.0",
       "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/crypto": "1.0.0-rc.0",
         "@smthrs/flow": "1.0.0-rc.0",
         "@smthrs/keys": "1.0.0-rc.0",
@@ -2133,6 +2134,7 @@
       "name": "@smthrs/engine-store",
       "version": "1.0.0-rc.0",
       "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.0",
         "@smthrs/artifacts": "1.0.0-rc.0",
         "@smthrs/crypto": "1.0.0-rc.0",
         "@smthrs/database": "1.0.0-rc.0",
@@ -2874,6 +2876,8 @@
       "name": "@smthrs/notifications",
       "version": "1.0.0-rc.0",
       "dependencies": {
+        "@smthrs/canonical": "1.0.0-rc.0",
+        "@smthrs/crypto": "1.0.0-rc.0",
         "@smthrs/journal": "1.0.0-rc.0",
       },
       "devDependencies": {

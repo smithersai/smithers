@@ -3,7 +3,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it, vi } from "vitest"
-import { Canonical } from "../src/index.ts"
+import { Canonical, canonicalize } from "../src/index.ts"
 
 const serialize = (value: unknown): Canonical => Effect.runSync(Schema.decodeUnknownEffect(Canonical)(value))
 
@@ -130,6 +130,13 @@ describe("non-finite numbers", () => {
 })
 
 describe("Unicode", () => {
+  it("can preserve legacy escaped UTF-16 without changing strict canonicalization", () => {
+    const input = { "10": "ten", "2": "two", "\uD800": ["\uDEAD"], absent: undefined }
+    expect(canonicalize(input, { loneSurrogates: "escape" }))
+      .toBe("{\"10\":\"ten\",\"2\":\"two\",\"\\ud800\":[\"\\udead\"]}")
+    expect(() => canonicalize(input)).toThrow("canonical_lone_surrogate")
+  })
+
   it.each([
     ["lone high surrogate in a value", { key: "\uD800" }],
     ["lone low surrogate in a value", { key: "\uDEAD" }],

@@ -135,6 +135,10 @@ const caused = (
  * whose lossy stringify forms could collide in a digest. The iterative walk
  * supports 10,000 nested levels below the root.
  *
+ * `loneSurrogates: "escape"` preserves legacy sorted-JSON formats that accepted
+ * unpaired UTF-16 code units. It emits their JSON escapes; this opt-in format
+ * is not RFC 8785. Strict canonicalization remains the default.
+ *
  * Two deliberate divergences favor digest determinism over byte parity: a
  * `toJSON` result is canonicalized recursively (stringify serializes it
  * as-is, so a chained `toJSON` stops after one level there), and a boxed
@@ -144,7 +148,11 @@ const caused = (
  * @category constructors
  * @since 0.1.0
  */
-export const canonicalize = (input: unknown): string => {
+export const canonicalize = (
+  input: unknown,
+  options: { readonly loneSurrogates?: "escape" } = {}
+): string => {
+  const text = options.loneSurrogates === "escape" ? (value: string) => value : assertWellFormed
   const root: Slot = {}
   const ancestors = new WeakSet<object>()
   const tasks: Array<Task> = [{ kind: "value", value: input, key: "", path: "$", depth: 0, slot: root }]
@@ -163,7 +171,7 @@ export const canonicalize = (input: unknown): string => {
         task.keys.flatMap((key, index) =>
           task.slots[index]!.value === undefined
             ? []
-            : `${JSON.stringify(assertWellFormed(key, task.path, "key"))}:${task.slots[index]!.value}`
+            : `${JSON.stringify(text(key, task.path, "key"))}:${task.slots[index]!.value}`
         ).join(",")
       }}`
       continue
@@ -196,7 +204,7 @@ export const canonicalize = (input: unknown): string => {
     }
     if (typeof value === "bigint") throw new CanonicalError("canonical_bigint", "BigInt", path)
     if (typeof value === "string") {
-      slot.value = JSON.stringify(assertWellFormed(value, path, "value"))
+      slot.value = JSON.stringify(text(value, path, "value"))
       continue
     }
     if (value === null || typeof value === "boolean") {
@@ -290,7 +298,7 @@ export const canonicalize = (input: unknown): string => {
     for (let index = keys.length - 1; index >= 0; index--) {
       const member = keys[index]!
       const memberPath = propertyPath(path, member)
-      assertWellFormed(member, memberPath, "key")
+      text(member, memberPath, "key")
       tasks.push({
         kind: "read",
         parent: value as Record<string, unknown>,
