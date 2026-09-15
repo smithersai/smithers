@@ -33,7 +33,7 @@ const cleanup: VibeCleanup = { summary: "✨ feat: finish the validated request"
 const main = "5".repeat(40)
 const preparation: AppendPreparation = { status: "prepared", target_bookmark: "main", expected_commit_id: main, source_commit_id: last.commitId,
   source_base_commit_id: original.commitId, changes: [base, first, last].map(atom => ({ change_id: atom.changeId, commit_id: atom.commitId })) }
-const landed = (status: AppendObservation["status"]) => ({ status, task_id: 12, request: { change_ids: preparation.changes.map(change => change.change_id),
+const landed = (status: AppendObservation["status"]) => ({ status, task_id: 12, request: { change_ids: preparation.changes.map(change => change.commit_id),
   target_bookmark: "main" as const, expected_commit_id: main, operation_key: "existing", append: { source_commit_id: last.commitId,
   source_base_commit_id: original.commitId, description: cleanup.summary } },
   ...(status === "landed" ? { result: { landed_count: 3, target_bookmark: "main" as const, target_commit_id: "9".repeat(40) } } : {}) }) as AppendObservation

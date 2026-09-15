@@ -142,7 +142,7 @@ export const make = (options: Options) => Effect.gen(function*() {
     observe: queued => Effect.gen(function*() {
       const observation = yield* send(HttpClientRequest.get(`${base}/landings/${queued.number}/land/append`), [200], AppendObservation)
       const request = observation.request
-      if (observation.task_id !== queued.taskId || !same(request.change_ids, queued.preparation.changes.map(change => change.change_id)) ||
+      if (observation.task_id !== queued.taskId || !same(request.change_ids, queued.preparation.changes.map(change => change.commit_id)) ||
         request.expected_commit_id !== queued.request.expected_commit_id || request.append.source_commit_id !== queued.request.commit_id ||
         request.append.source_base_commit_id !== queued.request.source_base_commit_id || request.append.description !== queued.request.description ||
         observation.status === "landed" && observation.result.landed_count !== queued.preparation.changes.length) {

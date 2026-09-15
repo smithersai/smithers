@@ -17,8 +17,10 @@ const landing = { request_id: requestId, number: 7, target_bookmark: "main", cha
 const queued: QueuedAppend = { requestId, number: 7, taskId: 12, preparation,
   request: { commit_id: preparation.source_commit_id, expected_commit_id: preparation.expected_commit_id,
     source_base_commit_id: preparation.source_base_commit_id, description } }
+// The durable append request pins commit ids (plue validateLandingAppend), not the
+// landing request's change ids.
 const observation: AppendObservation = { status: "landed", task_id: 12, request: {
-  change_ids: landing.change_ids, target_bookmark: "main", expected_commit_id: preparation.expected_commit_id,
+  change_ids: preparation.changes.map(change => change.commit_id), target_bookmark: "main", expected_commit_id: preparation.expected_commit_id,
   operation_key: "existing-native-operation", append: { source_commit_id: preparation.source_commit_id,
     source_base_commit_id: preparation.source_base_commit_id, description }
 }, result: { landed_count: 2, target_bookmark: "main", target_commit_id: "e".repeat(40) } }
@@ -87,7 +89,7 @@ for (const mode of ["missing-identity", "other-request", "other-stack", "human",
     const reply: Record<string, unknown> = { ...landing }
     if (mode === "missing-identity") delete reply.request_id
     if (mode === "other-request") reply.request_id = options.workspaceId
-    if (mode === "other-stack") reply.change_ids = ["m".repeat(32)]
+    if (mode === "other-stack") reply.change_ids = ["f".repeat(40)]
     if (mode === "human") reply.agent_authored = false
     const { service, calls } = await configured(() => json(reply, 201))
     await assert.rejects(Effect.runPromise(service.create(requestId, preparation, mode === "oversized-summary" ? "界".repeat(11_000) : description)))

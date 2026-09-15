@@ -18,7 +18,10 @@ export type AppendRequest = typeof AppendRequest.Type
 export const QueuedAppend = Schema.Struct({ ...LandingIdentity.fields, taskId: PositiveId,
   preparation: AppendPreparation, request: AppendRequest })
 export type QueuedAppend = typeof QueuedAppend.Type
-const NativeAppendRequest = Schema.Struct({ change_ids: Schema.Array(ChangeId).check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
+// The durable append request pins the exact ordered commits (40-hex commit ids),
+// not change ids: plue's validateLandingAppend requires the last entry to equal
+// append.source_commit_id, and endpoint 4 returns that request verbatim.
+const NativeAppendRequest = Schema.Struct({ change_ids: Schema.Array(CommitId).check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
   target_bookmark: Schema.Literal("main"), expected_commit_id: CommitId,
   operation_key: Schema.NonEmptyString.check(Schema.isMaxLength(1024)), lookup_only: Schema.optionalKey(Schema.Literal(false)),
   append: Schema.Struct({ source_commit_id: CommitId, source_base_commit_id: CommitId,
