@@ -13,6 +13,7 @@ import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { dockerAvailable } from "./helpers/DockerProbe.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -71,8 +72,7 @@ const withBarePath = async <A>(tools: ReadonlyArray<string>, body: () => Promise
 const native = process.platform === "darwin" || process.platform === "linux"
 const hasBwrap = process.platform !== "linux" ||
   NodeChildProcess.spawnSync("sh", ["-c", "command -v bwrap"]).status === 0
-const hasDocker = NodeChildProcess.spawnSync("sh", ["-c", "command -v docker && docker info"], { stdio: "ignore" })
-  .status === 0
+const hasDocker = native && dockerAvailable()
 
 describe.runIf(native)("sandbox enforcement", () => {
   it("is enforced on this host: a Linux runner without bwrap is a red run, not a warning", () => {
