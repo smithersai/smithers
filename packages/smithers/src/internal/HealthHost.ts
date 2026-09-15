@@ -3,7 +3,7 @@
  */
 import { Control, Health, Monitor } from "@smthrs/control"
 import type { Journal } from "@smthrs/journal"
-import { Cause, Effect, type Fiber, Metric, type Scope, Semaphore } from "effect"
+import { Cause, Effect, FiberMap, Metric, type Scope, Semaphore } from "effect"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")
@@ -20,22 +20,21 @@ export const watch = (
   Effect.gen(function*() {
     const control = yield* Control.Control
     const gate = yield* Semaphore.make(registry.limits.maxConcurrentProbes)
-    const active = new Map<string, Fiber.Fiber<Monitor.Report, never>>()
+    const active = yield* FiberMap.make<string, Monitor.Report, never>()
     const monitorId = `host-${randomUUID()}`
     const scan = Effect.gen(function*() {
-      for (const [runId, fiber] of active) if (fiber.pollUnsafe() !== undefined) active.delete(runId)
       let admitted = 0
       for (const status of ["running", "accepted", "waiting-approval", "parked"] as const) {
         const listed = yield* control.list({ _tag: "runs", filters: { status }, limit: 500 })
         if (listed._tag !== "runs") continue
         for (const run of listed.items) {
-          if (active.has(run.runId)) continue
-          if (active.size >= registry.limits.maxSubjects) {
+          if (yield* FiberMap.has(active, run.runId)) continue
+          if ((yield* FiberMap.size(active)) >= registry.limits.maxSubjects) {
             yield* Metric.update(refusedSubjects, 1)
             continue
           }
           const healthCheck = registry.resolve(run.flowId)
-          const fiber = yield* Monitor.run({
+          yield* Monitor.run({
             runId: run.runId,
             monitorId,
             healthCheck,
@@ -56,13 +55,12 @@ export const watch = (
                 })
                   .pipe(Effect.as({ runId: run.runId, beats: [], health: "unknown" as const }))
             ),
-            Effect.forkScoped
+            FiberMap.run(active, run.runId, { onlyIfMissing: true })
           )
-          active.set(run.runId, fiber)
           admitted += 1
         }
       }
-      yield* Metric.update(activeSubjects, active.size)
+      yield* Metric.update(activeSubjects, yield* FiberMap.size(active))
       return admitted
     }).pipe(Effect.catchCause((cause) =>
       Cause.hasInterruptsOnly(cause) ?

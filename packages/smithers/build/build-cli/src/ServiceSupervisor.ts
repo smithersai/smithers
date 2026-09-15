@@ -30,6 +30,7 @@ import * as Data from "effect/Data"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as RcMap from "effect/RcMap"
+import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as NodeHttp from "node:http"
@@ -846,14 +847,9 @@ const probeOnce = (
         cleanup()
         resume(Effect.succeed(result))
       }
-      const timer = setTimeout(
-        () => settle(miss(`the probe timed out after ${attemptTimeoutMs}ms`)),
-        Math.max(attemptTimeoutMs, 1)
-      )
       if ("port" in readiness) {
         const socket = NodeNet.connect({ host: "127.0.0.1", port: readiness.port })
         cleanup = () => {
-          clearTimeout(timer)
           socket.destroy()
         }
         socket.on("connect", () => settle({ ok: true }))
@@ -867,7 +863,6 @@ const probeOnce = (
           settle(status > 0 && status < 500 ? { ok: true } : miss(`GET ${readiness.http} answered ${status}`))
         })
         cleanup = () => {
-          clearTimeout(timer)
           request.destroy()
         }
         request.on(
@@ -879,7 +874,10 @@ const probeOnce = (
         settled = true
         cleanup()
       })
-    })
+    }).pipe(Effect.timeoutOrElse({
+      duration: Math.max(attemptTimeoutMs, 1),
+      orElse: () => Effect.succeed(miss(`the probe timed out after ${attemptTimeoutMs}ms`))
+    }))
 
 // ---------------------------------------------------------------------------
 // Service lifecycle
@@ -975,26 +973,26 @@ const awaitReadiness = (
   tail: () => string,
   context: ProbeContext
 ): Effect.Effect<void, ServiceError> =>
-  Effect.gen(function*() {
+  Effect.suspend(() => {
     const attemptMs = "port" in readiness
       ? portProbeAttemptMs
       : Math.min(parsed.readinessTimeoutMs, probeAttemptCapMs)
-    const deadline = Date.now() + parsed.readinessTimeoutMs
-    let lastMiss = "the probe never ran"
-    while (Date.now() < deadline) {
-      const remaining = deadline - Date.now()
-      const result = yield* probeOnce(readiness, Math.min(attemptMs, remaining), context)
-      if (result.ok) return
-      lastMiss = result.reason
-      yield* Effect.sleep(Math.min(readinessPollMs, Math.max(deadline - Date.now(), 0)))
-    }
-    return yield* Effect.fail(
+    let lastMiss = "the probe did not complete"
+    const timeout = () =>
       new ServiceError({
         key: parsed.spec.key,
         reason: "readiness-timeout",
         message: `service ${parsed.spec.key} was not ready within ${parsed.readinessTimeoutMs}ms: ${lastMiss}`,
         outputTail: tail()
       })
+    return probeOnce(readiness, attemptMs, context).pipe(
+      Effect.flatMap((result) => {
+        if (result.ok) return Effect.void
+        lastMiss = result.reason
+        return Effect.fail(timeout())
+      }),
+      Effect.retry(Schedule.spaced(readinessPollMs)),
+      Effect.timeoutOrElse({ duration: parsed.readinessTimeoutMs, orElse: () => Effect.fail(timeout()) })
     )
   })
 
