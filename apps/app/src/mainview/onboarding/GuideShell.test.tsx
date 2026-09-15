@@ -7,7 +7,7 @@ import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
-import { initialGuide } from "../state/AppState"
+import { initialGuide, type Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import { PRACTICE_CARD, PRACTICE_REPO, practiceChange, practicePicker, practiceStack } from "../state/practice/PracticeRepository"
 import type { GuideClock } from "./advance"
@@ -977,4 +977,53 @@ test("an open chat keeps its question as the read anchor when beat 13 advances",
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     expect(viewport.scrollTop).toBe(740)
   } finally { geometry.mockRestore() }
+}, 5_000)
+
+
+test("run chips dedupe transcript copies, replace outcomes, expire after reading, and stay quiet on reload", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const timers = new Map<number, () => void>()
+  let timerId = 0
+  const clock: GuideClock = { setTimeout: callback => { timers.set(++timerId, callback); return timerId }, clearTimeout: id => { timers.delete(id as number) } }
+  const host = await mountGuide(12, clock, { repo: "will/demo", autoPaused: true }, c => { controller = c })
+  const run = (index: number, phase: "running" | "completed" | "failed"): Card => ({
+    id: `wiki-copy-${index}`, kind: "run-trace", title: "Background run", status: "active", ordinal: 100 + index, createdAt: 100,
+    payload: { repo: "will/demo", runId: "wiki-run", workflow: "librarian/wiki", phase, steps: [], result: null, lastSeq: phase === "running" ? 0 : 1,
+      input: { _librarian: { kind: "wiki", scope: "test", inspected: false } } },
+  })
+  for (let index = 0; index < 12; index++) await controller.store.dispatch({ type: "card.upsert", actor: "system", card: run(index, "running") }).isPersisted.promise
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip="wiki"]')).toHaveLength(1)
+  await controller.store.dispatch({ type: "card.upsert", actor: "system", card: run(0, "completed") }).isPersisted.promise
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip="wiki"]')).toHaveLength(1)
+  expect(text(host.querySelector('[data-run-chip="wiki"]'))).toBe("Wiki completed on will/demo")
+  for (const callback of [...timers.values()]) callback()
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip="wiki"]')).toHaveLength(0)
+  // Another poll/transcript copy cannot resurrect an outcome already read.
+  await controller.store.dispatch({ type: "card.upsert", actor: "system", card: run(12, "completed") }).isPersisted.promise
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip="wiki"]')).toHaveLength(0)
+  controller.dispose()
+  const reloaded = await mountGuide(12, still, { repo: "will/demo" }, async c => {
+    await c.store.dispatch({ type: "card.upsert", actor: "system", card: run(13, "completed") }).isPersisted.promise
+  })
+  expect(reloaded.querySelectorAll('[data-run-chip]')).toHaveLength(0)
+}, 5_000)
+
+test("advancing a beat dismisses run outcomes before their read timer fires", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(12, still, { repo: "will/demo" }, c => { controller = c })
+  await controller.store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "new-outcome", kind: "run-trace", title: "Background run", status: "active", ordinal: 100, createdAt: 100,
+    payload: { repo: "will/demo", runId: "history-run", workflow: "librarian/history", phase: "failed", steps: [], result: null, lastSeq: 1,
+      input: { _librarian: { kind: "history", scope: "test", inspected: false } } },
+  } }).isPersisted.promise
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip]')).toHaveLength(1)
+  await controller.guideAct("decline", "background")
+  await settle()
+  expect(host.querySelectorAll('[data-run-chip]')).toHaveLength(0)
+  controller.dispose()
 }, 5_000)

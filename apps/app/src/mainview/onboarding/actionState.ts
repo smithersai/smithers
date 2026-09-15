@@ -1,6 +1,6 @@
 import { LiveTutorialRunSchema, type LiveTutorialOperation } from "@smthrs/rpc/LiveTutorial"
 import type { Card, GuideState } from "../state/AppState"
-import { LIBRARIAN_LAUNCH_OWNER, LIBRARIAN_COMMANDS, legacyLibrarianFailure, librarianLaunchFor } from "../state/LibrarianLaunch"
+import { LIBRARIAN_LAUNCH_OWNER, LIBRARIAN_COMMANDS, legacyLibrarianFailure, librarianLaunchFor, librarianReceiptFor } from "../state/LibrarianLaunch"
 import type { GuideAction } from "./lessons"
 import { completedGuideAction } from "./advance"
 import { activeLiveTutorialLimit } from "../state/LiveTutorialLimit"
@@ -25,6 +25,11 @@ export function guideActionState(action: GuideAction, cards: readonly Card[], gu
   const launch = background && librarianLaunchFor(guide, background)
   if (launch) {
     const label = background === "wiki" ? "Wiki" : "Mythical history"
+    const receipt = librarianReceiptFor(cards, launch)
+    if (receipt?.payload.phase === "completed") return { ...action, label: `${label} ready`, disabled: true }
+    if (receipt?.payload.phase === "failed") return { ...action, label: `Retry ${label}` }
+    if (receipt?.payload.phase === "running") return { ...action, label: `${label} started`, disabled: true }
+    if (receipt?.payload.phase === "launching") return { ...action, label: `Preparing ${label}…`, disabled: true, busy: true }
     const preparing = launch.phase === "preparing" || launch.phase === "launching"
     if (preparing && launch.owner === LIBRARIAN_LAUNCH_OWNER) return { ...action, label: `Preparing ${label}…`, disabled: true, busy: true }
     if (launch.phase === "failed" || preparing) return { ...action, label: `Retry ${label}` }

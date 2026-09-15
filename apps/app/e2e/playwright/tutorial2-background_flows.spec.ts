@@ -190,3 +190,53 @@ test("a failure after advancing removes the running promise and offers a persist
   await expect.poll(() => launchedFlows(host).length).toBe(3)
   await expect(retry).toHaveCount(0)
 })
+
+test("completed Wiki survives reload without Retry or repeated chips, and only failed history retries", async ({ page }) => {
+  const host = await reachBackgroundLesson(page)
+  await page.route("**/api/workflow/rpc", route => {
+    const call = route.request().postDataJSON()
+    const selector = call.payload?.selector
+    if (call.procedure !== "Projection.Snapshot" || selector?._tag !== "run-summary") return route.fallback()
+    const failed = selector.runId === "librarian-run-2"
+    return route.fulfill({ json: { ok: true, payload: {
+      cursor: { projection: "run-summary", runId: selector.runId, value: 1 },
+      rows: [{ runId: selector.runId, flowId: selector.runId === "librarian-run-1" ? "librarian/wiki" : "librarian/history",
+        status: failed ? "failed" : "completed", createdAt: 0, updatedAt: 1,
+        turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
+        verdict: failed ? "failed — Error: Error: git exited 1" : "Ready", diagnosis: failed ? "failed" : "" }]
+    } } })
+  })
+  await page.keyboard.press("u")
+  const wiki = page.locator('.guide-actions [data-flow="wiki.create"]')
+  await expect(wiki).toContainText("Wiki ready")
+  await expect(wiki).toBeDisabled()
+  await page.keyboard.press("y")
+  const notice = page.locator('.guide-actions [data-notice]')
+  await expect(notice.locator("p")).toContainText("Create Mythical history didn't start:")
+  await expect(notice.locator("p")).not.toContainText("Wiki")
+  await expect(notice.locator("p")).not.toContainText("may have started")
+  // The same outcome remains on the cards while its transient announcement expires.
+  await expect(page.locator('[data-run-chip="wiki"]')).toHaveCount(0)
+  await expect(page.locator('[data-run-chip="history"]')).toHaveCount(0)
+  await page.reload()
+  await stage(page, 12)
+  await expect(wiki).toContainText("Wiki ready")
+  await expect(wiki).toBeDisabled()
+  await expect(notice.locator("p")).toContainText("Create Mythical history didn't start:")
+  await expect(notice.locator("p")).not.toContainText("Wiki")
+  await expect(page.locator('[data-run-chip]')).toHaveCount(0)
+  const details = notice.locator("summary")
+  await details.focus()
+  await page.keyboard.press("Enter")
+  await expect(notice.locator("pre")).toHaveText("failed — Error: Error: git exited 1")
+  await page.keyboard.press("u")
+  expect(launchedFlows(host)).toHaveLength(2)
+  const retry = page.locator('.guide-actions [data-flow="history.bootstrap"]')
+  await expect(retry).toContainText("Retry Mythical history")
+  await retry.focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByText("Both are running. I'll tell you when they're done.", { exact: true })).toBeVisible()
+  await stage(page, 13)
+  expect(launchedFlows(host)).toEqual([`librarian/wiki ${repo}`, `librarian/history ${repo}`, `librarian/history ${repo}`])
+  await expect(page.locator('[data-run-chip]')).toHaveCount(0)
+})

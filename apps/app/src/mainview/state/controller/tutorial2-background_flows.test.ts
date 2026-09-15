@@ -6,6 +6,7 @@ import { createGuideController } from "./guide"
 import type { WorkflowController } from "./workflows"
 import { createLibrarianRunsController, LIBRARIAN_SIGNAL, librarianLaunchTiming, type LibrarianRunHost } from "./librarianRuns"
 import { guideActionState } from "../../onboarding/actionState"
+import { LIBRARIAN_UNCONFIRMED } from "../LibrarianLaunch"
 import { lessonMessage } from "../../onboarding/lessons"
 
 const fixture = async () => {
@@ -15,7 +16,8 @@ const fixture = async () => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12 } }).isPersisted.promise
   let repo = "will/demo", next = 0, refused = false
-  const ctx = { store, commandActor: "user", onDispose: () => {} } as unknown as ControllerContext
+  const disposals: Array<() => void> = []
+  const ctx = { store, commandActor: "user", onDispose: (dispose: () => void) => { disposals.push(dispose) } } as unknown as ControllerContext
   const launches: string[] = []
   const runs = {
     workflowIdentityGuard: () => undefined, workflowBalanceGuard: () => undefined,
@@ -30,7 +32,7 @@ const fixture = async () => {
       return { runId }
     }
   } satisfies LibrarianRunHost
-  return { store, storage, launches, ctx, runs, controller: createLibrarianRunsController(ctx, runs),
+  return { store, storage, launches, ctx, runs, dispose: () => disposals.splice(0).forEach(dispose => dispose()), controller: createLibrarianRunsController(ctx, runs),
     select: (value: string) => { repo = value }, refuse: () => { refused = true } }
 }
 
@@ -317,4 +319,62 @@ test("both failed launches retain their own explanation under the lesson", async
   expect(notice).toContain("Create Mythical history didn't start:")
   expect(f.store.session().guide?.noticeDetail).toContain("History source is unavailable.")
   expect(notice?.split("\n")).toHaveLength(2)
+})
+
+for (const mode of ["reload", "live"] as const) for (const phase of ["launching", "running", "completed", "failed"] as const) {
+  for (const hasRunId of [false, true]) test(`${mode}: ${phase} card repairs an unconfirmed intent ${hasRunId ? "with" : "without"} a run id`, async () => {
+    const f = await fixture()
+    await f.controller.createWiki("will/demo")
+    f.dispose()
+    const original = f.store.collections.cards.get(`flow-run-${f.launches[0]}`)!
+    if (original.kind !== "run-trace") throw Error("missing run")
+    const card = { ...original, payload: { ...original.payload, phase, error: phase === "failed" ? rawFailure : undefined } }
+    const entry = f.store.session().guide!.librarianLaunches![0]!
+    await f.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...f.store.session().guide!,
+      notice: "Wiki may have started. Check Runs before retrying, or choose Do this later.", noticeDetail: LIBRARIAN_UNCONFIRMED,
+      librarianLaunches: [{ ...entry, phase: "failed", reason: LIBRARIAN_UNCONFIRMED, runId: hasRunId ? entry.runId : undefined }] } }).isPersisted.promise
+    if (mode === "reload") await f.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const store = mode === "reload" ? await createAppStore({ kind: "localStorage", storage: f.storage }) : f.store
+    const controller = createLibrarianRunsController({ ...f.ctx, store }, f.runs)
+    if (mode === "reload") await controller.recoverLaunches()
+    else await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    await settle()
+    expect(store.session().guide?.librarianLaunches?.[0]).toMatchObject({ runId: card.payload.runId, phase: phase === "failed" ? "failed" : "started" })
+    if (phase === "failed") {
+      expect(store.session().guide?.notice).toContain("Create Wiki didn't start:")
+      expect(store.session().guide?.noticeDetail).toBe(rawFailure)
+    } else {
+      expect(store.session().guide?.notice).toBeUndefined()
+      expect(store.session().guide?.noticeDetail).toBeUndefined()
+    }
+    const action = guideActionState({ label: "Create Wiki", key: "u", flow: "wiki.create" }, [...store.collections.cards.values()], store.session().guide!)
+    expect(action.label).toBe(phase === "failed" ? "Retry Wiki" : phase === "completed" ? "Wiki ready" : phase === "launching" ? "Preparing Wiki…" : "Wiki started")
+    expect(action.disabled === true).toBe(phase !== "failed")
+    f.dispose()
+  })
+}
+
+test("completed Wiki and failed history name only history; a completed retry finishes the lesson", async () => {
+  const f = await fixture()
+  await f.controller.createWiki("will/demo")
+  await changePhase(f, 0, "completed")
+  const launch = f.runs.launchWorkflow
+  f.runs.launchWorkflow = async args => {
+    const result = await launch(args)
+    await changePhase(f, 1, "failed")
+    return result
+  }
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.store.session().guide?.notice).toBe(failedLine)
+  expect(f.store.session().guide?.noticeDetail).toBe(rawFailure)
+  f.runs.launchWorkflow = async args => {
+    const result = await launch(args)
+    await changePhase(f, 2, "completed")
+    return result
+  }
+  await f.controller.bootstrapHistory("will/demo")
+  expect(f.store.session().guide?.completed).toContain(LIBRARIAN_SIGNAL)
+  expect(f.store.session().guide?.notice).toBeUndefined()
+  expect(f.store.session().guide?.noticeDetail).toBeUndefined()
+  f.dispose()
 })

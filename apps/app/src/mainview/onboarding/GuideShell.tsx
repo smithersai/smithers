@@ -30,6 +30,7 @@ import { HelpBubble } from "../HelpBubble"
 import { GuidanceText } from "../GuidanceText"
 import { useCoarsePointer } from "../runtime/PointerMode"
 import { legacyLibrarianFailure, librarianFailureMessage, librarianLaunchFor } from "../state/LibrarianLaunch"
+import { LibrarianRunChips } from "./LibrarianRunChips"
 import { guideActionState } from "./actionState"
 import { ToastActionButton, toastActionShortcut } from "../ToastAction"
 
@@ -208,7 +209,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
   const dockWasOpen = useRef(false)
   const picker = cards.find(card => card.id === PRACTICE_CARD.commits)
   const runCard = cards.find(card => card.id === PRACTICE_CARD.run)
-  const librarianRuns = cards.flatMap(card => card.kind === "run-trace" && typeof card.payload.input?._librarian === "object" ? [card] : [])
   const runCommandGuide = (action: string, value?: string) => {
     controller.runCommand("onboarding.act", `${action}${value === undefined ? "" : ` ${JSON.stringify(value)}`}`)
   }
@@ -630,17 +630,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         </section>
       {/* The footer shares the shell's column with the dock. */}
       <footer data-keyboard-pane="Tutorial controls" className="guide-footer">
-        {/* Background runs stay in the chrome after the tutorial ends (SCRIPT v4 beat 12): the footer is the chrome the terminal keeps. */}
-        {librarianRuns.length > 0 && stage >= GUIDE_BRIDGE && (
-          <span className="guide-run-chips" aria-label="Background runs">
-            {librarianRuns.map(run => {
-              const kind = (run.payload.input?._librarian as { kind?: string }).kind
-              return <span key={run.id} className="guide-run-chip" data-run-chip={kind} data-phase={run.payload.phase}>
-                {kind === "wiki" ? "Wiki" : "Mythical history"} {run.payload.phase === "running" ? "started" : run.payload.phase} on {run.payload.repo}
-              </span>
-            })}
-          </span>
-        )}
+        {stage >= GUIDE_BRIDGE && <LibrarianRunChips key={`${guide.playthrough ?? 0}:${stage}`} cards={cards} clock={clock} />}
         <div className="guide-progress" aria-label={`Lesson ${stage} of ${GUIDE_LAST_STEP}`}>
           {Array.from({ length: GUIDE_LAST_STEP }, (_, i) => (
             <span key={i} data-passed={i + 1 <= stage} />

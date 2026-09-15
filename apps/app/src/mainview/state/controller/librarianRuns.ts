@@ -4,7 +4,7 @@ import type { WorkflowController } from "./workflows"
 import type { CommandResult } from "../../flows/entries/Declare"
 import { actorSharedState } from "../ActorBindings"
 import { lessonCompletion } from "../../onboarding/completion"
-import { LIBRARIAN_LAUNCH_OWNER, LIBRARIAN_UNCONFIRMED, LIBRARIAN_COMMANDS, librarianFailureMessage } from "../LibrarianLaunch"
+import { LIBRARIAN_LAUNCH_OWNER, LIBRARIAN_UNCONFIRMED, LIBRARIAN_COMMANDS, librarianFailureMessage, librarianReceiptFor, librarianRunMetadata } from "../LibrarianLaunch"
 import { GUIDE_STAGES } from "../../onboarding/lessons"
 
 /** Onboarding SCRIPT v4 beat 12: both background runs launched; the user never has to open either card. */
@@ -18,13 +18,7 @@ export type LibrarianKind = keyof typeof LIBRARIAN_FLOWS
 export type LibrarianRunHost = Pick<WorkflowController, "workflowIdentityGuard" | "workflowBalanceGuard" | "workflowTargetRepo" | "provisionWorkspace" | "launchWorkflow">
 type RunCard = Extract<Card, { kind: "run-trace" }>
 const healthy = (card: RunCard) => card.payload.phase === "running" || card.payload.phase === "completed"
-interface ReceiptScope { kind: LibrarianKind; scope: string; inspected: boolean }
-const metadata = (card: RunCard): ReceiptScope | undefined => {
-  const value = card.payload.input?._librarian
-  if (!value || typeof value !== "object") return
-  const row = value as Partial<ReceiptScope>
-  if ((row.kind === "wiki" || row.kind === "history") && typeof row.scope === "string" && typeof row.inspected === "boolean") return row as ReceiptScope
-}
+const metadata = librarianRunMetadata
 
 export interface LibrarianRunsController {
   readonly recoverLaunches: () => Promise<void>
@@ -46,10 +40,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   }
   const cards = (): RunCard[] => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
     .sort((a, b) => b.ordinal - a.ordinal)
-  const receiptFor = (entry: LaunchIntent) => cards().find(card => card.payload.repo === entry.repo
-    && metadata(card)?.scope === entry.scope && metadata(card)?.kind === entry.kind
-    && card.payload.workflow === LIBRARIAN_FLOWS[entry.kind]
-    && (entry.runId === undefined || card.payload.runId === entry.runId))
+  const receiptFor = (entry: LaunchIntent) => librarianReceiptFor(cards(), entry)
   const toastKey = (entry: LaunchIntent) => `librarian.failed.${entry.kind}.${entry.scope}`
   const saveIntent = async (entry: LaunchIntent): Promise<boolean> => {
     const guide = store.session().guide
@@ -97,6 +88,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   }
   /** A reload reports interrupted preparation; it never blindly repeats a possibly submitted launch. */
   const recoverLaunches = async (): Promise<void> => {
+    await reconcile()
     for (const entry of store.session().guide?.librarianLaunches ?? []) {
       // Toasts are transient; the durable intent restores the Retry door after reload.
       if (entry.phase === "failed") { await saveIntent(entry); continue }
@@ -121,7 +113,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     const key = `${kind}:${captured}`
     const held = pending.get(key)
     if (held) return held
-    const previous = receiptFor({ ...rejected, scope: captured })
+    const previous = receiptFor({ ...rejected, scope: captured, startedAt: 0 })
     if (previous && previous.payload.phase !== "failed") {
       await saveReceipt({ kind, repo, scope: captured, phase: "started", startedAt: previous.createdAt }, previous)
       await launchedBoth(repo, captured)
@@ -182,11 +174,11 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   async function reconcile(): Promise<void> {
     for (const entry of store.session().guide?.librarianLaunches ?? []) {
       if (entry.scope !== scope(entry.repo) || pending.has(`${entry.kind}:${entry.scope}`)) continue
-      if (entry.phase === "preparing" || entry.phase === "launching") continue
-      if (entry.phase === "failed" && entry.runId === undefined) continue
       const card = receiptFor(entry)
       if (!card) continue
-      if (card.payload.phase === "failed" && (entry.phase !== "failed" || entry.runId !== card.payload.runId || entry.reason !== card.payload.error)) {
+      const phase = card.payload.phase === "failed" ? "failed" : "started"
+      const reason = card.payload.phase === "failed" ? card.payload.error : undefined
+      if (entry.phase !== phase || entry.runId !== card.payload.runId || entry.reason !== reason) {
         await saveReceipt(entry, card)
       }
       await launchedBoth(entry.repo, entry.scope)
