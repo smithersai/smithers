@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { requestJson } from "./requestJson"
+import { EXECUTOR_TOKEN_ENV, EXECUTOR_TOKEN_HEADER } from "./executorAuth"
 
 export interface Snapshot { files: Record<string, string>; base: string; head: string }
 export interface TestResult { code: number; stdout: string; stderr: string; command: string }
@@ -18,7 +19,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const namespace = process.env.TUTORIAL_NAMESPACE ?? "smithers-tutorial"
 const image = process.env.TUTORIAL_EXECUTOR_IMAGE ?? ""
 const pending = new Map<string, Promise<Executor>>()
-const podName = (session: string) => `tutorial-${createHash("sha256").update(session).digest("hex").slice(0, 40)}`
+// New names prevent reusing pre-authentication pods during a rolling deploy.
+const podName = (session: string) => `tutorial-${createHash("sha256").update(`executor-auth-v1:${session}`).digest("hex").slice(0, 40)}`
 
 async function kubernetes(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> {
   const [token, ca] = await Promise.all([
@@ -47,6 +49,16 @@ async function provision(session: string): Promise<Executor> {
   if (session.length < 16 || session.length > 256) throw new Error("Invalid tutorial session")
   await collectExpired()
   const name = podName(session)
+  /*
+   * One shared token per session: the pod answers /execute only to the
+   * coordinator that named it, so nothing else on the pod network can drive
+   * the workspace. /health stays probe-open. Derived, not generated: the pod
+   * outlives the coordinator process, and a restart must re-derive the same
+   * token to keep driving its session's pod. The derivation input is the
+   * session scope — an unguessable digest, like the pod name's, but a
+   * DIFFERENT one, so the visible pod name never gives the token away.
+   */
+  const executorToken = createHash("sha256").update(`executor-token:${session}`).digest("hex")
   const path = `${podsPath}/${name}`
   let result = await kubernetes("GET", path)
   if (result.status === 404) {
@@ -57,6 +69,7 @@ async function provision(session: string): Promise<Executor> {
         terminationGracePeriodSeconds: 1,
         securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: { type: "RuntimeDefault" } },
         containers: [{ name: "executor", image, ports: [{ containerPort: 3001 }],
+          env: [{ name: EXECUTOR_TOKEN_ENV, value: executorToken }],
           resources: { requests: { cpu: "250m", memory: "256Mi", "ephemeral-storage": "256Mi" }, limits: { cpu: "1", memory: "512Mi", "ephemeral-storage": "512Mi" } },
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } },
           readinessProbe: { httpGet: { path: "/health", port: 3001 }, initialDelaySeconds: 1, periodSeconds: 2 },
@@ -78,7 +91,7 @@ async function provision(session: string): Promise<Executor> {
   }
   if (ip === undefined || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error("Tutorial workspace is still starting. Try again shortly.")
   const call = async <T>(action: string, values: Record<string, unknown> = {}): Promise<T> => {
-    const response = await fetch(`http://${ip}:3001/execute`, { method: "POST", headers: { "content-type": "application/json" },
+    const response = await fetch(`http://${ip}:3001/execute`, { method: "POST", headers: { "content-type": "application/json", [EXECUTOR_TOKEN_HEADER]: executorToken },
       body: JSON.stringify({ action, ...values }), signal: AbortSignal.timeout(45_000) })
     const body = await response.json() as T & { message?: string }
     if (!response.ok) throw new Error(body.message ?? "Tutorial executor failed")

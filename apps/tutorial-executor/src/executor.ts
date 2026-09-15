@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, lstat } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
+import { EXECUTOR_TOKEN_ENV, EXECUTOR_TOKEN_HEADER, executorTokenAuthorized } from "./executorAuth"
 
 // One container is one visitor. It holds no credentials, Kubernetes token,
 // persistent volume or other visitor's data. NetworkPolicy denies all egress.
@@ -129,6 +130,13 @@ async function act(body: Record<string, unknown>) {
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") { response.writeHead(200); response.end("ok"); return }
   if (request.method !== "POST" || request.url !== "/execute") { response.writeHead(404); response.end(); return }
+  // The coordinator's per-session token, when the pod was launched with one.
+  // /health stays open: the kubelet readiness probe carries no credentials.
+  if (!executorTokenAuthorized(request.headers[EXECUTOR_TOKEN_HEADER], process.env[EXECUTOR_TOKEN_ENV])) {
+    response.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" })
+    response.end(JSON.stringify({ message: "Executor authentication required" }))
+    return
+  }
   try {
     let size = 0; const chunks: Buffer[] = []
     for await (const chunk of request) { size += chunk.length; if (size > MAX_BYTES) throw new Error("Request exceeds limit"); chunks.push(chunk) }

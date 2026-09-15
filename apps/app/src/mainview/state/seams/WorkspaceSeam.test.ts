@@ -2037,6 +2037,33 @@ describe("workspace seam desktop session", () => {
     expect(refusal).toContain("malformed")
     expect(readDesktopStream("ws-1")).toBeNull()
   })
+
+  /*
+   * The minted `stream_url` becomes an iframe `src` verbatim, and the facet's
+   * sandbox carries allow-scripts + allow-same-origin: a `javascript:` URL
+   * inherits this origin and runs with the app's credentials. A mint whose
+   * stream is not an absolute http(s) URL is malformed, never a stream.
+   */
+  test("a mint whose stream is not an absolute http(s) URL is refused, never held", async () => {
+    for (const stream_url of [
+      "javascript:alert(document.domain)",
+      "data:text/html,<script>alert(document.domain)</script>",
+      "//evil.example/vnc.html",
+      "/api/workspaces/ws-1/desktop/stream",
+      "file:///etc/passwd"
+    ]) {
+      dropDesktopStream()
+      const { store, seam } = await harness({
+        "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": json(201, { ...DESKTOP_MINT, stream_url })
+      })
+      await seedWorkspace(store, { ...wsRow, kind: "desktop" })
+      const refusal = await seam.openDesktop("ws-1")
+      expect(typeof refusal).toBe("string")
+      expect(String(refusal)).toContain("malformed")
+      expect(readDesktopStream("ws-1")).toBeNull()
+    }
+    dropDesktopStream()
+  })
 })
 
 describe("workspace seam environment images", () => {

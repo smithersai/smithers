@@ -407,6 +407,20 @@ const parseDesktopMint = (value: unknown, workspaceId: string): DesktopStream | 
   const raw = value.session
   const sessionId = isRecord(raw) ? textOrNull(raw.id) : null
   if (url === null || sessionId === null || !isRecord(raw)) return null
+  /*
+   * The URL becomes the facet iframe's `src` verbatim, and that frame's
+   * sandbox carries allow-scripts + allow-same-origin: a `javascript:` URL
+   * inherits THIS origin and runs with the app's credentials, and a relative
+   * or schemeless one resolves against this origin. Only an absolute
+   * http(s) URL is a stream (http: covers a loopback plue in dev); anything
+   * else is malformed, never a stream.
+   */
+  try {
+    const protocol = new URL(url).protocol
+    if (protocol !== "https:" && protocol !== "http:") return null
+  } catch {
+    return null
+  }
   return { workspaceId, url, sessionId, expiresAt: textOrNull(raw.expires_at) }
 }
 
