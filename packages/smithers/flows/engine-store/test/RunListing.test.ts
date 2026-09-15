@@ -155,8 +155,13 @@ describe("bounded run listing", () => {
                   const expected = reference.filter((row) => matches(row, filter)).map((row) => row.runId)
                   for (const limit of [7, 23]) {
                     const seen: Array<string> = []
+                    let queryPages = 0
                     let cursor: string | undefined
                     do {
+                      // The independent model bounds traversal even if a
+                      // broken cursor repeats pages without ever reaching EOF.
+                      queryPages++
+                      expect(queryPages).toBeLessThanOrEqual(Math.max(1, Math.ceil(expected.length / limit)))
                       statements = 0
                       decodedRows = 0
                       const page = yield* catalog.listRuns({
@@ -195,7 +200,13 @@ describe("bounded run listing", () => {
             )
           })
         ),
-      60_000
+      // The 5000-run matrix traverses 7558 pages and more than 30,000 SQL
+      // statements. On the loaded remediation host it exhausted 60 seconds
+      // both in the full coverage run and alone without coverage (13.65 CPU
+      // seconds across 105.34 wall seconds for the isolated file). This tests
+      // row, query and decoding bounds, not elapsed time. Keep every case and
+      // bound cursor progress above, with a finite budget for the large matrix.
+      size === 5000 ? 180_000 : 60_000
     )
   }
 
