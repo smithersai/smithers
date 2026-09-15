@@ -28,6 +28,18 @@ for (const step of [2, 13, 14]) test(`accepted messages at beat ${step} keep Cha
   expect(store.session().guide?.conversationOpen).toBe(true)
 })
 
+test("an open palette never restores on boot: the composer is summoned (Command-K), never persisted open", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  await store.dispatch({ type: "palette.toggled", actor: "user", open: true }).isPersisted.promise
+  await store.dispatch({ type: "palette.actions.toggled", actor: "user", ref: "flow:wiki" }).isPersisted.promise
+  expect(store.session().paletteOpen).toBe(true)
+  expect(store.session().paletteActionsRef).toBe("flow:wiki")
+  const reloaded = await createAppStore({ kind: "localStorage", storage })
+  expect(reloaded.session().paletteOpen).toBe(false)
+  expect(reloaded.session().paletteActionsRef).toBeNull()
+})
+
 test("tutorial chat placement survives a concurrent guide update and reload", async () => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
