@@ -312,4 +312,43 @@ describe("Smithers Cloud CI", () => {
       expect(result.stdout).not.toContain("::gate")
     })
   })
+
+  describe("egress proxy", () => {
+    // A Cloud runner pod has no direct egress: everything leaves through a
+    // Squid forward proxy named by HTTP_PROXY/HTTPS_PROXY, and a connect that
+    // bypasses it is dropped rather than refused. curl and npm read the
+    // variables themselves; Node's own http/https clients do not unless
+    // NODE_USE_ENV_PROXY is set, which is why //apps/app:devkit reported
+    // "Hutch artifact index timed out" on runs 11723 through 11736.
+    const probe = new URL("cloud.proxy-probe.tmp.sh", import.meta.url)
+    const marker = 'if [ "${1:-}" = group ]; then'
+    afterAll(() => rmSync(probe, { force: true }))
+    const seen = (environment: Record<string, string>) => {
+      writeFileSync(
+        probe,
+        shell.replace(marker, `echo "NODE_USE_ENV_PROXY=\${NODE_USE_ENV_PROXY:-unset}"\nexit 0\n${marker}`)
+      )
+      const result = spawnSync("bash", ["scripts/ci/cloud.proxy-probe.tmp.sh"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...environment }
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(0)
+      return result.stdout.trim()
+    }
+
+    test("tells node to use the proxy the runner configured", () => {
+      expect(seen({ HTTPS_PROXY: "http://egress:3128" })).toBe("NODE_USE_ENV_PROXY=1")
+      expect(seen({ https_proxy: "http://egress:3128" })).toBe("NODE_USE_ENV_PROXY=1")
+      expect(seen({ HTTP_PROXY: "http://egress:3128" })).toBe("NODE_USE_ENV_PROXY=1")
+      expect(seen({ http_proxy: "http://egress:3128" })).toBe("NODE_USE_ENV_PROXY=1")
+    })
+
+    test("leaves a machine with no proxy connecting directly", () => {
+      expect(seen({})).toBe("NODE_USE_ENV_PROXY=unset")
+      // An empty variable names no proxy, so it must not route node through one.
+      expect(seen({ HTTPS_PROXY: "" })).toBe("NODE_USE_ENV_PROXY=unset")
+    })
+  })
 })

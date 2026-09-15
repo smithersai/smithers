@@ -43,6 +43,28 @@ export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-$JJ_EMAIL}"
 export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$JJ_USER}"
 export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$JJ_EMAIL}"
 
+# Node's own `http` and `https` clients ignore `HTTP_PROXY` and `HTTPS_PROXY`;
+# curl, npm and pnpm read them themselves, which is why every download this
+# script performs already works. A Cloud runner pod has no direct egress at
+# all — a NetworkPolicy drops every connect that is not kube-dns, the API or
+# the Squid egress proxy — so a Node program that connects directly is not
+# refused, it is blackholed, and the only symptom is that program's own
+# timeout.
+#
+# That is `//apps/app:devkit` on runs 11723, 11727, 11734 and 11736: electrobun
+# fetches its Hutch artifact index with `https.get`, the SYN went nowhere, and
+# the gate reported "Hutch artifact index timed out". Every host that path
+# needs is on the runner allowlist already (`github.com`,
+# `githubusercontent.com`), and the Hutch binary it installs reads the proxy
+# variables on its own; only Node had to be told.
+#
+# `NODE_USE_ENV_PROXY=1` makes Node's built-in clients read the same variables
+# (Node >= 24, which `ensure_node` pins). Set only when a proxy is configured,
+# so a developer reproducing a gate keeps direct connections.
+if [ -n "${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}" ]; then
+  export NODE_USE_ENV_PROXY=1
+fi
+
 # The status a gate exits with when it was never attempted, kept distinct from
 # both success and failure so one task's report can say which it was. 75 is
 # sysexits.h's EX_TEMPFAIL, which no gate command returns on its own.
@@ -187,7 +209,18 @@ ensure_jj() {
     tar -xzf "$tools_dir/rg.tar.gz" -C "$tools_dir"
     ln -sf "$tools_dir/ripgrep-14.1.1-${rg_target}/rg" "$tools_dir/bin/rg"
   fi
-  if [ ! -d .jj ]; then jj git init --colocate; fi
+  if [ ! -d .jj ]; then
+    # `jj git init --colocate` refuses inside a LINKED git worktree, whose .git
+    # is a file pointing at the main checkout — and a linked worktree is exactly
+    # how a developer reproduces one gate without disturbing their tree. Cloud
+    # gives each task a plain clone, so it still colocates there. Saying so and
+    # carrying on beats `set -e` killing the gate before it runs.
+    if [ -f .git ]; then
+      echo "Skipping jj colocation: $PWD is a linked git worktree" >&2
+    else
+      jj git init --colocate
+    fi
+  fi
 }
 
 ensure_foundry() {
