@@ -49,6 +49,31 @@ export const NodeRelease = Schema.Literals(["22.19.0"])
 export type NodeRelease = typeof NodeRelease.Type
 
 /**
+ * Schema for a workspace-relative file naming the Node release to install.
+ *
+ * The alternative to `NodeRelease`: rather than repeat an exact release in the
+ * workflow, the job points `actions/setup-node` at a file the repository
+ * already keeps, so the workflow, the shell bootstrap and a developer's
+ * version manager all read one number. `.node-version` is the conventional
+ * name and the one fnm, nvm and asdf look for.
+ *
+ * {@link Node} refuses anything but a workspace-relative path: no leading
+ * slash and no `..`, because a workflow reads it from the checkout root.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const NodeVersionFile = Schema.String
+
+/**
+ * A workspace-relative file naming the Node release to install.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type NodeVersionFile = typeof NodeVersionFile.Type
+
+/**
  * npm releases certified with the packed optional-peer consumer matrix.
  *
  * @category schemas
@@ -99,7 +124,8 @@ export type BunRelease = typeof BunRelease.Type
 export const NodeSetup = Schema.Struct({
   name: Schema.Literal("node"),
   runtime: Schema.optional(Runtime.NodeRuntime),
-  release: NodeRelease,
+  release: Schema.optional(NodeRelease),
+  versionFile: Schema.optional(NodeVersionFile),
   npmRelease: Schema.optional(NpmRelease),
   cachePackageStore: Schema.Boolean
 })
@@ -155,7 +181,7 @@ export type RuntimeSetup = typeof RuntimeSetup.Type
  * ```ts
  * import { Smithers } from "@smthrs/targets"
  *
- * export const node = Smithers.CiToolchain.Node({ release: "22.19.0" })
+ * export const node = Smithers.CiToolchain.Node({ versionFile: ".node-version" })
  * ```
  *
  * @category constructors
@@ -164,23 +190,44 @@ export type RuntimeSetup = typeof RuntimeSetup.Type
 export const Node = (options: {
   /**
    * The workspace's own runtime declaration, when the caller has one to hand.
-   * A PACKAGE.ts omits it: `release` is what the runner installs, and the
-   * workspace declares the interpreter it develops against once.
+   * A PACKAGE.ts omits it: `release` or `versionFile` is what the runner
+   * installs, and the workspace declares the interpreter it develops against
+   * once.
    */
   readonly runtime?: Runtime.NodeRuntime | undefined
-  readonly release: NodeRelease
+  /** The exact release to install. Mutually exclusive with `versionFile`. */
+  readonly release?: NodeRelease | undefined
+  /**
+   * A checked-in file naming the release to install, read by the setup action
+   * at run time. Mutually exclusive with `release`, and the better of the two
+   * when anything outside the workflow needs the same number.
+   */
+  readonly versionFile?: NodeVersionFile | undefined
   /** Install and verify this npm release instead of the one bundled with Node. */
   readonly npmRelease?: NpmRelease | undefined
   /** @default true */
   readonly cachePackageStore?: boolean | undefined
-}): NodeSetup =>
-  NodeSetup.make({
+}): NodeSetup => {
+  // Exactly one source, so the generated job can never carry a literal that
+  // disagrees with the file beside it, and never leaves the release to chance.
+  if ((options.release === undefined) === (options.versionFile === undefined)) {
+    throw new Error("CiToolchain.Node: declare exactly one of release or versionFile")
+  }
+  // A workflow reads the file from the checkout root, so an absolute path or one
+  // that climbs out of the workspace names something the runner does not have.
+  if (options.versionFile !== undefined
+    && (!/^[\w.][\w./-]*$/.test(options.versionFile) || options.versionFile.split("/").includes(".."))) {
+    throw new Error(`CiToolchain.Node: versionFile must be workspace-relative: ${JSON.stringify(options.versionFile)}`)
+  }
+  return NodeSetup.make({
     name: "node",
     ...(options.runtime === undefined ? {} : { runtime: options.runtime }),
-    release: options.release,
+    ...(options.release === undefined ? {} : { release: options.release }),
+    ...(options.versionFile === undefined ? {} : { versionFile: options.versionFile }),
     ...(options.npmRelease === undefined ? {} : { npmRelease: options.npmRelease }),
     cachePackageStore: options.cachePackageStore ?? true
   })
+}
 
 /**
  * Declares that a job installs Bun.

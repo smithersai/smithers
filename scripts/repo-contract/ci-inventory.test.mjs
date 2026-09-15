@@ -139,9 +139,13 @@ test("public project copy keeps the support contract out of the short descriptio
   }
 })
 
+// The generated ci.yml quotes its job ids (`  "cache-publish":`) while the
+// hand-written release.yml does not, so both spellings have to split; a pattern
+// for bare ids alone found no block and threw on the null rather than failing
+// with something a reader could act on.
 const jobBlocks = (workflow) => {
   const body = readFileSync(join(root, workflow), "utf8").split(/^jobs:\n/m)[1]
-  return Object.fromEntries(body.split(/^(?= {2}[\w-]+:\n)/m).map((block) => [block.match(/^ {2}([\w-]+):/)[1], block]))
+  return Object.fromEntries(body.split(/^(?= {2}"?[\w-]+"?:\n)/m).map((block) => [block.match(/^ {2}"?([\w-]+)"?:/)[1], block]))
 }
 
 test("every CI job and the release publish job bound their runtime below GitHub's six-hour default", () => {
@@ -153,7 +157,7 @@ test("every CI job and the release publish job bound their runtime below GitHub'
 test("jobs that install the workspace restore the pnpm store", () => {
   for (const [id, block] of Object.entries(jobBlocks(".github/workflows/ci.yml")))
     if (block.includes("pnpm install --frozen-lockfile"))
-      assert.match(block, /node-version: [\d.]+\n {10}cache: pnpm$/m, `ci.yml job ${id} installs the workspace from a cold store`)
+      assert.match(block, /"node-version-file": "\.node-version"\n {10}"cache": "pnpm"$/m, `ci.yml job ${id} installs the workspace from a cold store`)
 })
 
 test("the root TypeScript project includes every PACKAGE.ts outside packages/", () => {

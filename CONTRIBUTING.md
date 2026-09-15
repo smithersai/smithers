@@ -1,7 +1,12 @@
 # Contributing
 
-Use Node.js 22.19+ within Node 22, or Node.js 24.11+. Install the pinned
-package manager (`pnpm@11.25.0`), then dependencies with `pnpm install`.
+Use the Node release in `.node-version` at the root. It is the one release CI
+installs and the Cloud runner bootstraps, and fnm, nvm and asdf read that file,
+so `fnm use` or `nvm use` in the checkout gives you the same Node the gates run.
+Published packages support a wider range (`engines.node`, Node 22.19+ within
+Node 22 or Node 24.11+); that floor is what consumers may run, not what this
+workspace develops on. Install the pinned package manager (`pnpm@11.25.0`), then
+dependencies with `pnpm install`.
 
 Before opening a pull request, run every gate:
 

@@ -168,7 +168,13 @@ const targetIndex = Smithers.TargetIndex({
 
 const ubuntu = "ubuntu-latest"
 
-const node = Smithers.CiToolchain.Node({ release: "22.19.0", npmRelease: "11.16.0" })
+// One Node for every environment, named once in `.node-version` at the root:
+// setup-node reads it here through `node-version-file`, `scripts/ci/cloud.sh`
+// reads it to bootstrap a Cloud runner, and fnm, nvm and asdf read it on a
+// developer's machine. Before this the same fact was spelled three ways and
+// three different releases came out: package.json said >=22.19.0, ci.yml
+// installed 22.19.0, and the Cloud bootstrap downloaded 24.21.0.
+const node = Smithers.CiToolchain.Node({ versionFile: ".node-version", npmRelease: "11.16.0" })
 
 const bun = Smithers.CiToolchain.Bun({ release: "1.4.1" })
 

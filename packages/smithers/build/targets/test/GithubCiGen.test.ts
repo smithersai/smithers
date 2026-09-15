@@ -976,6 +976,39 @@ describe("render", () => {
     expect(() => CiToolchain.Node({ release: "22.19.0", npmRelease: "10.9.3" as never })).toThrow()
   })
 
+  it("points setup-node at a version file instead of naming a release", () => {
+    // One number, in a file every environment reads: the setup action through
+    // `node-version-file`, a shell bootstrap with no Node to parse JSON, and a
+    // developer's fnm or nvm. A literal in the workflow is a second place for
+    // the same fact to drift.
+    const rendered = render(attrsOf({
+      ...goldenAttrs,
+      gates: [],
+      jobs: [{
+        id: "test",
+        runsOn: "ubuntu-latest",
+        toolchain: CiToolchain.Needs({ runtimes: [CiToolchain.Node({ versionFile: ".node-version" })] }),
+        steps: [{ name: "Required gate", verb: Verb.Test, pattern: "//scripts/..." }]
+      }]
+    }))
+    expect(rendered).toContain([
+      `      - uses: "${actions.setupNode}"`,
+      "        with:",
+      '          "node-version-file": ".node-version"',
+      '          "cache": "pnpm"'
+    ].join("\n"))
+    expect(rendered).not.toContain('"node-version"')
+  })
+
+  it("refuses a Node declaration with both sources or neither, or a path off the checkout", () => {
+    for (const options of [{}, { release: "22.19.0" as const, versionFile: ".node-version" }]) {
+      expect(() => CiToolchain.Node(options)).toThrow(/exactly one of release or versionFile/)
+    }
+    for (const versionFile of ["/etc/node-version", "../.node-version", "sub/../../escape"]) {
+      expect(() => CiToolchain.Node({ versionFile })).toThrow(/workspace-relative/)
+    }
+  })
+
   it("refuses a declared path or diagnostic a shell would reinterpret", () => {
     for (const executable of ["/usr/bin/chrome; rm -rf /", "$(which chrome)", "/usr/bin/../../etc/passwd"]) {
       expect(() => CiToolchain.Browser({ executable, reason: "because" })).toThrow(/is not a usable/)

@@ -737,7 +737,11 @@ const runtimeSteps = (
         {
           uses: actions.setupNode,
           with: {
-            "node-version": setup.release,
+            // The declaration carries exactly one of the two, so the job either
+            // names the release or points at the file that does, never both.
+            ...(setup.versionFile === undefined
+              ? { "node-version": setup.release as string }
+              : { "node-version-file": setup.versionFile }),
             ...(setup.cachePackageStore && manager === "pnpm" ? { cache: manager } : {})
           }
         },

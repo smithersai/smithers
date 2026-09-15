@@ -59,8 +59,8 @@ export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$JJ_EMAIL}"
 # variables on its own; only Node had to be told.
 #
 # `NODE_USE_ENV_PROXY=1` makes Node's built-in clients read the same variables
-# (Node >= 24, which `ensure_node` pins). Set only when a proxy is configured,
-# so a developer reproducing a gate keeps direct connections.
+# (the Node `ensure_node` pins from .node-version). Set only when a proxy is
+# configured, so a developer reproducing a gate keeps direct connections.
 if [ -n "${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}" ]; then
   export NODE_USE_ENV_PROXY=1
 fi
@@ -92,21 +92,60 @@ on_cloud() { [ "${SMITHERS_CLOUD_CI:-}" = 1 ]; }
 #   npm ERR! notsup Required: {"node":"^20.17.0 || >=22.9.0"}
 #   npm ERR! notsup Actual:   {"npm":"9.2.0","node":"v18.19.0"}
 #
-# So bootstrap the official tarball first. The .tar.gz artifact is the one to
-# take: the runner has no xz and cannot install one. Checksums are the
-# linux .tar.gz entries of https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
-# (Node 24 Krypton LTS); bump the version and both digests together.
-node_version=24.21.0
-node_sha256_x64=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
-node_sha256_arm64=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
+# So bootstrap the official tarball first.
+#
+# The version is not written here. `.node-version` at the repo root holds the
+# one Node every environment runs: actions/setup-node reads the same file
+# through `node-version-file` in the generated ci.yml, and fnm, nvm and asdf
+# read it on a developer's machine, so the Cloud runner, GitHub's runners and a
+# laptop cannot drift onto three different releases the way they did before
+# (package.json said >=22.19.0, ci.yml installed 22.19.0 and this script pinned
+# 24.21.0).
+#
+# Parsed with sed rather than node, because the Node that would parse it is
+# exactly what may be missing here. Prints the exact `x.y.z`, or fails: an
+# unreadable pin must never fall back to a guess.
+node_pinned_version() {
+  local version
+  if [ ! -f .node-version ]; then
+    echo 'Missing .node-version at the repo root: it holds the one Node every environment runs' >&2
+    return 1
+  fi
+  version="$(sed -n '1s/^[[:space:]]*v\{0,1\}\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)[[:space:]]*$/\1/p' .node-version)"
+  if [ -z "$version" ]; then
+    echo ".node-version must hold one exact Node release as x.y.z; found: $(head -c 100 .node-version)" >&2
+    return 1
+  fi
+  printf '%s\n' "$version"
+}
 
-# The major the repo needs, from package.json engines.node. Parsed with sed
-# because the Node that would parse it is exactly what may be missing here.
+# The SHA-256 of one official Node artifact, keyed by version and architecture.
+#
+# The .tar.gz artifact is the one to take: the runner has no xz and cannot
+# install one. Values are the `node-v<version>-linux-<arch>.tar.gz` lines of
+# https://nodejs.org/dist/v<version>/SHASUMS256.txt.
+#
+# A version with no row here fails instead of downloading: a tarball this
+# script cannot verify is a tarball it must not run. When `.node-version`
+# moves, read that release's SHASUMS256.txt and add its row.
+node_digest() {
+  case "$1:$2" in
+    26.5.0:x64) printf '22b5f47ad6ae78837e4c2b846019965ce1a06ba143de176102294a1bf44fc677\n' ;;
+    26.5.0:arm64) printf '308e5fe89a82461ba5a6cf15ff5221b2cdbd7ae87600aa72bb3c3fbdc66412d1\n' ;;
+    *)
+      echo "No pinned SHA-256 digest for Node $1 on $2; add its digests from https://nodejs.org/dist/v$1/SHASUMS256.txt" >&2
+      return 1
+      ;;
+  esac
+}
+
+# The major the pinned release carries. A runner already on that major or a
+# later one keeps its Node, so no download happens on a host that is already
+# current; anything older is replaced.
 node_required_major() {
-  local range major
-  range="$(sed -n 's/.*"node"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1)"
-  major="$(printf '%s' "$range" | grep -oE '[0-9]+' | head -n 1 || true)"
-  if [ -n "$major" ]; then printf '%s\n' "$major"; else printf '24\n'; fi
+  local version
+  version="$(node_pinned_version)" || return 1
+  printf '%s\n' "${version%%.*}"
 }
 
 ensure_node() {
@@ -116,27 +155,29 @@ ensure_node() {
     echo "Skipping Node bootstrap on $(uname -s): $(node --version 2>/dev/null || echo 'no node')" >&2
     return 0
   fi
-  local required have
-  required="$(node_required_major)"
+  local version required have
+  version="$(node_pinned_version)" || exit 1
+  required="${version%%.*}"
   have="$(node --version 2>/dev/null || true)"
   have="${have#v}"
   have="${have%%.*}"
   if [[ "$have" =~ ^[0-9]+$ ]] && [ "$have" -ge "$required" ]; then
-    echo "Node v$have satisfies engines.node >=$required; keeping it" >&2
+    echo "Node v$have satisfies the pinned .node-version $version; keeping it" >&2
     return 0
   fi
-  echo "Node ${have:-none} does not satisfy engines.node >=$required; installing v$node_version" >&2
+  echo "Node ${have:-none} does not satisfy the pinned .node-version $version; installing v$version" >&2
   # No apt here: the runner is an unprivileged container with no sudo, and the
   # gzip tarball needs only the curl and tar the image already ships.
   local arch sha
   case "$(uname -m)" in
-    x86_64) arch=x64; sha="$node_sha256_x64" ;;
-    aarch64|arm64) arch=arm64; sha="$node_sha256_arm64" ;;
+    x86_64) arch=x64 ;;
+    aarch64|arm64) arch=arm64 ;;
     *) echo 'Unsupported Node architecture' >&2; exit 1 ;;
   esac
-  local tarball="$tools_dir/node-v$node_version-linux-$arch.tar.gz"
+  sha="$(node_digest "$version" "$arch")" || exit 1
+  local tarball="$tools_dir/node-v$version-linux-$arch.tar.gz"
   mkdir -p "$tools_dir/node"
-  download "https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$arch.tar.gz" "$tarball"
+  download "https://nodejs.org/dist/v$version/node-v$version-linux-$arch.tar.gz" "$tarball"
   echo "$sha  $tarball" | sha256sum -c -
   tar -xzf "$tarball" -C "$tools_dir/node" --strip-components=1
   # The global prefix stays ahead of the tarball's bundled npm so the certified

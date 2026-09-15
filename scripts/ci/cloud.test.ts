@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL("../../", import.meta.url))
 const workflow = readFileSync(new URL("../../.smithers/workflows/ci.tsx", import.meta.url), "utf8")
 const shell = readFileSync(new URL("cloud.sh", import.meta.url), "utf8")
 const github = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8")
+const nodeVersion = readFileSync(new URL("../../.node-version", import.meta.url), "utf8")
 const section = (from: string, to: string) => shell.slice(shell.indexOf(from), shell.indexOf(to))
 const toolsBlock = section("gate_tools() {", "bootstrap_for() {")
 // Gate -> toolchains, one gate per line in gate_tools.
@@ -176,20 +177,76 @@ describe("Smithers Cloud CI", () => {
       expect(result.status).toBe(0)
       return result
     }
-    const pinned = shell.match(/^node_version=(\S+)$/m)?.[1]
+    const pinned = nodeVersion.trim()
     const tools = ".flows/cloud-tools"
     const ensureNode = shell.slice(shell.indexOf("ensure_node() {"), shell.indexOf("ensure_js() {"))
+    const digests = shell.slice(shell.indexOf("node_digest() {"), shell.indexOf("# The major the pinned release"))
 
-    test("pins an exact Node version whose digests come from that release", () => {
+    test(".node-version holds the one exact Node release, and the script takes it from there", () => {
       expect(pinned).toMatch(/^\d+\.\d+\.\d+$/)
-      expect(shell).toContain(`https://nodejs.org/dist/v${pinned}/SHASUMS256.txt`)
-      for (const arch of ["x64", "arm64"]) {
-        expect(shell).toMatch(new RegExp(`^node_sha256_${arch}=[0-9a-f]{64}$`, "m"))
-      }
+      // No version literal in the script: the file is the only place it lives.
+      expect(shell).not.toMatch(/^node_version=/m)
+      expect(ensureNode).toContain("node_pinned_version")
+      expect(shell).toContain("sed -n '1s/^[[:space:]]*v")
       // The npm bootstrap has to run on the Node this installs, not before it.
       const js = shell.slice(shell.indexOf("ensure_js() {"))
       expect(js.indexOf("ensure_node")).toBeLessThan(js.indexOf("npm install --global"))
       expect(js).toContain("$(node --version) npm $(npm --version)")
+    })
+
+    test("the digest table covers the pinned version on both architectures", () => {
+      for (const arch of ["x64", "arm64"]) {
+        expect(digests).toMatch(new RegExp(`^ {4}${pinned.replaceAll(".", "\\.")}:${arch}\\) printf '[0-9a-f]{64}\\\\n' ;;$`, "m"))
+      }
+      // Where the two digests above came from, so the next bump has one place to look.
+      expect(shell).toContain("https://nodejs.org/dist/v<version>/SHASUMS256.txt")
+    })
+
+    test("the generated workflow names no Node release of its own", () => {
+      // Three files used to spell this fact three ways: package.json >=22.19.0,
+      // ci.yml 22.19.0, and this script 24.21.0. The workflow now reads the file.
+      expect(github).not.toMatch(/"?node-version"?:/)
+      expect(github).toContain('"node-version-file": ".node-version"')
+    })
+
+    test("a version the digest table does not cover fails instead of downloading", () => {
+      const probed = shell.replace(marker, [
+        'node_digest 99.0.0 x64 && echo "UNVERIFIED"',
+        "exit 0",
+        "",
+        marker
+      ].join("\n"))
+      writeFileSync(probe, probed)
+      const result = spawnSync("bash", ["scripts/ci/cloud.node-probe.tmp.sh"], { cwd: root, encoding: "utf8" })
+      expect(result.stdout).not.toContain("UNVERIFIED")
+      expect(result.stderr).toContain("No pinned SHA-256 digest for Node 99.0.0 on x64")
+      expect(result.stderr).toContain("add its digests")
+    })
+
+    test("an unreadable .node-version fails loudly rather than guessing", () => {
+      // The real parse is exercised against a substituted file, so what is under
+      // test is the sed the script ships rather than a copy of it.
+      writeFileSync(probe, shell.replace(marker,
+        ['echo "PARSED=$(node_pinned_version || echo FAILED)"', "exit 0", "", marker].join("\n")))
+      const file = `${root}.node-version`
+      try {
+        for (const held of ["", "lts/*\n", "22\n", "22.19\n", ">=26.5.0\n"]) {
+          writeFileSync(file, held)
+          const result = spawnSync("bash", ["scripts/ci/cloud.node-probe.tmp.sh"], { cwd: root, encoding: "utf8" })
+          expect(result.stdout).toContain("PARSED=FAILED")
+          expect(result.stderr).toContain("must hold one exact Node release as x.y.z")
+        }
+        rmSync(file)
+        const missing = spawnSync("bash", ["scripts/ci/cloud.node-probe.tmp.sh"], { cwd: root, encoding: "utf8" })
+        expect(missing.stdout).toContain("PARSED=FAILED")
+        expect(missing.stderr).toContain("Missing .node-version at the repo root")
+        // A leading `v` is what `node --version` prints and what some files carry.
+        writeFileSync(file, `v${pinned}\n`)
+        expect(spawnSync("bash", ["scripts/ci/cloud.node-probe.tmp.sh"], { cwd: root, encoding: "utf8" }).stdout)
+          .toContain(`PARSED=${pinned}`)
+      } finally {
+        writeFileSync(file, nodeVersion)
+      }
     })
 
     test("takes the gzip tarball so it needs neither xz nor apt", () => {
@@ -206,7 +263,7 @@ describe("Smithers Cloud CI", () => {
       expect(result.stdout).toContain("SHA256SUM -c -")
       expect(result.stdout).toContain("TAR -xzf")
       expect(result.stdout).not.toContain("APT")
-      expect(result.stderr).toContain("does not satisfy engines.node")
+      expect(result.stderr).toContain("does not satisfy the pinned .node-version")
       // node/bin goes on the front of PATH, behind only the npm global prefix.
       const path = result.stdout.match(/^PATH=(.*)$/m)?.[1]
       expect(path?.startsWith(`${root}${tools}/bin:${root}${tools}/node/bin:`)).toBe(true)
@@ -218,12 +275,12 @@ describe("Smithers Cloud CI", () => {
       expect(result.stdout).not.toContain("linux-x64")
     })
 
-    test("installs nothing when node already satisfies engines.node", () => {
-      const result = run({ node: "v24.0.0" })
+    test("installs nothing when node already satisfies the pinned version", () => {
+      const result = run({ node: `v${pinned}` })
       for (const absent of ["DOWNLOAD", "TAR ", "APT", "SHA256SUM"]) {
         expect(result.stdout).not.toContain(absent)
       }
-      expect(result.stderr).toContain("satisfies engines.node")
+      expect(result.stderr).toContain(`satisfies the pinned .node-version ${pinned}`)
       expect(result.stdout).not.toContain(`${tools}/node/bin`)
     })
 

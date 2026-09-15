@@ -106,8 +106,14 @@ export async function resolveInventory() {
       }
       const plan = selections.get(identity)
       const platforms = job.strategy?.matrix?.include ?? [{ os: job["runs-on"], advisory: false }]
-      const runtimes = job.steps.flatMap((entry) => entry.with?.["node-version"] ? [`Node ${entry.with["node-version"]}`]
-        : entry.with?.["bun-version"] ? [`Bun ${entry.with["bun-version"]}`] : [])
+      // A job names its Node through `node-version-file`, so the inventory has to
+      // read that file to report the release; otherwise every row silently lost
+      // its Node entry the moment the workflow stopped spelling one.
+      const runtimes = job.steps.flatMap((entry) =>
+        entry.with?.["node-version"] ? [`Node ${entry.with["node-version"]}`]
+          : entry.with?.["node-version-file"]
+            ? [`Node ${readFileSync(resolve(root, entry.with["node-version-file"]), "utf8").trim()}`]
+            : entry.with?.["bun-version"] ? [`Bun ${entry.with["bun-version"]}`] : [])
       if (job.steps.some((entry) => entry.run?.includes("rustup toolchain install"))) {
         const channel = readFileSync(resolve(root, "rust-toolchain.toml"), "utf8").match(/channel\s*=\s*"([^"]+)"/)?.[1]
         if (!channel) throw new Error("Rust tier has no pinned channel")
