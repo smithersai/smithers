@@ -1,6 +1,7 @@
 /** Dependency-aware execution in fresh processes, with cancellation on file changes.
  * @since 0.1.0
  */
+import { Cause, Effect, Exit, Queue, Stream } from "effect"
 import { watch } from "node:fs"
 import { createRequire } from "node:module"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -36,77 +37,64 @@ export const run = async (options: {
   const ignored = [".git", "node_modules", ...options.ignored].map((path) =>
     path.replaceAll("\\", "/").replace(/\/$/, "")
   )
-  let revision = 0
   let cycles = 0
   let exitCode = 0
-  let notify = () => {}
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let stopChild = () => {}
-  const watcher = options.once ? undefined : watch(options.root, { recursive: true }, (_event, filename) => {
-    if (filename === null) return
-    const path = filename.toString().replaceAll("\\", "/")
-    if (
-      path.split("/").includes("node_modules") ||
-      ignored.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
-    ) return
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      revision += 1
-      stopChild()
-      notify()
-    }, options.debounceMs)
+  // switchMap discards a replaced stream's error. Retain process cleanup
+  // failures so a replacement cannot start after containment failed.
+  let failure: unknown
+  const cycle = Effect.suspend(() => {
+    if (failure !== undefined) return Effect.fail(failure)
+    const number = ++cycles
+    let output = ""
+    return ContainedProcess.runEffect({
+      command: process.execPath,
+      args: [entry, ...options.args, "--workspace", options.root],
+      cwd: options.root,
+      environment: options.environment,
+      stdout: (text) => {
+        if (options.cycleCompleted !== undefined) output = `${output}${text}`.slice(-16 * 1024)
+        options.stdout(text)
+      },
+      stderr: options.stderr
+    }).pipe(Effect.onExit((exit) =>
+      Effect.sync(() => {
+        exitCode = Exit.isSuccess(exit) ? exit.value : 1
+        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) failure = Cause.squash(exit.cause)
+        options.cycleCompleted?.({ number, exitCode, output })
+      })
+    ))
   })
-  let watchError: Error | undefined
-  watcher?.on("error", (error) => {
-    watchError = error
-    stopChild()
-    notify()
-  })
-  const abort = () => {
-    stopChild()
-    notify()
-  }
-  options.signal?.addEventListener("abort", abort, { once: true })
-  try {
-    while (!options.signal?.aborted && watchError === undefined) {
-      const startedAt = revision
-      cycles += 1
-      const controller = new AbortController()
-      stopChild = () => controller.abort()
-      let output = ""
-      try {
-        exitCode = await ContainedProcess.run({
-          command: process.execPath,
-          args: [entry, ...options.args, "--workspace", options.root],
-          cwd: options.root,
-          environment: options.environment,
-          signal: controller.signal,
-          stdout: (text) => {
-            if (options.cycleCompleted !== undefined) output = `${output}${text}`.slice(-16 * 1024)
-            options.stdout(text)
-          },
-          stderr: options.stderr
-        })
-      } catch (cause) {
-        if (!(cause instanceof ContainedProcess.ProcessError) || cause.code !== "cancelled") throw cause
-        exitCode = 1
-      } finally {
-        stopChild = () => {}
-      }
-      options.cycleCompleted?.({ number: cycles, exitCode, output })
-      if (options.once) break
-      if (startedAt === revision && !options.signal?.aborted && watchError === undefined) {
-        await new Promise<void>((resolve) => {
-          notify = resolve
-        })
-      }
-    }
-    if (watchError !== undefined) throw watchError
-    return { cycles, exitCode, stopped: options.signal?.aborted ?? false }
-  } finally {
-    clearTimeout(timer)
-    watcher?.close()
-    options.signal?.removeEventListener("abort", abort)
-    stopChild()
-  }
+  const changes = Stream.callback<string, Error>((queue) =>
+    Effect.acquireRelease(
+      Effect.try({
+        try: () =>
+          watch(options.root, { recursive: true }, (_event, filename) => {
+            if (filename === null) return
+            const path = filename.toString().replaceAll("\\", "/")
+            if (
+              path.split("/").includes("node_modules") ||
+              ignored.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+            ) return
+            Queue.offerUnsafe(queue, path)
+          }).on("error", (error) => {
+            Queue.failCauseUnsafe(queue, Cause.fail(error))
+          }),
+        catch: (cause) => cause instanceof Error ? cause : new Error("filesystem watch failed", { cause })
+      }),
+      (watcher) => Effect.sync(() => watcher.close())
+    ), { bufferSize: 1, strategy: "sliding" }).pipe(
+      Stream.debounce(options.debounceMs),
+      Stream.prepend([""])
+    )
+  const result = await Effect.runPromiseExit(
+    (options.once ? Stream.make("") : changes).pipe(
+      Stream.switchMap(() => Stream.fromEffect(cycle), { bufferSize: 1 }),
+      Stream.runDrain,
+      Effect.scoped
+    ),
+    { signal: options.signal }
+  )
+  if (failure !== undefined) throw failure
+  if (Exit.isFailure(result) && !Cause.hasInterruptsOnly(result.cause)) throw Cause.squash(result.cause)
+  return { cycles, exitCode, stopped: options.signal?.aborted ?? false }
 }

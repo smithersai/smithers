@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import * as Fs from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
@@ -31,6 +32,7 @@ vi.mock("node:module", async (original) => {
     }
   }
 })
+import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 import * as Watch from "../src/Watch.ts"
 
 const roots: Array<string> = []
@@ -45,6 +47,7 @@ const alive = (pid: number) => {
   }
 }
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const pid of pids.splice(0)) if (alive(pid)) process.kill(pid, "SIGKILL")
   for (const root of roots.splice(0)) await Fs.rm(root, { recursive: true, force: true })
 })
@@ -72,6 +75,73 @@ setInterval(() => {}, 1000);
 `
 
 describe.skipIf(process.platform === "win32")("watch process-group containment", () => {
+  it.each(["change", "abort"])("surfaces cleanup failure after %s and starts no replacement", async (trigger) => {
+    const root = await fixture("")
+    const controller = new AbortController()
+    const failure = new ContainedProcess.ProcessError("cleanup_failed", "fixture cleanup failed")
+    const run = vi.spyOn(ContainedProcess, "runEffect").mockReturnValue(
+      Effect.sync(() =>
+        setImmediate(() => {
+          if (trigger === "abort") controller.abort()
+          else fixtureEntry.watcher!.emit("change", "change", "changed.txt")
+        })
+      ).pipe(Effect.andThen(Effect.never), Effect.ensuring(Effect.die(failure)))
+    )
+    await expect(
+      Watch.run({
+        root,
+        args: [],
+        ignored: [],
+        debounceMs: 1,
+        once: false,
+        signal: controller.signal,
+        stdout: () => {},
+        stderr: () => {}
+      })
+    ).rejects.toBe(failure)
+    expect(run).toHaveBeenCalledOnce()
+  })
+
+  it("keeps a relevant change when ignored events arrive in the same turn", async () => {
+    const root = await fixture("")
+    const controller = new AbortController()
+    let started = 0
+    let cleaned = 0
+    vi.spyOn(ContainedProcess, "runEffect").mockReturnValue(
+      Effect.sync(() => {
+        started++
+        if (started === 1) {
+          setImmediate(() => {
+            fixtureEntry.watcher!.emit("change", "change", "changed.txt")
+            fixtureEntry.watcher!.emit("change", "change", "node_modules/ignored.txt")
+          })
+        } else {
+          expect(cleaned).toBe(1)
+          controller.abort()
+        }
+      }).pipe(
+        Effect.andThen(Effect.never),
+        Effect.ensuring(Effect.sync(() => {
+          cleaned++
+        }))
+      )
+    )
+    expect(
+      await Watch.run({
+        root,
+        args: [],
+        ignored: [],
+        debounceMs: 1,
+        once: false,
+        signal: controller.signal,
+        stdout: () => {},
+        stderr: () => {}
+      })
+    )
+      .toEqual({ cycles: 2, exitCode: 1, stopped: true })
+    expect(cleaned).toBe(2)
+  })
+
   it.each(["default", "ignores TERM", "exits zero"])(
     "awaits the resistant descendant before reporting cancellation (leader %s)",
     async (leader) => {
