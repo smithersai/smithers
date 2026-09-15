@@ -288,8 +288,18 @@ export const account = (options: {
   // ledger's entire purpose is to say that the tree changed since a check
   // ran. An empty digest makes an entry inert rather than wrong.
   const workspaceDigest = covered ? closingDigest : ""
+  // Where the frame's writes sit among its calls, so a check can be stamped
+  // with the tree it actually read. `calls` settle in order, so a check with
+  // no standing write after it read the tree the frame closed on, whatever
+  // the frame did before it; a check with one after it read an earlier tree
+  // and the closing digest would be somebody else's answer. A measurement
+  // that moved with nothing declaring it cannot be placed among the calls at
+  // all, so that frame stamps nothing as read.
+  const standingAt = calls.map((call) => call.mutates && (call.ok || !covered))
+  const lastStandingWrite = standingAt.lastIndexOf(true)
+  const unattributedMutation = mutated && lastStandingWrite === -1
   const readings = (checkpointed: boolean) =>
-    calls.flatMap((call) => {
+    calls.flatMap((call, index) => {
       if (!call.ok || call.mutates || (call.at !== undefined) !== checkpointed) return []
       const recorded = NarrowedCheck.check({
         flow: call.flow,
@@ -303,17 +313,19 @@ export const account = (options: {
         digest: checkpointed ? "" : workspaceDigest,
         failing: call.failing,
         passing: call.passing,
-        // A frame that also edited cannot say whether its checks ran before or
-        // after the edit, so the tree stamped on them is a guess in one
-        // direction. `UnresolvedFailure` refuses to carry a failure on such a
-        // stamp; see `NarrowedCheck.Check` `stable`.
+        // Whether the tree stamped above is the tree this call read. Every
+        // write the frame declared is a call with a position among these ones,
+        // so the answer is positional: a check with no standing write after it
+        // read the closing tree, and one with a write after it read a tree
+        // that is gone. That is what lets the loop a real agent runs — edit,
+        // then run the check that was red, in one frame — hold its own
+        // evidence, while `check, then edit` still stamps nothing.
         //
-        // A checkpointed reading is the one case where the guess is not a
-        // guess. The tree it read was pinned before the edit and cannot move,
-        // so the ordering is established by the pin rather than inferred from
-        // the frame — which is exactly what this surface exists to buy, and
-        // what the run used to buy by reverting its own work.
-        stable: checkpointed || !mutated
+        // A checkpointed reading is stable for a different reason: the tree it
+        // read was pinned and cannot move, so the ordering is established by
+        // the pin rather than by position — which is exactly what that surface
+        // exists to buy, and what the run used to buy by reverting its work.
+        stable: checkpointed || (!unattributedMutation && index > lastStandingWrite)
       })
       return recorded === undefined ? [] : [recorded]
     })

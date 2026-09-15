@@ -201,9 +201,21 @@ try {
   // -----------------------------------------------------------------------
   rehydrate(join(root, "fixtures/wave11-journals.json"), journals, "r1", patches)
 
-  /** What wave 11's five runs hold, as the four predicates read them. */
+  /**
+   * What wave 11's five runs hold, as the four predicates read them.
+   *
+   * astropy's `cleanCompletion` reads false because its last editing frame
+   * (16) ran `pytest -rA astropy/io/fits/tests/test_header.py` AFTER its edit
+   * and that check was red; the next frame answered with the same file under
+   * `-k fromstring` and completed. That red used to be dropped from the ledger
+   * because its frame also edited, so the completion read as clean. Checks now
+   * carry the tree they read rather than their frame's, so a reading taken
+   * after the frame's last write counts — which is what makes the broad red
+   * visible, and the narrow-probe completion it hides is the shape
+   * `UnresolvedFailure` exists to name.
+   */
   const waveEleven = {
-    "astropy__astropy-8707": [true, true, false, true],
+    "astropy__astropy-8707": [true, true, false, false],
     "django__django-16612": [true, true, false, true],
     "pydata__xarray-7393": [true, false, false, false],
     "pytest-dev__pytest-6197": [true, true, true, true],
@@ -259,7 +271,12 @@ try {
    * the one with fewer terms.
    */
   const chosen = {
-    "astropy__astropy-8707": { index: "r2", by: "score", scores: { r1: 3, r2: 4 } },
+    // Neither astropy run holds a green over the tree it finished on. r1 ran
+    // its broad check after its last edit and it was red; r2's last frame to
+    // touch the final tree moved it with nothing declaring the write, so none
+    // of that frame's four readings can be placed against the move and the
+    // closing digest is not a tree any of them read.
+    "astropy__astropy-8707": { index: "r2", by: "score", scores: { r1: 2, r2: 3 } },
     "django__django-16612": { index: "r1", by: "score", scores: { r1: 3, r2: 1 } },
     "pydata__xarray-7393": { index: "r1", by: "run index", scores: { r1: 1, r2: 1 } },
     "pytest-dev__pytest-6197": { index: "r2", by: "terms", scores: { r1: 4, r2: 4 }, terms: { r1: 35, r2: 34 } },

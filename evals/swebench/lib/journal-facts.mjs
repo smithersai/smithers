@@ -205,7 +205,15 @@ export const read = (databasePath) => {
   for (const entry of frames) {
     const workspaceDigest = entry.basis === "observed" ? entry.digest : ""
     entry.epoch = mutations
-    entry.checks = entry.calls.flatMap((call) => {
+    // `CellTurn` stamps a check stable when it read the tree the frame closed
+    // on, which its position among the frame's calls answers: every write the
+    // frame declared is a call, and calls settle in order. Read the same way
+    // here, or a replayed journal disagrees with the run that wrote it.
+    const covered = entry.basis === "observed"
+    const standingAt = entry.calls.map((call) => call.mutates && (call.ok || !covered))
+    const lastStandingWrite = standingAt.lastIndexOf(true)
+    const unattributedMutation = entry.mutated && lastStandingWrite === -1
+    entry.checks = entry.calls.flatMap((call, index) => {
       if (!call.ok || call.mutates) return []
       const recorded = NarrowedCheck.check({
         flow: call.flow,
@@ -214,7 +222,7 @@ export const read = (databasePath) => {
         digest: workspaceDigest,
         failing: call.failing,
         passing: call.passing,
-        stable: !entry.mutated
+        stable: !unattributedMutation && index > lastStandingWrite
       })
       return recorded === undefined ? [] : [{ check: recorded, seq: call.seq }]
     })

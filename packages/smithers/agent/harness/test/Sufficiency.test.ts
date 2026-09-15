@@ -304,7 +304,14 @@ describe("Sufficiency over the recorded waves", () => {
     for (const frame of journal.frames) {
       index = index + 1
       const digest = frame.basis === "observed" ? frame.digest : ""
-      const checks = frame.calls.flatMap((call) => {
+      // `CellTurn` stamps a check stable when it read the tree the frame closed
+      // on, and the frame's calls settle in order, so the answer is where the
+      // check sits relative to the frame's last standing write. A frame that
+      // moved with nothing declaring it places nothing.
+      const standingAt = frame.calls.map((call) => call.mutates && (call.ok || frame.basis !== "observed"))
+      const lastStandingWrite = standingAt.lastIndexOf(true)
+      const unattributed = frame.mutated && lastStandingWrite === -1
+      const checks = frame.calls.flatMap((call, position) => {
         if (!call.ok || call.mutates) return []
         const result = ("exit" in call ? { exitCode: call.exit } : {}) as Schema.Json
         const probe = "probe" in call
@@ -315,7 +322,7 @@ describe("Sufficiency over the recorded waves", () => {
           digest,
           failing: !probe && UnresolvedFailure.failed(result),
           passing: !probe && UnresolvedFailure.passed(result),
-          stable: !frame.mutated
+          stable: !unattributed && position > lastStandingWrite
         })
         return recorded === undefined ? [] : [recorded]
       })
@@ -335,8 +342,9 @@ describe("Sufficiency over the recorded waves", () => {
   }
 
   const fires = [
-    // Frame 11 also edits; frame 13 is the first stable passing reading.
-    ["wave 9", waveNine.journals, "pytest-dev__pytest-6197", 13],
+    // Frame 11 both edits and, after the edit, re-runs the check that was red:
+    // the loop a real agent runs, and the frame the pair completes in.
+    ["wave 9", waveNine.journals, "pytest-dev__pytest-6197", 11],
     ["wave 10", waveTen.journals, "astropy__astropy-8707", 8]
   ] as const
 

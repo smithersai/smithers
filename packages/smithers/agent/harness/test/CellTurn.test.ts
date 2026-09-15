@@ -2389,46 +2389,62 @@ describe("CellTurn sufficiency", () => {
     })
 
   it("tells the next frame it holds failing-before and passing-after evidence", async () => {
+    // `fixing` edits and then re-runs the check, which is the loop a real agent
+    // runs. The edit is a call, so the check that settles after it is a reading
+    // of the tree the frame closed on and the pair completes in that frame.
     const { events, model } = await watching(
-      [checking("check a.py"), fixing("check a.py"), checking("check a.py"), `ctx.done("done")`],
-      [exits(1), { _tag: "Success", value: null, tree: "a.py=fixed" }, exits(0), exits(0)]
+      [checking("check a.py"), fixing("check a.py"), `ctx.done("done")`],
+      [exits(1), { _tag: "Success", value: null, tree: "a.py=fixed" }, exits(0)]
     )
 
     const observed = of(events, "sufficiency-observed")
     expect(observed).toHaveLength(1)
-    expect(observed[0]).toMatchObject({ flow: "bash", epoch: 0, nextFrame: 3 })
+    expect(observed[0]).toMatchObject({ flow: "bash", epoch: 0, nextFrame: 2 })
     expect(observed[0]?.failed).toContain("check a.py")
     expect(observed[0]?.passed).toContain("check a.py")
 
     // The whole point is that the model reads it, so the frame after the pair
     // is the frame that carries it.
-    const answering = JSON.stringify(model.recorder.requests[3]?.messages)
+    const answering = JSON.stringify(model.recorder.requests[2]?.messages)
     expect(answering).toContain("Evidence held")
     expect(answering).toContain("Nothing is being asked of you")
     expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Evidence held")
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).not.toContain("Evidence held")
 
     // Nothing is bounced and no cap is spent: the frame that produced the pair
     // continued exactly as its transition asked.
     expect(of(events, "turn-closed").map((event) => event.outcome)).toEqual([
       "continue",
       "continue",
-      "continue",
       "resolved"
     ])
   })
 
-  it.each(["before", "after"])("rejects a passing check %s an edit in the same frame", async (order) => {
-    const edit = `await ctx.call("edit", { path: "a.py", text: "fix" })`
-    const check = checking("check a.py")
-    const mutation = { _tag: "Success", value: null, tree: "a.py=fixed" } as const
+  // The two orders one frame can put an edit and a check in. The stamp a check
+  // carries is its frame's CLOSING digest, so the answer is positional and not
+  // a property of the frame: a check after the edit read the tree it is stamped
+  // with, and a check before it read a tree that is gone.
+  const edit = `await ctx.call("edit", { path: "a.py", text: "fix" })`
+  const mutation = { _tag: "Success", value: null, tree: "a.py=fixed" } as const
+
+  it("rejects a passing check taken before an edit in the same frame", async () => {
     const { events, model } = await watching(
-      [checking("check a.py"), order === "before" ? `${check}\n${edit}` : `${edit}\n${check}`, `ctx.done("done")`],
-      [exits(1), ...(order === "before" ? [exits(0), mutation] : [mutation, exits(0)])]
+      [checking("check a.py"), `${checking("check a.py")}\n${edit}`, `ctx.done("done")`],
+      [exits(1), exits(0), mutation]
     )
 
     expect(of(events, "sufficiency-observed")).toEqual([])
     expect(JSON.stringify(model.recorder.requests)).not.toContain("Evidence held")
+  })
+
+  it("accepts a passing check taken after an edit in the same frame", async () => {
+    const { events } = await watching(
+      [checking("check a.py"), `${edit}\n${checking("check a.py")}`, `ctx.done("done")`],
+      [exits(1), mutation, exits(0)]
+    )
+
+    const observed = of(events, "sufficiency-observed")
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toMatchObject({ flow: "bash", epoch: 0, nextFrame: 2 })
   })
 
   it("writes the observation once, however many frames the run spends after it", async () => {
@@ -2437,10 +2453,9 @@ describe("CellTurn sufficiency", () => {
         checking("check a.py"),
         fixing("check a.py"),
         checking("check a.py"),
-        checking("check a.py"),
         `ctx.done("done")`
       ],
-      [exits(1), { _tag: "Success", value: null, tree: "a.py=fixed" }, exits(0), exits(0), exits(0)]
+      [exits(1), { _tag: "Success", value: null, tree: "a.py=fixed" }, exits(0), exits(0)]
     )
 
     // Once per run: the transcript grows, so the notice the run was shown stays
@@ -2448,11 +2463,6 @@ describe("CellTurn sufficiency", () => {
     expect(of(events, "sufficiency-observed")).toHaveLength(1)
     expect(
       (model.recorder.requests[3]?.messages ?? []).filter((message) =>
-        message.content.some((part) => part.type === "text" && part.text.includes("Evidence held"))
-      )
-    ).toHaveLength(1)
-    expect(
-      (model.recorder.requests[4]?.messages ?? []).filter((message) =>
         message.content.some((part) => part.type === "text" && part.text.includes("Evidence held"))
       )
     ).toHaveLength(1)

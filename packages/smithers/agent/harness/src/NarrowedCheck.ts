@@ -306,14 +306,21 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   /**
-   * Whether the frame that ran this check left the workspace as it found it.
+   * Whether {@link Check.digest} is the tree this check actually read.
    *
-   * A frame's calls are not ordered against its edits in anything the harness
-   * records, so a check taken in a frame that also edited is stamped with that
-   * frame's closing digest whether it ran before or after the edit. For
-   * {@link find} that reads a stale check as current and costs a demand. For a
-   * *failure* carried by such a check the same stamp would attribute a result
-   * to a tree the check never ran over, so `UnresolvedFailure` requires this.
+   * A check is stamped with its frame's closing digest, and a frame may both
+   * edit and check. The frame's writes are calls, though, and calls settle in
+   * order, so the question has an answer rather than a guess: a check with no
+   * standing write after it read the tree the frame closed on and is stable; a
+   * check with a write after it read a tree that is gone and is not. A frame
+   * whose measurement moved with no call declaring it — a shell redirect —
+   * cannot place the move among its calls at all, so nothing in it is stable.
+   *
+   * What it buys each reader: for {@link find} an unstable reading is a stale
+   * check read as current, which costs a demand; for a *failure* carried by
+   * one the stamp would attribute a result to a tree the check never ran over,
+   * so `UnresolvedFailure` requires this. A reading attributed to a checkpoint
+   * is stable by pin rather than by position.
    */
   stable: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
