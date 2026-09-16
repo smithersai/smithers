@@ -502,11 +502,16 @@ export const createWorkflowController = (
     const input = inputArg ?? {}
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
-    const balanceGuard = zeroBalanceGuard()
-    if (balanceGuard !== undefined) return balanceGuard
     const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
     const { repo, binding } = target
+    // A selected cloud workspace executes with its own configured provider.
+    // Its gateway enforces workspace access, capacity and provider setup;
+    // the separate Smithers prepaid balance funds managed workflow launches.
+    if (binding.workspaceId === undefined) {
+      const balanceGuard = zeroBalanceGuard()
+      if (balanceGuard !== undefined) return balanceGuard
+    }
     const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
     const declaration = source?.kind === "workflow-list"
       ? source.payload.workflows.find(flow => flow.key === name)?.inputSchema

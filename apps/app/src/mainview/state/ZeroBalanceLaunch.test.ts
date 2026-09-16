@@ -2,7 +2,9 @@
  * Launch Checklist D-4 — the zero-balance UX. AppState.ts:290-296's ruling
  * says chat is complimentary (a $0 balance never pauses it — Backends.test.ts
  * already pins that) and the pause discipline applies only to
- * non-complimentary (paid) work: workflow launches. These tests pin the other
+ * non-complimentary (paid) work: managed workflow launches. Explicit cloud
+ * workspace runs use their own provider; the gateway enforces their access
+ * and capacity. These tests pin the other
  * half — `flow.create`/`flow.run` at a definitive $0 balance render a clear,
  * embedded transcript message and never reach the workspace/gateway seam at
  * all (no hang, no stack trace, deterministic).
@@ -221,4 +223,33 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
     const toasts = [...store.collections.toasts.values()]
     expect(toasts.some((toast) => toast.detail === EXHAUSTED_TEXT)).toBe(false)
   })
+})
+
+
+test("a selected cloud workspace uses its own provider at zero managed balance", async () => {
+  const store = await webStore()
+  const calls: string[] = []
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    fetchImpl: async (input) => {
+      calls.push(String(input))
+      return new Response(JSON.stringify({ status: "error", message: "workspace probe" }), { status: 500 })
+    }
+  })
+  await signInAtZeroBalance(store)
+  const workspaceId = "11111111-1111-4111-8111-111111111111"
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [{
+    id: workspaceId, repoId: REPO, name: "Coding", targetBookmark: "main", status: "running",
+    provisioningStage: null, suspendedAt: null, createdAt: null
+  }] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: REPO + "#workspace:" + workspaceId }).isPersisted.promise
+  calls.length = 0
+  const outcome = await controller.commands.run("flow.run", "coding/request " + REPO + ' {"prompt":"Document cloud development"}')
+  expect(outcome.status).toBe("failed")
+  if (outcome.status === "failed") expect(outcome.error).not.toBe(EXHAUSTED_TEXT)
+  expect(calls.some(url => url.includes("workflow/provision"))).toBe(true)
+  expect(transcriptTexts(store)).not.toContain(EXHAUSTED_TEXT)
+  // Selecting a cloud copy must not exempt another repository's managed run.
+  const other = await controller.commands.run("flow.run", "review-pr someone/else")
+  expect(other.status).toBe("failed")
+  if (other.status === "failed") expect(other.error).toBe(EXHAUSTED_TEXT)
 })
