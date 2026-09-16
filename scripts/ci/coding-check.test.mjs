@@ -1,15 +1,16 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 
 const script = resolve(import.meta.dirname, "coding-check.sh")
 const fixture = (mode) => {
-  const root = mkdtempSync(join(tmpdir(), "coding-bootstrap-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "coding-bootstrap-")))
   writeFileSync(join(root, "bun"), `#!/bin/sh
 echo "$*" >> "$FIXTURE/install.log"
+echo "$BUN_INSTALL_CACHE_DIR" >> "$FIXTURE/cache.log"
 case "$MODE" in
   fail) exit 23 ;;
   stall) exec sleep 30 ;;
@@ -20,13 +21,16 @@ esac
   const result = spawnSync("sh", [script, "//flows:codingNative"], {
     cwd: root, encoding: "utf8", timeout: 15_000,
     env: { ...process.env, PATH: `${root}:${process.env.PATH}`, FIXTURE: root, MODE: mode,
-      SMITHERS_CHECK_INSTALL_TIMEOUT: "1s" }
+      SMITHERS_CHECK_INSTALL_TIMEOUT: "1s", BUN_INSTALL_CACHE_DIR: join(tmpdir(), "persistent-bun-cache") }
   })
   const attempts = readFileSync(join(root, "install.log"), "utf8").trim().split("\n")
   const checked = existsSync(join(root, "check.log")) ? readFileSync(join(root, "check.log"), "utf8").trim() : null
+  const caches = readFileSync(join(root, "cache.log"), "utf8").trim().split("\n")
   rmSync(root, { recursive: true, force: true })
   assert.equal(result.error, undefined)
   assert.ok(attempts.every(args => args === "install --frozen-lockfile"))
+  assert.ok(caches.every(cache => cache === join(root, "node_modules/.cache/smithers-bun")),
+    "every install, including retries, must use the disposable export instead of an inherited persistent cache")
   return { result, attempts, checked }
 }
 

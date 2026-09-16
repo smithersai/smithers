@@ -3,6 +3,9 @@
 # and workspace-local build CLI. Never resolve declarations against the editor.
 set -eu
 export HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
+# Keep dependency downloads inside this disposable revision export. Repeated
+# checks must not accumulate gigabytes in the developer's persistent Bun cache.
+export BUN_INSTALL_CACHE_DIR="$PWD/node_modules/.cache/smithers-bun"
 # Bun can stop making progress after populating its cache. Bound bootstrap
 # independently of the test deadline and retry only a timed-out installation.
 install_attempt=1
