@@ -371,7 +371,7 @@ describe("command registry pure model", () => {
   test("parseSubmit resolves empty, bare command, args command, and prompt", () => {
     const commands = [
       { name: "world", summary: "w" },
-      { name: "browser", summary: "b", args: "<url>" }
+      { name: "browser", summary: "b", args: "<url>", acceptsArgs: true }
     ]
     expect(parseSubmit("", commands)).toEqual({ kind: "empty" })
     expect(parseSubmit("/", commands)).toEqual({ kind: "empty" })
@@ -388,9 +388,35 @@ describe("command registry pure model", () => {
     expect(parseSubmit("hello there", commands)).toEqual({ kind: "prompt", text: "hello there" })
   })
 
+  test("typed issue flows accept slash payloads without display argument hints", async () => {
+    const { controller } = await freshController()
+    const commands = controller.commands.all()
+    for (const name of ["issue.flows", "issue.repro", "issue.poc", "issue.implement"]) {
+      const command = commands.find(command => command.name === name)!
+      expect(command.args).toBeUndefined()
+      expect(command.acceptsArgs).toBe(true)
+      expect(parseSubmit(`/${name} 3 practice:smithersai/hello-server`, commands)).toEqual({
+        kind: "command", name, args: "3 practice:smithersai/hello-server"
+      })
+    }
+    const withoutHints = commands.map(({ args: _args, ...command }) => command)
+    expect(parseSubmit("/files.read README.md", withoutHints)).toEqual({
+      kind: "command", name: "files.read", args: "README.md"
+    })
+    expect(parseSubmit("/world trailing text", commands)).toEqual({
+      kind: "prompt", text: "/world trailing text"
+    })
+  })
+
+  test("display argument hints cannot grant an input capability", () => {
+    expect(parseSubmit("/no-args surprise", [{ name: "no-args", summary: "No input", args: "display only", acceptsArgs: false }])).toEqual({
+      kind: "prompt", text: "/no-args surprise"
+    })
+  })
+
   describe("parseSubmit command boundary", () => {
     const commands = [
-      { name: "goal", summary: "Set the goal", args: "<text>" },
+      { name: "goal", summary: "Set the goal", args: "<text>", acceptsArgs: true },
       { name: "goal.show", summary: "Show the goal" },
       { name: "no-args", summary: "No arguments" }
     ]
@@ -664,7 +690,7 @@ describe("command registry bindings", () => {
     expect(toggle?.metadata.hidden).toBeUndefined()
     // Listed, so the human can find the toggle in the slash menu.
     expect(controller.slashItems("dark-mode").map((item) => item.flow.name)).toContain("appearance.dark-mode")
-    // The args hint is what makes `/appearance.theme <palette>` parse as an invocation.
+    // The argument hint documents the input accepted by `/appearance.theme`.
     expect(controller.commands.find("appearance.theme")?.metadata.args).toBeDefined()
 
     // The default palette is night-owl, and every key round-trips.

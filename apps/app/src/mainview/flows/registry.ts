@@ -178,6 +178,8 @@ export const confirmLabel = (metadata: FlowMetadata, payload: Record<string, unk
  */
 export interface CatalogItem extends FlowMetadata {
   readonly name: string
+  /** Input capability derived from the declaration; display hints do not decide syntax. */
+  readonly acceptsArgs?: boolean
 }
 
 /**
@@ -207,7 +209,9 @@ export const nameOf = (entry: FlowEntry): string => entry.declaredName ?? entry.
 /** An entry projected into the plain record the pure catalog rules read. */
 export const itemOf = (entry: FlowEntry): CatalogItem => ({
   name: nameOf(entry),
-  ...entry.metadata
+  ...entry.metadata,
+  acceptsArgs: entry.input.ast._tag !== "Objects" ||
+    entry.input.ast.propertySignatures.length > 0 || entry.input.ast.indexSignatures.length > 0
 })
 
 /**
@@ -745,7 +749,7 @@ const commandHead = (text: string): { readonly name: string; readonly args?: str
  *    menu selecting its first (recommended) item,
  *  - an input that is ONLY a registered slash flow executes it directly
  *    by its registered name,
- *  - `/name <text>` executes directly when the flow declares an args hint,
+ *  - `/name <text>` executes directly when the flow declares input,
  *  - a leading token that is flow SYNTAX but names no registered flow is
  *    refused by name — never handed to the model as prose,
  *  - anything else is a prompt for the agent.
@@ -766,7 +770,7 @@ export const parseSubmit = <C extends CatalogItem>(
   const command = commands.find((candidate) => candidate.name === invocation.name)
   if (command === undefined) return { kind: "unknown-command", name: invocation.name }
   if (invocation.args === undefined) return { kind: "command", name: invocation.name }
-  if (command.args !== undefined) {
+  if (command.acceptsArgs === true) {
     return { kind: "command", name: invocation.name, args: invocation.args }
   }
   return { kind: "prompt", text }
