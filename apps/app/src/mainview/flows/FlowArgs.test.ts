@@ -156,3 +156,8 @@ test("issue detail preserves the tracker even when native and GitHub numbers col
   roundTrip("issues.view", { number: 1, repo: "will/flows" }, "1 will/flows", { number: 1, repo: "will/flows" })
   expect(payloadFor("issues.view", "will/flows --source github")).toHaveProperty("error")
 })
+
+ test("Wiki heading buttons retain their card scope", () => {
+  roundTrip("wiki.heading", { line: "5", cardId: "wiki-open-plans" }, "5 wiki-open-plans", { line: "5", cardId: "wiki-open-plans" })
+  roundTrip("wiki.heading", { line: "5" }, "5", { line: "5" })
+})

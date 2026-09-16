@@ -220,3 +220,25 @@ describe("wiki.heading", () => {
     controller.dispose()
   })
 })
+
+
+test("embedded Wiki headings wait for their own editor and persist Document view", async () => {
+  const { store, controller } = await setup()
+  await controller.commands.run("wiki.open", "plans")
+  const scrolled: number[] = []
+  let ready = false
+  controller.attachWorldEditor("plans", "wiki-open-plans:test", {
+    getMarkdown: () => store.collections.worldDocuments.get("plans")!.body,
+    setMarkdown: () => {},
+    scrollToLine: line => { if (!ready) return false; scrolled.push(line); return true }
+  })
+  setTimeout(() => { ready = true }, 40)
+  expect((await controller.commands.run("wiki.heading", "5 wiki-open-plans")).status).toBe("executed")
+  expect(scrolled).toEqual([5])
+  expect(store.collections.cards.get("wiki-open-plans")).toMatchObject({ payload: { view: "document" } })
+  expect(store.session().surface).toBe("chat")
+  expect((await controller.commands.run("wiki.heading", "99 wiki-open-plans")).status).toBe("failed")
+  expect(scrolled).toEqual([5])
+  controller.attachWorldEditor("plans", "wiki-open-plans:test", null)
+  controller.dispose()
+})

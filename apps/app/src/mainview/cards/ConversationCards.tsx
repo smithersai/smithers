@@ -1,5 +1,6 @@
 import { ViewSkeleton } from "../ViewSkeleton"
 import { MarkdownEditorSurface } from "../ViewModules"
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 import { Badge, Button, FileTree } from "@smthrs/ui"
 import { ExternalLink, GitPullRequest, HardDrive, Server } from "lucide-react"
@@ -158,7 +159,7 @@ export const WorldCardBody = ({
           {view === "outline" ? <div className="wiki-card-outline">
             <h3>{document.title}</h3>
             <ol aria-label="Page outline">{parseOutline(document.body).map((heading) =>
-              <li key={heading.line} data-depth={heading.depth}>{heading.text}</li>)}</ol>
+              <li key={heading.line} data-depth={heading.depth}><button type="button" {...flowAction(onRunCommand, "wiki.heading", flowArgs("wiki.heading", { line: String(heading.line), cardId: card.id }))}>{heading.text}</button></li>)}</ol>
             <details><summary>Sources</summary><ul>{document.sources.map((source) => <li key={source}>{source}</li>)}</ul>
               {cloud === undefined ? <p>Saved by {document.updatedBy} at app revision {document.revision}.</p> :
                 <p>Page {cloud.pageId} in {cloud.repo}. Recorded at {cloud.remoteUpdatedAt}.</p>}

@@ -216,7 +216,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** The Wiki pane's editor mount registers its handle here (null on unmount); `wiki.heading` scrolls through it. */
   readonly attachWikiEditor: (editor: WikiEditorHandle | null) => void
   /** `wiki.heading <line>`: bring the open note's heading at that source line into view. */
-  readonly jumpToHeading: (line: string) => string | void
+  readonly jumpToHeading: (line: string, cardId?: string) => Promise<string | void>
   readonly decideApproval: (id: string, decision: "approved" | "denied") => void
   /**
    * Answer a gate that asked a question rather than for a grant.

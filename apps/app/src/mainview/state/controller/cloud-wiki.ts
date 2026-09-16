@@ -482,5 +482,11 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
     if (handles.size === 0) shared.editors.delete(id)
     else shared.editors.set(id, handles)
   }
-  return { listCloudWiki, openCloudWiki, editCloudWiki, retryCloudWiki, attachWorldEditor }
+  const scrollEditor = (id: string, cardId: string, line: number): boolean => {
+    for (const [slot, editor] of shared.editors.get(id) ?? []) {
+      if (slot.startsWith(`${cardId}:`) && editor.scrollToLine(line)) return true
+    }
+    return false
+  }
+  return { listCloudWiki, openCloudWiki, editCloudWiki, retryCloudWiki, attachWorldEditor, scrollEditor }
 }

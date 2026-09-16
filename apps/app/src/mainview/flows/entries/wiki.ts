@@ -146,9 +146,9 @@ export const wikiFlows = (actions: CommandActions & Partial<LibrarianRunsControl
     hidden: true,
     userOnly: true,
     userOnlyReason: WIKI_HEADING_USER_ONLY_REASON,
-    args: "<line>",
-    input: Schema.Struct({ line: Schema.String }),
-    handler: ({ line }) => actions.jumpToHeading(line)
+    args: "<line> [cardId]",
+    input: Schema.Struct({ line: Schema.String, cardId: Schema.optional(Schema.String) }),
+    handler: ({ line, cardId }) => actions.jumpToHeading(line, cardId)
   }),
   flow({
     name: "wiki.delete",

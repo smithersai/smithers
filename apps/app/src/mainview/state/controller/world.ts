@@ -49,7 +49,7 @@ export interface WorldController {
   /** The open note's editor, registered by its mount and released on unmount; the seam `wiki.heading` scrolls through. */
   readonly attachWikiEditor: (editor: WikiEditorHandle | null) => void
   /** `wiki.heading <line>`: bring the open note's heading at that source line into view. */
-  readonly jumpToHeading: (line: string) => string | void
+  readonly jumpToHeading: (line: string, cardId?: string) => Promise<string | void>
 }
 
 /** What the Wiki pane's editor answers to (the markdown-editor adapter's handle, cut to the one act the pane needs). */
@@ -59,7 +59,7 @@ export interface WikiEditorHandle {
 
 export const createWorldController = (
   ctx: ControllerContext,
-  deps: { readonly nextOrdinal: () => number; readonly cloudWiki?: { readonly editCloudWiki: (id: string, body: string) => Promise<string | void> } }
+  deps: { readonly nextOrdinal: () => number; readonly cloudWiki?: { readonly scrollEditor?: (id: string, cardId: string, line: number) => boolean; readonly editCloudWiki: (id: string, body: string) => Promise<string | void> } }
 ): WorldController => {
   let pendingClear: AbortController | undefined
   let disposed = false
@@ -276,9 +276,30 @@ export const createWorldController = (
     editor.current = handle
   }
 
-  const jumpToHeading = (line: string): string | void => {
+  const jumpToHeading = async (line: string, cardId?: string): Promise<string | void> => {
     const wanted = Number.parseInt(line, 10)
     if (!Number.isInteger(wanted) || wanted < 1 || String(wanted) !== line.trim()) return `${line} is not a line number.`
+    if (cardId !== undefined) {
+      const card = ctx.store.collections.cards.get(cardId)
+      if (card?.kind !== "world") return "This Wiki card is no longer available."
+      const selected = card.payload.selectedDocumentId ?? card.payload.documents[0]?.id
+      const document = selected === undefined ? undefined : ctx.store.collections.worldDocuments.get(selected)
+      if (document === undefined) return `No ${WIKI_DISPLAY_NAME} note is open in the editor.`
+      if (wanted > document.body.split("\n").length) return `${document.path} has no line ${wanted}.`
+      const error = setWikiCardView(cardId, "document")
+      if (error) return error
+      const epoch = ctx.accountEpoch
+      const deadline = Date.now() + 5_000
+      while (!disposed && ctx.accountEpoch === epoch && Date.now() < deadline) {
+        const current = ctx.store.collections.cards.get(cardId)
+        if (current?.kind !== "world" || current.payload.view !== "document" ||
+          (current.payload.selectedDocumentId ?? current.payload.documents[0]?.id) !== selected) return
+        if (deps.cloudWiki?.scrollEditor?.(document.id, cardId, wanted)) return
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      if (!disposed && ctx.accountEpoch === epoch) return `The editor for ${document.title} is still loading; try again in a moment.`
+      return
+    }
     const session = ctx.store.session()
     const selected = session.selectedWorldDocumentId ?? null
     const document = selected === null ? undefined : ctx.store.collections.worldDocuments.get(selected)
