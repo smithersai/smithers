@@ -634,6 +634,7 @@ describe("durable signal admission and engine observation", () => {
         )
         yield* state.park(runId, {
           reason: "approval",
+          ...(address === "same" ? { request: JSON.stringify({ kind: "text", prompt: "Confirm the target" }) } : {}),
           ...(address === "tokenless" ? {} : { token: address === "same" ? bound.asToken : next.asToken })
         }, owner)
         const before = yield* state.waiting(runId)
@@ -649,7 +650,11 @@ describe("durable signal admission and engine observation", () => {
               ...store,
               latestRound: () => Effect.succeed({ ...row, status: "running" })
             }))
-          ).toMatchObject({ _tag: "Observed", status: "waiting-approval" })
+          ).toMatchObject({
+            _tag: "Observed",
+            status: "waiting-approval",
+            pendingWaits: [{ request: { kind: "text", prompt: "Confirm the target" } }]
+          })
         }
         const delivery = yield* AgentSession.deliverSignal({
           runId,
