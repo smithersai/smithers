@@ -1814,7 +1814,7 @@ const initializeAppStore = async (
   // draft or run. The existing atomic checkpoint path retains those rows and
   // refuses compaction while a prepared edit still needs the covered prefix.
   scheduleAutoCompaction = () => {
-    if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 || committedEvents.length < 512) return
+    if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 || committedEvents.length < 64) return
     compactionTimer = setTimeout(() => {
       compactionTimer = undefined
       if (disposed || pendingWrites.size > 0) return

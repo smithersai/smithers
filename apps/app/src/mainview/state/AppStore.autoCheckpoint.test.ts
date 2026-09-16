@@ -17,7 +17,7 @@ test("idle checkpoint bounds reopen replay while retaining documents and later e
     await store.dispatch({ type: "world.document.upserted", actor: "user", document: {
       id: "kept", path: "kept.md", title: "Kept", body: "Preserve my work", links: [], tags: [], sources: [], confidence: 1
     } }).isPersisted.promise
-    for (let index = 0; index < 515; index++) {
+    for (let index = 0; index < 67; index++) {
       await store.dispatch({ type: "sidebar.toggled", actor: "user", open: index % 2 === 0 }).isPersisted.promise
     }
     const before = await store.eventHistory()
@@ -48,7 +48,7 @@ test("failed automatic checkpoint retains its suffix and retries after a committ
   } }
   const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   try {
-    for (let index = 0; index < 513; index++) {
+    for (let index = 0; index < 65; index++) {
       await store.dispatch({ type: "sidebar.toggled", actor: "user", open: index % 2 === 0 }).isPersisted.promise
     }
     const before = await store.eventHistory()
