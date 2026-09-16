@@ -63,17 +63,19 @@ interface HandlerRef {
   readonly context: string
 }
 
-/** Every action-prop occurrence with the following lines (handlers can wrap). */
+/** Inspect the complete JSX handler; focus handoffs can precede the command. */
 const handlers = (source: string): Array<HandlerRef> => {
+  const tree = ts.createSourceFile("surface.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const lines = source.split("\n")
   const found: Array<HandlerRef> = []
-  lines.forEach((line, index) => {
-    for (const prop of ACTION_PROPS) {
-      const pattern = new RegExp(`\\b${prop}=`)
-      if (!pattern.test(line)) continue
-      found.push({ prop, line, context: lines.slice(index, index + 4).join("\n") })
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node) && ACTION_PROPS.includes(node.name.getText(tree) as typeof ACTION_PROPS[number])) {
+      const line = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line
+      found.push({ prop: node.name.getText(tree), line: lines[line]!, context: node.getText(tree) })
     }
-  })
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
   return found
 }
 
@@ -163,6 +165,7 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
   "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
   "../cards/WorkflowCards.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
+  "../cards/FlowFormCards.tsx": ["cancel.onClick()"], // the card.dismiss binding, after keyboard focus moves
   "../cards/ApprovalAnswer.tsx": ["onAnswer(", "onClick={send}"], // the answer is a value, not a flow argument; both mounts bind onAnswer to the controller
 }
 
@@ -215,6 +218,7 @@ describe("launch-law parity: every affordance is a command", () => {
     }
     expect(files["../cards/LiveTutorialRunBody.tsx"]).toContain("const scoped=runSourceCommand(card.id,onRunCommand)")
     expect(files["../cards/WorkflowCards.tsx"]).toContain("onRunCommand: sendRunCommand")
+    expect(files["../cards/FlowFormCards.tsx"]).toContain('const cancel = flowAction(onRunCommand, "card.dismiss", card.id)')
     // Visibility is a host lifecycle observation, not a button or a command.
   })
 
