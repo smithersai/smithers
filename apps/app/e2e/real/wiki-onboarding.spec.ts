@@ -11,7 +11,10 @@ const boot = async (page: Page): Promise<void> => {
 }
 
 const makeNote = async (page: Page, marker: string): Promise<{ readonly id: string; readonly title: string }> => {
+  const cards = page.locator('.smithers-card[data-kind="world"]')
+  const before = await cards.count()
   await command(page, "/world.new-note")
+  await expect(cards).toHaveCount(before + 1)
   await closeComposer(page)
   const card = page.locator('.smithers-card[data-kind="world"]').last()
   await expect(card).toBeVisible()
@@ -41,7 +44,7 @@ test(
     await boot(page)
     await command(page, "/world")
     await closeComposer(page)
-    await expect(page.getByRole("region", { name: "Smithers Wiki state" })).toBeVisible()
+    await expect(page.getByTestId("card-world-embedded")).toBeVisible()
     const marker = fixtureInputText(`world-alias-${Date.now()}`)
     const note = await makeNote(page, marker)
 
@@ -55,6 +58,7 @@ test(
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
     await expect(dialog).toBeHidden()
     await page.reload()
+    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
     await command(page, `/wiki.open ${note.title}`)
     await closeComposer(page)
     await expect(page.locator('.smithers-card[data-kind="world"]').last()).toContainText(note.title)

@@ -4,7 +4,9 @@ import { command, closeComposer, expect, openApp, test } from "./support"
 
 const boot = async (page: Page) => { await openApp(page); await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible() }
 const createNote = async (page: Page) => {
+  const before = await page.locator('.smithers-card[data-kind="world"]').count()
   await command(page, "/wiki.new-note"); await closeComposer(page)
+  await expect(page.locator('.smithers-card[data-kind="world"]')).toHaveCount(before + 1)
   const card = page.locator('.smithers-card[data-kind="world"]').last(); await expect(card).toBeVisible()
   const cardId = ((await card.getAttribute("data-testid")) ?? "").replace(/^card-/, "")
   expect(cardId).toMatch(/^wiki-open-/)

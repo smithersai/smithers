@@ -12,8 +12,10 @@ const boot = async (page: Page): Promise<void> => {
 }
 
 const createNote = async (page: Page, body: string): Promise<{ readonly id: string; readonly title: string; readonly card: Locator }> => {
+  const before = await page.locator('.smithers-card[data-kind="world"]').count()
   await command(page, "/wiki.new-note")
   await closeComposer(page)
+  await expect(page.locator('.smithers-card[data-kind="world"]')).toHaveCount(before + 1)
   const card = page.locator('.smithers-card[data-kind="world"]').last()
   await expect(card).toBeVisible()
   const testId = await card.getAttribute("data-testid")
@@ -30,7 +32,7 @@ test(
   scenario("local-wiki-collaboration-selection-persistence", {
     capabilities: [],
     coverage: [
-      "action:wiki.new-note", "action:wiki.edit", "action:wiki.select", "action:wiki", "action:wiki.card.view",
+      "action:wiki.new-note", "action:wiki.edit", "action:wiki.card.select", "action:wiki", "action:wiki.card.view",
       "host:local", "host:production", "path:persistence", "door:slash", "door:button",
       "dimension:shared-browser-context", "dimension:selection-persistence", "evidence:world-document-readback"
     ]
@@ -41,19 +43,20 @@ test(
     const secondBody = fixtureInputText(`second-note-${Date.now()}`)
     const first = await createNote(page, firstBody)
     const second = await createNote(page, secondBody)
-    await page.getByTestId("chrome-wiki").click()
-    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
+    await command(page, "/wiki"); await closeComposer(page)
+    const pane = page.getByTestId("card-world-embedded")
     await expect(pane).toBeVisible()
     await expect(pane.getByRole("button", { name: first.title, exact: true })).toBeVisible()
     await expect(pane.getByRole("button", { name: second.title, exact: true })).toBeVisible()
     await pane.getByRole("button", { name: second.title, exact: true }).click()
+    await pane.getByRole("button", { name: "Document", exact: true }).click()
     await expect(pane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
     await page.reload()
-    await expect(page.getByRole("region", { name: "Smithers Wiki state" }).getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
+    await expect(page.getByTestId("card-world-embedded").getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
+    await page.close()
     const restarted = await context.newPage()
     await boot(restarted)
-    await restarted.getByTestId("chrome-wiki").click()
-    const restartedPane = restarted.getByRole("region", { name: "Smithers Wiki state" })
+    const restartedPane = restarted.getByTestId("card-world-embedded")
     await expect(restartedPane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
     await expect(restartedPane.getByText(secondBody, { exact: false })).toBeVisible()
     await restarted.close()
@@ -65,7 +68,7 @@ test(
   scenario("local-wiki-heading-selection-keyboard", {
     capabilities: [],
     coverage: [
-      "action:wiki.new-note", "action:wiki.edit", "action:wiki.heading", "action:wiki.select",
+      "action:wiki.new-note", "action:wiki.edit", "action:wiki.heading", "action:wiki.card.select",
       "host:local", "host:production", "path:keyboard", "door:slash", "door:button", "door:user-only",
       "dimension:keyboard", "dimension:outline-keyboard", "dimension:heading-scroll", "evidence:editor-focus-and-readback"
     ]
@@ -73,17 +76,19 @@ test(
   async ({ page }) => {
     await boot(page)
     const note = await createNote(page, "Intro\n\n## Collaboration\n\nShared content")
-    await page.getByTestId("chrome-wiki").click()
-    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
-    const outline = pane.getByRole("tree", { name: "Document outline" })
-    const heading = outline.getByRole("treeitem", { name: "Collaboration", exact: true })
+    await command(page, "/wiki"); await closeComposer(page)
+    const pane = page.getByTestId("card-world-embedded")
+    const outline = pane.getByRole("list", { name: "Page outline" })
+    const heading = outline.getByRole("button", { name: "Collaboration", exact: true })
     await expect(heading).toBeVisible()
     await heading.focus()
     await expect(heading).toBeFocused()
     await heading.press("Enter")
     await expect(pane.getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
-    await expect(pane.getByRole("treeitem", { name: "Collaboration", exact: true })).toBeVisible()
-    await pane.getByRole("treeitem", { name: "Collaboration", exact: true }).press("Space")
+    await expect(pane.getByLabel(`Edit ${note.title}`, { exact: true }).getByRole("textbox")).toBeFocused()
+    await pane.getByRole("button", { name: "Outline", exact: true }).click()
+    await heading.focus()
+    await heading.press("Space")
     await expect(pane.getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
   }
 )
@@ -99,14 +104,14 @@ test(
   }),
   async ({ page }) => {
     await boot(page)
-    await page.getByTestId("chrome-wiki").click()
-    const pane = page.getByRole("region", { name: "Smithers Wiki state" })
-    await expect(pane.getByText("No Wiki yet", { exact: true })).toBeVisible()
+    await command(page, "/wiki"); await closeComposer(page)
+    const pane = page.getByTestId("card-world-embedded")
+    await expect(pane.getByText("No Wiki yet.", { exact: true })).toBeVisible()
     await pane.getByRole("button", { name: "Create Wiki", exact: true }).click()
     await closeComposer(page)
     await expect(page.getByText(/Sign in with GitHub|requires you to sign in|signed in/i).last()).toBeVisible()
-    await expect(pane.locator('.world-sidebar [data-flow="wiki.select"]')).toHaveCount(0)
-    await expect(pane.getByText("No Wiki yet", { exact: true })).toBeVisible()
+    await expect(pane.locator('.world-card-sidebar button')).toHaveCount(0)
+    await expect(pane.getByText("No Wiki yet.", { exact: true })).toBeVisible()
   }
 )
 
@@ -129,7 +134,8 @@ test(
     await command(page, "/wiki.cloud.open home acme/no-such-repository")
     await closeComposer(page)
     await expect(page.getByText(/Wiki|repository|sign in|could not reach/i).last()).toBeVisible()
-    await page.getByTestId("chrome-wiki").click()
-    await expect(page.getByRole("region", { name: "Smithers Wiki state" }).getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
+    await command(page, "/wiki"); await closeComposer(page)
+    await page.getByTestId("card-world-embedded").getByRole("button", { name: "Document", exact: true }).click()
+    await expect(page.getByTestId("card-world-embedded").getByLabel(`Edit ${note.title}`, { exact: true })).toBeVisible()
   }
 )

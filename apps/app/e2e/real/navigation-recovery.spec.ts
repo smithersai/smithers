@@ -8,8 +8,10 @@ const boot = async (page: Page): Promise<void> => {
 }
 
 const createNote = async (page: Page): Promise<{ card: Locator; id: string; title: string }> => {
+  const before = await page.locator('.smithers-card[data-kind="world"]').count()
   await command(page, "/wiki.new-note")
   await closeComposer(page)
+  await expect(page.locator('.smithers-card[data-kind="world"]')).toHaveCount(before + 1)
   const card = page.locator('.smithers-card[data-kind="world"]').last()
   await expect(card).toBeVisible()
   const testId = await card.getAttribute("data-testid")
@@ -20,7 +22,7 @@ const createNote = async (page: Page): Promise<{ card: Locator; id: string; titl
 }
 
 test(
-  "sidebar opens from the logo and remains open across a real reload",
+  "sidebar opens from the logo and starts closed after a real reload",
   scenario("real-sidebar-reload-recovery", {
     capabilities: [],
     coverage: ["host:local", "host:production", "door:button", "path:persistence", "action:sidebar.toggle", "dimension:reload-recovery", "evidence:sidebar-state"]
@@ -34,15 +36,15 @@ test(
     await expect(page.getByRole("complementary", { name: "Sessions and chrome" })).toBeVisible()
     await page.reload()
     const reloadedLogo = page.getByRole("button", { name: "Smithers", exact: true })
-    await expect(reloadedLogo).toHaveAttribute("aria-expanded", "true")
-    await expect(page.getByRole("complementary", { name: "Sessions and chrome" })).toBeVisible()
-    await reloadedLogo.click()
     await expect(reloadedLogo).toHaveAttribute("aria-expanded", "false")
+    await expect(page.getByRole("complementary", { name: "Sessions and chrome" })).toBeHidden()
+    await reloadedLogo.click()
+    await expect(reloadedLogo).toHaveAttribute("aria-expanded", "true")
   }
 )
 
 test(
-  "tutorial focus boundaries keep the global W shortcut from stealing input",
+  "W opens navigation while the composer preserves typed W input",
   scenario("real-sidebar-keyboard-boundary", {
     capabilities: [],
     coverage: ["host:local", "host:production", "door:user-only", "path:success", "action:sidebar.toggle", "action:palette.open", "dimension:focus-boundary", "evidence:keyboard-navigation"]
@@ -50,15 +52,14 @@ test(
   async ({ page }) => {
     await boot(page)
     const logo = page.getByRole("button", { name: "Smithers", exact: true })
-    // The tutorial owns the keyboard surface while it is active. A global
-    // navigation shortcut must not steal that surface or mutate its state.
+    // Bare W navigates; typing into the composer must not toggle navigation.
     await page.keyboard.press("w")
-    await expect(logo).toHaveAttribute("aria-expanded", "false")
+    await expect(logo).toHaveAttribute("aria-expanded", "true")
     await page.keyboard.press("ControlOrMeta+k")
     const input = page.getByTestId("composer-input")
     await expect(input).toBeVisible()
     await input.fill("w")
-    await expect(logo).toHaveAttribute("aria-expanded", "false")
+    await expect(logo).toHaveAttribute("aria-expanded", "true")
     await closeComposer(page)
   }
 )
@@ -82,7 +83,7 @@ test(
     await expect(note.card.getByRole("button", { name: "Maximize card", exact: true })).toBeFocused()
     await note.card.getByRole("button", { name: "Maximize card", exact: true }).click()
     await expect(note.card).toHaveAttribute("data-maximized", "true")
-    await note.card.locator(".card-maximize-backdrop").click({ position: { x: 3, y: 3 } })
+    await note.card.getByRole("button", { name: "Restore", exact: true }).click()
     await expect(note.card).toHaveAttribute("data-maximized", "false")
   }
 )
@@ -104,7 +105,7 @@ test(
     const tab = sidebar.getByRole("tab", { name: note.title, exact: true })
     await expect(tab).toBeVisible()
     await tab.click()
-    await expect(page.getByTestId(`card-${note.id}`)).toBeVisible()
+    await expect(page.getByTestId(`tab-body-card-${note.id}`).getByTestId(`card-${note.id}`)).toBeVisible()
     await sidebar.getByRole("button", { name: `Close ${note.title}`, exact: true }).click()
     await expect(sidebar.getByRole("tab", { name: note.title, exact: true })).toHaveCount(0)
   }

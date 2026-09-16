@@ -107,31 +107,43 @@ test("an unsafe absolute OAuth return destination is discarded before GitHub", s
   expect(new URL(page.url()).origin).toBe(productOrigin)
 })
 
-authenticatedTest("GitHub OAuth returns to the repository and resumes the parked action", scenario("auth.oauth-return-to-deferred-resume", {
+authenticatedTest("GitHub OAuth stays on the original repository and resumes the parked action", scenario("auth.oauth-return-to-deferred-resume", {
   capabilities: ["identity"],
   coverage: [
     "action:auth.sign-in", "action:auth.prompt", "action:billing.balance", "host:production",
     "path:success", "path:permission", "path:persistence", "door:slash", "door:button", "door:user-only",
     "dimension:github-oauth-return-to", "dimension:deferred-action-resume", "evidence:session-api-and-balance-card"
   ],
-  description: "The sanctioned GitHub profile performs the deployed OAuth redirect from a repository path and the protected action parked before navigation resumes afterward."
+  description: "The sanctioned GitHub profile performs the deployed OAuth handoff from a repository path and the protected action parked before navigation resumes afterward."
 }), async ({ page, context }, testInfo) => {
   const baseURL = String(testInfo.project.use.baseURL)
   await clearProductSession(context, baseURL)
   await page.goto(new URL(APP_PATH, baseURL).toString(), { waitUntil: "domcontentloaded" })
   await expect.poll(() => readAuthenticatedSession(page)).toBeUndefined()
+  await expect(page.getByTestId("chrome-sign-in")).toBeVisible({ timeout: 60_000 })
 
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible({ timeout: 60_000 })
   await openChat(page)
   await command(page, "/billing.balance")
   const signIn = page.locator('button[data-flow="auth.sign-in"]:visible').last()
   await expect(signIn).toBeVisible()
+  const opened = context.waitForEvent("page")
   await signIn.click()
-  await finishGitHubOAuth(page, new URL(baseURL).origin)
+  const popup = await opened
+  try {
+    await popup.waitForURL(url => url.href !== "about:blank")
+    await popup.waitForLoadState("domcontentloaded")
+    const authorize = popup.getByRole("button", { name: /^authorize/i }).first()
+    if (await authorize.isVisible()) await authorize.click()
+    await expect.poll(() => readAuthenticatedSession(page), { timeout: 60_000 }).not.toBeUndefined()
+    expect(new URL(page.url()).origin).toBe(new URL(baseURL).origin)
+  } finally { await popup.close() }
 
   await expect.poll(() => readAuthenticatedSession(page), { timeout: 30_000 }).not.toBeUndefined()
   await expect.poll(() => new URL(page.url()).pathname).toBe(APP_PATH)
   await expect.poll(() => new URL(page.url()).searchParams.has("signed-in")).toBe(false)
-  await expect(page.locator('button[data-flow="auth.sign-in"]:visible')).toHaveCount(0)
+  await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
+  await expect(page.getByRole("status").filter({ hasText: "Signed in with GitHub as @codeplanesmithers." })).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="balance"]')).toBeVisible({ timeout: 30_000 })
 })
 

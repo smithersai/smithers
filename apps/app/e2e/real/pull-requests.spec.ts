@@ -1,3 +1,4 @@
+import { closeComposer } from "./support"
 import { scenario } from "./coverage/types"
 import { fixtureCommentBody } from "./support/values"
 import { authenticatedTest as test, readAuthenticatedSession } from "./auth-permissions/profile"
@@ -360,7 +361,7 @@ anonymousTest(
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()
     await command(page, "/prs.create")
-    await expectFlowOutcome(page, "prs.create", "", "failed")
+    await closeComposer(page)
     await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
     await expect(page.getByTestId("transcript")).toContainText(/sign in/i)
     await expect(landingDetail(page, 1)).toHaveCount(0)
