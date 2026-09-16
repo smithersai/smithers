@@ -244,7 +244,7 @@ describe("smithers mvp worker", () => {
       version: "1.0.0",
       buildSha: "build-abc",
       capabilities: ["agent", "identity", "cloud", "billing.checkout", "cloud.terminal"],
-      authFlow: "redirect",
+      authFlow: "native-handoff",
       sandbox: null
     })
   })

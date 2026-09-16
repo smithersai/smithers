@@ -24,7 +24,7 @@ const gate = () => {
 }
 const fixture = async (services: AppServices = {}, reject = false) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
-  if (services.bootstrap?.host === "local") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+  if (services.bootstrap?.host === "local" || services.bootstrap?.authFlow === "native-handoff") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   const held = gate()
   const observed: AppStore = { ...store, dispatch: transition => {
     const transaction = store.dispatch(transition)
@@ -69,9 +69,9 @@ test("a rejected download intent closes its empty reservation and never navigate
   expect(popup.closed).toBe(true)
 })
 
-test("the actual local OAuth door reserves before commit and starts the handoff only afterward", async () => {
+for (const host of ["local", "cloud"] as const) test(`the ${host} OAuth handoff reserves before commit and starts only afterward`, async () => {
   const requests: string[] = []
-  const { controller, held } = await fixture({ bootstrap: bootstrap("local"), handoffPollMs: 1,
+  const { controller, held } = await fixture({ bootstrap: { ...bootstrap(host), authFlow: "native-handoff" }, handoffPollMs: 1,
     fetchImpl: async input => {
       const url = String(input); requests.push(url)
       return url.includes("/native/start") ? Response.json({ handoffId: "test-handoff", pollSecret: "private-poll-secret" }) : Response.json({}, { status: 404 })

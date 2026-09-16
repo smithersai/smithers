@@ -192,3 +192,7 @@ Add three drift failures: a declaration with a runtime capability unknown to `Ap
 | G — native continuation | `packages/rpc/src/*Handoff*`; `apps/server/src/index.ts`; `apps/app/src/bun/{index,server}.ts`; `apps/app/electrobun.config.ts`; auth controller | one-time/expiry/replay; no credential in deep link/state/log; packaged launch resumes repo/file | C, D, E |
 | H — native BYOK | `apps/app/src/bun/*Keychain*`; bootstrap route; `KeysSeam.ts`; flow/card contracts | keychain lifecycle; renderer sees masked metadata only; web parity stays absent | A, B |
 | I — CI, previews, rollout | `apps/app/BUILD.ts`; `apps/server/BUILD.ts`; `ci/BUILD.ts`; generated app deploy workflow; deploy/canary scripts | `wrangler dev` web project; preview smoke; canary→prod receipt/build/rollback probes | C–G |
+
+### Production sign-in origin (2026-09-16)
+
+The web bootstrap selects the existing `native-handoff` protocol. The user gesture reserves a popup before durable command admission; GitHub completes there while the original repository page remains usable. Only the one-time claim response sets the session cookie on the requesting origin. This avoids tying production sign-in to the identity worker's fixed canary callback and retains the parked action on its original page. No poll secret or session is placed in the popup URL.

@@ -29,7 +29,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       name = card.payload.flow
     }
     if (name === "auth.sign-in") {
-      if (ctx.services.openExternal !== undefined || ctx.services.bootstrap?.host !== "local" || ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out") return undefined
+      if (ctx.services.openExternal !== undefined || (ctx.services.bootstrap?.host !== "local" && ctx.services.bootstrap?.authFlow !== "native-handoff") || ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out") return undefined
     }
     if (name === "app.download" && (ctx.services.openExternal !== undefined || ctx.services.downloadUrl === null)) return undefined
     return reserveBrowserCommandGesture(name)

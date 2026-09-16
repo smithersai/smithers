@@ -245,7 +245,7 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
         terminal: true,
         browser: Option.isSome(egress)
       }),
-      authFlow: identity ? "redirect" : "none",
+      authFlow: identity ? "native-handoff" : "none",
       sandbox: null
     })
   })
