@@ -18,7 +18,7 @@ const workflowPaths = (requests: Array<{ method: string; path: string }>) =>
 test("signed-out approvals park behind the real sign-in door and survive reload without a workflow read", scenario("approvals.signed-out-deferred-reload", {
   capabilities: ["identity"],
   coverage: [
-    "action:approvals.list", "action:auth.prompt", "host:local", "path:permission", "path:persistence",
+    "action:approvals.list", "action:auth.prompt", "host:local", "host:production", "path:permission", "path:persistence",
     "door:slash", "door:user-only", "dimension:approval-auth-boundary", "dimension:reload",
     "evidence:session-and-network-observation"
   ],
@@ -44,7 +44,7 @@ test("signed-out approvals park behind the real sign-in door and survive reload 
 test("signed-out dispatcher reads the public mirror, renders one real card, and never invents live trigger rows", scenario("triggers.signed-out-public-declaration", {
   capabilities: [],
   coverage: [
-    "action:triggers.list", "host:local", "path:success", "door:slash", "door:button",
+    "action:triggers.list", "host:local", "host:production", "path:success", "door:slash", "door:button",
     "dimension:public-declaration", "dimension:no-live-signed-out", "dimension:network-read",
     "evidence:mirror-response-and-card-readback"
   ],

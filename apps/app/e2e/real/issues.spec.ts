@@ -24,7 +24,7 @@ test(
     capabilities: [],
     description: "Open the shipped practice issue through the real browser host, inspect its installed workflow catalog through the slash command and rendered button, and verify the catalog remains readable after reload.",
     coverage: [
-      "action:issues.view", "action:issue.flows", "host:local", "path:success", "path:persistence", "path:keyboard",
+      "action:issues.view", "action:issue.flows", "host:local", "host:production", "path:success", "path:persistence", "path:keyboard",
       "door:slash", "door:button", "dimension:practice-repository", "dimension:flow-catalog", "dimension:reload", "dimension:keyboard",
       "evidence:rendered-workflow-list-and-durable-card"
     ]
@@ -53,7 +53,7 @@ test(
     description: "Exercise the shipped practice issue through its real UI and durable browser database, including keyboard comment submit, close, reload readback, and reopen.",
     coverage: [
       "action:issues.list", "action:issues.view", "action:issues.comment", "action:issues.close", "action:issues.reopen",
-      "host:local", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
+      "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
       "dimension:practice-repository", "dimension:reload", "dimension:comment-readback", "dimension:keyboard",
       "evidence:sqlite-ui-readback"
     ]

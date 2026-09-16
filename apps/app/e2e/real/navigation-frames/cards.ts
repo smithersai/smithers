@@ -67,7 +67,11 @@ export const openWikiForm = async (
 
 /** Open the shipped practice issue stack. It proves local card behavior, not a provider call. */
 export const openPracticeIssues = async (page: Page): Promise<Locator> => {
-  await enterUrlApp(page)
+  if (process.env.SMITHERS_REAL_E2E_HOST === "production") {
+    // The signed-out practice tests must not enter the private canary repo.
+    await page.goto(LOCAL_REPOSITORY_PATH)
+    await expectAppReady(page)
+  } else await enterUrlApp(page)
   await command(page, `/issues.list open ${PRACTICE_REPOSITORY}`)
   await closeComposer(page)
   const card = page.getByTestId("card-practice-issues")

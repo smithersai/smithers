@@ -271,6 +271,7 @@ test("the shipped practice issue card keeps local history, reloads it, and disca
     "action:card.history.back",
     "action:card.history.forward",
     "host:local",
+    "host:production",
     "path:success",
     "path:persistence",
     "door:button",
