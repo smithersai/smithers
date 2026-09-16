@@ -264,8 +264,14 @@ configuredGatewayTest(
       await attachProductionJson(testInfo, "cloud-terminal-output", { repo: workflowRepo.repo, workspaceId: id, sessionId, marker })
     } finally {
       if (sessionId !== undefined) {
+        const cleanupStarted = Date.now()
         const deleted = await realApi(page, request, "POST", `${path}/${encodeURIComponent(sessionId)}/destroy`)
-        expect([204, 404]).toContain(deleted.status())
+        const cleanupMs = Date.now() - cleanupStarted
+        expect(deleted.status()).toBe(204)
+        const stopped = await realApi(page, request, "GET", `${path}/${encodeURIComponent(sessionId)}`)
+        expect(stopped.status()).toBe(200)
+        expect(await stopped.json()).toMatchObject({ id: sessionId, workspace_id: id, status: "stopped" })
+        await attachProductionJson(testInfo, "cloud-terminal-cleanup", { sessionId, status: deleted.status(), cleanupMs, durableStatus: "stopped" })
       }
     }
   }
