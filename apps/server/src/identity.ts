@@ -127,12 +127,13 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
       scopes?: unknown
     } | undefined
     if (body === undefined || typeof body !== "object" || body === null || typeof body.login !== "string" || body.login === "") {
-      // Identity answers a cookieless validate with a session body that has
-      // no login. That is a signed-out visitor, not a malformed answer, and
-      // the 401 is what opens the anonymous catalog door
-      // (anonymousCatalogTurn). A loginless body for a request that DID
-      // send a cookie is still identity misbehaving.
-      if (cookie === null && body !== undefined) return { status: "invalid" } as const
+      // Identity decides a validate by the session cookie alone and answers a
+      // missing, stale, or foreign-secret one with a loginless 200. That is a
+      // signed-out visitor, not a malformed answer, and the 401 is what opens
+      // the anonymous catalog door (anonymousCatalogTurn). Other first-party
+      // cookies (the live-tutorial cookie, an edge cookie) say nothing about
+      // the session, so only an unparseable body is identity misbehaving.
+      if (body !== undefined) return { status: "invalid" } as const
       return {
         status: "unavailable",
         response: refuse("upstream_malformed", "The identity service returned a malformed session response.")

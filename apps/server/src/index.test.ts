@@ -1378,6 +1378,35 @@ describe("anonymous exploring of a public catalog repository", () => {
     )
   })
 
+  test("a loginless 200 for a request carrying a non-session cookie still opens the anonymous door", async () => {
+    // The live-tutorial route sets __Host-smithers-tutorial on Path=/, so a
+    // signed-out visitor's next requests carry a Cookie header. Identity still
+    // answers them with its loginless 200; that must stay "signed out".
+    let upstreamCalls = 0
+    await withMockedFetch(
+      (request) => {
+        if (new URL(request.url).hostname === "identity.test") {
+          expect(request.headers.get("cookie")).toBe("__Host-smithers-tutorial=x")
+          return Response.json({ state: "signed-out", login: null })
+        }
+        upstreamCalls += 1
+        return ndjsonUpstream([{ type: "delta", kind: "text", text: "It is a monorepo." }, { type: "done" }])
+      },
+      async () => {
+        const response = await worker.fetch(
+          new Request("https://canary.smithers.sh/api/agent/turn", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: "https://canary.smithers.sh", cookie: "__Host-smithers-tutorial=x" },
+            body: JSON.stringify(exploring("smithersai/smithers", "run-loginless-cookie"))
+          }),
+          identityEnv
+        )
+        expect(response.status).toBe(200)
+        expect(upstreamCalls).toBe(1)
+      }
+    )
+  })
+
   test("a signed-out turn about a catalog repository runs, unattributed to any account", async () => {
     let seen: Headers | undefined
     let upstreamCalls = 0
@@ -2560,7 +2589,7 @@ describe("the server-side kill route (B-3)", () => {
         expect(turn.status).toBe(200)
         const body = await turn.text()
         expect(body.trim().split("\n")).toHaveLength(chunks + 1)
-        // One poll per CANCEL_POLL_CHUNKS (64) chunks, not one per chunk.
+        // One poll per CANCEL_POLL_CHUNKS (256) chunks, not one per chunk.
         expect(stateReads).toBeGreaterThan(0)
         expect(stateReads).toBeLessThan(chunks / 8)
       }
@@ -3947,7 +3976,7 @@ describe("generation-scoped turn lifecycle", () => {
     }
   })
 
-  test("a silent upstream backs off and terminates before the cancel poll budget is spent", async () => {
+  test("a silent upstream backs off and terminates at the eight-minute monitoring cap", async () => {
     const storage = memoryStorage()
     const registry = new TurnCancelRegistry({ storage })
     let polls = 0
@@ -3985,7 +4014,8 @@ describe("generation-scoped turn lifecycle", () => {
         const frames = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line))
         expect(frames).toEqual([{ runId: "generation-poll-cap", type: "done", reason: "stop",
           error: "The turn exceeded its cancellation monitoring limit. Try again." }])
-        expect(polls).toBe(96)
+        // Polls at 0, 500, 1500, 3500, 7500, then every 5000ms up to 477500: 99, then the cap.
+        expect(polls).toBe(99)
         expect(intervals.slice(0, 5)).toEqual([500, 1000, 2000, 4000, 5000])
         expect(Math.max(...intervals)).toBe(5000)
         expect(cancelled).toBe(true)

@@ -70,13 +70,23 @@ describe("validateSession", () => {
     }
   })
 
-  test("a loginless answer is signed-out for a cookieless request and malformed for one that sent a cookie", async () => {
+  test("a loginless 200 is signed out whatever cookies the request carried; only an unparseable body is malformed", async () => {
+    // Identity decides a validate by the session cookie alone and answers a
+    // missing, stale, or foreign-secret one with a loginless 200. Any other
+    // first-party cookie (the live-tutorial cookie, an edge cookie) must not
+    // turn that answer into a 502 outage that closes the anonymous door.
     const answer = () => jsonAnswer(200, { state: "signed-out", login: null })
     expect(await run(validateSession(session()), wire(answer).layer, config())).toEqual({ status: "invalid" })
-    const withCookie = await run(validateSession(session("smithers_session=abc")), wire(answer).layer, config())
-    expect(withCookie.status).toBe("unavailable")
-    if (withCookie.status === "unavailable") {
-      expect(await withCookie.response.json()).toEqual({
+    expect(await run(validateSession(session("__Host-smithers-tutorial=x")), wire(answer).layer, config())).toEqual({ status: "invalid" })
+    expect(await run(validateSession(session("smithers_identity=stale")), wire(answer).layer, config())).toEqual({ status: "invalid" })
+    const unparseable = await run(
+      validateSession(session("smithers_identity=abc")),
+      wire(() => new Response("<html>", { status: 200, headers: { "content-type": "text/html" } })).layer,
+      config()
+    )
+    expect(unparseable.status).toBe("unavailable")
+    if (unparseable.status === "unavailable") {
+      expect(await unparseable.response.json()).toEqual({
         status: "error",
         code: "upstream_malformed",
         message: "The identity service returned a malformed session response."
