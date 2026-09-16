@@ -830,24 +830,25 @@ export const ChangeStackView = ({ payload, stack }: { readonly payload: ChangeCa
   )
 }
 
-/** One compact view of the existing evidence, retaining unread and revision boundaries. */
+/** Only recorded evidence or an actual read failure; absent fields have no row. */
 const ReviewEvidence = ({ card, onRunCommand }: { readonly card: ChangeCard } & ChangeCardActions) => {
   const p = card.payload
-  const at = (seq: number | null | undefined): string => seq == null ? "revision not recorded" :
+  const at = (seq: number | null | undefined): string => seq == null ? "" :
     `rev ${seq}${p.currentSeq === null ? " · current revision unknown" : seq === p.currentSeq ? " · current" : " · not current"}`
-  const missing = (reason: string | undefined): string => reason ? `Not read: ${reason}` : "Not recorded"
-  const checks = p.checks === null ? missing(p.unread?.checks) : p.checks.length === 0 ? "No results recorded" :
+  const missing = (reason: string | undefined): string => reason ? `Not read: ${reason}` : ""
+  const checks = p.checks === null ? missing(p.unread?.checks) : p.checks.length === 0 ? "0" :
     p.checks.map(check => `${check.context}: ${check.state}`).join(" · ")
   const current = p.findings?.filter(finding => finding.state !== "stale" && p.currentSeq !== null && finding.raisedAtSeq === p.currentSeq)
-  const rows: Array<readonly [ChangeFacet, string, string]> = [
-    ["checks", "Checks", `${checks} (${at(p.checksAt)})`],
-    ["findings", "Findings", p.findings === null ? missing(p.unread?.findings) :
-      p.currentSeq === null ? `${p.findings.length} recorded; current revision unknown` :
-        `${current?.length ?? 0} at the current revision; ${p.findings.length - (current?.length ?? 0)} older or unlinked`],
-    ["review", "Review threads", p.threads === null ? missing(p.unread?.threads) :
-      `${p.threads.filter(thread => thread.state === "open").length} open · ${p.threads.filter(thread => thread.state === "done").length} awaiting acknowledgment · ${p.threads.filter(thread => thread.state == null).length} with state unrecorded`]
-  ]
+  const rows: Array<readonly [ChangeFacet, string, string]> = []
+  if (p.checks !== null || p.unread?.checks) rows.push(["checks", "Checks", [checks, at(p.checksAt)].filter(Boolean).join(" · ")])
+  if (p.findings !== null || p.unread?.findings) rows.push(["findings", "Findings", p.findings === null ? missing(p.unread?.findings) :
+    p.currentSeq === null ? String(p.findings.length) :
+      `${current?.length ?? 0} current · ${p.findings.length - (current?.length ?? 0)} older or unlinked`])
+  if (p.threads !== null || p.unread?.threads) rows.push(["review", "Review threads", p.threads === null ? missing(p.unread?.threads) :
+    `${p.threads.filter(thread => thread.state === "open").length} open · ${p.threads.filter(thread => thread.state === "done").length} awaiting acknowledgment`])
   if (p.walkthrough) rows.push(["walkthrough", "Walkthrough", at(p.walkthrough.seq)])
+  const hasHumanReview = (p.reviews ?? []).some(review => review.reviewerKind !== "agent")
+  if (rows.length === 0 && !p.unread?.walkthrough && !hasHumanReview) return null
   return <section className="world-card-list" aria-label="Review evidence">
     <h4>Review evidence</h4>
     {rows.map(([facet, label, detail]) => <div key={facet} className="world-card-row">
@@ -856,7 +857,7 @@ const ReviewEvidence = ({ card, onRunCommand }: { readonly card: ChangeCard } & 
         {...flowAction(onRunCommand, "change.facet", flowArgs("change.facet", { changeId: p.changeId, facet }))}>Inspect {label.toLowerCase()}</Button>
     </div>)}
     {p.unread?.walkthrough === undefined ? null : <p className="world-card-path">Walkthrough not read: {p.unread.walkthrough}</p>}
-    {(p.reviews ?? []).some(review => review.reviewerKind !== "agent") ? <Button size="sm" variant="outline" 
+    {hasHumanReview ? <Button size="sm" variant="outline" 
       {...flowAction(onRunCommand, "review.since-mine", p.changeId)}>Diff since my review</Button> : null}
   </section>
 }
@@ -883,13 +884,10 @@ export const ChangeCardBody = ({
   const owners = ownersLine(payload)
   return (
     <div className="world-card-list">
-      <p className="world-card-row">
-        <span className="world-card-path">
-          {payload.repo} · {payload.changeId}
-          {payload.currentSeq !== null && payload.revisionCount !== null ? ` · rev ${payload.currentSeq} of ${payload.revisionCount}` : ""}
-          {payload.commitId !== null ? ` · ${shortId(payload.commitId)}` : ""}
-          {payload.authorName !== null ? ` · ${payload.authorName}` : ""}
-        </span>
+      {payload.currentSeq !== null || payload.stack !== null || turn !== null ? <p className="world-card-row">
+        {payload.currentSeq !== null ? <span className="world-card-path">
+          rev {payload.currentSeq}{payload.revisionCount !== null ? ` of ${payload.revisionCount}` : ""}
+        </span> : null}
         {payload.stack !== null ? <StatusPill {...landingPill(payload.stack.state)} /> : null}
         {/* plue#484: the turn names its actor's LOGIN (a username, or an agent session's title); the party alone when it names none. */}
         {turn !== null ?
@@ -900,8 +898,7 @@ export const ChangeCardBody = ({
             </span>
           ) :
           null}
-      </p>
-      {payload.timestamp !== null ? <p className="world-card-path">{timeLabel(Date.parse(payload.timestamp))}</p> : null}
+      </p> : null}
       {payload.description !== "" ? <p className="world-card-title">{payload.description.split("\n")[0]}</p> : null}
       {payload.repos.length > 0 ?
         (

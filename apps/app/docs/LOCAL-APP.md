@@ -517,8 +517,8 @@ Lane `change` (ADR 0003) makes the change the unit of review:
   plue's change DTO plus its auxiliaries: the per-repo stat, the carrying
   landing request's stack position (`Landing #42 · position 2 of 2 · open →
   main`), and the changeset when the repository's owner is an org (a `failed`
-  changeset renders its `failure_reason` verbatim). The header names `repo ·
-  changeId · rev N of M · commit · author`, the landing pill, and whose turn
+  changeset renders its `failure_reason` verbatim). The header names `rev N of M`
+  when recorded, the landing pill, and whose turn
   it is by LOGIN (`turn: will · reviewer`); a field the GET did not state
   renders nothing, so a change with no recorded revision shows no revision
   count. Five facets always switch the body: Diff (two revision pickers that
@@ -745,4 +745,3 @@ at controller construction to register Library navigation, commands, recommendat
 and agent tools. Disabled controllers refuse Library mutations and leave existing
 plugin installations available to the other app features. Saved Library cards are
 inert while disabled.
-

@@ -248,10 +248,12 @@ const tabs = (host: HTMLElement): Array<string> =>
   [...host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim() ?? "")
 
 describe("the change card", () => {
-  test("the header names the repo, the change, the short commit, and the author — and no revision count while none is recorded", () => {
+  test("the header omits provenance filler and unrecorded revision counts", () => {
     const { host } = renderChange(changeCard())
     const text = host.textContent ?? ""
-    expect(text).toContain("will/smithers · qupxosqw · a03f5f11 · will")
+    expect(text).not.toContain("will/smithers · qupxosqw · a03f5f11 · will")
+    expect(text).not.toContain("Not recorded")
+    expect(text).not.toContain("revision not recorded")
     expect(text).not.toContain("rev ")
     expect(text).not.toContain("turn:")
     host.remove()
@@ -260,7 +262,7 @@ describe("the change card", () => {
   test("the header reads rev N of M and the turn's LOGIN once the change GET states them (plue#450, #460, #484)", () => {
     const { host } = renderChange(liveCard())
     const text = host.textContent ?? ""
-    expect(text).toContain("will/smithers · qupxosqw · rev 2 of 2 · a03f5f11 · will")
+    expect(text).toContain("rev 2 of 2")
     /* plue#484: the login, then the party — never the numeric actor id. */
     expect(text).toContain("turn: will · reviewer")
     expect(text).not.toContain("turn: 9")
@@ -1060,8 +1062,8 @@ describe("docs/LOCAL-APP.md's Cards section", () => {
   test("the change card's header form and facet strip are the ones the doc states", async () => {
     const text = await contract()
     const { host } = renderChange(liveCard({ walkthrough: { seq: 2, sections: [], quiz: [] } }))
-    expect(host.textContent ?? "").toContain("· rev 2 of 2 ·")
-    expect(text).toContain("`repo · changeId · rev N of M · commit · author`")
+    expect(host.textContent ?? "").toContain("rev 2 of 2")
+    expect(text).toContain("The header names `rev N of M` when recorded")
     /* The five always-on facets, named in the order the strip renders them. */
     const listed = text.slice(text.indexOf("Five facets always switch the body:"))
     const always = tabs(host).filter((label) => label !== "Walkthrough" && label !== "Owners")
@@ -1094,14 +1096,16 @@ test("absent Change auxiliaries render no invented unread sentences in any facet
       checks: null, reviews: null, threads: null, reviewRequests: null, stack: null, changeset: null }))
     expect(host.textContent).not.toContain("not read")
     expect(host.textContent).not.toContain("no reason recorded")
+    expect(host.textContent).not.toContain("Not recorded")
+    expect(host.querySelector('[aria-label="Review evidence"]')).toBeNull()
     host.remove()
   }
 })
 
-test("the Change timestamp uses the same local clock as card Details", () => {
+test("the Change body omits its duplicate provenance timestamp", () => {
   const at = new Date().setHours(4, 5, 0, 0)
   const { host } = renderChange(changeCard({ timestamp: new Date(at).toISOString() }))
-  expect(host.textContent).toContain(timeLabel(at))
+  expect(host.textContent).not.toContain(timeLabel(at))
   host.remove()
 })
 
