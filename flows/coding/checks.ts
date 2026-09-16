@@ -1,7 +1,7 @@
 /** Revision checks are ordinary actions over Plue's read-only JJ tree export. */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Executable from "@smthrs/registry/Executable"
-import { Effect, Layer, Path, Schema } from "effect"
+import { Effect, Layer, Path, Schema, Semaphore } from "effect"
 import { contained, runSourceProcess, withImmutableSource, type ImmutableSourceOptions } from "./immutable-source.ts"
 import { Check, CodingError, Implementation, Receipt, checkInputDigest } from "./schema.ts"
 
@@ -26,7 +26,11 @@ export type CheckHostOptions = ImmutableSourceOptions
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 
 /** Supply this layer to the existing native action table and register checkDelegate. */
-export const checkLayers = (options: CheckHostOptions) => Layer.mergeAll(
+export const checkLayers = (options: CheckHostOptions) => {
+  // Each check owns an exported tree, dependency install and build processes.
+  // Bound their combined memory footprint for the whole workspace host.
+  const checks = Semaphore.makeUnsafe(1)
+  return Layer.mergeAll(
   Interpreter.layer(checkDelegate),
   CheckCommand.toLayer(invocation => Effect.gen(function*() {
     const { implementation, check } = yield* Schema.decodeUnknownEffect(Input)(invocation.input)
@@ -64,9 +68,11 @@ export const checkLayers = (options: CheckHostOptions) => Layer.mergeAll(
     }))
   }).pipe(
     Effect.scoped,
+    checks.withPermits(1),
     Effect.mapError(error => error instanceof CodingError ? error : new CodingError({
       code: "execution", message: "Revision check could not execute or finish its temporary source cleanup" +
         (error instanceof Error ? `: ${error.message.slice(0, 2_048)}` : "")
     }))
   ))
 )
+}

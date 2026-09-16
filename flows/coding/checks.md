@@ -96,3 +96,5 @@ invalid reviewer receipt refuses the check. It never publishes the wiki current
 pointer. The host binds its actual reviewer policy and configured page catalog
 to the ordinary check declaration's execution identity. The owning
 [semantic-check guide](wiki-check.md) describes the capture and reuse contract.
+
+The coding host runs one revision command check at a time. The permit covers source export, dependency installation, execution, and temporary-tree cleanup, so concurrent check flows do not multiply the workspace VM's memory and disk usage. Each check still records its own immutable-source receipt.
