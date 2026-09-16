@@ -263,7 +263,7 @@ describe("§3 the keyboard contract", () => {
     const view = await mount()
     await press(view, "k", { meta: true })
     await view.act(() => view.controller.changeDraft("Compose"))
-    await view.act(() => view.host.querySelector('[data-ref="src/Composer.tsx"]')?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })))
+    await view.act(() => view.host.querySelector('[data-ref="src/Composer.tsx"]')?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })))
     expect(highlighted(view.host)?.dataset["ref"]).toBe("src/Composer.tsx")
     await press(view, "Enter")
     expect(invoked(view.store)).toContainEqual({ name: "chat.send", args: "Compose" })
@@ -281,6 +281,18 @@ describe("§3 the keyboard contract", () => {
     expect(invoked(view.store)).toEqual(before)
     expect(view.store.session().draft).toBe("Explain this repository.")
     expect(palette(view.host)).not.toBeNull()
+  })
+
+  test("a menu appearing under a stationary pointer preserves the exact typed flow", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/wiki"))
+    const other = view.host.querySelector<HTMLElement>('[data-flow="wiki.cloud"][role="option"]')
+    expect(other).not.toBeNull()
+    await view.act(() => other!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })))
+    await press(view, "Enter")
+    expect(invoked(view.store).map(row => row.name)).toContain("wiki")
+    expect(invoked(view.store).some(row => row.name === "wiki.cloud")).toBe(false)
   })
 
   test("/issues retains the slash path and exact-name precedence", async () => {

@@ -232,7 +232,9 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
             tabIndex: -1,
             "aria-selected": highlightedRow,
             "data-highlighted": highlightedRow ? "true" : "false",
-            onMouseEnter: () => onHighlight(index)
+            // Opening or reflowing the menu beneath a stationary pointer must not
+            // replace the keyboard selection. Only actual pointer motion does.
+            onMouseMove: () => onHighlight(index)
           }
           const heading = label === undefined ? null : <div className="palette-group" key={`group:${label}:${index}`}>{label}</div>
           if (row.kind === "slash" && row.row.kind === "namespace") {
