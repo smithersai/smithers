@@ -126,7 +126,7 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
   if (!comparisonBase || !/^[0-9a-f]{40}$/.test(comparisonBase)) return yield* invalid("The check needs an immutable comparison base")
   if (isPR && !proposal.length) {
     const mergeBase = yield* runSourceProcess(options, ["jj", "log", "--ignore-working-copy", "--no-graph", "-r",
-      `heads(::${comparisonBase} & ::${work.evidence.source.commitId})`, "-T", "commit_id"], options.repositoryPath, Math.min(30_000, work.deadlineAt - Date.now()))
+      `heads(::commit_id("${comparisonBase}") & ::commit_id("${work.evidence.source.commitId}"))`, "-T", "commit_id"], options.repositoryPath, Math.min(30_000, work.deadlineAt - Date.now()))
     if (mergeBase.exitCode !== 0 || mergeBase.stdout.truncated || !/^[0-9a-f]{40}$/.test(mergeBase.stdout.text.trim())) return yield* invalid("The PR has no single captured merge base")
     comparisonBase = mergeBase.stdout.text.trim()
   }

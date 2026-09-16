@@ -142,9 +142,9 @@ export const RunSteps = Action.make("repository/run-steps", {
   success: Schema.Record(Schema.String, StepResult), error: CodingError
 })
 export const CaptureJob = Action.make("repository/capture-job", {
-  payload: JobInput, success: RepositoryEvidence, error: CodingError, nondeterministic: true
+  payload: Schema.Struct({ ...JobInput.fields, deadlineAt: Schema.optionalKey(Schema.Number) }), success: RepositoryEvidence, error: CodingError, nondeterministic: true
 })
-export const CaptureFollowup = Flow.make("repository/CaptureFollowup", { payload: JobInput, success: RepositoryEvidence, error: CodingError,
+export const CaptureFollowup = Flow.make("repository/CaptureFollowup", { payload: CaptureJob.payloadSchema, success: RepositoryEvidence, error: CodingError,
   body: input => CaptureJob.call(input) })
 export const Investigate = Flow.make("repository/Investigate", {
   payload: { input: JobInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number, evaluation: Schema.optionalKey(Schema.Boolean) }, success: JobResult, error: CodingError,
@@ -153,7 +153,7 @@ export const Investigate = Flow.make("repository/Investigate", {
 export const RepositoryJob = Flow.make("repository/Job", {
   payload: JobInput, success: JobResult, error: Schema.Union([CodingError, WaitFor.WaitForRequestInvalid]),
   body: input => StartBudget.call({ minutes: input.configuration.budgetMinutes }).pipe(Node.bindPlanned(deadlineAt =>
-    CaptureJob.call(input).pipe(Node.bindPlanned(evidence =>
+    CaptureJob.call({ ...input, deadlineAt }).pipe(Node.bindPlanned(evidence =>
       Investigate.child({ input, evidence, deadlineAt }).pipe(Node.bindPlanned(result => PublishReply.child({ input, result })), Node.bindPlanned(result => Node.branch(Node.succeed(result), {
         if: result => result.status === "needs-author",
         then: result => ContinueAuthor.call({ input, result, deadlineAt }),

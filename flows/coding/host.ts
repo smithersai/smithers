@@ -195,12 +195,13 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       const binding = yield* Context.get(context, NativeCoding).read()
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
       if (!binding.capabilities?.includes("apply-files/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; apply-files/v1 is required"))
+      if (!binding.capabilities.includes("import-source/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; import-source/v1 is required"))
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, stateRoot, credential: options.credential,
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
-        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "repository-jobs/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
+        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "repository-jobs/v1", "repository-source/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
           ...(options.landing === undefined || options.planning === undefined ? [] : ["coding-vibe/v1"])])] }, bind, root)
     }))).pipe(Layer.provideMerge(host))
   }).pipe(Effect.provide(platform.host))))

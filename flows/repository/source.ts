@@ -32,7 +32,7 @@ export const withCapturedCommit = <A, E, R>(options: ImmutableSourceOptions, com
   if (tree.commitId !== commitId || root === canonical || !contained(canonical, root, path)) return yield* invalid("The native exporter returned another source or path")
   // This is a fixed host-owned JJ read, never an event-provided command.
   const command = yield* spawner.spawn(ChildProcess.make("jj", ["-R", options.repositoryPath, "--ignore-working-copy", `--at-op=${operationId}`,
-    "log", "--no-graph", "-r", commitId, "-T", "json(self)"], { cwd: options.repositoryPath, stdin: "ignore" }))
+    "log", "--no-graph", "-r", `commit_id("${commitId}")`, "-T", "json(self)"], { cwd: options.repositoryPath, stdin: "ignore" }))
   const text = yield* Stream.runFoldEffect(command.stdout, () => "", (text, chunk) => text.length + chunk.length > 65536
     ? Effect.fail(invalid("Native commit metadata exceeded its bound")) : Effect.succeed(text + new TextDecoder().decode(chunk)))
   const exit = yield* command.exitCode

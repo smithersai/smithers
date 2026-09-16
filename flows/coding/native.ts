@@ -6,7 +6,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
-import { ChangeId, FileRecovery, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourcePublication } from "./native-schema.ts"
+import { ChangeId, FileRecovery, ImportSource, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
 export * from "./native-schema.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow
@@ -22,6 +22,7 @@ export class NativeCoding extends Context.Service<NativeCoding, {
   readonly read: (changeIds?: ReadonlyArray<string>, historyLimit?: number) => Effect.Effect<typeof ReadResult.Type, NativeCodingError>
   readonly apply: (operation: Operation) => Effect.Effect<OperationResult, NativeCodingError>
   readonly publishOriginalSource: (request: typeof PublishSource.Type) => Effect.Effect<SourcePublication, NativeCodingError>
+  readonly importSource?: (request: typeof ImportSource.Type) => Effect.Effect<typeof SourceImport.Type, NativeCodingError>
 }>()("coding/NativeCoding") {}
 
 export interface NativeOptions {
@@ -85,6 +86,22 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
       Effect.flatMap(Schema.decodeUnknownEffect(ReadResult)),
       Effect.mapError(error => error instanceof NativeCodingError ? error : failure("invalid_receipt", "Native read returned an invalid revision"))
     ),
+    importSource: (request: typeof ImportSource.Type) => Effect.gen(function*() {
+      const input = yield* Schema.decodeUnknownEffect(ImportSource)(request).pipe(
+        Effect.mapError(() => failure("source_refused", "Native source import requires exact immutable source refs")))
+      if (new Set(input.commits.map(commit => commit.commitId)).size !== input.commits.length ||
+          input.commits.some(commit => commit.commitId === "0".repeat(40))) return yield* failure("source_refused", "Native source import needs distinct nonempty commits")
+      const result = yield* invoke({ operation: "import_source", ...input }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(SourceImport)),
+        Effect.mapError(error => error instanceof NativeCodingError ? error : failure("invalid_receipt", "Native source import returned an invalid receipt")))
+      if (result.requestId !== input.requestId || result.head.operationId !== result.operationId || result.revisions.length !== input.commits.length ||
+          new Set(result.revisions.map(revision => revision.commitId)).size !== input.commits.length || input.commits.some(commit =>
+            commit.ref !== `refs/smithers/workspaces/${result.workspaceId}/sources/${commit.commitId}` ||
+            !result.revisions.some(revision => revision.commitId === commit.commitId && revision.operationId === result.operationId))) {
+        return yield* failure("invalid_receipt", "Native source import did not acknowledge the exact retained commits and owning workspace")
+      }
+      return result
+    }),
     publishOriginalSource: (request: typeof PublishSource.Type) => Effect.gen(function*() {
       if (options.sourcePublication === "local-only") return yield* failure("source_publication_unavailable", "This host has explicit local-only native capability; it cannot acknowledge cloud retention")
       const input = yield* Schema.decodeUnknownEffect(PublishSource)(request).pipe(

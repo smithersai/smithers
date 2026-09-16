@@ -51,6 +51,13 @@ export const SourcePublication = Schema.Struct({
 })
 export type SourcePublication = typeof SourcePublication.Type
 export const PublishSource = Schema.Struct({ requestId: RequestId, source: Resolved })
+/** Object import is a native store operation, never an edit or source URL. */
+export const ImportSource = Schema.Struct({ requestId: RequestId,
+  commits: Schema.Array(Schema.Struct({ commitId: CommitId,
+    ref: Schema.NonEmptyString.check(Schema.isMaxLength(200)) })).check(Schema.isMinLength(1), Schema.isMaxLength(2)) })
+export const SourceImport = Schema.Struct({ status: Schema.Literal("imported"), requestId: RequestId, workspaceId: RequestId,
+  repositoryId: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), operationId: OperationId,
+  head: NativeRevision, revisions: Schema.Array(NativeRevision).check(Schema.isMinLength(1), Schema.isMaxLength(2)) })
 export const FileRecovery = Schema.Struct({ requestId: RequestId, path: Schema.String,
   files: Schema.Array(Schema.Struct({ path: Schema.String, preimage: Schema.NullOr(Schema.String), proposed: Schema.NullOr(Schema.String) })) })
 export const OperationResult = Schema.Union([

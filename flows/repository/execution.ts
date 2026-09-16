@@ -16,6 +16,7 @@ import { admitSourcePath } from "./source.ts"
 import { PublishReply } from "./replies.ts"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import { sourceEvent } from "./events.ts"
+import { ensureSource } from "./retention.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 const allowedReferences = (work: typeof Work.Type) => new Set([
@@ -98,10 +99,12 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
       ? yield* available.value.resolveReview(input.event) : undefined
     if (needsPR && !review && !(input.event.type === "pull_request" && typeof head.sha === "string")) return yield* invalid("Select the actual PR and immutable candidate for review")
     const sourceRevision = review?.sourceRevision ?? normalized.sourceRevision ?? (typeof head.sha === "string" ? head.sha : undefined)
+    if (sourceRevision !== undefined) yield* ensureSource(options, input.event, review?.payload ?? normalized.payload, yield* currentExecutionId)
     const evidence = yield* captureRepository(options, { repo: input.repo, prompt: JSON.stringify(review?.payload ?? input.event.payload),
       ...(sourceRevision === undefined ? {} : { sourceRevision }) })
     return review ? { ...evidence, subject: review.payload } : normalized.sourceRevision ? { ...evidence, subject: normalized.payload } : evidence
-  })),
+  }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
+    orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))),
   RetainObservation.toLayer(({ work, observation }) => Effect.gen(function*() {
     yield* Effect.try({ try: () => verifyObservation(work, observation), catch: error => error instanceof CodingError ? error : invalid("Invalid step evidence") })
     return result(work, observation, yield* currentExecutionId)
@@ -211,7 +214,7 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
       const updated = yield* runtime.execute(CheckReply, { executionId: `${key}-validate`, payload: { input: current, reply, previous } })
       if (updated === null) continue
       current = updated
-      const evidence = yield* runtime.execute(CaptureFollowup, { executionId: `${key}-capture`, payload: current })
+      const evidence = yield* runtime.execute(CaptureFollowup, { executionId: `${key}-capture`, payload: { ...current, deadlineAt } })
       const investigated = yield* runtime.execute(Investigate, { executionId: `${key}-investigate`, payload: { input: current, evidence, deadlineAt } })
       const published = yield* runtime.execute(PublishReply, { executionId: `${key}-reply`, payload: { input: current, result: investigated } })
       previous = { ...published, publicActions: [...previous.publicActions, ...published.publicActions] }

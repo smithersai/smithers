@@ -6,6 +6,17 @@ import { CodingError } from "../coding/schema.ts"
 import { Event, Job, Record, SourceStatus } from "./schema.ts"
 
 export interface RemoteOptions extends RepositoryBinding { readonly gatewayId: string; readonly credential: string }
+const Commit = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
+const SourceCommit = Schema.String.check(Schema.isPattern(/^(?!0{40}$)[0-9a-f]{40}$/))
+/** The host constructs this only from an admitted push or a resolved PR. */
+export const RetainSourceRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("pull_request"), number: Schema.Int.check(Schema.isGreaterThan(0)), head: SourceCommit, base: SourceCommit }),
+  Schema.Struct({ kind: Schema.Literal("push"), head: SourceCommit, base: Commit,
+    ref: Schema.String.check(Schema.isPattern(/^refs\/(heads|tags)\/[^\s]+$/)), delivery_key: Schema.NonEmptyString.check(Schema.isMaxLength(200)) })
+])
+export const RetainedSource = Schema.Struct({ status: Schema.Literal("retained"), source: Schema.Literal("github"),
+  full_name: Schema.NonEmptyString, workspace_id: Schema.NonEmptyString, head: SourceCommit, base: Commit,
+  head_ref: Schema.NonEmptyString, base_ref: Schema.optionalKey(Schema.NonEmptyString), clone_url: Schema.NonEmptyString })
 export class RepositoryRemote extends Context.Service<RepositoryRemote, {
   readonly repo: string
   readonly workspaceId: string
@@ -17,6 +28,7 @@ export class RepositoryRemote extends Context.Service<RepositoryRemote, {
   readonly createTrial: (job: typeof Job.Type, requestId: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
   readonly manual?: (job: typeof Job.Type, requestId: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
   readonly resolveReview?: (event: typeof Event.Type) => Effect.Effect<{ payload: Schema.Json; sourceRevision: string }, CodingError>
+  readonly retainSource?: (input: typeof RetainSourceRequest.Type) => Effect.Effect<typeof RetainedSource.Type, CodingError>
   readonly comment?: (job: typeof Job.Type, step: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
 }>()("repository/Remote") {}
 const failed = (message: string) => new CodingError({ code: "unavailable", message })
@@ -38,10 +50,19 @@ export const makeRemote = (options: RemoteOptions) => Effect.gen(function*() {
     return yield* failed("Repository automation requires the provisioned repository API binding")
   }
   const base = `${options.apiBaseUrl}/repos/${options.repositorySlug.split("/").map(encodeURIComponent).join("/")}`
-  const send = (request: HttpClientRequest.HttpClientRequest, gateway = false) => Effect.gen(function*() {
+  const send = (request: HttpClientRequest.HttpClientRequest, gateway = false, source = false) => Effect.gen(function*() {
     const response = yield* HttpClient.withScope(client).execute(request.pipe(
       HttpClientRequest.bearerToken(gateway ? Redacted.make(options.credential) : options.token), HttpClientRequest.acceptJson))
-    if (response.status < 200 || response.status >= 300) return yield* failed(`Repository operation returned HTTP ${response.status}`)
+    if (response.status < 200 || response.status >= 300) {
+      if (source) {
+        const refusal = response.status === 404 ? ["source_missing", "The selected GitHub source is no longer available"] as const
+          : response.status === 409 ? ["source_changed", "The selected GitHub source changed; capture its latest event"] as const
+          : response.status === 400 || response.status === 401 || response.status === 403 ? ["source_refused", "The repository refused this source identity or workspace binding"] as const
+          : ["source_unavailable", "The selected GitHub source could not be retained"] as const
+        return yield* new CodingError({ code: refusal[0]!, message: refusal[1]! })
+      }
+      return yield* failed(`Repository operation returned HTTP ${response.status}`)
+    }
     return yield* readJson(response)
   }).pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }), Effect.scoped,
     Effect.timeoutOrElse({ duration: "45 seconds", orElse: () => Effect.fail(failed("Repository operation timed out")) }),
@@ -79,6 +100,26 @@ export const makeRemote = (options: RemoteOptions) => Effect.gen(function*() {
       const source = object(value).source
       return source === "github" || source === "smithers-cloud" ? Effect.succeed(source) : Effect.fail(failed("The repository source could not be verified"))
     })),
+    retainSource: request => Effect.gen(function*() {
+      const input = yield* Schema.decodeUnknownEffect(RetainSourceRequest)(request).pipe(
+        Effect.mapError(() => new CodingError({ code: "source_refused", message: "Source retention needs the exact admitted push or PR identity" })))
+      const metadata = object(yield* send(HttpClientRequest.get(`${base}/repository-source`), false, true))
+      if (metadata.source !== "github" || typeof metadata.full_name !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(metadata.full_name)) {
+        return yield* new CodingError({ code: "source_refused", message: "This repository has no verified GitHub source" })
+      }
+      const retained = yield* send(HttpClientRequest.post(`${base}/repository-source/retain`).pipe(
+        HttpClientRequest.bodyJsonUnsafe({ ...input, workspace_id: options.workspaceId })), false, true).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(RetainedSource)),
+        Effect.mapError(error => error instanceof CodingError ? error : new CodingError({ code: "invalid_receipt", message: "Source retention returned an invalid receipt" })))
+      const ref = (commit: string) => `refs/smithers/workspaces/${options.workspaceId}/sources/${commit}`
+      if (retained.workspace_id !== options.workspaceId || retained.full_name !== metadata.full_name || retained.head !== input.head || retained.base !== input.base ||
+          retained.head_ref !== ref(input.head) || (input.base === "0".repeat(40) ? retained.base_ref !== undefined : retained.base_ref !== ref(input.base))) {
+        return yield* new CodingError({ code: "invalid_receipt", message: "Source retention did not acknowledge this exact repository, workspace and commits" })
+      }
+      // clone_url is display metadata. The native importer uses its provisioned
+      // origin and credential socket, never a response-provided URL or token.
+      return retained
+    }),
     resolveReview: event => Effect.gen(function*() {
       const original = object(event.payload), direct = object(original.pull_request)
       if (event.source !== "github" && (event.type === "pull_request" || event.manualStep !== undefined) && typeof object(direct.head).sha === "string" && typeof object(direct.base).sha === "string") {

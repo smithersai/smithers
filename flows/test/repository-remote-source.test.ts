@@ -44,3 +44,50 @@ test("GitHub PR capture validates the recorded source, PR number and exact base/
   selected = { ...actual, number: 8 }
   await assert.rejects(Effect.runPromise(remote.resolveReview!(event)), /no verified repository/)
 })
+
+test("source retention binds every acknowledgement to the provisioned workspace and admitted immutable identity", async t => {
+  const workspace = "22222222-2222-4222-8222-222222222222", head = "b".repeat(40), base = "a".repeat(40)
+  const ref = (sha: string) => `refs/smithers/workspaces/${workspace}/sources/${sha}`
+  const requests: Record<string, unknown>[] = []
+  let status = 200, override: Record<string, unknown> = {}
+  const server = createServer(async (request, response) => {
+    response.setHeader("content-type", "application/json")
+    assert.equal(request.headers.authorization, "Bearer fixture-token")
+    if (request.url === "/api/repos/local/mirror/repository-source") {
+      response.end(JSON.stringify({ source: "github", full_name: "original/source" })); return
+    }
+    assert.equal(request.url, "/api/repos/local/mirror/repository-source/retain")
+    assert.equal(request.method, "POST")
+    let text = ""; for await (const chunk of request) text += chunk
+    const body = JSON.parse(text); requests.push(body)
+    response.statusCode = status
+    response.end(JSON.stringify(status === 200 ? { status: "retained", source: "github", full_name: "original/source", workspace_id: workspace,
+      head: body.head, base: body.base, head_ref: ref(body.head), ...(body.base === "0".repeat(40) ? {} : { base_ref: ref(body.base) }),
+      clone_url: "https://native.example/local/mirror.git", ...override } : { error: "fixture refusal" }))
+  })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const address = server.address(); assert(address && typeof address !== "string")
+  const remote = await Effect.runPromise(makeRemote({ apiBaseUrl: `http://127.0.0.1:${address.port}/api`, repositorySlug: "local/mirror", repositoryId: 1,
+    workspaceId: workspace, token: Redacted.make("fixture-token"), gatewayId: "11111111-1111-4111-8111-111111111111", credential: "fixture-gateway" })
+    .pipe(Effect.provide(FetchHttpClient.layer)))
+  const pr = { kind: "pull_request" as const, number: 7, head, base }
+  const retained = await Effect.runPromise(remote.retainSource!(pr))
+  assert.equal(retained.head_ref, ref(head))
+  assert.deepEqual(requests[0], { ...pr, workspace_id: workspace })
+  const push = { kind: "push" as const, head, base: "0".repeat(40), ref: "refs/heads/new", delivery_key: "github:signed-event" }
+  assert.equal((await Effect.runPromise(remote.retainSource!(push))).base_ref, undefined)
+  assert.deepEqual(requests[1], { ...push, workspace_id: workspace })
+  for (const changed of [{ head: "c".repeat(40) }, { base_ref: ref(head) }, { head_ref: "refs/heads/main" },
+    { workspace_id: "33333333-3333-4333-8333-333333333333" }, { full_name: "other/repository" }]) {
+    override = changed
+    await assert.rejects(Effect.runPromise(remote.retainSource!(pr)), /exact repository, workspace and commits/)
+  }
+  override = {}
+  for (const [http, code] of [[404, "source_missing"], [409, "source_changed"], [403, "source_refused"], [503, "source_unavailable"]] as const) {
+    status = http
+    const outcome = await Effect.runPromise(remote.retainSource!(pr).pipe(Effect.result))
+    assert.equal(outcome._tag, "Failure")
+    if (outcome._tag === "Failure") assert.equal(outcome.failure.code, code)
+  }
+})

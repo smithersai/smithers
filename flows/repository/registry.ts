@@ -13,8 +13,8 @@ import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
 import { JobInput, JobResult, OperationResult, SetupInput } from "./schema.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
-const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "changes.ts", "replies.ts", "delivery.ts",
-  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
+const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "changes.ts", "replies.ts", "delivery.ts",
+  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {
     if (!/^[0-9a-f]{64}$/.test(__SMITHERS_CODING_ARTIFACT_DIGEST__)) return yield* Effect.fail(new Error("Invalid repository host fingerprint"))
