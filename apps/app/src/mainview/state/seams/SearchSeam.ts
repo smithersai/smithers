@@ -31,6 +31,7 @@ import type { Card, WorkingCopy } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import { runScopeFromCard } from "../RunReference"
 import { runSearchRef } from "../../flows/RunCommand"
+import { fileArgs } from "../../flows/FileArgs"
 import { readEnvironment } from "./EnvironmentSeam"
 import type { SecretMetadata } from "./EnvironmentSeam"
 import { readHistory } from "./HistorySeam"
@@ -92,21 +93,18 @@ const flowOf = (mode: PaletteMode): string | null => prefixRow(mode).flow
 
 /**
  * One indexed row before its actions exist. `actions` is set only where the
- * row's flow is known without the registry walk (a flow row, a projection
- * flow, a line jump); `open` replaces the registry's open door (a box file
- * opens in its box).
+ * row's flow is known without the registry walk, including file reads that
+ * retain their repository or working-copy target.
  */
 type Fact = SearchFact & {
   readonly actions?: ReadonlyArray<SearchAction>
-  readonly open?: SearchAction
 }
 
 /** The flows a search names must be registered on this host; the rest of an item's actions come from the registry too. */
 const withActions = (entries: ReadonlyArray<FlowEntry>, fact: Fact): SearchItem => {
   const item: SearchFact = { kind: fact.kind, ref: fact.ref, title: fact.title, ...(fact.subtitle === undefined ? {} : { subtitle: fact.subtitle }) }
   if (fact.actions !== undefined) return { ...item, actions: [...fact.actions] }
-  const actions = [...actionsFor(item, entries)]
-  return { ...item, actions: fact.open === undefined ? actions : [fact.open, ...actions.filter((action) => action.role !== "open")] }
+  return { ...item, actions: [...actionsFor(item, entries)] }
 }
 
 /** The secrets of one repository as the environment document names them: names and hosts, never a value. */
@@ -145,38 +143,46 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
 
   /** Files the app has listed: the sidebar's loaded directories and the file and listing cards. Box files open in the box. */
   const fileItems = (): ReadonlyArray<Fact> => {
+    const read = (flow: "files.read" | "workspace.file", path: string, target: string): SearchAction => ({
+      flow, args: fileArgs(path, target), role: "open",
+      label: flow === "files.read" ? "Read a file from a repository" : "Read one file out of a cloud workspace"
+    })
     if (isPracticeContext(ctx.store)) return practiceFilePaths().map(path => ({
       kind: "file", ref: path, title: path, subtitle: PRACTICE_REPO,
-      open: { flow: "files.read", args: `${path} ${PRACTICE_REPO}`, label: "Read a file from a repository", role: "open" },
+      actions: [read("files.read", path, PRACTICE_REPO)]
     }))
     const seen = new Map<string, Fact>()
-    const add = (ref: string, subtitle: string, open?: SearchAction): void => {
+    const add = (kind: "shared" | "local" | "workspace", target: string, path: string, subtitle: string): void => {
+      const relative = path.replace(/^\/+/, "")
+      const ref = kind === "shared" ? `/${target}/${relative}` : `${kind}:${encodeURIComponent(target)}/${relative}`
       if (seen.has(ref)) return
-      seen.set(ref, { kind: "file", ref, title: ref, subtitle, ...(open === undefined ? {} : { open }) })
+      // Identity and execution retain the observed repository or explicit working copy.
+      seen.set(ref, { kind: "file", ref, title: relative, subtitle,
+        actions: [read(kind === "workspace" ? "workspace.file" : "files.read", relative, target)] })
     }
     const copies = ctx.store.collections.workingCopies
     for (const row of ctx.store.collections.repoTree.values()) {
       if (row.state !== "loaded") continue
       const copy: WorkingCopy | undefined = copies.get(row.copyId)
+      if (copy === undefined) continue
+      const local = copy.kind === "local" ? [...ctx.store.collections.repos.values()].find(repo => repo.path === copy.path) : undefined
+      if (copy.kind === "local" && local === undefined) continue
       for (const entry of row.entries) {
         if (entry.kind !== "file") continue
         const path = joinPath(row.path, entry.name)
-        if (copy?.kind === "workspace") {
-          const workspaceId = copy.workspaceId ?? copy.id
-          add(path, `${copy.label} (box)`, { flow: "workspace.file", args: `${path} ${workspaceId}`, label: "Read one file out of a cloud workspace", role: "open" })
-        } else {
-          add(path, copy?.label ?? row.copyId)
-        }
+        if (copy.kind === "workspace") add("workspace", copy.workspaceId ?? copy.id, path, `${copy.repoId} · ${copy.label}`)
+        else if (local !== undefined) add("local", local.id, path, local.name)
+        else add("shared", copy.repoId, path, copy.repoId)
       }
     }
     for (const card of cards()) {
-      if (card.kind === "file") add(card.payload.address ?? card.payload.path, card.payload.repo)
-      if (card.kind === "file-list") {
-        for (const entry of card.payload.entries) {
-          if (entry.kind !== "file") continue
-          const path = joinPath(card.payload.path.replace(/^\/+/, ""), entry.name)
-          add(card.payload.localRepoId === undefined && card.payload.address !== undefined ? `/${card.payload.repo}/${path}` : path, card.payload.repo)
-        }
+      if (card.kind !== "file" && card.kind !== "file-list") continue
+      const { localRepoId, repo, path } = card.payload
+      const kind = localRepoId === undefined ? "shared" : "local"
+      const target = localRepoId ?? repo
+      if (card.kind === "file") add(kind, target, path, repo)
+      else for (const entry of card.payload.entries) {
+        if (entry.kind === "file") add(kind, target, joinPath(path.replace(/^\/+/, ""), entry.name), repo)
       }
     }
     return [...seen.values()]
@@ -332,7 +338,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       ref: path,
       title: `${path}:${at}`,
       subtitle: file.payload.repo,
-      actions: [{ flow: "files.read", args: `${path}:${at}`, label: "Read a file from a repository", role: "open" }]
+      actions: [{ flow: "files.read", args: fileArgs(`${file.payload.path}:${at}`, file.payload.localRepoId ?? file.payload.repo), label: "Read a file from a repository", role: "open" }]
     }]
   }
 

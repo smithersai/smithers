@@ -1,3 +1,4 @@
+import { fileArgs, parseFileArgs } from "../flows/FileArgs"
 import { flowAction } from "../flows/FlowAction"
 /*
  * The search-results card (Search and Command Palette Spec 2026-09-07 §3,
@@ -35,6 +36,17 @@ export const groupByKind = (items: ReadonlyArray<SearchItem>): ReadonlyArray<{ r
     .map(([kind, rows]) => ({ kind, items: rows }))
 }
 
+/** Old saved rows may have only a relative path. Never bind those to today's selection. */
+const boundFileActions = (item: SearchItem): Array<SearchAction> => item.actions.flatMap(action => {
+  if (action.role !== "open" || (action.flow !== "files.read" && action.flow !== "workspace.file")) return []
+  const parsed = parseFileArgs(action.args)
+  if ("error" in parsed) return []
+  if (parsed.tokens.length === 2 && parsed.tokens[1] !== "") return [action]
+  if (action.flow !== "files.read" || parsed.tokens.length !== 1) return []
+  const global = /^\/([\w.-]+\/[\w.-]+)\/(.+)$/.exec(parsed.tokens[0]!)
+  return global === null ? [] : [{ ...action, args: fileArgs(global[2], global[1]) }]
+})
+
 const ActionButton = ({ action, onRunCommand }: { readonly action: SearchAction } & SearchResultsCardActions) => (
   <Button
     variant="ghost"
@@ -49,7 +61,7 @@ const ActionButton = ({ action, onRunCommand }: { readonly action: SearchAction 
 
 export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: SearchResultsCard } & SearchResultsCardActions) => {
   const { payload } = card
-  const groups = groupByKind(payload.items)
+  const groups = groupByKind(payload.items.map(item => item.kind === "file" ? { ...item, actions: boundFileActions(item) } : item))
   return (
     <div className="world-card-list search-results">
       <div className="world-card-row">
