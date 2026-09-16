@@ -448,7 +448,7 @@ export const createWorkflowPumpController = (
           })
           if (phase === "completed") await ctx.finishTutorialChange(cardId)
           if (ctx.disposed || pump.stopped || ctx.runPumps.get(cardId) !== pump) return
-          if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
+          if (!alreadyTerminal && !(phase === "completed" && row.flowId === "repository/setup")) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
             ? "The run was cancelled." : `The run failed: ${runFailure(row.verdict).message}` })
           if (eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
             previous = row
