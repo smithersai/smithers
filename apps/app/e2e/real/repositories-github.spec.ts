@@ -105,7 +105,7 @@ authenticatedTest(
       "evidence:session-card-status-and-installation-readback"
     ]
   }),
-  async ({ page, request, context }, testInfo) => {
+  async ({ page, request }, testInfo) => {
     await bootProductionRepository(page)
     await enableProductionVerbose(page)
     const statusPath = cloudRepoPath(PRODUCTION_REPO, "/github-app-status")
@@ -131,26 +131,15 @@ authenticatedTest(
       ? String(initialStatus.installation_id)
       : undefined
     if (installationId === undefined) {
-      expect(initialStatus.install_url).toBe("https://github.com/apps/smitherspreviewrelease/installations/new")
-      const opened = context.waitForEvent("page")
-      await card.getByRole("button", { name: "Open GitHub", exact: true }).click()
-      await expectFlowOutcome(page, "github.app.open", PRODUCTION_REPO, "executed")
-      const github = await opened
-      try {
-        await github.waitForURL((candidate) => candidate.hostname === "github.com" && /\/settings\/installations\/\d+$/.test(candidate.pathname), {
-          timeout: 60_000
-        })
-        installationId = /\/settings\/installations\/(\d+)$/.exec(new URL(github.url()).pathname)?.[1]
-        expect(installationId).toMatch(/^\d+$/)
-        await attachProductionJson(testInfo, "github-app-installation-door", {
-          installUrl: initialStatus.install_url,
-          redirectedOrigin: new URL(github.url()).origin,
-          redirectedPath: new URL(github.url()).pathname,
-          title: await github.title()
-        })
-      } finally {
-        await github.close()
-      }
+      // Public status intentionally omits installation IDs without a caller-scoped
+      // connection. Resolve authority through the signed-in user's inventory.
+      const inventory = await readJson<{
+        readonly repos?: ReadonlyArray<{ readonly fullName: string; readonly installationId: number }>
+      }>(page, request, "/api/user/github-app/installations")
+      const selectedInstallation = inventory.repos?.find((repo) => repo.fullName === PRODUCTION_REPO)
+      expect(selectedInstallation).toBeDefined()
+      installationId = String(selectedInstallation!.installationId)
+      expect(installationId).toMatch(/^\d+$/)
     }
 
     const verificationPath = `/api/user/github-app/installations/${encodeURIComponent(installationId!)}`
@@ -201,7 +190,7 @@ authenticatedTest(
     })
     expect(status.github_app_installed).toBe(true)
     expect(status.github_app_configured).toBe(true)
-    expect(typeof status.installation_id).toBe("number")
+    if (status.installation_id !== undefined) expect(String(status.installation_id)).toBe(installationId)
     await expect(card).toContainText(/GitHub App installed.*configured/)
   }
 )

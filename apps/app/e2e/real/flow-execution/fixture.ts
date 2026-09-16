@@ -1,10 +1,11 @@
 import { fixtureRepositoryName } from "../support/values"
 import type { APIRequestContext, BrowserContext, Page, TestInfo } from "@playwright/test"
 import { authenticatedTest } from "../auth-permissions/profile"
-import { expect, realApi } from "../support/test"
+import { closeComposer, command, expect, realApi } from "../support/test"
 import {
   attachProductionJson,
   bootProductionRepository,
+  enableProductionVerbose,
   cloudRepoPath,
   createOwnedGitHubRepository,
   deleteOwnedCloudRepository,
@@ -16,12 +17,13 @@ import { gatewayCall, runSummary, waitForTerminalRun, type RunSummary, type RunT
 
 export type OwnedWorkflowRepository = RunTracker & {
   readonly repo: string
+  readonly repositoryId: number
   readonly workspaceId?: string
   readonly gatewayId?: string
   readonly runs: Set<string>
 }
 
-type WorkflowFixtures = { readonly workflowRepo: OwnedWorkflowRepository }
+type WorkflowFixtures = { readonly workflowRepo: OwnedWorkflowRepository; readonly provisionCodingGateway: boolean }
 
 const importRepository = async (
   page: Page,
@@ -48,14 +50,15 @@ const provisionRepository = async (
   page: Page,
   request: APIRequestContext,
   repo: string,
+  workspaceId: string,
   testInfo: TestInfo
 ): Promise<{ readonly workspaceId?: string; readonly gatewayId?: string }> => {
   const deadline = Date.now() + 180_000
   let last: Record<string, unknown> | undefined
   do {
-    const response = await realApi(page, request, "POST", "/api/workflow/provision", { repo })
-    expect(response.status(), `provision ${repo}`).toBe(200)
-    last = await response.json() as Record<string, unknown>
+    const response = await realApi(page, request, "POST", "/api/workflow/provision", { repo, workspaceId })
+    last = await response.json().catch(() => ({ message: "Non-JSON provision response" })) as Record<string, unknown>
+    expect(response.status(), `provision ${repo}: ${JSON.stringify(last)}`).toBe(200)
     if (last.status === "ready") {
       const result = {
         ...(typeof last.workspaceId === "string" ? { workspaceId: last.workspaceId } : {}),
@@ -111,7 +114,8 @@ const setup = async (
   page: Page,
   request: APIRequestContext,
   context: BrowserContext,
-  testInfo: TestInfo
+  testInfo: TestInfo,
+  provisionCodingGateway: boolean
 ): Promise<{ readonly owned: OwnedGitHubRepository; readonly fixture: OwnedWorkflowRepository }> => {
   await bootProductionRepository(page)
   const name = fixtureRepositoryName(`smithers-e2e-import-s15-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
@@ -130,17 +134,34 @@ const setup = async (
       importStatus = status
       if (accepted !== undefined) importJobId = accepted
     })
-    const provisioned = await provisionRepository(page, request, owned.fullName, testInfo)
+    const workspaceId = imported.terminal.workspace_id
+    expect(typeof workspaceId, "import must name its real workspace").toBe("string")
+    // Import completion names the accepted workspace; VM creation continues
+    // in the background. Provider operations require its real running receipt.
+    await expect.poll(async () => {
+      const response = await realApi(page, request, "GET", cloudRepoPath(owned.fullName, `/workspaces/${workspaceId}`))
+      expect(response.status()).toBe(200)
+      const row = await response.json() as { readonly status?: unknown; readonly failure_message?: unknown }
+      if (row.status === "failed") throw new Error(`Workspace provisioning failed: ${String(row.failure_message)}`)
+      return row.status
+    }, { timeout: 180_000, intervals: [1_000, 2_000, 5_000] }).toBe("running")
+    const provisioned = provisionCodingGateway
+      ? await provisionRepository(page, request, owned.fullName, workspaceId as string, testInfo)
+      : { workspaceId: workspaceId as string }
+    expect(provisioned.workspaceId).toBe(workspaceId)
+    await enableProductionVerbose(page)
     const cloud = await realApi(page, request, "GET", cloudRepoPath(owned.fullName))
     expect(cloud.status(), `Cloud repository ${owned.fullName}`).toBe(200)
+    const cloudRepository = await cloud.json() as { readonly id?: unknown }
+    expect(typeof cloudRepository.id, "Cloud repository id").toBe("number")
     await attachProductionJson(testInfo, "workflow-fixture-ready", {
       repo: owned.fullName,
       importJobId: imported.jobId,
       terminal: imported.terminal,
       provisioned,
-      cloud: await cloud.json().catch(() => undefined)
+      cloud: cloudRepository
     })
-    return { owned, fixture: { repo: owned.fullName, ...provisioned, runs: new Set(), ambiguities: [] } }
+    return { owned, fixture: { repo: owned.fullName, repositoryId: cloudRepository.id as number, ...provisioned, runs: new Set(), ambiguities: [] } }
   } catch (error) {
     const failures: unknown[] = []
     let authoritative = false
@@ -175,8 +196,9 @@ const setup = async (
 }
 
 export const workflowTest = authenticatedTest.extend<WorkflowFixtures>({
-  workflowRepo: async ({ page, request, context }, use, testInfo) => {
-    const { owned, fixture } = await setup(page, request, context, testInfo)
+  provisionCodingGateway: [true, { option: true }],
+  workflowRepo: async ({ page, request, context, provisionCodingGateway }, use, testInfo) => {
+    const { owned, fixture } = await setup(page, request, context, testInfo, provisionCodingGateway)
     let bodyError: unknown
     try {
       await use(fixture)
@@ -215,5 +237,33 @@ export const workflowTest = authenticatedTest.extend<WorkflowFixtures>({
     })
     const failures = [...(bodyError === undefined ? [] : [bodyError]), ...cleanupFailures]
     if (failures.length > 0) throw new AggregateError(failures, `Workflow scenario or cleanup for ${fixture.repo} failed.`)
+  }
+})
+
+/** Read-only catalog canaries use an explicitly configured existing gateway.
+ * They never delete its repository/workspace or accept a coding run. Fresh
+ * imports remain the independently owned fixture for lifecycle/mutation tests.
+ */
+export const configuredGatewayTest = authenticatedTest.extend<{ workflowRepo: OwnedWorkflowRepository }>({
+  workflowRepo: async ({ page, request }, use, testInfo) => {
+    const repo = process.env.SMITHERS_REAL_CONFIGURED_REPO
+    const workspaceId = process.env.SMITHERS_REAL_CONFIGURED_WORKSPACE
+    if (!repo || !workspaceId) throw new Error("SMITHERS_REAL_CONFIGURED_REPO and SMITHERS_REAL_CONFIGURED_WORKSPACE must name the canary's prepared coding workspace.")
+    if (!repo.startsWith("codeplanesmithers/")) throw new Error("Configured gateway canaries require the saved test account's repository.")
+    await bootProductionRepository(page, repo)
+    const repository = await realApi(page, request, "GET", cloudRepoPath(repo))
+    expect(repository.status()).toBe(200)
+    const repositoryId = (await repository.json() as { id: number }).id
+    const workspace = await realApi(page, request, "GET", cloudRepoPath(repo, `/workspaces/${workspaceId}`))
+    expect(workspace.status()).toBe(200)
+    expect(await workspace.json()).toMatchObject({ id: workspaceId, repository_id: repositoryId })
+    const provisioned = await provisionRepository(page, request, repo, workspaceId, testInfo)
+    await enableProductionVerbose(page)
+    await command(page, `/workspace.view ${workspaceId}`)
+    await expect(page.getByTestId(`card-workspace-${workspaceId}`)).toBeVisible()
+    await closeComposer(page)
+    await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
+    await closeComposer(page)
+    await use({ repo, repositoryId, ...provisioned, runs: new Set(), ambiguities: [] })
   }
 })

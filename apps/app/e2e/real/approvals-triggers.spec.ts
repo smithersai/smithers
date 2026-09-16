@@ -95,14 +95,14 @@ authenticatedTest("production dispatcher and approvals are read from the authent
   const triggers = page.locator('.smithers-card[data-kind="trigger-list"]').last()
   await expect(triggers).toBeVisible()
   await expect(triggers.getByTestId("trigger-register")).toBeVisible()
-  expect(reads.some(({ path }) => path === "/api/workflow/triggers")).toBe(true)
+  await expect.poll(() => reads.some(({ path }) => path === "/api/workflow/triggers")).toBe(true)
 
   await command(page, `/approvals.list ${PRODUCTION_REPO}`)
   await closeComposer(page)
   const approvals = page.locator('.smithers-card[data-kind="approvals-inbox"]').last()
   await expect(approvals).toBeVisible()
   await expect(approvals).toContainText(new RegExp(`No approvals are pending on ${PRODUCTION_REPO.replace("/", "\\/")}`))
-  expect(reads.some(({ path }) => path === "/api/workflow/approvals")).toBe(true)
+  await expect.poll(() => reads.some(({ path }) => path === "/api/workflow/approvals")).toBe(true)
 
   const approvalApi = await realApi(page, request, "GET", `/api/workflow/approvals?repo=${encodeURIComponent(PRODUCTION_REPO)}`)
   expect(approvalApi.status()).toBe(200)

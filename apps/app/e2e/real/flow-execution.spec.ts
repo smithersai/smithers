@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, test } from "./support/test"
 import { attachProductionJson, bootProductionRepository, enableProductionVerbose } from "./repositories-github/production"
-import { workflowTest } from "./flow-execution/fixture"
+import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
 import {
   acceptedRunId,
   gatewayCall,
@@ -13,6 +13,7 @@ import {
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
+configuredGatewayTest.setTimeout(240_000)
 workflowTest.setTimeout(30 * 60_000)
 workflowTest.use({ actionTimeout: 30_000 })
 
@@ -112,11 +113,11 @@ const waitForCompletedRun = async (
   return completed
 }
 
-workflowTest(
+configuredGatewayTest(
   "the live gateway lists runtime flows and the UI derives their declared input forms",
   scenario("flows.production-runtime-catalog-input-schema", {
     capabilities: ["identity", "cloud"],
-    description: "Read a verified private repository's actual gateway catalog, list it through the UI, and require a runtime-declared flow's JSON schema to become keyboard-operable form fields.",
+    description: "Read a configured canary repository's actual gateway catalog, list it through the UI, and require a runtime-declared flow's JSON schema to become keyboard-operable form fields.",
     coverage: [
       "action:flow.list", "action:flow.run", "host:production", "path:success", "path:keyboard",
       "door:slash", "door:button", "dimension:runtime-discovery", "dimension:declared-input-schema",
@@ -131,7 +132,7 @@ workflowTest(
     expect(Array.isArray(catalog.items), "the real flow list must expose an items array").toBe(true)
     const declared = catalog.items!.find((flow) => {
       if (typeof flow.flowId !== "string" || typeof flow.inputSchema !== "object" || flow.inputSchema === null) return false
-      const properties = (flow.inputSchema as { readonly properties?: unknown }).properties
+      const properties = (flow.inputSchema as { readonly schema?: { readonly properties?: unknown } }).schema?.properties
       return typeof properties === "object" && properties !== null && !Array.isArray(properties) && Object.keys(properties).length > 0
     })
     expect(declared, "the real workspace must publish at least one flow with schema properties").toBeDefined()
@@ -149,13 +150,13 @@ workflowTest(
 
     const form = page.locator(`form[data-flow-name="flow.run"]`).last()
     await expect(form).toBeVisible()
-    const schema = declared!.inputSchema as {
+    const schema = (declared!.inputSchema as { readonly schema: {
       readonly properties: Record<string, { readonly type?: unknown; readonly enum?: unknown }>
       readonly required?: unknown
-    }
+    } }).schema
     expect(schema.required === undefined || Array.isArray(schema.required), "JSON schema required must be an array when present").toBe(true)
     const required = new Set(Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === "string") : [])
-    const expectedFields = Object.entries(schema.properties).map(([name, property]) => ({
+    const expectedFields = Object.entries(schema.properties).sort(([a], [b]) => a.localeCompare(b)).map(([name, property]) => ({
       name,
       kind: Array.isArray(property.enum) ? "select" : property.type === "number" || property.type === "integer" ? "number" : property.type === "boolean" ? "boolean" : "text",
       required: String(required.has(name))
@@ -171,7 +172,7 @@ workflowTest(
   }
 )
 
-workflowTest(
+configuredGatewayTest(
   "a missing runtime flow fails from the real gateway without accepting a run",
   scenario("flows.production-missing-flow-error", {
     capabilities: ["identity", "cloud"],

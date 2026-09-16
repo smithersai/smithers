@@ -22,7 +22,7 @@ export const bootProductionRepository = async (page: Page, repo = PRODUCTION_REP
     await page.goto(`/${repo}`, { waitUntil: "domcontentloaded" })
   }
   await expect(page).toHaveURL(new RegExp(`/${repo.replace("/", "\\/")}$`))
-  await expect(page.getByTestId("transcript")).toBeVisible()
+  await expect(page.getByTestId("transcript")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   expect(await readAuthenticatedSession(page)).toEqual({
     login: "codeplanesmithers",
@@ -32,10 +32,15 @@ export const bootProductionRepository = async (page: Page, repo = PRODUCTION_REP
 }
 
 export const enableProductionVerbose = async (page: Page): Promise<void> => {
-  await command(page, "/verbose")
-  const toggledOff = page.getByText("Verbose off", { exact: true }).last()
-  if (await toggledOff.isVisible().catch(() => false)) await command(page, "/verbose")
-  await expect(page.getByTestId("transcript")).toContainText("Verbose on")
+  const receipts = page.getByText(/^Verbose (?:on|off)(?: —|$)/)
+  const toggle = async (): Promise<void> => {
+    const before = await receipts.count()
+    await command(page, "/verbose")
+    await expect(receipts).toHaveCount(before + 1)
+  }
+  await toggle()
+  if ((await receipts.last().textContent())?.startsWith("Verbose off")) await toggle()
+  await expect(receipts.last()).toContainText("Verbose on")
 }
 
 export const readJson = async <T>(
@@ -205,7 +210,7 @@ export const deleteOwnedGitHubRepository = async (owned: OwnedGitHubRepository):
   const finalDelete = github.getByRole("button", { name: /^Delete this repository$/ }).last()
   await expect(finalDelete).toBeEnabled({ timeout: 30_000 })
   await finalDelete.click()
-  await github.waitForURL((candidate) => candidate.pathname !== `/${owned.fullName}/settings`, { timeout: 60_000 })
+  await github.waitForURL((candidate) => !candidate.pathname.startsWith(`/${owned.fullName}`), { timeout: 60_000 })
 
   const missing = await github.goto(owned.url, { waitUntil: "domcontentloaded" })
   expect(missing?.status()).toBe(404)

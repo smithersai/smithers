@@ -14,11 +14,11 @@ import { test } from "./support"
  * metadata, and preserves both dependencies when a provider job is ambiguous.
  */
 workflowTest.setTimeout(600_000)
-workflowTest.use({ actionTimeout: 45_000 })
+workflowTest.use({ actionTimeout: 45_000, provisionCodingGateway: false })
 
 type WorkspaceWire = {
   readonly id?: unknown
-  readonly repo_full_name?: unknown
+  readonly repository_id?: unknown
   readonly name?: unknown
   readonly status?: unknown
   readonly target_bookmark?: unknown
@@ -26,9 +26,9 @@ type WorkspaceWire = {
 
 const workspacePath = (repo: string, id: string): string => cloudRepoPath(repo, `/workspaces/${encodeURIComponent(id)}`)
 
-const expectWorkspaceRow = (row: WorkspaceWire, repo: string, id: string): void => {
+const expectWorkspaceRow = (row: WorkspaceWire, repositoryId: number, id: string): void => {
   expect(row.id, "provider workspace id").toBe(id)
-  expect(row.repo_full_name, "workspace repository scope").toBe(repo)
+  expect(row.repository_id, "workspace repository scope").toBe(repositoryId)
   expect(typeof row.name, "provider workspace name").toBe("string")
   expect(row.name, "provider workspace name").not.toBe("")
   expect(typeof row.status, "provider workspace status").toBe("string")
@@ -55,7 +55,7 @@ workflowTest(
     const current = await realApi(page, request, "GET", workspacePath(workflowRepo.repo, workspaceId))
     expect(current.status()).toBe(200)
     const row = await current.json() as WorkspaceWire
-    expectWorkspaceRow(row, workflowRepo.repo, workspaceId)
+    expectWorkspaceRow(row, workflowRepo.repositoryId, workspaceId)
 
     await command(page, `/workspace.view ${workspaceId}`)
     await expectFlowOutcome(page, "workspace.view", workspaceId, "executed")
@@ -67,10 +67,10 @@ workflowTest(
 
     const observed: Record<string, unknown> = { workspace: row, id: workspaceId }
     for (const [flow, suffix, bodyText] of [
-      ["workspace.files", `/files?path=${encodeURIComponent("/")}`, "Files"],
-      ["workspace.services", "/services", "Services"],
+      ["workspace.files", `/workspaces/${workspaceId}/files?path=`, "Files"],
+      ["workspace.services", `/workspaces/${workspaceId}/services`, "Services"],
       ["workspace.sessions", "/workspace/sessions", "Sessions"],
-      ["workspace.egress", "/egress?limit=100", "Egress"]
+      ["workspace.egress", `/workspaces/${workspaceId}/egress?limit=30`, "Egress"]
     ] as const) {
       const path = cloudRepoPath(workflowRepo.repo, suffix)
       const requestSeen = page.waitForResponse((response) =>
@@ -88,8 +88,10 @@ workflowTest(
 
     // The file read is a second, independently observed path. The root list
     // determines the path; a guessed fixture filename would weaken this test.
-    const listing = observed.files as { readonly entries?: ReadonlyArray<{ readonly path?: unknown; readonly kind?: unknown }> }
-    const candidate = listing.entries?.find((entry) => typeof entry.path === "string" && entry.kind === "file")
+    const listing = observed.files as ReadonlyArray<{ readonly path?: unknown; readonly kind?: unknown }>
+    expect(Array.isArray(listing), "provider file listing").toBe(true)
+    const candidate = listing.find((entry) => typeof entry.path === "string" && entry.kind === "file")
+    expect(candidate, "the imported README must be available to read").toBeDefined()
     if (candidate?.path !== undefined) {
       const path = String(candidate.path)
       const readPath = cloudRepoPath(workflowRepo.repo, `/workspaces/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}`)
@@ -167,7 +169,7 @@ workflowTest(
     const beforeResponse = await realApi(page, request, "GET", path)
     expect(beforeResponse.status()).toBe(200)
     const before = await beforeResponse.json() as WorkspaceWire
-    expectWorkspaceRow(before, workflowRepo.repo, workspaceId)
+    expectWorkspaceRow(before, workflowRepo.repositoryId, workspaceId)
     const name = String(before.name)
     await command(page, `/workspace.view ${workspaceId}`)
     await expectFlowOutcome(page, "workspace.view", workspaceId, "executed")
@@ -187,7 +189,7 @@ workflowTest(
         const response = await realApi(page, request, "GET", path)
         if (response.status() !== 200) return `http-${response.status()}`
         settled = await response.json() as WorkspaceWire
-        expectWorkspaceRow(settled, workflowRepo.repo, workspaceId)
+        expectWorkspaceRow(settled, workflowRepo.repositoryId, workspaceId)
         return settled.status
       }, { timeout: 180_000, intervals: [1_000, 2_000, 5_000] }).toMatch(expected)
       expect(settled).toBeDefined()
@@ -218,5 +220,74 @@ workflowTest(
       repo: workflowRepo.repo, workspaceId, name, before, suspended, resumed,
       deleteStatus: (await deletion).status(), finalStatus: 404
     })
+  }
+)
+
+workflowTest(
+  "a cloud terminal accepts keyboard input and returns real shell output",
+  scenario("workspaces.cloud-terminal-keyboard-output", {
+    capabilities: ["identity", "cloud"],
+    description: "Open a terminal on an owned running cloud workspace through the UI, type a split marker, verify the shell's combined output, and destroy exactly the created session.",
+    coverage: ["action:workspace.view", "action:workspace.terminal", "host:production", "path:success", "path:keyboard", "door:slash", "dimension:keyboard", "dimension:real-pty", "dimension:websocket", "evidence:rendered-shell-output-and-session-cleanup"]
+  }),
+  async ({ page, request, workflowRepo }, testInfo) => {
+    const id = workflowRepo.workspaceId!
+    await bootProductionRepository(page, workflowRepo.repo)
+    await command(page, `/workspace.view ${id}`)
+    await expect(page.getByTestId(`card-workspace-${id}`)).toBeVisible()
+    await closeComposer(page)
+    const path = cloudRepoPath(workflowRepo.repo, "/workspace/sessions")
+    const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path && response.ok(), { timeout: 90_000 })
+    let sessionId: string | undefined
+    try {
+      await command(page, `/workspace.terminal ${id}`)
+      const response = await created
+      const session = await response.json() as { readonly id?: unknown; readonly workspace_id?: unknown }
+      expect(typeof session.id).toBe("string")
+      sessionId = session.id as string
+      expect(session.workspace_id).toBe(id)
+      await closeComposer(page)
+      const terminal = page.getByTestId(`terminal-${sessionId}`)
+      await expect(terminal).toBeVisible({ timeout: 60_000 })
+      await terminal.locator(".xterm-helper-textarea").focus()
+      const suffix = String(Date.now())
+      await page.keyboard.type(`printf '%s%s\\n' 'CLOUD_TERMINAL_' '${suffix}'`)
+      await page.keyboard.press("Enter")
+      const marker = `CLOUD_TERMINAL_${suffix}`
+      await expect(terminal.locator(".xterm-rows")).toContainText(marker, { timeout: 30_000 })
+      await attachProductionJson(testInfo, "cloud-terminal-output", { repo: workflowRepo.repo, workspaceId: id, sessionId, marker })
+    } finally {
+      if (sessionId !== undefined) {
+        const deleted = await realApi(page, request, "POST", `${path}/${encodeURIComponent(sessionId)}/destroy`)
+        expect([204, 404]).toContain(deleted.status())
+      }
+    }
+  }
+)
+
+workflowTest(
+  "an unconfigured coding workspace names the missing model instead of resuming forever",
+  scenario("workspaces.cloud-missing-model-refusal", {
+    capabilities: ["identity", "cloud"],
+    description: "Select a freshly imported running workspace with no model configured and require the real coding gateway to name the missing configuration in the UI.",
+    coverage: ["action:workspace.view", "action:repo.select", "action:flow.list", "host:production", "path:error", "door:slash", "dimension:missing-model", "dimension:bounded-refusal", "evidence:real-provision-response-and-visible-error"]
+  }),
+  async ({ page, request, workflowRepo }, testInfo) => {
+    const id = workflowRepo.workspaceId!
+    await bootProductionRepository(page, workflowRepo.repo)
+    await command(page, `/workspace.view ${id}`)
+    await expect(page.getByTestId(`card-workspace-${id}`)).toBeVisible()
+    await closeComposer(page)
+    await command(page, `/repo.select ${workflowRepo.repo}#workspace:${id}`)
+    await closeComposer(page)
+    const response = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/workflow/provision" && r.status() >= 400, { timeout: 60_000 })
+    await command(page, `/flow.list ${workflowRepo.repo}`)
+    const refused = await response
+    expect(await refused.text()).toContain("SMITHERS_CODING_IMPLEMENT_MODEL")
+    await expect(page.getByText(/Configure SMITHERS_CODING_IMPLEMENT_MODEL/).first()).toBeVisible({ timeout: 30_000 })
+    const current = await realApi(page, request, "GET", workspacePath(workflowRepo.repo, id))
+    expect(current.status()).toBe(200)
+    expect(await current.json()).toMatchObject({ id, status: "running" })
+    await attachProductionJson(testInfo, "missing-model-refusal", { repo: workflowRepo.repo, workspaceId: id, status: refused.status(), workspaceRetained: true })
   }
 )
