@@ -7,3 +7,4 @@
 .first-run-actions h2 { font-size: 1rem; margin: 0; }
 .first-run-actions h3 { font-size: .8rem; margin: 16px 0 8px; }
 .first-run-actions section > button { margin: 0 8px 8px 0; }
+.first-run-actions section > button.emphasis { font-weight: 600; }
