@@ -23,6 +23,7 @@ export function PluginsSurface() {
       plugins: session.plugins,
     }))
   )
+  if (!controller.features.pluginLibrary) return null
   const installed = sessionRows[0]?.plugins ?? []
   /* What the shelf actually added here: the loader's own answer, recomputed each render. */
   const { surface, problem } = loadedApp(installed, (name) => controller.commands.find(name) !== undefined)

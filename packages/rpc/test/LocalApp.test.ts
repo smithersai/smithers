@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest"
 import * as CloudTunnel from "../src/CloudTunnel.ts"
-import * as LinearAuth from "../src/LinearAuth.ts"
 import * as LocalApp from "../src/LocalApp.ts"
 import {
   HarnessesResponseSchema,
@@ -388,13 +387,12 @@ describe("the targets query and run wire model", () => {
  * LocalApp declares nothing of those domains itself.
  */
 describe("the names that moved out of LocalApp", () => {
-  const homes = { LocalLsp, CloudTunnel, LinearAuth }
+  const homes = { LocalLsp, CloudTunnel }
   const localApp: Record<string, unknown> = LocalApp
 
   test("still import from LocalApp, as the value their home declares", () => {
     expect(localApp.LspHoverSchema).toBe(LocalLsp.LspHoverSchema)
     expect(localApp.CloudSessionSchema).toBe(CloudTunnel.CloudSessionSchema)
-    expect(localApp.LinearAuthSessionSchema).toBe(LinearAuth.LinearAuthSessionSchema)
     for (const [home, exports] of Object.entries(homes)) {
       for (const [name, value] of Object.entries(exports)) {
         if (name in localApp) expect(localApp[name], `${home}.${name}`).toBe(value)

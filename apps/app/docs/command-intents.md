@@ -60,7 +60,6 @@ Generic form drafts already live in the `flow-form` card payload. `form.set` now
 
 `CommandIntent.test.ts` covers active composition ordering, actual storage commit failure, external-effect/settlement failure and reload, stable chain and HTTP identities, source/actor attribution, durable draft clearing, and privacy erasure. `CommandGesture.test.ts` covers actual download and local OAuth paths plus clipboard and nested form-copy activation, including rejected receipts. `AppTransitionValidation.test.ts` keeps the transition union and runtime schema fields exhaustive.
 
-
 For native GitHub sign-in, successful command settlement means that the
 handoff was created and its system-browser page opened. It does not mean the
 account is authenticated. The controller owns a cancellable claim poll and
@@ -68,3 +67,4 @@ joins it before releasing storage; accepted session observations establish the
 later sign-in outcome. A second explicit gesture reopens the same pending
 handoff instead of waiting for the authentication loop or minting another one.
 Neither command replay nor application-state replay restarts that external work.
+

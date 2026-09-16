@@ -407,12 +407,10 @@ describe("the change card", () => {
     expect(rows[2]).toContain("landing #42 · by will · approved by ana at rev 2 · " + timeLabel(Date.parse("2026-09-01T12:00:00Z")))
     /* rev 1 offers Diff to current; the current revision does not. rev 2 carries the snapshot; rev 1 does not. */
     expect(host.querySelectorAll('button[data-flow="change.pins"]')).toHaveLength(1)
-    expect(host.querySelectorAll('button[data-flow="change.open-computer"]')).toHaveLength(1)
+    expect(host.querySelectorAll('button[data-flow="change.open-computer"]')).toHaveLength(0)
     click(host, "Diff rev 1 to current")
-    click(host, "Open the computer that produced rev 2")
     expect(commands).toEqual([
       { name: "change.pins", args: "qupxosqw 1 current" },
-      { name: "change.open-computer", args: "qupxosqw s_8d1" }
     ])
     host.remove()
   })
@@ -494,10 +492,8 @@ describe("the change card", () => {
     expect(text).not.toContain("0 affected")
     expect((host.querySelector('select[aria-label="Checks at revision"]') as HTMLSelectElement).value).toBe("2")
     choose(host, "Checks at revision", "1")
-    click(host, "Open the computer that produced rev 2")
     expect(commands).toEqual([
       { name: "change.checks", args: "qupxosqw 1" },
-      { name: "change.open-computer", args: "qupxosqw s_8d1" }
     ])
     host.remove()
 
@@ -1083,23 +1079,12 @@ describe("docs/LOCAL-APP.md's Cards section", () => {
     const text = await contract()
     const seam = async (name: string): Promise<string> =>
       (await readFile(new URL(`../state/seams/${name}.ts`, import.meta.url), "utf8")).replace(/\s+/g, " ")
-    const linear = await seam("LinearSeam")
     const workspace = await seam("WorkspaceSeam")
-    /* The card's Retry is documented on its own backend's route, and the seam POSTs that route. */
-    expect(text).toContain("`/sync.retry <opId>` for a Linear op")
-    expect(linear).toContain("/ops/${encodeURIComponent(trimmed)}/retry`)")
-    /* The ops feed the doc describes is read rather than degraded. */
-    expect(text).toContain("then the durable ops newest first")
-    expect(linear).toContain("/ops?${params.toString()}`")
     /* Files and Services are documented as bound facets, and the seam GETs both. */
     expect(text).toContain("Files (the repository file card's own listing, bound to the workspace's routes)")
     expect(workspace).toContain('workspacePath(repoId, workspaceId, "/files")')
     expect(workspace).toContain('workspacePath(repoId, workspaceId, "/services")')
-    /* The issue card's link act is documented as a call, and the seam POSTs and DELETEs it. */
-    const issues = await seam("IssuesSeam")
-    expect(text).toContain("The act POSTs that identifier to the issue's own `linear-link` route")
-    expect(issues).toContain("`${issuesPath(repo)}/${number}/linear-link`, { method: \"DELETE\" }")
-    expect(issues).toContain('`${issuesPath(repo)}/${number}/linear-link`, { method: "POST",')
+
   })
 })
 

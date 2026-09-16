@@ -391,9 +391,8 @@ describe("the optional full composer's + menu and surface pill", () => {
       "Trivial implementation · GPT-5.6 Lunacodex is not installed",
       "UI · Kimi K3opencode-kimi is not installed",
       "Fast UI · Cerebras gpt-oss-120bopencode-cerebras is not installed",
-      // The raw harness session, named like the sidebar's `+` names it; then the New agent form (custom-agents.md).
+      // The raw harness session uses the same name as the sidebar.
       "Claude Codewill@example.com",
-      "New agent…"
     ])
     // The orchestrator's harness is installed, so its role row is enabled; the explainer's is not.
     expect(items[2]?.hasAttribute("disabled")).toBe(false)
@@ -405,7 +404,6 @@ describe("the optional full composer's + menu and surface pill", () => {
       "connector.add",
       ...Array<string>(6).fill("agent.role"),
       "tab.harness",
-      "agent.new"
     ])
     // No Smithers Cloud on the local host: no flow.create, so no "New flow…" is offered.
     expect(controller.commands.find("flow.create")).toBeUndefined()

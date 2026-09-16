@@ -146,23 +146,6 @@ const persisted = async (store: AppStore, transition: Parameters<AppStore["dispa
 }
 
 describe("the + menu", () => {
-  test("New agent replaces the initiating menu and its blocking backdrop with the form", async () => {
-    const { store, controller } = await localHarness({
-      fetchImpl: async () => new Response(JSON.stringify({}), { status: 404 })
-    })
-    const { host, act } = mount(controller)
-    try {
-      await act(() => host.querySelector<HTMLButtonElement>("[data-testid=tab-add]")?.click())
-      expect(host.querySelector(".tab-add-backdrop")).not.toBeNull()
-      await act(() => host.querySelector<HTMLButtonElement>("[data-testid=tab-add-new-agent]")?.click())
-      for (let tick = 0; tick < 100 && !store.collections.cards.has("form-agent.create"); tick += 1) await act(() => {})
-      await act(() => {})
-      expect(host.querySelector("[data-testid=flow-form-submit]")).not.toBeNull()
-      expect(host.querySelector("[data-testid=tab-add-menu]")).toBeNull()
-      expect(host.querySelector(".tab-add-backdrop")).toBeNull()
-      expect(store.session().tabMenuOpen).toBe(false)
-    } finally { controller.dispose() }
-  })
 
   test("opens outside the scrolling list: Terminal first, then the agents", async () => {
     const { store, controller } = await localHarness()
@@ -212,12 +195,9 @@ describe("the + menu", () => {
       "agent.role",
       "tab.harness",
       "tab.harness",
-      // Agents as data (custom-agents.md): the last row opens the New agent form card.
-      "agent.new"
     ])
     expect(items[0]?.textContent).toBe("Terminal")
-    expect(items.at(-1)?.getAttribute("data-testid")).toBe("tab-add-new-agent")
-    expect(items.at(-1)?.textContent).toBe("New agent…")
+    expect(host.querySelector("[data-testid=tab-add-new-agent]")).toBeNull()
     expect(host.querySelector("[data-testid=tab-add-agents]")?.textContent).toBe("Agents")
     // Six role rows sit between Terminal and the first raw harness.
     expect(items[1]?.textContent).toContain("Orchestrator · Fable 5")
@@ -232,7 +212,7 @@ describe("the + menu", () => {
     expect(controller.commands.find("tab.chat")).toBeUndefined()
     // The three-door law: every flow this menu binds is the agent's too (the launches confirm).
     const callable = new Set(controller.commands.callable().map((entry) => entry.binding.descriptor.name))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness", "agent.new"]) expect(callable.has(name)).toBe(true)
+    for (const name of ["tab.terminal", "agent.role", "tab.harness"]) expect(callable.has(name)).toBe(true)
     expect(controller.commands.find("tab.terminal")?.metadata.confirm).toBeUndefined()
     expect(controller.commands.find("agent.role")?.metadata.confirm).toBeDefined()
     expect(controller.commands.find("tab.harness")?.metadata.confirm).toBeDefined()

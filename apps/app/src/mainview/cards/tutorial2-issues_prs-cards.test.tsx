@@ -67,7 +67,6 @@ test("practice Add flow opens the shared form with its issue and repo; submit re
     const issue = [...store.collections.cards.values()].find(card => card.kind === "issue")!
     if (issue.kind !== "issue") throw new Error("Missing issue")
     flushSync(() => root.render(<IssueCardBody card={issue} onRunCommand={controller.runCommand} />))
-    expect(host.querySelector('[data-flow="issues.link-linear"]')?.classList.contains("sui-button-outline")).toBe(true)
     const chip = host.querySelector<HTMLButtonElement>('[data-flow="issue.add-flow"]')!
     chip.focus()
     expect(document.activeElement).toBe(chip)

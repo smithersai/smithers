@@ -141,19 +141,6 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     input: Schema.Struct({ changeId: Schema.String, seq: Schema.Number }),
     handler: ({ changeId, seq }) => actions.checksOfChangeAt(changeId, seq)
   }),
-  flow({
-    /* Forking a revision's snapshot into a computer is an outbound act: the capability always asks. */
-    name: "change.open-computer",
-    summary: "Open the computer that produced a revision (fork its snapshot into a workspace)",
-    runtime: ["cloud"],
-    hidden: true,
-    capabilities: ["outbound:launch"],
-    confirm: "open a computer from the revision's snapshot",
-    args: "<changeId> <snapshotId>",
-    requires: ["signed-in"],
-    input: Schema.Struct({ changeId: Schema.String, snapshotId: Schema.String }),
-    handler: ({ changeId, snapshotId }) => actions.openChangeComputer(changeId, snapshotId)
-  })
 ]
 
 /*

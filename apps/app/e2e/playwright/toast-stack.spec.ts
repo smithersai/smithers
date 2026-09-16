@@ -20,7 +20,7 @@ const boot = async (page: Page) => {
   await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { default_bookmark: "main" } }))
-  await page.route("**/api/repos/smithersai/smithers/contents/.smithers/home.json", route => route.fulfill({ json: {
+  await page.route("**/api/repos/smithersai/smithers/contents/README.md", route => route.fulfill({ json: {
     content: JSON.stringify({ blocks: [{ type: "text", text: "Repository home" }] }),
   } }))
   await page.goto("/")
@@ -68,7 +68,7 @@ for (const viewport of viewports) {
     await page.emulateMedia({ reducedMotion: "reduce" })
     await boot(page)
     await page.getByRole("button", { name: "Chat", exact: true }).click()
-    await page.getByTestId("composer-input").fill("/repo.home smithersai/smithers")
+    await page.getByTestId("composer-input").fill("/files.read README.md smithersai/smithers")
     // Chat is now a nonmodal bottom dock; it must still leave Send reachable.
     await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeVisible()
     await expect(page.locator('.toast[data-toast-status="failed"]')).toBeVisible()

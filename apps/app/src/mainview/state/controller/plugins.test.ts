@@ -3,7 +3,7 @@ import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
 import { createPluginsController } from "./plugins"
 
-const setup = async (guideStep?: number) => {
+const setup = async (guideStep?: number, enabled = true) => {
   const data = new Map<string, string>()
   const store = await createAppStore({
     kind: "localStorage",
@@ -15,7 +15,7 @@ const setup = async (guideStep?: number) => {
   })
   if (guideStep !== undefined) {
   }
-  const controller = createPluginsController({ store, commandActor: "user" } as unknown as ControllerContext)
+  const controller = createPluginsController({ store, commandActor: "user", services: { features: { pluginLibrary: enabled } } } as unknown as ControllerContext)
   return { store, controller }
 }
 
@@ -68,5 +68,19 @@ test("the Library pane toggles, and back to the conversation", async () => {
   expect(store.session().surface).toBe("plugins")
   controller.showPlugins()
   expect(store.session().surface).toBe("chat")
+  await store.dispose?.()
+})
+
+
+test("disabled Library refuses direct calls without changing saved plugins or cards", async () => {
+  const { store, controller } = await setup(undefined, false)
+  store.dispatch({ type: "plugin.installed", actor: "system", plugin: "librarian" })
+  controller.showPlugins()
+  controller.installPlugin("factory")
+  controller.removePlugin("librarian")
+  expect(controller.listPlugins()).toEqual({ value: "" })
+  expect(store.session().surface).toBe("chat")
+  expect(store.session().plugins).toEqual(["librarian"])
+  expect(store.collections.cards.get("plugin-library")).toBeUndefined()
   await store.dispose?.()
 })

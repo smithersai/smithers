@@ -298,7 +298,6 @@ successors freeze before entering the cache. Verification reads the actual
 served collections again; replay validates saved inputs, positions and heads.
 The optimization changes no version-1 digest bytes.
 
-
 ## Normalized gateway run and approval views
 
 `runtimeRuns` and `runtimeApprovals` are the browser's attributed observations
@@ -406,9 +405,9 @@ identity, reverse-order calls, immutable history through real store reopen,
 failed decision receipts and late account responses. The controller suites also
 exercise list/open/pump composition and unchanged 20,000-row journal polling.
 
-
 ## September 15 stop and handoff
 
 Implementation stopped at the user's request after final billing integration. App typecheck passed; billing consumer checks passed 286 distinct tests plus LiteralPin 32. WorkspaceSeam passed 139/139 after one test runner allowance increased from 5 to 30 seconds; production limits and all assertions are unchanged. The earlier complete app aggregate had timing failures with passing isolated reruns, and is not claimed as a clean aggregate.
 
 The final merge includes main `76fae281af26` (question-gate answers). Four overlaps were composed to keep durable pending/input receipts, structured answers and both test sets. This final composition was not retested before the user-requested stop. Follow-up verification, broader WorkspaceSeam account/disposal fencing, production rollout and remaining authority boundaries are handed off in `state-handoff.md` and a GitHub issue.
+

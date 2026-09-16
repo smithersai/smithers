@@ -1,4 +1,4 @@
-import { AGENT_ROLES, agentRoleTitle, orderedAgentRoles } from "@smthrs/rpc/AgentRoles"
+import { AGENT_ROLES, agentRoleTitle } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "./state/AppState"
 
@@ -22,9 +22,9 @@ export interface RoleMenuEntry {
 
 export const roleMenuEntries = (
   harnesses: ReadonlyArray<Harness>,
-  agents: ReadonlyArray<AgentRole> = AGENT_ROLES
+  _agents: ReadonlyArray<AgentRole> = AGENT_ROLES
 ): ReadonlyArray<RoleMenuEntry> =>
-  orderedAgentRoles(agents).map((role) => {
+  AGENT_ROLES.map((role) => {
     const harness = harnesses.find((candidate) => candidate.id === role.harness)
     const title = agentRoleTitle(role)
     if (harness === undefined || harness.status === "unavailable") {

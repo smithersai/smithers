@@ -582,7 +582,7 @@ reads after an identity change.
 Cloud gate refusals render the controller's registered sign-in button:
 `auth.sign-in` on web, `cloud.sign-in` on native. The agent is directed to
 `cloud.prompt`. The same rule covers changes, workspaces, code intelligence,
-egress, GitHub and Linear. The retained transcript sign-in prompt is a separate
+egress and GitHub. The retained transcript sign-in prompt is a separate
 presentation issue: `TranscriptMessage.tsx` and `onboarding/GuideShell.tsx`
 render persisted `auth.sign-in` messages independently of the current identity.
 

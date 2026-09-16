@@ -1,8 +1,8 @@
+import { captureTurnTraffic, parseTurnFrames } from "./chat-tools/ui"
 import type { APIRequestContext, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, realApi, registerOwnedPty, test } from "./support/test"
 import { enterCanonicalRepositoryApp } from "./navigation-frames/cards"
-import { captureTurnTraffic, parseTurnFrames, toolExecution } from "./chat-tools/ui"
 
 interface HarnessRow {
   readonly id: string
@@ -25,13 +25,6 @@ interface AgentRow {
   readonly builtin: boolean
 }
 
-interface HarnessModels {
-  readonly harnessId: string
-  readonly models: ReadonlyArray<string>
-  readonly source: "list" | "suggestions"
-  readonly reason?: string
-}
-
 const boot = async (page: Page): Promise<void> => {
   await enterCanonicalRepositoryApp(page)
   await expect(page.getByTestId("transcript")).toBeVisible()
@@ -51,21 +44,6 @@ const agents = async (page: Page, request: APIRequestContext): Promise<ReadonlyA
   return (await response.json() as { readonly agents: ReadonlyArray<AgentRow> }).agents
 }
 
-const authenticatedModelHarness = async (page: Page, request: APIRequestContext): Promise<HarnessRow> => {
-  const rows = await harnesses(page, request)
-  const usable = (row: HarnessRow): boolean =>
-    row.binary !== null &&
-    (row.status === "signed-in" || row.status === "api-key") &&
-    (row.models?.suggestions.length ?? 0) > 0
-  const row = ["opencode-kimi", "opencode-cerebras", "codex", "claude"]
-    .map((id) => rows.find((candidate) => candidate.id === id))
-    .find((candidate): candidate is HarnessRow => candidate !== undefined && usable(candidate))
-  if (row === undefined) {
-    throw new Error("Real agents E2E requires an installed, authenticated harness with a verified model; discovery found none.")
-  }
-  return row
-}
-
 const completedPromptHarness = async (page: Page, request: APIRequestContext): Promise<HarnessRow> => {
   const rows = await harnesses(page, request)
   const row = ["opencode-kimi", "opencode-cerebras"]
@@ -79,42 +57,6 @@ const completedPromptHarness = async (page: Page, request: APIRequestContext): P
     throw new Error("Real delegation E2E requires authenticated OpenCode so its one-shot provider command can complete; discovery found none.")
   }
   return row
-}
-
-const harnessModels = async (page: Page, request: APIRequestContext, id: string): Promise<HarnessModels> => {
-  const response = await realApi(page, request, "GET", `/api/harnesses/${encodeURIComponent(id)}/models`)
-  expect(response.status()).toBe(200)
-  return await response.json() as HarnessModels
-}
-
-const providerOf = (harness: HarnessRow, model: string): string => {
-  if (model.includes("/")) return model.slice(0, model.indexOf("/"))
-  if (harness.id === "codex") return "openai"
-  if (harness.id === "claude") return "anthropic"
-  return harness.id
-}
-
-const putAgent = async (
-  page: Page,
-  request: APIRequestContext,
-  id: string,
-  harness: HarnessRow,
-  model: string,
-  purpose: string,
-  label = id
-): Promise<void> => {
-  const response = await realApi(page, request, "PUT", `/api/agents/${encodeURIComponent(id)}`, {
-    label,
-    purpose,
-    harness: harness.id,
-    model: { provider: providerOf(harness, model), id: model, label: model }
-  })
-  expect([200, 201]).toContain(response.status())
-}
-
-const deleteAgent = async (page: Page, request: APIRequestContext, id: string): Promise<void> => {
-  const response = await realApi(page, request, "DELETE", `/api/agents/${encodeURIComponent(id)}`)
-  expect([200, 404]).toContain(response.status())
 }
 
 test("installed authenticated harness discovery agrees with the Agents card", scenario("agents.harnesses.discovery", {
@@ -165,156 +107,6 @@ test("installed authenticated harness discovery agrees with the Agents card", sc
   }
 })
 
-test("a real harness model list is projected into the Models card", scenario("agents.harnesses.models", {
-  capabilities: ["local.harnesses"],
-  coverage: [
-    "action:agent.models",
-    "host:local",
-    "path:success",
-    "door:slash",
-    "dimension:provider-model-selection",
-    "evidence:model-route-and-card"
-  ],
-  description: "The selected installed harness runs its real model-list probe when supported, and the slash-rendered card agrees with the authenticated API result."
-}), async ({ page, request }) => {
-  await boot(page)
-  const harness = await authenticatedModelHarness(page, request)
-  const answer = await harnessModels(page, request, harness.id)
-  expect(answer.harnessId).toBe(harness.id)
-  expect(answer.models.length, answer.reason ?? `${harness.displayName} returned no models`).toBeGreaterThan(0)
-
-  await command(page, `/agent.models ${harness.id}`)
-  await closeComposer(page)
-  const card = page.getByTestId(`card-agent-models-${harness.id}`)
-  await expect(card).toBeVisible()
-  await expect(card.getByTestId("agent-models-list")).toBeVisible()
-  await expect(card).toContainText(answer.models[0]!)
-})
-
-test("the New agent form creates a custom role with a real selectable harness model", scenario("agents.custom.create-form", {
-  capabilities: ["local.harnesses"],
-  coverage: [
-    "action:agent.new",
-    "action:agent.create",
-    "action:form.set",
-    "action:form.submit",
-    "host:local",
-    "path:success",
-    "door:slash",
-    "door:button",
-    "dimension:custom-role-create",
-    "dimension:provider-model-selection",
-    "evidence:agents-api-readback"
-  ],
-  description: "A partial slash invocation renders the derived form, whose real harness and model seams create a persisted custom role verified through the host API."
-}), async ({ page, request }) => {
-  await boot(page)
-  const id = "s09-create"
-  await deleteAgent(page, request, id)
-  const harness = await authenticatedModelHarness(page, request)
-  const model = harness.models?.suggestions[0]
-  if (model === undefined) throw new Error(`${harness.displayName} provided no selectable real model.`)
-
-  await command(page, `/agent.new ${id} ${harness.id}`)
-  const form = page.getByTestId("card-form-agent.create")
-  await expect(form).toBeVisible()
-  await closeComposer(page)
-  await expect(form.getByTestId("flow-form-id")).toHaveValue(id)
-  await expect(form.getByTestId("flow-form-harness")).toHaveValue(harness.id)
-  await form.getByTestId("flow-form-model").fill(model)
-  await form.getByTestId("flow-form-purpose").fill("Answers harmless E2E probes")
-  await form.getByTestId("flow-form-submit").click()
-  await expect(form).toHaveAttribute("data-status", "acted")
-
-  await expect.poll(async () => (await agents(page, request)).find((agent) => agent.id === id)).toMatchObject({
-    id,
-    purpose: "Answers harmless E2E probes",
-    harness: harness.id,
-    model: { id: model },
-    builtin: false
-  })
-  await deleteAgent(page, request, id)
-})
-
-test("the Agents card edits an independently provisioned custom role", scenario("agents.custom.edit-button", {
-  capabilities: ["local.harnesses"],
-  coverage: [
-    "action:agent.list",
-    "action:agent.new",
-    "action:agent.edit",
-    "action:form.set",
-    "action:form.submit",
-    "host:local",
-    "path:success",
-    "door:slash",
-    "door:button",
-    "dimension:custom-role-edit",
-    "evidence:agents-api-readback"
-  ],
-  description: "A real role fixture is edited through the Agents card and derived form, then read back independently from the persistent agents API."
-}), async ({ page, request }) => {
-  await boot(page)
-  const id = "s09-edit"
-  await deleteAgent(page, request, id)
-  const harness = await authenticatedModelHarness(page, request)
-  const model = harness.models!.suggestions[0]!
-  await putAgent(page, request, id, harness, model, "Before edit", "Before edit")
-
-  await command(page, "/agent.list")
-  await closeComposer(page)
-  const list = page.locator('.smithers-card[data-kind="agents"]')
-  await list.getByTestId(`agents-edit-${id}`).click()
-  const form = page.getByTestId("card-form-agent.edit")
-  await expect(form).toBeVisible()
-  await form.getByTestId("flow-form-purpose").fill("Edited through the real UI")
-  await form.getByTestId("flow-form-label").fill("S09 editor")
-  await form.getByTestId("flow-form-submit").click()
-  await expect(form).toHaveAttribute("data-status", "acted")
-  await expect.poll(async () => (await agents(page, request)).find((agent) => agent.id === id)).toMatchObject({
-    label: "S09 editor",
-    purpose: "Edited through the real UI",
-    harness: harness.id,
-    model: { id: model }
-  })
-  await deleteAgent(page, request, id)
-})
-
-test("the Agents card removes only the selected custom role", scenario("agents.custom.remove-button", {
-  capabilities: ["local.harnesses"],
-  coverage: [
-    "action:agent.list",
-    "action:agent.remove",
-    "host:local",
-    "path:success",
-    "door:slash",
-    "door:button",
-    "dimension:custom-role-delete",
-    "dimension:stable-target",
-    "evidence:agents-api-readback"
-  ],
-  description: "The Remove button carries one concrete custom id; the real API proves that row disappeared while a second owned role remained."
-}), async ({ page, request }) => {
-  await boot(page)
-  const target = "s09-remove"
-  const control = "s09-keep"
-  await deleteAgent(page, request, target)
-  await deleteAgent(page, request, control)
-  const harness = await authenticatedModelHarness(page, request)
-  const model = harness.models!.suggestions[0]!
-  await putAgent(page, request, target, harness, model, "Remove me")
-  await putAgent(page, request, control, harness, model, "Keep me")
-
-  await command(page, "/agent.list")
-  await closeComposer(page)
-  const card = page.locator('.smithers-card[data-kind="agents"]')
-  await card.getByTestId(`agents-remove-${target}`).click()
-  await expect.poll(async () => (await agents(page, request)).some((agent) => agent.id === target)).toBe(false)
-  expect((await agents(page, request)).some((agent) => agent.id === control)).toBe(true)
-  await expect(card.locator(`[data-agent="${target}"]`)).toHaveCount(0)
-  await expect(card.locator(`[data-agent="${control}"]`)).toBeVisible()
-  await deleteAgent(page, request, control)
-})
-
 test("delegation completes a harmless prompt in a real harness and its session can be selected and read", scenario("agents.delegate.completed-session", {
   capabilities: ["local.harnesses", "local.terminal"],
   coverage: [
@@ -333,16 +125,14 @@ test("delegation completes a harmless prompt in a real harness and its session c
     "dimension:verbose-readback",
     "evidence:pty-api-output-and-ui"
   ],
-  description: "A custom OpenCode role sends one harmless prompt to its authenticated provider, exposes the real PTY through the agent card, exits cleanly, and returns its output through tab.read's verbose flow trace."
+  description: "A built-in OpenCode role sends one harmless prompt to its authenticated provider, exposes the real PTY through the agent card, exits cleanly, and returns its output through tab.read's verbose flow trace."
 }), async ({ page, request }) => {
   test.setTimeout(180_000)
   await boot(page)
-  const id = "s09-delegate"
-  await deleteAgent(page, request, id)
   const harness = await completedPromptHarness(page, request)
-  const model = harness.models!.suggestions[0]
-  if (model === undefined) throw new Error(`${harness.displayName} returned no model for a real delegation.`)
-  await putAgent(page, request, id, harness, model, "Returns one harmless verification marker")
+  const role = (await agents(page, request)).find(role => role.builtin && role.harness === harness.id)
+  if (role === undefined) throw new Error(`No built-in role uses ${harness.displayName}`)
+  const id = role.id
   await command(page, "/agent.list")
   await closeComposer(page)
 
@@ -410,7 +200,6 @@ test("delegation completes a harmless prompt in a real harness and its session c
   expect(finalSessions.status()).toBe(200)
   expect((await finalSessions.json() as { readonly sessions: ReadonlyArray<Record<string, unknown>> }).sessions)
     .toContainEqual(expect.objectContaining({ sessionId, alive: false, exitCode: 0 }))
-  await deleteAgent(page, request, id)
 })
 
 test("the real Explainer provider streams an answer into its embedded card", scenario("agents.explain.real-provider", {
@@ -440,48 +229,6 @@ test("the real Explainer provider streams an answer into its embedded card", sce
   expect(frames.some((frame) => frame.type === "done" && frame.error === undefined)).toBe(true)
 })
 
-test("a real model tool request cannot remove a role before the human confirms", scenario("agents.permission.agent-confirm-remove", {
-  capabilities: ["agent", "local.harnesses"],
-  coverage: [
-    "action:agent.list",
-    "action:agent.remove",
-    "host:local",
-    "path:permission",
-    "door:agent",
-    "door:button",
-    "dimension:consequential-confirmation",
-    "dimension:no-side-effect-before-confirm",
-    "evidence:model-tool-call-and-agents-api"
-  ],
-  description: "A real model invokes the consequential agent.remove flow, which must preserve the role until the exact human confirmation button executes the bound removal."
-}), async ({ page, request }) => {
-  test.setTimeout(180_000)
-  await boot(page)
-  const id = "s09-confirm"
-  await deleteAgent(page, request, id)
-  const harness = await authenticatedModelHarness(page, request)
-  const model = harness.models!.suggestions[0]!
-  await putAgent(page, request, id, harness, model, "Confirmation boundary fixture")
-  await command(page, "/agent.list")
-  await closeComposer(page)
-
-  const traffic = await captureTurnTraffic(page)
-  await command(page, `Use the commands tool now with action execute, name agent.remove, and args ${id}. This checks the app's confirmation boundary.`)
-  await closeComposer(page)
-  // A real provider may request confirmation more than once in the same turn.
-  // Every request must remain inert; activate the latest exactly bound action.
-  const confirmation = page.getByRole("button", { name: `Confirm: remove the agent ${id}`, exact: true }).last()
-  await expect(confirmation).toBeVisible({ timeout: 150_000 })
-  await expect(confirmation).toHaveAttribute("data-flow", "agent.remove")
-  await expect(page.getByTestId("transcript")).toHaveAttribute("aria-busy", "false", { timeout: 150_000 })
-  expect(toolExecution(parseTurnFrames(await traffic.read()), "agent.remove"))
-    .toMatchObject({ action: "execute", name: "agent.remove", args: id })
-  expect((await agents(page, request)).some((agent) => agent.id === id)).toBe(true)
-
-  await confirmation.click()
-  await expect.poll(async () => (await agents(page, request)).some((agent) => agent.id === id)).toBe(false)
-})
-
 test("a flag-shaped delegated task is refused before any PTY is created", scenario("agents.delegate.permission-argv", {
   capabilities: ["local.harnesses"],
   coverage: [
@@ -498,9 +245,9 @@ test("a flag-shaped delegated task is refused before any PTY is created", scenar
 }), async ({ page, request }) => {
   await boot(page)
   const harness = await completedPromptHarness(page, request)
-  const id = "s09-permission"
-  await deleteAgent(page, request, id)
-  await putAgent(page, request, id, harness, harness.models!.suggestions[0]!, "Permission boundary fixture")
+  const role = (await agents(page, request)).find(role => role.builtin && role.harness === harness.id)
+  if (role === undefined) throw new Error(`No built-in role uses ${harness.displayName}`)
+  const id = role.id
   await command(page, "/agent.list")
   await closeComposer(page)
   const before = (await (await realApi(page, request, "GET", "/api/pty")).json() as { readonly sessions: ReadonlyArray<{ readonly sessionId: string }> }).sessions
@@ -510,5 +257,4 @@ test("a flag-shaped delegated task is refused before any PTY is created", scenar
   await closeComposer(page)
   const after = (await (await realApi(page, request, "GET", "/api/pty")).json() as { readonly sessions: ReadonlyArray<{ readonly sessionId: string }> }).sessions
   expect(after.map((session) => session.sessionId)).toEqual(before.map((session) => session.sessionId))
-  await deleteAgent(page, request, id)
 })

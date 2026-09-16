@@ -2737,10 +2737,6 @@ describe("the browser tool route (§2d)", () => {
       ["GET", "/api/user/orgs"],
       ["GET", "/api/orgs/smithersai/provider-connections"],
       ["POST", "/api/orgs/smithersai/changesets/7/land"],
-      ["GET", "/api/integrations/linear"],
-      ["DELETE", "/api/integrations/linear/7"],
-      ["POST", "/api/linear"],
-      ["POST", "/api/linear/7/ops/9/retry"],
       ["GET", "/api/notifications/list"],
       ["GET", "/api/billing"],
       ["GET", "/api/billing/plans"],
@@ -2757,6 +2753,14 @@ describe("the browser tool route (§2d)", () => {
     // GET /api/billing/checkout is NOT here: off the proxy allowlist it falls
     // through to the /api/billing/ prefix, which the product billing worker owns.
     const cases: ReadonlyArray<readonly [string, string]> = [
+      ["GET", "/api/linear"],
+      ["POST", "/api/linear"],
+      ["GET", "/api/integrations/linear"],
+      ["GET", "/api/auth/linear"],
+      ["POST", "/api/repos/a/b/issues/1/linear-link"],
+      ["DELETE", "/api/repos/a/b/issues/1/linear-link"],
+      ["GET", "/api/cloud/api/linear"],
+      ["POST", "/api/cloud/api/repos/a/b/issues/1/linear-link"],
       ["DELETE", "/api/notifications/list"],
       ["POST", "/api/user/repos"],
       /* The BYOK key family was deleted with keys.list / keys.remove: nothing forwards, nothing answers 501. */
@@ -2764,7 +2768,6 @@ describe("the browser tool route (§2d)", () => {
       ["DELETE", "/api/user/byok-keys/anthropic"],
       ["PATCH", "/api/user/workspaces"],
       ["PUT", "/api/orgs/smithersai/provider-connections"],
-      ["PUT", "/api/linear/7"],
       /*
        * Doors no product seam calls (apps/app/src/mainview/state/seams): a PAT
        * mint, a provider-connection write, an org delete, an integration
@@ -2778,9 +2781,6 @@ describe("the browser tool route (§2d)", () => {
       ["POST", "/api/user/tokens"],
       ["DELETE", "/api/user/tokens/7"],
       ["DELETE", "/api/orgs/smithersai"],
-      ["POST", "/api/integrations/linear"],
-      ["PATCH", "/api/integrations/linear/7"],
-      ["DELETE", "/api/linear/7"]
     ]
     for (const [method, path] of cases) {
       const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method }), assetsEnv())

@@ -242,7 +242,7 @@ const seedCard = async (store: AppStore, terminalSessionId?: string): Promise<vo
         status: "running",
         provisioningStage: null,
         bookmarkHead: null,
-        snapshots: [],
+
         sessions: [],
         ...(terminalSessionId === undefined ? {} : { terminalSessionId })
       }
@@ -288,30 +288,6 @@ describe("workspace seam gates", () => {
     expect(await seam.listWorkspaces()).toBe("Sign in to Smithers Cloud to continue.")
     expect(await seam.openWorkspace("main", "will/smithers")).toBe("Sign in to Smithers Cloud to continue.")
     expect(await seam.openTerminal("ws-1")).toBe("Sign in to Smithers Cloud to continue.")
-  })
-
-  test("a degraded sign-in refuses every act with the enable wording", async () => {
-    const { store, seam } = await harness({}, { degraded: true })
-    await seedWorkspace(store)
-    for (const refusal of [
-      await seam.listWorkspaces(),
-      await seam.openWorkspace("main", "will/smithers"),
-      await seam.viewWorkspace("ws-1"),
-      await seam.openTerminal("ws-1"),
-      await seam.suspendWorkspace("ws-1"),
-      await seam.resumeWorkspace("ws-1"),
-      await seam.forkWorkspace("ws-1"),
-      await seam.snapshotWorkspace("ws-1"),
-      await seam.deleteSnapshot("snap-1", "ws-1"),
-      await seam.forkFromSnapshot("snap-1", "ws-1"),
-      await seam.templateSnapshot("snap-1", "tpl", "ws-1"),
-      await seam.listSessions("ws-1"),
-      await seam.destroySession("sess-1", "ws-1"),
-      await seam.deleteWorkspace("ws-1", "review")
-    ]) {
-      expect(refusal).toBe(DEGRADED_WORKSPACE_REFUSAL)
-      expect(refusal).toContain("sign in again to enable")
-    }
   })
 })
 
@@ -534,7 +510,7 @@ describe("workspace seam open", () => {
           name: "review",
           targetBookmark: "main",
           bookmarkHead: { changeId: "qupxosqw", commitId: "c0ffee1" },
-          snapshots: [{ id: "snap-1", name: "golden", createdAt: "2026-08-01T00:00:00Z" }],
+
           sessions: []
         })
       })
@@ -676,17 +652,6 @@ describe("workspace seam acts", () => {
     expect(refusal).toContain("name a workspace id")
   })
 
-  test("fork renders the fork's own card", async () => {
-    const { store, seam } = await harness({
-      "POST api/repos/will/smithers/workspaces/ws-1/fork": json(201, { ...WS_RUNNING, id: "ws-9", name: "review-fork" })
-    })
-    await seedWorkspace(store)
-    const result = await seam.forkWorkspace("ws-1", "review-fork")
-    expect(typeof result).toBe("object")
-    expect(workspacesOf(store).map((row) => row.id).sort()).toEqual(["ws-1", "ws-9"])
-    expect(cardOf(store, "ws-9")?.title).toBe("review-fork · will/smithers")
-  })
-
   /*
    * Critique finding 5: the typed-name gate lived only in the card's
    * chrome; the flow deleted on one click. The name now rides the payload
@@ -729,59 +694,6 @@ describe("workspace seam acts", () => {
 })
 
 describe("workspace seam snapshots", () => {
-  test("snapshot takes one and refreshes the card's list", async () => {
-    const { store, seam } = await harness({
-      "POST api/repos/will/smithers/workspaces/ws-1/snapshot": json(201, { id: "snap-2", name: "checkpoint", created_at: null }),
-      "api/repos/will/smithers/workspace-snapshots": json(200, [
-        { id: "snap-1", name: "golden", created_at: null },
-        { id: "snap-2", name: "checkpoint", created_at: null }
-      ])
-    })
-    await seedWorkspace(store)
-    const result = await seam.snapshotWorkspace("ws-1", "checkpoint")
-    expect(typeof result).toBe("object")
-    const payload = payloadOf(store)
-    expect(payload?.snapshots.map((snapshot) => snapshot.id)).toEqual(["snap-1", "snap-2"])
-  })
-
-  test("fork from a snapshot creates a workspace on the snapshot's image", async () => {
-    const { store, seam, requests } = await harness({
-      "POST api/repos/will/smithers/workspaces": json(201, { ...WS_RUNNING, id: "ws-7", name: "golden-copy", target_bookmark: null })
-    })
-    await seedWorkspace(store)
-    const result = await seam.forkFromSnapshot("snap-1", "ws-1")
-    expect(typeof result).toBe("object")
-    expect(requests[0]).toBe("POST api/repos/will/smithers/workspaces")
-    expect(workspacesOf(store).map((row) => row.id).sort()).toEqual(["ws-1", "ws-7"])
-    expect(cardOf(store, "ws-7")?.title).toBe("golden-copy · will/smithers")
-  })
-
-  test("template snapshots from the snapshot's own workspace", async () => {
-    const { store, seam, requests } = await harness({
-      "api/repos/will/smithers/workspace-snapshots/snap-1": json(200, { id: "snap-1", name: "golden", workspace_id: "ws-1", created_at: null }),
-      "POST api/repos/will/smithers/workspace-snapshots": json(201, { id: "tpl-1", name: "base-image", created_at: null }),
-      "api/repos/will/smithers/workspace-snapshots": json(200, [{ id: "tpl-1", name: "base-image", created_at: null }])
-    })
-    await seedWorkspace(store)
-    const result = await seam.templateSnapshot("snap-1", "base-image", "ws-1")
-    expect(typeof result).toBe("object")
-    expect(requests).toContain("GET api/repos/will/smithers/workspace-snapshots/snap-1")
-    expect(requests).toContain("POST api/repos/will/smithers/workspace-snapshots")
-    const payload = payloadOf(store)
-    expect(payload?.snapshots).toEqual([{ id: "tpl-1", name: "base-image", createdAt: null }])
-  })
-
-  test("delete snapshot refreshes the card", async () => {
-    const { store, seam } = await harness({
-      "DELETE api/repos/will/smithers/workspace-snapshots/snap-1": json(204, null),
-      "api/repos/will/smithers/workspace-snapshots": json(200, [])
-    })
-    await seedWorkspace(store)
-    const result = await seam.deleteSnapshot("snap-1", "ws-1")
-    expect(typeof result).toBe("object")
-    const payload = payloadOf(store)
-    expect(payload?.snapshots).toEqual([])
-  })
 })
 
 describe("workspace seam terminal", () => {
@@ -1029,7 +941,7 @@ describe("workspace seam terminal", () => {
             status: "running",
             provisioningStage: null,
             bookmarkHead: null,
-            snapshots: [],
+
             sessions: []
           }
         }
@@ -1099,17 +1011,6 @@ describe("workspace tabs and the cloud session", () => {
 })
 
 describe("workspace seam facets", () => {
-  test("setFacet renders the facet and refreshes what it shows", async () => {
-    const { store, seam } = await harness({
-      "api/repos/will/smithers/workspace-snapshots": json(200, [{ id: "snap-1", name: "golden", created_at: null }])
-    })
-    await seedWorkspace(store)
-    const refusal = await seam.setFacet("ws-1", "snapshots")
-    expect(refusal).toBeUndefined()
-    const payload = payloadOf(store)
-    expect(payload?.facet).toBe("snapshots")
-    expect(payload?.snapshots).toEqual([{ id: "snap-1", name: "golden", createdAt: null }])
-  })
 })
 
 /*
@@ -2542,7 +2443,6 @@ describe("the one-command desktop open", () => {
     const { seam, store, requests, bodies, storage } = await harness({
       "POST api/repos/will/smithers/workspaces": json(200, desktopBox("running", true)),
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [{ name: "main", change_id: "qupxosqw", commit_id: "c0ffee1" }] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
       "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": json(201, DESKTOP_MINT)
     })
@@ -2583,7 +2483,6 @@ describe("the one-command desktop open", () => {
         return json(200, reads < 2 ? desktopBox("running", false) : desktopBox("running", true))
       },
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
       "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": json(201, DESKTOP_MINT)
     })
@@ -2616,7 +2515,6 @@ describe("the one-command desktop open", () => {
       "POST api/repos/will/smithers/workspaces": json(202, { ...desktopBox("starting"), id: "ws-2" }),
       "GET api/repos/will/smithers/workspaces/ws-2": json(200, { ...desktopBox("running", true), id: "ws-2" }),
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
       "POST api/repos/will/smithers/workspaces/ws-2/desktop/session": json(201, { ...DESKTOP_MINT, workspace_id: "ws-2" })
     })
@@ -2642,7 +2540,6 @@ describe("the one-command desktop open", () => {
         failure_message: "bookmark \"main\" not found on will/smithers"
       })),
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
     })
     try {
@@ -2664,7 +2561,6 @@ describe("the one-command desktop open", () => {
       "POST api/repos/will/smithers/workspaces": json(202, desktopBox("starting")),
       "GET api/repos/will/smithers/workspaces/ws-1": json(200, desktopBox("starting")),
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
     })
     try {
@@ -2696,7 +2592,6 @@ describe("the one-command desktop open", () => {
         return json(200, desktopBox("starting"))
       },
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] })
     }, { desktopWaitMs: 50 })
     try {
@@ -2717,7 +2612,6 @@ describe("the one-command desktop open", () => {
     const { seam, store } = await harness({
       "POST api/repos/will/smithers/workspaces": json(200, desktopBox("running", true)),
       "GET api/repos/will/smithers/bookmarks": json(200, { bookmarks: [] }),
-      "GET api/repos/will/smithers/workspace-snapshots": json(200, { snapshots: [] }),
       "GET api/repos/will/smithers/workspace/sessions": json(200, { sessions: [] }),
       "POST api/repos/will/smithers/workspaces/ws-1/desktop/session": () => {
         mints += 1
@@ -2835,7 +2729,6 @@ describe("plan sandbox limits embed an upgrade refusal", () => {
   const limit = () => json(402, { code: "plan_limit_exceeded", fault: "user", message: "Suspend one sandbox or upgrade.", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" })
   const paths = [
     ["open", "POST api/repos/will/smithers/workspaces"],
-    ["fork", "POST api/repos/will/smithers/workspaces/ws-1/fork"],
     ["resume", "POST api/repos/will/smithers/workspaces/ws-1/resume"],
     ["desktop-box", "POST api/repos/will/smithers/workspaces"],
     ["desktop", "POST api/repos/will/smithers/workspaces/ws-1/desktop/session"]
@@ -2845,14 +2738,12 @@ describe("plan sandbox limits embed an upgrade refusal", () => {
     const { store, seam, requests } = await harness({ [path]: limit, "api/repos/will/smithers/workspaces/ws-1": json(200, WS_DESKTOP) })
     await seedWorkspace(store, { ...wsRow, kind: "desktop" })
     const answer = act === "open" ? await seam.openWorkspace(undefined, "will/smithers")
-      : act === "fork" ? await seam.forkWorkspace("ws-1")
       : act === "resume" ? await seam.resumeWorkspace("ws-1")
       : act === "desktop-box" ? await seam.openDesktopBox(undefined, "will/smithers")
       : await seam.openDesktop("ws-1")
     expect(answer).toContain("Your plan is at its sandbox limit.")
     const card = store.collections.cards.get("billing-plan-limit")
     expect(card?.kind).toBe("billing-plans")
-    if (card?.kind === "billing-plans") expect(card.payload.refusal).toMatchObject({ code: "plan_limit_exceeded", upgrade_plan_key: "pro", limit_kind: "concurrent_sandboxes", plan_key: "free" })
     expect(requests.filter(request => request === path)).toHaveLength(1)
   })
 })

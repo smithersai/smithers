@@ -6,77 +6,6 @@ file:line after each claim); each decision names its source plan and why.
 
 ## 0. Corrections to the brief (verified)
 
-1. **No WorkOS.** Identity is the sibling Worker `smithers-cloud-identity`
-   (`apps/UPSTREAMS.md:20`), GitHub OAuth only. The product Worker proxies
-   `/api/auth/*` and `/api/identity/*` (`apps/server/src/index.ts:2323`)
-   and validates the cookie via `POST /api/identity/validate` (`:1317-1331`).
-   `grep -ri workos apps/server/src apps/UPSTREAMS.md apps/app/src/bun` = 0 hits.
-   (Fable flagged it; Codex agreed silently.)
-2. **The chat seam is `/api/agent/turn`, `/api/agent/turn/cancel`,
-   `/api/model/stream`** (`packages/rpc/src/AgentApiRoutes.ts:5-6,62`), not
-   `/v1`. `run_worker_first: ["/api/*", "/v1/*", "/workflows/*"]`
-   (`apps/server/wrangler.jsonc:18`) carries two 0.x entries the Worker
-   itself calls gone (`index.ts:192-196`); the rc.0 gateway mounts
-   `/rpc`, `/projections`, `/sync`, `/health` (`GATEWAY_ROUTE_PREFIXES`,
-   `index.ts:196`) are absent, so those paths serve `index.html`. (Fable.)
-3. **Tag counts drift while the sidebar lane edits `Flows.ts` uncommitted**
-   (`git status`: `M apps/app/src/mainview/flows/Flows.ts`). At 20:45:
-   139 `runtime:` + 2 `runtimeAny:`; Smithers Cloud 86 (+2 any), local.targets 20,
-   identity 14, local.repositories 9 (+2 any), local.harnesses 3, keys.byok
-   2, billing.checkout 2, agent 2, local.terminal 1. Fable (81) and Codex
-   (88) counted different snapshots; the mechanism is unchanged:
-   `Commands.ts:132-137` filters on `runtime.every && runtimeAny.some`. (Both.)
-4. **Seven seams call the Bun PAT proxy, and the Worker 404s it.**
-   `CLOUD_ROUTE_PREFIX = "/api/cloud/"` (`packages/rpc/src/LocalApp.ts:411`)
-   is used by `RepositoriesSeam.ts:102`, `WorkspaceSeam.ts:371`,
-   `ChangeSeam.ts:700`, `GitHubSeam.ts:160`, `LinearSeam.ts:261`,
-   `RepoImportSeam.ts:152`, `EgressSeam.ts:109`. `apps/server/src/index.ts`
-   has no `/api/cloud` handler; the path falls to the canonical 404
-   (`:2340`). `FilesSeam.ts:249` is the exception: it reads
-   `/api/repos/{o}/{r}/contents` directly, which `PLATFORM_PROXY_RULES`
-   allows (`index.ts:2018-2050`). So on canary today a file renders if you
-   know the repo name, but the repository list (`/api/user/repos`, absent
-   from the rules too) never loads. (Fable on the 404; Codex on FilesSeam.)
-5. **`workspace.terminal` registers on web and never connects.** Tagged
-   `runtime: ["Smithers Cloud"]` only (`Flows.ts:1406-1408`); the client's
-   `socketProtocol` is `localSocketProtocols()[0]` (`AppController.ts:681`,
-   `LocalSession.ts:48-50`), undefined without the local-session meta, and
-   `CloudTerminalClient.ts:170-171` returns without opening. (Fable.)
-6. **plue already has a browser ticket door.** ADR 0002 (`docs/decisions/
-   0002-citc-sandbox-kinds.md:53-70`): `POST /api/auth/sse-ticket` (30 s,
-   single use) exists "only for browsers"; Origin is mandatory and checked
-   before auth for non-Bearer principals; "No reserved app origin exists."
-   Fable's claim that direct-to-cloud needs a backend auth change is wrong;
-   it needs a plue origin-allowlist change. (Codex.)
-7. **The sidebar tree is local-only.** `repo.tree` is
-   `runtime: ["local.repositories"]` (`Flows.ts:1941-1943`) and
-   `RepoTreeSeam.ts:1-8` posts the local `POST /api/repo/files`. Fable's
-   signed-in mockup shows a cloud tree that does not exist. (Codex.)
-8. **Persistence is the same in both shells.** Collections live in OPFS
-   SQLite in the webview (`state/AppStore.ts:2`, `docs/persistence.md:6-21`);
-   native disk holds only the Smithers Cloud PAT (`seams/CloudSeam.ts:3-5`) and
-   `stateDir` records (`src/bun/index.ts:31-33`). (Both.)
-9. **No web test tier, no web targets.** `e2e/README.md:3-5` records the
-   `wrangler dev` stack removed 2026-08-26; `playwright.config.ts:27-28` has
-   one `chromium` project booting `bun src/bun/serve.ts`; `apps/app/BUILD.ts`
-   declares `check` (`:45`) and `unitTests` (`:76`), `apps/server/BUILD.ts`
-   the same (`:30`, `:47`); T1 runs from `.github/workflows/apps-deploy.yml:
-   67-68`, which deploys on `apps-v*` tags (`:4-7`). (Both.)
-10. **No download page, no URL scheme, no CSP.** `electrobun.config.ts:17-57`
-    registers no protocol; `openExternal` admits only http/https
-    (`src/bun/index.ts:26`); the only response headers are COOP/COEP
-    (`index.ts:171-174`, `public/_headers`); no `Content-Security-Policy`
-    in `apps/server/src` or `apps/app/src`. New since both plans:
-    `apps/site` (uncommitted Astro 5 + Starlight scaffold, `output:
-    "static"`, `site: "https://smithers.sh"`) already names `/download` as
-    "the downloads page" in `apps/site/astro.config.mjs:5-8`. No
-    `wrangler.*`, no `BUILD.ts`, no pages yet.
-11. **Native gap.** `PRODUCT_PROXY_PREFIXES` (`src/bun/server.ts:304-311`)
-    omits `/api/workflow/`, and the Bun server has no workflow route, so
-    `controller/gateway.ts:64` (`WORKFLOW_RPC_PATH`) gets the Bun 404
-    (`server.ts:886`). Codex's table marks flows/runs native "Yes"; today
-    they are not. (Fable, R6.)
-
 ## 1. Mode model
 
 **Decision: two axes already in the tree, no new mode enum (both).**
@@ -94,14 +23,12 @@ the same mechanism).
 - `packages/rpc/src/AppBootstrap.ts`: `RuntimeCapabilitySchema` gains
   `"cloud.terminal"` (this origin tunnels workspace terminals) and
   `"cloud.pat"` (a host-held Smithers Cloud PAT session: `/api/cloud-auth/*`, the
-  Linear loopback). Bun emits both; the Worker emits `cloud.terminal` after
   W4 and never `cloud.pat`.
 - New `packages/rpc/src/HostCapabilities.ts`:
   `cloudCapabilities(env: { identity; Smithers Cloud; agent; checkout; terminal: boolean }): RuntimeCapability[]`
   and `localCapabilities(opts: { agent; identity; Smithers Cloud; pathEntry: boolean }): RuntimeCapability[]`.
   `index.ts:2246` and `server.ts:524` call them; the parity test reads them.
 - `flows/Flows.ts`: `workspace.terminal` -> `["Smithers Cloud", "cloud.terminal"]`;
-  `cloud.sign-in`, `cloud.sign-out`, `linear.connect*` gain `"cloud.pat"`.
 - `flows/registry.ts`: `FlowMetadata.hosts?: ReadonlyArray<AppBootstrap["host"]>`;
   `Commands.ts available()` checks it. Used only by the two download flows.
 
@@ -138,7 +65,6 @@ for one, say so and execute app.download.prompt." One line keeps
 | Agent chat | yes | yes | `WebAgent` -> `/api/agent/turn`; web adds `TURN_LIMITS` per login |
 | Flows, runs, approvals | yes | R6 | `/api/workflow/rpc` lives on the Worker (`index.ts:2299`); Bun forwards nothing |
 | GitHub import, mirror sync | W0 | yes | `/api/github/import` allowlisted; `RepoImportSeam.ts:152` |
-| Linear connect | no | yes | loopback callback on Bun; `cloud.pat` |
 | Smithers Cloud PAT sign-in (`cloud.sign-in`) | no | yes | on web the cookie IS the cloud identity (`fetchCloudToken`, `index.ts:2172`) |
 | Local repos, local tree, `repo.*` | no | yes | `local.repositories`; picker is a native door |
 | Local terminal, targets, harnesses | no | yes | `local.terminal`, `local.targets`, `local.harnesses` |
@@ -450,3 +376,4 @@ the download sentence. Receipt: `docs/web-mode/W0-RECEIPT.md`.
 5. Should native drop the Smithers Cloud PAT keychain and adopt the Worker's
    cookie->cloud-token bridge so both modes share one identity? Default:
    yes, as a later lane; this plan does not touch `CloudAuth.ts`.
+

@@ -322,7 +322,7 @@ test("browser chat sees a desktop opened outside chat and refreshes its stream s
   await store.dispatch({ type: "card.upsert", actor: "user", card: {
     id: "desktop-context", kind: "workspace", title: "My desktop", status: "active", ordinal: 1, createdAt: 1,
     payload: { workspaceId: "ws-context", repo: "acme/api", name: "My desktop", targetBookmark: "main", status: "running",
-      provisioningStage: null, suspendedAt: null, bookmarkHead: null, snapshots: [], sessions: [], workspaceKind: "desktop", facet: "desktop" },
+      provisioningStage: null, suspendedAt: null, bookmarkHead: null, sessions: [], workspaceKind: "desktop", facet: "desktop" },
   } }).isPersisted.promise
   holdDesktopStream({ workspaceId: "ws-context", url: "https://desktop.invalid/?token=secret-fixture", sessionId: "private-session", expiresAt: null })
   try {

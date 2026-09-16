@@ -51,46 +51,24 @@ test("real search refuses unindexed modes and preserves an honest empty result",
   await expect(empty.getByTestId("search-results-empty")).toContainText("query-that-is-not-a-flow-9f2f")
 })
 
-test("the real Library installs, exposes, removes, and reloads a plugin through the user controls", scenario("plugins.library-install-remove-reload-real", {
+test("the Library is absent while its feature flag is off", scenario("plugins.library-disabled-real", {
   capabilities: [],
-  coverage: ["action:plugins", "action:plugins.install", "action:plugins.remove", "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:user-only", "door:button", "dimension:plugin-shelf", "dimension:plugin-rail", "dimension:reload", "dimension:keyboard", "evidence:installed-shelf-and-rail"],
-  description: "The real Library surface mutates the durable plugin shelf with its actual install and remove controls, exposes the plugin rail, and restores the empty shelf after reload."
+  coverage: ["host:local", "host:production", "path:success", "door:slash", "dimension:plugin-shelf", "evidence:disabled-library"],
+  description: "The default app does not register Library navigation or mutation commands. Enabled Library behavior is covered by the controller and component suites."
 }), async ({ page }) => {
   await boot(page)
-  await command(page, "/plugins")
-  await closeComposer(page)
-  const library = page.getByRole("region", { name: "Plugins on your workspace" })
-  await expect(library).toBeVisible()
-  const librarian = library.locator('[data-plugin="librarian"]')
-  await expect(librarian).toHaveAttribute("data-installed", "false")
-  const install = librarian.getByRole("button", { name: "Install the Librarian", exact: true })
-  await install.focus()
-  await expect(install).toBeFocused()
-  await install.press("Enter")
-  await expect(librarian).toHaveAttribute("data-installed", "true")
-  await expect(library.getByRole("navigation", { name: "Installed capabilities" })).toBeVisible()
-  await expect(library.getByTestId("plugin-rail-wiki")).toBeVisible()
-  await page.reload({ waitUntil: "domcontentloaded" })
-  const afterReload = page.getByRole("region", { name: "Plugins on your workspace" })
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  if (!await afterReload.isVisible()) { await command(page, "/plugins"); await closeComposer(page) }
-  const restored = page.getByRole("region", { name: "Plugins on your workspace" })
-  await expect(restored.locator('[data-plugin="librarian"]')).toHaveAttribute("data-installed", "true")
-  const remove = restored.locator('[data-plugin="librarian"]').getByRole("button", { name: "Remove", exact: true })
-  await remove.focus()
-  await expect(remove).toBeFocused()
-  await remove.press("Enter")
-  await expect(restored.locator('[data-plugin="librarian"]')).toHaveAttribute("data-installed", "false")
-  await page.reload({ waitUntil: "domcontentloaded" })
-  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  if (!await page.getByRole("region", { name: "Plugins on your workspace" }).isVisible()) { await command(page, "/plugins"); await closeComposer(page) }
-  await expect(page.getByRole("region", { name: "Plugins on your workspace" }).locator('[data-plugin="librarian"]')).toHaveAttribute("data-installed", "false")
+  await openComposer(page)
+  await page.getByTestId("composer-input").fill("/plugins")
+  await expect(page.locator('[data-flow="plugins"]')).toHaveCount(0)
+  await expect(page.locator('[data-flow="plugins.install"]')).toHaveCount(0)
+  await expect(page.locator('[data-flow="plugins.remove"]')).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "Plugins on your workspace" })).toHaveCount(0)
 })
 
-test("signed-out notifications and sync commands fail closed through the real requirement door", scenario("cloud-required-notifications-sync-refusal-real", {
+test("signed-out notifications commands fail closed through the real requirement door", scenario("cloud-required-notifications-refusal-real", {
   capabilities: [],
-  coverage: ["action:notifications.list", "action:notifications.read", "action:sync.retry", "host:local", "host:production", "path:permission", "door:slash", "dimension:signed-out-cloud-requirement", "dimension:no-side-effect", "evidence:sign-in-step-and-no-cloud-card"],
-  description: "Without a session, cloud notification and sync actions expose the real sign-in requirement and do not create success cards or issue cloud mutations."
+  coverage: ["action:notifications.list", "action:notifications.read", "host:local", "host:production", "path:permission", "door:slash", "dimension:signed-out-cloud-requirement", "dimension:no-side-effect", "evidence:sign-in-step-and-no-cloud-card"],
+  description: "Without a session, cloud notification actions expose the real sign-in requirement and do not create success cards or issue cloud mutations."
 }), async ({ page }) => {
   await boot(page)
   await command(page, "/notifications.list")
@@ -100,8 +78,5 @@ test("signed-out notifications and sync commands fail closed through the real re
   await command(page, "/notifications.read")
   await closeComposer(page)
   await expect(page.getByText(/Sign in with GitHub to mark every notification read/i).last()).toBeVisible()
-  await command(page, "/sync.retry owned-op-that-does-not-exist")
-  await closeComposer(page)
-  await expect(page.getByText(/Sign in with GitHub to retry one failed sync op/i).last()).toBeVisible()
-  await expect(page.locator('.smithers-card[data-kind="sync-ops"]')).toHaveCount(0)
+
 })

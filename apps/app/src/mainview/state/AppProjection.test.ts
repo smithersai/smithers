@@ -45,7 +45,7 @@ const workspace: CloudWorkspaceInput = {
 
 describe("pure app event projection", () => {
   test("owns exactly the domain roster and its stable keys", () => {
-    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(43)
+    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(42)
     expect(Object.keys(emptyAppProjection())).toEqual(Object.keys(APP_PROJECTION_SCHEMAS))
     expect(APP_PROJECTION_COLLECTION_NAMES).not.toContain("appEvents")
     expect(appProjectionKey("githubAppStatuses", { repo: "org/repo" })).toBe("org/repo")
@@ -177,7 +177,7 @@ describe("pure app event projection", () => {
     state = apply(state, { type: "repo.selected", actor: "user", id: "org/repo#workspace:computer" })
     expect(state.sessions[0]!.activeRepoKey).toBe("org/repo#workspace:computer")
     const card: Card = { id: "workspace-computer", kind: "workspace", title: "Computer", status: "active", createdAt: 1, ordinal: 1,
-      payload: { ...workspaceCardFacts(workspace), bookmarkHead: null, snapshots: [], sessions: [], files: [], facet: "files" } }
+      payload: { ...workspaceCardFacts(workspace), bookmarkHead: null, sessions: [], files: [], facet: "files" } }
     state = apply(state, { type: "card.upsert", actor: "system", card })
     state = apply(state, { type: "card.maximized", actor: "user", id: card.id })
     const frameId = cardFrameId(DEFAULT_BRANCH_ID, card.id)

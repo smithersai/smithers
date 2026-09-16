@@ -94,7 +94,7 @@ export const projectHttpFrame = (prior: HttpTurn, priorLeg: HttpTurnLeg, frame: 
     const existing = view.card(frame.id), patch = CardPatchSchema.safeParse(frame.patch)
     if (existing !== undefined && !isRuntimeOwnedCard(existing) && !view.protectedCard(frame.id) && patch.success && patch.data.kind === existing.kind) {
       const merged = CardSchema.safeParse({ ...existing, ...patch.data, id: existing.id,
-        payload: patch.data.payload === undefined ? existing.payload : existing.kind === "repo-onboarding" ? patch.data.payload : { ...existing.payload, ...patch.data.payload } })
+        payload: patch.data.payload === undefined ? existing.payload : { ...existing.payload, ...patch.data.payload } })
       if (merged.success) transitions.push({ type: "card.updated", actor: "smithers", id: frame.id, patch: CardPatchSchema.parse(merged.data) })
     }
   } else if (frame.type === "tool_call") {

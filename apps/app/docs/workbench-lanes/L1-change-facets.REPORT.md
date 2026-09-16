@@ -44,58 +44,6 @@ this lane's edits are confined to the change blocks. Nothing is committed.
 
 ## What the card renders now
 
-1. **Revisions + diff pickers.** `revisions[]` (seq, commit, parent commit,
-   source, agent session, snapshot, operation ids, created_at) ride the
-   card; the header reads `rev N of M` and `turn: <party>`. The Diff facet
-   has two `<select>` pickers (`parent|rev N → rev N|current`) bound to
-   `change.pins`; `parent → current` reads the bare route, every other pair
-   reads `?from=&to=` (jj interdiff). `change.view <id> <rev>` pins
-   `parent → rev`. "since my review" runs `review.since-mine`, which pins
-   `from` to the signed-in user's `last_reviewed_seq`; the facet's first line
-   names it and "show all" returns to `parent → current`. The diff card pins
-   `{ seq, commitId }` at the `to` revision.
-2. **Findings.** `GET …/findings` (every revision, so stale rows stay
-   visible): analyzer runs as headers (`name · state · rev N · paused/failure
-   reason`), rows `severity · analyzer · path:line · text · rev N[ · stale][ ·
-   <feedback word>]`; a row with recorded feedback dims. Actions `Please fix`
-   (confirm) and `Not useful` render and run registered flows that refuse
-   honestly — see mismatch 10.
-3. **Checks.** Statuses at the chosen revision's commit (`change.checks`
-   picker), newest per context, with `12 affected · 4 ran · 8 cached · 12s`
-   when the row states any work; `Open the computer` renders iff the
-   revision carries `workspace_snapshot_id` and runs `change.open-computer`
-   (confirm, `outbound:launch`): `POST /workspaces { snapshot_id }` on the
-   change's repo, then the workspace seam renders the card.
-4. **Review facet + header strip.** `reviews[]` off the change GET:
-   `reviewer · verdict at rev N · <confidence word> confidence · "summary" · K
-   revisions since`; the strip reads `agent approve at rev 2 (low
-   confidence)`, `will approve at rev 1 · 1 revision since`, `owners ✓ |
-   owners · N paths missing | owners · agent changes denied on <path>`. No
-   number is ever rendered for confidence.
-5. **Threads.** `○ open / ◐ done / ● resolved` from the row's lifecycle,
-   `stale` / `moved → :line` from the anchor, `done at rev N` from
-   `resolved_in_revision`; Done on open, Ack + Reopen on done, Reopen on
-   resolved, each `POST /landings/{n}/threads/{id}/<verb>` then a re-read.
-   The Land button reads `2 threads open` and the landing list's
-   `blocked_by` words (`check lint · agent LGTM missing · agent changes
-   denied on docs/guide.md`) and is disabled while any stands.
-6. **History.** `rev N · commit · source · agent session X · snapshot Y ·
-   time` per revision, `Diff to current` (change.pins) and `Open the
-   computer` per row; the last row `landed · by X · approved by Y at rev N ·
-   time` from `landed`. Zero revisions and no landed row → "No revisions
-   recorded for X." (a fact, not a "(plue#450)" line).
-7. **Walkthrough.** `GET …/walkthrough?rev=<current_seq>`; a 404 is "none"
-   and the facet is absent (no tab, no "coming soon"); present, it leads the
-   strip when the current revision's source is `agent` and the diff has more
-   than 20 files, else trails History. Renders sections (title, markdown
-   text, diagram source) and the quiz count.
-8. **Owners.** `owners` off the change GET → the Owners facet (rows `path ·
-   owners by name · policy word · approved by X at rev N | missing · ask
-   a, b`, Required approvers, Suggested reviewers), the header strip's third
-   row, and the Suggested reviewers slot at the foot of the Review facet
-   (plue's `suggested_reviewers` ∪ every `missing_approvals[].candidates`).
-   Teams render by name.
-
 Also: `change.resolve` now POSTs `/changes/{id}/conflicts/resolve { path }`
 (#455 exists) and names the agent session; `change.land` and `prs.land` send
 `{ commit_id }` (mismatch 17); the stack line drops "by request order" when
@@ -128,9 +76,6 @@ the change GET states `stack.position`, and adds `N of M landable` from
 
 ## Tests added (by name)
 
-`ChangeSeam.test.ts` (50; new or reshaped):
-revisions ride the change GET with parent commit, source, session, snapshot, and created_at (plue#450) · reviews ride the change GET with reviewer_kind, verdict, the confidence WORD, and last_reviewed_seq (plue#459) · the turn, the server's stack position, and the gate's blocks ride the card (plue#460, #452) · threads carry the lifecycle from done_at/resolved_at, the anchor from plue's `state` key, and resolved_in_revision (plue#461) · findings ride with their revision, state, feedback, and the analyzer runs (plue#454) · checks carry their work and workspace, newest per context, read at the current revision (plue#452) · change.checks reads the statuses at another revision's commit · owners ride the change GET … (plue#467) · the walkthrough at the current revision rides the card; a 404 is 'none', never an unread (plue#465) · landed provenance rides the change GET (plue#464) · change.view with a rev pins the Diff facet parent → rev through the interdiff route (plue#451) · change.view with a rev the change lacks refuses by name and reads no diff · change.pins reads the interdiff rev N → rev M and keeps the Diff facet · review.since-mine pins the diff from my last_reviewed_seq to current and names it · review.since-mine without a review of mine, or one at the current revision, says so and pins nothing · change.diff between two revisions reads the interdiff and pins the diff card at the `to` revision (plue#451) · change.diff with a pin no revision answers refuses by name — never a guessed pair · change.land PUTs the change's current commit_id, queues the carrying landing request, and re-reads · review.done / ack / reopen POST the thread transition on the carrying landing and re-read the card · a thread transition the platform refuses answers its message verbatim · a thread transition without a carrying landing request says so · findings.please-fix and findings.not-useful refuse honestly — the findings route is read-only · change.open-computer forks the revision's snapshot on the change's repo and lends the card to the workspace seam · change.open-computer refuses a degraded sign-in with the workspace enable wording · change.resolve POSTs the conflict's path, names the agent session, and re-reads (plue#455); plus the retained tests re-pointed at the live fixture.
-
 `ChangeCards.test.tsx` (36; new or reshaped):
 the header reads rev N of M and turn: <party> … · the review strip: the agent's verdict with its confidence WORD, the human approval with revisions since, the owners line · the diff facet's two pickers pin the interdiff through change.pins; since my review rides review.since-mine · the history facet renders each revision's provenance, Diff to current, Open the computer iff a snapshot exists, and the landed row · the history facet with no revisions and no landed row states the empty fact — nothing invented · the findings facet renders the analyzer runs, each finding …, Please fix, and Not useful · unread findings say so with the reason; a read, empty list states the empty fact — never 'don't exist yet' · the checks facet renders one row per context with its work, the revision picker, and Open the computer iff the revision carries a snapshot · the review facet renders the verdict rows and the threads with their glyph, anchor token, done revision, and one-click Done / Ack / Reopen · a thread whose lifecycle the server did not state renders no glyph and no act · the Land button names the gate's block: open threads and the landing list's blocked_by · the owners facet lists each touched path … · the walkthrough facet exists only when an artifact does, leads for a large agent revision, and renders its sections · the stack line labels an inferred position as by request order and drops the label for the server's own; the landable prefix rides when stated · (diff card) a revision pair reads rev N → rev M and the pin names its revision.
 
@@ -156,3 +101,4 @@ the header reads rev N of M and turn: <party> … · the review strip: the agent
 - **Thread authors**: plue's comment rows carry `user_id` only, so no name renders.
 - **Namespaces `review` / `findings`** in the slash menu are synthesized by `registry.ts` (label = id, empty summary); `registry.ts` is not a lane file, so no rows were added.
 - **`stack.landing_request_id`** is not used (a DB id); the landing number still needs the list read.
+

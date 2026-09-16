@@ -102,35 +102,3 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   })
 ]
 
-/** The Linear links on an issue, registered after the `linear.*` and `sync.*` flows. */
-export const issuesLinearFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({
-    name: "issues.link-linear",
-    form: { fields: { number: { label: "Issue number" }, identifier: { label: "Linear identifier" }, repo: { optionsFrom: "cloud-repos", kind: "text" } } },
-    summary: "Link an issue to a Linear identifier",
-    runtime: ["cloud"],
-    args: "<number> <identifier> [owner/repo]",
-    requires: ["signed-in"],
-    input: Schema.Struct({
-      number: Schema.Number,
-      identifier: Schema.String,
-      repo: Schema.optional(Schema.String)
-    }),
-    handler: ({ number, identifier, repo }) => actions.linkIssueLinear(number, identifier, repo)
-  }),
-  flow({
-    name: "issues.unlink-linear",
-    summary: "Remove an issue's Linear link",
-    runtime: ["cloud"],
-    confirm: "remove the issue's Linear link",
-    /* The identifier typed back is the flow's own input: the seam unlinks only when it matches, whoever invoked. */
-    args: "<number> <identifier> [owner/repo]",
-    requires: ["signed-in"],
-    input: Schema.Struct({
-      number: Schema.Number,
-      identifier: Schema.optional(Schema.String),
-      repo: Schema.optional(Schema.String)
-    }),
-    handler: ({ number, identifier, repo }) => actions.unlinkIssueLinear(number, identifier, repo)
-  })
-]

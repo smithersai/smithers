@@ -368,39 +368,6 @@ export type ChangeInput = Pick<
 export const changeRowId = (repoId: string, changeId: string): string => `${repoId}#${changeId}`
 
 /*
- * Lane sync (ADR 0005): one Linear integration as GET /api/linear answers it
- * — team, repository, active, last sync. The collection is the authority for
- * the Connectors surface's Linear row (per team, with last sync) and for the
- * bare-act resolution of linear.sync / linear.activity / linear.disconnect.
- * The wire's numeric id is the key, as a string.
- */
-export const LinearIntegrationRowSchema = z.object({
-  id: z.string(),
-  teamId: z.string(),
-  teamName: z.string(),
-  teamKey: z.string(),
-  repoOwner: z.string(),
-  repoName: z.string(),
-  active: z.boolean(),
-  remediation: z.string().nullable(),
-  lastSyncAt: z.string().nullable(),
-  createdAt: z.string().nullable(),
-  updatedAt: z.number(),
-  revision: z.number().int().nonnegative()
-})
-export type LinearIntegrationRow = z.infer<typeof LinearIntegrationRowSchema>
-
-/** The fields an integrations load writes (the reducer adds updatedAt/revision). */
-export type LinearIntegrationInput = Pick<
-  LinearIntegrationRow,
-  "id" | "teamId" | "teamName" | "teamKey" | "repoOwner" | "repoName" | "active" | "remediation" | "lastSyncAt" | "createdAt"
->
-
-/** The `org/repo` of an integration row. */
-export const linearIntegrationRepo = (row: Pick<LinearIntegrationRow, "repoOwner" | "repoName">): string =>
-  `${row.repoOwner}/${row.repoName}`
-
-/*
  * Lane sync (ADR 0005): the GitHub App status the app has READ for one
  * repository (GET /api/repos/{o}/{r}/github-app-status). The Connectors
  * surface's GitHub row counts these — every counted row is a DTO read, so a
@@ -1619,17 +1586,6 @@ export type AppTransition =
     type: "change.loaded"
     actor: "system"
     change: ChangeInput
-  }
-  /*
-   * Lane sync (ADR 0005): the Linear integrations list replaced (the signed-in
-   * user's whole list — the route lists per user, so there is no scope) and
-   * one repository's GitHub App status read. Both are DTO facts, never
-   * inferred state.
-   */
-  | {
-    type: "linear.integrations.loaded"
-    actor: "system"
-    integrations: ReadonlyArray<LinearIntegrationInput>
   }
   | {
     type: "github.app-status.loaded"

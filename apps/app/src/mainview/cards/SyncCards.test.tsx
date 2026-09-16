@@ -1,34 +1,15 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
 import { afterAll, describe, expect, jest, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { pillStatus } from "./CardRenderers"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "../state/AppController"
 import type { AppController } from "../state/AppController"
 import type { Card } from "../state/AppState"
-import { createAppStore } from "../state/AppStore"
-import { IssueCardBody } from "./IssueCards"
 import { RepoImportCardBody } from "./RepoImportCard"
 import { ConnectorSetupCardBody, endpointLabel, rateLimitHeldUntil, SyncOpsCardBody } from "./SyncCards"
 
-/*
- * The lane-sync cards (ADR 0005): the Linear wizard renders its steps, the
- * team pick, the repository pick, and the Connect act; the SAME card turned
- * connected offers Sync now / Activity / Disconnect; the GitHub card offers
- * the install and reconcile acts; the sync-ops card renders a run's live
- * state and counts, one row per op (with the wire's own status word, the
- * age, the verbatim error and Retry on a failure), the mirror's per-ref
- * rows and its `mirror_status` header word, and the ADR's rate-limit line.
- * Every act rides onRunCommand with a complete invocation.
- *
- * The states below are ADR 0005's own list: authorizing, active, a failed op
- * with Retry, an expired key, importing with counts, a failed import with
- * Retry, and rate-limited with a disabled Retry.
- */
+
 
 GlobalRegistrator.register()
 
@@ -39,43 +20,18 @@ afterAll(async () => {
   await GlobalRegistrator.unregister()
 })
 
-const memoryStorage = (): StorageApi => {
-  const data = new Map<string, string>()
-  return {
-    getItem: (key) => data.get(key) ?? null,
-    setItem: (key, value) => void data.set(key, value),
-    removeItem: (key) => void data.delete(key)
-  }
-}
-
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-const silentAgent: AgentPort = {
-  available: true,
-  startTurn: async () => ({ status: "started" }),
-  cancelTurn: async () => {},
-  subscribe: () => () => {}
-}
-
 type SetupPayload = Extract<Card, { kind: "connector-setup" }>["payload"]
 type SyncOpsPayload = Extract<Card, { kind: "sync-ops" }>["payload"]
 
 const setupCard = (overrides: Partial<SetupPayload> = {}): Extract<Card, { kind: "connector-setup" }> => ({
-  id: "connector-setup-linear-will/smithers",
+  id: "connector-setup-github-will/smithers",
   kind: "connector-setup",
-  title: "Connect Linear · will/smithers",
+  title: "Connect GitHub · will/smithers",
   status: "active",
   createdAt: 0,
   ordinal: 0,
   payload: {
-    connector: "linear",
+    connector: "github",
     repo: "will/smithers",
     phase: "setup",
     steps: [
@@ -84,25 +40,20 @@ const setupCard = (overrides: Partial<SetupPayload> = {}): Extract<Card, { kind:
       { id: "repository", label: "Repository", state: "pending", detail: "will/smithers" },
       { id: "confirm", label: "Confirm", state: "pending", detail: null }
     ],
-    teams: [
-      { id: "team-eng", name: "Engineering", key: "ENG" },
-      { id: "team-design", name: "Design", key: "DES" }
-    ],
     ...overrides
   }
 })
 
 const syncOpsCard = (overrides: Partial<SyncOpsPayload> = {}): Extract<Card, { kind: "sync-ops" }> => ({
-  id: "sync-ops-linear-7",
+  id: "sync-ops-mirror-7",
   kind: "sync-ops",
-  title: "Sync · Linear ENG ↔ will/smithers",
+  title: "Sync · Mirror · will/smithers",
   status: "active",
   createdAt: 0,
   ordinal: 0,
   payload: {
-    subject: "Linear ENG ↔ will/smithers",
-    source: "linear",
-    integrationId: "7",
+    subject: "Mirror · will/smithers",
+    source: "github-mirror",
     repo: "will/smithers",
     runState: null,
     ops: [],
@@ -149,209 +100,11 @@ const click = (host: HTMLElement, text: string): void => {
 /** An ISO stamp a number of minutes from now — the rate-limit line reads against the real clock. */
 const minutesFromNow = (minutes: number): string => new Date(Date.now() + minutes * 60_000).toISOString()
 
-const renderWith = (controller: AppController, node: React.ReactNode) => {
-  const host = document.createElement("div")
-  document.body.append(host)
-  flushSync(() => {
-    createRoot(host).render(<ControllerTestProvider controller={controller}>{node}</ControllerTestProvider>)
-  })
-  return host
-}
-
-const controllerWithRepositories = async (): Promise<AppController> => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  store.dispatch({
-    type: "repositories.loaded",
-    actor: "system",
-    repositories: [
-      { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: null },
-      { id: "acme/flows", org: "acme", ownerKind: "org", name: "flows", head: null }
-    ]
-  })
-  return createAppController(store, unavailableRepositories, silentAgent, {
-    fetchImpl: async () => new Response("{}", { headers: { "content-type": "application/json" } })
-  })
-}
-
-describe("ConnectorSetupCardBody — the Linear wizard", () => {
-  test("the steps render; the active team step lists the teams one click each", () => {
-    const { host, commands } = renderSetup(setupCard())
-
-    expect(host.textContent).toContain("Authorize in your browser")
-    expect(host.textContent).toContain("authorized as Will")
-    click(host, "ENG · Engineering")
-    expect(commands).toEqual([{ name: "linear.connect.team", args: "team-eng will/smithers" }])
-  })
-
-  test("the authorize step's Open Linear runs the handoff act", () => {
-    const { host, commands } = renderSetup(
-      setupCard({
-        steps: [
-          { id: "authorize", label: "Authorize in your browser", state: "active", detail: null },
-          { id: "team", label: "Team", state: "pending", detail: null },
-          { id: "repository", label: "Repository", state: "pending", detail: "will/smithers" },
-          { id: "confirm", label: "Confirm", state: "pending", detail: null }
-        ],
-        teams: undefined
-      })
-    )
-
-    click(host, "Open Linear")
-    expect(commands).toEqual([{ name: "linear.connect.open", args: "will/smithers" }])
-  })
-
-  test("ADR 0005 authorizing: step 1 is the only act, and no later step claims anything", () => {
-    const { host, commands } = renderSetup(
-      setupCard({
-        steps: [
-          { id: "authorize", label: "Authorize in your browser", state: "active", detail: null },
-          { id: "team", label: "Team", state: "pending", detail: null },
-          { id: "repository", label: "Repository", state: "pending", detail: "will/smithers" },
-          { id: "confirm", label: "Confirm", state: "pending", detail: null }
-        ],
-        teams: undefined
-      })
-    )
-
-    /* The card wears the running pill while the browser step is out. */
-    expect(pillStatus(setupCard({ phase: "setup" }))).toBe("running")
-    expect(host.textContent).toContain("Authorize in your browser")
-    /* No team list, no repository pick, no Connect — nothing is offered before its step. */
-    expect([...host.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      expect.stringContaining("Open Linear")
-    ])
-    click(host, "Open Linear")
-    expect(commands).toEqual([{ name: "linear.connect.open", args: "will/smithers" }])
-  })
-
-  test("ADR 0005 expired key: the wording rides step 1 and Open Linear is still the act", () => {
-    const { host, commands } = renderSetup(
-      setupCard({
-        steps: [
-          { id: "authorize", label: "Authorize in your browser", state: "error", detail: null, error: "authorization expired · Open Linear again" },
-          { id: "team", label: "Team", state: "pending", detail: null },
-          { id: "repository", label: "Repository", state: "pending", detail: "will/smithers" },
-          { id: "confirm", label: "Confirm", state: "pending", detail: null }
-        ],
-        teams: undefined
-      })
-    )
-
-    expect(host.textContent).toContain("authorization expired · Open Linear again")
-    click(host, "Open Linear")
-    expect(commands).toEqual([{ name: "linear.connect.open", args: "will/smithers" }])
-  })
-
-  test("a failed step renders the server error verbatim", () => {
-    const { host } = renderSetup(
-      setupCard({
-        steps: [
-          { id: "authorize", label: "Authorize in your browser", state: "error", detail: null, error: "Reading /linear/setup failed (404)" },
-          { id: "team", label: "Team", state: "pending", detail: null },
-          { id: "repository", label: "Repository", state: "pending", detail: "will/smithers" },
-          { id: "confirm", label: "Confirm", state: "pending", detail: null }
-        ]
-      })
-    )
-
-    expect(host.textContent).toContain("Reading /linear/setup failed (404)")
-  })
-
-  test("the repository pick lists the loaded repositories", async () => {
-    const controller = await controllerWithRepositories()
-    const { host, commands } = renderSetup(
-      setupCard({
-        steps: [
-          { id: "authorize", label: "Authorize in your browser", state: "done", detail: "authorized" },
-          { id: "team", label: "Team", state: "done", detail: "ENG · Engineering" },
-          { id: "repository", label: "Repository", state: "active", detail: "will/smithers" },
-          { id: "confirm", label: "Confirm", state: "pending", detail: null }
-        ],
-        teamId: "team-eng"
-      }),
-      controller
-    )
-
-    click(host, "acme/flows")
-    expect(commands).toEqual([{ name: "linear.connect.repo", args: "will/smithers acme/flows" }])
-  })
-
-  test("authorized step and team picked render Connect without a setup handle", () => {
-    const { host, commands } = renderSetup(setupCard({ teamId: "team-eng" }))
-
-    click(host, "Connect")
-    expect(commands).toEqual([{ name: "linear.connect.confirm", args: "will/smithers" }])
-  })
-
-  test("the connected state offers Sync now, Activity, and Disconnect", () => {
-    const { host, commands } = renderSetup(
-      setupCard({
-        phase: "connected",
-        integration: { id: 7, teamKey: "ENG", teamName: "Engineering", active: true, lastSyncAt: null }
-      })
-    )
-
-    expect(host.textContent).toContain("ENG · Engineering → will/smithers")
-    click(host, "Sync now")
-    click(host, "Activity")
-    expect(commands).toEqual([
-      { name: "linear.sync", args: "7" },
-      { name: "linear.activity", args: "7" }
-    ])
-  })
-
-  test("the connected state names the Linear account the integration authorized as (plue#491)", () => {
-    const { host } = renderSetup(
-      setupCard({
-        phase: "connected",
-        actor: "Will",
-        integration: { id: 7, teamKey: "ENG", teamName: "Engineering", active: true, lastSyncAt: null }
-      })
-    )
-
-    expect(host.textContent).toContain("authorized as Will")
-  })
-
-  test("a connected card whose wire named no actor says nothing about one", () => {
-    const { host } = renderSetup(
-      setupCard({
-        phase: "connected",
-        actor: null,
-        integration: { id: 7, teamKey: "ENG", teamName: "Engineering", active: true, lastSyncAt: null }
-      })
-    )
-
-    expect(host.textContent).not.toContain("authorized as")
-  })
-
-  test("Disconnect arms a confirm row; only its second click runs the flow, with the team key typed back", () => {
-    /*
-     * Review finding 4: one click on a ghost button deleted the integration.
-     * The card-level confirm is the workspace card's rule — the act itself
-     * carries the team key as its own input, so a slash cannot skip it either.
-     */
-    const { host, commands } = renderSetup(
-      setupCard({
-        phase: "connected",
-        integration: { id: 7, teamKey: "ENG", teamName: "Engineering", active: true, lastSyncAt: null }
-      })
-    )
-
-    expect(host.textContent).not.toContain("Disconnect Linear ENG from will/smithers?")
-    click(host, "Disconnect")
-    expect(commands).toEqual([])
-    expect(host.textContent).toContain("Disconnect Linear ENG from will/smithers?")
-
-    click(host, "Disconnect ENG")
-    expect(commands).toEqual([{ name: "linear.disconnect", args: "7 ENG" }])
-  })
-})
-
 describe("the frame pill of a sync-ops card", () => {
   test("a null run state (nothing has answered yet) is never done, and a wire word is never renamed", () => {
     /* Review finding 3: null fell into "done", so a sync that had just started wore a finished pill. */
     expect(pillStatus(syncOpsCard({ runState: null, trigger: "sync started · run 41" }))).toBe("pending")
-    /* Every word below is one of plue's own CHECK values, Linear's and the mirror's. */
+    
     expect(pillStatus(syncOpsCard({ runState: "pending" }))).toBe("pending")
     expect(pillStatus(syncOpsCard({ runState: "running" }))).toBe("running")
     expect(pillStatus(syncOpsCard({ runState: "completed" }))).toBe("completed")
@@ -359,66 +112,6 @@ describe("the frame pill of a sync-ops card", () => {
     expect(pillStatus(syncOpsCard({ runState: "succeeded" }))).toBe("succeeded")
     expect(pillStatus(syncOpsCard({ runState: "failed" }))).toBe("failed")
     expect(pillStatus(syncOpsCard({ runState: null, error: "Starting the sync failed (500)" }))).toBe("failed")
-  })
-})
-
-describe("IssueCardBody — the Linear link (lane sync)", () => {
-  const issueCard = (url: string): Extract<Card, { kind: "issue" }> => ({
-    id: "issue-will/smithers-90",
-    kind: "issue",
-    title: "#90",
-    status: "acted",
-    createdAt: 0,
-    ordinal: 0,
-    payload: {
-      repo: "will/smithers",
-      number: 90,
-      title: "Flaky test",
-      state: "open",
-      author: "ana",
-      issueBody: "",
-      labels: [],
-      comments: [],
-      linear: { identifier: "ENG-482", url }
-    }
-  })
-
-  /** The same issue before anyone linked it: the DTO carries no mapping, so the card offers the act instead. */
-  const unlinkedCard = (): Extract<Card, { kind: "issue" }> => {
-    const { payload, ...rest } = issueCard("https://linear.app/acme/issue/ENG-482/flaky")
-    const { linear: _linear, ...unlinked } = payload
-    return { ...rest, payload: unlinked }
-  }
-
-  test("an https linear.app URL off the DTO is the link; any other scheme or host renders the identifier as text", async () => {
-    /* Review finding 10: the href was rendered straight off the DTO while the install URL was origin-vetted. */
-    const controller = await controllerWithRepositories()
-    const linked = renderWith(controller, <IssueCardBody card={issueCard("https://linear.app/acme/issue/ENG-482/flaky")} onRunCommand={() => {}} />)
-    expect(linked.querySelector("a")?.getAttribute("href")).toBe("https://linear.app/acme/issue/ENG-482/flaky")
-    expect(linked.textContent).toContain("Linear ENG-482")
-
-    for (const hostile of ["javascript:alert(1)", "http://linear.app/acme/issue/ENG-482", "https://linear.app.evil.example/x", "not a url"]) {
-      const host = renderWith(controller, <IssueCardBody card={issueCard(hostile)} onRunCommand={() => {}} />)
-      expect(host.querySelector("a")).toBeNull()
-      expect(host.textContent).toContain("Linear ENG-482")
-    }
-  })
-
-  test("Link to Linear is the button door of issues.link-linear: it rides onRunCommand and the body needs no controller", () => {
-    /*
-     * Review finding ui-cards-tabs/maintainability/6: the button carried
-     * data-flow="issues.link-linear" while calling controller.changeDraft, so
-     * the file's own header promise (every act rides onRunCommand) was false
-     * and the act never ran the flow it named. Rendered bare here: a reach
-     * back for the controller throws out of useController.
-     */
-    const commands: Array<{ name: string; args?: string }> = []
-    const { host } = render(<IssueCardBody card={unlinkedCard()} onRunCommand={(name, args) => commands.push({ name, args })} />)
-    const button = buttonNamed(host, "Link to Linear")
-    expect(button.getAttribute("data-flow")).toBe("issues.link-linear")
-    flushSync(() => button.click())
-    /* Only the number is carried: the identifier is the field THE FORM LAW renders, prefilled with what the button gave. */
-    expect(commands).toEqual([{ name: "issues.link-linear", args: "90" }])
   })
 })
 
@@ -700,7 +393,7 @@ describe("SyncOpsCardBody", () => {
       <SyncOpsCardBody card={syncOpsCard({ runId: "41", trigger: "sync started · run 41" })} onRunCommand={() => {}} />
     )
 
-    expect(host.textContent).toContain("Linear ENG ↔ will/smithers")
+    expect(host.textContent).toContain("Mirror · will/smithers")
     expect(host.textContent).toContain("sync started · run 41")
     /* Nothing has answered yet, so nothing claims a state or a count. */
     expect(host.textContent).not.toContain("of ")
@@ -717,7 +410,7 @@ describe("SyncOpsCardBody", () => {
           ops: [
             {
               id: "12",
-              source: "linear",
+              source: "github-mirror",
               target: "smithers-cloud",
               entity: "issue",
               entityId: "ENG-482",
@@ -734,7 +427,7 @@ describe("SyncOpsCardBody", () => {
 
     expect(host.textContent).toContain("Running")
     expect(host.textContent).toContain("10 of 12 · 1 failed")
-    expect(host.textContent).toContain("linear → Smithers Cloud issue ENG-482 create")
+    expect(host.textContent).toContain("github-mirror → Smithers Cloud issue ENG-482 create")
     /* ADR row: "… action, age". */
     expect(host.textContent).toContain("just now")
     /* Nothing succeeded may offer a Retry. */
@@ -748,7 +441,7 @@ describe("SyncOpsCardBody", () => {
      */
     expect(endpointLabel("jjhub")).toBe("Smithers Cloud")
     expect(endpointLabel("smithers-cloud")).toBe("Smithers Cloud")
-    expect(endpointLabel("linear")).toBe("linear")
+    expect(endpointLabel("github")).toBe("github")
     expect(endpointLabel("github")).toBe("github")
 
     const { host } = render(
@@ -759,7 +452,7 @@ describe("SyncOpsCardBody", () => {
             {
               id: "77",
               source: "jjhub",
-              target: "linear",
+              target: "github",
               entity: "issue",
               entityId: "77",
               action: "update",
@@ -773,53 +466,8 @@ describe("SyncOpsCardBody", () => {
       />
     )
 
-    expect(host.textContent).toContain("Smithers Cloud → linear issue 77 update")
+    expect(host.textContent).toContain("Smithers Cloud → github issue 77 update")
     expect(host.textContent).not.toContain("jjhub")
-  })
-
-  test("ADR 0005 failed op: the error is verbatim on the row, with Retry naming the op", () => {
-    const commands: Array<{ name: string; args?: string }> = []
-    const { host } = render(
-      <SyncOpsCardBody
-        card={syncOpsCard({
-          runState: "completed",
-          ops: [
-            {
-              id: "90",
-              source: "smithers-cloud",
-              target: "linear",
-              entity: "issue",
-              entityId: "90",
-              action: "update",
-              status: "failed",
-              error: "Linear API: 422 label 'infra' does not exist on team ENG",
-              retryable: true,
-              at: null
-            },
-            {
-              id: "91",
-              source: "linear",
-              target: "smithers-cloud",
-              entity: "comment",
-              entityId: "ENG-480",
-              action: "create",
-              status: "skipped",
-              retryable: false,
-              at: null
-            }
-          ]
-        })}
-        onRunCommand={(name, args) => commands.push({ name, args })}
-      />
-    )
-
-    expect(host.textContent).toContain("Smithers Cloud → linear issue 90 update")
-    expect(host.textContent).toContain("Linear API: 422 label 'infra' does not exist on team ENG")
-    /* The skipped row is a state, not a failure, and it is never filtered out. */
-    expect(host.textContent).toContain("Skipped")
-    expect(host.querySelectorAll("button")).toHaveLength(1)
-    click(host, "Retry")
-    expect(commands).toEqual([{ name: "sync.retry", args: "90" }])
   })
 
   test("a mirror run renders one row per ref and the repository's own mirror_status word", () => {
@@ -900,7 +548,7 @@ describe("SyncOpsCardBody", () => {
     /* ADR 0005's header line, with the count plue now states. */
     expect(host.textContent).toContain("behind GitHub · 3 refs · 1 failed")
     expect(host.textContent).toContain("remote rejected: non-fast-forward")
-    /* A mirror row's Retry is the MIRROR's route, never the Linear op retry. */
+    
     click(host, "Retry")
     expect(commands).toEqual([{ name: "github.mirror.retry-ref", args: "refs/heads/wip will/smithers" }])
   })
@@ -928,11 +576,11 @@ describe("SyncOpsCardBody", () => {
     expect(host.textContent).not.toContain("refs")
   })
 
-  test("past the cut, Show more widens the window; older ops offer Load older", () => {
+  test("past the cut, Show more widens the window", () => {
     const commands: Array<{ name: string; args?: string }> = []
     const ops = Array.from({ length: 12 }, (_, index) => ({
       id: `op-${index}`,
-      source: "linear",
+      source: "github-mirror",
       target: "smithers-cloud",
       entity: "issue",
       entityId: `ENG-${index}`,
@@ -943,17 +591,15 @@ describe("SyncOpsCardBody", () => {
     }))
     const { host } = render(
       <SyncOpsCardBody
-        card={syncOpsCard({ ops, window: "24h", hasOlder: true })}
+        card={syncOpsCard({ ops })}
         onRunCommand={(name, args) => commands.push({ name, args })}
       />
     )
 
     expect(host.textContent).not.toContain("ENG-11")
     click(host, "Show more")
-    click(host, "Load older")
     expect(commands).toEqual([
-      { name: "sync.ops.show-more", args: "sync-ops-linear-7" },
-      { name: "sync.ops.load-older", args: "sync-ops-linear-7" }
+      { name: "sync.ops.show-more", args: "sync-ops-mirror-7" },
     ])
   })
 })

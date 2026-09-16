@@ -32,7 +32,7 @@ export interface PtyCreateInput {
   readonly rows: number
   readonly harnessId?: Harness["id"]
   /**
-   * A named role (AgentRoles.ts), built-in or custom: the server resolves it
+   * A named role (AgentRoles.ts), built-in: the server resolves it
    * against the agents store to the role's harness and composes the launch
    * argv, so the renderer never supplies argv.
    */
@@ -125,8 +125,8 @@ export interface PtyManagerOptions {
   /** The harness table, read when a harness tab opens (its binary and launch argv). */
   readonly harnesses: () => Promise<ReadonlyArray<Harness>>
   /**
-   * The agents (routes/agents.ts, `<stateDir>/agents.json`), read when a
-   * role launches: a custom agent resolves exactly like a built-in. Default
+   * The built-in agents (routes/agents.ts), read when a
+   * role launches: the built-in role determines its harness. Default
    * the built-in table (tests, one-shot hosts).
    */
   readonly roles?: () => Promise<ReadonlyArray<AgentRole>>

@@ -11,7 +11,7 @@ import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
 /** The `workspace` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
-export const namespace: Namespace = { id: "workspace", label: "Boxes", summary: "Open and drive the box for a branch: stream, snapshot, and inspect it (ADR 0002)" }
+export const namespace: Namespace = { id: "workspace", label: "Boxes", summary: "Open and drive the box for a branch: stream and inspect it (ADR 0002)" }
 
 /**
  * The repository `/desktop` will act on: the one the invocation named, else
@@ -102,67 +102,6 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     handler: ({ workspaceId }) => actions.resumeWorkspace(workspaceId)
   }),
   flow({
-    name: "workspace.fork",
-    summary: "Fork a cloud workspace",
-    runtime: ["cloud"],
-    confirm: "fork the workspace",
-    args: "[workspaceId] [name]",
-    requires: ["signed-in"],
-    input: Schema.Struct({ workspaceId: Schema.optional(Schema.String), name: Schema.optional(Schema.String) }),
-    handler: ({ workspaceId, name }) => actions.forkWorkspace(workspaceId, name)
-  }),
-  flow({
-    name: "workspace.snapshot",
-    summary: "Snapshot a cloud workspace",
-    runtime: ["cloud"],
-    confirm: "snapshot the workspace",
-    args: "[workspaceId] [name]",
-    requires: ["signed-in"],
-    input: Schema.Struct({ workspaceId: Schema.optional(Schema.String), name: Schema.optional(Schema.String) }),
-    handler: ({ workspaceId, name }) => actions.snapshotWorkspace(workspaceId, name)
-  }),
-  flow({
-    name: "workspace.snapshot.delete",
-    summary: "Delete a workspace snapshot",
-    runtime: ["cloud"],
-    hidden: true,
-    confirm: "delete the snapshot",
-    args: "<snapshotId> [workspaceId]",
-    requires: ["signed-in"],
-    input: Schema.Struct({ snapshotId: Schema.String, workspaceId: Schema.optional(Schema.String) }),
-    handler: ({ snapshotId, workspaceId }) => actions.deleteWorkspaceSnapshot(snapshotId, workspaceId)
-  }),
-  flow({
-    /* The snapshot row's "Fork from": a new workspace whose image is the snapshot. */
-    name: "workspace.snapshot.fork",
-    summary: "Create a workspace from a snapshot",
-    runtime: ["cloud"],
-    hidden: true,
-    capabilities: ["outbound:launch"],
-    confirm: "create a workspace from the snapshot",
-    args: "<snapshotId> [workspaceId]",
-    requires: ["signed-in"],
-    input: Schema.Struct({ snapshotId: Schema.String, workspaceId: Schema.optional(Schema.String) }),
-    handler: ({ snapshotId, workspaceId }) => actions.forkWorkspaceFromSnapshot(snapshotId, workspaceId)
-  }),
-  flow({
-    name: "workspace.template",
-    form: {
-      fields: { workspaceId: { optionsFrom: "workspaces" } },
-      args: (payload) => line(text(payload, "snapshotId"), text(payload, "workspaceId"), flag(payload, "name"))
-    },
-    summary: "Create a workspace template from a snapshot",
-    runtime: ["cloud"],
-    args: "<snapshotId> <name> [workspaceId]",
-    requires: ["signed-in"],
-    input: Schema.Struct({
-      snapshotId: Schema.String,
-      name: Schema.String,
-      workspaceId: Schema.optional(Schema.String)
-    }),
-    handler: ({ snapshotId, name, workspaceId }) => actions.templateWorkspaceSnapshot(snapshotId, name, workspaceId)
-  }),
-  flow({
     name: "workspace.sessions",
     summary: "List a cloud workspace's sessions",
     runtime: ["cloud"],
@@ -205,7 +144,7 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     requires: ["signed-in"],
     input: Schema.Struct({
       workspaceId: Schema.String,
-      facet: Schema.Literals(["terminal", "files", "services", "snapshots", "egress", "desktop"])
+      facet: Schema.Literals(["terminal", "files", "services", "egress", "desktop"])
     }),
     prepare: ({ workspaceId, facet }) => actions.setWorkspaceFacet.preload?.(workspaceId, facet),
     handler: ({ workspaceId, facet }) => actions.setWorkspaceFacet(workspaceId, facet)

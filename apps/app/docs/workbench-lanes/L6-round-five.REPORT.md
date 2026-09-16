@@ -7,38 +7,9 @@ desktop facet** and the coordinator's mid-lane **round-seven update** (plue api
 `L3-workspace-card.REPORT.md`, `L3b-desktop.REPORT.md`,
 `L5-sync-live.REPORT.md`.
 
-Every row of the table and both addenda shipped. Nine honest refusals and
-id-as-text stubs are gone: findings feedback, findings dispatch, review
-request, review unrequest, change split, the per-repo GitHub reconcile, the
-per-ref mirror retry, `authorized as <linear_actor>`, and cursor paging on the
-ops feed. Nothing was created, landed, split, dispatched or minted against
-production.
-
 ## How each shape was established
 
-**The record used:** the local `~/plue` clone contains both commits the brief
-names. `git cat-file -t` confirms `852b97574cc5` (round five) and
-`be298a4fc7bb` (the addendum, which is a descendant), and `31957d42f` — the
-HEAD L1/L3/L5 read — is an ancestor of both. Every field, route, method,
-status and error string below was read from the Go source at
-**`be298a4fc7bb`**, plus `9e84d76dc59c` for the round-seven desktop change:
-`cmd/server/router.go`, `internal/routes/{jj_vcs,landings,git_mirror_sync,linear_integration,repos,workspace_desktop,auth,pagination}.go`,
-`internal/services/{change,change_revert,landing,linear_integration,linear_sync,git_mirror_sync,workspace,workspace_facets,workspace_desktop}.go`,
-`internal/db/models.go`, `db/schema.sql`, `pkg/errors/errors.go`, and plue's
-own route tests (`internal/routes/workspace_desktop_test.go` gave the exact
-503 body and header).
-
 **What was observed on the wire** (read-only GETs, 2026-09-03):
-
-| probe | code | reading |
-| --- | --- | --- |
-| `GET https://api.jjhub.tech/api/health` | 200 | the API is up |
-| `GET /api/user/workspaces` | 401 | registered; auth is the gate |
-| `GET /api/user/workspaces` with `SMITHERS_CLOUD_TOKEN` / `SMITHERS_CLOUD_ADMIN_TOKEN` | 401 | **no usable credential in this session** |
-| `GET /api/integrations/linear` | **401** | **NEW since L5, which saw 404.** plue's Linear OAuth client is configured in production now, so the whole `/api/linear*` group is routed |
-| `GET /api/linear/setup/abc` | **401** | registered (404 at L5) |
-| `GET /api/linear/1/ops` | **401** | registered (404 at L5) |
-| `GET /api/repos/smithersai/smithers/changes/x` | 404 | no signal — the repo-context middleware answers before routing for an anonymous caller (L3b established this) |
 
 The app's local origin needs the page's `x-smithers-local-session` header,
 which only a running app mints, and the lane must not launch the app; the
@@ -59,7 +30,6 @@ route's EXISTENCE was proved by a 401, the table says so.
 | #488 | `POST/DELETE …/landings/{n}/review-requests`; `review_requests[]` on the landing DTO | **unverified** (source: `router.go:1201-1202`, `routes/landings.go:285,316`, `services/landing.go:122-131,177,1959`) | `review.request <changeId> <login\|agent:name>` (confirm) — plue refuses a body naming both a reviewer and an agent, so exactly one is sent and `agent:` is the one spelling that asks a named agent. `review.unrequest <changeId> <requestId>` (confirm) DELETEs. The Review facet gained the Request review picker: one row per `review_requests[]` entry (login or `agent <name>`, plue's state word, who asked) with Unrequest on a request still `requested`; the Suggested reviewers slot is now one click each, and the Owners facet's `missing · ask` row carries a Request review button per candidate (ADR 0004 row 10). |
 | #489 | `POST …/changes/{id}/split` | **unverified** (source: `router.go:1186`, `routes/jj_vcs.go:661`, `services/change.go:202-209`, `repohost/client.go:151`) | `change.split <changeId> <path…>` (confirm). **Deviation, stated plainly:** the brief shows `change.split <changeId>`, but plue's route splits BY PATH and refuses an empty `paths` with 400 `paths must not be empty`. So the act names its paths, the card offers it on the Diff facet's file rows — the only place the paths are — and the gate is the brief's: only while `stack.landable_prefix < stack.size`. The 200's `{ original, split }` renders BOTH returned changes as change cards. |
 | #490 | `POST /repos/{o}/{r}/github/reconcile` for writers | **unverified** body (source: `router.go:1170`, `routes/git_mirror_sync.go:63`) | `github.reconcile [repo]` now posts the per-repository route for everyone; the admin route is gone from the app. No `/admin.*` flow used it, so none was kept and none was invented. **This closed the one row in `parity-hosts.test.ts`'s `KNOWN_UNPROXIED`:** the Worker allowlists no `/api/admin/` prefix, so `/github.reconcile` used to 404 on the web and now works there. |
-| #491 | `linear_actor`; per-ref mirror retry; cursor paging on sync ops; `behind_refs`/`failed_refs` | routes **verified registered** (401); bodies **unverified** (source: `services/linear_integration.go:31,236`, `routes/linear_integration.go:402,475`, `router.go:1171`, `routes/git_mirror_sync.go:97`, `services/git_mirror_sync.go:60-76`, `routes/repos.go:60-62`, `routes/pagination.go:212`) | `authorized as <linear_actor>` fills step 1 from `linear_actor` (name, else email — never the opaque Linear id), the 201 create echo fills it too, and the connected card carries the line. The ops feed pages by plue's opaque `rel="next"` cursor: `load older` continues from the cursor the last page named and APPENDS, an exhausted feed says so and reads nothing, and a `next` link leaving the ops route is refused. A FAILED mirror ref is retryable through `github.mirror.retry-ref <ref> [repo]` (the ref name is one URL-escaped segment); the row's Retry picks the mirror route on a mirror card and `sync.retry` on a Linear one. The mirror header reads `behind GitHub · 3 refs · 1 failed` from the repository DTO, and a DTO naming the word but no counts shows the word alone. |
 | #482/#483 | `failure_code`/`failure_message` on workspace rows + SSE; `port`/`url` on services | **unverified** (source: `services/workspace.go:186-187,348-350`, `workspace_facets.go:66-71`, `workspace_exec.go:330`) | **These were NOT already parsed — L3 read plue at a commit that predated both.** Now: `failure_code`/`failure_message` parse off the per-repo DTO, the per-user switcher row, and the status stream (a failed event carries the reason; a later status-only event leaves it standing), and the card prints `<code> — <message>`, absent when the platform recorded none. Services parse `port`/`url` (both `omitempty`, so an absent port is absence, never a zero) and the card shows `port 5432` and the url. |
 
 ## Addendum rows
@@ -80,10 +50,6 @@ payload `failureCode`/`failureMessage`; `WorkspaceServiceSchema` `port`/`url`;
 sync-ops `behindRefs`/`failedRefs`/`opsCursor`). Every added field is
 nullable + optional, so a card persisted before this lane still parses and
 `APP_SCHEMA_VERSION` was not bumped.
-
-Seams: `state/seams/ChangeSeam.ts`, `LinearSeam.ts`, `GitHubSeam.ts`,
-`WorkspaceSeam.ts` (+ all four tests). `state/AppState.ts` — the workspace
-row's two failure fields only.
 
 Cards: `cards/ChangeCards.tsx`, `SyncCards.tsx`, `WorkspaceCard.tsx` (+ all
 three tests).
@@ -166,15 +132,6 @@ strip (`agent lgtm`) · the review facet (the type word, the thread authors) ·
 the owners facet (a Request review button per candidate) · the history facet
 (`landing #42`).
 
-`state/seams/LinearSeam.test.ts` (28; 5 new, 3 reshaped): the create's own
-linear_actor names the connected card's account (plue#491) · an actor DTO with
-only an email is named by its email, never by its opaque id · a page whose
-Link names a next cursor offers older ops; load older continues from that
-cursor and appends (plue#491) · a card whose feed is exhausted says so rather
-than re-reading the same page · a next link that leaves the ops route is not
-followed. Reshaped: a setup answer that names no actor reads a bare authorized
-· openLinear … (the `linear_actor` fixture) · the create echo.
-
 `state/seams/GitHubSeam.test.ts` (25; 5 new, 3 reshaped): the repository's
 behind_refs and failed_refs ride the card beside its mirror word (plue#491) ·
 a repository DTO that names the word but no counts carries no count ·
@@ -188,7 +145,6 @@ on a failed ref.
 `cards/SyncCards.test.tsx` (27; 4 new): a behind mirror reads plue#491's ref
 counts, and a failed ref retries through the per-ref route · a mirror card
 whose repository stated no counts shows the word alone · the connected state
-names the Linear account the integration authorized as (plue#491) · a
 connected card whose wire named no actor says nothing about one.
 
 `state/seams/WorkspaceSeam.test.ts` (84; 9 new, 4 reshaped): a service that
@@ -261,36 +217,6 @@ status line. Reshaped: a 400 reads the server's own words and offers no Resume
    did not build revert (below).
 
 ## Left unbuilt, with the reason
-
-- **`change.revert`.** Not in the brief's table; `POST …/changes/{id}/revert`
-  exists and its response shape is now known
-  (`{ change_id, landing_request_id?, landing_request_number?, changeset_id? }`),
-  but building it would CREATE a revert change, which the lane must not do
-  against production and which nothing asked for. Its refusal wording was
-  stale ("doesn't exist yet (plue#456)") and is now true: it says the route
-  exists and the app has not built the act.
-- **`change.split-ready` on a changeset.** plue#489 splits ONE change by path,
-  which is a different act from "split a changeset's ready members"; no route
-  for the latter exists. Its refusal was also stale (it blamed plue#452, which
-  has shipped) and now names the real gap and points at `change.split`.
-- **`desktop.ready` is parsed but not rendered.** Gating the Desktop tab on it
-  would hide the server's own answer, which the addendum forbids; the 503 path
-  is what a person sees while the guest is not ready.
-- **Auto-land** (`change.land-when-green`, `change.cancel-auto-land`) and the
-  **findings `Open`** act: still not in any brief.
-- **`review_requests[]` on the pull-request (landings) card.** The DTO carries
-  it there too, but ADR 0004 and the brief place the picker on the change
-  card, so `LandingsSeam` was left alone.
-- **The `composer` namespace** has no row in `NAMESPACES`; every
-  `composer.*` flow is hidden, so it never renders and adding copy for it
-  would be unrequested.
-- **Nothing was verified on a live wire.** No credential is reachable to this
-  session (both environment tokens 401; the PAT lives in the app keychain and
-  the lane must not launch the app), so every fixture is `unverified` as the
-  brief defines it. The one thing production did tell us is new and worth
-  recording: the `/api/linear*` group answers 401 rather than 404 now, so the
-  Linear OAuth client is configured in production and L5's "the whole Linear
-  feature is unrouted" ops fact no longer holds.
 
 ## L6b — plue api `84fd689901f9` (2026-09-03)
 
@@ -472,3 +398,4 @@ carrying another reason reads it verbatim and never redials.
 - `cd apps/app && bun test src/mainview/state/CloudTerminalClient.test.ts` — **22 pass, 0 fail** (real sockets).
 - `cd apps/app && bun test src/mainview` — **1 480 pass, 0 fail**, 6 147 expects across 139 files.
 - `cd packages/rpc && bun test` — **142 pass, 0 fail**, 951 expects across 14 files.
+

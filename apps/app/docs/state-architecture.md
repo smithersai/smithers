@@ -39,20 +39,6 @@ The generic runtime stores control and execution in `<root>/.flows/control.db` a
 
 There are **43 domain projections**: 41 persisted collections plus two per-launch collections. Four additional private collections hold application event authority. Those counts distinguish the view roster from physical persistence. Per-launch views reset at boot; their accepted observations can still appear in retained event history until compaction or privacy erasure.
 
-| Family | Collections |
-|---|---|
-| Conversation and presentation | `sessions`, `messages`, `cards`, `cardHistories`, `tabs`, `workspaces`, `branches`, `frames` |
-| Notes and repository knowledge | `worldDocuments`, `repositoryContexts`, `repositoryNotifications`, `notificationReceipts`, `practiceIssues` |
-| Local inventory and preferences | `connectors`, `connectorOperations`, `repos`, `pinnedRepos`, `starredTargets`, `harnesses`, `agents` |
-| Cloud observations | `repositories`, `workingCopies`, `cloudWorkspaces`, `changes`, `linearIntegrations`, `githubAppStatuses` |
-| Account and request observations | `identitySessions`, `cloudSessions`, `billingAccounts`, private `approvalRequests` |
-| Durable attempt/recovery state | `commandIntents`, `httpTurns`, `httpTurnLegs` |
-| Normalized runtime observations | `runtimeRuns`, `runtimeApprovals` |
-| Diagnostics and auxiliary UI | `transitions`, `toolCalls`, `toasts`, `recommendations` |
-| Optional in-page chain projections | `chainEvents`, `retiredChainLineages` |
-| Per-launch collections | `repoTree`, `repositoryFlows` |
-| Private application authority | `appEvents`, `appEventHeads`, `appEventCheckpoints`, `appEventRetirements` |
-
 `repos` means native repositories; `repositories` means cloud inventory. UI `workspaces` and `branches` describe presentation/history. `cloudWorkspaces` describes remote execution workspaces. They are not interchangeable. Derived live card/index collections are additional ephemeral read views, not durable authorities. [Exact roster](../src/mainview/state/AppStore.ts), [pure projection schemas](../src/mainview/state/AppProjection.ts).
 
 ## What one frontend change does
@@ -176,3 +162,4 @@ This covers identities retained by the client. It does not discover lost journal
 The remaining architectural work is now easier to name: connect additional backend fact feeds where freshness warrants it; extend fact completeness to additional product domains; design producer-death reconciliation and destination idempotency where automatic recovery is required; add explicit retention/compaction policies; and add integrity and missing-history detection for target JSONL, whose tolerant reader also applies to new journals. None should be hidden behind a generic “synced” flag.
 
 To evaluate a new state field, ask: who accepts writes, what durable receipt proves acceptance, which facts reconstruct it, what cursor names the applied prefix, what survives retention, what happens after a crash, and what must be erased on an ownership change. If those answers are explicit, keeping a fast materialized table is compatible with an event-derived architecture.
+

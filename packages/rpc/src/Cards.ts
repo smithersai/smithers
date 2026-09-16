@@ -5,7 +5,7 @@ import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
  * @since 1.0.0
  */
 import { z } from "zod"
-import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
+import { AGENT_ROLES, AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
   ChangeAnalyzerRunSchema,
   ChangeCheckSchema,
@@ -27,7 +27,6 @@ import {
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
-import { HomeBlockSchema } from "./HomePane.ts"
 import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
 import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
@@ -174,8 +173,6 @@ export type CardPlanItem = z.infer<typeof CardPlanItemSchema>
  */
 export const FORM_OPTION_PROVIDERS = [
   "harnesses",
-  "agent-harnesses",
-  "harness-models",
   "open-repos",
   "cloud-repos",
   "bookmarks",
@@ -664,6 +661,8 @@ const CommitSummarySchema = z.object({
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  // Identity-only tombstones keep historical frames and journals loadable.
+  z.object({ ...cardBaseShape, kind: z.literal("retired"), payload: z.object({}) }),
   z.object({
     ...cardBaseShape,
     kind: z.literal("repo-update"),
@@ -1115,41 +1114,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       webhooks: z.array(z.object({ name: z.string(), flowId: z.string().optional() })).optional()
     })
   }),
-  /*
-   * The factory card (factory.show, Factory design session 2026-09-07 §4):
-   * how a repository builds itself, in two sections. Wiki: the generated
-   * wiki's stats when a generated wiki exists (null until one does), the
-   * count of Wiki notes the store holds, and the Librarian's answers and
-   * misses when a log serves them (null until one does). Infra: the box's
-   * infra-as-code files as read from the repository tree, each present,
-   * absent from the tree, or unreadable with the reason. An absent file is
-   * a row, never a silent omission; nothing here is ever invented.
-   */
-  z.object({
-    ...cardBaseShape,
-    kind: z.literal("factory"),
-    payload: z.object({
-      repo: z.string(),
-      wiki: z.object({
-        generated: z.object({
-          pages: z.number().int().nonnegative(),
-          sha: z.string(),
-          coverage: z.string().optional(),
-          generatedAt: z.number().optional()
-        }).nullable(),
-        notes: z.number().int().nonnegative(),
-        librarian: z.object({
-          answers: z.number().int().nonnegative(),
-          misses: z.number().int().nonnegative()
-        }).nullable()
-      }),
-      infra: z.array(z.object({
-        path: z.string(),
-        state: z.enum(["present", "absent", "unreadable"]),
-        reason: z.string().optional()
-      }))
-    })
-  }),
+
   /*
    * Lane runs §2 — the run inbox: every run on the workspace, one summary row
    * each, with the filters the listing was cut at so the card states what it
@@ -1328,7 +1293,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * plue#473, and absent-vs-null is not distinguished — no mapping line
        * renders without the DTO field. Optional so older cards parse.
        */
-      linear: z.object({ identifier: z.string(), url: z.string() }).nullable().optional(),
       comments: z.array(
         z.object({
           author: z.string().nullable(),
@@ -1591,7 +1555,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("connector-setup"),
     payload: z.object({
-      connector: z.enum(["linear", "github"]),
+      connector: z.literal("github"),
       /** `org/repo` — the repository being connected. */
       repo: z.string(),
       phase: z.enum(["setup", "connected"]),
@@ -1606,23 +1570,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           error: z.string().optional()
         })
       ),
-      /** The OAuth callback's setup handle (Linear only); the team pick and the create consume it. */
-      setupKey: z.string().optional(),
-      setupExpiresAt: z.string().optional(),
-      /** `authorized as <actor>` — only when the setup answer names the viewer; never invented. */
-      actor: z.string().nullable().optional(),
-      /** The teams the setup key can see (Linear step 2). */
-      teams: z.array(z.object({ id: z.string(), name: z.string(), key: z.string() })).optional(),
-      /** The picked team (Linear step 2's one click). */
-      teamId: z.string().optional(),
-      /** The connected Linear integration (the connected state's header and last-sync line). */
-      integration: z.object({
-        id: z.number().int(),
-        teamKey: z.string(),
-        teamName: z.string(),
-        active: z.boolean(),
-        lastSyncAt: z.string().nullable()
-      }).optional(),
       /** The GitHub App installation (the connected state's `installation <id> · configured`). */
       installationId: z.number().int().nullable().optional(),
       configured: z.boolean().optional(),
@@ -1656,7 +1603,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     payload: z.object({
       /** The header subject: `Linear ENG ↔ org/repo` or `Mirror · org/repo`. */
       subject: z.string(),
-      source: z.enum(["linear", "github-mirror"]),
+      source: z.literal("github-mirror"),
       /** The Linear integration id the run belongs to (Linear only). */
       integrationId: z.string().optional(),
       /** `org/repo` (the mirror's repository). */
@@ -2084,9 +2031,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       persistence: z.string().nullable().optional(),
       /** `<vm>@<ssh host>` — the copyable line (plue#446). */
       sshHost: z.string().nullable().optional(),
-      snapshots: z.array(
-        z.object({ id: z.string(), name: z.string(), createdAt: z.string().nullable() })
-      ),
       sessions: z.array(
         z.object({
           id: z.string(),
@@ -2144,7 +2088,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        */
       terminalRefusal: SessionRefusalSchema.nullable().optional(),
       /** Which body tab the card shows; the terminal by default. */
-      facet: z.enum(["terminal", "files", "services", "snapshots", "egress", "desktop"]).optional(),
+      facet: z.enum(["terminal", "files", "services", "egress", "desktop"]).optional(),
       /** The plue session the card's Terminal facet (and its tab) is attached to. */
       terminalSessionId: z.string().optional(),
       /** The last act's honest refusal, kept on the card. */
@@ -2370,14 +2314,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       error: z.string().optional()
     })
   }),
-  /*
-   * The agents as data (apps/app/docs/workbench-lanes/custom-agents.md): the
-   * Agents card lists every built-in and custom agent with its harness's live
-   * availability (from the harness signals, never guessed); the form card
-   * holds the New-agent draft IN ITS PAYLOAD (form edits are card-payload
-   * updates, never component state); the models card is what a harness's own
-   * list command printed.
-   */
+  /* Built-in agents and the availability reported by their harnesses. */
   z.object({
     ...cardBaseShape,
     kind: z.literal("agents"),
@@ -2450,89 +2387,9 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       error: z.string().optional()
     })
   }),
-  /*
-   * The repository welcome and its three answers (apps/app
-   * controller/onboarding.ts): the opener a repository shows when it is
-   * opened, and the maintain / contribute / explore cards its buttons open.
-   * `activity` is null until the public activity route answers; `guides` are
-   * the guide documents the repository actually holds, never invented.
-   */
-  z.object({
-    ...cardBaseShape,
-    kind: z.literal("repo-onboarding"),
-    payload: z.discriminatedUnion("stage", [
-      z.object({
-        stage: z.literal("welcome"),
-        repo: z.string(),
-        /** The curated one-sentence predicate ("a durable framework …"); null when the catalog carries none. */
-        summary: z.string().nullable()
-      }),
-      z.object({
-        stage: z.literal("maintain"),
-        repo: z.string(),
-        activity: z.object({
-          sentence: z.string(),
-          /** A null count is one the mirror could not answer; the sentence names it. */
-          counts: z.object({
-            commits: z.number().int().nullable(),
-            pullRequests: z.number().int().nullable(),
-            issues: z.number().int().nullable()
-          }),
-          since: z.string()
-        }).nullable(),
-        /** Why `activity` is null: the route is not deployed yet, or its answer could not be read. */
-        reason: z.string().optional(),
-        /** The maintainer's read flows this host registers, in button order. */
-        flows: z.array(z.string())
-      }),
-      z.object({
-        stage: z.literal("contribute"),
-        repo: z.string(),
-        /** The contributing guide's path when the repository holds one. */
-        guide: z.string().nullable(),
-        reason: z.string().optional()
-      }),
-      z.object({
-        stage: z.literal("explore"),
-        repo: z.string(),
-        guides: z.array(z.object({ path: z.string() })),
-        reason: z.string().optional()
-      })
-    ])
-  }),
-  /*
-   * The repository's home pane (apps/app controller/onboarding.ts): the first
-   * card a repository shows, declared in its `.smithers/FACTORY.ts` as
-   * `export const home = Smithers.Factory.Home` and read as
-   * `.smithers/home.json` from the public mirror. `blocks` are the declared
-   * blocks verbatim (HomePane.ts refuses raw HTML); `featuredFlows` is the
-   * featured set of `.smithers/factory.json` when a flows block asked for it
-   * and the projection answered, null when it did not, with `featuredReason`
-   * saying why.
-   */
-  z.object({
-    ...cardBaseShape,
-    kind: z.literal("repo-home"),
-    payload: z.object({
-      repo: z.string(),
-      /** The repository-relative file the pane was read from. */
-      path: z.string(),
-      blocks: z.array(HomeBlockSchema),
-      featuredFlows: z.array(z.object({ id: z.string(), summary: z.string().nullable() })).nullable(),
-      featuredReason: z.string().optional()
-    })
-  }),
-  z.object({
-    ...cardBaseShape,
-    kind: z.literal("agent-models"),
-    payload: z.object({
-      harnessId: z.enum(HARNESS_IDS),
-      displayName: z.string(),
-      models: z.array(z.string()),
-      source: z.enum(["list", "suggestions"]),
-      reason: z.string().optional()
-    })
-  }),
+
+
+
   /*
    * The anonymous turn ceiling's refusal (factory mock 22): a signed-out
    * visitor's turn the Worker refused with 429 turn_rate_limited. `message`
@@ -2604,92 +2461,40 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   })
 ])
-// The last agent-form wire shape before 13585bde95. Validate before
-// migrating so malformed rows still follow the storage quarantine path.
-const LegacyAgentFormCardSchema = z.object({
-  ...cardBaseShape,
-  kind: z.literal("agent-form"),
-  payload: z.object({
-    mode: z.enum(["create", "edit"]),
-    draft: z.object({
-      id: z.string(),
-      label: z.string(),
-      purpose: z.string(),
-      harness: z.enum(HARNESS_IDS).optional(),
-      model: z.string()
-    }),
-    harnesses: z.array(z.object({
-      id: z.enum(HARNESS_IDS),
-      displayName: z.string(),
-      status: z.enum(["signed-in", "api-key", "binary-only", "unavailable"]),
-      account: z.string()
-    })),
-    models: z.array(z.string()),
-    modelsSource: z.enum(["list", "suggestions"]).optional(),
-    modelsReason: z.string().optional(),
-    phase: z.enum(["editing", "saving", "saved", "cancelled", "failed"]),
-    error: z.string().optional()
-  })
-})
-
-/**
- * Decodes current cards and upgrades historical agent-form drafts, including
- * cards embedded in snapshots, before validating the current contract.
- *
- * @since 1.0.0
- * @category schemas
- */
+/** Retired UI records keep their identity, without retaining executable forms or feature data. */
+const retiredFlows = new Set([
+  "repo.welcome", "repo.explore", "repo.contribute", "repo.maintain", "repo.home", "factory.show",
+  "workspace.fork", "workspace.snapshot", "workspace.snapshot.delete", "workspace.snapshot.fork", "workspace.template",
+  "change.open-computer", "agent.create", "agent.edit", "agent.models", "agent.new", "agent.remove",
+  "issues.link-linear", "issues.unlink-linear", "sync.retry", "sync.ops.load-older"
+])
+const retiredKinds = new Set(["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form"])
 export const CardSchema = Object.assign(
-  z.preprocess((value: z.input<typeof CurrentCardSchema> | z.input<typeof LegacyAgentFormCardSchema>) => {
-    if (typeof value !== "object" || value === null || !("kind" in value) || value.kind !== "agent-form") return value
-    const legacy = LegacyAgentFormCardSchema.safeParse(value)
-    if (!legacy.success) return value
-    const { payload, ...base } = legacy.data
-    const creating = payload.mode === "create"
-    return {
-      ...base,
-      kind: "flow-form",
-      status: payload.phase === "saved" || payload.phase === "cancelled" ? "acted" : base.status,
-      payload: {
-        flow: creating ? "agent.create" : "agent.edit",
-        via: "user",
-        fields: [
-          ...(creating ?
-            [
-              { name: "id", label: "Id", kind: "text", required: true },
-              {
-                name: "harness",
-                label: "Harness",
-                kind: "select",
-                required: true,
-                optionsFrom: "agent-harnesses",
-                options: payload.harnesses.map((harness) => ({
-                  value: harness.id,
-                  label: harness.displayName,
-                  disabled: harness.status === "binary-only" || harness.status === "unavailable",
-                  reason: harness.status
-                }))
-              }
-            ] :
-            []),
-          {
-            name: "model",
-            label: "Model",
-            kind: "text",
-            required: creating,
-            optionsFrom: "harness-models",
-            options: payload.models.map((model) => ({ value: model, label: model }))
-          },
-          { name: "purpose", label: "Purpose", kind: "text", required: false },
-          { name: "label", label: "Label", kind: "text", required: false }
-        ],
-        // Optional harnesses must be absent rather than undefined: the current
-        // draft is a record of scalar values, not an object with optional keys.
-        draft: Object.fromEntries(Object.entries(payload.draft).filter(([, entry]) => entry !== undefined)),
-        given: creating ? {} : { id: payload.draft.id },
-        ...(payload.error === undefined ? {} : { error: payload.error })
-      }
+  z.preprocess((value: unknown) => {
+    if (typeof value !== "object" || value === null) return value
+    const row = value as Record<string, unknown>
+    const payload = row.payload as Record<string, unknown> | undefined
+    const flow = payload?.flow
+    if (retiredKinds.has(String(row.kind)) ||
+      (row.kind === "connector-setup" && payload?.connector === "linear") ||
+      (row.kind === "sync-ops" && payload?.source === "linear") ||
+      (row.kind === "flow-form" && typeof flow === "string" && (retiredFlows.has(flow) || flow.startsWith("linear.")))) {
+      const { body: _body, ...base } = row
+      return { ...base, kind: "retired", title: "", loading: false, status: "acted", payload: {} }
     }
+    if (row.kind === "agents" && Array.isArray(payload?.agents)) {
+      return { ...row, payload: { ...payload, agents: payload.agents.flatMap((entry: unknown) => {
+        if (typeof entry !== "object" || entry === null) return []
+        const saved = entry as Record<string, unknown>
+        const role = AGENT_ROLES.find(candidate => candidate.id === saved.id)
+        return role === undefined ? [] : [{ ...saved, id: role.id, label: role.label,
+          purpose: role.purpose, harness: role.harness, model: role.model, builtin: true }]
+      }) } }
+    }
+    if (row.kind === "workspace" && payload?.facet === "snapshots") {
+      return { ...row, payload: { ...payload, facet: "terminal" } }
+    }
+    return value
   }, CurrentCardSchema),
   { options: CurrentCardSchema.options }
 )
@@ -2705,7 +2510,7 @@ export type Card = z.infer<typeof CardSchema>
 type ShallowPatch<T> = { [K in keyof T]?: T[K] | undefined }
 type PatchFor<C extends Card> = C extends Card
   ? Pick<C, "kind"> & ShallowPatch<Pick<C, "title" | "body" | "status" | "createdAt" | "ordinal">> & {
-    payload?: (C extends { kind: "repo-onboarding" } ? C["payload"] : ShallowPatch<C["payload"]>) | undefined
+    payload?: ShallowPatch<C["payload"]> | undefined
   }
   : never
 

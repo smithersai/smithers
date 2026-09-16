@@ -68,7 +68,6 @@ The storage format and migration rules are documented in [persistence.md](persis
 | A browser callback needed to be bound to the login attempt; origin or Fetch Metadata checks alone do not prove which login produced a redirect. | Generate a 256-bit `callback_state` per attempt. The API binds it to its OAuth verifier cookie and echoes it in the fragment. Native completion verifies state and the bridge nonce before claiming the attempt. Wrong, absent, old, oversized, and replayed callbacks are rejected. |
 | The API's default CLI scopes omit capabilities required by the desktop app. | Request the eight documented app scopes explicitly, without adding organization/user write or administrative scopes. |
 | A late callback or keychain write could restore a session after logout. | Fence sign-in generations and serialize credential writes. Expired cached credentials are invalidated and restored sessions re-probe granted scopes. |
-| Linear sign-in opened a system-browser URL protected by a renderer-only header, returning 401. | Use a short-lived, one-use navigation handoff and strip that capability before forwarding upstream. |
 | Checking DNS and then fetching a hostname permitted DNS rebinding between validation and connection. | Native HTTPS connects to the validated address while preserving the original Host, TLS SNI, and certificate checks. |
 | Worker fetch cannot provide the same arbitrary-address pinning guarantee. | Advertise `browser.read` only when an explicitly trusted `BROWSER_EGRESS` service binding exists. Without it, omit the capability and return a typed unavailable response. |
 | Remote-read timeouts did not cover every stage, and body/redirect failures could escape the intended limits. | Apply one deadline across DNS, redirects, response headers, and body reads; cap bodies, reject URL credentials/private destinations, and normalize streaming errors. Native compressed responses are decoded within the bounded read path. |
@@ -96,15 +95,6 @@ Remote URL --> resolve/check --> pin public address --> TLS --> bounded body
                              original hostname remains
                              the certificate identity
 ```
-
-Implementation: [CloudAuth.ts](../src/bun/CloudAuth.ts),
-[LinearAuth.ts](../src/bun/LinearAuth.ts),
-[native BrowserFetch.ts](../src/bun/BrowserFetch.ts),
-[shared BrowserFetch.ts](../../../packages/rpc/src/BrowserFetch.ts),
-[Worker index.ts](../../server/src/index.ts),
-[CloudAgent.ts](../src/bun/CloudAgent.ts),
-[CloudSeam.ts](../src/mainview/state/seams/CloudSeam.ts),
-[CloudTerminalClient.ts](../src/mainview/state/CloudTerminalClient.ts).
 
 The necessary API counterpart is in the adjacent `plue` checkout:
 `internal/routes/auth.go`, `internal/routes/auth_native_callback_test.go`,
@@ -195,7 +185,6 @@ Implementation: [server.ts](../src/bun/server.ts),
 - Browser: **38 non-live scenarios passed across the review runs**. This covers
   agent creation, boot, changes, chat, workspaces, code intelligence, frame
   navigation, installed harnesses, repository identity, targets, flow runs,
-  Linear/import, tabs, graph history/replay/affected/CI, and real terminals.
   The final five affected browser checks passed together. The live model-turn
   scenario was intentionally skipped in the deterministic stub configuration.
   After changing the CLI progress policy, the successful target-run and complete
@@ -244,3 +233,4 @@ reinstalled the shared workspace dependencies during validation; missing-module
 failures from that interruption were followed by dependency repair and reruns.
 `final-packaged-restoration.log` records the successful final package and native
 suite; `final-typecheck-restoration.log` records the final UI TypeScript check.
+

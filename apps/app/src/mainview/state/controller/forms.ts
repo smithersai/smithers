@@ -1,5 +1,4 @@
-import type { HarnessModelsResponse } from "@smthrs/rpc/AgentRoles"
-import { HarnessModelsResponseSchema,orderedAgentRoles } from "@smthrs/rpc/AgentRoles"
+import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import { Schema } from "effect"
@@ -32,7 +31,6 @@ import type { ControllerContext } from "./context"
  */
 
 type FlowFormCard = Extract<Card, { kind: "flow-form" }>
-type HarnessId = Harness["id"]
 
 export interface FormRenderRequest {
   /** Edit this property of the registered flow's payload using its declared schema. */
@@ -75,27 +73,6 @@ export const formCardId = (flow: string): string => `form-${flow}`
 /** The tool text an agent reads when its invocation rendered a form instead of running. */
 export const formRenderedText = (missing: ReadonlyArray<string>): string =>
   `rendered a form for ${missing.join(", ")}: ask the user to fill it in`
-
-const isHarnessId = (value: unknown): value is HarnessId =>
-  typeof value === "string" && (HARNESS_IDS as ReadonlyArray<string>).includes(value)
-
-/** `GET /api/harnesses/{id}/models`: the harness's own list, or the table's suggestions, with the reason when it printed nothing. */
-export const fetchHarnessModels = async (
-  ctx: Pick<ControllerContext, "baseUrl" | "boundedFetch" | "errorMessageOf">,
-  harness: HarnessId
-): Promise<HarnessModelsResponse> => {
-  try {
-    const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/harnesses/${harness}/models`)
-    if (!response.ok) {
-      return { harnessId: harness, models: [], source: "suggestions", reason: await ctx.errorMessageOf(response, `The server answered ${response.status}`) }
-    }
-    const parsed = HarnessModelsResponseSchema.safeParse(await response.json())
-    if (!parsed.success) return { harnessId: harness, models: [], source: "suggestions", reason: "The server's model list did not parse." }
-    return parsed.data
-  } catch (error) {
-    return { harnessId: harness, models: [], source: "suggestions", reason: error instanceof Error ? error.message : String(error) }
-  }
-}
 
 const coerce = (field: FormField, value: string): { readonly value: FieldValue } | { readonly error: string } => {
   switch (field.kind) {
@@ -165,44 +142,23 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     return card?.kind === "flow-form" ? card : undefined
   }
 
-  /*
-   * The harness a model list belongs to: the draft's own harness field, or
-   * the harness of the agent the draft names (agent.edit keeps a built-in's
-   * harness fixed, so the row is the truth).
-   */
-  const harnessOf = (draft: FormDraft): HarnessId | undefined => {
-    const picked = draft["harness"] ?? draft["harnessId"]
-    if (isHarnessId(picked)) return picked
-    const agentId = draft["id"] ?? draft["roleId"]
-    const role = typeof agentId === "string" ? collections.agents.get(agentId) : undefined
-    return role?.harness
-  }
-
-  /** An installed harness with its credential state; `hosting` also needs a verified model flag (a custom agent binds a model). */
-  const harnessOption = (harness: Harness, hosting: boolean): FieldOption => {
+  /** An installed harness with its credential state. */
+  const harnessOption = (harness: Harness): FieldOption => {
     const account = harness.account?.email ?? harness.account?.label ?? ""
     const label = account === "" ? harness.displayName : `${harness.displayName} · ${account}`
     if (harness.status === "unavailable") return { value: harness.id, label: harness.displayName, disabled: true, reason: "not installed" }
     if (harness.status === "binary-only") return { value: harness.id, label: harness.displayName, disabled: true, reason: "no credential" }
-    if (hosting && harness.models === undefined) return { value: harness.id, label, disabled: true, reason: "no verified model flag" }
     return { value: harness.id, label }
   }
 
   /** The options a seam supplies for a provider, read at render; an empty list is a valid answer. */
-  const optionsFor = (provider: OptionProvider, draft: FormDraft): ReadonlyArray<FieldOption> => {
+  const optionsFor = (provider: OptionProvider, _draft: FormDraft): ReadonlyArray<FieldOption> => {
     switch (provider) {
       case "files":
         /* Filled asynchronously from the selected repository below; never invented here. */
         return []
       case "harnesses":
-        return harnesses().map((harness) => harnessOption(harness, false))
-      case "agent-harnesses":
-        return harnesses().map((harness) => harnessOption(harness, true))
-      case "harness-models": {
-        const harness = harnessOf(draft)
-        const row = harness === undefined ? undefined : collections.harnesses.get(harness)
-        return (row?.models?.suggestions ?? []).map((model) => ({ value: model, label: model }))
-      }
+        return harnesses().map((harness) => harnessOption(harness))
       case "open-repos":
         return [...collections.repos.values()].map((repo) => ({ value: repo.id, label: `${repo.name} · ${repo.path}` }))
       case "cloud-repos":
@@ -228,7 +184,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
         )
       }
       case "agents":
-        return roleMenuEntries(harnesses(), orderedAgentRoles([...collections.agents.values()])).map((entry) => ({
+        return roleMenuEntries(harnesses(), AGENT_ROLES).map((entry) => ({
           value: entry.role.id,
           label: entry.title,
           ...(entry.available ? {} : { disabled: true, reason: entry.reason })
@@ -250,27 +206,6 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const transaction = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload, status } })
     if (invocation !== undefined) continuations.set(card.id, { invocation, payload: JSON.stringify(payload) })
     return transaction.isPersisted.promise.then(() => {})
-  }
-
-  /*
-   * The harness's own list command answers after the render: when it names
-   * models, they replace the table's suggestions on the model field — but
-   * only while the draft still names that harness.
-   */
-  const refreshModelList = async (cardId: string): Promise<void> => {
-    const card = formCard(cardId)
-    if (card === undefined || !card.payload.fields.some((field) => field.optionsFrom === "harness-models")) return
-    const harness = harnessOf(card.payload.draft)
-    if (harness === undefined) return
-    if (ctx.disposed) return
-    const answer = await fetchHarnessModels(ctx, harness)
-    if (ctx.disposed || answer.models.length === 0) return
-    const current = formCard(cardId)
-    if (current === undefined || harnessOf(current.payload.draft) !== harness) return
-    const fields = current.payload.fields.map((field) =>
-      field.optionsFrom === "harness-models" ? { ...field, options: answer.models.map((model) => ({ value: model, label: model })) } : field
-    )
-    await patch(current, { ...current.payload, fields }, current.status)
   }
 
   /*
@@ -317,7 +252,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       fields = fields.map(field => ({ ...field, options: [...installed].map(([id, owner]) => ({ value: String(id), label: owner })) }))
     }
     if (fields.length === 0) return undefined
-    /* A line the grammar parses whole prefills exactly (agent.new's edit prefill); a line it refuses prefills what it can. */
+    /* A line the grammar parses whole prefills exactly; a line it refuses prefills what it can. */
     const parsed = payloadFor(
       request.name,
       request.args,
@@ -390,7 +325,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     // A failed card commit must not start the model/file provider read.
     void rendered.isPersisted.promise.then(async () => {
       if (ctx.disposed) return
-      await Promise.all([refreshModelList(cardId), refreshFileList(cardId)])
+      await refreshFileList(cardId)
     }).catch(() => {})
     const missing = missingFields(resolved, draft)
     return { cardId, missing: missing.length > 0 ? missing : resolved.map((field) => field.name) }
@@ -418,7 +353,6 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      */
     const dependency = ["harness", "harnessId", "id", "roleId"].includes(name)
     await patch(card, { ...payload, draft, fields: dependency ? withOptions(card.payload.fields, draft) : card.payload.fields }, "active")
-    if (dependency) await refreshModelList(cardId)
     if (name === "repo") await refreshFileList(cardId)
   }
 

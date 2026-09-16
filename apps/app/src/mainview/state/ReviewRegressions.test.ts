@@ -99,19 +99,6 @@ describe("review regressions: concurrent commands and working-copy identity", ()
     expect(failed?.status).toBe("error")
   })
 
-  test("clearing a prefilled field does not restore it from the original arguments", async () => {
-    const bodies: Array<Record<string, unknown>> = []
-    const { controller } = await boot(async (_input, init) => {
-      if (init?.method === "PUT") { bodies.push(JSON.parse(String(init.body))); return json({}) }
-      return json({}, 404)
-    })
-    controller.renderFlowForm({ name: "agent.create", args: "new-worker codex model-1 remove-this", via: "user" })
-    await controller.commands.run("form.set", "form-agent.create purpose")
-    expect((await controller.commands.run("form.submit", "form-agent.create")).status).toBe("executed")
-    expect(bodies).toHaveLength(1)
-    expect(bodies[0]?.purpose).toBe("")
-  })
-
   test("human presentation remains human while an agent read awaits, and its eventual card remains attributed to the agent", async () => {
     const gate = deferred()
     let reading = false
@@ -131,27 +118,6 @@ describe("review regressions: concurrent commands and working-copy identity", ()
     await controller.commands.runForAgent("world")
     expect(store.collections.cards.has("world-embedded")).toBe(true)
     expect(store.session().surface).toBe("chat")
-  })
-
-  test("an agent-created form keeps its actor after the harness fetch, including confirmation on submit", async () => {
-    const gate = deferred()
-    let reading = false
-    let creates = 0
-    const { store, controller } = await boot(async (input, init) => {
-      if (String(input).endsWith("/api/harnesses")) { reading = true; await gate.promise; return json({ harnesses: [harness] }) }
-      if (init?.method === "PUT") creates += 1
-      return json({}, 404)
-    })
-    const open = controller.commands.runForAgent("agent.new", "new-worker codex model-1")
-    await until(() => reading)
-    await controller.commands.run("world")
-    gate.resolve()
-    await open
-    const card = store.collections.cards.get("form-agent.create")
-    expect(card?.kind === "flow-form" && card.payload.via).toBe("agent")
-    await controller.commands.run("form.submit", "form-agent.create")
-    expect(creates).toBe(0)
-    expect([...store.collections.messages.values()].some((message) => message.action?.flow === "agent.create")).toBe(true)
   })
 
   test("a delayed harness launch stays attached to its captured working copy", async () => {

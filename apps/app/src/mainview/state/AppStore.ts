@@ -80,7 +80,6 @@ FrameSchema,
 GitHubAppStatusRowSchema,
 HarnessSchema,
 IdentitySessionSchema,
-LinearIntegrationRowSchema,
 LocalRepositoryConnectorSchema,
 MAIN_TAB_ID,
 MessageSchema,
@@ -856,7 +855,6 @@ const COLLECTION_DEFINITIONS = {
   cloudSessions: persistedCollection("app-cloud-sessions", CloudSessionRowSchema, byId),
   cloudWorkspaces: persistedCollection("app-cloud-workspaces", CloudWorkspaceRowSchema, byId),
   changes: persistedCollection("app-changes", ChangeRowSchema, byId),
-  linearIntegrations: persistedCollection("app-linear-integrations", LinearIntegrationRowSchema, byId),
   githubAppStatuses: persistedCollection("app-github-app-statuses", GitHubAppStatusRowSchema, (row) => row.repo),
   repoTree: {
     persisted: false as const,
@@ -1481,7 +1479,7 @@ const initializeAppStore = async (
     if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
       const pending = pendingDraft
       const next = appendAppEvent(pending.previous, { kind: "transition", transition }, {
-        eventId: pending.eventId, createdAt: pending.createdAt, persistenceMode: resolved.mode
+        eventId: pending.eventId, createdAt: pending.createdAt, persistenceMode: resolved.mode, journalBudgetBytes: options.journalBudgetBytes ?? MAX_CHAIN_EVENT_BYTES
       })
       if (next === undefined) return pending.transaction
       if (!recoveringInputs && transition.actor === "user") pending.recoveryRaw = writeDraftRecovery(draftRecoveryStorage, next.head.revision, transition.draft,

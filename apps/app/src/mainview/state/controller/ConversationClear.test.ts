@@ -9,7 +9,7 @@ import type { FrameHistoryPort } from "../../runtime/FrameHistory"
 import { parseFramePath } from "../../runtime/FrameHistory"
 import { DEFAULT_BRANCH_ID,DEFAULT_WORKSPACE_ID,MessageSchema,rootFrameId,WorldDocumentSchema } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { createAppStore } from "../AppStore"
+import { createAppStore, PERSISTED_COLLECTION_SPECS } from "../AppStore"
 import { archiveNotice } from "../ConversationArchive"
 import { writeLegacyCollection } from "../TestFixtures"
 import { createControllerContext } from "./context"
@@ -371,11 +371,7 @@ describe("local archive and append-only summary notes", () => {
 describe("one archive transaction across SQLite projections", () => {
   for (const fails of [false, true]) {
     test(`notes, archive, frames and clear ${fails ? "roll back" : "commit"} together`, async () => {
-      const template = await createAppStore({ kind: "localStorage", storage: host() })
-      const specs = Object.values(template.collections).map((collection) => ({
-        id: collection.id,
-        schema: collection.config.schema!
-      }))
+      const specs = PERSISTED_COLLECTION_SPECS
       const sqlite = new Database(":memory:")
       const adapter = await openSqliteRowStorage({
         execute: async <TRow>(sql: string, params: ReadonlyArray<unknown> = []): Promise<ReadonlyArray<TRow>> => {

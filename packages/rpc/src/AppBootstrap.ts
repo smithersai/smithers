@@ -36,7 +36,7 @@ export const RuntimeCapabilitySchema = z.enum([
   // Cloud doors a host serves itself, declared by the host that opens them
   // (packages/rpc/src/HostCapabilities.ts holds the per-host tables).
   "cloud.terminal", // this origin tunnels workspace terminals (/api/cloud-ws/*)
-  "cloud.pat", // a host-held Smithers Cloud PAT session (/api/cloud-auth/*, the Linear loopback)
+  "cloud.pat", // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)
   "local.repositories",
   "local.repository-path-entry",
   "local.targets",

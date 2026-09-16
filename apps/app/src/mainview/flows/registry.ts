@@ -41,7 +41,6 @@ import * as connector from "./entries/connector"
 import * as debug from "./entries/debug"
 import * as egress from "./entries/egress"
 import * as env from "./entries/env"
-import * as factory from "./entries/factory"
 import * as feature from "./entries/feature"
 import * as files from "./entries/files"
 import * as findings from "./entries/findings"
@@ -51,7 +50,6 @@ import * as github from "./entries/github"
 import * as history from "./entries/history"
 import * as issue from "./entries/issue"
 import * as issues from "./entries/issues"
-import * as linear from "./entries/linear"
 import * as notifications from "./entries/notifications"
 import * as palette from "./entries/palette"
 import * as plugins from "./entries/plugins"
@@ -332,6 +330,7 @@ export interface CommandState {
   readonly typing: boolean
   readonly hasConnectors: boolean
   /** The plugins installed on this workspace (the session's shelf); optional so state fixtures stay minimal. */
+  readonly pluginLibrary?: boolean
   readonly plugins?: ReadonlyArray<string>
   /** The validated session carries admin:true; the admin plugin registers only then. */
   readonly admin: boolean
@@ -427,15 +426,12 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   tab.namespace,
   target.namespace,
   flow.namespace,
-  factory.namespace,
   runs.namespace,
   approvals.namespace,
   issues.namespace,
   issue.namespace,
   prs.namespace,
-  linear.namespace,
   github.namespace,
-  sync.namespace,
   change.namespace,
   review.namespace,
   findings.namespace,
@@ -446,6 +442,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   search.namespace,
   palette.namespace,
   plugins.namespace,
+  sync.namespace,
   branches.namespace,
   commits.namespace,
   env.namespace,

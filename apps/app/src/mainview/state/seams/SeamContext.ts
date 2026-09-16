@@ -97,14 +97,7 @@ export const errorMessage = (body: unknown, fallback: string): string => {
   return fallback
 }
 
-/*
- * A URL off a DTO that the app will follow (an install link opened in the
- * system browser, a Linear link rendered as an href): only an https URL on
- * the named host is worth linking. Anything else — a `javascript:` scheme,
- * a look-alike host, a malformed value — answers null and the card renders
- * the text without a link. One check for every DTO href (review finding 10:
- * the install URL was vetted, the Linear URL was not).
- */
+
 export const trustedHttpsUrl = (value: string, host: string): string | null => {
   try {
     const url = new URL(value)

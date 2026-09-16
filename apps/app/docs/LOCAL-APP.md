@@ -335,10 +335,7 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | POST | `/api/agent/turn/erase` | Delete-only proof, including fencing a not-yet-accepted leg |
 | POST | `/api/agent/turn/cancel` | Cancel a turn (`/api/chat/cancel` is an alias) |
 | GET | `/api/harnesses` | Installed harness snapshot (each row states its verified model suggestions and whether it has a list command) |
-| GET | `/api/harnesses/:id/models` | The harness's own model list (its list command under a 5 s cap), else the table's verified suggestions; empty + reason on failure |
-| GET | `/api/agents` | The agents (built-in and custom), seeded from the built-ins into `<stateDir>/agents.json` on first read |
-| PUT | `/api/agents/:id` | Create or edit an agent `{ label, purpose, harness, model }`; the harness must take a verified model flag, the model id no spaces or leading dash; a built-in keeps its harness |
-| DELETE | `/api/agents/:id` | Remove a custom agent; a built-in answers 409 |
+| GET | `/api/agents` | The built-in agent roles |
 | POST | `/api/repo/open` | Consume `{ authorizationId }`, or dev-only `{ path }` |
 | GET | `/api/repos` | Open repository snapshot |
 | POST | `/api/repo/access` | Downgrade `{ repoId, access: "read" }`, stop repository processes and save the reduced grant |
@@ -359,8 +356,6 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | POST | `/api/cloud-auth/start` | Begin the browser login; answers `{ url }` |
 | GET | `/api/cloud-auth/session` | `{ state, username, expiresAt }`, never the token |
 | POST | `/api/cloud-auth/sign-out` | Delete the keychain credential and the in-memory token |
-| POST | `/api/linear-auth/start` | Begin the Linear OAuth handoff (lane sync): a loopback listener on a random port waits for the cloud's redirect; answers `{ url }` to open. 501 offline |
-| GET | `/api/linear-auth/session` | `{ state: "idle" \| "waiting" \| "authorized", setupKey? }`, the setup key once the callback lands, never the token |
 
 `POST /api/targets/affected` requests CLI plan inputs and uses static declaration
 inputs when a target has no plan input list. An empty plan list is authoritative.
@@ -561,44 +556,13 @@ Lane `change` (ADR 0003) makes the change the unit of review:
   its re-read (`/change.diff <changeId> parent current <path>`), and a binary
   file says so instead of showing a diff.
 
-Lane `sync` (ADR 0005) adds Linear and GitHub sync as actions:
-
-- **`connector-setup`** (`/linear.connect [owner/repo]`, `/github.app
-  [owner/repo]`): one card kind serves both handoffs. The Linear half is
-  the wizard: the steps authorize → team → repository → confirm render as
-  rows that fill in (`authorized as Will`, `ENG · Engineering`), a failed
-  step reads the server error verbatim (`authorization expired · Open
-  Linear again`), and the OAuth handoff rides the Bun server's
-  `/api/linear-auth/*` receiver. The setup key, never a token, reaches the
-  renderer and stays in transient seam state shared by the user and agent
-  bindings. Cards, transition history, persistence, and error text exclude
-  the handle. Completion, failure, and expiry discard it; reloading requires
-  Open Linear again. Confirm requires a numeric integration id from the
-  create response or refreshed list; otherwise the setup card shows an error.
-  On confirm the SAME card turns into the connected state:
-  `ENG · Engineering → org/repo`, the last-sync age, and Sync now /
-  Activity / Disconnect (`/linear.sync`, `/linear.activity`,
-  `/linear.disconnect`, the last confirming). The GitHub half renders the
-  App status read (`/github.app`): installed `· installation <id> ·
-  configured`, or the trusted install link with Open GitHub
-  (`/github.app.open`), plus Re-check and Reconcile
-  (`/github.reconcile`; the route is 404 in prod today and its message
-  shows verbatim). `/repos.app` stays as `github.app`'s hidden alias.
-- **`sync-ops`** (`/linear.sync [integration]`, `/linear.activity
-  [integration]`, `/github.mirror-sync [owner/repo]`) is one card kind for
-  Linear syncs and GitHub mirror syncs: the subject, the run's own state word
-  and, for a mirror, the repository's `mirror_status`, the refs line (`behind
-  GitHub · 3 refs · 1 failed`), the run's counts (`12 of 20 · 1 failed`), the
-  run id or the trigger's one fact (`sync started`, `already running`), then
-  the durable ops newest first. An op row carries its glyph, `source → target
-  entity action` in the wire's own words, its status, its age, its error
-  verbatim, and, when the wire marked it retryable, a Retry on its OWN
-  backend's route (`/sync.retry <opId>` for a Linear op through the
-  integration that carries it, `/github.mirror.retry-ref` for a mirror ref);
-  a failed op is never filtered out. Past ten ops the card offers Show more
-  (`/sync.ops.show-more`), and a feed with older pages offers Load older
-  (`/sync.ops.load-older`, the Link header's keyset cursor). A null `runState`
-  wears the neutral pending pill, never "done".
+- **`connector-setup`** renders the GitHub App status from `/github.app`,
+  its trusted install link through `/github.app.open`, and Re-check and
+  Reconcile through `/github.reconcile`.
+- **`sync-ops`** renders GitHub mirror runs, their repository status, counts,
+  per-ref results, and errors. Failed refs retry through
+  `/github.mirror.retry-ref`. `/sync.ops.show-more` reveals additional rows.
+  A null run state retains the pending pill.
 - **`repo-import`** grows the job's own progress: the stage counts (`refs
   214 of 214 · objects … · issues …`) when the wire carries them, the
   failed phase's Retry through `/repos.import.retry <jobId>` (the route
@@ -607,18 +571,9 @@ Lane `sync` (ADR 0005) adds Linear and GitHub sync as actions:
   rate-limit line on every sync card (`GitHub rate limit reached · 0 of
   5,000 · resets 12:40 · Retry after`), as does a status answer whose
   remaining budget drops under a fifth; a plain 429 invents no reset.
-- **`issue`** names the Linear link the DTO carries (`Linear ENG-482`,
-  linked) or offers Link to Linear…, the button door of
-  `issues.link-linear` carrying the issue number, so THE FORM LAW renders
-  the form that asks for the identifier. The act POSTs that identifier to
-  the issue's own `linear-link` route and re-reads the detail card, so the
-  card states the link it just made; `issues.unlink-linear` DELETEs the same
-  route and gates the removal on the linked identifier typed back exactly,
-  naming the one the card already read.
 
-The Connectors surface's rows read only what the app has read: GitHub's
-count is the App statuses its own act filed, Linear's per-team state is the
-integrations the seam loaded. A repository never checked is absent, never
+
+The Connectors surface's GitHub row reads loaded App statuses. A repository never checked is absent, never
 assumed.
 
 The composer's origin chip carries the probed checkout's pin: `~/smithers ·
@@ -752,7 +707,6 @@ suite is running. Failed package staging removes its temporary workspace and
 reports both errors if cleanup also fails. The packaged lane is macOS-only and
 the GitHub fixture scenario requires network access.
 
-
 ### Approval ownership
 
 Approval and approvals-inbox cards are created by runtime transitions from
@@ -783,3 +737,12 @@ Exit codes are `0` for no failed or undecided probes (prerequisite skips are
 allowed), `1` for failures, and `2` for probes that ran but could not decide.
 See [the scripts runbook](../scripts/README.md#launch-checklist-launch-checklistts)
 for prerequisites, commands and report fields.
+
+## Plugin Library configuration
+
+`AppServices.features.pluginLibrary` defaults to `false`. Enable it explicitly
+at controller construction to register Library navigation, commands, recommendations,
+and agent tools. Disabled controllers refuse Library mutations and leave existing
+plugin installations available to the other app features. Saved Library cards are
+inert while disabled.
+

@@ -6,7 +6,7 @@ import { Effect, Exit, Fiber } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createAppStore } from "../state/AppStore"
+import { createAppStore, PERSISTED_COLLECTION_SPECS } from "../state/AppStore"
 import { writeLegacyCollection } from "../state/TestFixtures"
 import { makeCollectionJournal } from "./CollectionJournal"
 import { retiredLineageKey } from "./LineageRetirement"
@@ -29,11 +29,7 @@ const memoryStorage = (): StorageApi => {
 const started: Event.Event = { _tag: "ChainStarted", goal: "commit proof", envelope: null }
 
 const blockedStore = async (path = ":memory:") => {
-  const template = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const collections = Object.values(template.collections).map((collection) => ({
-    id: collection.id,
-    schema: collection.config.schema!
-  }))
+  const collections = PERSISTED_COLLECTION_SPECS
   const sqlite = new Database(path)
   let block = false
   let fails = false

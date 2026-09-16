@@ -143,7 +143,7 @@ describe("the instructions budget", () => {
     expect(smithersInstructions(catalog, honesty)).toContain("code intelligence (hover, definitions, diagnostics)")
     const native = smithersInstructions([...catalog, { name: "code.hover", summary: "The type at a position" }], { ...honesty, host: "native" })
     expect(native).toContain(CODE_INTEL_LINE)
-    expect(native).not.toContain("code intelligence (hover, definitions, diagnostics) and connecting Linear need the native app")
+    expect(native).not.toContain("code intelligence (hover, definitions, diagnostics) need the native app")
   })
 
   /*

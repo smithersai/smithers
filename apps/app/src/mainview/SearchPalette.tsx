@@ -178,13 +178,7 @@ export interface PaletteOverlayProps {
 
 const roleWord = (role: SearchAction["role"]): string => (role === "open" ? "Enter" : role === "primary" ? "Cmd+Enter" : "")
 
-/*
- * The overlay, one surface in three zones (§3, §9): a head that appears only
- * with real context — the actions panel's item or the mode a prefix chose —
- * the scrolling rows, and the key legend as a footer (Linear's palette art):
- * the draft sits in the composer right beside the overlay, so a bare ⌘K
- * prints no banner and never echoes "(none)".
- */
+
 export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
   const touch = useCoarsePointer()
   const revealHighlighted = useCallback((node: HTMLDivElement | null) => {

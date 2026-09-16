@@ -71,18 +71,6 @@ describe("flowArgs — one serialisation, and the grammar gives the values back"
     })
   })
 
-  test("workspace.template carries a name that holds a space, and one that holds --name", () => {
-    roundTrip("workspace.template", { snapshotId: "snap-1", workspaceId: "ws-1", name: "rc 2" }, "snap-1 ws-1 --name rc 2", {
-      snapshotId: "snap-1",
-      workspaceId: "ws-1",
-      name: "rc 2"
-    })
-    roundTrip("workspace.template", { snapshotId: "snap-1", workspaceId: "ws-1", name: "rc --name 2" }, "snap-1 ws-1 --name rc --name 2", {
-      snapshotId: "snap-1",
-      workspaceId: "ws-1",
-      name: "rc --name 2"
-    })
-  })
 
   test("form.set carries a value that holds a space, and clears the field when it is blank", () => {
     roundTrip("form.set", { cardId: "card-1", field: "message", value: "two words" }, "card-1 message two words", {
@@ -109,7 +97,6 @@ describe("FlowName — the seam's names are the registry's names", () => {
       "runs.steer",
       "target.filter",
       "target.select",
-      "workspace.template"
     ]
     expect(named.filter((name) => !declared.has(name))).toEqual([])
   })

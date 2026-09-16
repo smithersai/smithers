@@ -23,10 +23,10 @@ test("parking a gated act dispatches only the durable command, leaving the answe
   const store = await webStore()
   const controller = createAppController(store, unavailableRepositories, webAgent())
   const before = new Set(store.collections.transitions.keys())
-  controller.deferCommand("issues.link-linear", "3", "signed-in")
+  controller.deferCommand("issues.view", "3", "signed-in")
   const events = [...store.collections.transitions.values()].filter(record => !before.has(record.id))
   expect(events.map(record => record.type)).toEqual(["command.deferred"])
-  expect(store.session().pendingCommand).toMatchObject({ name: "issues.link-linear", args: "3", requirement: "signed-in" })
+  expect(store.session().pendingCommand).toMatchObject({ name: "issues.view", args: "3", requirement: "signed-in" })
   expect([...store.collections.toasts.values()]).toEqual([])
 })
 

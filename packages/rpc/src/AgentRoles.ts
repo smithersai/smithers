@@ -6,31 +6,7 @@
 import { z } from "zod"
 import { HARNESS_IDS } from "./LocalApp.ts"
 
-/*
- * The agent roles (apps/app/docs/LOCAL-APP.md "Tabs" → "Agents";
- * apps/app/docs/workbench-lanes/custom-agents.md): every role is a job
- * description bound to one model and to the local harness that runs that
- * model. Roles are DATA — the `+` menus, the PTY route, the subagent card, the
- * Agents card, and the orchestrator's instructions all read one list — so a
- * role can never be launched with a different model than it names, and the
- * server (not the renderer) turns a role id into a launch argv.
- *
- * Agents are rows, not an enum. The built-ins below seed `<stateDir>/
- * agents.json` on the Bun host (`builtin: true`: editable model and purpose,
- * never removable); the user adds any number of custom agents, each a
- * harness the machine has plus a model id that harness accepts. Nothing
- * stores a launch argv: `roleLaunchArgv` COMPOSES it from the harness's
- * verified model flag and the guarded model id.
- *
- * Model ids and CLI flags are verified against the installed binaries:
- *  - `claude --model <model>` accepts a full model name ("claude-fable-5").
- *  - `codex -m <MODEL>` ("gpt-5.6-sol", "gpt-5.6-luna"; the same ids
- *    packages/smithers/agent/model/src/DeferredTools.ts lists for the GPT-5.6 family).
- *  - `opencode --model provider/model`: `opencode models kimi-for-coding`
- *    lists `k3`; `opencode models cerebras` lists `gpt-oss-120b` and
- *    `gemma-4-31b` (opencode 1.18.22, this machine). The model id an
- *    opencode role stores is the `provider/model` the binary accepts.
- */
+/** Built-in agent roles bind a job to a model and supported local harness. */
 
 /** A role id: lowercase, starts with a letter, 2–41 characters, no spaces.
  * @since 1.0.0
@@ -128,7 +104,7 @@ export const AgentRoleSchema = z.object({
   harness: z.enum(HARNESS_IDS),
   /** Whether this role's job is to delegate to the others. */
   delegates: z.boolean(),
-  /** A seeded row: editable model and purpose, never removable. */
+  /** Whether the role belongs to the built-in registry. */
   builtin: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number()
@@ -212,7 +188,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
   })
 ]
 
-/** Whether a string is a well-formed agent id (built-in or custom); not whether one exists.
+/** Whether a string is a well-formed agent id; not whether one exists.
  * @since 1.0.0
  * @category conversions
  */
@@ -240,24 +216,6 @@ export const agentRole = (id: BuiltinAgentRoleId): AgentRole => {
   const role = findAgentRole(id)
   if (role === undefined) throw new Error(`Unknown agent role ${id}`)
   return role
-}
-
-/**
- * The agents as every menu lists them: the built-ins in table order, then
- * the custom agents oldest first. An empty list (nothing loaded yet) is the
- * built-ins, because they are never removable — a loaded list is never empty.
- * @since 1.0.0
- * @category conversions
- */
-export const orderedAgentRoles = (roles: ReadonlyArray<AgentRole>): ReadonlyArray<AgentRole> => {
-  if (roles.length === 0) return AGENT_ROLES
-  const rank = (role: AgentRole): number => {
-    const index = (AGENT_ROLE_IDS as ReadonlyArray<string>).indexOf(role.id)
-    return role.builtin && index !== -1 ? index : AGENT_ROLE_IDS.length
-  }
-  return [...roles].sort((left, right) =>
-    rank(left) - rank(right) || left.createdAt - right.createdAt || left.id.localeCompare(right.id)
-  )
 }
 
 /*
@@ -426,13 +384,6 @@ export const roleLaunchArgv = (
   return prompt === "" ? base : [...base, "--", prompt]
 }
 
-/*
- * The wire (apps/app/docs/LOCAL-APP.md "HTTP and WebSocket surface"):
- * `GET /api/agents` answers the list; `PUT /api/agents/{id}` creates or
- * edits one row from this body; `GET /api/harnesses/{id}/models` answers
- * what the harness's own list command printed, or the table's verified
- * suggestions when it has no list command.
- */
 /**
  * Validates agents response values at the RPC boundary.
  *
@@ -447,71 +398,3 @@ export const AgentsResponseSchema = z.object({ agents: z.array(AgentRoleSchema) 
  * @category models
  */
 export type AgentsResponse = z.infer<typeof AgentsResponseSchema>
-
-/**
- * Validates agent put request values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const AgentPutRequestSchema = z.object({
-  label: z.string().min(1).max(60),
-  purpose: z.string().max(400),
-  harness: z.enum(HARNESS_IDS),
-  model: AgentRoleModelSchema,
-  delegates: z.boolean().optional()
-}).strict()
-/**
- * The decoded value accepted by {@link AgentPutRequestSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type AgentPutRequest = z.infer<typeof AgentPutRequestSchema>
-
-/**
- * Validates agent response values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const AgentResponseSchema = z.object({ agent: AgentRoleSchema })
-
-/**
- * Validates harness models response values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const HarnessModelsResponseSchema = z.object({
-  harnessId: z.enum(HARNESS_IDS),
-  /** One model id per line the list command printed, or the verified suggestions. */
-  models: z.array(z.string()),
-  source: z.enum(["list", "suggestions"]),
-  /** Why the list is empty or fell back, in the host's words; absent when it answered. */
-  reason: z.string().optional()
-})
-/**
- * The decoded value accepted by {@link HarnessModelsResponseSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type HarnessModelsResponse = z.infer<typeof HarnessModelsResponseSchema>
-
-/**
- * The id a new agent gets from its name when none was typed: "Docs writer"
- * → "docs-writer". Undefined when nothing id-shaped survives.
- * @since 1.0.0
- * @category conversions
- */
-export const agentIdFromLabel = (label: string): AgentRoleId | undefined => {
-  const slug = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/^[^a-z]+/, "")
-    .slice(0, 41)
-  return AGENT_ROLE_ID.test(slug) ? slug : undefined
-}

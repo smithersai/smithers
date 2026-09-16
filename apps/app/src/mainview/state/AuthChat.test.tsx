@@ -10,7 +10,7 @@ import { openRequestedRepo,requestedRepo } from "../RepoLink"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories,waitFor } from "./TestFixtures"
+import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -233,16 +233,13 @@ describe("auth is a conversation state — the chat is the only page", () => {
   }
 
   for (const savedSignIn of [false, true]) {
-    test(`an unknown repository boot replaces the persisted repository Home with its notice (saved sign-in: ${savedSignIn})`, async () => {
+    test(`an unknown repository boot shows its notice after a persisted repository selection (saved sign-in: ${savedSignIn})`, async () => {
       const storage = memoryStorage()
       const http = backend({
         "/api/auth/session": json(401, {}),
         "/api/auth/scopes": json(200, { scopes: [] }),
         "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] }),
         "/api/repos/smithersai/smithers": json(200, { default_bookmark: "main" }),
-        "/api/repos/smithersai/smithers/contents/.smithers/home.json": json(200, {
-          content: JSON.stringify({ blocks: [{ type: "text", text: "The known repository's home." }] })
-        })
       })
       const boot = async () => {
         const store = await createAppStore({ kind: "localStorage", storage })
@@ -259,8 +256,6 @@ describe("auth is a conversation state — the chat is the only page", () => {
       window.history.replaceState(null, "", "/smithersai/smithers/")
       const first = await boot()
       expect(first.refusal).toBeUndefined()
-      await waitFor(() => first.store.collections.cards.has("repo-home-smithersai/smithers"))
-      expect(mount(first.controller).host.textContent).toContain("Home · smithersai/smithers")
       if (savedSignIn) await first.controller.commands.run("auth.prompt")
       await first.store.settled?.()
       mounted.pop()?.()
@@ -270,27 +265,16 @@ describe("auth is a conversation state — the chat is the only page", () => {
       const reloaded = await boot()
       expect(reloaded.refusal).toBe("nope/nope is not in the public repository catalog.")
       expect(reloaded.store.session().activeRepoKey).toBe("smithersai/smithers")
-      expect(reloaded.store.collections.cards.has("repo-home-smithersai/smithers")).toBe(true)
       const { host } = mount(reloaded.controller)
       const notice = host.querySelector('[data-repository-missing] .smithers-chat-message')
       expect(notice).not.toBeNull()
       expect(notice?.textContent).toContain("nope/nope isn't on Smithers yet.")
       expect(notice?.querySelector('[data-flow="auth.sign-in"]')).not.toBeNull()
-      expect(host.querySelector('[data-kind="repo-home"]')).toBeNull()
-      expect(host.textContent).not.toContain("Home · smithersai/smithers")
       expect(window.location.pathname).toBe("/nope/nope/")
     })
   }
 
-  /*
-   * Anonymous exploring (apps/server/PUBLIC-REPOSITORIES.md): at
-   * smithers.sh/smithersai/smithers the catalog row is selected before the
-   * session answers signed-out. The web gate never reads: the transcript
-   * belongs to the repository's welcome card (repo.welcome, rendered by the
-   * open path in RepoLink.ts), whose maintain and contribute doors render
-   * the sign-in step only when it is needed.
-   */
-  test("signed-out on the web with a catalog repository selected: no gate, no exploring line; the welcome card is the opener", async () => {
+  test("signed-out on the web with a catalog repository selected: reads and chat remain available", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: WEB,
@@ -316,16 +300,12 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await controller.loadSession()
     await settled()
 
-    expect((await controller.commands.run("repo.welcome")).status).toBe("executed")
     await settled()
 
     const { host, markup } = mount(controller)
     expect(markup()).not.toContain(WEB_OPENING)
     expect(markup()).not.toContain("You are exploring")
     expect(host.querySelector(".smithers-chat-message .message-cta")).toBeNull()
-    expect(host.querySelector('.repo-onboarding[data-stage="welcome"]')).not.toBeNull()
-    expect([...host.querySelectorAll<HTMLElement>('.repo-onboarding [data-flow]')].map((button) => button.dataset.flow))
-      .toEqual(["repo.maintain", "repo.contribute", "repo.explore"])
     // Repository reads are open to the visitor; a write still waits on sign-in.
     expect(controller.commands.state().publicRepo).toBe(true)
     expect(host.querySelector(".smithers-composer")).not.toBeNull()

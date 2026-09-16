@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { z } from "zod"
+import { AGENT_ROLES } from "../src/AgentRoles.ts"
 import type { Card } from "../src/Cards.ts"
 import {
   CardPatchSchema,
@@ -10,6 +11,10 @@ import {
 } from "../src/Cards.ts"
 import { LSP_DIAGNOSTICS_CAP } from "../src/LocalLsp.ts"
 import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
+
+const builtIn = AGENT_ROLES[0]!
+const builtInCardRow = { id: builtIn.id, label: builtIn.label, purpose: builtIn.purpose, harness: builtIn.harness,
+  model: builtIn.model, builtin: true, harnessName: "Claude", available: true, reason: "", account: "will@example.com" }
 
 const base = { id: "card-r1", title: "Aomi", status: "active", createdAt: 0, ordinal: 0 }
 
@@ -30,7 +35,6 @@ describe("the workspace card", () => {
     status: "running",
     provisioningStage: null,
     bookmarkHead: { changeId: "qupxosqw", commitId: "c0ffee1" },
-    snapshots: [{ id: "snap-1", name: "before-upgrade", createdAt: "2026-09-01T10:00:00Z" }],
     sessions: [{ id: "sess-1", status: "running", createdAt: null }]
   }
 
@@ -164,42 +168,15 @@ describe("the file card", () => {
   })
 })
 
-/*
- * Custom agents (apps/app/docs/workbench-lanes/custom-agents.md): the Agents card
- * carries every agent with the harness's live availability, the form card
- * carries its draft in the payload, and the subagent card accepts a custom
- * role id beside a built-in one.
- */
 describe("the agent cards", () => {
-  const row = {
-    id: "reviewer",
-    label: "Reviewer",
-    purpose: "Reviews diffs.",
-    harness: "codex",
-    harnessName: "Codex",
-    model: { provider: "openai", id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-    builtin: false,
-    available: true,
-    reason: "",
-    account: "will@example.com"
-  }
+  const row = builtInCardRow
 
-  test("the agents card lists rows with availability; a bad id or a model with a space is refused", () => {
-    const card = CardSchema.parse({ ...base, kind: "agents", payload: { native: true, agents: [row] } })
-    if (card.kind !== "agents") return
-    expect(card.payload.agents[0]?.available).toBe(true)
-    expect(
-      CardSchema.safeParse({ ...base, kind: "agents", payload: { native: true, agents: [{ ...row, id: "Bad Id" }] } })
-        .success
-    ).toBe(false)
-    expect(
-      CardSchema.safeParse({
-        ...base,
-        kind: "agents",
-        payload: { native: true, agents: [{ ...row, model: { ...row.model, id: "gpt 5" } }] }
-      })
-        .success
-    ).toBe(false)
+  test("the agents card retains availability but resets custom definitions and edited built-in models", () => {
+    const card = CardSchema.parse({ ...base, kind: "agents", payload: { native: true, agents: [
+      { ...row, model: { provider: "openai", id: "gpt 5", label: "Edited" }, label: "Edited" },
+      { ...row, id: "custom-reviewer", builtin: false }
+    ] } })
+    expect(card.payload).toEqual({ native: true, agents: [row] })
   })
 
   test("the flow-form card holds the flow, who asked, the derived fields, the draft and what was given; a bad kind or provider is rejected", () => {
@@ -207,7 +184,7 @@ describe("the agent cards", () => {
       ...base,
       kind: "flow-form",
       payload: {
-        flow: "agent.create",
+        flow: "tab.harness",
         via: "agent",
         fields: [
           { name: "id", label: "Id", kind: "text", required: true },
@@ -216,17 +193,17 @@ describe("the agent cards", () => {
             label: "Harness",
             kind: "select",
             required: true,
-            optionsFrom: "agent-harnesses",
+            optionsFrom: "harnesses",
             options: [
               { value: "codex", label: "Codex · OPENAI_API_KEY" },
               { value: "opencode", label: "OpenCode", disabled: true, reason: "no credential" }
             ]
           },
-          { name: "model", label: "Model", kind: "text", required: true, optionsFrom: "harness-models", options: [] },
+          { name: "model", label: "Model", kind: "text", required: true, options: [] },
           { name: "purpose", label: "Purpose", kind: "text", required: false }
         ],
-        draft: { id: "reviewer", harness: "codex" },
-        given: { id: "reviewer", harness: "codex" }
+        draft: { id: "implement", harness: "codex" },
+        given: { id: "implement", harness: "codex" }
       }
     })
     if (card.kind !== "flow-form") return
@@ -260,21 +237,11 @@ describe("the agent cards", () => {
     )
   })
 
-  test("the models card is what the harness printed, with its source", () => {
-    const card = CardSchema.parse({
-      ...base,
-      kind: "agent-models",
-      payload: { harnessId: "opencode", displayName: "OpenCode", models: ["cerebras/gpt-oss-120b"], source: "list" }
-    })
-    if (card.kind !== "agent-models") return
-    expect(card.payload.models).toEqual(["cerebras/gpt-oss-120b"])
-  })
-
-  test("the subagent card takes a custom role id and its purpose, and still parses without one", () => {
+  test("the subagent card takes a built-in role id and its purpose, and still parses without one", () => {
     const payload = {
       harnessId: "codex",
       displayName: "Reviewer · GPT-5.6 Terra",
-      roleId: "reviewer",
+      roleId: "implement",
       purpose: "Reviews diffs.",
       tabId: "pty-1",
       sessionId: "pty-1",
@@ -291,58 +258,13 @@ describe("the agent cards", () => {
     // this test without ever asserting a role.
     expect("cloud" in card.payload).toBe(false)
     if ("cloud" in card.payload) return
-    expect(card.payload.roleId).toBe("reviewer")
+    expect(card.payload.roleId).toBe("implement")
     expect(card.payload.purpose).toBe("Reviews diffs.")
     const { roleId: _roleId, purpose: _purpose, ...bare } = payload
     expect(CardSchema.safeParse({ ...base, kind: "agent", payload: bare }).success).toBe(true)
     expect(CardSchema.safeParse({ ...base, kind: "agent", payload: { ...payload, roleId: "Not An Id" } }).success).toBe(
       false
     )
-  })
-})
-
-describe("persisted card upgrades", () => {
-  const draft = { id: "reviewer", label: "Reviewer", purpose: "Review diffs", harness: "codex", model: "gpt-5.6-terra" }
-  const legacy = {
-    ...base,
-    kind: "agent-form",
-    payload: {
-      mode: "create",
-      draft,
-      harnesses: [{ id: "codex", displayName: "Codex", status: "api-key", account: "" }],
-      models: ["gpt-5.6-terra"],
-      modelsSource: "suggestions",
-      phase: "editing"
-    }
-  }
-
-  test.each(["create", "edit"])("upgrades a historical %s draft, including embedded snapshots", (mode) => {
-    const saved = { ...legacy, payload: { ...legacy.payload, mode } }
-    const card = CardSchema.parse(JSON.parse(JSON.stringify(saved)))
-    expect(card.id).toBe(legacy.id)
-    expect(card.kind).toBe("flow-form")
-    if (card.kind !== "flow-form") throw new Error("draft was not upgraded")
-    expect(card.payload.flow).toBe(`agent.${mode}`)
-    expect(card.payload.draft).toEqual(draft)
-    expect(card.payload.via).toBe("user")
-    expect(card.payload.fields.map((field) => field.name)).toEqual(
-      mode === "create" ? ["id", "harness", "model", "purpose", "label"] : ["model", "purpose", "label"]
-    )
-    expect(card.payload.given).toEqual(mode === "edit" ? { id: draft.id } : {})
-    expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [saved] }).cards).toEqual([card])
-    expect(CardSchema.parse(card)).toEqual(card)
-  })
-
-  test("keeps settled forms settled and interrupted saves editable", () => {
-    for (const phase of ["saved", "cancelled", "saving", "failed"]) {
-      const card = CardSchema.parse({ ...legacy, payload: { ...legacy.payload, phase, error: "last refusal" } })
-      expect(card.status).toBe(phase === "saved" || phase === "cancelled" ? "acted" : base.status)
-      expect(card.payload).toMatchObject({ draft, error: "last refusal" })
-    }
-  })
-
-  test("does not upgrade a malformed historical row", () => {
-    expect(CardSchema.safeParse({ ...legacy, payload: { ...legacy.payload, draft: {} } }).success).toBe(false)
   })
 })
 
@@ -366,16 +288,9 @@ describe("card patch validation", () => {
     ).toBe(true)
   })
 
-  test("metadata is optional but kind is required; nested stage payloads remain atomic", () => {
+  test("metadata is optional but kind is required", () => {
     expect(CardPatchSchema.parse({ kind: "file", title: "After" })).toEqual({ kind: "file", title: "After" })
     expect(CardPatchSchema.safeParse({ title: "After" }).success).toBe(false)
-    expect(CardPatchSchema.safeParse({ kind: "repo-onboarding", payload: { stage: "welcome" } }).success).toBe(false)
-    expect(
-      CardPatchSchema.safeParse({
-        kind: "repo-onboarding",
-        payload: { stage: "welcome", repo: "smithers", summary: null }
-      }).success
-    ).toBe(true)
     expect(CardPatchSchema.safeParse({ kind: "agent", payload: { roleId: "Bad Id" } }).success).toBe(false)
   })
 
@@ -707,22 +622,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       webhooks: [{ name: "github", flowId: "ci" }]
     }
   },
-  factory: {
-    minimal: {
-      repo: "smithersai/smithers",
-      wiki: { generated: null, notes: 0, librarian: null },
-      infra: []
-    },
-    full: {
-      repo: "smithersai/smithers",
-      wiki: {
-        generated: { pages: 24, sha: "4e87ac15", coverage: "82%", generatedAt: 1_757_000_000_000 },
-        notes: 11,
-        librarian: { answers: 90, misses: 4 }
-      },
-      infra: [{ path: ".smithers/FACTORY.ts", state: "unreadable", reason: "the mirror refused (404)" }]
-    }
-  },
   "run-list": {
     minimal: { repo: "smithersai/smithers", runs: [] },
     full: {
@@ -822,7 +721,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       source: "github",
       htmlUrl: "https://github.com/smithersai/smithers/issues/1634",
       labels: ["ci", "flaky"],
-      linear: { identifier: "ENG-482", url: "https://linear.app/smithers/issue/ENG-482" },
       comments: [{ author: null, commentBody: "reproduced", createdAt: "2026-09-05T09:00:00Z" }],
       createdAt: "2026-09-04T08:00:00Z",
       assignees: [{ login: "ada", avatar: "https://avatars.githubusercontent.com/u/1" }],
@@ -988,7 +886,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "connector-setup": {
     minimal: { connector: "github", repo: "smithersai/smithers", phase: "setup", steps: [] },
     full: {
-      connector: "linear",
+      connector: "github",
       repo: "smithersai/smithers",
       phase: "connected",
       steps: [{
@@ -998,18 +896,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         detail: "authorized as will",
         error: "authorization expired"
       }],
-      setupKey: "setup-1",
-      setupExpiresAt: "2026-09-05T09:05:00Z",
-      actor: "will",
-      teams: [{ id: "team-1", name: "Engineering", key: "ENG" }],
-      teamId: "team-1",
-      integration: {
-        id: 7,
-        teamKey: "ENG",
-        teamName: "Engineering",
-        active: true,
-        lastSyncAt: "2026-09-05T09:00:00Z"
-      },
       installationId: 4212,
       configured: true,
       installUrl: "https://github.com/apps/smithers/installations/new",
@@ -1020,8 +906,8 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "sync-ops": {
     minimal: { subject: "Mirror · smithersai/smithers", source: "github-mirror", runState: null, ops: [] },
     full: {
-      subject: "Linear ENG ↔ smithersai/smithers",
-      source: "linear",
+      subject: "Mirror · smithersai/smithers",
+      source: "github-mirror",
       integrationId: "7",
       repo: "smithersai/smithers",
       runId: "run-1",
@@ -1033,7 +919,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       trigger: "sync started",
       ops: [{
         id: "op-1",
-        source: "linear",
+        source: "github-mirror",
         target: "github",
         entity: "issue",
         entityId: "ENG-482",
@@ -1344,7 +1230,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       status: "pending",
       provisioningStage: null,
       bookmarkHead: null,
-      snapshots: [],
       sessions: []
     },
     full: {
@@ -1373,7 +1258,6 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       },
       persistence: "persistent",
       sshHost: "ws-1@ssh.jjhub.tech",
-      snapshots: [{ id: "snap-1", name: "before-upgrade", createdAt: "2026-09-01T10:00:00Z" }],
       sessions: [{ id: "sess-1", status: "running", createdAt: null, kind: "lsp", language: "typescript" }],
       lspLanguages: ["typescript"],
       files: [{ name: "src", path: "src", type: "dir", size: null }],
@@ -1392,6 +1276,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       desktop: { ready: true, streamUrl: "/vnc", session: { id: "vnc-1", expiresAt: "2026-09-05T09:05:00Z" } },
       desktopRefusal: { status: 503, message: "desktop not ready", code: "desktop_not_ready", retryAfterSeconds: 5 },
       desktopStage: "starting",
+      desktopProgress: "Starting desktop",
       terminalRefusal: { status: 503, message: "guest not ready", code: "guest_not_ready", retryAfterSeconds: 3 },
       facet: "desktop",
       terminalSessionId: "pty-1",
@@ -1733,7 +1618,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       statusRollup: statusRollup("session:pty-1", "exited", "idle"),
       harnessId: "codex",
       displayName: "Reviewer · GPT-6 Astra",
-      roleId: "reviewer",
+      roleId: "implement",
       purpose: "Reviews diffs.",
       task: "review the rpc change",
       tabId: "pty-1",
@@ -1757,25 +1642,14 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { native: false, agents: [] },
     full: {
       native: true,
-      agents: [{
-        id: "reviewer",
-        label: "Reviewer",
-        purpose: "Reviews diffs.",
-        harness: "codex",
-        harnessName: "Codex",
-        model: { provider: "openai", id: "gpt-6-astra", label: "GPT-6 Astra" },
-        builtin: false,
-        available: true,
-        reason: "",
-        account: "will@example.com"
-      }],
+      agents: [builtInCardRow],
       error: "the harness signals failed"
     }
   },
   "flow-form": {
-    minimal: { flow: "agent.create", via: "user", fields: [], draft: {}, given: {} },
+    minimal: { flow: "tab.harness", via: "user", fields: [], draft: {}, given: {} },
     full: {
-      flow: "agent.create",
+      flow: "tab.harness",
       via: "agent",
       fields: [{
         name: "harness",
@@ -1784,58 +1658,15 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         required: true,
         placeholder: "codex",
         options: [{ value: "opencode", label: "OpenCode", disabled: true, reason: "no credential" }],
-        optionsFrom: "agent-harnesses"
+        optionsFrom: "harnesses"
       }],
-      draft: { id: "reviewer", retries: 2, verbose: true },
-      given: { id: "reviewer" },
+      draft: { id: "implement", retries: 2, verbose: true },
+      given: { id: "implement" },
       submitting: true,
       submitLabel: "Run flow",
       payloadField: "input",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
       error: "the submit refused (500)"
-    }
-  },
-  "repo-onboarding": {
-    minimal: { stage: "welcome", repo: "smithersai/smithers", summary: null },
-    full: {
-      stage: "maintain",
-      repo: "smithersai/smithers",
-      activity: {
-        sentence: "12 commits, 3 landings and 4 issues in the last week",
-        counts: { commits: 12, pullRequests: 3, issues: null },
-        since: "2026-08-29T00:00:00Z"
-      },
-      reason: "the activity route is not deployed",
-      flows: ["issues.list", "prs.list"]
-    }
-  },
-  "repo-home": {
-    minimal: {
-      repo: "smithersai/smithers",
-      path: ".smithers/home.json",
-      blocks: [{ type: "flows" }],
-      featuredFlows: null
-    },
-    full: {
-      repo: "smithersai/smithers",
-      path: ".smithers/home.json",
-      blocks: [
-        { type: "text", title: "Smithers", text: "A durable control plane for long-running coding agents." },
-        { type: "links", title: "Docs", links: [{ label: "Docs", url: "https://smithers.sh/docs" }] },
-        { type: "flows", title: "Flows" }
-      ],
-      featuredFlows: [{ id: "review", summary: "review the change" }, { id: "land", summary: null }],
-      featuredReason: "the projection did not answer"
-    }
-  },
-  "agent-models": {
-    minimal: { harnessId: "opencode", displayName: "OpenCode", models: [], source: "suggestions" },
-    full: {
-      harnessId: "opencode",
-      displayName: "OpenCode",
-      models: ["cerebras/gpt-oss-120b"],
-      source: "list",
-      reason: "the list command is unavailable"
     }
   },
   "search-results": {
@@ -1988,6 +1819,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       }]
     }
   },
+  retired: { minimal: {}, full: {} },
   "plugin-library": {
     minimal: { tutorial: false },
     full: { tutorial: true }
@@ -2015,7 +1847,7 @@ describe("every persisted card kind", () => {
   })
 
   test("every union payload has an explicit branch audit below", () => {
-    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent", "repo-onboarding"])
+    expect(kinds.filter((kind) => payloadFields(kind) === null)).toEqual(["agent"])
   })
 
   test.each(objectKinds)("%s: the fixtures name every field the payload declares, and no more", (kind) => {
@@ -2120,36 +1952,6 @@ describe("a GitHub call's rate limit", () => {
   })
 })
 
-/*
- * The repository welcome's other three stages: the payload is a
- * discriminated union, so each stage is its own required shape and a stage
- * change is an atomic replacement, never a partial inherit.
- */
-describe("the repo-onboarding stages", () => {
-  const stages = [
-    { stage: "welcome", repo: "smithersai/smithers", summary: "a durable control plane" },
-    {
-      stage: "maintain",
-      repo: "smithersai/smithers",
-      activity: null,
-      reason: "the activity route is not deployed",
-      flows: []
-    },
-    { stage: "contribute", repo: "smithersai/smithers", guide: "CONTRIBUTING.md" },
-    { stage: "explore", repo: "smithersai/smithers", guides: [{ path: "docs/README.md" }] }
-  ]
-
-  test.each(stages)("the $stage stage parses and round-trips", (payload) => {
-    const parsed = CardSchema.parse(card("repo-onboarding", payload))
-    expect(parsed.payload).toEqual(payload)
-  })
-
-  test("a stage outside the four, and a stage missing its own required field, are refused", () => {
-    expect(CardSchema.safeParse(card("repo-onboarding", { stage: "abandon", repo: "o/r" })).success).toBe(false)
-    expect(CardSchema.safeParse(card("repo-onboarding", { stage: "contribute", repo: "o/r" })).success).toBe(false)
-  })
-})
-
 /** Cloud observations retain routing, unknown provider, and transcript identity through persistence. */
 const cloudAgentFixtures: KindFixtures = {
   minimal: {
@@ -2227,5 +2029,34 @@ describe("the persisted local and cloud agent variants", () => {
     )
     expect(CardSchema.safeParse(card("agent", { ...cloudAgentFixtures.minimal, transcript: [{ id: "7" }] })).success)
       .toBe(false)
+  })
+})
+
+describe("removed presentation compatibility", () => {
+  const saved = (kind: string, payload: unknown) => ({ ...base, kind, payload, body: "Old content", loading: true })
+  const retired = [
+    ...["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form"].map(kind => saved(kind, { draft: "old data" })),
+    saved("connector-setup", { connector: "linear" }),
+    saved("sync-ops", { source: "linear" }),
+    ...["repo.welcome", "repo.explore", "repo.contribute", "repo.maintain", "repo.home", "factory.show",
+      "workspace.fork", "workspace.snapshot", "workspace.snapshot.delete", "workspace.snapshot.fork", "workspace.template",
+      "change.open-computer", "agent.create", "agent.edit", "agent.models", "agent.new", "agent.remove",
+      "issues.link-linear", "issues.unlink-linear", "sync.retry", "sync.ops.load-older", "linear.setup"].map(flow =>
+      saved("flow-form", { flow, via: "user", submitting: true, draft: { secret: "obsolete" } }))
+  ]
+  test.each(retired)("retires $kind without losing the card identity", (row) => {
+    const result = CardSchema.parse(JSON.parse(JSON.stringify(row)))
+    expect(result).toEqual({ ...base, kind: "retired", title: "", status: "acted", payload: {}, loading: false })
+    expect(CardSchema.parse(result)).toEqual(result)
+    expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [row] }).cards).toEqual([result])
+    if (row.kind !== "flow-form") expect(CardPatchSchema.safeParse({ kind: row.kind, payload: row.payload }).success).toBe(false)
+  })
+  test("the old snapshot facet becomes a terminal while internal snapshot provenance survives", () => {
+    const old = saved("workspace", { ...FIXTURES.workspace.minimal, facet: "snapshots", snapshot: true,
+      snapshots: [{ id: "old", name: "Old", createdAt: null }] })
+    const result = CardSchema.parse(old)
+    expect(result.kind).toBe("workspace")
+    expect(result.payload).toMatchObject({ facet: "terminal", snapshot: true, workspaceId: "ws-1" })
+    expect(result.payload).not.toHaveProperty("snapshots")
   })
 })

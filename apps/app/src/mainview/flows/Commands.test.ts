@@ -132,8 +132,6 @@ const REFUSAL = "/repo.open is not in the web app — it needs the native app."
 const CARD_TEXT =
   "/repo.open is not in the web app. Local repositories, terminals, build targets and local agents need the native app."
 const CARD_ACTION = { flow: "app.download", label: "Download the app" }
-const LINEAR_REFUSAL = "/linear.connect is not in the web app — it needs the native app's Smithers Cloud session."
-const LINEAR_CARD_TEXT = "/linear.connect is not in the web app. It needs the native app's Smithers Cloud session."
 const SESSION_REFUSAL =
   "/cloud.sign-in is not in the web app — on the web your GitHub sign-in is your Smithers Cloud sign-in."
 const ORIGIN_REFUSAL = "/workspace.terminal is not available on this origin yet."
@@ -277,8 +275,6 @@ describe("explainAbsent — an exact miss classified against the unfiltered cata
 
   test("the cloud.pat door is the native app's Smithers Cloud session; the session flows themselves are answered by the GitHub sign-in", async () => {
     const { controller } = await freshController(WEB)
-    expect(controller.commands.explainAbsent("linear.connect")).toEqual({ door: "cloud.pat", reason: LINEAR_REFUSAL })
-    expect(controller.commands.explainAbsent("linear.connect.confirm")?.door).toBe("cloud.pat")
     expect(controller.commands.explainAbsent("cloud.sign-in")).toEqual({ door: "cloud.session", reason: SESSION_REFUSAL })
     expect(controller.commands.explainAbsent("cloud.sign-out")?.door).toBe("cloud.session")
   })
@@ -359,17 +355,6 @@ describe("the unavailable outcome — one answer for slash, button and agent", (
     const typed = await controller.commands.runForAgent("/tab.terminal")
     expect(typed.status).toBe("unavailable")
     expect(downloadCards(store)).toHaveLength(2)
-  })
-
-  test("a cloud.pat flow gets the Smithers Cloud session sentence on its card, and the download action", async () => {
-    const { store, controller } = await freshController(WEB)
-    signIn(store)
-    const outcome = await controller.commands.run("linear.connect")
-    expect(outcome).toEqual({ status: "unavailable", door: "cloud.pat", reason: LINEAR_REFUSAL, action: "app.download.prompt" })
-    const cards = downloadCards(store)
-    expect(cards).toHaveLength(1)
-    expect(cards[0]?.text).toBe(LINEAR_CARD_TEXT)
-    expect(cards[0]?.action).toEqual(CARD_ACTION)
   })
 
   test("the cloud session flows are answered by the GitHub sign-in: no card, no download, one honest line", async () => {
@@ -531,12 +516,10 @@ describe("app.download and app.download.prompt", () => {
     const { store, controller } = await freshController(WEB)
     expect((await controller.commands.runForAgent("app.download.prompt")).status).toBe("executed")
     expect((await controller.commands.runForAgent("app.download.prompt", "tab.terminal")).status).toBe("executed")
-    expect((await controller.commands.runForAgent("app.download.prompt", "linear.connect")).status).toBe("executed")
     const cards = downloadCards(store)
     expect(cards.map((card) => card.text)).toEqual([
       "That is not in the web app. Local repositories, terminals, build targets and local agents need the native app.",
       "/tab.terminal is not in the web app. Local repositories, terminals, build targets and local agents need the native app.",
-      LINEAR_CARD_TEXT
     ])
     for (const card of cards) expect(card.action).toEqual(CARD_ACTION)
   })

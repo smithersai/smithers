@@ -25,15 +25,15 @@ afterAll(async () => {
 
 type FlowFormCard = Extract<Card, { kind: "flow-form" }>
 
-const base = { title: "/agent.create", status: "active" as const, createdAt: 0, ordinal: 0 }
+const base = { title: "/tab.harness", status: "active" as const, createdAt: 0, ordinal: 0 }
 
 const formCard = (payload: Partial<FlowFormCard["payload"]> = {}, status: Card["status"] = "active"): FlowFormCard => ({
   ...base,
-  id: "form-agent.create",
+  id: "form-tab.harness",
   kind: "flow-form",
   status,
   payload: {
-    flow: "agent.create",
+    flow: "tab.harness",
     via: "agent",
     fields: [
       { name: "id", label: "Id", kind: "text", required: true },
@@ -42,7 +42,7 @@ const formCard = (payload: Partial<FlowFormCard["payload"]> = {}, status: Card["
         label: "Harness",
         kind: "select",
         required: true,
-        optionsFrom: "agent-harnesses",
+        optionsFrom: "harnesses",
         options: [
           { value: "claude", label: "Claude Code · will@example.com" },
           { value: "codex", label: "Codex · OPENAI_API_KEY" },
@@ -51,12 +51,12 @@ const formCard = (payload: Partial<FlowFormCard["payload"]> = {}, status: Card["
         ]
       },
       {
-        name: "model",
-        label: "Model",
+        name: "bookmark",
+        label: "Bookmark",
         kind: "text",
         required: true,
-        optionsFrom: "harness-models",
-        options: [{ value: "gpt-5.6-sol", label: "gpt-5.6-sol" }, { value: "gpt-5.6-terra", label: "gpt-5.6-terra" }]
+        optionsFrom: "bookmarks",
+        options: [{ value: "main", label: "main" }, { value: "work", label: "work" }]
       },
       { name: "seq", label: "Seq", kind: "number", required: false },
       { name: "follow", label: "Follow", kind: "boolean", required: false },
@@ -100,19 +100,19 @@ describe("the flow form card", () => {
     })} onRunCommand={(name, args) => recorder.calls.push([name, args])} />)
     expect(host.querySelector("textarea")?.value).toBe("Goal\nEvidence")
     input(host, "flow-form-text", "Goal\nEvidence\nNext step")
-    expect(recorder.calls[0]).toEqual(["form.set", "form-agent.create text Goal\nEvidence\nNext step"])
+    expect(recorder.calls[0]).toEqual(["form.set", "form-tab.harness text Goal\nEvidence\nNext step"])
     const copy = [...host.querySelectorAll("button")].find(button => button.textContent === "Copy brief")
     copy?.click()
-    expect(recorder.calls[1]).toEqual(["form.submit", "form-agent.create"])
+    expect(recorder.calls[1]).toEqual(["form.submit", "form-tab.harness"])
   })
   test("renders one control per field kind: text, select, text with a datalist, number, checkbox", () => {
     const host = mount(<FlowFormCardBody card={formCard()} onRunCommand={() => {}} />)
     expect(host.querySelector("[data-testid=flow-form-id]")?.getAttribute("type")).toBe("text")
     expect(host.querySelector("[data-testid=flow-form-harness]")?.tagName).toBe("SELECT")
-    const model = host.querySelector<HTMLInputElement>("[data-testid=flow-form-model]")
-    expect(model?.getAttribute("type")).toBe("text")
-    expect(model?.getAttribute("list")).toBe("flow-form-options-form-agent.create-model")
-    expect([...host.querySelectorAll("datalist option")].map((option) => option.getAttribute("value"))).toEqual(["gpt-5.6-sol", "gpt-5.6-terra"])
+    const bookmark = host.querySelector<HTMLInputElement>("[data-testid=flow-form-bookmark]")
+    expect(bookmark?.getAttribute("type")).toBe("text")
+    expect(bookmark?.getAttribute("list")).toBe("flow-form-options-form-tab.harness-bookmark")
+    expect([...host.querySelectorAll("datalist option")].map((option) => option.getAttribute("value"))).toEqual(["main", "work"])
     expect(host.querySelector("[data-testid=flow-form-seq]")?.getAttribute("type")).toBe("number")
     expect(host.querySelector("[data-testid=flow-form-follow]")?.getAttribute("type")).toBe("checkbox")
     expect(host.querySelector<HTMLInputElement>("[data-testid=flow-form-purpose]")?.placeholder).toBe("Reviews diffs")
@@ -120,7 +120,7 @@ describe("the flow form card", () => {
     expect([...host.querySelectorAll("[data-field]")].map((row) => [row.getAttribute("data-field"), row.getAttribute("data-required")])).toEqual([
       ["id", "true"],
       ["harness", "true"],
-      ["model", "true"],
+      ["bookmark", "true"],
       ["seq", "false"],
       ["follow", "false"],
       ["purpose", "false"]
@@ -152,7 +152,7 @@ describe("the flow form card", () => {
     if (harness === null) throw new Error("no harness select")
     harness.value = "codex"
     harness.dispatchEvent(new Event("change", { bubbles: true }))
-    input(host, "flow-form-model", "gpt-5.6-terra")
+    input(host, "flow-form-bookmark", "work")
     input(host, "flow-form-seq", "3")
     const follow = host.querySelector<HTMLInputElement>("[data-testid=flow-form-follow]")
     if (follow === null) throw new Error("no checkbox")
@@ -162,14 +162,14 @@ describe("the flow form card", () => {
     input(host, "flow-form-purpose", "old")
     host.querySelector<HTMLButtonElement>("[data-testid=flow-form-cancel]")?.click()
     expect(calls).toEqual([
-      ["form.set", "form-agent.create id reviewer"],
-      ["form.set", "form-agent.create harness codex"],
-      ["form.set", "form-agent.create model gpt-5.6-terra"],
-      ["form.set", "form-agent.create seq 3"],
-      ["form.set", "form-agent.create follow true"],
-      ["form.set", "form-agent.create purpose"],
-      ["form.set", "form-agent.create purpose old"],
-      ["card.dismiss", "form-agent.create"]
+      ["form.set", "form-tab.harness id reviewer"],
+      ["form.set", "form-tab.harness harness codex"],
+      ["form.set", "form-tab.harness bookmark work"],
+      ["form.set", "form-tab.harness seq 3"],
+      ["form.set", "form-tab.harness follow true"],
+      ["form.set", "form-tab.harness purpose"],
+      ["form.set", "form-tab.harness purpose old"],
+      ["card.dismiss", "form-tab.harness"]
     ])
     expect(host.querySelector("[data-testid=flow-form-cancel]")?.getAttribute("data-flow")).toBe("card.dismiss")
   })
@@ -217,7 +217,7 @@ describe("the flow form card", () => {
       const field = host.querySelector<HTMLInputElement>("input")!
       field.focus()
       flushSync(() => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: state === "composing" })))
-      expect(calls).toEqual(state === "ready" ? [["form.submit", "form-agent.create"]] : [])
+      expect(calls).toEqual(state === "ready" ? [["form.submit", "form-tab.harness"]] : [])
       if (state === "ready") expect(document.activeElement).toBe(field)
     }
   })
@@ -236,7 +236,7 @@ describe("the flow form card", () => {
     const host = mount(<FlowFormCardBody card={formCard({ fields: [{ name: "amount", label: "Amount", kind: "number", required: true }], draft: { amount: 0.5 } })} onRunCommand={onRunCommand} />)
     expect(host.querySelector<HTMLInputElement>("input")!.checkValidity()).toBe(true)
     host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!.click()
-    expect(calls).toEqual([["form.submit", "form-agent.create"]])
+    expect(calls).toEqual([["form.submit", "form-tab.harness"]])
   })
 
   test("Submit is form.submit, disabled until every required field is filled; a boolean never blocks it", () => {
@@ -246,18 +246,18 @@ describe("the flow form card", () => {
     expect(disabled?.disabled).toBe(true)
     expect(disabled?.getAttribute("data-flow")).toBe("form.submit")
     const filled = mount(
-      <FlowFormCardBody card={formCard({ draft: { id: "reviewer", harness: "codex", model: "gpt-5.6-terra" } })} onRunCommand={onRunCommand} />
+      <FlowFormCardBody card={formCard({ draft: { id: "reviewer", harness: "codex", bookmark: "work" } })} onRunCommand={onRunCommand} />
     )
     const submit = filled.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")
     expect(submit?.disabled).toBe(false)
     expect(submit?.textContent).toBe("Submit")
     submit?.click()
-    expect(calls).toEqual([["form.submit", "form-agent.create"]])
+    expect(calls).toEqual([["form.submit", "form-tab.harness"]])
   })
 
   test("a submitted card keeps its record with the controls disabled and no acts; a refused submit shows the reason and stays editable", () => {
     const acted = mount(
-      <FlowFormCardBody card={formCard({ draft: { id: "reviewer", harness: "codex", model: "gpt-5.6-terra" } }, "acted")} onRunCommand={() => {}} />
+      <FlowFormCardBody card={formCard({ draft: { id: "reviewer", harness: "codex", bookmark: "work" } }, "acted")} onRunCommand={() => {}} />
     )
     expect(acted.querySelector("[data-testid=flow-form-submit]")).toBeNull()
     expect(acted.querySelector("[data-testid=flow-form-cancel]")).toBeNull()
@@ -265,11 +265,11 @@ describe("the flow form card", () => {
     expect(acted.querySelector<HTMLInputElement>("[data-testid=flow-form-id]")?.value).toBe("reviewer")
     const refused = mount(
       <FlowFormCardBody
-        card={formCard({ draft: { id: "ui", harness: "codex", model: "gpt-5.6-terra" }, error: "An agent named ui already exists — agent.edit ui changes it." }, "error")}
+        card={formCard({ draft: { id: "ui", harness: "codex", bookmark: "work" }, error: "The harness is unavailable." }, "error")}
         onRunCommand={() => {}}
       />
     )
-    expect(refused.querySelector("[role=alert]")?.textContent).toBe("An agent named ui already exists — agent.edit ui changes it.")
+    expect(refused.querySelector("[role=alert]")?.textContent).toBe("The harness is unavailable.")
     expect(refused.querySelector<HTMLInputElement>("[data-testid=flow-form-id]")?.disabled).toBe(false)
     expect(refused.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")?.disabled).toBe(false)
   })

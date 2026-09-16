@@ -194,7 +194,6 @@ Neither receipt claims append, publication or shipment, and green parent output
 cannot stand in for a child receipt. Its Inspect button opens the exact native
 child in the existing debugger; full receipt text remains available there.
 
-
 Original and cleaned source retention are separate completed facts in the same
 progress projection. The browser uses the shared pure `PublicationInput` and
 `SourcePublication` schemas. It checks the owning Vibe ancestry, input/source
@@ -211,3 +210,4 @@ run ID is optional until admission records it. Each stage keeps the existing
 source-qualified child debugger link; a short commit prefix is only a visual
 reference and never an execution identity. No API, collection or flow command
 is added, and retention does not claim append, landing or shipment.
+

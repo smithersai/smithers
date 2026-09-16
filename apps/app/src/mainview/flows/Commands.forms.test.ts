@@ -127,57 +127,8 @@ const formOf = (store: AppStore, flow: string): Extract<Card, { kind: "flow-form
 }
 
 const messages = (store: AppStore) => [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal)
-const toasts = (store: AppStore) => [...store.collections.toasts.values()]
 
 describe("THE FORM LAW — the agent door", () => {
-  test("a call without the required input renders the flow's form and says so; no usage sentence, nothing ran", async () => {
-    const { store, controller, puts } = await boot()
-    const result = await execute(controller, "agent.create")
-    expect(result).toBe("rendered a form for id, harness, model: ask the user to fill it in")
-    expect(result).not.toContain("needs")
-    expect(result).not.toContain("/agent.create ")
-    const form = formOf(store, "agent.create")
-    expect(form?.payload).toMatchObject({ flow: "agent.create", via: "agent", draft: {}, given: {} })
-    expect(form?.title).toBe("Create an agent: an id, the harness that runs it, the model id that harness accepts, and its purpose")
-    expect(form?.payload.fields.map((field) => [field.name, field.kind, field.required])).toEqual([
-      ["id", "text", true],
-      ["harness", "select", true],
-      ["model", "text", true],
-      ["purpose", "text", false]
-    ])
-    // The harness select is the harness seam: installed with credential state; an unpickable one carries its reason.
-    expect(form?.payload.fields[1]?.options).toEqual([
-      { value: "claude", label: "Claude Code · will@example.com" },
-      { value: "codex", label: "Codex · OPENAI_API_KEY" },
-      { value: "opencode-kimi", label: "OpenCode · Kimi", disabled: true, reason: "no credential" },
-      { value: "crush", label: "Crush · OPENAI_API_KEY", disabled: true, reason: "no verified model flag" },
-      { value: "pi", label: "Pi", disabled: true, reason: "not installed" }
-    ])
-    // No harness picked yet: the model field has no options to offer.
-    expect(form?.payload.fields[2]?.options).toEqual([])
-    expect(puts).toEqual([])
-    expect(messages(store).find((message) => message.action?.flow === "agent.create")).toBeUndefined()
-  })
-
-  test("partial args prefill the draft and the form asks only for the rest; the harness's model list feeds the model field", async () => {
-    const { store, controller } = await boot()
-    expect(await execute(controller, "agent.create", "reviewer codex")).toBe("rendered a form for model: ask the user to fill it in")
-    await settle()
-    const form = formOf(store, "agent.create")
-    expect(form?.payload.draft).toEqual({ id: "reviewer", harness: "codex" })
-    expect(form?.payload.given).toEqual({ id: "reviewer", harness: "codex" })
-    // The verified suggestions at render, replaced by the harness's own list once it answers.
-    expect(form?.payload.fields[2]?.options?.map((option) => option.value)).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
-  })
-
-  test("a complete call on a confirm flow still confirms — the form door never swallows the confirm path", async () => {
-    const { store, controller, puts } = await boot()
-    const result = await execute(controller, "agent.create", "reviewer codex gpt-5.6-terra Reviews diffs")
-    expect(result).toContain("asked the user to confirm")
-    expect(formOf(store, "agent.create")).toBeUndefined()
-    expect(messages(store).find((message) => message.action?.flow === "agent.create")?.action?.args).toBe("reviewer codex gpt-5.6-terra Reviews diffs")
-    expect(puts).toEqual([])
-  })
 
   test("the user-only refusal and the W0 door are untouched: a user-only flow without args is refused by name, never formed", async () => {
     const { store, controller } = await boot()
@@ -188,92 +139,9 @@ describe("THE FORM LAW — the agent door", () => {
 })
 
 describe("THE FORM LAW — the slash door and the button door", () => {
-  test("a typed slash without its input renders the same form as the human's, and the composer line points at it", async () => {
-    const { store, controller } = await boot()
-    controller.send("/agent.create reviewer")
-    await settle()
-    const form = formOf(store, "agent.create")
-    expect(form?.payload).toMatchObject({ via: "user", draft: { id: "reviewer" } })
-    expect(store.session().draft).toBe("")
-    const shown = toasts(store)
-    expect(shown.map((toast) => [toast.title, toast.status])).toEqual([["Fill in the form above", "ok"]])
-    expect(shown[0]?.detail ?? "").not.toContain("needs")
-  })
-
-  test("a button carries its args and runs the flow as before; nothing renders a form", async () => {
-    const { store, controller, puts } = await boot()
-    const outcome = await controller.commands.run("agent.create", "reviewer codex gpt-5.6-terra Reviews diffs")
-    expect(outcome.status).toBe("executed")
-    expect(puts.map((put) => put.id)).toEqual(["reviewer"])
-    expect(formOf(store, "agent.create")).toBeUndefined()
-  })
 })
 
 describe("THE FORM LAW — filling and submitting", () => {
-  test("form.set commits one field into the payload, coerces by kind, and refuses what the seam did not offer", async () => {
-    const { store, controller } = await boot()
-    await execute(controller, "agent.create")
-    const id = "form-agent.create"
-    expect((await controller.commands.run("form.set", `${id} harness codex`)).status).toBe("executed")
-    expect((await controller.commands.run("form.set", `${id} id reviewer`)).status).toBe("executed")
-    expect(formOf(store, "agent.create")?.payload.draft).toEqual({ harness: "codex", id: "reviewer" })
-    // Picking the harness re-read the model field's options for it.
-    expect(formOf(store, "agent.create")?.payload.fields[2]?.options?.map((option) => option.value)).toContain("gpt-5.6-terra")
-    expect(await controller.commands.run("form.set", `${id} harness pi`)).toEqual({ status: "failed", error: "Pi cannot be picked: not installed." })
-    expect(await controller.commands.run("form.set", `${id} harness moon`)).toEqual({
-      status: "failed",
-      error: "Harness offers claude, codex, opencode-kimi, crush, pi; moon is not one of them."
-    })
-    expect(await controller.commands.run("form.set", `${id} colour red`)).toEqual({
-      status: "failed",
-      error: "The form has no field colour; its fields are id, harness, model, purpose."
-    })
-    // A blank commit clears.
-    expect((await controller.commands.run("form.set", `${id} id`)).status).toBe("executed")
-    expect(formOf(store, "agent.create")?.payload.draft).toEqual({ harness: "codex" })
-    expect(await controller.commands.run("form.set", "form-nope id x")).toEqual({ status: "failed", error: "There is no form card form-nope." })
-  })
-
-  test("a slash-rendered form's Submit runs the flow as the human, and the card keeps the record as acted", async () => {
-    const { store, controller, puts } = await boot()
-    controller.send("/agent.create")
-    await settle()
-    const id = "form-agent.create"
-    for (const line of ["id reviewer", "harness codex", "model gpt-5.6-terra", "purpose Reviews diffs for correctness"]) {
-      await controller.commands.run("form.set", `${id} ${line}`)
-    }
-    const outcome = await controller.commands.run("form.submit", id)
-    expect(outcome).toEqual({ status: "executed", value: "created agent reviewer: Reviewer on codex with gpt-5.6-terra" })
-    expect(puts).toEqual([{
-      id: "reviewer",
-      body: { label: "Reviewer", purpose: "Reviews diffs for correctness", harness: "codex", model: { provider: "openai", id: "gpt-5.6-terra", label: "gpt-5.6-terra" } }
-    }])
-    const form = formOf(store, "agent.create")
-    expect(form?.status).toBe("acted")
-    expect(form?.payload.error).toBeUndefined()
-    // No confirm card: the human's own Submit was the act.
-    expect(messages(store).find((message) => message.action?.flow === "agent.create")).toBeUndefined()
-    expect(await controller.commands.run("form.submit", id)).toEqual({ status: "failed", error: `The form ${id} was already submitted.` })
-  })
-
-  test("an agent-rendered form's Submit runs the flow as the agent: a confirm flow posts its confirm card and the human's click runs it", async () => {
-    const { store, controller, puts } = await boot()
-    await execute(controller, "agent.create", "reviewer")
-    const id = "form-agent.create"
-    await controller.commands.run("form.set", `${id} harness codex`)
-    await controller.commands.run("form.set", `${id} model gpt-5.6-terra`)
-    // The human clicks Submit on the agent's form.
-    const outcome = await controller.commands.run("form.submit", id)
-    expect(outcome.status).toBe("executed")
-    expect(outcome.status === "executed" ? outcome.value : "").toContain("asked the user to confirm")
-    expect(puts).toEqual([])
-    const confirmation = messages(store).find((message) => message.action?.flow === "agent.create")
-    expect(confirmation?.action).toEqual({ flow: "agent.create", args: "reviewer codex gpt-5.6-terra", label: "Confirm: create the agent reviewer on codex with gpt-5.6-terra" })
-    expect(formOf(store, "agent.create")?.status).toBe("acted")
-    // The confirm button runs the flow as the user.
-    expect((await controller.commands.run("agent.create", "reviewer codex gpt-5.6-terra")).status).toBe("executed")
-    expect(puts.map((put) => put.id)).toEqual(["reviewer"])
-  })
 
   test("the agent may submit its own form, and a refusal lands on the card and in its result", async () => {
     const { store, controller } = await boot()
@@ -289,47 +157,6 @@ describe("THE FORM LAW — filling and submitting", () => {
     const submitted = await execute(controller, "form.submit", id)
     expect(submitted).toContain("asked the user to confirm")
     expect(messages(store).find((message) => message.action?.flow === "tab.harness")?.action?.args).toBe("claude")
-  })
-
-  test("a refused flow puts its reason on the form for the human, with no toast", async () => {
-    const { store, controller } = await boot()
-    controller.send("/agent.create")
-    await settle()
-    const id = "form-agent.create"
-    for (const line of ["id ui", "harness codex", "model gpt-5.6-terra"]) await controller.commands.run("form.set", `${id} ${line}`)
-    expect(await controller.commands.run("form.submit", id)).toEqual({ status: "executed" })
-    const form = formOf(store, "agent.create")
-    expect(form?.status).toBe("error")
-    expect(form?.payload.error).toBe("An agent named ui already exists — agent.edit ui changes it.")
-    expect(toasts(store).filter((toast) => toast.status === "failed")).toEqual([])
-  })
-
-  test("Cancel is card.dismiss: it drops a form card and refuses any other kind", async () => {
-    const { store, controller } = await boot()
-    await execute(controller, "agent.create")
-    expect((await controller.commands.run("card.dismiss", "form-agent.create")).status).toBe("executed")
-    expect(formOf(store, "agent.create")).toBeUndefined()
-    expect(await controller.commands.run("card.dismiss", "card-1")).toEqual({ status: "failed", error: "/card.dismiss dismisses form cards; card-1 is a status card." })
-    expect(store.collections.cards.get("card-1")).toBeDefined()
-    expect(await controller.commands.run("card.dismiss", "nope")).toEqual({ status: "failed", error: "There is no card nope." })
-  })
-
-  test("agent.new renders agent.create's form; an existing id renders agent.edit's, prefilled from the row", async () => {
-    const { store, controller } = await boot()
-    expect(await execute(controller, "agent.new")).toBe("rendered a form for id, harness, model: ask the user to fill it in")
-    expect(formOf(store, "agent.create")?.payload.via).toBe("agent")
-    expect((await controller.commands.run("agent.new", "explainer")).status).toBe("executed")
-    const edit = formOf(store, "agent.edit")
-    const explainer = AGENT_ROLES.find((role) => role.id === "explainer")
-    expect(edit?.payload).toMatchObject({
-      flow: "agent.edit",
-      via: "user",
-      draft: { id: "explainer", model: "kimi-for-coding/k3", purpose: explainer?.purpose ?? "", label: "Explainer" }
-    })
-    // The id select is the agents seam; the model field's options are the row's harness's.
-    expect(edit?.payload.fields[0]?.optionsFrom).toBe("agents")
-    expect(edit?.payload.fields[0]?.options?.map((option) => option.value)).toContain("explainer")
-    expect(edit?.payload.fields[1]?.options?.map((option) => option.value)).toEqual(["kimi-for-coding/k3"])
   })
 })
 
@@ -475,17 +302,6 @@ describe("THE FORM LAW — every flow's form submits its own named payload", () 
       }
     }
     expect(failures).toEqual([])
-  })
-
-  test("a prefilled free-text field the human cleared submits as the clear, not as the value it held", async () => {
-    const { controller } = await boot()
-    const entry = controller.commands.find("agent.edit")!
-    const fields = formFieldsFor(entry.input, entry.metadata.form)
-    const given = { id: "explainer", purpose: "Explains code" }
-    // form.set with a blank value drops the key: the human emptied the control.
-    const cleared = submissionPayload(entry.input, fields, given, { id: "explainer" })
-    expect(cleared).toEqual({ payload: { id: "explainer", purpose: "" } })
-    expect(submissionPayload(entry.input, fields, given, draftFrom(fields, given))).toEqual({ payload: given })
   })
 
   test("a structured control holding text that is not JSON is the form's own refusal, and nothing runs", async () => {

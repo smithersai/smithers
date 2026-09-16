@@ -94,8 +94,6 @@ Requirement and History tests now expect `auth.prompt`, not an automatic OAuth r
 - chat-first shell: panes never replace the conversation > the composer's surfaces menu opens the panes without leaving chat
 - local archive and append-only summary notes > failed local persistence returns an honest failure and restores every projection
 - local contents read also persists the exact file and completes
-- repo.home > repo.welcome renders the home pane above the welcome when the repository declares one, and stands alone when it does not
-- repo.welcome > the model's door answers the sentence and names the three flows
 - selected cloud head still reads cloud when a different local checkout is open
 - the chrome buttons > Wiki, signed out, opens the Wiki pane beside the chat and touches no message; a second click returns to the chat
 - the composer header: the repository selector and where it lives > a known revision pins `change#seq`; a newer one names itself only when both seqs are known

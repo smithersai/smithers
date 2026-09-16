@@ -50,7 +50,6 @@ AND ARCHITECTURE, not code. Ground every claim in the tree; cite files.
 - Backend: Smithers Cloud (`~/plue`) — repos mirroring GitHub under users/orgs,
   workspaces (cloud Linux machines with a terminal over WebSocket, Bearer +
   `terminal` subprotocol, 64 KiB frames, close-code contract), changes and
-  landing requests, GitHub-synced issues, Linear sync. The Worker bridges the
   cookie session to a Smithers Cloud token for `/api/repos/`, `/api/user/…`,
   `/api/github/import`, `/api/notifications/`; a separate Smithers Cloud PAT flow
   (`/api/auth/github/cli`) exists for the native app (keychain).
@@ -98,3 +97,4 @@ One Markdown file, at most ~400 lines, sections in the order above, ASCII
 mockups where a screen is described, a final "Lanes" table (lane, files,
 tests, depends on). No code beyond signatures. Write it to the path you are
 given; do not edit any other file.
+

@@ -275,10 +275,6 @@ const seedPrivateRoster = async (store: AppStore): Promise<void> => {
       authorName: "Alice", timestamp: null, hasConflict: false, parentChangeIds: [], currentSeq: null, revisionCount: null
     }
   }).isPersisted.promise
-  await store.dispatch({ type: "linear.integrations.loaded", actor: "system", integrations: [{
-    id: "private", teamId: "team", teamName: "Private", teamKey: "ALICE", repoOwner: "alice", repoName: "private",
-    active: true, remediation: null, lastSyncAt: null, createdAt: null
-  }] }).isPersisted.promise
   await store.dispatch({ type: "github.app-status.loaded", actor: "system", status: {
     repo: "alice/private", installed: true, configured: true, installationId: 1, installUrl: null, rateLimit: null,
   } }).isPersisted.promise
@@ -309,7 +305,6 @@ const privateRosterSizes = (store: AppStore) => ({
   workingCopies: store.collections.workingCopies.size,
   cloudWorkspaces: store.collections.cloudWorkspaces.size,
   changes: store.collections.changes.size,
-  linearIntegrations: store.collections.linearIntegrations.size,
   githubAppStatuses: store.collections.githubAppStatuses.size,
   repoTree: store.collections.repoTree.size,
   repositoryFlows: store.collections.repositoryFlows.size

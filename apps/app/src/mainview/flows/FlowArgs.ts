@@ -69,12 +69,7 @@ export interface FlowInput {
   }
   /** `<repoId> [label]` — no label selects the repository's table itself. */
   readonly "target.select": { readonly repoId: string; readonly label?: string }
-  /** `<snapshotId> [workspaceId] --name <name>` — the name is the rest of the line. */
-  readonly "workspace.template": {
-    readonly snapshotId: string
-    readonly name: string
-    readonly workspaceId?: string
-  }
+
 }
 
 /** A flow whose input the card seam hands over as values rather than as a line. */
@@ -146,10 +141,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "target.select": (payload) => line(token(payload, "repoId"), token(payload, "label")),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),
   "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),
-  "workspace.template": (payload) => {
-    const name = token(payload, "name")
-    return line(token(payload, "snapshotId"), token(payload, "workspaceId"), name === undefined ? undefined : `--name ${name}`)
-  }
+
 }
 
 /**

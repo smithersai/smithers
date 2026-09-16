@@ -23,7 +23,7 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
   return { store, controller, redirects, requests }
 }
 
-for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secrets.list", undefined], ["issues.link-linear", "3"]] as const) {
+for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secrets.list", undefined], ["issues.view", "3"]] as const) {
   test(`${name} signed out parks silently with exactly one sign-in prompt per click, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()
     controller.runCommand(name, args)

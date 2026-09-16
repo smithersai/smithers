@@ -7,68 +7,6 @@ the tree are the three pre-existing TargetGraph integration tests plus two
 
 ## What shipped, per step
 
-1. **Shared schemas** (`packages/rpc/src/Cards.ts`): the `workspace` card
-   payload — workspaceId, repo, name, targetBookmark, the six statuses,
-   provisioningStage, suspendedAt (optional so older cards parse),
-   `bookmarkHead { changeId, commitId } | null` (the TARGET BOOKMARK's head,
-   never the workspace's), snapshots[], sessions[], facet,
-   terminalSessionId, error — and the `service-log` payload (lands with the
-   contract; no flow produces it until plue#449). No kind, no uptime, no
-   workspace head, no ahead/behind (plue#446). `CLOUD_WS_ROUTE_PREFIX`
-   (`/api/cloud-ws/`) joined `packages/rpc/src/LocalApp.ts`.
-2. **Model + seam.** `cloudWorkspaces` collection (`app-cloud-workspaces`,
-   registered in `SchemaVersion.ts`) as the authority; `workspaces.loaded`
-   (per-user or per-repo scope replace) and `workspace.updated` upsert AND
-   re-sync the `workingCopies` rows piper added (`workspace:<id>`, kind
-   workspace, `label · state`) in the same transaction.
-   `state/seams/WorkspaceSeam.ts` covers every plue route — per-user and
-   per-repo list, get, create-or-reuse per bookmark, delete, suspend,
-   resume, fork, snapshot create/list/delete/template, fork-from-snapshot,
-   sessions list/destroy — plus a settle watch that polls a
-   pending/starting workspace until it settles, re-reading the repo list on
-   a 404. A bare act resolves the active workspace copy, else the single
-   loaded workspace, else an honest choice. Every act gates on the cloud
-   session: signed-out refuses with the sign-in step; `degraded` refuses
-   with the exact "sign in again to enable" wording. 23 seam tests against
-   route doubles.
-3. **The `workspace` card** (`cards/WorkspaceCard.tsx`, registered in
-   `ChatCards.tsx` with the payload-status pill; `starting`/`suspended`
-   joined `@smthrs/ui`'s status vocabulary). Header `repo · bookmark ·
-   bookmark head @ <id>` — labeled as the bookmark's head. Facet strip
-   Terminal / Files / Services / Snapshots: Terminal shows the attachment,
-   every session with Destroy, and Open terminal; Files and Services render
-   EMPTY with the plue#449 wording; Snapshots rows carry Fork from, Make
-   template, Delete. Footer Suspend or Resume, Fork, Snapshot, Delete behind
-   a typed confirm (the workspace's name typed back). Starting streams
-   provisioningStage; failed names the stage and offers Retry
-   (`workspace.open` again); an act's refusal stays on the card. 10 card
-   tests across statuses and facets. The terminal runs over plue's ticketed
-   WebSocket through the Bun tunnel: `/api/cloud-ws/repos/{o}/{r}/workspace/
-   sessions/{id}/terminal` authorizes like `/ws` (origin + the local-session
-   subprotocol — a browser upgrade carries no custom header), and Bun
-   bridges frames both ways with the Bun-held bearer and plue's `terminal`
-   subprotocol attached upstream (`src/bun/server.ts`, 4 tunnel tests). The
-   renderer's `CloudTerminalClient` mirrors PtyClient (queue-before-open,
-   reconnect while attached; 4 tests); a workspace terminal tab carries
-   `workspaceId` + `repo` instead of `cwd`, closing it detaches (never
-   DELETEs), and `tab.read` refuses it honestly.
-4. **Flows.** `workspace.list [owner/repo]`, `workspace.open [bookmark]
-   [repo]` (`outbound:launch`), `workspace.view <id>`, `workspace.terminal`,
-   `workspace.suspend|resume|fork|snapshot` (confirm), the hidden id-scoped
-   `workspace.snapshot.delete`, `workspace.snapshot.fork`
-   (`outbound:launch`), `workspace.session.destroy`, `workspace.delete`
-   (confirms), `workspace.template`, `workspace.sessions`, and the
-   user-only `workspace.facet` — slash payloads, and the registry, parity
-   (WorkspaceCard pinned at 13 handlers, `setDeleteDraft` allowlisted as
-   presentation state), and invocable pins updated.
-5. **Tree rows.** A workspace copy under its repo reads `name · state`
-   (piper's renderer; the citc collection now feeds it) and selecting it
-   makes it the active working copy — asserted in the T1 spec
-   (`copy-workspace:ws-1` reads `review · running`).
-6. **Docs.** `LOCAL-APP.md` cards section (the lane's paragraph) and
-   `WORKBENCH-UX.md` §3.1 (a status note: what landed, what waits on plue
-   Phase B / #449 / #446, which flows are registered).
-
 ## Decisions worth knowing
 
 - **`cloudWorkspaces` is the authority, `workingCopies` the projection.**
@@ -122,8 +60,6 @@ the tree are the three pre-existing TargetGraph integration tests plus two
   `75ed77754c`); its tests were not updated with the behavior change.
 
 ## Review (Kimi K3, read-only, 2026-09-02) and what changed
-
-Fixed in the working tree after the review: (1) the terminal attach: plue confirmed a Bearer PAT alone is accepted (the `?ticket=` exists for browsers), but the upgrade REQUIRES an Origin header — the tunnel now sends `https://jjhub.tech` (`SMITHERS_CLOUD_WS_ORIGIN` overrides) and caps frames at plue's 64 KiB; (2) "Make template" emitted a multi-word snapshot name the parser refused — `workspace.template` accepts `--name <rest of line>` and the button uses it; (3) the settle watch polled a wedged workspace forever — it stops after 120 polls (ten minutes at 5 s) and the card keeps the last fact; (5) the tunnel's path guard admitted `.`/`..` segments — segments are checked and the joined target must stay under the upstream's `/api/repos/`; (8) renderer→upstream frames were unbounded — a 1 MiB upstream buffer closes the renderer's socket; (9) a destroyed session's tab reconnected at 1 Hz forever — the client reconnects only on 1006 and plue's 1001, retries 1011 once, and treats 1008 (`access revoked`) and 1000 as final with the reason shown; (11) the bare workspace-id badge at the card's foot was unbriefed chrome — removed.
 
 Open from the same review: (4) a scope replace drops workspaces whose wire rows fail to parse (and their tree rows); (7) the seam test harness never asserts request bodies, so `source_bookmark`, `snapshot_id`, fork `name` are unverified; (10) fork/open acts refuse a malformed answer without refreshing the list, unlike suspend/resume.
 
@@ -279,3 +215,4 @@ A final `tsc` run showed one error in `ComposerLayout.test.tsx` ("Cannot find
 name 'host'"), the change lane's edit in progress at that minute (95 changed
 lines, not this lane's file); the run before it was clean with every citc
 change in place.
+

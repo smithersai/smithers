@@ -87,7 +87,6 @@ export const NATIVE_ROUTE_CODES = [
   "language_server_missing",
   "language_server_timeout",
   "language_unsupported",
-  "linear_auth_unavailable",
   "local_session_required",
   "manager_closed",
   "manual_repository_paths_disabled",
@@ -221,8 +220,7 @@ export const NATIVE_FAILURES = {
   "language_server_timeout": { fault: "dependency", status: 504, retryAfter: 0 },
   /** No row of the language registry handles this file's extension. */
   "language_unsupported": { fault: "user", status: 400, retryAfter: 0 },
-  /** The Linear sign-in could not be started from the state this host is in. */
-  "linear_auth_unavailable": { fault: "user", status: 409, retryAfter: 0 },
+  
   /** The per-launch local session capability was absent or wrong. Never a person's Smithers session. */
   "local_session_required": { fault: "user", status: 401, retryAfter: 0 },
   /** The terminal manager is closed: the host is stopping, or this repository was closed under it. */

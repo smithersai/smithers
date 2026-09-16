@@ -181,7 +181,7 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
   const openHarnessTab: TabsController["openHarnessTab"] = async (harnessId, launch) => {
     if (collections.harnesses.size === 0) await loadHarnesses()
     /*
-     * A role (AgentRoles.ts), built-in or custom, names its harness and its
+     * A role (AgentRoles.ts), built-in, names its harness and its
      * model; the server resolves the role against the same agents store to
      * the launch argv, so the renderer sends the role id and the task, never
      * argv. Its availability is the harness's.

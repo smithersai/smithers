@@ -1,3 +1,4 @@
+import { Copy } from "lucide-react"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { ViewSkeleton } from "../ViewSkeleton"
 import { flowAction } from "../flows/FlowAction"
@@ -31,7 +32,7 @@ import { fileArgs, parseFileArgs } from "../flows/FileArgs"
  */
 import { useState, useSyncExternalStore } from "react"
 import { Button, Spinner, StatusPill } from "@smthrs/ui"
-import { Camera, Copy, Globe, Monitor, Play, RefreshCw, Server, Square, TerminalSquare, Trash2 } from "lucide-react"
+import { Globe, Monitor, Play, RefreshCw, Server, Square, TerminalSquare, Trash2 } from "lucide-react"
 import { useController } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import { readDesktopStream, subscribeDesktopStream } from "../state/seams/DesktopStream"
@@ -61,7 +62,7 @@ export interface WorkspaceCardActions {
 type WorkspaceCard = Extract<Card, { kind: "workspace" }>
 type WorkspacePayload = WorkspaceCard["payload"]
 
-const FACETS = ["terminal", "files", "services", "snapshots", "egress", "desktop"] as const
+const FACETS = ["terminal", "files", "services", "egress", "desktop"] as const
 
 /*
  * Lane L3b — ADR 0002: "three sandbox kinds share one option surface; the kind
@@ -451,47 +452,6 @@ const WorkspaceFacetBody = ({
       </div>
     )
   }
-  if (facet === "snapshots") {
-    return (
-      <ul className="world-card-list">
-        {payload.snapshots.length === 0 ?
-          <li className="world-card-empty">No snapshots of {payload.name} yet.</li> :
-          payload.snapshots.map((snapshot) => (
-            <li key={snapshot.id} className="world-card-row">
-              <Camera size={14} aria-hidden="true" />
-              <span className="world-card-title">{snapshot.name}</span>
-              {snapshot.createdAt !== null ?
-                <span className="world-card-path">{dayLabel(snapshot.createdAt)}</span> :
-                null}
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label={`Fork a workspace from ${snapshot.name}`}
-                {...flowAction(onRunCommand, "workspace.snapshot.fork", `${snapshot.id} ${payload.workspaceId}`)}
-              >
-                Fork from
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label={`Create a template from ${snapshot.name}`}
-                {...flowAction(onRunCommand, "workspace.template", flowArgs("workspace.template", { snapshotId: snapshot.id, workspaceId: payload.workspaceId, name: snapshot.name }))}
-              >
-                Make template
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label={`Delete snapshot ${snapshot.name}`}
-                {...flowAction(onRunCommand, "workspace.snapshot.delete", `${snapshot.id} ${payload.workspaceId}`)}
-              >
-                <Trash2 size={12} aria-hidden="true" /> Delete
-              </Button>
-            </li>
-          ))}
-      </ul>
-    )
-  }
   /* The terminal facet: the attachment, then every session the workspace holds. */
   const storedTerminalRefusal = payload.terminalRefusal ?? null
   const terminalRefusal = storedTerminalRefusal === null ? null : refusalFromStored(storedTerminalRefusal)
@@ -724,20 +684,6 @@ export const WorkspaceCardBody = ({
             </Button>
           ) :
           null}
-        <Button
-          size="sm"
-          variant="outline"
-          {...flowAction(onRunCommand, "workspace.fork", `${payload.workspaceId} ${payload.name}-fork`)}
-        >
-          <Copy size={12} aria-hidden="true" /> Fork
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          {...flowAction(onRunCommand, "workspace.snapshot", payload.workspaceId)}
-        >
-          <Camera size={12} aria-hidden="true" /> Snapshot
-        </Button>
         <Button
           size="sm"
           variant="outline"

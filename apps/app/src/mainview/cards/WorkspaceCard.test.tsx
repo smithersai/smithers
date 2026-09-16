@@ -126,7 +126,7 @@ const workspaceCard = (
     provisioningStage: null,
     suspendedAt: null,
     bookmarkHead: { changeId: "qupxosqw", commitId: "c0ffee1" },
-    snapshots: [],
+
     sessions: [],
     ...overrides
   }
@@ -408,8 +408,8 @@ describe("the workspace card", () => {
     expect(host.textContent).toContain("postgresRunning")
     expect(host.textContent).toContain("port 5432")
     expect(host.textContent).toContain("https://ws-1.workspaces.smithers-cloud.test")
-    click(host, "Snapshots")
-    expect(commands[0]).toEqual({ name: "workspace.facet", args: "ws-1 snapshots" })
+    click(host, "Terminal")
+    expect(commands[0]).toEqual({ name: "workspace.facet", args: "ws-1 terminal" })
     host.remove()
     const empty = render(workspaceCard({ facet: "services", services: [] }))
     expect(empty.host.textContent).toContain("review declares no services.")
@@ -525,18 +525,6 @@ describe("the workspace card", () => {
     ordinary.host.remove()
   })
 
-  test("the snapshots facet lists snapshots with template and delete acts", () => {
-    const { host, commands } = render(
-      workspaceCard({ facet: "snapshots", snapshots: [{ id: "snap-1", name: "golden", createdAt: "2026-08-01T00:00:00Z" }] })
-    )
-    expect(host.textContent).toContain("golden")
-    click(host, "Make template")
-    expect(commands[0]).toEqual({ name: "workspace.template", args: "snap-1 ws-1 --name golden" })
-    click(host, "Delete snapshot golden")
-    expect(commands[1]).toEqual({ name: "workspace.snapshot.delete", args: "snap-1 ws-1" })
-    host.remove()
-  })
-
   test("suspend shows on a running workspace, resume on a suspended one", () => {
     const running = render(workspaceCard())
     click(running.host, "Suspend")
@@ -602,15 +590,6 @@ describe("the workspace card", () => {
     const { host, commands } = render(workspaceCard({ status: "failed", provisioningStage: null, targetBookmark: null }))
     click(host, "Open a vm workspace")
     expect(commands[0]).toEqual({ name: "workspace.open", args: "will/smithers --kind vm" })
-    host.remove()
-  })
-
-  test("the snapshots facet's fork-from act creates a workspace from the snapshot", () => {
-    const { host, commands } = render(
-      workspaceCard({ facet: "snapshots", snapshots: [{ id: "snap-1", name: "golden", createdAt: null }] })
-    )
-    click(host, "Fork a workspace from golden")
-    expect(commands[0]).toEqual({ name: "workspace.snapshot.fork", args: "snap-1 ws-1" })
     host.remove()
   })
 })

@@ -154,7 +154,7 @@ export const createTurnController = (
     }
     const merged = CardSchema.safeParse({ ...existing, ...patch.data, id: existing.id,
       payload: patch.data.payload === undefined ? existing.payload :
-        existing.kind === "repo-onboarding" ? patch.data.payload : { ...existing.payload, ...patch.data.payload }
+        { ...existing.payload, ...patch.data.payload }
     })
     if (!merged.success) {
       console.warn("Smithers dropped a card.update frame that fails schema", merged.error)

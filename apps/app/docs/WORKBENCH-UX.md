@@ -192,22 +192,7 @@ route.
 **Services facet.** Rows: name, state, port, one Logs action that opens a
 `service-log` card (tail, follow toggle), one Restart action.
 
-**Snapshots facet.** Rows: name, taken at, size; actions Fork from, Share.
-
 **Flows.**
-
-| Flow | Args | Invokers | Notes |
-| --- | --- | --- | --- |
-| `workspace.open` | `[bookmark] [repo]` | user, agent | Create-or-reuse per plue's one-per-user-per-bookmark rule; renders the card. |
-| `workspace.desktop` | `[workspaceId]` | user, agent | Renders the card with the Desktop facet; never attaches. |
-| `workspace.attach` | `<workspaceId>` | user only | Input capture. |
-| `workspace.terminal` | `[workspaceId]` | user, agent | Opens the terminal tab. |
-| `workspace.suspend` / `resume` | `[workspaceId]` | user, agent (confirm) | |
-| `workspace.fork` | `[workspaceId] [name]` | user, agent (confirm) | |
-| `workspace.snapshot` | `[workspaceId] [name]` | user, agent (confirm) | |
-| `workspace.services` | `[workspaceId]` | user, agent | |
-| `workspace.logs` | `<workspaceId> <service>` | user, agent | `service-log` card. |
-| `files.list` / `files.read` | `[path] [repo\|workspace]` | user, agent | Existing flows; the target grammar gains a workspace id. |
 
 **States.** Empty: no workspace for this bookmark, the card offers Open.
 Starting: header pill plus a provisioning line from plue's SSE
@@ -215,7 +200,7 @@ Starting: header pill plus a provisioning line from plue's SSE
 card is older than the collection row; the row wins.
 
 **Data.** Exists: create, get, list, delete, ssh, exec, files, services, SSE
-status, snapshots (`/api/repos/{o}/{r}/workspace-snapshots`). New: the desktop
+status. New: the desktop
 session contract in §6, a thumbnail route, and a workspace class with enough
 memory for a display (the 512MB class cannot run a compositor; the spike used
 c3-standard-8 hosts, the guest size is the open question).
@@ -675,3 +660,4 @@ Each is consequential and hard to reverse; record the answer as an ADR.
 5. **Local checkout versus workspace.** When both are open for the same
    repository, a bare command means the active one in the selector; the
    selector shows which. No silent preference.
+

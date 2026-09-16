@@ -29,11 +29,11 @@ const honesty = (host: InstructionHonesty["host"], nativeDownloadable?: boolean)
 })
 
 describe("the host line", () => {
-  test("the web app states what needs the native app, that Linear and code intelligence are among them, that the GitHub sign-in is the Cloud sign-in, and what to execute when asked", () => {
+  test("the web app states what needs the native app, that code intelligence is among them, that the GitHub sign-in is the Cloud sign-in, and what to execute when asked", () => {
     const prompt = smithersInstructions([], honesty("web", true))
     expect(prompt).toContain(WEB_HOST_LINE)
     expect(WEB_HOST_LINE).toBe(
-      "This is the Smithers web app. Local repositories, local terminals, build targets, local agents, code intelligence (hover, definitions, diagnostics) and connecting Linear need the native app; when asked for one, say so and execute app.download.prompt. On the web the GitHub sign-in is the Smithers Cloud sign-in — there is no separate Cloud sign-in to offer."
+      "This is the Smithers web app. Local repositories, local terminals, build targets, local agents, code intelligence (hover, definitions, diagnostics) need the native app; when asked for one, say so and execute app.download.prompt. On the web the GitHub sign-in is the Smithers Cloud sign-in — there is no separate Cloud sign-in to offer."
     )
     expect(prompt.split(WEB_HOST_LINE)).toHaveLength(2)
     // A published native build: no caveat.

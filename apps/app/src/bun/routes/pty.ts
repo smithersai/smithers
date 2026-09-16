@@ -25,7 +25,7 @@ export const PtyCreateRequestSchema = z.object({
   cols: geometry,
   rows: geometry,
   harnessId: z.enum(HARNESS_IDS).optional(),
-  /** A named role (AgentRoles.ts), built-in or custom, instead of a raw harness; the server picks the harness and composes the argv. */
+  /** A named role (AgentRoles.ts), built-in, instead of a raw harness; the server picks the harness and composes the argv. */
   roleId: AgentRoleIdSchema.optional(),
   /** The delegated task, bounded: it becomes one CLI argument. */
   task: z.string().max(8_000).optional()

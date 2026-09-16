@@ -29,6 +29,7 @@ export const cardActions = (controller: AppController): CardBindings => {
   if (cached !== undefined) return cached
   const actions: CardBindings = {
     projectionStore: controller.store,
+    pluginLibrary: controller.features?.pluginLibrary ?? false,
     onDecideApproval: (id, decision, answer, question) =>
       // Structured human answers keep their value shape through the controller.
       answer === undefined

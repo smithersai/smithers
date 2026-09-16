@@ -13,9 +13,7 @@ at `https://canary.smithers.sh`. The shared roster in
 roster grows as maintainers register their repositories — sign in with GitHub,
 then install the Smithers GitHub App on the repository — and the response keeps
 the roster order. Repository requests do not change this roster. Each entry
-carries a curated `summary`, the one sentence the app's welcome speaks when the
-repository is opened (`repo.welcome` in apps/app); it is written in the roster,
-never fetched.
+carries a curated `summary` written in the roster.
 
 The response also carries `comingSoon`, an array of `{ name, title, url,
 stats }` after `repos`. `COMING_SOON_REPOS` in `src/publicRepoCatalog.ts`

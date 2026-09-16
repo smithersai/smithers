@@ -201,26 +201,6 @@ const suggestedReviewers = (payload: ChangePayload): ReadonlyArray<string> | nul
   return [...names]
 }
 
-/** The Open-the-computer act for a revision that carries a workspace snapshot; nothing otherwise. */
-const OpenComputer = ({
-  changeId,
-  revision,
-  onRunCommand
-}: { readonly changeId: string; readonly revision: ChangeRevision | undefined } & ChangeCardActions) => {
-  if (revision?.workspaceSnapshotId === undefined) return null
-  const snapshotId = revision.workspaceSnapshotId
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      aria-label={`Open the computer that produced rev ${revision.seq}`}
-      {...flowAction(onRunCommand, "change.open-computer", `${changeId} ${snapshotId}`)}
-    >
-      Open the computer
-    </Button>
-  )
-}
-
 /**
  * Whether this change is worth splitting (the brief's gate): its landing
  * request states a landable prefix SHORTER than the stack, so part of the
@@ -350,7 +330,6 @@ const checkWork = (check: NonNullable<ChangePayload["checks"]>[number]): string 
 const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } & ChangeCardActions) => {
   const { payload } = card
   const at = payload.checksAt ?? payload.currentSeq
-  const revision = payload.revisions.find((candidate) => candidate.seq === at)
   return (
     <div className="world-card-list">
       {payload.revisions.length > 0 ?
@@ -365,7 +344,6 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
             >
               {payload.revisions.map((candidate) => <option key={candidate.seq} value={String(candidate.seq)}>rev {candidate.seq}</option>)}
             </select>
-            <OpenComputer changeId={payload.changeId} revision={revision} onRunCommand={onRunCommand} />
           </div>
         ) :
         null}
@@ -681,7 +659,6 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
               </Button>
             ) :
             null}
-          <OpenComputer changeId={payload.changeId} revision={revision} onRunCommand={onRunCommand} />
         </li>
       ))}
       {landed !== null ?

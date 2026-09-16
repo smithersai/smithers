@@ -36,7 +36,7 @@ const setup = async (web = true, storage = memoryStorage(), initiallySignedIn = 
     cloud: async (state: typeof cloud) => { cloud = state; await controller.loadCloudSession(); await settle() } }
 }
 
-const producers = ["identity", "required identity", "OAuth retry", "chat gate", "requirement", "repo.maintain", "repo.contribute"] as const
+const producers = ["identity", "required identity", "OAuth retry", "chat gate", "requirement"] as const
 for (const producer of producers) {
   test(`${producer}: sign-in answers the same prompt without deleting its history`, async () => {
     const h = await setup()
@@ -45,7 +45,6 @@ for (const producer of producers) {
     else if (producer === "OAuth retry") h.controller.handleAuthReturn("?auth=failed")
     else if (producer === "chat gate") h.controller.send("Keep this draft")
     else if (producer === "requirement") await h.controller.commands.run("secrets.list", "smithersai/smithers")
-    else await h.controller.commands.run(producer, "smithersai/smithers")
     await settle()
     const prompt = [...h.store.collections.messages.values()].find(row => row.action?.flow === "auth.sign-in")
     expect(prompt).toBeDefined()

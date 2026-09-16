@@ -32,10 +32,6 @@ export type FieldKind = "text" | "textarea" | "number" | "boolean" | "select"
 export const OPTION_PROVIDERS = [
   /** Installed harnesses with their credential state (the harness table). */
   "harnesses",
-  /** The harnesses that can host a custom agent: installed, credentialed, with a verified model flag. */
-  "agent-harnesses",
-  /** The model ids the draft's harness accepts: its verified suggestions, then its own list command. */
-  "harness-models",
   /** Repositories open in the local app. */
   "open-repos",
   /** Smithers Cloud repositories the session has loaded. */
@@ -44,7 +40,7 @@ export const OPTION_PROVIDERS = [
   "bookmarks",
   /** Cloud workspaces the session has loaded. */
   "workspaces",
-  /** The agents (built-in and custom) with their availability here. */
+  /** The agents (built-in) with their availability here. */
   "agents",
   /** The plugin catalog, with the ones already on this workspace's shelf marked. */
   "plugins",

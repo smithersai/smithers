@@ -346,7 +346,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "flow.list": (args) => repoOnly("flow.list", args),
   "triggers.list": (args) => repoOnly("triggers.list", args),
   "triggers.register": (args) => repoOnly("triggers.register", args),
-  "factory.show": (args) => repoOnly("factory.show", args),
   "flow.run": (args) => {
     const { name, repo, input } = flowRunParts(args)
     if (name === undefined) return no("flow.run needs a flow name")
@@ -462,11 +461,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * each takes only its optional target. `feature.prototype` reads like
    * issues.create: the request is the line, a trailing owner/repo the target.
    */
-  "repo.welcome": (args) => repoOnly("repo.welcome", args),
-  "repo.maintain": (args) => repoOnly("repo.maintain", args),
-  "repo.contribute": (args) => repoOnly("repo.contribute", args),
-  "repo.explore": (args) => repoOnly("repo.explore", args),
-  "repo.home": (args) => repoOnly("repo.home", args),
   "feature.prototype": (args, known) => {
     const { rest, repo } = splitTrailingRepo(args, known)
     if (rest === "") return no("feature.prototype needs what the feature should do")
@@ -636,59 +630,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "workspace.terminal": (args) => optional("workspaceId", args),
   "workspace.suspend": (args) => optional("workspaceId", args),
   "workspace.resume": (args) => optional("workspaceId", args),
-  "workspace.fork": (args) => {
-    const [workspaceId, ...rest] = tokensOf(args)
-    const name = rest.join(" ").trim()
-    return ok({
-      ...(workspaceId === undefined ? {} : { workspaceId }),
-      ...(name === "" ? {} : { name })
-    })
-  },
-  "workspace.snapshot": (args) => {
-    const [workspaceId, ...rest] = tokensOf(args)
-    const name = rest.join(" ").trim()
-    return ok({
-      ...(workspaceId === undefined ? {} : { workspaceId }),
-      ...(name === "" ? {} : { name })
-    })
-  },
-  "workspace.snapshot.delete": (args) => {
-    const [snapshotId, workspaceId, ...rest] = tokensOf(args)
-    if (snapshotId === undefined) return no("workspace.snapshot.delete needs a snapshot id")
-    if (rest.length > 0) return no("workspace.snapshot.delete takes a snapshot id and optionally a workspace id")
-    return ok(workspaceId === undefined ? { snapshotId } : { snapshotId, workspaceId })
-  },
-  "workspace.snapshot.fork": (args) => {
-    const [snapshotId, workspaceId, ...rest] = tokensOf(args)
-    if (snapshotId === undefined) return no("workspace.snapshot.fork needs a snapshot id")
-    if (rest.length > 0) return no("workspace.snapshot.fork takes a snapshot id and optionally a workspace id")
-    return ok(workspaceId === undefined ? { snapshotId } : { snapshotId, workspaceId })
-  },
-  "workspace.template": (args) => {
-    /*
-     * Two spellings: `<snapshotId> <one-word-name> [workspaceId]`, and
-     * `<snapshotId> [workspaceId] --name <the rest of the line>` for a
-     * multi-word name (the Snapshots facet's button emits the second, since a
-     * snapshot's own name may carry spaces).
-     */
-    const tokens = tokensOf(args)
-    const flag = tokens.indexOf("--name")
-    const positional = flag === -1 ? tokens : tokens.slice(0, flag)
-    const flagged = flag === -1 ? undefined : tokens.slice(flag + 1).join(" ").trim()
-    const [snapshotId, second, third, ...rest] = positional
-    if (flagged !== undefined) {
-      if (snapshotId === undefined || flagged === "") {
-        return no("workspace.template needs a snapshot id and a name: /workspace.template <snapshotId> [workspaceId] --name <name>")
-      }
-      if (third !== undefined || rest.length > 0) return no("workspace.template takes a snapshot id, optionally a workspace id, then --name <name>")
-      return ok(second === undefined ? { snapshotId, name: flagged } : { snapshotId, name: flagged, workspaceId: second })
-    }
-    if (snapshotId === undefined || second === undefined) {
-      return no("workspace.template needs a snapshot id and a name: /workspace.template <snapshotId> <name> [workspaceId]")
-    }
-    if (rest.length > 0) return no("workspace.template takes a snapshot id, a one-word name, and optionally a workspace id (use --name for a multi-word name)")
-    return ok(third === undefined ? { snapshotId, name: second } : { snapshotId, name: second, workspaceId: third })
-  },
   "workspace.sessions": (args) => optional("workspaceId", args),
   "workspace.session.destroy": (args) => {
     const [sessionId, workspaceId, ...rest] = tokensOf(args)
@@ -835,13 +776,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     }
     return ok({ changeId, seq: number })
   },
-  "change.open-computer": (args) => {
-    const [changeId, snapshotId, ...rest] = tokensOf(args)
-    if (changeId === undefined || snapshotId === undefined || rest.length > 0) {
-      return no("change.open-computer takes a change id and the revision's snapshot id")
-    }
-    return ok({ changeId, snapshotId })
-  },
   "review.since-mine": (args) => required("changeId", args, "review.since-mine needs a change id"),
   "review.done": (args) => numberedChangeRef("review.done", "threadId", "a thread id", args),
   "review.ack": (args) => numberedChangeRef("review.ack", "threadId", "a thread id", args),
@@ -909,7 +843,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { path } : { path, repo })
   },
   "repos.app": (args) => repoOnly("repos.app", args),
-  /* Lane sync (ADR 0005): Linear and GitHub sync as actions. */
+  
   "github.app": (args) => repoOnly("github.app", args),
   "github.app.choose": (args) => required("installationId", args, "Choose a GitHub App installation."),
   "github.app.open": (args) => repoOnly("github.app.open", args),
@@ -922,55 +856,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { ref: rest } : { ref: rest, repo })
   },
   "repos.import.retry": (args) => required("jobId", args, "repos.import.retry needs the job id"),
-  "linear.connect": (args) => repoOnly("linear.connect", args),
-  "linear.connect.open": (args) => repoOnly("linear.connect.open", args),
-  "linear.connect.confirm": (args) => repoOnly("linear.connect.confirm", args),
-  "linear.connect.team": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
-    if (rest === "" || /\s/.test(rest)) return no("linear.connect.team needs the team id")
-    return ok(repo === undefined ? { teamId: rest } : { teamId: rest, repo })
-  },
-  "linear.connect.repo": (args) => {
-    const tokens = tokensOf(args)
-    const [cardRepo, repo] = tokens
-    if (cardRepo === undefined || repo === undefined || tokens.length > 2) {
-      return no("linear.connect.repo needs the card's repository and the picked owner/repo")
-    }
-    return ok({ cardRepo, repo })
-  },
-  "linear.sync": (args) => optional("integration", args),
-  "linear.activity": (args) => optional("integration", args),
-  "linear.disconnect": (args) => {
-    /* `<integration> <teamKey>`: the key typed back confirms; without it the seam names the exact invocation. */
-    const tokens = tokensOf(args)
-    const [integration, confirmKey] = tokens
-    if (integration === undefined) return no("linear.disconnect needs an integration: /linear.disconnect <id|team> <teamKey>")
-    if (tokens.length > 2) return no("linear.disconnect takes an integration and its team key typed back")
-    return ok(confirmKey === undefined ? { integration } : { integration, confirmKey })
-  },
-  "sync.retry": (args) => required("opId", args, "sync.retry needs an op id"),
   "sync.ops.show-more": (args) => required("cardId", args, "sync.ops.show-more needs the card id"),
-  "sync.ops.load-older": (args) => required("cardId", args, "sync.ops.load-older needs the card id"),
-  "issues.link-linear": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
-    const [head, identifier, ...extra] = rest.split(/\s+/)
-    const number = Number(head)
-    if (!Number.isInteger(number) || number <= 0) return no("issues.link-linear needs an issue number")
-    if (identifier === undefined || identifier === "" || extra.length > 0) {
-      return no("issues.link-linear needs the Linear identifier: /issues.link-linear <n> <identifier>")
-    }
-    return ok(repo === undefined ? { number, identifier } : { number, identifier, repo })
-  },
-  "issues.unlink-linear": (args, known) => {
-    /* `<n> <identifier> [owner/repo]`: the identifier typed back confirms; without it the seam names the exact invocation. */
-    const { rest, repo } = splitTrailingRepo(args, known)
-    const [head, identifier, ...extra] = rest.split(/\s+/)
-    const number = Number(head)
-    if (!Number.isInteger(number) || number <= 0) return no("issues.unlink-linear needs an issue number")
-    if (extra.length > 0) return no("issues.unlink-linear takes an issue number, its Linear identifier typed back, and optionally an owner/repo")
-    const confirmed = identifier === undefined || identifier === "" ? {} : { identifier }
-    return ok(repo === undefined ? { number, ...confirmed } : { number, ...confirmed, repo })
-  },
   "debug.backend": (args) => ok({ backend: args ?? "" }),
   "debug.errors": (args) => optional("query", args),
   "admin.allowlist.add": (args) => required("login", args, "admin.allowlist.add needs a login"),
@@ -1017,23 +903,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "agent.change.start": (args) => optional("cardId", args),
   "agent.explain": (args) => required("what", args, "agent.explain needs something to explain: /agent.explain <what>"),
-  /*
-   * Agents as data (custom-agents.md). `agent.new` takes its prefill
-   * positionally; `agent.create` needs the three that define an agent, the
-   * purpose is the rest of the line; `agent.edit` reads `--model`,
-   * `--purpose`, `--label` anywhere on the line, each value running to the
-   * next flag.
-   */
-  "agent.new": (args) => {
-    const [id, harness, model, ...rest] = tokensOf(args)
-    const purpose = rest.join(" ").trim()
-    return ok({
-      ...(id === undefined ? {} : { id }),
-      ...(harness === undefined ? {} : { harness }),
-      ...(model === undefined ? {} : { model }),
-      ...(purpose === "" ? {} : { purpose })
-    })
-  },
   /* THE FORM LAW: the generic form card's acts. `form.set`'s value is the rest of the line (blank clears). */
   "form.set": (args) => {
     const [cardId, field, ...rest] = tokensOf(args)
@@ -1043,34 +912,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ cardId, field, value: rest.length === 0 ? "" : value })
   },
   "form.submit": (args) => required("cardId", args, "form.submit needs the card id"),
-  "agent.create": (args) => {
-    const [id, harness, model, ...rest] = tokensOf(args)
-    if (id === undefined || harness === undefined || model === undefined) {
-      return no("agent.create needs an id, a harness, and a model: /agent.create reviewer codex gpt-5.6-terra Reviews diffs")
-    }
-    const purpose = rest.join(" ").trim()
-    return ok(purpose === "" ? { id, harness, model } : { id, harness, model, purpose })
-  },
-  "agent.edit": (args) => {
-    const [id, ...rest] = tokensOf(args)
-    if (id === undefined) return no("agent.edit needs an agent id: /agent.edit <id> [--model <id>] [--purpose <text>] [--label <name>]")
-    const payload: Record<string, string> = { id }
-    let current: "model" | "purpose" | "label" | undefined
-    for (const token of rest) {
-      if (token === "--model" || token === "--purpose" || token === "--label") {
-        current = token.slice(2) as "model" | "purpose" | "label"
-        payload[current] = ""
-        continue
-      }
-      if (current === undefined) return no("agent.edit takes an id then --model, --purpose, or --label")
-      payload[current] = payload[current] === "" ? token : `${payload[current]} ${token}`
-    }
-    if (payload["model"] === "") return no("agent.edit's --model needs a model id")
-    if (payload["label"] === "") return no("agent.edit's --label needs a name")
-    return ok(payload)
-  },
-  "agent.remove": (args) => required("id", args, "agent.remove needs an agent id"),
-  "agent.models": (args) => required("harness", args, "agent.models needs a harness id: /agent.models opencode"),
   /*
    * The cloud agent sessions (entries/agentSession.ts). `new` reads its line
    * as [owner/repo] [provider] [task…], each position OPTIONAL: a token that

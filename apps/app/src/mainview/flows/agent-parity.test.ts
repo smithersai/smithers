@@ -127,8 +127,6 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "cloud.prompt", confirm: false },
   /* Agents as data (custom-agents.md): listing and the form render cards; defining what spends money confirms. */
   { name: "agent.list", confirm: false },
-  { name: "agent.new", confirm: false },
-  { name: "agent.models", args: "codex", confirm: false },
   /*
    * The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent
    * sessions"): the reads are free; launching a sandbox agent, steering it
@@ -139,9 +137,6 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "agent.session.view", args: "sess-1", confirm: false },
   { name: "agent.session.say", args: "sess-1 hello there", confirm: true },
   { name: "agent.session.stop", args: "sess-1", confirm: true },
-  { name: "agent.create", args: "reviewer codex gpt-5.6-terra Reviews diffs", confirm: true },
-  { name: "agent.edit", args: "explainer --purpose Explains briefly", confirm: true },
-  { name: "agent.remove", args: "reviewer", confirm: true },
   /* Code intelligence (docs/code-intel/PLAN.md §4): reads against the local language server; none confirms. */
   { name: "code.hover", args: "src/index.ts:3:7", confirm: false },
   { name: "code.definition", args: "src/index.ts:3:17", confirm: false },
@@ -241,6 +236,7 @@ const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
     }
   }
   const controller = createAppController(store, repositories, unavailableAgent, {
+    features: { pluginLibrary: true },
     bootstrap,
     socketUrl: () => undefined,
     fetchImpl: async (input, init) => {
@@ -467,47 +463,16 @@ describe("the three-door law", () => {
   test("the + menu's flows are the agent's flows: tab.terminal, agent.role and tab.harness are callable", async () => {
     const { controller } = await boot()
     const callable = new Set(controller.commands.callable().map(nameOf))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "tab.card", "agent.new", "agent.list", "agent.create", "form.set", "form.submit", "card.dismiss"]) {
+    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "tab.card", "agent.list", "form.set", "form.submit", "card.dismiss"]) {
       expect(callable.has(name)).toBe(true)
     }
     // And listed: the slash menu and the prompt's catalog show them.
     const disclosed = new Set(controller.commands.disclosed().map((descriptor) => descriptor.name))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "cloud.prompt", "agent.list", "agent.new", "agent.create", "agent.edit", "agent.remove", "agent.models"]) {
+    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "cloud.prompt", "agent.list"]) {
       expect(disclosed.has(name)).toBe(true)
     }
     expect(disclosed.has("flow.run.retry")).toBe(false)
     // The form card's acts (THE FORM LAW) are hidden from the catalog and callable, like every id-scoped card act.
     for (const name of ["form.set", "form.submit", "card.dismiss"]) expect(disclosed.has(name)).toBe(false)
-  })
-
-  test("agent.delegate and agent.role accept a custom id: the launch goes by role id, and the confirm card names it", async () => {
-    const { store, controller, ptyBodies } = await boot()
-    const reviewer = {
-      id: "reviewer",
-      label: "Reviewer",
-      purpose: "Reviews diffs.",
-      model: { provider: "openai", id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-      harness: "codex" as const,
-      delegates: false,
-      builtin: false,
-      createdAt: 1,
-      updatedAt: 1
-    }
-    store.dispatch({ type: "agents.loaded", actor: "system", agents: [...(await import("@smthrs/rpc/AgentRoles")).AGENT_ROLES, reviewer] })
-    await settle(2)
-    expect(await execute(controller, "agent.delegate", "reviewer review the retry")).toContain("asked the user to confirm")
-    expect(ptyBodies).toHaveLength(0)
-    expect(confirmationFor(store, "agent.delegate")?.action?.args).toBe("reviewer review the retry")
-    expect((await controller.commands.run("agent.delegate", "reviewer review the retry")).status).toBe("executed")
-    expect(ptyBodies.at(-1)).toMatchObject({ kind: "harness", harnessId: "codex", roleId: "reviewer", task: "review the retry" })
-    expect(store.collections.cards.get("agent-pty-1")?.payload).toMatchObject({ roleId: "reviewer", purpose: "Reviews diffs." })
-    expect(await execute(controller, "agent.role", "reviewer")).toContain("asked the user to confirm")
-    expect(confirmationFor(store, "agent.role")?.action?.args).toBe("reviewer")
-    // An id the store lacks is refused by the store's list, not an enum.
-    const refused = await controller.commands.run("agent.delegate", "poet write a haiku")
-    expect(refused.status).toBe("failed")
-    if (refused.status !== "failed") throw new Error("The unknown agent must be refused")
-    expect(refused.error).toContain("There is no agent named poet")
-    expect(refused.error).toContain("reviewer")
   })
 })

@@ -19,7 +19,7 @@ export const featureFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
      * workspace's `prototype` flow on the request, tracked by the run card
      * as a trace. Fast and cheap exploration only; never promoted. Signed out,
      * the controller's gate parks a human's invocation on the auth.prompt step
-     * (the same door repo.contribute renders) and refuses the model's.
+     * and refuses the model's.
      */
     name: "feature.prototype",
     form: {

@@ -15,10 +15,10 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       let input = page.getByTestId("composer-input")
       // A seam can expire before identity learns it: requirement refusals are
       // transcript prompts now, while explicit seam failures retain a toast.
-      await page.route("**/api/repos/smithersai/smithers/contents/.smithers/home.json", route => route.fulfill({
+      await page.route("**/api/repos/smithersai/smithers/contents/README.md", route => route.fulfill({
         status: 403, json: { message: "Use /auth.sign-in to read this repository." },
       }))
-      await input.fill("/repo.home smithersai/smithers")
+      await input.fill("/files.read README.md smithersai/smithers")
       await input.press("Enter")
       const stack = page.getByLabel("Notifications", { exact: true })
       const signIn = stack.getByRole("button", { name: "Sign in with GitHub", exact: true })

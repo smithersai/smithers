@@ -1,12 +1,11 @@
 import { flowAction } from "./flows/FlowAction"
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Separator } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { FolderGit2, GitPullRequest, HardDrive, Plug, RefreshCw, Server, Trash2 } from "lucide-react"
+import { FolderGit2, GitPullRequest, HardDrive, Plug, Server, Trash2 } from "lucide-react"
 import type { KeyboardEvent } from "react"
 import { useController } from "./ControllerContext"
 import { rovingKeyDown } from "./RovingKeyDown"
 import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
-import { ageLabel } from "./Timestamps"
 
 const shortHead = (head: string | null): string => head?.slice(0, 8) ?? "No commits yet"
 
@@ -30,19 +29,9 @@ export function ConnectorsSurface() {
     }))
   )
   const connectors = [...connectorRows].sort((left, right) => left.name.localeCompare(right.name))
-  /*
-   * Lane sync (ADR 0005): the GitHub and Linear rows read ONLY what the app
-   * has actually read — the App statuses its github.app act filed and the
-   * integrations the Linear seam loaded. A repo never checked is absent,
-   * never assumed.
-   */
+  
   const { data: gitHubAppStatusRows } = useLiveQuery(collections.githubAppStatuses)
-  const { data: linearIntegrationRows } = useLiveQuery(collections.linearIntegrations)
   const installedRepositories = gitHubAppStatusRows.filter((row) => row.installed && row.configured).length
-  /* ADR 0005 "Connectors surface": Linear per team, WITH last sync — the age off the DTO's last_sync_at; nothing when it never synced. */
-  const linearTeams = [...linearIntegrationRows]
-    .sort((left, right) => left.teamKey.localeCompare(right.teamKey))
-    .map((row) => (row.lastSyncAt !== null ? `${row.teamKey} (last sync ${ageLabel(row.lastSyncAt)})` : row.teamKey))
   const operation = operationRows.find((candidate) => candidate.id === "connector-operation") ??
     collections.connectorOperations.get("connector-operation")
   const selecting = operation?.phase === "selecting-local-repository"
@@ -66,7 +55,7 @@ export function ConnectorsSurface() {
 
   interface StoreRow {
     readonly key: string
-    readonly icon: "github" | "local" | "cloud" | "linear"
+    readonly icon: "github" | "local" | "cloud"
     readonly name: string
     readonly description: string
     readonly action:
@@ -115,16 +104,6 @@ export function ConnectorsSurface() {
         ? { kind: "button", label: "Check the App", flow: "github.app" }
         : { kind: "button", label: "Connect", flow: "auth.sign-in" }
     } satisfies StoreRow] : []),
-    ...(controller.commands.find("linear.connect") !== undefined ? [{
-      /* Lane sync: the Linear connector — per-team state from the integrations the seam loaded. */
-      key: "linear",
-      icon: "linear",
-      name: "Linear",
-      description: linearTeams.length > 0
-        ? `${linearTeams.join(", ")} connected — issues sync both ways.`
-        : "Sync issues with a Linear team.",
-      action: { kind: "button", label: "Connect", flow: "linear.connect" }
-    } satisfies StoreRow] : []),
     ...(cloudAvailable ? [{
       /*
        * repos.import mirrors a GitHub repository into Smithers Cloud and is
@@ -150,8 +129,6 @@ export function ConnectorsSurface() {
       <GitPullRequest size={16} aria-hidden="true" /> :
       icon === "local" ?
       <HardDrive size={16} aria-hidden="true" /> :
-      icon === "linear" ?
-      <RefreshCw size={16} aria-hidden="true" /> :
       <Server size={16} aria-hidden="true" />
 
   const onRowsKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {

@@ -30,7 +30,7 @@ import type { FlowEntry } from "./registry"
 import type { CommandActions } from "./entries/Declare"
 import { accountFlows } from "./entries/account"
 import { adminOperatorFlows, adminResetFlows, adminToolFlows } from "./entries/admin"
-import { agentEditFlows, agentFlows, tutorialChangeFlows } from "./entries/agent"
+import { agentFlows, tutorialChangeFlows } from "./entries/agent"
 import { agentSessionFlows } from "./entries/agentSession"
 import { appFlows } from "./entries/app"
 import { appearanceFlows } from "./entries/appearance"
@@ -51,7 +51,6 @@ import { connectSurfaceFlows, connectorFlows } from "./entries/connector"
 import { debugFlows, debugVerboseFlows } from "./entries/debug"
 import { egressFlows } from "./entries/egress"
 import { envFlows } from "./entries/env"
-import { factoryFlows } from "./entries/factory"
 import { featureFlows } from "./entries/feature"
 import { filesAddFlows, filesFlows } from "./entries/files"
 import { findingsFlows } from "./entries/findings"
@@ -59,13 +58,12 @@ import { flowFlows, flowRunStopAllFlows, flowsSurfaceFlows } from "./entries/flo
 import { formFlows } from "./entries/form"
 import { frameFlows } from "./entries/frame"
 import { githubFlows } from "./entries/github"
-import { issuesFlows, issuesLinearFlows } from "./entries/issues"
-import { linearFlows } from "./entries/linear"
+import { issuesFlows } from "./entries/issues"
 import { notificationsFlows } from "./entries/notifications"
 import { paletteFlows } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON, pluginsFlows, pluginsSurfaceFlows } from "./entries/plugins"
 import { prsFlows } from "./entries/prs"
-import { repoFlows, repoOpenFlows, repoStarterFlows, tutorialRepositoryFlows } from "./entries/repo"
+import { repoFlows, repoOpenFlows, tutorialRepositoryFlows } from "./entries/repo"
 import { reposImportFlows, reposImportRetryFlows } from "./entries/repos"
 import { reviewFlows } from "./entries/review"
 import { runsFlows } from "./entries/runs"
@@ -123,7 +121,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...wikiSurfaceFlows(actions),
   ...worldSurfaceFlows(actions),
   ...flowsSurfaceFlows(actions),
-  ...pluginsSurfaceFlows(actions),
+  ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsSurfaceFlows(actions) : []),
   ...appearanceFlows(actions),
   ...chatSurfacesFlows(actions),
   ...debugVerboseFlows(actions),
@@ -132,7 +130,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...browserFlows(actions),
   ...flowFlows(actions),
   ...triggersFlows(actions),
-  ...factoryFlows(actions),
   ...runsFlows(actions),
   ...flowRunStopAllFlows(actions),
   ...approvalsFlows(actions),
@@ -154,7 +151,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...reposImportFlows(actions),
   ...issuesFlows(actions),
   ...prsFlows(actions),
-  ...repoStarterFlows(actions),
   ...featureFlows(actions),
   ...notificationsFlows(actions),
   ...envFlows(actions),
@@ -166,9 +162,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...codeFlows(actions),
   ...githubFlows(actions),
   ...reposImportRetryFlows(actions),
-  ...linearFlows(actions),
   ...syncFlows(actions),
-  ...issuesLinearFlows(actions),
   ...workspaceFlows(actions),
   ...egressFlows(actions),
   ...changeFlows(actions),
@@ -182,7 +176,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...tutorialChangeFlows(actions),
   ...changeOpenFlows(actions),
   ...formFlows(actions),
-  ...agentEditFlows(actions),
   ...tabFlows(actions),
   ...repoFlows(actions),
   ...tutorialRepositoryFlows(actions),
@@ -194,7 +187,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...smithersFlows(actions),
   ...searchFlows(actions),
   ...paletteFlows(actions),
-  ...pluginsFlows(actions),
+  ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsFlows(actions) : []),
   ...guideFlows(actions)
 ]
 

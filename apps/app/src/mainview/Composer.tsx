@@ -134,7 +134,7 @@ function ComposerMenu({
       icon: <Library size={14} aria-hidden="true" />,
       active: surface === "plugins"
     }
-  ] as const
+  ].filter(entry => entry.flow !== "plugins" || controller.features.pluginLibrary)
 
   const openMenu = (): void => {
     setHighlighted(0)
@@ -257,7 +257,6 @@ function ComposerAdd({
   const { data: agentRows } = useLiveQuery(collections.agents)
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const canAddFiles = controller.commands.find("files.add") !== undefined
-  const canNewAgent = controller.commands.find("agent.new") !== undefined
   const canAddConnector = controller.nativeRepositoriesAvailable &&
     controller.commands.find("connector.add") !== undefined
   const canCreateFlow = controller.commands.find("flow.create") !== undefined
@@ -348,20 +347,6 @@ function ComposerAdd({
         )
       }]
       : []),
-    /* Agents as data (custom-agents.md): the last row opens the New agent form card. */
-    ...(canNewAgent
-      ? [{
-        key: "agent.new",
-        flow: "agent.new",
-        testId: "composer-add-new-agent",
-        content: (
-          <>
-            <Bot size={14} aria-hidden="true" />
-            New agent…
-          </>
-        )
-      }]
-      : [])
   ]
 
   if (entries.length === 0) return null

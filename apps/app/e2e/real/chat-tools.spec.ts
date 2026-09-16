@@ -443,7 +443,7 @@ authenticatedTest("production recommendations come from the live recommender and
   // not eligible for the recommendation-click fixture.
   const safeActions = new Set([
     "wiki", "chat.commands", "chat.surfaces", "appearance.theme", "search.open", "auth.prompt", "cloud.prompt",
-    "issues.list", "prs.list", "flow.list", "runs.list", "approvals.list", "repo.welcome", "plugins", "connect", "account.show"
+    "issues.list", "prs.list", "flow.list", "runs.list", "approvals.list", "plugins", "connect", "account.show"
   ])
   const recommended = named.find((entry) => safeActions.has(entry) && offered.includes(entry))
   await attachJson(testInfo, "recommendation-before-click", { bootstrap, answer, offered, eligible: recommended })

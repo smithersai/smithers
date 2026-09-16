@@ -1435,36 +1435,6 @@ describe("createChangeSeam", () => {
     )
   })
 
-  test("change.open-computer forks the revision's snapshot on the change's repo and lends the card to the workspace seam", async () => {
-    const { store, seam, requests, bodies, shownWorkspaces } = await harness({
-      ...viewRoutes,
-      [`POST ${REPO}/workspaces`]: json(201, {
-        id: "ws-9",
-        name: "qupxosqw-rev-2",
-        status: "starting",
-        target_bookmark: "main",
-        provisioning_stage: "boot",
-        created_at: "2026-09-01T12:00:00Z"
-      })
-    })
-    await seam.viewChange("qupxosqw")
-    expect(textOf(await seam.openComputer("qupxosqw", "s_8d1"))).toBe(
-      "Computer \"qupxosqw-rev-2\" (ws-9) is starting from snapshot s_8d1 of qupxosqw — the workspace card tracks it."
-    )
-    expect(requests).toContain(`POST ${REPO}/workspaces`)
-    expect(JSON.parse(bodies[`POST ${REPO}/workspaces`] ?? "null")).toEqual({ snapshot_id: "s_8d1" })
-    expect(store.collections.cloudWorkspaces.get("ws-9")?.repoId).toBe("will/smithers")
-    expect(shownWorkspaces).toEqual(["ws-9"])
-  })
-
-  test("change.open-computer refuses a degraded sign-in with the workspace enable wording", async () => {
-    const { seam, requests } = await harness(viewRoutes, { degraded: true })
-    expect(textOf(await seam.openComputer("qupxosqw", "s_8d1"))).toBe(
-      "This Smithers Cloud sign-in can't use workspaces — sign in again to enable them."
-    )
-    expect(requests).toEqual([])
-  })
-
   test("change.split-ready refuses — the ready members aren't recorded (plue#452)", async () => {
     const changeset = {
       id: 7,

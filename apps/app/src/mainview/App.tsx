@@ -193,9 +193,7 @@ function AppContent() {
    *
    * With a public catalog repository selected (the /owner/name path,
    * apps/server/PUBLIC-REPOSITORIES.md) the signed-out visitor is not gated:
-   * the transcript opens on the repository's welcome card instead
-   * (repo.welcome, controller/onboarding.ts), whose maintain and contribute
-   * doors render the sign-in step when it is needed. Reads and chat work.
+   * reads and chat work, and writes render the sign-in step when needed.
    */
   /*
    * The host, named once, because the sign-in message and the gate below both
@@ -348,13 +346,7 @@ function AppContent() {
 
   const latestEntry = entries.at(-1)
   const latestReadId = latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
-  // Start at this repository's Home, or Welcome until its declared pane arrives,
-  // even when this profile has another repository's conversation above it.
-  const homeReadId = session.activeRepoKey ? `repo-home-${session.activeRepoKey}` : undefined
-  const welcomeReadId = session.activeRepoKey ? `repo-welcome-${session.activeRepoKey}` : undefined
-  const initialReadId = !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id
-    : entries.some(entry => entry.kind === "card" && entry.card.id === homeReadId) ? homeReadId : welcomeReadId
-  const showingArrival = latestReadId !== undefined && latestReadId === welcomeReadId
+  const initialReadId = !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id : undefined
 
   // Chat stays mounted when closed.
   const composerWrap = (
@@ -526,11 +518,11 @@ function AppContent() {
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
           <MessageScrollerProvider key={`${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`} scrollAnchor="bottom"
             initialMessageId={initialReadId}
-            readAnchor={{ messageId: showingArrival ? initialReadId! : latestReadId ?? "",
-              actor: showingArrival ? "arrival" : latestEntry?.kind === "message" && latestEntry.message.role === "user" ? "user" : "output",
+            readAnchor={{ messageId: latestReadId ?? "",
+              actor: latestEntry?.kind === "message" && latestEntry.message.role === "user" ? "user" : "output",
               requestId: readRequestRef.current,
               userMessageId: messages.filter(message => message.role === "user").at(-1)?.id,
-              version: latestEntry?.kind === "card" && !showingArrival ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
+              version: latestEntry?.kind === "card" ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
@@ -570,7 +562,7 @@ function AppContent() {
           <ConnectorsSurface /> :
           session.surface === "flows" ?
           <FlowsSurface cards={cardRows} /> :
-          session.surface === "plugins" ?
+          session.surface === "plugins" && controller.features.pluginLibrary ?
           <PluginsSurface /> :
           null}
 

@@ -2,8 +2,6 @@ import { describe, expect, test } from "vitest"
 import {
   AGENT_ROLE_IDS,
   AGENT_ROLES,
-  agentIdFromLabel,
-  AgentPutRequestSchema,
   agentRole,
   AgentRoleSchema,
   agentRoleTitle,
@@ -16,7 +14,6 @@ import {
   isAgentRoleId,
   isBuiltinAgentRoleId,
   isCloudRoleId,
-  orderedAgentRoles,
   roleLaunchArgv
 } from "../src/AgentRoles.ts"
 import type { AgentRole } from "../src/AgentRoles.ts"
@@ -73,34 +70,6 @@ describe("the agent role registry", () => {
     expect(isBuiltinAgentRoleId("reviewer")).toBe(false)
     expect(findAgentRole("reviewer")).toBeUndefined()
     expect(findAgentRole("reviewer", [...AGENT_ROLES, custom])?.label).toBe("Reviewer")
-  })
-
-  test("the schema accepts a custom row and refuses a bad id, a model with a space, and a model with a leading dash", () => {
-    expect(AgentRoleSchema.safeParse(custom).success).toBe(true)
-    for (const id of ["Reviewer", "1st", "a", "has space", "-lead", "x".repeat(42)]) {
-      expect(AgentRoleSchema.safeParse({ ...custom, id }).success).toBe(false)
-      expect(isAgentRoleId(id)).toBe(false)
-    }
-    for (const model of ["gpt 5", "-m", "--dangerously-skip-permissions", "", "x".repeat(82)]) {
-      expect(AgentRoleSchema.safeParse({ ...custom, model: { ...custom.model, id: model } }).success).toBe(false)
-      expect(
-        AgentPutRequestSchema.safeParse({
-          label: custom.label,
-          purpose: custom.purpose,
-          harness: custom.harness,
-          model: { ...custom.model, id: model }
-        }).success
-      ).toBe(false)
-    }
-    // Provider-qualified ids (opencode) and dotted versions pass.
-    expect(AgentRoleSchema.safeParse({ ...custom, model: { ...custom.model, id: "cerebras/gpt-oss-120b" } }).success)
-      .toBe(true)
-    expect(AgentPutRequestSchema.safeParse({ label: "R", purpose: "", harness: "codex", model: custom.model }).success)
-      .toBe(true)
-    expect(
-      AgentPutRequestSchema.safeParse({ label: "R", purpose: "", harness: "codex", model: custom.model, extra: 1 })
-        .success
-    ).toBe(false)
   })
 
   test("the launch argv is composed per harness: binary, model flag, model id, then the task as the first prompt", () => {
@@ -169,20 +138,6 @@ describe("the agent role registry", () => {
     test.each([undefined, "", " \t\n"])("omits the prompt and terminator for an empty task: %j", (task) => {
       expect(roleLaunchArgv(role, harness, task)).toEqual([harness.binary, ...harness.flag, role.model.id])
     })
-  })
-
-  test("orderedAgentRoles keeps the built-ins first in table order, custom agents oldest first; an empty list is the built-ins", () => {
-    const later = { ...custom, id: "docs-writer", label: "Docs writer", createdAt: 20, updatedAt: 20 }
-    const ordered = orderedAgentRoles([later, custom, ...[...AGENT_ROLES].reverse()])
-    expect(ordered.map((role) => role.id)).toEqual([...AGENT_ROLE_IDS, "reviewer", "docs-writer"])
-    expect(orderedAgentRoles([])).toBe(AGENT_ROLES)
-  })
-
-  test("an id derives from a name when none was typed", () => {
-    expect(agentIdFromLabel("Docs writer")).toBe("docs-writer")
-    expect(agentIdFromLabel("  Reviewer (mine) ")).toBe("reviewer-mine")
-    expect(agentIdFromLabel("42")).toBeUndefined()
-    expect(agentIdFromLabel("")).toBeUndefined()
   })
 })
 

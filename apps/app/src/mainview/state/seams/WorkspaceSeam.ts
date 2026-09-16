@@ -11,16 +11,10 @@ import { actorSharedState } from "../ActorBindings"
  *
  *   GET    /api/user/workspaces                          — the per-user list
  *   GET    /api/repos/{o}/{r}/workspaces                 — one repository's list
- *   POST   /api/repos/{o}/{r}/workspaces                 — create-or-reuse { name?, snapshot_id?, source_bookmark? }
+ *   POST   /api/repos/{o}/{r}/workspaces                 — create-or-reuse { name?, source_bookmark? }
  *   GET    /api/repos/{o}/{r}/workspaces/{id}
  *   POST   /api/repos/{o}/{r}/workspaces/{id}/suspend|resume
- *   POST   /api/repos/{o}/{r}/workspaces/{id}/fork       { name }
  *   DELETE /api/repos/{o}/{r}/workspaces/{id}
- *   POST   /api/repos/{o}/{r}/workspaces/{id}/snapshot   { name }
- *   GET    /api/repos/{o}/{r}/workspace-snapshots
- *   GET    /api/repos/{o}/{r}/workspace-snapshots/{id}
- *   DELETE /api/repos/{o}/{r}/workspace-snapshots/{id}
- *   POST   /api/repos/{o}/{r}/workspace-snapshots        { workspace_id, name } — a template
  *   GET    /api/repos/{o}/{r}/workspace/sessions         { workspace_id }
  *   POST   /api/repos/{o}/{r}/workspace/sessions         { workspace_id, cols, rows } — a terminal;
  *                                                         { workspace_id, kind: "lsp", language } is CloudLspClient's (lane L6)
@@ -148,7 +142,7 @@ export const terminalSessionRetry = {
   defaultDelayMs: 3_000
 }
 
-export type WorkspaceFacet = "terminal" | "files" | "services" | "snapshots" | "egress" | "desktop"
+export type WorkspaceFacet = "terminal" | "files" | "services" | "egress" | "desktop"
 
 export interface WorkspaceSeam {
   /** `workspace.list [owner/repo]`: refresh the collection and the tree; a bare call lists the per-user inventory. */
@@ -172,12 +166,7 @@ export interface WorkspaceSeam {
   readonly openTerminal: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
   readonly suspendWorkspace: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
   readonly resumeWorkspace: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
-  readonly forkWorkspace: (workspaceId?: string, name?: string) => Promise<string | void | { readonly value: string }>
-  readonly snapshotWorkspace: (workspaceId?: string, name?: string) => Promise<string | void | { readonly value: string }>
-  readonly deleteSnapshot: (snapshotId: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
   /** A workspace created FROM a snapshot (the snapshot row's "Fork from"): POST /workspaces { snapshot_id }. */
-  readonly forkFromSnapshot: (snapshotId: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
-  readonly templateSnapshot: (snapshotId: string, name: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
   readonly listSessions: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
   readonly destroySession: (sessionId: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
   /** `workspace.delete <id> <name>`: the workspace's name typed back is the gate — a mismatch refuses, whoever invoked. */
@@ -236,12 +225,6 @@ export interface WorkspaceSeamDeps {
   readonly desktopWaitMs?: number
 }
 
-interface SnapshotRow {
-  readonly id: string
-  readonly name: string
-  readonly createdAt: string | null
-}
-
 interface SessionRow {
   readonly id: string
   readonly status: string
@@ -255,7 +238,6 @@ interface SessionRow {
 /** The auxiliaries a workspace card renders beside the DTO row. */
 interface CardAux {
   readonly bookmarkHead: { readonly changeId: string | null; readonly commitId: string | null } | null
-  readonly snapshots: ReadonlyArray<SnapshotRow>
   readonly sessions: ReadonlyArray<SessionRow>
   readonly files: ReadonlyArray<WorkspaceFileEntry>
   readonly filesPath: string
@@ -605,15 +587,6 @@ const parseBookmark = (value: unknown): { readonly name: string; readonly change
   }
 }
 
-/** One snapshot row off the wire; malformed rows drop. */
-const parseSnapshot = (value: unknown): SnapshotRow | null => {
-  if (!isRecord(value)) return null
-  const id = str(value.id)
-  const name = str(value.name)
-  if (id === null || name === null) return null
-  return { id, name, createdAt: textOrNull(value.created_at) }
-}
-
 /** One session row off the wire; malformed rows drop. */
 const parseSession = (value: unknown): (SessionRow & { readonly workspaceId: string | null }) | null => {
   if (!isRecord(value)) return null
@@ -786,16 +759,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     return found === undefined ? null : { changeId: found.changeId, commitId: found.commitId }
   }
 
-  /** The repository's snapshot/template list; null = unread (an absent answer, not a fact). */
-  const loadSnapshots = async (repoId: string): Promise<ReadonlyArray<SnapshotRow> | null> => {
-    const answer = await getJson(repoPath(repoId, "/workspace-snapshots"))
-    if ("error" in answer) return null
-    return arrayOf(answer.body, "snapshots").flatMap((entry) => {
-      const parsed = parseSnapshot(entry)
-      return parsed === null ? [] : [parsed]
-    })
-  }
-
   const workspacePath = (repoId: string, workspaceId: string, rest: string): string =>
     repoPath(repoId, `/workspaces/${encodeURIComponent(workspaceId)}${rest}`)
 
@@ -867,7 +830,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const payload = {
       ...workspaceCardFacts(current),
       bookmarkHead: overrides.bookmarkHead !== undefined ? overrides.bookmarkHead : prior?.bookmarkHead ?? null,
-      snapshots: overrides.snapshots !== undefined ? [...overrides.snapshots] : prior?.snapshots ?? [],
       sessions: overrides.sessions !== undefined ? [...overrides.sessions] : prior?.sessions ?? [],
       ...(overrides.files !== undefined
         ? { files: [...overrides.files], filesPath: overrides.filesPath ?? "" }
@@ -1173,14 +1135,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       ctx.dispatch({ type: "repo.selected", actor: ctx.actor(), id: `${workspace.repoId}#workspace:${workspace.id}` })
     }
     if (UNSETTLED.has(workspace.status)) watch(workspace.id)
-    const [bookmarkHead, snapshots, sessions] = await Promise.all([
+    const [bookmarkHead, sessions] = await Promise.all([
       loadBookmarkHead(workspace.repoId, workspace.targetBookmark),
-      loadSnapshots(workspace.repoId),
       loadSessions(workspace.repoId, workspace.id)
     ])
     renderWorkspace(workspace, {
       bookmarkHead,
-      ...(snapshots === null ? {} : { snapshots }),
       ...(sessions === null ? {} : { sessions })
     })
     return {
@@ -1202,14 +1162,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if (fresh === null) return `Smithers Cloud's answer for workspace ${workspace.id} was malformed.`
     ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: fresh })
     if (UNSETTLED.has(fresh.status)) watch(fresh.id)
-    const [bookmarkHead, snapshots, sessions] = await Promise.all([
+    const [bookmarkHead, sessions] = await Promise.all([
       loadBookmarkHead(fresh.repoId, fresh.targetBookmark),
-      loadSnapshots(fresh.repoId),
       loadSessions(fresh.repoId, fresh.id)
     ])
     renderWorkspace(fresh, {
       bookmarkHead,
-      ...(snapshots === null ? {} : { snapshots }),
       ...(sessions === null ? {} : { sessions })
     })
     return { value: `Workspace "${fresh.name}" (${fresh.id}) is ${fresh.status} — the card is current.` }
@@ -1250,123 +1208,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if (UNSETTLED.has(fresh.status)) watch(fresh.id)
     renderWorkspace(fresh)
     return { value: `Workspace "${fresh.name}" (${fresh.id}) is ${fresh.status}.` }
-  }
-
-  const forkWorkspace: WorkspaceSeam["forkWorkspace"] = async (workspaceId, name) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    const accountCurrent = currentOperation()
-    const resolved = resolveWorkspace(workspaceId)
-    if ("error" in resolved) return resolved.error
-    const { workspace } = resolved
-    const forked = await sendJson("POST", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}/fork`), {
-      name: name ?? ""
-    })
-    if (!accountCurrent()) return SIGN_OUT_REFUSAL
-    if ("error" in forked) return failOnCard(workspace, forked)
-    const fork = parseWorkspaceWire(forked.body, workspace.repoId)
-    if (fork === null) return `Smithers Cloud's answer for the fork of ${workspace.id} was malformed.`
-    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: fork })
-    if (UNSETTLED.has(fork.status)) watch(fork.id)
-    renderWorkspace(fork)
-    return { value: `Forked "${workspace.name}" into "${fork.name}" (${fork.id}), ${fork.status} — the new card tracks it.` }
-  }
-
-  const snapshotWorkspace: WorkspaceSeam["snapshotWorkspace"] = async (workspaceId, name) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    const resolved = resolveWorkspace(workspaceId)
-    if ("error" in resolved) return resolved.error
-    const { workspace } = resolved
-    const taken = await sendJson("POST", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}/snapshot`), {
-      name: name ?? ""
-    })
-    if ("error" in taken) return failOnCard(workspace, taken)
-    const snapshot = parseSnapshot(taken.body)
-    const snapshots = await loadSnapshots(workspace.repoId)
-    renderWorkspace(workspace, snapshots === null
-      ? snapshot === null ? {} : { snapshots: [snapshot] }
-      : { snapshots })
-    return {
-      value: snapshot === null
-        ? `Snapshot of "${workspace.name}" (${workspace.id}) taken.`
-        : `Snapshot "${snapshot.name}" (${snapshot.id}) taken of "${workspace.name}" (${workspace.id}).`
-    }
-  }
-
-  const deleteSnapshot: WorkspaceSeam["deleteSnapshot"] = async (snapshotId, workspaceId) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    const resolved = resolveRepo(workspaceId)
-    if ("error" in resolved) return resolved.error
-    const deleted = await sendJson(
-      "DELETE",
-      repoPath(resolved.repo, `/workspace-snapshots/${encodeURIComponent(snapshotId)}`)
-    )
-    if ("error" in deleted) return deleted.error
-    const snapshots = await loadSnapshots(resolved.repo)
-    for (const row of ctx.store.collections.cloudWorkspaces.values()) {
-      if (row.repoId !== resolved.repo) continue
-      /*
-       * The workspace the act resolved renders (creating its card — the
-       * user just acted on it); the others only refresh a card already in
-       * the transcript.
-       */
-      if (row.id !== resolved.workspaceId && ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
-      renderWorkspace(row, snapshots === null ? {} : { snapshots })
-    }
-    return { value: `Snapshot ${snapshotId} is deleted.` }
-  }
-
-  const forkFromSnapshot: WorkspaceSeam["forkFromSnapshot"] = async (snapshotId, workspaceId) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    const accountCurrent = currentOperation()
-    const resolved = resolveRepo(workspaceId)
-    if ("error" in resolved) return resolved.error
-    const created = await sendJson("POST", repoPath(resolved.repo, "/workspaces"), { snapshot_id: snapshotId })
-    if (!accountCurrent()) return SIGN_OUT_REFUSAL
-    if ("error" in created) {
-      if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? true, ctx.actor())
-      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
-      return refusalSentence(created.refusal)
-    }
-    const workspace = parseWorkspaceWire(created.body, resolved.repo)
-    if (workspace === null) return `Smithers Cloud's answer for the workspace from snapshot ${snapshotId} was malformed.`
-    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace })
-    if (UNSETTLED.has(workspace.status)) watch(workspace.id)
-    renderWorkspace(workspace)
-    return {
-      value: `Workspace "${workspace.name}" (${workspace.id}) is ${workspace.status} from snapshot ${snapshotId} — the card tracks it.`
-    }
-  }
-
-  const templateSnapshot: WorkspaceSeam["templateSnapshot"] = async (snapshotId, name, workspaceId) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    const resolved = resolveRepo(workspaceId)
-    if ("error" in resolved) return resolved.error
-    const source = await getJson(repoPath(resolved.repo, `/workspace-snapshots/${encodeURIComponent(snapshotId)}`))
-    if ("error" in source) return source.error
-    const sourceWorkspaceId = isRecord(source.body) ? textOrNull(source.body.workspace_id) : null
-    if (sourceWorkspaceId === null) return `Smithers Cloud's answer for snapshot ${snapshotId} named no workspace.`
-    const created = await sendJson("POST", repoPath(resolved.repo, "/workspace-snapshots"), {
-      workspace_id: sourceWorkspaceId,
-      name
-    })
-    if ("error" in created) return created.error
-    const template = parseSnapshot(created.body)
-    const snapshots = await loadSnapshots(resolved.repo)
-    for (const row of ctx.store.collections.cloudWorkspaces.values()) {
-      if (row.repoId !== resolved.repo) continue
-      if (row.id !== resolved.workspaceId && ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
-      renderWorkspace(row, snapshots === null ? {} : { snapshots })
-    }
-    return {
-      value: template === null
-        ? `Template "${name}" created from snapshot ${snapshotId}.`
-        : `Template "${template.name}" (${template.id}) created from snapshot ${snapshotId}.`
-    }
   }
 
   const listSessions: WorkspaceSeam["listSessions"] = async (workspaceId) => {
@@ -1515,7 +1356,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         // Preserve current lifecycle and desktop credentials; only the requested facet was prefetched.
         return workspaceCard(row, { facet, ...(facet === "files" ? { files: p.files, filesPath: p.filesPath }
           : facet === "services" ? { services: p.services } : facet === "egress" ? { egress: p.egress, egressCursor: p.egressCursor }
-          : facet === "snapshots" ? { snapshots: p.snapshots } : facet === "terminal" ? { sessions: p.sessions.map(session => ({ ...session, kind: session.kind ?? null, language: session.language ?? null })) } : {}) })
+          : facet === "terminal" ? { sessions: p.sessions.map(session => ({ ...session, kind: session.kind ?? null, language: session.language ?? null })) } : {}) })
       },
       before: async () => {
         if (facet !== "desktop") {
@@ -1525,11 +1366,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       },
       read: async () => {
         let extra: Partial<CardAux> = { facet }
-        if (facet === "snapshots") {
-          const snapshots = await loadSnapshots(row.repoId)
-          if (snapshots === null) return "Workspace snapshots couldn't be loaded. Try again."
-          extra = { facet, snapshots }
-        } else if (facet === "terminal") {
+        if (facet === "terminal") {
           const sessions = await loadSessions(row.repoId, row.id)
           if (sessions === null) return "Workspace sessions couldn't be loaded. Try again."
           extra = { facet, sessions }
@@ -1925,9 +1762,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       else progress(stage)
     }, desktopBoxWait.pollMs)
     try {
-      const [bookmarkHead, snapshots, sessions] = await Promise.all([
+      const [bookmarkHead, sessions] = await Promise.all([
         loadBookmarkHead(box.repoId, box.targetBookmark),
-        loadSnapshots(box.repoId),
         loadSessions(box.repoId, box.id)
       ])
       if (!current()) return
@@ -1935,7 +1771,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         facet: "desktop",
         desktopStage: "creating",
         bookmarkHead,
-        ...(snapshots === null ? {} : { snapshots }),
         ...(sessions === null ? {} : { sessions })
       })
       /* A suspended box is plue's reuse answer for one that was put to sleep; waking it is this app's part. */
@@ -2190,11 +2025,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     openTerminal,
     suspendWorkspace: (workspaceId) => transitionWorkspace("suspend", workspaceId),
     resumeWorkspace: (workspaceId) => transitionWorkspace("resume", workspaceId),
-    forkWorkspace,
-    snapshotWorkspace,
-    deleteSnapshot,
-    forkFromSnapshot,
-    templateSnapshot,
     listSessions,
     destroySession,
     deleteWorkspace,

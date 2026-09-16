@@ -232,7 +232,7 @@ const seamsByFlow = (): Map<string, ReadonlySet<string>> => {
 }
 
 /** The API path heads plue serves; a string fragment under one of them is a call. */
-const API_HEADS = "repos|user|orgs|integrations|linear|notifications|github|admin|billing|cloud-auth|linear-auth|repo|auth|identity|agent|model"
+const API_HEADS = "repos|user|orgs|notifications|github|admin|billing|cloud-auth|repo|auth|identity|agent|model"
 
 /**
  * The static prefixes of every upstream path a seam file builds, normalized to
@@ -346,7 +346,6 @@ describe("host parity — the web and native catalogs against the servers' own c
     expect(nativeOnlyNames).toContain("target.run")
     expect(nativeOnlyNames).toContain("tab.terminal")
     expect(nativeOnlyNames).toContain("cloud.sign-in")
-    expect(nativeOnlyNames).toContain("linear.connect")
     const webNames = new Set(web.commands.all().map((command) => command.name))
     const slashNames = new Set<string>()
     const walk = (needle: string): void => {
@@ -447,7 +446,6 @@ describe("host parity — the web and native catalogs against the servers' own c
     expect([...(pathCache.get("RepositoriesSeam") ?? [])]).toContain("/api/user/repos")
     expect([...(pathCache.get("FilesSeam") ?? [])]).toContain("/api/repos/")
     expect([...(pathCache.get("RepoTreeSeam") ?? [])]).toContain("/api/repos/")
-    expect([...(writeCache.get("LinearSeam") ?? [])]).toContain("DELETE /api/integrations/linear/")
     expect([...(writeCache.get("ChangeSeam") ?? [])]).toContain("POST /api/orgs/")
     const found = [...gaps.entries()]
       .map(([path, flows]) => ({ path, flows: [...flows].sort() }))
@@ -581,7 +579,6 @@ describe("host parity — the web and native catalogs against the servers' own c
           provisioningStage: null,
           suspendedAt: null,
           bookmarkHead: { changeId: "qupxosqw", commitId: "c0ffee1" },
-          snapshots: [],
           sessions: [{ id: "sess-1", status: "running", createdAt: null }]
         }
       }

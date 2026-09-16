@@ -81,14 +81,6 @@ describe("the local origin", () => {
     expect(logs).toContain(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)
   })
 
-  test("the request trail elides the Linear setup key from its path", async () => {
-    /* Sync review finding 8: the one-time setup key rode the trail line on every connect. */
-    const response = await apiFetch("/api/cloud/api/linear/setup/sk-secret-123")
-    await response.text()
-    expect(logs.some((line) => line.includes("GET /api/cloud/api/linear/setup/<setup-key> ->"))).toBe(true)
-    expect(logs.some((line) => line.includes("sk-secret-123"))).toBe(false)
-  })
-
   test("GET /api/health reports node and sandbox", async () => {
     const response = await fetch(`${server.origin}/api/health`)
     expect(response.status).toBe(200)
@@ -167,15 +159,11 @@ describe("the local origin", () => {
       origin: "local"
     })
     const before = logs.length
-    const routed = await apiFetch("/api/agents/%E0%A4%A", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: "{}"
-    })
+    const routed = await apiFetch("/api/pty/%E0%A4%A/output")
     expect(routed.status).toBe(400)
     expect(((await routed.json()) as { error: { code: string } }).error.code).toBe("invalid_path")
     // A path that never reaches a handler still leaves its line.
-    expect(logs.slice(before).some((line) => /^PUT \/api\/agents\/%E0%A4%A -> 400 in \d+ms$/.test(line))).toBe(true)
+    expect(logs.slice(before).some((line) => /^GET \/api\/pty\/%E0%A4%A\/output -> 400 in \d+ms$/.test(line))).toBe(true)
     // `Bun.file(<directory>)` throws EISDIR, and a dotted name looks like a file.
     await mkdir(join(dist, "docs.d"), { recursive: true })
     const dotted = await fetch(`${server.origin}/docs.d/`)
@@ -525,7 +513,7 @@ describe("the local origin", () => {
     })
     try {
       const headers = { [LOCAL_SESSION_HEADER]: proxied.sessionToken, origin: proxied.origin, cookie: "smithers_identity=sealed" }
-      for (const path of ["/api/repos/smithersai/smithers/issues?state=open", "/api/user/github-repos/smithersai/smithers/issues", "/api/billing/balance", "/api/notifications/unread", "/api/workflow/provision", "/api/integrations/linear", "/api/linear/7/ops?limit=20"]) {
+      for (const path of ["/api/repos/smithersai/smithers/issues?state=open", "/api/user/github-repos/smithersai/smithers/issues", "/api/billing/balance", "/api/notifications/unread", "/api/workflow/provision"]) {
         const response = await fetch(`${proxied.origin}${path}`, { headers })
         expect(response.status).toBe(200)
       }
@@ -535,15 +523,16 @@ describe("the local origin", () => {
         "/api/billing/balance",
         "/api/notifications/unread",
         "/api/workflow/provision",
-        "/api/integrations/linear",
-        "/api/linear/7/ops"
       ])
       // The Worker authenticates by the identity session cookie; the Origin follows the upstream like every identity call.
       expect(seen.every((entry) => entry.cookie === "smithers_identity=sealed")).toBe(true)
       expect(seen.every((entry) => entry.origin === `http://127.0.0.1:${upstream.port}`)).toBe(true)
       const unknown = await fetch(`${proxied.origin}/api/nothing/here`, { headers })
       expect(unknown.status).toBe(404)
-      expect(seen).toHaveLength(7)
+      for (const path of ["/api/linear", "/api/integrations/linear", "/api/auth/linear", "/api/repos/a/b/issues/1/linear-link", "/api/cloud/api/linear", "/api/cloud/api/auth/linear", "/api/cloud/api/repos/a/b/issues/1/linear-link"]) {
+        expect((await fetch(`${proxied.origin}${path}`, { headers })).status).toBe(404)
+      }
+      expect(seen).toHaveLength(5)
     } finally {
       await proxied.stop()
       upstream.stop(true)

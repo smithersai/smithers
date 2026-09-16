@@ -37,7 +37,7 @@ export const agentFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
      */
     name: "agent.role",
     form: { fields: { roleId: { optionsFrom: "agents" } } },
-    summary: "Launch a named agent (built-in or custom) as a session",
+    summary: "Launch a named agent (built-in) as a session",
     runtime: ["local.harnesses"],
     confirm: "launch an agent role as a session",
     args: "<roleId>",
@@ -57,7 +57,7 @@ export const agentFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "agent.delegate",
     confirm: "delegate a task to an agent session",
     form: { fields: { roleId: { optionsFrom: "agents" } } },
-    summary: "Delegate a task to an agent (built-in or custom; agent.list shows them)",
+    summary: "Delegate a task to an agent (built-in; agent.list shows them)",
     runtime: ["local.harnesses"],
     args: "<role> <task>",
     input: Schema.Struct({ roleId: Schema.String, task: Schema.String }),
@@ -67,86 +67,14 @@ export const agentFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
         : `${roleId} is not an agent id (lowercase letters, digits and dashes). agent.list shows the agents.`
   }),
   flow(EXPLAIN),
-  /*
-   * Agents as data (docs/workbench-lanes/custom-agents.md): the agents are
-   * rows the user manages from the chat. Listing and the form render cards;
-   * creating, editing, and removing an agent define what may spend money on
-   * the human's harnesses, so the agent asks and the human confirms. The
-   * web host has no local harnesses: agent.list says so on its card, and
-   * the rest are absent there (runtime).
-   */
   flow({
     name: "agent.list",
-    summary: "Show the agents: built-in and custom, with what each can launch here",
+    summary: "Show the agents: built-in, with what each can launch here",
     input: NoPayload,
     handler: () => actions.listAgents()
   }),
-  flow({
-    name: "agent.new",
-    summary: "Open the New agent form (an existing id opens it for editing)",
-    runtime: ["local.harnesses"],
-    args: "[id] [harness] [model] [purpose]",
-    input: Schema.Struct({
-      id: Schema.optional(Schema.String),
-      harness: Schema.optional(Schema.String),
-      model: Schema.optional(Schema.String),
-      purpose: Schema.optional(Schema.String)
-    }),
-    handler: (prefill) => actions.newAgent(prefill)
-  })
   ]
 }
-
-/** The agent editor flows, registered after `form.*`. */
-export const agentEditFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({
-    name: "agent.create",
-    form: { fields: { harness: { optionsFrom: "agent-harnesses" }, model: { optionsFrom: "harness-models", kind: "text" } } },
-    summary: "Create an agent: an id, the harness that runs it, the model id that harness accepts, and its purpose",
-    runtime: ["local.harnesses"],
-    confirm: ({ id, harness, model }) => `create the agent ${String(id)} on ${String(harness)} with ${String(model)}`,
-    args: "<id> <harness> <model> [purpose]",
-    input: Schema.Struct({ id: Schema.String, harness: Schema.String, model: Schema.String, purpose: Schema.optional(Schema.String) }),
-    handler: (input) => actions.createAgent(input)
-  }),
-  flow({
-    name: "agent.edit",
-    form: {
-      fields: { id: { optionsFrom: "agents" }, model: { optionsFrom: "harness-models", kind: "text" } },
-      args: (payload) => line(text(payload, "id"), flag(payload, "model"), flag(payload, "purpose"), flag(payload, "label"))
-    },
-    summary: "Change an agent's model, purpose, or name (a built-in keeps its harness)",
-    runtime: ["local.harnesses"],
-    confirm: ({ id }) => `edit the agent ${String(id)}`,
-    args: "<id> [--model <id>] [--purpose <text>] [--label <name>]",
-    input: Schema.Struct({
-      id: Schema.String,
-      model: Schema.optional(Schema.String),
-      purpose: Schema.optional(Schema.String),
-      label: Schema.optional(Schema.String)
-    }),
-    handler: ({ id, ...patch }) => actions.editAgent(id, patch)
-  }),
-  flow({
-    name: "agent.remove",
-    form: { fields: { id: { optionsFrom: "agents" } } },
-    summary: "Remove a custom agent (a built-in cannot be removed)",
-    runtime: ["local.harnesses"],
-    confirm: ({ id }) => `remove the agent ${String(id)}`,
-    args: "<id>",
-    input: Schema.Struct({ id: Schema.String }),
-    handler: ({ id }) => actions.removeAgent(id)
-  }),
-  flow({
-    name: "agent.models",
-    form: { fields: { harness: { optionsFrom: "agent-harnesses" } } },
-    summary: "List the models a harness can run, as the harness reports them",
-    runtime: ["local.harnesses"],
-    args: "<harness>",
-    input: Schema.Struct({ harness: Schema.String }),
-    handler: ({ harness }) => actions.listHarnessModels(harness)
-  })
-]
 
 /** Root composes this alongside agentFlows after binding the controller. */
 export const tutorialChangeFlows = (actions: import("../../state/controller/tutorialChange").TutorialChangeController): ReadonlyArray<FlowEntry> => [

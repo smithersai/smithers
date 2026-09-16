@@ -105,14 +105,6 @@ export const withoutRepoParam = (location: Pick<Location, "pathname" | "search" 
   return `${location.pathname}${search === "" ? "" : `?${search}`}${location.hash}`
 }
 
-/** Whether the transcript already opens on this repository's welcome card (controller/onboarding.ts). */
-const welcomed = (controller: Pick<AppController, "store">, repo: string): boolean => {
-  for (const card of controller.store.collections.cards.values()) {
-    if (card.kind === "repo-onboarding" && card.payload.stage === "welcome" && card.payload.repo === repo) return true
-  }
-  return false
-}
-
 /** A repository URL must not discard that repository's selected working copy. */
 const selectionForRepo = (controller: Pick<AppController, "store">, repo: string): string => {
   const key = controller.store.session().activeRepoKey
@@ -146,9 +138,8 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
 /**
  * Select the requested repository from the signed-in inventory or public catalog. The
  * catalog row joins the repositories collection beside whatever the cloud
- * inventory already loaded, then `repo.select` makes it the active one, and
- * the welcome (`repo.welcome`) opens the transcript unless a reload finds it
- * already there. The repository's shared read-only copy (WorkspaceViews.ts)
+ * inventory already loaded, then `repo.select` makes it the active one.
+ * The repository's shared read-only copy (WorkspaceViews.ts)
  * opens its root in the sidebar on this first paint, and the mirror's
  * default bookmark lands on the row so the copy names it. Returns the
  * refusal when the request could not be honoured.
@@ -176,7 +167,6 @@ export const openRequestedRepo = async (
       if (failure === undefined && own !== undefined) {
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         if (refusal !== undefined) return refusal
-        if (!welcomed(controller, own.id)) controller.runCommand("repo.welcome")
         return
       }
     }
@@ -200,7 +190,6 @@ export const openRequestedRepo = async (
   }
   const refusal = await controller.selectRepo(selectionForRepo(controller, repository.id))
   if (refusal !== undefined) return refusal
-  if (!welcomed(controller, repository.id)) controller.runCommand("repo.welcome")
   /*
    * The shared copy's tree opens once, on the first paint of the catalog
    * repository: `repo.tree <copyId>` through the registry, the same act the

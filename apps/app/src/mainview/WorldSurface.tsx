@@ -4,7 +4,7 @@ import { flowAction } from "./flows/FlowAction"
 import { Badge, Button, EmptyState, FileTree } from "@smthrs/ui"
 import { BacklinksPanel, OutlineView } from "@smthrs/ui/vault"
 import { useLiveQuery } from "@tanstack/react-db"
-import { BookOpen, Factory, Plus, Trash2, Waypoints } from "lucide-react"
+import { BookOpen, Plus, Trash2, Waypoints } from "lucide-react"
 import { Suspense, useMemo } from "react"
 import { activeRepositoryId } from "./state/RepoContext"
 import { useController } from "./ControllerContext"
@@ -35,7 +35,6 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
     }))
   )
   const session = sessionRows[0] ?? controller.store.session()
-  const canShowFactory = controller.commands.find("factory.show") !== undefined
   const selected = documents.find((document) => document.id === session.selectedWorldDocumentId) ?? documents[0]
   const selectedPath = selected?.path
   const graphMode = session.wikiPane === "graph"
@@ -92,20 +91,6 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
           <Waypoints size={14} aria-hidden="true" />
           Graph
         </Button>
-        {/* The button door of factory.show: the same registry entry the slash and the agent run. */}
-        {canShowFactory ?
-          (
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="wiki-factory"
-              {...flowAction(controller.runCommand, "factory.show")}
-            >
-              <Factory size={14} aria-hidden="true" />
-              Factory
-            </Button>
-          ) :
-          null}
       </SurfaceHeader>
 
       <div className="world-workspace" data-pane={graphMode ? "graph" : "document"}>

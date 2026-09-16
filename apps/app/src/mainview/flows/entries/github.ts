@@ -16,12 +16,7 @@ export const namespace: Namespace = { id: "github", label: "GitHub", summary: "T
 
 /** The `github` flows registered as one aggregator block. */
 export const githubFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  /*
-   * Lane sync (ADR 0005): Linear and GitHub sync as actions. The reads
-   * render the connector-setup and sync-ops cards; the writes ride the same
-   * seams. Every route these acts call exists on plue's own router; a server
-   * that has not deployed one answers, and the seam surfaces that answer.
-   */
+  
   flow({
     name: "github.app",
     summary: "Check the Smithers GitHub App on a repository",

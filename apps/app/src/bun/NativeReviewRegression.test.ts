@@ -10,7 +10,6 @@ import { createNativeShutdown } from "./NativeShutdown"
 import { childEnv } from "./Pty"
 import { createTargetRunHistory } from "./TargetRunHistory"
 import { startLocalServer } from "./server"
-import { createAgentStore } from "./routes/agents"
 import { createLspSession } from "./lsp/LspSession"
 import { TYPESCRIPT_SERVER } from "./lsp/LanguageServers"
 
@@ -50,27 +49,6 @@ test("a duplicate active chat request preserves the first response stream", asyn
   expect(result).toContain('"type":"done"'); expect(result).toContain('"text":"first"')
 })
 
-test("Linear's browser navigation consumes only its one-use authorization", async () => {
-  const calls: Array<string> = []
-  const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => {
-    calls.push(request.url)
-    expect(request.headers.get("authorization")).toBe("Bearer test-cloud-token")
-    return Response.redirect("https://linear.app/oauth/authorize", 302)
-  } })
-  cleanup.push(() => { upstream.stop(true) })
-  const server = await startLocalServer({ distDir: await directory(), node: null, chatStub: true, cloudMode: "hybrid",
-    cloudApi: `http://127.0.0.1:${upstream.port}`, cloudAuth: { token: () => "test-cloud-token", session: () => ({ state: "signed-in", username: "test", expiresAt: null }),
-      start: async () => ({ error: "unused" }), signOut: async () => {}, stop: async () => {} }, log: () => {} })
-  cleanup.push(() => server.stop())
-  const response = await fetch(`${server.origin}/api/linear-auth/start`, { method: "POST", headers: { [LOCAL_SESSION_HEADER]: server.sessionToken } })
-  const { url } = await response.json() as { url: string }
-  const missing = new URL(url); missing.searchParams.delete("handoff")
-  expect((await fetch(missing)).status).toBe(401)
-  const browser = await fetch(url, { redirect: "manual" })
-  expect(browser.status).toBe(302); expect(browser.headers.get("location")).toBe("https://linear.app/oauth/authorize")
-  expect(calls).toHaveLength(1); expect(calls[0]).not.toContain("handoff=")
-  expect((await fetch(url, { redirect: "manual" })).status).toBe(401)
-})
 
 test("the native browser route is session-gated and enabled only in hybrid mode", async () => {
   for (const cloudMode of ["offline", "hybrid"] as const) {
@@ -113,13 +91,6 @@ test("expired credentials allow a fresh login and valid restores recheck scope",
     if (expired) { expect(saved.value()).toBeNull(); expect(await auth.start()).toHaveProperty("url") }
     else expect(auth.session().scopes).toBe("degraded")
   }
-})
-
-test("concurrent successful agent edits both survive on disk", async () => {
-  const stateDir = await directory(); const store = createAgentStore({ stateDir })
-  const input = { label: "Reviewer", purpose: "Review tests", harness: "codex" as const, model: { provider: "openai", id: "gpt-5.6-terra", label: "GPT" } }
-  expect((await Promise.all([store.put("review-one", input), store.put("review-two", input)])).map((row) => row.status)).toEqual(["created", "created"])
-  expect((await createAgentStore({ stateDir }).list()).filter((row) => row.id.startsWith("review-")).map((row) => row.id)).toEqual(["review-one", "review-two"])
 })
 
 test("starting a new run first retains the previous launch's history", async () => {

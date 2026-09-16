@@ -48,7 +48,6 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
     page.on("request", request => { if (request.url().includes("/api/auth/github/start")) redirects.push(request.url()) })
     await page.goto("/smithersai/smithers/")
     await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
-    await expect(page.locator('[data-kind="repo-onboarding"]')).toBeVisible()
     await slash(page, command)
     const prompt = page.getByRole("article").filter({ has: page.getByRole("button", { name: "Sign in with GitHub", exact: true }) }).last()
     await expect(prompt).toContainText(command === "/flow.run review smithersai/smithers" ? "Sign in with GitHub to run review on smithersai/smithers."

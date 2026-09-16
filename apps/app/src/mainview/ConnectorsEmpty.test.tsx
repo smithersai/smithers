@@ -3,7 +3,7 @@ import type { StorageApi } from "@tanstack/db"
 import { afterAll,afterEach,describe,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import App from "./App"
+import { ConnectorsSurface } from "./ConnectorsSurface"
 import { ControllerTestProvider } from "./ControllerContext"
 import type { NativeRepositories } from "./native/NativeBridge"
 import type { AgentPort } from "./runtime/AgentPort"
@@ -70,7 +70,7 @@ const mount = (controller: AppControllerType): HTMLElement => {
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
-        <App />
+        <ConnectorsSurface />
       </ControllerTestProvider>
     )
   )

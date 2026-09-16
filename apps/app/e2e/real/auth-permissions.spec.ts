@@ -4,9 +4,7 @@ import { command, expect, openApp, realApi, test } from "./support/test"
 import {
   authenticatedTest,
   clearProductSession,
-  finishGitHubOAuth,
   launchAuthenticatedProfile,
-  maintainerTest,
   ordinaryTest,
   readAuthenticatedSession,
   requireProfileEnvironment,
@@ -303,38 +301,6 @@ ordinaryTest("an ordinary account is denied by both the admin UI and server rout
   const denied = await realApi(page, request, "GET", "/api/admin/health")
   expect(denied.status()).toBe(404)
   expect(await denied.json()).toEqual({ status: "error", code: "route_not_found", message: "Not found." })
-})
-
-maintainerTest("maintainer access is exercised by its separately provisioned repository identity", scenario("auth.maintainer-repository-access", {
-  capabilities: ["identity", "cloud"],
-  coverage: [
-    "action:repo.maintain", "host:production", "path:success", "path:permission", "door:slash",
-    "dimension:maintainer-repository-identity", "evidence:verified-github-app-repo-and-terminal-maintainer-projection"
-  ],
-  description: "A separately provisioned maintainer proves real GitHub App access to its owned repository and reaches the read-only maintainer flow's terminal card."
-}), async ({ page, request }) => {
-  requireProfileEnvironment("SMITHERS_E2E_MAINTAINER_PROFILE")
-  const repo = process.env.SMITHERS_E2E_MAINTAINER_REPO?.trim()
-  if (!repo) throw new Error("SMITHERS_E2E_MAINTAINER_REPO is required for real maintainer permission coverage.")
-  let session = await readAuthenticatedSession(page)
-  await expect.poll(async () => (session = await readAuthenticatedSession(page))).not.toBeUndefined()
-  expect(session, "maintainer identity preflight must produce a real session").toBeDefined()
-
-  const installed = await realApi(page, request, "GET", "/api/user/github-app/installations")
-  expect(installed.status(), "maintainer GitHub App access verification must succeed").toBe(200)
-  const body = await installed.json() as { repos?: Array<{ fullName?: unknown; installationId?: unknown }> }
-  const verified = body.repos?.find((candidate) => candidate.fullName === repo)
-  expect(verified, `${repo} must be in the session-owned, live GitHub App repository projection`).toBeDefined()
-  expect(verified?.installationId).toEqual(expect.any(Number))
-
-  await page.goto(new URL(`/${repo}`, page.url()).toString(), { waitUntil: "domcontentloaded" })
-  await openChat(page)
-  await command(page, `/repo.maintain ${repo}`)
-  const card = page.locator('.smithers-card[data-kind="repo-onboarding"]').last()
-  await expect(card).toBeVisible({ timeout: 30_000 })
-  await expect(card).toContainText(repo)
-  await expect(card.getByTestId("onboarding-activity")).toBeVisible()
-  await expect(card.locator('[data-flow="issues.list"]')).toBeVisible()
 })
 
 ordinaryTest("signing out one real user does not alter another user's live session", scenario("auth.cross-user-session-isolation", {

@@ -26,7 +26,6 @@ const card: Card = {
   payload: {
     ...workspaceCardFacts(workspace),
     bookmarkHead: null,
-    snapshots: [],
     sessions: [],
     files: [],
     facet: "files"

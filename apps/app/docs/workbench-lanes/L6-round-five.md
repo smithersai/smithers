@@ -19,7 +19,6 @@ production from this lane.
 | #488 | `POST/DELETE …/landings/{n}/review-requests`; `review_requests[]` on the landing DTO | `review.request <changeId> <login>` (user + button; agent via confirm) and `review.unrequest` (confirm); the Request review picker lists `review_requests[]` and the Suggested reviewers slot |
 | #489 | `POST …/changes/{id}/split` | `change.split <changeId>` (confirm) on a stack whose `landable_prefix` < size; render the returned changes |
 | #490 | `POST /repos/{o}/{r}/github/reconcile` for writers | `github.reconcile [repo]` uses it for everyone; the admin route stays only for `/admin.*` |
-| #491 | `linear_actor` on Linear DTOs; per-ref mirror retry; cursor paging on sync ops; `behind_refs` / `failed_refs` on mirror status | `authorized as <linear_actor>` line; `load older` by cursor; per-ref Retry on failed refs; header `behind GitHub · n refs` |
 | #482/#483 | `failure_code` / `failure_message` on workspace rows + SSE; `port` / `url` on services rows | already parsed by L3: confirm the card renders them from a live fixture |
 
 Also live: agent-kind workspaces boot (jj config dir fix), so the RFD-004
@@ -36,15 +35,6 @@ orchestrator has not signed the app into Smithers Cloud, say so and keep the
 fixtures `unverified`.
 
 ## Files
-
-`state/seams/{ChangeSeam,LandingsSeam,LinearSeam,GitHubSeam,WorkspaceSeam}.ts`
-(+ tests), `cards/{ChangeCards,SyncCards,WorkspaceCard}.tsx` (+ tests),
-`packages/rpc/src/{Changes,Cards}.ts` rows for these fields, the change/sync
-controllers, and the new flows in `flows/Flows.ts` + `SlashPayload.ts` +
-`flows/registry.ts` namespaces. Flows.ts, SlashPayload.ts, registry.ts and
-Commands.ts are ALSO being edited by the web-mode W0 lane until it reports;
-the orchestrator dispatches this lane only after that, and the lane re-reads
-those files before each edit regardless.
 
 ## Verification
 
@@ -63,3 +53,4 @@ those files before each edit regardless.
 - plue #497/#498 are backend (empty clone for fresh repos; no egress env in
   workspace terminals): nothing to build, but a Files facet that shows only
   `.git` renders exactly that.
+

@@ -52,7 +52,7 @@ for (const path of ["/", "/smithersai/smithers/"]) {
   test(`Chat button preserves immediately typed slash prefixes on every open: ${path}`, async ({ page }) => {
     await page.goto(path)
     const input = page.getByTestId('composer-input')
-    for (const draft of ['/account.show', '/wiki', '/factory.show']) {
+    for (const draft of ['/account.show', '/wiki']) {
       await page.getByRole('button', { name: 'Chat', exact: true }).click()
       await page.keyboard.type(draft)
       await expect(input).toHaveValue(draft)

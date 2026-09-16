@@ -291,7 +291,6 @@ stages proofs from its verified current HTTP legs before erasure.
 Filesystem erasure is not a multi-file transaction: an I/O failure
 can leave a partial reset, so the failure copy never claims unchanged bytes.
 
-
 For failures other than writer ownership, the startup failure panel offers two
 acts, both flows with their actor recorded
 (`state/StorageRecoveryAction.ts`, `flows/StorageRecoveryFlow.ts`), never DOM
@@ -859,3 +858,4 @@ does not claim a cross-tab/database lease or exactly-once external effects.
 The native target topic publishes only after the run journal has accepted and fsynced the corresponding frame. `TargetRunHistory.event` returns the exact retained frame, so live and replay readers receive the same redacted output and the same journal-cap marker; a capped frame or failed append returns no publishable frame. Once an append fails, later frames cannot hide the missing suffix, and `flush` rejects. Startup refuses to overwrite an existing journal, and append refuses to recreate a missing prefix. Cancel and shutdown await pending terminal receipts. Output logs remain bounded (including explicit truncation); lifecycle frames remain retained.
 
 New exit events include `at`, making terminal status/time a pure reduction of the initial run metadata and accepted events. The trailing RunRecord is a compatibility cache: deleting or changing it cannot override a timestamped exit. Legacy untimed exits still use their final record. This is a filesystem journal, with each accepted append fsynced; it is not a remote transactional execution guarantee. Execution that happened before a failed append is not fabricated into successful replay history.
+

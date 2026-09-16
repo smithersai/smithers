@@ -208,7 +208,7 @@ describe("openRequestedRepo", () => {
     expect(store.session().activeRepoKey).toBe("smithersai/smithers#workspace:coding")
   })
 
-  test("a catalog repository becomes the active selection, and the welcome opens the transcript", async () => {
+  test("a catalog repository becomes the active selection, and its shared tree opens", async () => {
     const { store, controller, ran } = await fixture()
     const requests: Array<string> = []
     const http = async (input: RequestInfo | URL) => {
@@ -225,11 +225,11 @@ describe("openRequestedRepo", () => {
       head: null,
       // Provenance: the row is readable signed out, and the chat opens on it.
       catalog: true,
-      // The curated sentence the welcome reads (controller/onboarding.ts).
+      // The catalog retains its curated summary.
       summary: SUMMARY
     })
-    // The welcome, then the shared read-only copy's root opens (the caret's own act), once per launch.
-    expect(ran).toEqual(["repo.welcome", "repo.tree shared:smithersai/smithers"])
+    // The shared read-only copy's root opens (the caret's own act), once per launch.
+    expect(ran).toEqual(["repo.tree shared:smithersai/smithers"])
   })
 
   /*
@@ -249,7 +249,7 @@ describe("openRequestedRepo", () => {
     expect(requests).toEqual(["/api/public/repos", "/api/repos/smithersai/smithers"])
     expect(store.collections.repositories.get("smithersai/smithers")?.head).toEqual({ bookmark: "main", changeId: null, commitId: null })
     expect(store.collections.workingCopies.get("shared:smithersai/smithers")).toMatchObject({ kind: "shared", access: "read", bookmark: "main" })
-    expect(ran).toEqual(["repo.welcome", "repo.tree shared:smithersai/smithers"])
+    expect(ran).toEqual(["repo.tree shared:smithersai/smithers"])
     // The tree row stands for this launch: the reload leaves the caret's state alone.
     store.dispatch({ type: "repo-tree.loaded", actor: "system", copyId: "shared:smithersai/smithers", path: "", entries: [], truncated: false })
     expect(await openRequestedRepo(controller, http, "smithersai/smithers")).toBeUndefined()
@@ -263,27 +263,6 @@ describe("openRequestedRepo", () => {
     expect(await openRequestedRepo(controller, http, "smithersai/smithers")).toBeUndefined()
     expect(store.collections.repositories.get("smithersai/smithers")?.head).toBeNull()
     expect(store.collections.workingCopies.get("shared:smithersai/smithers")?.bookmark).toBeUndefined()
-  })
-
-  test("a reload that finds the welcome already in the transcript does not repeat it", async () => {
-    const { store, controller, ran } = await fixture()
-    store.dispatch({
-      type: "card.upsert",
-      actor: "user",
-      card: {
-        id: "repo-welcome-smithersai/smithers",
-        kind: "repo-onboarding",
-        title: "Welcome · smithersai/smithers",
-        status: "active",
-        createdAt: 1,
-        ordinal: 0,
-        payload: { stage: "welcome", repo: "smithersai/smithers", summary: null }
-      }
-    })
-    expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")).toBeUndefined()
-    expect(store.session().activeRepoKey).toBe("smithersai/smithers")
-    // No second welcome; the shared copy's tree opens, because tree rows never survive a relaunch.
-    expect(ran).toEqual(["repo.tree shared:smithersai/smithers"])
   })
 
   test("a name outside the catalog is refused and selects nothing", async () => {
@@ -366,16 +345,16 @@ test("a signed-in repository URL waits for the user's inventory and selects its 
   expect(loaded).toBe(true)
   expect(store.session().activeRepoKey).toBe("codeplanesmithers/canary-sandbox")
   expect(store.collections.repositories.get("codeplanesmithers/canary-sandbox")?.catalog).not.toBe(true)
-  expect(ran).toContain("repo.welcome")
+  expect(ran).toEqual([])
 })
 
-test("a signed-in catalog visitor keeps the public welcome and shared tree without waiting on private inventory", async () => {
+test("a signed-in catalog visitor keeps the shared tree without waiting on private inventory", async () => {
   const { store, controller, ran } = await fixture()
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
   controller.loadRepositories = async () => { throw new Error("private inventory unavailable") }
   expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")).toBeUndefined()
   expect(store.session().activeRepoKey).toBe("smithersai/smithers")
-  expect(ran).toEqual(["repo.welcome", "repo.tree shared:smithersai/smithers"])
+  expect(ran).toEqual(["repo.tree shared:smithersai/smithers"])
 })
 
 

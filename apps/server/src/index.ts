@@ -380,6 +380,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== "GET") return methodNotAllowed()
       return yield* probeCloudSession(request)
     }
+    if (/^\/api\/auth\/linear(?:\/|$)/.test(url.pathname)) return notFound()
     if (url.pathname.startsWith(AUTH_ROUTE_PREFIX) || url.pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
       return yield* proxyToIdentity(request)
     }

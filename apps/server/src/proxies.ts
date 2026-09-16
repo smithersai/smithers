@@ -58,9 +58,6 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
   { prefix: "/api/user/orgs", methods: ["GET"] },
   /* ChangeSeam: the changeset DTO, and landing one (ADR 0003). */
   { prefix: "/api/orgs/", methods: ["GET", "POST"] },
-  /* LinearSeam (plue epic #474): integrations list and disconnect; setup lookup, create, sync, ops, per-op retry. */
-  { prefix: "/api/integrations/", methods: ["GET", "DELETE"] },
-  { prefix: "/api/linear", methods: ["GET", "POST"] },
   { prefix: "/api/notifications/", methods: ["GET", "PUT"] },
   { exact: BILLING_OVERVIEW_PATH, methods: ["GET"] },
   { exact: BILLING_PLANS_PATH, methods: ["GET"] },
@@ -107,7 +104,7 @@ const platformFailureMessage = (status: number, body: string): string => {
 }
 
 export const platformProxyMatch = (pathname: string, method: string): boolean =>
-  PLATFORM_PROXY_RULES.some(
+  !/\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname) && PLATFORM_PROXY_RULES.some(
     (rule) =>
       rule.methods.includes(method) &&
       (rule.exact !== undefined

@@ -111,7 +111,6 @@ const PRESENTATION_ONLY = [
   "onDismissDrawer(", // graph card detail drawer close: local presentation state (which node is focused)
   "setOpenLog(", // run timeline log panel: which row's log is open — local presentation state
   "setDeleteDraft", // workspace card delete: the typed-confirm row's open state and its draft — local presentation state; the act itself rides workspace.delete
-  "setDisconnectArmed", // connector-setup card disconnect: the confirm row's open state — local presentation state; the act itself rides linear.disconnect
   "onRunCommand(", // delegated: App.tsx binds it to the registry's runCommand
   "onChoose(", // delegated: Composer.tsx routes a palette row through runCommand, or edits the draft (a namespace, a prefix)
   // Card maximize/minimize: each calls the delegated onMaximize/onMinimize (bound to card.maximize /
@@ -242,7 +241,6 @@ describe("launch-law parity: every affordance is a command", () => {
       // 15 − the corner balance chip: the balance is one act away (/balance), never main-page chrome.
       // +1 (ask 5): the Flows pane's back-to-conversation close, like World's.
       // +1: the Flows pane's Triggers button, the button door of triggers.list.
-      // +1: the Wiki pane's Factory button, the button door of factory.show.
       // +1 (Librarian L5): the Wiki pane's Graph button, the button door of wiki.graph.
       "../App.tsx": 4, // -1: the shell has four handlers; main's five-count baseline was already stale.
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
@@ -250,7 +248,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../StartupError.tsx": 3, // Held: takeover/reload; moved: takeover.
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
-      "../WorldSurface.tsx": 7,
+      "../WorldSurface.tsx": 6,
       "../WikiDeleteDialog.tsx": 1, // The Wiki confirmation moved to the shared shell; its command remains wiki.delete.confirm.
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
@@ -308,8 +306,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../ToastAction.tsx": 1,
       "../ToastStack.tsx": 1,
       /* The multi-parity domain cards: every handler routes through onRunCommand. */
-      /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */
-      "../cards/IssueCards.tsx": 9, // + the detail's comment box submit (issues.comment)
+      
+      "../cards/IssueCards.tsx": 8, // + the detail's comment box submit (issues.comment)
       "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow.
       "../cards/FileCards.tsx": 3,
       /* Mark-all-read. */
@@ -320,15 +318,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/RepoImportCard.tsx": 2,
       // The tutorial's ranked chooser: one row button plus Skip.
       "../cards/RepositoryChoiceCard.tsx": 2,
-      /*
-       * Lane sync (ADR 0005): the connector-setup card's Open Linear, the
-       * per-team picks, the repository pick, Connect, the connected state's
-       * Sync now / Activity / Disconnect (the arming click and the confirm
-       * row's typed-key send), the GitHub card's Open GitHub / Re-check /
-       * Reconcile, and the sync-ops card's Retry / Show more / Load older —
-       * all through onRunCommand with data-flow set.
-       */
-      "../cards/SyncCards.tsx": 14,
+      
+      "../cards/SyncCards.tsx": 5,
       /* The /theme picker: nine swatches, one shared handler through onRunCommand. */
       "../cards/ThemePickerCard.tsx": 1,
       /*
@@ -347,7 +338,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * box whose image predates the desktop tools, where a Retry is a door
        * onto a wall.
        */
-      "../cards/WorkspaceCard.tsx": 21,
+      "../cards/WorkspaceCard.tsx": 16,
       /*
        * The target-graph cards: the graph drawer's close/copy/open/run acts
        * (4), the timeline row's log toggle (1), the history row's replay
@@ -376,7 +367,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/AffectedCard.tsx": 1,
       // Agents as data (custom-agents.md): Launch, Edit, Remove, New agent.
       /* 6 = the Agents card's Launch / Edit / Remove and New agent, the subagent card's Open tab, + the cloud session card's Stop (agent.session.stop). */
-      "../cards/AgentCards.tsx": 6,
+      "../cards/AgentCards.tsx": 3,
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,
@@ -386,14 +377,12 @@ describe("launch-law parity: every affordance is a command", () => {
        * contributor's three, the explore card's guide rows) is one shared
        * handler through onRunCommand with data-flow set.
        */
-      "../cards/OnboardingCards.tsx": 1,
       /*
        * The repository's home pane (controller/onboarding.ts): the featured
        * flows' doors (flow.run) and Open PACKAGE.ts (files.read) are one
        * shared handler through onRunCommand with data-flow set; links are
        * anchors, not buttons.
        */
-      "../cards/HomeCards.tsx": 1,
       /*
        * Lane change (ADR 0003) + lane L1 (ADR 0004, the live plue routes):
        * the change card's facet tabs, Land / Split ready / Revert / Full
@@ -404,7 +393,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * rows' Diff to current, and the diff card's re-read — all through
        * onRunCommand with data-flow set.
        */
-      "../cards/ChangeCards.tsx": 24,
+      "../cards/ChangeCards.tsx": 23,
       /*
        * The plan inside a run card: Inspect review feedback and Inspect failed
        * execution (runs.trace.select), Vibe this change (flow.run), Check
@@ -425,7 +414,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
        * Open page, and Refresh (wiki.sync) — all through onRunCommand.
        */
-      "../cards/ConversationCards.tsx": 11, // The empty Wiki now offers wiki.create.
+      "../cards/ConversationCards.tsx": 12, // The empty Wiki now offers wiki.create.
       /*
        * The targets table: History in the toolbar, the view, kind and state
        * chips (target.filter), each row's star (target.star / unstar),
@@ -435,7 +424,6 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/TargetCards.tsx": 26,
       /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
-      "../cards/FactoryCard.tsx": 1,
       /* The dispatcher card's Register door, the button door of triggers.register (factory mock 2; sign-in is the door). */
       "../cards/TriggersCard.tsx": 1,
       /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
@@ -454,7 +442,7 @@ describe("launch-law parity: every affordance is a command", () => {
       /* 27 = 26 + the footer's Account button, the button door of account.show (factory mock 21; renders where an identity seam exists). */
       /* 28 = 27 + the footer's History button, the button door of history.show (design session 2026-09-07 chrome; cloud host only). */
       /* 30 = 28 + the footer's Wiki and Flows buttons, the button doors of the `wiki` and `flows` surface switches (the chrome is exactly Wiki, Dispatcher, Flows, Secrets, History, Account). */
-      "../tabs/ChromeBar.tsx": 29, // -1: removed the tutorial sound toggle.
+      "../tabs/ChromeBar.tsx": 28, // -1: removed the tutorial sound toggle.
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })

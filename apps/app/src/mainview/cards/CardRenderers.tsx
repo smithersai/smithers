@@ -26,16 +26,13 @@ import { commitCardFamily } from "./CommitCards"
 import { ciMatrixCardFamily } from "./CiMatrixCard"
 import { conversationCardFamily } from "./ConversationCards"
 import { envCardFamily } from "./EnvCard"
-import { factoryCardFamily } from "./FactoryCard"
 import { fileCardFamily } from "./FileCards"
 import { flowFormCardFamily } from "./FlowFormCards"
 import { graphCardFamily } from "./GraphCardLazy"
 import { historyCardFamily } from "./HistoryCard"
-import { homeCardFamily } from "./HomeCards"
 import { issueCardFamily } from "./IssueCards"
 import { landingCardFamily } from "./LandingCards"
 import { notificationsCardFamily } from "./NotificationsCard"
-import { onboardingCardFamily } from "./OnboardingCards"
 import { LibrarianLibraryCard } from "../plugins/tutorial2-librarian-card"
 import { RepositoryChoiceCard } from "./RepositoryChoiceCard"
 import { repoImportCardFamily } from "./RepoImportCard"
@@ -69,8 +66,11 @@ const pluginLibraryCardFamily: CardFamily<"plugin-library"> = {
   }
 }
 
+const retiredCardFamily: CardFamily<"retired"> = { retired: { render: () => null, pill: () => "" } }
+
 /** The families in registration order; the test reads this list to prove the slices are disjoint. */
 export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
+  retiredCardFamily,
   turnCardFamily,
   approvalCardFamily,
   billingCardFamily,
@@ -78,10 +78,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   conversationCardFamily,
   workflowCardFamily,
   triggersCardFamily,
-  factoryCardFamily,
   runsCardFamily,
-  onboardingCardFamily,
-  homeCardFamily,
   issueCardFamily,
   landingCardFamily,
   changeCardFamily,
@@ -117,6 +114,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
 
 /** One entry per card kind. Written as a literal so a missing kind fails to compile. */
 export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
+  ...retiredCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,
   ...billingCardFamily,
@@ -124,10 +122,7 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...conversationCardFamily,
   ...workflowCardFamily,
   ...triggersCardFamily,
-  ...factoryCardFamily,
   ...runsCardFamily,
-  ...onboardingCardFamily,
-  ...homeCardFamily,
   ...issueCardFamily,
   ...landingCardFamily,
   ...changeCardFamily,

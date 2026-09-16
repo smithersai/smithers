@@ -83,7 +83,6 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
   const roleEntries = roleMenuEntries(harnessRows, agentRows)
   const canOpenTerminal = controller.commands.find("tab.terminal") !== undefined
   const canOpenHarnesses = controller.commands.find("tab.harness") !== undefined
-  const canNewAgent = controller.commands.find("agent.new") !== undefined
   const canSignIn = controller.commands.find("auth.sign-in") !== undefined
   // The web app's door to the native app (docs/web-mode/PLAN.md §3): registered on the cloud host only, and
   // rendered only while a native release exists to download (AppLinks.ts — null until one carries an asset).
@@ -606,20 +605,6 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
                       <span className="tab-add-account">{harness.status}</span>
                     </button>
                   )) : null}
-                  {/* Agents as data (custom-agents.md): the last row opens the New agent form card in the chat. */}
-                  {canNewAgent ?
-                    (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="tab-add-item"
-                        data-testid="tab-add-new-agent"
-                        {...flowAction(controller.runCommand, "agent.new")}
-                      >
-                        <span>New agent…</span>
-                      </button>
-                    ) :
-                    null}
                 </div>
               </>
             ) :

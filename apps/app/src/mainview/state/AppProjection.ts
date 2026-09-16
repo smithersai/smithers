@@ -1,3 +1,4 @@
+import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { z } from "zod"
 import { approvalQuestionKey } from "../cards/ApprovalQuestion"
@@ -15,7 +16,6 @@ CloudWorkspaceRow,
 Frame,
 FrameSnapshot,
 GitHubAppStatusRow,
-LinearIntegrationRow,
 LocalRepositoryConnector,
 Message,
 Recommendation,
@@ -46,7 +46,6 @@ FrameSchema,
 GitHubAppStatusRowSchema,
 HarnessSchema,
 IdentitySessionSchema,
-LinearIntegrationRowSchema,
 LocalRepositoryConnectorSchema,
 MAIN_TAB_ID,
 MessageSchema,
@@ -151,7 +150,6 @@ export const APP_PROJECTION_SCHEMAS = {
   cloudSessions: CloudSessionRowSchema,
   cloudWorkspaces: CloudWorkspaceRowSchema,
   changes: ChangeRowSchema,
-  linearIntegrations: LinearIntegrationRowSchema,
   githubAppStatuses: GitHubAppStatusRowSchema,
   repoTree: RepoTreeRowSchema,
   repositoryFlows: RepositoryFlowsRowSchema,
@@ -285,7 +283,6 @@ export const APP_TRANSITION_TYPES = {
   "workspace.session.destroyed": true,
   "workspace.deleted": true,
   "change.loaded": true,
-  "linear.integrations.loaded": true,
   "github.app-status.loaded": true,
   "repo.pinned": true,
   "repo.unpinned": true,
@@ -680,7 +677,6 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       collections.workingCopies,
       collections.cloudWorkspaces,
       collections.changes,
-      collections.linearIntegrations,
       collections.githubAppStatuses,
       collections.repoTree,
       collections.repositoryFlows
@@ -825,6 +821,10 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
   if (!Number.isFinite(createdAt)) throw new Error("Invalid app boot context")
   const draft = projectionDraft(previous)
   const { collections } = draft
+  // Custom definitions are retired; even pre-upgrade stores use only built-in roles.
+  const oldAgents = [...collections.agents.keys()]
+  if (oldAgents.length > 0) collections.agents.delete(oldAgents)
+  for (const role of AGENT_ROLES) collections.agents.insert({ ...role })
   // Legacy cards establish a captured baseline only. They do not establish
   // missing gateway lifecycle events, cursors, or server approval timestamps.
   for (const card of [...collections.cards.values()].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
@@ -2276,7 +2276,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             ...existing,
             ...decoded.data,
             payload: decoded.data.payload === undefined ? existing.payload :
-              existing.kind === "repo-onboarding" ? decoded.data.payload : { ...existing.payload, ...decoded.data.payload }
+              { ...existing.payload, ...decoded.data.payload }
           })
           if (!candidate.success) return
           let patch: typeof transition.patch = candidate.data
@@ -2691,7 +2691,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             if (previous === undefined) continue
             const status = expireStatus(previous, transition.now)
             if (status !== previous) collections.runtimeRuns.update(run.id, draft => {
-              if (draft.summary !== undefined) draft.summary.statusRollup = status
+              if (draft.summary !== undefined) draft.summary = { ...draft.summary, statusRollup: status }
             })
           }
           for (const tab of collections.tabs.values()) {
@@ -2769,10 +2769,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
 
         case "agents.loaded": {
           // Same replace-in-place rule as the harnesses: update, insert, delete, never delete-then-insert one key.
-          const next = new Set<string>(transition.agents.map((agent) => agent.id))
+          const next = new Set<string>(AGENT_ROLES.map((agent) => agent.id))
           const stale = [...collections.agents.keys()].filter((id) => !next.has(id))
           if (stale.length > 0) collections.agents.delete(stale)
-          for (const agent of transition.agents) {
+          for (const agent of AGENT_ROLES) {
             if (collections.agents.get(agent.id) === undefined) collections.agents.insert({ ...agent })
             else {
               collections.agents.update(agent.id, (draft) => {
@@ -3038,24 +3038,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             collections.changes.update(change.id, (draft) => {
               Object.assign(draft, row)
             })
-          }
-          break
-        }
-        /* Lane sync (ADR 0005): the Linear integrations list replaced; one GitHub App status upserted. */
-        case "linear.integrations.loaded": {
-          const next = new Set(transition.integrations.map((integration) => integration.id))
-          const stale = [...collections.linearIntegrations.values()]
-            .filter((integration) => !next.has(integration.id))
-            .map((integration) => integration.id)
-          if (stale.length > 0) collections.linearIntegrations.delete(stale)
-          for (const integration of transition.integrations) {
-            const row: LinearIntegrationRow = { ...integration, updatedAt: createdAt, revision }
-            if (collections.linearIntegrations.get(integration.id) === undefined) collections.linearIntegrations.insert(row)
-            else {
-              collections.linearIntegrations.update(integration.id, (draft) => {
-                Object.assign(draft, row)
-              })
-            }
           }
           break
         }

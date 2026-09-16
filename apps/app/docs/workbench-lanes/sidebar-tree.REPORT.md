@@ -173,7 +173,6 @@ touched. The remaining errors are other lanes' mid-edit files
 `parity.test.ts`: the ChromeBar count pin is updated (22); the one remaining
 diff is `SyncCards.tsx` 13 → 14, another lane's in-flight change.
 `registry.test.ts` "one run path": this lane's three names are in the pin;
-the remaining diff is `sync.ops.load-older`, another lane's.
 
 ## Full `bun test src` in `apps/app`
 
@@ -193,6 +192,6 @@ file this lane touched:
   final": a real-socket test ("Expected 101 status code"); file untouched.
 - 1 × `flows/parity.test.ts`: `SyncCards.tsx` 13 → 14 (another lane's
   in-flight affordance; this lane's ChromeBar pin is updated to 22).
-- 1 × `flows/registry.test.ts`: `sync.ops.load-older` missing from the
   name pin (another lane's in-flight flow; this lane's three names are in).
+
 

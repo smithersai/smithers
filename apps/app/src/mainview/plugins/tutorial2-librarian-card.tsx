@@ -9,6 +9,7 @@ export function LibrarianLibraryCard({ tutorial = false }: { readonly tutorial?:
   const controller = useController()
   const { data } = useLiveQuery(q => q.from({ session: controller.store.collections.sessions })
     .select(({ session }) => ({ plugins: session.plugins })))
+  if (!controller.features.pluginLibrary) return null
   const installed = data[0]?.plugins ?? []
   const { surface, problem } = loadedApp(installed, name => controller.commands.find(name) !== undefined)
   return <div className="plugins-content">

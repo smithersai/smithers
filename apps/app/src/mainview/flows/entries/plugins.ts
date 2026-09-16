@@ -21,7 +21,7 @@ export const namespace: Namespace = {
 
 /** Nothing installed yet is exactly when the Library leads. */
 export const recommendations: ReadonlyArray<Recommendation> = [
-  { name: "plugins", when: (state) => (state.plugins ?? []).length === 0, rank: () => 2 }
+  { name: "plugins", when: (state) => state.pluginLibrary === true && (state.plugins ?? []).length === 0, rank: () => 2 }
 ]
 
 /** Why the Library pane is the human's: browsing is a viewport gesture. */

@@ -49,12 +49,11 @@ import type {
   DiffFile,
   LandingBlock
 } from "@smthrs/rpc/Changes"
-import { changeRowId, WORKSPACE_STATUSES } from "../AppState"
-import type { Card, ChangeInput, CloudWorkspaceInput } from "../AppState"
+import { changeRowId } from "../AppState"
+import type { Card, ChangeInput } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import { createCloudClient } from "./CloudClient"
 import type { SeamContext } from "./SeamContext"
-import { DEGRADED_WORKSPACE_REFUSAL } from "./WorkspaceSeam"
 
 export const DEGRADED_CHANGE_REFUSAL =
   "This Smithers Cloud sign-in can't dispatch agents — sign in again to enable them."
@@ -108,8 +107,6 @@ export interface ChangeSeam {
   readonly requestReview: (changeId: string, reviewer: string, repo?: string) => Outcome
   /** `review.unrequest <changeId> <requestId>`: dismiss one review request (plue#488). */
   readonly unrequestReview: (changeId: string, requestId: number, repo?: string) => Outcome
-  /** `change.open-computer <changeId> <snapshotId>`: fork the revision's snapshot into a workspace. */
-  readonly openComputer: (changeId: string, snapshotId: string, repo?: string) => Outcome
 }
 
 /** What the controller lends the seam: the workspace card's renderer for a forked computer. */
@@ -648,27 +645,7 @@ const parseWalkthrough = (value: unknown, seq: number | null): ChangeWalkthrough
   }
 }
 
-const isWorkspaceStatus = (value: unknown): value is CloudWorkspaceInput["status"] =>
-  typeof value === "string" && (WORKSPACE_STATUSES as ReadonlyArray<string>).includes(value)
-
 /** The forked workspace off POST /workspaces, in the row's shape (WorkspaceSeam owns the full parser). */
-const parseWorkspaceWire = (value: unknown, fallbackRepo: string): CloudWorkspaceInput | null => {
-  if (!isRecord(value)) return null
-  const id = str(value.id)
-  const name = str(value.name) ?? str(value.slug)
-  if (id === null || name === null || !isWorkspaceStatus(value.status)) return null
-  return {
-    id,
-    repoId: str(value.repo_full_name) ?? fallbackRepo,
-    name,
-    targetBookmark: str(value.target_bookmark),
-    status: value.status,
-    provisioningStage: str(value.provisioning_stage),
-    suspendedAt: str(value.suspended_at),
-    createdAt: str(value.created_at)
-  }
-}
-
 /** One changeset row off the live DTO (ADR 0003); malformed rows drop. */
 const parseChangeset = (value: unknown): ChangesetState | null => {
   if (!isRecord(value)) return null
@@ -1724,28 +1701,6 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
     )
   }
 
-  const openComputer: ChangeSeam["openComputer"] = async (changeId, snapshotId, repo) => {
-    const refusal = gate()
-    if (refusal !== undefined) return refusal
-    if (degraded()) return refuseCloudSignIn(ctx, DEGRADED_WORKSPACE_REFUSAL)
-    if (snapshotId.trim() === "") return "change.open-computer needs the revision's snapshot id: /change.open-computer <changeId> <snapshotId>"
-    const resolved = resolveRepo(changeId, repo)
-    if ("error" in resolved) return resolved.error
-    const created = await sendJson("POST", repoPath(resolved.repo, "/workspaces"), { snapshot_id: snapshotId })
-    if ("error" in created) return created.error
-    const workspace = parseWorkspaceWire(created.body, resolved.repo)
-    if (workspace === null) return `Smithers Cloud's answer for the computer from snapshot ${snapshotId} was malformed.`
-    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace })
-    /* The workspace card is the workspace seam's to render; the controller lends its viewer. */
-    if (deps.viewWorkspace !== undefined) {
-      const shown = await deps.viewWorkspace(workspace.id)
-      if (typeof shown === "string") return `The computer ${workspace.id} was created from snapshot ${snapshotId}, but its card couldn't be read: ${shown}`
-    }
-    return {
-      value: `Computer "${workspace.name}" (${workspace.id}) is ${workspace.status} from snapshot ${snapshotId} of ${changeId} — the workspace card tracks it.`
-    }
-  }
-
   return {
     viewChange,
     diffChange,
@@ -1765,6 +1720,5 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
     notUseful,
     requestReview,
     unrequestReview,
-    openComputer
   }
 }

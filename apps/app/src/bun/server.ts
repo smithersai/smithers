@@ -43,8 +43,6 @@ import {
   CLOUD_WS_NOT_READY_CLOSE_CODE,
   CLOUD_WS_PENDING_CLOSE_CODE,
   CLOUD_WS_ROUTE_PREFIX,
-  LINEAR_AUTH_SESSION_PATH,
-  LINEAR_AUTH_START_PATH,
   withRetryAfter
 } from "@smthrs/rpc/LocalApp"
 import type { CloudWsSessionKind } from "@smthrs/rpc/LocalApp"
@@ -63,7 +61,6 @@ import { createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
 import { createCloudAuth } from "./CloudAuth"
 import type { CloudAuth, CloudKeychain } from "./CloudAuth"
-import { createLinearAuth } from "./LinearAuth"
 import { detectHarnesses } from "./Harnesses"
 import { findNode } from "./Node"
 import type { NodeSidecar } from "./Node"
@@ -431,9 +428,7 @@ const encoder = new TextEncoder()
 const PRODUCT_PROXY_PREFIXES: ReadonlyArray<string> = [
   /* Flows and runs: provision + RPC live on the Worker (web-mode plan R6); the local origin forwarded neither. */
   "/api/workflow/",
-  /* Linear: the integrations list and the per-integration sync/ops routes (lane L5); neither hop forwarded them. */
-  "/api/integrations/",
-  "/api/linear",
+  
   "/api/repos/",
   "/api/github/",
   "/api/user/",
@@ -443,13 +438,8 @@ const PRODUCT_PROXY_PREFIXES: ReadonlyArray<string> = [
 ]
 
 /** The stub's stand-in for the identity seam: signed out, nothing else configured. */
-/*
- * The request trail names paths, never secrets: the Linear setup lookup
- * carries its one-time setup key in the path (`/api/cloud/api/linear/setup/
- * <key>`), so the key is elided before the line is written (sync review
- * finding 8 — the cloud token never reaches a trail line; neither may this).
- */
-export const trailPath = (pathname: string): string => pathname.replace(/(\/linear\/setup\/)[^/?#]+/, "$1<setup-key>")
+
+export const trailPath = (pathname: string): string => pathname
 
 const stubIdentity = (pathname: string): Response =>
   pathname === AUTH_SESSION_PATH
@@ -936,26 +926,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     return json({ ok: true })
   })
 
-  /*
-   * The Linear OAuth handoff (lane sync, ADR 0005): start listens for the
-   * setup-key callback and answers the OAuth start URL through the cloud
-   * proxy; the session answer carries the key only once authorized. The
-   * handoff needs the cloud seam (its URL rides the proxy), so offline
-   * answers 501 like the cloud login.
-   */
-  const linearAuth = cloudUpstream === null
-    ? undefined
-    : createLinearAuth({ origin: () => `http://127.0.0.1:${server.port}`, log })
-  router.add("POST", LINEAR_AUTH_START_PATH, async () => {
-    if (linearAuth === undefined) return jsonError("not_implemented", "The cloud seam is disabled in this build.")
-    const started = await linearAuth.start()
-    return "error" in started ? jsonError("linear_auth_unavailable", started.error) : json(started)
-  })
-  router.add("GET", LINEAR_AUTH_SESSION_PATH, () =>
-    linearAuth === undefined
-      ? json({ state: "idle" })
-      : json(linearAuth.session()))
-
   // The runtime error ingest the SPA posts to (state/ClientErrors.ts holds
   // the client half of this contract): logged, never persisted.
   router.add("POST", CLIENT_ERRORS_PATH, async ({ request }) => {
@@ -1110,9 +1080,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
        */
       const oauthNavigation = request.method === "GET" &&
         (pathname === AUTH_SIGN_IN_PATH || pathname === AUTH_CALLBACK_PATH)
-      const linearNavigation = request.method === "GET" && linearAuth?.claimNavigation(url) === true
-      if (linearNavigation) url.searchParams.delete("handoff")
-      if (pathname !== HEALTH_PATH && !oauthNavigation && !linearNavigation) {
+      if (pathname !== HEALTH_PATH && !oauthNavigation) {
         if (!sameSecret(request.headers.get(LOCAL_SESSION_HEADER) ?? "", sessionToken)) {
           return jsonError("local_session_required", "The local session capability is required.")
         }
@@ -1131,6 +1099,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         }
       }
       if (router.knows(pathname)) return jsonError("method_not_allowed", `${request.method} is not allowed on ${pathname}.`)
+      if (/^\/(?:api\/cloud\/)?api\/(?:linear(?:\/|$)|integrations\/linear(?:\/|$)|auth\/linear(?:\/|$))/.test(pathname) || /\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname)) return jsonError("not_found", "Not found.")
       if (pathname.startsWith(CLOUD_ROUTE_PREFIX)) {
         return cloudUpstream === null
           ? refuse("feature_unavailable_here", "The cloud seam is disabled in this build.")
@@ -1450,7 +1419,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         () => closeCloudBridges(1001, "the local app is shutting down"),
         () => server.stop(true),
         () => cloudAuth?.stop(),
-        () => linearAuth?.stop(),
         () => ptyStopped,
         () => sessionMonitor?.stop(),
         () => lsp.killAll(),

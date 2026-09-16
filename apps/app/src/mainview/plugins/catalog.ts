@@ -85,15 +85,11 @@ const factory: AppPlugin = {
     recommended: 3,
     dependsOn: ["librarian"],
     gettingStarted: [
-      "Start a prototype for the smallest version of the idea.",
-      "Open the Factory to see the stages a change moves through."
+      "Start a prototype for the smallest version of the idea."
     ]
   },
   activate: (ctx) =>
-    Effect.flatMap(
-      availableRail([{ flow: "factory.show", label: "Factory", icon: "factory" }]),
-      (rail) => contribute(ctx, { rail, flows: ["factory.show", "feature.prototype"] })
-    )
+    contribute(ctx, { flows: ["feature.prototype"] })
 }
 
 /** Box: the per-branch sandbox the work actually runs in. */

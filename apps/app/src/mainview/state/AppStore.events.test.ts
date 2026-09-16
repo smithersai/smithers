@@ -1,3 +1,4 @@
+import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { afterEach,describe,expect,test } from "bun:test"
@@ -10,7 +11,7 @@ import { PRIVACY_RETIREMENT_KEY, readPrivacyRetirement } from "../chain/PrivacyR
 import { ENVELOPE_STORAGE_KEY,parseStorageEnvelope } from "../chain/TransactionalStorage"
 import { digest } from "@smthrs/core/Digest"
 import { APP_PROJECTOR_VERSION, AppProjectorVersionError, AppEventIntegrityError, appProjectionHash, retiredAppStreamKey, replayAppEvents } from "./AppEventStream"
-import { initialSession } from "./AppState"
+import { initialSession, cardFrameId } from "./AppState"
 import { createAppStore,PERSISTED_COLLECTION_SPECS,type AppStore } from "./AppStore"
 import { canonicalEventValue, decodeEventValue, encodeEventValue } from "./EventValue"
 import { memoryStorage } from "./TestFixtures"
@@ -50,7 +51,7 @@ const sqliteStore = async (path: string) => {
   return { store, db }
 }
 
-const installProjectorFixture = async (storage: StorageApi, version: number) => {
+const installProjectorFixture = async (storage: StorageApi, version: number, retiredPresentation = false) => {
   const store = await open(storage)
   await store.dispatch({ type: "message.submitted", actor: "user", turnId: "kept", text: "Keep my work" }).isPersisted.promise
   await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId: "kept" }).isPersisted.promise
@@ -66,11 +67,38 @@ const installProjectorFixture = async (storage: StorageApi, version: number) => 
   await store.dispatch({ type: "world.document.upserted", actor: "user", document: {
     id: "kept", path: "kept.md", title: "Kept", body: "Retain wiki", links: [], tags: [], sources: [], confidence: 1
   } }).isPersisted.promise
+  const builtIn = AGENT_ROLES[0]!
+  const custom = { ...builtIn, id: "custom-reviewer", builtin: false, label: "Custom reviewer" }
+  if (retiredPresentation) {
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: "kept-agents", kind: "agents", title: "Agents", status: "active", createdAt: 2, ordinal: 2,
+      payload: { native: true, agents: [{ ...builtIn, harnessName: "Claude", available: true, reason: "", account: "" }] }
+    } }).isPersisted.promise
+    await store.dispatch({ type: "card.maximized", actor: "user", id: "kept" }).isPersisted.promise
+  }
   await store.compactEvents()
   const history = await store.eventHistory()
   const snapshot = structuredClone(history.checkpoint.snapshot)
   Object.assign(snapshot.sessions![0]!, { guide: { version: 3, sequence: "practice-v4", step: 1,
     completed: [], autoPaused: false, conversationOpen: false }, guideVisible: false })
+  const retireFixture = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(retireFixture)
+    if (value === null || typeof value !== "object") return value
+    const row = value as Record<string, unknown>
+    if (row.kind === "file" && row.id === "kept") return { ...row, kind: "repo-home", payload: {
+      repo: "org/repo", path: ".smithers/home.json", blocks: [{ type: "text", text: "Old home" }], featuredFlows: null
+    } }
+    if (row.kind === "agents") return { ...row, payload: { native: true, agents: [
+      { ...builtIn, label: "Edited built-in", purpose: "Custom purpose", model: { provider: "custom", id: "custom-model", label: "Custom" },
+        harnessName: "Claude", available: true, reason: "", account: "" },
+      { ...custom, harnessName: "Claude", available: true, reason: "", account: "" }
+    ] } }
+    return Object.fromEntries(Object.entries(row).map(([key, field]) => [key, retireFixture(field)]))
+  }
+  if (retiredPresentation) {
+    Object.assign(snapshot, retireFixture(snapshot))
+    snapshot.agents = [{ ...builtIn, label: "Edited built-in" }, custom]
+  }
   const stateHash = appProjectionHash(snapshot as unknown as Parameters<typeof appProjectionHash>[0])
   const head = { ...history.head, projectorVersion: version, stateHash }
   const eventBody = { formatVersion: 1, projectorVersion: version, id: "retired-guide-event", streamId: head.streamId,
@@ -85,6 +113,16 @@ const installProjectorFixture = async (storage: StorageApi, version: number) => 
   await store.dispose?.()
   opened.splice(opened.indexOf(store), 1)
   editEnvelope(storage, entries => {
+    if (retiredPresentation) {
+      entries["smithers-mvp.app-agents"] = JSON.stringify(Object.fromEntries(snapshot.agents!.map(row => {
+        const agent = row as Record<string, unknown>
+        return [`s:${agent.id}`, { versionKey: "fixture", data: agent }]
+      })))
+      for (const id of ["app-cards", "app-frames"]) {
+        const key = `smithers-mvp.${id}`
+        if (entries[key]) entries[key] = JSON.stringify(retireFixture(JSON.parse(entries[key]!)))
+      }
+    }
     if (version === 1) {
       entries["smithers-mvp.app-events"] = JSON.stringify({ "s:retired-guide-event": { versionKey: "fixture", data: event } })
       const sessions = JSON.parse(entries["smithers-mvp.app-sessions"]!)
@@ -99,13 +137,44 @@ const installProjectorFixture = async (storage: StorageApi, version: number) => 
 }
 
 describe("the live store's authoritative event path", () => {
+  test("version 2 cards retire across reopening while historical frames and conversations survive", async () => {
+    const storage = memoryStorage()
+    const old = await installProjectorFixture(storage, 2, true)
+    const restored = await open(storage)
+    const history = await restored.eventHistory()
+    expect(history.checkpoint.reason).toBe("projector-upgrade")
+    expect(history.head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect(history.head.streamId).not.toBe(old.head.streamId)
+    expect(restored.collections.cards.get("kept")).toMatchObject({ id: "kept", kind: "retired", payload: {}, title: "" })
+    const branch = restored.session().activeBranchId!
+    const frame = restored.collections.frames.get(cardFrameId(branch, "kept"))!
+    expect(frame.id).toBe(cardFrameId(branch, "kept"))
+    expect(frame.snapshot?.cards.find(card => card.id === "kept")).toMatchObject({ kind: "retired", payload: {} })
+    expect(restored.collections.messages.get("message-kept-user")?.text).toBe("Keep my work")
+    expect([...restored.collections.agents.keys()].sort()).toEqual(AGENT_ROLES.map(role => role.id).sort())
+    for (const role of AGENT_ROLES) expect(restored.collections.agents.get(role.id)).toMatchObject(role)
+    const agentsCard = restored.collections.cards.get("kept-agents")!
+    expect(agentsCard.kind).toBe("agents")
+    if (agentsCard.kind !== "agents") throw new Error("Missing built-in roster")
+    expect(agentsCard.payload.agents).toHaveLength(1)
+    expect(agentsCard.payload.agents[0]).toMatchObject({ id: AGENT_ROLES[0]!.id, label: AGENT_ROLES[0]!.label, model: AGENT_ROLES[0]!.model })
+    expect(frame.snapshot?.cards.find(card => card.id === "kept-agents")).toMatchObject({ kind: "agents", payload: agentsCard.payload })
+    expect((await restored.verifyState()).valid).toBe(true)
+    const reopened = await open(storage)
+    expect(reopened.collections.frames.get(frame.id)).toEqual(frame)
+    expect(reopened.collections.cards.get("kept")?.kind).toBe("retired")
+    expect(reopened.collections.agents.has("custom-reviewer")).toBe(false)
+    expect(reopened.collections.cards.get("kept-agents")).toEqual(agentsCard)
+    expect((await reopened.verifyState()).valid).toBe(true)
+  })
+
   test("rotates retired guide checkpoints without losing materialized rows", async () => {
     const storage = memoryStorage()
     const old = await installProjectorFixture(storage, 1)
     const restored = await open(storage)
     const next = await restored.eventHistory()
-    expect(next.head.projectorVersion).toBe(2)
-    expect(next.checkpoint.projectorVersion).toBe(2)
+    expect(next.head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect(next.checkpoint.projectorVersion).toBe(APP_PROJECTOR_VERSION)
     expect(next.checkpoint.reason).toBe("projector-upgrade")
     expect(next.head.streamId).not.toBe(old.head.streamId)
     expect(next.events).toHaveLength(0)
@@ -147,9 +216,9 @@ describe("the live store's authoritative event path", () => {
 
   test("newer projectors refuse boot and preserve history", async () => {
     const storage = memoryStorage()
-    await installProjectorFixture(storage, 3)
+    await installProjectorFixture(storage, APP_PROJECTOR_VERSION + 1)
     const before = storage.getItem(ENVELOPE_STORAGE_KEY)
-    await expect(open(storage)).rejects.toEqual(new AppProjectorVersionError(3))
+    await expect(open(storage)).rejects.toEqual(new AppProjectorVersionError(APP_PROJECTOR_VERSION + 1))
     expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(before)
   })
 

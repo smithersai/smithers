@@ -101,8 +101,6 @@ import type { EgressSeam } from "./seams/EgressSeam"
 import { createEgressSeam } from "./seams/EgressSeam"
 import type { EnvironmentSeam } from "./seams/EnvironmentSeam"
 import { createEnvironmentSeam } from "./seams/EnvironmentSeam"
-import type { FactorySeam } from "./seams/FactorySeam"
-import { createFactorySeam } from "./seams/FactorySeam"
 import type { FilesSeam } from "./seams/FilesSeam"
 import { createFilesSeam } from "./seams/FilesSeam"
 import type { GitHubSeam } from "./seams/GitHubSeam"
@@ -113,8 +111,6 @@ import type { IssuesSeam } from "./seams/IssuesSeam"
 import { createIssuesSeam } from "./seams/IssuesSeam"
 import type { LandingsSeam } from "./seams/LandingsSeam"
 import { createLandingsSeam } from "./seams/LandingsSeam"
-import type { LinearSeam } from "./seams/LinearSeam"
-import { createLinearSeam } from "./seams/LinearSeam"
 import type { NotificationsSeam } from "./seams/NotificationsSeam"
 import { createNotificationsSeam } from "./seams/NotificationsSeam"
 import type { RepoImportSeam } from "./seams/RepoImportSeam"
@@ -312,11 +308,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /* Agents as data (docs/workbench-lanes/custom-agents.md); see controller/agents.ts. */
   readonly loadAgents: AgentsController["loadAgents"]
   readonly listAgents: AgentsController["listAgents"]
-  readonly newAgent: AgentsController["newAgent"]
-  readonly createAgent: AgentsController["createAgent"]
-  readonly editAgent: AgentsController["editAgent"]
-  readonly removeAgent: AgentsController["removeAgent"]
-  readonly listHarnessModels: AgentsController["listHarnessModels"]
   /* THE FORM LAW (apps/app/AGENTS.md): the flow-form card's render, field commits, submit, and dismiss; see controller/forms.ts. */
   readonly renderFlowForm: FormsController["renderFlowForm"]
   readonly setFormField: FormsController["setFormField"]
@@ -477,12 +468,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly introduce: AppShellController["introduce"]
   /** Render the account card, or the sign-in step signed out (account.show). */
   readonly showAccount: AccountController["showAccount"]
-  /* The repository welcome and its three answers (controller/onboarding.ts). */
-  readonly welcomeRepo: OnboardingController["welcomeRepo"]
-  readonly maintainRepo: OnboardingController["maintainRepo"]
-  readonly contributeRepo: OnboardingController["contributeRepo"]
-  readonly exploreRepo: OnboardingController["exploreRepo"]
-  readonly homeRepo: OnboardingController["homeRepo"]
   readonly prototypeFeature: OnboardingController["prototypeFeature"]
   /*
    * The multi-parity domain seams (MULTI-ACTIONS-GAP.md Tier 1/2): issues,
@@ -495,8 +480,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly createIssue: IssuesSeam["createIssue"]
   readonly setIssueState: IssuesSeam["setIssueState"]
   readonly commentOnIssue: IssuesSeam["commentOnIssue"]
-  readonly linkIssueLinear: IssuesSeam["linkLinear"]
-  readonly unlinkIssueLinear: IssuesSeam["unlinkLinear"]
   readonly listLandings: LandingsSeam["listLandings"]
   readonly viewLanding: LandingsSeam["viewLanding"]
   readonly setLandingTab: LandingsSeam["setTab"]
@@ -513,8 +496,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listSecrets: SecretsSeam["listSecrets"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
-  /** The repository's factory (factory.show): wiki stats and the box's infra-as-code files. */
-  readonly showFactory: FactorySeam["showFactory"]
   readonly importRepository: RepoImportSeam["importRepository"]
   readonly retryImport: RepoImportSeam["retryImport"]
   readonly listBookmarks: BookmarksSeam["listBookmarks"]
@@ -529,23 +510,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly codeHover: CodeIntelSeam["hover"]
   readonly codeDefinition: CodeIntelSeam["definition"]
   readonly codeDiagnostics: CodeIntelSeam["diagnostics"]
-  /*
-   * Lane sync (ADR 0005): Linear and GitHub sync as actions — the
-   * connector-setup cards, the sync-ops card, and the GitHub App status
-   * behind the `/api/cloud/*` proxy (state/seams/LinearSeam.ts,
-   * GitHubSeam.ts).
-   */
-  readonly linearConnect: LinearSeam["connect"]
-  readonly linearConnectOpen: LinearSeam["openLinear"]
-  readonly linearConnectTeam: LinearSeam["pickTeam"]
-  readonly linearConnectRepo: LinearSeam["pickRepository"]
-  readonly linearConnectConfirm: LinearSeam["confirmConnect"]
-  readonly linearSync: LinearSeam["syncNow"]
-  readonly linearActivity: LinearSeam["activity"]
-  readonly linearDisconnect: LinearSeam["disconnect"]
-  readonly retrySyncOp: LinearSeam["retryOp"]
-  readonly showMoreSyncOps: LinearSeam["showMoreOps"]
-  readonly loadOlderSyncOps: LinearSeam["loadOlderOps"]
+  
+  readonly showMoreSyncOps: (cardId: string) => Promise<string | void>
   readonly githubApp: GitHubSeam["app"]
   readonly githubChooseInstallation: GitHubSeam["chooseInstallation"]
   readonly githubOpenInstall: GitHubSeam["openInstall"]
@@ -571,11 +537,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly openWorkspaceTerminal: WorkspaceSeam["openTerminal"]
   readonly suspendWorkspace: WorkspaceSeam["suspendWorkspace"]
   readonly resumeWorkspace: WorkspaceSeam["resumeWorkspace"]
-  readonly forkWorkspace: WorkspaceSeam["forkWorkspace"]
-  readonly snapshotWorkspace: WorkspaceSeam["snapshotWorkspace"]
-  readonly deleteWorkspaceSnapshot: WorkspaceSeam["deleteSnapshot"]
-  readonly forkWorkspaceFromSnapshot: WorkspaceSeam["forkFromSnapshot"]
-  readonly templateWorkspaceSnapshot: WorkspaceSeam["templateSnapshot"]
   readonly listWorkspaceSessions: WorkspaceSeam["listSessions"]
   readonly destroyWorkspaceSession: WorkspaceSeam["destroySession"]
   readonly deleteWorkspace: WorkspaceSeam["deleteWorkspace"]
@@ -620,7 +581,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /* Lane L1: the live plue routes — pins, checks per revision, threads, findings, the snapshot fork. */
   readonly setChangePins: ChangeSeam["setPins"]
   readonly checksOfChangeAt: ChangeSeam["checksAt"]
-  readonly openChangeComputer: ChangeSeam["openComputer"]
   readonly diffSinceMyReview: ChangeSeam["sinceMyReview"]
   readonly reviewThreadDone: ChangeSeam["threadDone"]
   readonly reviewThreadAck: ChangeSeam["threadAck"]
@@ -741,6 +701,7 @@ export interface AppServices {
 }
 
 export interface AppFeatures {
+  readonly pluginLibrary?: boolean
   readonly suggestionPills?: boolean
 }
 
@@ -764,7 +725,11 @@ export const createAppController = (
   }))
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {
+    pluginLibrary: services.features?.pluginLibrary ?? false,
     suggestionPills: services.features?.suggestionPills ?? services.bootstrap?.host === "cloud"
+  }
+  if (!features.pluginLibrary && store.session().surface === "plugins") {
+    store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome) => {
@@ -833,7 +798,6 @@ export const createAppController = (
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
   }))
-  const factorySeam = actors.pair(seamCtx, (context) => createFactorySeam(context))
   const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
@@ -842,15 +806,8 @@ export const createAppController = (
   const diffFilesSeam = actors.pair(seamCtx, createDiffFilesSeam)
   const filesSeam = actors.pair(seamCtx, (context) => createFilesSeam(context))
   const repoTreeSeam = actors.pair(seamCtx, (context) => createRepoTreeSeam(context))
-  /*
-   * Lane sync: the Linear and GitHub seams. The OAuth handoffs ride the
-   * same native openExternal door as cloud sign-in; the Linear handoff's
-   * receiver is the Bun server's /api/linear-auth/* (bun/LinearAuth.ts).
-   */
+  
   const gitHubSeam = actors.pair(seamCtx, (context) => createGitHubSeam(context, {
-    ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
-  }))
-  const linearSeam = actors.pair(seamCtx, (context) => createLinearSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
   /*
@@ -884,8 +841,7 @@ export const createAppController = (
     if (store.collections.cloudSessions.get("cloud")?.state === "signed-in") {
       void repositoriesSeam.loadRepositories()
       void workspaceSeam.refreshWorkspaces()
-      /* Lane sync: the integrations the Connectors surface's Linear row reads. */
-      void linearSeam.refreshIntegrations()
+      
     }
   }
   const loadCloudSession = async (): Promise<void> => {
@@ -980,12 +936,7 @@ export const createAppController = (
   const {
     loadAgents,
     listAgents,
-    newAgent,
-    createAgent,
-    editAgent,
-    removeAgent,
-    listHarnessModels
-  } = actors.pair(ctx, (context, select) => createAgentsController(context, { nextOrdinal: store.nextOrdinal, loadHarnesses: select(loadHarnesses), renderFlowForm: select(renderFlowForm) }))
+  } = actors.pair(ctx, (context, select) => createAgentsController(context, { nextOrdinal: store.nextOrdinal, loadHarnesses: select(loadHarnesses) }))
   const { toggleRepoTree, renameWorkspace, toggleWorkspaceRename } = actors.pair(ctx, (context, select) => createSidebarController(context, select(repoTreeSeam)))
   /*
    * "Open in tab" is offered on the maximized card, so opening the tab also
@@ -1366,13 +1317,10 @@ export const createAppController = (
   }
 
   /*
-   * The repository welcome and its three answers: the sign-in gate rides the
-   * requirement axis' park (deferCommand) and the auth.prompt step; the
-   * feature prototype rides flow.run's launch path as a run of kind prototype.
+   * The feature prototype rides flow.run's launch path as a run of kind prototype.
    */
   const onboarding = actors.pair(ctx, (context, select) =>
     createOnboardingController(context, {
-      nextOrdinal: store.nextOrdinal,
       deferCommand,
       promptSignIn,
       workflows: select(workflowController)
@@ -1586,11 +1534,6 @@ export const createAppController = (
     loadHarnesses,
     loadAgents,
     listAgents,
-    newAgent,
-    createAgent,
-    editAgent,
-    removeAgent,
-    listHarnessModels,
     renderFlowForm,
     setFormField,
     submitForm,
@@ -1676,19 +1619,12 @@ export const createAppController = (
     dismissHint: (id: string) => { store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id }) },
     introduce,
     showAccount: account.showAccount,
-    welcomeRepo: onboarding.welcomeRepo,
-    maintainRepo: onboarding.maintainRepo,
-    contributeRepo: onboarding.contributeRepo,
-    exploreRepo: onboarding.exploreRepo,
-    homeRepo: onboarding.homeRepo,
     prototypeFeature: onboarding.prototypeFeature,
     listIssues: issuesSeam.listIssues,
     viewIssue: issuesSeam.viewIssue,
     createIssue: issuesSeam.createIssue,
     setIssueState: issuesSeam.setIssueState,
     commentOnIssue: issuesSeam.commentOnIssue,
-    linkIssueLinear: issuesSeam.linkLinear,
-    unlinkIssueLinear: issuesSeam.unlinkLinear,
     listLandings: landingsSeam.listLandings,
     viewLanding: landingsSeam.viewLanding,
     setLandingTab: landingsSeam.setTab,
@@ -1706,7 +1642,6 @@ export const createAppController = (
     listSecrets: secretsSeam.listSecrets,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,
-    showFactory: factorySeam.showFactory,
     registerTrigger,
     importRepository: repoImportSeam.importRepository,
     retryImport: repoImportSeam.retryImport,
@@ -1720,17 +1655,11 @@ export const createAppController = (
     codeHover,
     codeDefinition,
     codeDiagnostics,
-    linearConnect: linearSeam.connect,
-    linearConnectOpen: linearSeam.openLinear,
-    linearConnectTeam: linearSeam.pickTeam,
-    linearConnectRepo: linearSeam.pickRepository,
-    linearConnectConfirm: linearSeam.confirmConnect,
-    linearSync: linearSeam.syncNow,
-    linearActivity: linearSeam.activity,
-    linearDisconnect: linearSeam.disconnect,
-    retrySyncOp: linearSeam.retryOp,
-    showMoreSyncOps: linearSeam.showMoreOps,
-    loadOlderSyncOps: linearSeam.loadOlderOps,
+    showMoreSyncOps: async (cardId) => {
+      const card = store.collections.cards.get(cardId)
+      if (card?.kind !== "sync-ops") return
+      store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, payload: { ...card.payload, expanded: true } } })
+    },
     githubApp: gitHubSeam.app,
     githubChooseInstallation: gitHubSeam.chooseInstallation,
     githubOpenInstall: gitHubSeam.openInstall,
@@ -1747,11 +1676,6 @@ export const createAppController = (
     openWorkspaceTerminal: workspaceSeam.openTerminal,
     suspendWorkspace: workspaceSeam.suspendWorkspace,
     resumeWorkspace: workspaceSeam.resumeWorkspace,
-    forkWorkspace: workspaceSeam.forkWorkspace,
-    snapshotWorkspace: workspaceSeam.snapshotWorkspace,
-    deleteWorkspaceSnapshot: workspaceSeam.deleteSnapshot,
-    forkWorkspaceFromSnapshot: workspaceSeam.forkFromSnapshot,
-    templateWorkspaceSnapshot: workspaceSeam.templateSnapshot,
     listWorkspaceSessions: workspaceSeam.listSessions,
     destroyWorkspaceSession: workspaceSeam.destroySession,
     deleteWorkspace: workspaceSeam.deleteWorkspace,
@@ -1783,7 +1707,6 @@ export const createAppController = (
     setChangeFacet: changeSeam.setFacet,
     setChangePins: changeSeam.setPins,
     checksOfChangeAt: changeSeam.checksAt,
-    openChangeComputer: changeSeam.openComputer,
     diffSinceMyReview: changeSeam.sinceMyReview,
     reviewThreadDone: changeSeam.threadDone,
     reviewThreadAck: changeSeam.threadAck,
@@ -1806,6 +1729,7 @@ export const createAppController = (
       const identity = store.collections.identitySessions.get("identity")
       const signedIn = identity?.state === "signed-in"
       return {
+        pluginLibrary: features.pluginLibrary,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",

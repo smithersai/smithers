@@ -19,6 +19,7 @@ export interface PluginsController {
 }
 
 export const createPluginsController = (ctx: ControllerContext): PluginsController => {
+  const enabled = () => ctx.services?.features?.pluginLibrary === true
   const installed = (): ReadonlyArray<string> => ctx.store.session().plugins ?? []
 
   /* A lesson finished by a real flow: the guide moves on, everywhere else nothing happens. */
@@ -29,6 +30,7 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
    * in the conversation instead of taking the pane.
    */
   const showPlugins = (): void => {
+    if (!enabled()) return
     ctx.store.dispatch({
       type: "surface.changed",
       actor: ctx.commandActor,
@@ -37,6 +39,7 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
   }
 
   const installPlugin = (id: string): string | void => {
+    if (!enabled()) return
     const plugin = pluginById(id)
     if (plugin === undefined) return `No plugin named “${id}”. Open the Library with /plugins to see the shelf.`
     const shelf = installed()
@@ -57,6 +60,7 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
   }
 
   const removePlugin = (id: string): string | void => {
+    if (!enabled()) return
     const plugin = pluginById(id)
     if (plugin === undefined) return `No plugin named “${id}”. Open the Library with /plugins to see the shelf.`
     if (!installed().includes(id)) return `${plugin.manifest.name} is not installed.`
@@ -72,6 +76,7 @@ export const createPluginsController = (ctx: ControllerContext): PluginsControll
 
   /* The model's door onto the Library: the shelf as an answer, not as a pane. */
   const listPlugins = (): { readonly value: string } => {
+    if (!enabled()) return { value: "" }
     const shelf = installed()
     /* The same live shelf as the pane, embedded: browsing is not installing. */
     const existing = ctx.store.collections.cards.get("plugin-library")

@@ -51,16 +51,16 @@ describe("formFieldsFor — one control per schema field", () => {
     const hints: FormHints = {
       fields: {
         id: { label: "Agent id", placeholder: "reviewer" },
-        harness: { optionsFrom: "agent-harnesses" },
-        model: { optionsFrom: "harness-models", kind: "text" },
+        harness: { optionsFrom: "harnesses" },
+        model: { optionsFrom: "harnesses", kind: "text" },
         purpose: { required: true }
       }
     }
     const fields = formFieldsFor(AgentCreate, hints)
     expect(fields).toEqual([
       { name: "id", label: "Agent id", kind: "text", required: true, placeholder: "reviewer" },
-      { name: "harness", label: "Harness", kind: "select", required: true, optionsFrom: "agent-harnesses" },
-      { name: "model", label: "Model", kind: "text", required: true, optionsFrom: "harness-models" },
+      { name: "harness", label: "Harness", kind: "select", required: true, optionsFrom: "harnesses" },
+      { name: "model", label: "Model", kind: "text", required: true, optionsFrom: "harnesses" },
       { name: "purpose", label: "Purpose", kind: "text", required: true }
     ])
   })

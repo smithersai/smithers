@@ -1,24 +1,8 @@
 import { flowAction } from "../flows/FlowAction"
-/*
- * The lane-sync cards (ADR 0005): the connector-setup card (one kind serves
- * both handoffs — the Linear wizard authorize → team → repository → confirm,
- * the same card turned connected state, and the GitHub App install/reconcile)
- * and the sync-ops card (Linear sync runs and their ops, GitHub mirror runs
- * and their per-ref results). Every act binds a registered flow through
- * onRunCommand with data-flow set; the rate-limit line follows the ADR
- * (`… · 0 of 5 000 · resets 12:40 · Retry after`, Retry disabled until the
- * reset).
- *
- * Every state word on this card is the WIRE's own — a run state, an op
- * status, a repository's `mirror_status` — and rides `StatusPill`, whose
- * shared vocabulary already tints all of them. Nothing here renames a
- * backend word, and a failed op is never filtered out of the list.
- */
+
 import { Badge, Button, StatusPill } from "@smthrs/ui"
-import { useLiveQuery } from "@tanstack/react-db"
-import { Check, Circle, ExternalLink, Minus, Plug, RefreshCw, Unplug, X } from "lucide-react"
-import { useCallback, useState, useSyncExternalStore } from "react"
-import { useController } from "../ControllerContext"
+import { Check, Circle, ExternalLink, Minus, Plug, RefreshCw, X } from "lucide-react"
+import { useCallback, useSyncExternalStore } from "react"
 import { ageLabel, timeLabel, untilLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -96,155 +80,6 @@ export const RateLimitLine = ({ rateLimit }: { readonly rateLimit: RateLimit }) 
   )
 }
 
-const stepIcon = (state: "pending" | "active" | "done" | "error") => {
-  switch (state) {
-    case "done":
-      return <Check size={14} aria-hidden="true" />
-    case "error":
-      return <X size={14} aria-hidden="true" />
-    case "active":
-      return <Circle size={14} aria-hidden="true" fill="currentColor" />
-    default:
-      return <Circle size={14} aria-hidden="true" />
-  }
-}
-
-/** The wizard's repository pick: every loaded repository, one click each. */
-const RepositoryPick = ({
-  cardRepo,
-  onRunCommand
-}: {
-  readonly cardRepo: string
-} & SyncCardActions) => {
-  const controller = useController()
-  const { data: repositories } = useLiveQuery((q) =>
-    q.from({ repository: controller.store.collections.repositories }).select(({ repository }) => ({
-      id: repository.id
-    })))
-  if (repositories.length === 0) return null
-  return (
-    <>
-      {repositories.map((repository) => (
-        <div key={repository.id} className="world-card-row">
-          <Button
-            variant={repository.id === cardRepo ? "outline" : "ghost"}
-            size="sm"
-            {...flowAction(onRunCommand, "linear.connect.repo", `${cardRepo} ${repository.id}`)}
-          >
-            {repository.id}
-          </Button>
-        </div>
-      ))}
-    </>
-  )
-}
-
-/** The Linear wizard and, on confirm, the connected state (the SAME card). */
-const LinearSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetupCard } & SyncCardActions) => {
-  const { repo, steps, teams, teamId, integration } = card.payload
-  /*
-   * Disconnect's card-level confirm (the workspace card's rule): the first
-   * click arms a confirm row, the second sends the team key back as the
-   * flow's own input, so one click never disconnects. Armed-or-not is
-   * transient chrome state, never a store fact.
-   */
-  const [disconnectArmed, setDisconnectArmed] = useState(false)
-  if (card.payload.phase === "connected" && integration !== undefined) {
-    return (
-      <div className="world-card-list">
-        <div className="world-card-row">
-          <span className="connect-store-icon">
-            <Plug size={14} />
-          </span>
-          <span className="world-card-title">{`${integration.teamKey} · ${integration.teamName} → ${repo}`}</span>
-          <Badge variant={integration.active ? "success" : "muted"}>{integration.active ? "active" : "inactive"}</Badge>
-        </div>
-        {/* plue#491 `linear_actor`: the Linear account whose authorization this integration syncs with. */}
-        {card.payload.actor != null ? <p className="world-card-path">{`authorized as ${card.payload.actor}`}</p> : null}
-        {integration.lastSyncAt !== null ?
-          <p className="world-card-path">{`last sync ${ageLabel(integration.lastSyncAt)}`}</p> :
-          null}
-        <div className="world-card-row">
-          <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "linear.sync", String(integration.id))}>
-            <RefreshCw size={14} /> Sync now
-          </Button>
-          <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "linear.activity", String(integration.id))}>
-            Activity
-          </Button>
-          <Button size="sm" variant="ghost" data-flow="linear.disconnect" onClick={() => setDisconnectArmed((armed) => !armed)}>
-            <Unplug size={14} /> Disconnect
-          </Button>
-        </div>
-        {disconnectArmed ?
-          (
-            <div className="world-card-row">
-              <span className="world-card-path">{`Disconnect Linear ${integration.teamKey} from ${repo}?`}</span>
-              <Button
-                size="sm"
-                variant="destructive"
-                {...flowAction(onRunCommand, "linear.disconnect", `${integration.id} ${integration.teamKey}`)}
-              >
-                {`Disconnect ${integration.teamKey}`}
-              </Button>
-            </div>
-          ) :
-          null}
-        {card.payload.rateLimit !== undefined ? <RateLimitLine rateLimit={card.payload.rateLimit} /> : null}
-        {card.payload.error !== undefined ? <p className="world-card-path">{card.payload.error}</p> : null}
-      </div>
-    )
-  }
-  const stepOf = (id: string) => steps.find((step) => step.id === id)
-  const team = stepOf("team")
-  const repository = stepOf("repository")
-  const confirmReady = stepOf("authorize")?.state === "done" && teamId !== undefined
-  return (
-    <div className="world-card-list">
-      {steps.map((step) => (
-        <div key={step.id} className="world-card-row">
-          <span className="connect-store-icon">{stepIcon(step.state)}</span>
-          <span className="world-card-title">{step.label}</span>
-          {step.detail !== null ? <span className="world-card-path">{step.detail}</span> : null}
-          {step.id === "authorize" && (step.state === "active" || step.state === "error") ?
-            (
-              <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "linear.connect.open", repo)}>
-                <ExternalLink size={14} /> Open Linear
-              </Button>
-            ) :
-            null}
-        </div>
-      ))}
-      {steps.filter((step) => step.error !== undefined).map((step) => (
-        <p key={`${step.id}-error`} className="world-card-path">{step.error}</p>
-      ))}
-      {team?.state === "active" && teams !== undefined ?
-        teams.map((candidate) => (
-          <div key={candidate.id} className="world-card-row">
-            <Button
-              variant="ghost"
-              size="sm"
-              {...flowAction(onRunCommand, "linear.connect.team", `${candidate.id} ${repo}`)}
-            >
-              {`${candidate.key} · ${candidate.name}`}
-            </Button>
-          </div>
-        )) :
-        null}
-      {repository?.state === "active" ? <RepositoryPick cardRepo={repo} onRunCommand={onRunCommand} /> : null}
-      {confirmReady ?
-        (
-          <div className="world-card-row">
-            <Button size="sm"  {...flowAction(onRunCommand, "linear.connect.confirm", repo)}>
-              Connect
-            </Button>
-          </div>
-        ) :
-        null}
-      {card.payload.error !== undefined ? <p className="world-card-path">{card.payload.error}</p> : null}
-    </div>
-  )
-}
-
 /** The GitHub App half: install state, the install/reconcile acts, the rate-limit line. */
 const GitHubSetupBody = ({ card, onRunCommand }: { readonly card: ConnectorSetupCard } & SyncCardActions) => {
   const { repo, phase, installationId, configured, installUrl } = card.payload
@@ -289,19 +124,11 @@ export const ConnectorSetupCardBody = ({
   card,
   onRunCommand
 }: { readonly card: ConnectorSetupCard } & SyncCardActions) =>
-  card.payload.connector === "linear"
-    ? <LinearSetupBody card={card} onRunCommand={onRunCommand} />
-    : <GitHubSetupBody card={card} onRunCommand={onRunCommand} />
+  <GitHubSetupBody card={card} onRunCommand={onRunCommand} />
 
 const OP_LIMIT = 10
 
-/*
- * The row glyph, from the WIRE's own status word (ADR 0005: "status glyph,
- * source → target, entity and id, action, age"). A Linear op reads `pending
- * | success | failed | skipped`, a mirror ref `pending | succeeded |
- * failed`; both vocabularies land here and neither is renamed on screen —
- * the word itself still rides the badge beside the glyph.
- */
+
 /*
  * The endpoint name on a sync row. The wire carries whatever the backend
  * calls itself, and the cloud's own payloads still say `jjhub` — an internal
@@ -341,17 +168,13 @@ export const mirrorRefsLine = (payload: SyncOpsCard["payload"]): string | null =
 }
 
 export const SyncOpsCardBody = ({ card, onRunCommand }: { readonly card: SyncOpsCard } & SyncCardActions) => {
-  const { subject, runId, runState, counts, mirrorStatus, trigger, ops, opsNote, hasOlder, expanded } = card.payload
+  const { subject, runId, runState, counts, mirrorStatus, trigger, ops, opsNote, expanded } = card.payload
   const shown = expanded === true ? ops : ops.slice(0, OP_LIMIT)
   const refsLine = mirrorRefsLine(card.payload)
-  /*
-   * The Retry an op row offers is its OWN backend's: a Linear op retries
-   * through `sync.retry <opId>`, a mirror ref through plue#491's per-ref
-   * route. One row, two routes, and neither card ever offers the other's.
-   */
-  const retryFlow = card.payload.source === "github-mirror" ? "github.mirror.retry-ref" : "sync.retry"
+  
+  const retryFlow = "github.mirror.retry-ref"
   const retryArgs = (opId: string): string =>
-    card.payload.source === "github-mirror" ? `${opId} ${card.payload.repo ?? ""}`.trim() : opId
+    `${opId} ${card.payload.repo ?? ""}`.trim()
   return (
     <div className="world-card-list">
       <div className="world-card-row">
@@ -399,16 +222,6 @@ export const SyncOpsCardBody = ({ card, onRunCommand }: { readonly card: SyncOps
           </div>
         ) :
         null}
-      {/* ADR 0005: the Activity view pages the feed rather than cutting it off. */}
-      {hasOlder === true ?
-        (
-          <div className="world-card-row">
-            <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "sync.ops.load-older", card.id)}>
-              Load older
-            </Button>
-          </div>
-        ) :
-        null}
       {opsNote !== undefined ? <p className="world-card-path">{opsNote}</p> : null}
       {card.payload.rateLimit !== undefined ? <RateLimitLine rateLimit={card.payload.rateLimit} /> : null}
       {card.payload.error !== undefined ? <p className="world-card-path">{card.payload.error}</p> : null}
@@ -429,15 +242,7 @@ export const syncCardFamily: CardFamily<"connector-setup" | "sync-ops"> = {
     render: (card, actions) => <SyncOpsCardBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: (card) => {
       if (card.payload.error !== undefined) return "failed"
-      /*
-       * The run state comes from the sync-run DTO alone and is that DTO's own
-       * word (`pending | running | completed | failed` for a Linear run,
-       * `queued | running | succeeded | failed` for a mirror run; the shared
-       * status vocabulary tints every one). Null means nothing has answered
-       * yet, which is an outcome the app cannot see: it wears the neutral
-       * pill, never "done" (review finding 3: a sync that had just started
-       * read as finished).
-       */
+      
       if (card.payload.runState === null) return "pending"
       return card.payload.runState
     }

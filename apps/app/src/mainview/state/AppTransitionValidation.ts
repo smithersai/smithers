@@ -8,7 +8,7 @@ import type { AppProjectionSnapshot } from "./AppProjection"
 import {
 ActorSchema,AgentRoleSchema,BranchSchema,CardHistorySchema,CardPatchSchema,CardSchema,ChangeRowSchema,
 CloudRepositorySchema,CloudWorkspaceRowSchema,FrameSchema,GitHubAppStatusRowSchema,
-HarnessSchema,LinearIntegrationRowSchema,MessageSchema,PALETTES,
+HarnessSchema,MessageSchema,PALETTES,
 PinnedRepoSchema,RecommendationSourceSchema,RepoSchema,RepositoryFlowSchema,
 SessionSchema,StarredTargetSchema,SuggestionSchema,TabSchema,ToastSchema,
 WorkingCopySchema,WorldDocumentSchema,
@@ -162,7 +162,6 @@ export const APP_TRANSITION_SCHEMAS = {
   "workspace.session.destroyed": z.object({ "type": z.literal("workspace.session.destroyed"), "actor": ActorSchema, "sessionId": z.string() }).strict(),
   "workspace.deleted": z.object({ "type": z.literal("workspace.deleted"), "actor": ActorSchema, "workspaceId": z.string() }).strict(),
   "change.loaded": z.object({ "type": z.literal("change.loaded"), "actor": z.literal("system"), "change": ChangeRowSchema.omit({ updatedAt: true, revision: true }) }).strict(),
-  "linear.integrations.loaded": z.object({ "type": z.literal("linear.integrations.loaded"), "actor": z.literal("system"), "integrations": z.array(LinearIntegrationRowSchema.omit({ updatedAt: true, revision: true })) }).strict(),
   "github.app-status.loaded": z.object({ "type": z.literal("github.app-status.loaded"), "actor": z.literal("system"), "status": GitHubAppStatusRowSchema.omit({ updatedAt: true, revision: true }) }).strict(),
   "repo.pinned": z.object({ "type": z.literal("repo.pinned"), "actor": ActorSchema, "pin": PinnedRepoSchema }).strict(),
   "repo.unpinned": z.object({ "type": z.literal("repo.unpinned"), "actor": z.literal("user"), "id": z.string() }).strict(),

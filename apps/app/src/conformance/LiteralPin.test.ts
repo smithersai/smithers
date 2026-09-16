@@ -81,6 +81,23 @@ interface Excuse {
  * list cannot outlive what it excuses.
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
+  { literal: "plugins", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
+    reason: "Negative assertion: the default-off Library must expose no command controls." },
+  { literal: "plugins.install", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
+    reason: "Negative assertion: the default-off Library must expose no command controls." },
+  { literal: "plugins.remove", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
+    reason: "Negative assertion: the default-off Library must expose no command controls." },
+
+  {
+    literal: "workspace-rename-",
+    file: "e2e/real/workspace-lifecycle.spec.ts",
+    reason: "A disposable local repository fixture name, not a card id emitted by the workspace rename flow."
+  },
+  {
+    literal: "retired-",
+    file: "e2e/packaged/FixtureRun.ts",
+    reason: "A temporary fixture-directory prefix used for atomic cleanup, not a persisted card id."
+  },
   {
     literal: "main.home",
     file: "e2e/site/landing-start.spec.ts",

@@ -7,7 +7,7 @@ import { flowAction } from "../flows/FlowAction"
  * (parity.test.ts allowlists it). List rows open the detail (issues.view);
  * the detail carries the comment box (issues.comment), the one state toggle
  * (issues.close / issues.reopen) and, on an unlinked issue, the door onto
- * issues.link-linear. Every interactive element carries data-flow with its
+ * Every interactive element carries data-flow with its
  * registered command name.
  */
 import { flowArgs } from "../flows/FlowArgs"
@@ -36,8 +36,6 @@ export interface IssueCardActions {
   readonly onRunCommand: RunCommand
 }
 
-/** Only an https linear.app URL off the DTO is followed; anything else renders the identifier as text. */
-export const trustedLinearUrl = (value: string): string | null => trustedHttpsUrl(value, "linear.app")
 
 type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number] & IssueExtras
 type IssuePayload = Extract<Card, { kind: "issue" }>["payload"] & IssueExtras
@@ -191,13 +189,11 @@ export const IssueCardBody = ({
   card,
   onRunCommand
 }: { readonly card: Extract<Card, { kind: "issue" }> } & IssueCardActions) => {
-  const { repo, number, title, state, author, issueBody, labels, comments, linear } = card.payload
+  const { repo, number, title, state, author, issueBody, labels, comments } = card.payload
   const github = card.payload.source === "github"
   const githubHref = github ? trustedHttpsUrl(card.payload.htmlUrl ?? "", "github.com") : null
   const extra: IssuePayload = card.payload
   const toggleCommand = state === "open" ? "issues.close" : "issues.reopen"
-  /* The DTO's URL is vetted like the install URL (review finding 10): https on linear.app, or no link at all. */
-  const linearHref = linear != null ? trustedLinearUrl(linear.url) : null
   const assignees = people(extra.assignees)
   return (
     <article className="ghc ghc-detail" data-issue={number}>
@@ -258,32 +254,6 @@ export const IssueCardBody = ({
           <SideSection title="Labels">
             {labels.length > 0 ? labels.map((label) => <LabelPill key={label} name={label} color={extra.labelColors?.[label]} />) : null}
           </SideSection>
-          {/*
-            * Lane sync (ADR 0005): the Linear link the DTO carries, or the act
-            * that would set it. The act is a door ONTO the flow's form (THE FORM
-            * LAW, superseding the ADR's composer prefill): it carries the issue
-            * number it knows and issues.link-linear asks for the identifier.
-            */}
-          {!github ? <SideSection title="Linear">
-            {linear != null ?
-              (
-                <span>
-                  <span className="ghc-visually-hidden">Linear </span>
-                  {linearHref !== null ?
-                    <a href={linearHref} target="_blank" rel="noreferrer">{linear.identifier}</a> :
-                    <span>{linear.identifier}</span>}
-                </span>
-              ) :
-              (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  {...flowAction(onRunCommand, "issues.link-linear", String(number))}
-                >
-                  Link to Linear…
-                </Button>
-              )}
-          </SideSection> : null}
           <SideSection title="Repository">
             <span className="ghc-mono">{repoLabel(repo)}</span>
           </SideSection>

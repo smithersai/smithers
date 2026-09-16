@@ -453,13 +453,7 @@ export const PtyOutputResponseSchema = z.object({
  */
 export type PtyOutputResponse = z.infer<typeof PtyOutputResponseSchema>
 
-/*
- * Code intelligence, the Smithers Cloud seam, and the Linear handoff moved to
- * their own modules: import them from `./LocalLsp.ts`, `./CloudTunnel.ts`,
- * and `./LinearAuth.ts`. These re-exports keep the old import path working
- * for one release and cover only the names that existed at the move; a new
- * name is exported from its home alone.
- */
+
 export {
   CLOUD_AUTH_SESSION_PATH,
   CLOUD_AUTH_SIGN_OUT_PATH,
@@ -488,13 +482,7 @@ export type {
   CloudSession,
   CloudWsSessionKind
 } from "./CloudTunnel.ts"
-export {
-  LINEAR_AUTH_SESSION_PATH,
-  LINEAR_AUTH_START_PATH,
-  LinearAuthSessionSchema,
-  LinearAuthStartResponseSchema
-} from "./LinearAuth.ts"
-export type { LinearAuthSession, LinearAuthStartResponse } from "./LinearAuth.ts"
+
 export {
   LSP_DEFINITION_PATH,
   LSP_DIAGNOSTICS_CAP,

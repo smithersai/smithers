@@ -814,3 +814,18 @@ describe("command registry bindings", () => {
     expect(empty).toBe("failed: the execute action requires a command name")
   })
 })
+
+
+test("Library is absent by default from commands, recommendations and agent tools", async () => {
+  const { store, controller } = await freshController()
+  expect(controller.features.pluginLibrary).toBe(false)
+  for (const name of ["plugins", "plugins.list", "plugins.install", "plugins.remove"]) {
+    expect(controller.commands.find(name)).toBeUndefined()
+    expect((await controller.commands.run(name, "librarian")).status).not.toBe("executed")
+  }
+  expect(recommendedNames({ ...chatState, plugins: [] })).not.toContain("plugins")
+  expect(recommendedNames({ ...chatState, plugins: [], pluginLibrary: true })).toContain("plugins")
+  expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).not.toContain("plugins.install")
+  expect(store.session().plugins ?? []).toEqual([])
+  await controller.dispose()
+})

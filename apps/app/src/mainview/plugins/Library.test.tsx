@@ -52,13 +52,22 @@ const silentAgent: AgentPort = {
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const openLibrary = async (): Promise<{
+const openLibrary = async (enabled = true, saved = false): Promise<{
   readonly host: HTMLElement
   readonly store: AppStore
   readonly act: (change: () => void) => Promise<void>
 }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  if (saved) {
+    store.dispatch({ type: "surface.changed", actor: "system", surface: "plugins" })
+    store.dispatch({ type: "plugin.installed", actor: "system", plugin: "librarian" })
+    store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "plugin-library", kind: "plugin-library", title: "Library", status: "active",
+      createdAt: 1, ordinal: 1, payload: { tutorial: false }
+    } })
+  }
   const controller = createAppController(store, noRepositories, silentAgent, {
+    features: { pluginLibrary: enabled },
     fetchImpl: async () => new Response("{}", { headers: { "content-type": "application/json" } })
   })
   const host = document.createElement("div")
@@ -74,6 +83,7 @@ const openLibrary = async (): Promise<{
   mounted.push(() => {
     flushSync(() => root.unmount())
     host.remove()
+    void controller.dispose()
   })
   const act = async (change: () => void): Promise<void> => {
     flushSync(change)
@@ -117,4 +127,15 @@ describe("the Library", () => {
     expect(store.session().plugins).toEqual([])
     expect(host.querySelectorAll(".plugin-rail button").length).toBe(0)
   })
+})
+
+
+test("saved Library surfaces and cards remain inert when disabled", async () => {
+  const { host, store } = await openLibrary(false, true)
+  expect(store.session().surface).toBe("chat")
+  expect(store.session().plugins).toEqual(["librarian"])
+  expect(host.querySelector(".plugins-surface")).toBeNull()
+  expect(host.querySelector(".plugin-card")).toBeNull()
+  expect(host.querySelector('[data-flow="plugins.install"]')).toBeNull()
+  expect(host.querySelector('[data-flow="plugins.remove"]')).toBeNull()
 })

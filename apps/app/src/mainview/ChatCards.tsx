@@ -89,6 +89,7 @@ export const CardView = memo(function CardView({
   debugVerbose,
   workflowCatalogs,
   projectionStore,
+  pluginLibrary,
   signedOut
 }: CardViewProps) {
   /*
@@ -132,6 +133,7 @@ export const CardView = memo(function CardView({
     pendingFocus.current = "maximize"
     onMinimize()
   }
+  if (card.kind === "retired" || (card.kind === "plugin-library" && !pluginLibrary)) return null
   return (
     <>
       {maximized ?

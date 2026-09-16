@@ -145,10 +145,6 @@ member is ready; it makes a new change and re-renders the stack.
 
 ## 4. Provenance and undo
 
-- **Open the computer that produced revision 4.** History row action; forks
-  the revision's workspace snapshot into a workspace (`workspace.open
-  --snapshot s_8d1`) and renders the workspace card. Reads "forked from
-  snapshot s_8d1" in that card's facts line.
 - **Dispatch an agent to resolve this conflict.** Diff facet, conflicted
   hunk, confirm flow `change.resolve <changeId> <path>`; a run card appears;
   the resolution arrives as the next revision with source `agent session`.
@@ -266,3 +262,4 @@ client-supplied commit id; the change card is live and the header
 denominator is its newer-revision signal; missing flows added (`review.
 request`, `findings.fix`, `ci.logs`, `change.history`); Revert appears only
 on a landed change; mid-stack Land and the Split action have a place.
+

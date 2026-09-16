@@ -47,8 +47,6 @@ Source: plue backend session handoff.
   will says otherwise: kind and environment come from the repository's
   `.smithers/environment.nix`; a repository without one offers `container`
   only, stated in words.
-- Fork and Snapshot sit on the card footer beside Suspend/Resume; the
-  Snapshots facet lists snapshots with Fork from / Save as template / Delete.
 
 ## Terminal attach contract (plue-0c, 2026-09-02)
 

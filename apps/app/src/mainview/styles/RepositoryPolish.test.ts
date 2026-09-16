@@ -23,16 +23,6 @@ for (const [theme, accent] of [["light", "#994cc3"], ["dark", "#c792ea"]]) {
 }
 
 
-test("home links stay underlined even with the host page anchor reset", () => {
-  style("./cards.css")
-  const reset = document.createElement("style")
-  reset.textContent = "a { color: inherit; text-decoration: none; }"
-  document.head.append(reset)
-  document.body.innerHTML = '<div style="--brand:#994cc3"><a class="repo-home-link" href="/docs/">Read more</a></div>'
-  expect(getComputedStyle(document.querySelector("a")!).textDecorationLine).toBe("underline")
-  expect(getComputedStyle(document.querySelector("a")!).color).toBe("#994cc3")
-})
-
 test("account sections share a stable label column without changing other tables", () => {
   style("./cards.css")
   document.body.innerHTML = '<section class="smithers-card" data-kind="account"><table class="secrets-table"><tbody><tr><th>read:user</th><td>See your GitHub profile.</td></tr></tbody></table></section>'

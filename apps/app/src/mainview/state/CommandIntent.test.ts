@@ -201,14 +201,14 @@ describe("durable command intent at the active shared door", () => {
     const controller = controllerFor(store)
     expect((await controller.commands.run("repo.update", "practice:smithersai/hello-server", "automatic")).status).toBe("executed")
     expect((await controller.commands.submit({ name: "repo.update", actor: "user", payload: { repo: "practice:smithersai/hello-server" } })).status).toBe("executed")
-    controller.renderFlowForm({ name: "agent.create", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.optional(Schema.String), id: Schema.String }) })
-    await controller.setFormField("form-agent.create", "purpose", "A durable purpose")
-    await controller.setFormField("form-agent.create", "id", "my-agent")
-    await controller.setFormField("form-agent.create", "purpose", "")
+    controller.renderFlowForm({ name: "tab.harness", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.optional(Schema.String), id: Schema.String }) })
+    await controller.setFormField("form-tab.harness", "purpose", "A durable purpose")
+    await controller.setFormField("form-tab.harness", "id", "my-agent")
+    await controller.setFormField("form-tab.harness", "purpose", "")
     await store.settled?.()
     await controller.dispose()
     const restored = await open(bytes)
-    const form = restored.collections.cards.get("form-agent.create")
+    const form = restored.collections.cards.get("form-tab.harness")
     expect(form?.kind === "flow-form" && form.payload.draft).toEqual({ id: "my-agent" })
     expect([...restored.collections.commandIntents.values()]).toEqual(expect.arrayContaining([
       expect.objectContaining({ actor: "system", source: "automatic", status: "settled" }),
@@ -228,11 +228,11 @@ describe("durable command intent at the active shared door", () => {
         : Reflect.get(target, property, receiver) })
     } }
     const controller = controllerFor(observed, undefined, { fetchImpl: async () => {
-      reads++; started.resolve(); return Response.json({ harnessId: "codex", models: [], source: "suggestions" })
+      reads++; started.resolve(); return Response.json([])
     } })
-    controller.renderFlowForm({ name: "agent.create", args: "helper codex", via: "user",
-      input: Schema.Struct({ id: Schema.String, harness: Schema.String, model: Schema.optional(Schema.String) }),
-      hints: { fields: { model: { optionsFrom: "harness-models" } } } })
+    controller.renderFlowForm({ name: "files.read", args: "README.md will/smithers", via: "user",
+      input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
+      hints: { fields: { path: { optionsFrom: "files" } } } })
     expect(reads).toBe(0)
     held.resolve()
     if (!rejected) await started.promise
@@ -252,13 +252,13 @@ describe("durable command intent at the active shared door", () => {
         return { clear: () => { cleared++ } }
       }
     })
-    controller.renderFlowForm({ name: "agent.create", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String }) })
+    controller.renderFlowForm({ name: "tab.harness", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String }) })
     await store.settled?.()
-    const pending = controller.commands.run("form.set", "form-agent.create purpose pending words")
+    const pending = controller.commands.run("form.set", "form-tab.harness purpose pending words")
     // The actual shared door reaches the private preparation without yielding.
-    expect(staged).toMatchObject([{ cardId: "form-agent.create", card: { payload: { draft: { purpose: "pending words" } } } }])
+    expect(staged).toMatchObject([{ cardId: "form-tab.harness", card: { payload: { draft: { purpose: "pending words" } } } }])
     expect(store.collections.commandIntents.get(staged[0]!.intentId)?.name).toBe("form.set")
-    const before = store.collections.cards.get("form-agent.create")
+    const before = store.collections.cards.get("form-tab.harness")
     expect(before?.kind === "flow-form" && before.payload.draft).toEqual({})
     await entered.promise
     if (close) await controller.dispose()
@@ -266,7 +266,7 @@ describe("durable command intent at the active shared door", () => {
     expect((await pending).status).toBe(close ? "failed" : "executed")
     expect(cleared).toBe(1)
     const readable = close ? await open(bytes) : store
-    const after = readable.collections.cards.get("form-agent.create")
+    const after = readable.collections.cards.get("form-tab.harness")
     expect(after?.kind === "flow-form" && after.payload.draft).toEqual(close ? {} : { purpose: "pending words" })
   })
 
@@ -274,13 +274,13 @@ describe("durable command intent at the active shared door", () => {
     const store = await open()
     let stages = 0
     const controller = controllerFor({ ...store, stagePendingCardInput: () => { stages++; return { clear: () => {} } } })
-    controller.renderFlowForm({ name: "agent.create", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String, count: Schema.Number }) })
+    controller.renderFlowForm({ name: "tab.harness", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String, count: Schema.Number }) })
     await store.settled?.()
-    expect((await controller.commands.run("form.set", "form-agent.create count invalid-number")).status).toBe("failed")
-    expect((await controller.commands.run("form.set", "form-agent.create missing ignored")).status).toBe("failed")
-    expect((await controller.commands.runForAgent("form.set", "form-agent.create purpose agent words", invocation("form-edit"))).status).toBe("executed")
+    expect((await controller.commands.run("form.set", "form-tab.harness count invalid-number")).status).toBe("failed")
+    expect((await controller.commands.run("form.set", "form-tab.harness missing ignored")).status).toBe("failed")
+    expect((await controller.commands.runForAgent("form.set", "form-tab.harness purpose agent words", invocation("form-edit"))).status).toBe("executed")
     expect(stages).toBe(0)
-    const card = store.collections.cards.get("form-agent.create")
+    const card = store.collections.cards.get("form-tab.harness")
     expect(card?.kind === "flow-form" && card.payload.draft).toEqual({ purpose: "agent words" })
   })
 
@@ -300,10 +300,10 @@ describe("durable command intent at the active shared door", () => {
     try {
       const store = await open(storage)
       controller = controllerFor(hold(store, "command.intent.accepted", held, entered))
-      controller.renderFlowForm({ name: "agent.create", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String, description: Schema.String }) })
+      controller.renderFlowForm({ name: "tab.harness", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String, description: Schema.String }) })
       await store.settled?.()
-      const first = controller.commands.run("form.set", "form-agent.create purpose first field")
-      const second = controller.commands.run("form.set", "form-agent.create description second field")
+      const first = controller.commands.run("form.set", "form-tab.harness purpose first field")
+      const second = controller.commands.run("form.set", "form-tab.harness description second field")
       if (acceptSaved) await store.settled?.()
       const frozen = new Map(values), frozenRecovery = new Map(recoveryValues)
       const pending = readEntityRecoveries(storageFor(frozenRecovery))
@@ -316,7 +316,7 @@ describe("durable command intent at the active shared door", () => {
       await controller.dispose()
       host.localStorage = storageFor(frozenRecovery)
       const restored = await open(storageFor(frozen))
-      const card = restored.collections.cards.get("form-agent.create")
+      const card = restored.collections.cards.get("form-tab.harness")
       expect(card?.kind === "flow-form" && card.payload.draft).toEqual({ purpose: "first field", description: "second field" })
       expect(readEntityRecoveries(host.localStorage)).toEqual([])
       expect((await restored.verifyState()).valid).toBe(true)
