@@ -972,7 +972,6 @@
 }
 /* The workspace outro must not paint or catch wheel events over an explicit
  * maximize. Keep the footer's Chat door, and fill its remaining content area. */
-.guide-content:has(.guide-app .smithers-card[data-maximized="true"]) > .guide-header,
 .guide-content:has(.guide-app .smithers-card[data-maximized="true"]) > .guide-main {
 	display: none;
 }

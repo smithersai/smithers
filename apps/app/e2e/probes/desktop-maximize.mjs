@@ -17,14 +17,13 @@ try {
       <div class="smithers-card-body"><div class="world-card-list"><p class="world-card-row">Workspace</p><div class="world-card-row">Desktop · Files</div>
       <div class="workspace-desktop"><iframe class="workspace-desktop-frame" srcdoc="<body style='height:4000px;background:teal'>Desktop</body>"></iframe><p class="world-card-row">Rotate session</p></div>
       <div class="world-card-row">Suspend · Fork · Snapshot</div></div></div></section></div></div></div>
-      <div class="guide-header">Your workspace</div><main class="guide-main"><div class="guide-dialogue">You're set</div></main></div>
+      <main class="guide-main"><div class="guide-dialogue">You're set</div></main></div>
       <footer class="guide-footer"><button>Chat</button></footer></div>`)
     const frame = page.locator('iframe')
     const bounds = await frame.boundingBox()
     assert(bounds.height > height * .65, `Desktop should fill the content: ${JSON.stringify(bounds)}`)
     assert(bounds.width > width * .9)
     assert.equal(await page.locator('.guide-main').isVisible(), false)
-    assert.equal(await page.locator('.guide-header').isVisible(), false)
     const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName,
       { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 })
     assert.equal(hit, 'IFRAME')

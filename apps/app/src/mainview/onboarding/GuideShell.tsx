@@ -202,7 +202,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     controller.runCommand("onboarding.act", `${action}${value === undefined ? "" : ` ${JSON.stringify(value)}`}`)
   }
   /*
-   * C opens Chat (Cmd/Ctrl-K remains an alias) (SCRIPT v4 "Open decision"): the composer rises
+   * Cmd/Ctrl+K opens Chat (SCRIPT v4 "Open decision"): the composer rises
    * into the bottom dock with "Ask Smithers" as its first row.
    */
   const runCommandOpen = () => {
@@ -283,7 +283,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         document.querySelector<HTMLTextAreaElement>('.guide-composer-layer textarea')?.focus()
       } : runCommandClose)
       if (key === GUIDE_KEYS.mode) return action(() => document.querySelector<HTMLButtonElement>('.guide-shell [aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
-      if (key === GUIDE_KEYS.chat) return action(() => conversationOpen ? runCommandClose() : runCommandOpen())
       if (key === 'w') return action(() => controller.runCommand('sidebar.toggle'))
       if (conversationOpen) return
       if (key === 'enter' && introduction !== undefined && showTutorialHelp) return action(advanceGuidance)
@@ -386,11 +385,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         <i />
         <i />
         <i />
-      </div>
-      <div className="guide-header">
-        <span className="guide-location">
-          {stage === GUIDE_LAST_STEP ? "Your workspace" : null}
-        </span>
       </div>
       <main className="guide-main">
         <section className="guide-lesson" aria-label={`Lesson ${stage}`}>

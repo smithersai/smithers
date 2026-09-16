@@ -108,24 +108,6 @@
   top: 24%;
   animation-delay: -8s;
 }
-.guide-header {
-  height: var(--g-strip);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  /* The title strip stays put while the lesson scrolls under it. */
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--g-bg);
-}
-.guide-location {
-  margin-left: 128px;
-  font-size: var(--fs-caption);
-  letter-spacing: 0.04em;
-  color: var(--g-muted);
-}
 .guide-wordmark {
   position: absolute;
   left: 12px;
@@ -853,7 +835,6 @@
 /* The terminal read, actions, and workspace occupy their own rows. */
 .guide-shell[data-step="14"] .guide-atmosphere,
 .guide-shell[data-step="14"] .guide-progress { display: none; }
-.guide-shell[data-step="14"] .guide-header { order: 0; }
 .guide-shell[data-step="14"] .guide-main {
   order: 1;
   flex: 0 1 auto;
@@ -868,7 +849,6 @@
   min-height: 0;
   overflow: hidden;
 }
-.guide-shell[data-step="14"] .guide-location { margin-left: 0; }
 .guide-shell[data-step="14"] .guide-footer {
   background: var(--g-panel);
   border-top: 1px solid var(--g-line);
@@ -984,10 +964,6 @@
   }
 }
 @media (max-width: 600px) {
-  .guide-location {
-    font-size: var(--fs-caption);
-    max-width: 120px;
-  }
   .guide-main {
     padding: 8px 20px 12px;
   }
@@ -1083,9 +1059,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-.guide-header {
-  flex-shrink: 0;
 }
 .guide-main {
   width: 100%;
@@ -1327,7 +1300,6 @@
    header already owns the title strip; the transcript takes all space left
    between these controls and the actions above the footer. */
 @media (min-width: 601px) and (max-width: 1000px) and (max-height: 500px) {
-  .guide-shell:not([data-step="14"]) .guide-header { display: none; }
   .guide-main { padding-block: 8px; }
   .guide-shell:not([data-step="14"]) .guide-lesson {
     display: grid;
@@ -1363,7 +1335,7 @@
 /* On short screens Chat uses the lesson controls' space for the exchange.
    Mode and Close stay in the dock; closing it returns the lesson controls. */
 @media (max-height: 600px) {
-  .guide-shell[data-conversation-open="true"] :is(.guide-navigation, .guide-goal, .guide-actions, .guide-header, .guide-footer) { display: none; }
+  .guide-shell[data-conversation-open="true"] :is(.guide-navigation, .guide-goal, .guide-actions, .guide-footer) { display: none; }
   .guide-shell[data-conversation-open="true"] .guide-lesson { display: flex; }
   .guide-shell[data-conversation-open="true"][data-step="14"] .guide-main { max-height: none; }
 }
