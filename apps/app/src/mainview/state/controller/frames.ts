@@ -7,7 +7,6 @@ import {
 import type { Branch, Frame, FrameSnapshot } from "../AppState"
 import type { FrameHistoryPort, FrameLocation } from "../../runtime/FrameHistory"
 import type { ControllerContext } from "./context"
-import { activeRepositoryId } from "../RepoContext"
 
 export interface FramesController {
   readonly maximizeCard: (id: string) => string | void
@@ -64,13 +63,6 @@ export const createFramesController = (
     if (initial !== undefined && validLocation(ctx, initial)) navigateFromHistory(initial)
     else history.replace(sessionLocation(ctx))
     ctx.onDispose(history.subscribe(navigateFromHistory))
-    const selectRepository = () => {
-      const repo = activeRepositoryId(ctx.store)
-      if (repo !== null) history.selectRepository?.(repo)
-    }
-    selectRepository()
-    const selection = ctx.store.collections.sessions.subscribeChanges(selectRepository)
-    ctx.onDispose(() => selection.unsubscribe())
   }
 
   const maximizeCard: FramesController["maximizeCard"] = (id) => {

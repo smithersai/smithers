@@ -7,7 +7,6 @@ export interface FrameLocation {
 }
 
 export interface FrameHistoryPort {
-  readonly selectRepository?: (repo: string) => void
   readonly current: () => FrameLocation | undefined
   readonly push: (location: FrameLocation) => void
   readonly replace: (location: FrameLocation) => void
@@ -73,8 +72,7 @@ const stateLocation = (state: unknown): FrameLocation | undefined => {
  *   history entries and back/forward still fire popstate; the location
  *   travels in each entry's state instead of its URL.
  * - Mounted with `keepUrl` (AppMount.tsx, the smithers.sh home page): the
- *   same pinning until a real repository is selected from `/`, then pin to
- *   that repository for the rest of the page’s life.
+ *   entry URL is kept for the life of the page.
  */
 export interface BrowserFrameHistoryOptions {
   readonly keepUrl?: boolean
@@ -86,17 +84,12 @@ export const createBrowserFrameHistory = (
 ): FrameHistoryPort => {
   // Tutorial entry is explicit even on a repository URL; retain it on reload.
   const tutorial = () => new URLSearchParams(host.location.search).has("tutorial") ? "?tutorial" : ""
-  let pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
+  const pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
   const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned + tutorial()
   return {
     current,
-    selectRepository: (repo) => {
-      if (pinned !== "/" || pathRepo(`/${repo}`) === null) return
-      pinned = `/${repo}`
-      host.history.replaceState(host.history.state, "", pinned + tutorial())
-    },
     push: (location) => host.history.pushState({ smithersFrame: true, location }, "", url(location)),
     replace: (location) => host.history.replaceState({ smithersFrame: true, location }, "", url(location)),
     back: () => host.history.back(),

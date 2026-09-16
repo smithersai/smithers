@@ -327,20 +327,3 @@ describe("durable frame navigation", () => {
     controller.dispose()
   })
 })
-
-for (const catalog of [false, true]) test(`frame history observes ${catalog ? "catalog" : "inventory"} repository selection`, async () => {
-  const store = await createAppStore({ kind: "localStorage", storage: storage() })
-  const selected: string[] = []
-  const controller = createAppController(store, repositories, agent, {
-    frameHistory: { ...memoryHistory(), selectRepository: repo => { selected.push(repo) } },
-    fetchImpl: async () => new Response("{}", { status: 404 }),
-  })
-  await store.dispatch({ type: "repository.upserted", actor: "system", repository: {
-    id: "acme/widgets", org: "acme", name: "widgets", ownerKind: "user", head: null, catalog,
-  } }).isPersisted.promise
-  if (catalog) await controller.selectRepo("acme/widgets")
-  else await store.dispatch({ type: "repo.selected", actor: "system", id: "acme/widgets" }).isPersisted.promise
-  await settle()
-  expect(selected).toContain("acme/widgets")
-  await controller.dispose()
-})
