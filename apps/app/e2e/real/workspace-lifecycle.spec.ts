@@ -75,13 +75,14 @@ workflowTest(
       const path = cloudRepoPath(workflowRepo.repo, suffix)
       const requestSeen = page.waitForResponse((response) =>
         response.request().method() === "GET" && new URL(response.url()).pathname + new URL(response.url()).search === path)
+        .then(async response => ({ status: response.status(), body: await response.json() }))
       const args = flow === "workspace.files" ? `/ ${workspaceId}` : workspaceId
       await command(page, `/${flow} ${args}`)
       await expectFlowOutcome(page, flow, args, "executed")
       await closeComposer(page)
       const response = await requestSeen
-      expect(response.status(), `${bodyText} provider read`).toBe(200)
-      const body = await response.json()
+      expect(response.status, `${bodyText} provider read`).toBe(200)
+      const body = response.body
       observed[bodyText.toLowerCase()] = body
       expect(JSON.stringify(body), `${bodyText} response must remain workspace-scoped`).not.toContain("other-repository")
     }
@@ -198,8 +199,8 @@ workflowTest(
 
     const suspended = await transition("suspend", /^suspended$/)
     await expect(card).toContainText(/Suspended/i)
-    const resumed = await transition("resume", /^(running|starting|pending)$/)
-    await expect(card).toContainText(/Running|Starting|Pending/i)
+    const resumed = await transition("resume", /^running$/)
+    await expect(card).toContainText(/Running/i)
 
     // Exercise the card's own typed-name gate before the destructive request.
     await card.getByRole("button", { name: "Delete", exact: true }).click()
