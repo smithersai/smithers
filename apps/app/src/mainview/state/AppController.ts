@@ -788,6 +788,11 @@ export const createAppController = (
       }
     }))
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
+  if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
+    // Mark the controller closed synchronously, before React unmount refs or
+    // background pumps can dispatch into the revoked store.
+    void ctx.dispose().catch(() => {})
+  }))
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {
     suggestionPills: services.features?.suggestionPills ?? services.bootstrap?.host === "cloud"

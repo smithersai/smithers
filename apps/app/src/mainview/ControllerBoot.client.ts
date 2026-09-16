@@ -1,3 +1,4 @@
+import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
 import { shouldReplayTutorial } from "./onboarding/resume"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
@@ -16,7 +17,7 @@ import { createTurnEraser } from "./runtime/TurnErasure"
 const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
-    catch: (cause) => new Error(`${label}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    catch: (cause) => isWriterOwnershipError(cause) ? cause : new Error(`${label}: ${cause instanceof Error ? cause.message : String(cause)}`)
   })
 
 /*

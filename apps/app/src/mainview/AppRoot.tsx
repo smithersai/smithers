@@ -1,5 +1,7 @@
+import { StartupErrorPanel } from "./StartupError"
+import { subscribeWriterOwnership, writerOwnershipFailure } from "./state/WriterOwnership"
 import { ViewSkeleton } from "./ViewSkeleton"
-import { lazy, StrictMode, Suspense } from "react"
+import { lazy, StrictMode, Suspense, useSyncExternalStore } from "react"
 import { prepareControllerBoot, ControllerProvider } from "./ControllerProvider"
 import { SessionNavigation, SessionNavigationFallback } from "./SessionNavigation"
 import { SessionShell } from "./SessionShell"
@@ -45,6 +47,8 @@ export function AppRoot({
   const View = preparedViews === undefined
     ? (mode === "repo" ? RepoApp : GuidedApp)
     : (mode === "repo" ? preparedViews.RepositoryApp : preparedViews.GuidedApp)
+  const moved = useSyncExternalStore(subscribeWriterOwnership, writerOwnershipFailure, writerOwnershipFailure)
+  if (moved !== undefined) return <StartupErrorPanel reason={moved} />
   const boot = prepareControllerBoot({ mode })
   return (
     <StrictMode>

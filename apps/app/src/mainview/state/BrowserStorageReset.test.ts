@@ -48,6 +48,25 @@ describe("resetLocalBrowserStorage", () => {
     expect(reloads).toBe(0)
   })
 
+  test("a stolen lease rejects pending drafts and all subsequent writes", async () => {
+    window.localStorage.clear()
+    window.localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage")
+    const stolen = Promise.withResolvers<void>()
+    Object.defineProperty(navigator, "locks", { configurable: true, value: {
+      request: (_name: string, _options: unknown, callback: (lock: object) => Promise<void>) =>
+        Promise.race([callback({}), stolen.promise])
+    } })
+    const store = await createAppStore()
+    const committed = window.localStorage.getItem("smithers-mvp.store")
+    const draft = store.dispatch({ type: "composer.changed", actor: "user", draft: "pending before takeover" })
+    const rejected = draft.isPersisted.promise.then(() => undefined, error => error)
+    stolen.reject(new DOMException("Stolen", "AbortError"))
+    expect(await rejected).toBeInstanceOf(Error)
+    await store.dispose?.()
+    expect(window.localStorage.getItem("smithers-mvp.store")).toBe(committed)
+    expect(() => store.dispatch({ type: "composer.changed", actor: "user", draft: "stale" })).toThrow("closed")
+  })
+
   test("reset disposes the live dispatcher and reacquires its lease before erasing", async () => {
     window.localStorage.clear()
     window.localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage")

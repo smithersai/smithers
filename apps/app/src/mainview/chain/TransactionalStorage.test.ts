@@ -12,6 +12,7 @@ import {
   UnsupportedStorageEnvelopeError,
   STAGED_ENVELOPE_STORAGE_KEY
 } from "./TransactionalStorage"
+import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "../state/StorageRecoveryContract"
 import type { StorageWriterLockManager } from "./TransactionalStorage"
 
 /*
@@ -218,24 +219,62 @@ describe("the write-ahead commit protocol", () => {
   })
 })
 
-describe("browser localStorage writer ownership", () => {
-  test("two browser contexts cannot both hold the writer through a commit", async () => {
-    const held = new Set<string>()
-    const context = (): StorageWriterLockManager => ({
-      request: async (name, options, callback) => {
-        expect(options).toEqual({ mode: "exclusive", ifAvailable: true })
-        if (held.has(name)) return callback(null)
-        held.add(name)
-        try { await callback({ name }) } finally { held.delete(name) }
+/** A queued origin-wide lock, including the browser's stolen-request rejection. */
+const lockManager = () => {
+  let owner: { reject: (error: unknown) => void } | undefined
+  const queue: Array<() => void> = []
+  const requests: Array<Parameters<StorageWriterLockManager["request"]>[1]> = []
+  const locks: StorageWriterLockManager = {
+    request: (_name, options, callback) => new Promise<void>((resolve, reject) => {
+      requests.push(options)
+      const ticket = { reject }
+      const abort = () => { const i = queue.indexOf(start); if (i >= 0) queue.splice(i, 1); reject(new DOMException("Aborted", "AbortError")) }
+      const start = () => {
+        options.signal?.removeEventListener("abort", abort)
+        owner = ticket
+        void callback({}).then(resolve, reject).finally(() => {
+          if (owner === ticket) { owner = undefined; queue.shift()?.() }
+        })
       }
+      if (options.steal) { owner?.reject(new DOMException("Stolen", "AbortError")); owner = undefined }
+      if (!owner) start()
+      else { queue.push(start); options.signal?.addEventListener("abort", abort, { once: true }) }
     })
-    const first = await acquireLocalStorageWriter(context())
-    expect(held.size).toBe(1)
-    await expect(acquireLocalStorageWriter(context())).rejects.toBeInstanceOf(DurableStorageConflictError)
+  }
+  return { locks, requests }
+}
+
+describe("browser localStorage writer ownership", () => {
+  test("waits for a closing tab within the budget", async () => {
+    const { locks, requests } = lockManager()
+    const first = await acquireLocalStorageWriter(locks)
+    const waiting = acquireLocalStorageWriter(locks, { timeoutMs: 100 })
     await first.release()
-    const reopened = await acquireLocalStorageWriter(context())
-    await reopened.release()
-    expect(held.size).toBe(0)
+    const second = await waiting
+    expect(requests[1]?.signal).toBeInstanceOf(AbortSignal)
+    expect(requests[1]).not.toHaveProperty("ifAvailable")
+    await second.release()
+  })
+
+  test("times out with an actionable typed refusal without releasing the owner", async () => {
+    const { locks } = lockManager()
+    const first = await acquireLocalStorageWriter(locks)
+    await expect(acquireLocalStorageWriter(locks, { timeoutMs: 10 })).rejects.toBeInstanceOf(WriterHeldByAnotherTabError)
+    expect(() => first.assertOwned()).not.toThrow()
+    await first.release()
+  })
+
+  test("takeover steals and fences the old lease before notifying its store", async () => {
+    const { locks, requests } = lockManager()
+    const first = await acquireLocalStorageWriter(locks)
+    const lost = first.lost.then(() => expect(() => first.assertOwned()).toThrow(WriterMovedToAnotherTabError))
+    const second = await acquireLocalStorageWriter(locks, { steal: true })
+    await lost
+    expect(requests[1]?.steal).toBe(true)
+    expect(requests[1]).not.toHaveProperty("signal")
+    await first.release()
+    expect(() => second.assertOwned()).not.toThrow()
+    await second.release()
   })
 
   test("a rejected Web Lock request refuses open", async () => {

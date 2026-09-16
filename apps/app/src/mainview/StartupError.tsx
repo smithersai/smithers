@@ -1,3 +1,5 @@
+import { isWriterOwnershipError, type WriterOwnershipError } from "./state/StorageRecoveryContract"
+import { useSmithersHere } from "./state/WriterOwnership"
 import type { CSSProperties } from "react"
 import { errorMessage } from "./state/ClientErrors"
 import { createStartupRecovery, mountStartupRecovery } from "./StartupRecovery"
@@ -50,11 +52,33 @@ export const startupErrorMessage = (reason: unknown, earlier?: unknown): string 
     ].join("\n")
 
 /** The panel React renders when a boot failure reaches the error boundary. */
-export function StartupErrorPanel({ message }: { readonly message: string }) {
+type StartupFailure = { readonly kind: "generic"; readonly message: string } | WriterOwnershipError
+
+const startupFailure = (reason: unknown): StartupFailure =>
+  isWriterOwnershipError(reason) ? reason : { kind: "generic", message: startupErrorMessage(reason) }
+
+export function StartupErrorPanel({ message, reason = message }: { readonly message?: string; readonly reason?: unknown }) {
+  const failure = startupFailure(reason)
+  switch (failure.kind) {
+    case "writer-held":
+      return <main style={PANEL_STYLE}>
+        <h1>Smithers is open in another tab</h1>
+        <p>Use Smithers here or close that tab and reload.</p>
+        <button type="button" onClick={useSmithersHere}>Use Smithers here</button>{" "}
+        <button type="button" onClick={() => window.location.reload()}>Reload</button>
+      </main>
+    case "writer-moved":
+      return <main style={PANEL_STYLE}>
+        <h1>Smithers moved to another tab</h1>
+        <button type="button" onClick={useSmithersHere}>Use Smithers here</button>
+      </main>
+    case "generic": break
+    default: { const exhaustive: never = failure; return exhaustive }
+  }
   return (
     <main style={PANEL_STYLE}>
       <h1>{HEADING}</h1>
-      <pre style={DETAIL_STYLE}>{message}</pre>
+      <pre style={DETAIL_STYLE}>{failure.message}</pre>
       <p>{HINT}</p>
       <div ref={mountStartupRecovery} />
     </main>

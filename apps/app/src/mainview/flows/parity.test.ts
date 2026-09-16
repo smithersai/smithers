@@ -158,6 +158,9 @@ const PRESENTATION_ONLY = [
 // Indirections added with the focused guide and run cards. Scope each literal
 // to its component so a similarly named handler cannot inherit the exception.
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
+  // Pre-boot browser navigation: no writable store/controller exists here.
+  // Choosing this document's writer is a human tab gesture, not an app command.
+  "../StartupError.tsx": ["onClick={useSmithersHere}", "onClick={() => window.location.reload()}"],
   "../onboarding/GuideShell.tsx": ["onClick={advanceGuidance}"], // advances transient introductory help, without invoking a capability
   "../onboarding/IntroSlides.tsx": ["dispatch(\"intro-"], // IntroSlidesShell binds its three typed actions to onboarding.act; pinned below.
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App and GuideShell bind the typed action to runCommand(action.flow, action.args)
@@ -258,6 +261,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../App.tsx": 5,
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
+      "../StartupError.tsx": 3, // Held: takeover/reload; moved: takeover.
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
       "../WorldSurface.tsx": 7,

@@ -1,3 +1,4 @@
+import { WriterMovedToAnotherTabError } from "./StorageRecoveryContract"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
@@ -72,4 +73,33 @@ describe("AppStore owns its acquired SQLite handle even if initialization fails"
       database.close()
     }
   })
+})
+
+test("ownership revoked during asynchronous SQLite writes rolls back before COMMIT", async () => {
+  const database = new Database(":memory:")
+  let owned = true
+  let revokeOnWrite = false
+  let closed = false
+  const host: SqliteRowDatabase = {
+    execute: async <TRow>(sql: string, params: ReadonlyArray<unknown> = []): Promise<ReadonlyArray<TRow>> => {
+      const statement = database.query(sql)
+      if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<TRow>
+      statement.run(...params as [])
+      if (revokeOnWrite && /^\s*(INSERT|UPDATE|DELETE)/i.test(sql)) owned = false
+      return []
+    },
+    close: () => { closed = true }
+  }
+  try {
+    const resolved = await resolvePersistence({ bootRecord: () => undefined, openDatabase: async () => host },
+      () => { if (!owned) throw new WriterMovedToAnotherTabError() })
+    const store = await createAppStore(resolved)
+    const before = database.query(`SELECT * FROM ${ROW_TABLE_NAME} ORDER BY collection_id, row_key`).all()
+    revokeOnWrite = true
+    await expect(store.dispatch({ type: "composer.changed", actor: "user", draft: "revoked" }).isPersisted.promise)
+      .rejects.toBeInstanceOf(WriterMovedToAnotherTabError)
+    expect(database.query(`SELECT * FROM ${ROW_TABLE_NAME} ORDER BY collection_id, row_key`).all()).toEqual(before)
+    await Promise.resolve(store.dispose?.()).catch(() => {})
+    expect(closed).toBe(true)
+  } finally { database.close() }
 })

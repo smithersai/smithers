@@ -1,6 +1,6 @@
 import { Component } from "react"
 import type { ErrorInfo, ReactNode } from "react"
-import { startupErrorMessage, StartupErrorPanel } from "./StartupError"
+import { StartupErrorPanel } from "./StartupError"
 
 /**
  * Catches a boot failure that reaches React.
@@ -12,12 +12,12 @@ import { startupErrorMessage, StartupErrorPanel } from "./StartupError"
  */
 export class StartupErrorBoundary extends Component<
   { readonly onError: (error: unknown) => void; readonly children: ReactNode },
-  { readonly message: string | null }
+  { readonly failure: { readonly reason: unknown } | null }
 > {
-  override state: { readonly message: string | null } = { message: null }
+  override state: { readonly failure: { readonly reason: unknown } | null } = { failure: null }
 
-  static getDerivedStateFromError(error: unknown): { readonly message: string } {
-    return { message: startupErrorMessage(error) }
+  static getDerivedStateFromError(error: unknown): { readonly failure: { readonly reason: unknown } } {
+    return { failure: { reason: error } }
   }
 
   override componentDidCatch(error: unknown, _info: ErrorInfo): void {
@@ -25,8 +25,8 @@ export class StartupErrorBoundary extends Component<
   }
 
   override render(): ReactNode {
-    const { message } = this.state
-    return message === null ? this.props.children : <StartupErrorPanel message={message} />
+    const { failure } = this.state
+    return failure === null ? this.props.children : <StartupErrorPanel reason={failure.reason} />
   }
 }
 

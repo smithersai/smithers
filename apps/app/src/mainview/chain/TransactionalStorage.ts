@@ -1,3 +1,4 @@
+import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "../state/StorageRecoveryContract"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import type { StorageApi } from "@tanstack/db"
 import { DurableStorageConflictError } from "./DurableCollection"
@@ -33,6 +34,8 @@ export const ENVELOPE_QUARANTINE_PREFIX = "smithers-mvp-quarantine.store."
 export const ROW_QUARANTINE_PREFIX = "smithers-mvp-quarantine.row."
 
 export interface StorageWriterLease {
+  readonly lost: Promise<void>
+  readonly assertOwned: () => void
   /** Release only after the AppStore has stopped accepting and flushed writes. */
   readonly release: () => Promise<void>
 }
@@ -41,7 +44,7 @@ export interface StorageWriterLease {
 export interface StorageWriterLockManager {
   readonly request: (
     name: string,
-    options: { readonly mode: "exclusive"; readonly ifAvailable: true },
+    options: { readonly mode: "exclusive"; readonly signal?: AbortSignal; readonly steal?: boolean },
     callback: (lock: object | null) => Promise<void>
   ) => Promise<void>
 }
@@ -54,19 +57,51 @@ export interface StorageWriterLockManager {
  * never select a different persistent backend when acquisition is refused.
  */
 export const acquireLocalStorageWriter = async (
-  locks: StorageWriterLockManager | undefined = globalThis.navigator?.locks
+  locks: StorageWriterLockManager | undefined = globalThis.navigator?.locks,
+  options: { readonly timeoutMs?: number; readonly steal?: boolean } = {}
 ): Promise<StorageWriterLease> => {
   if (locks === undefined) {
     throw new Error("This browser cannot safely own local storage without Web Locks. Opening was refused.")
   }
   const acquired = Promise.withResolvers<StorageWriterLease>()
   const released = Promise.withResolvers<void>()
-  const request = locks.request(`${ENVELOPE_STORAGE_KEY}.writer`, { mode: "exclusive", ifAvailable: true }, async (lock) => {
-    if (lock === null) throw new DurableStorageConflictError("localStorage writer ownership")
-    acquired.resolve({ release: async () => { released.resolve(); await request } })
+  const lost = Promise.withResolvers<void>()
+  const abort = new AbortController()
+  let owned = false
+  let granted = false
+  const timer = options.steal ? undefined : setTimeout(() => abort.abort(), options.timeoutMs ?? 1500)
+  // Deferring also captures synchronous host failures and initializes request
+  // before an injected manager can invoke the callback synchronously.
+  const request = Promise.resolve().then(() => locks.request(`${ENVELOPE_STORAGE_KEY}.writer`, {
+    // Web Locks forbids combining steal with signal; stealing does not queue.
+    mode: "exclusive", ...(options.steal ? { steal: true } : { signal: abort.signal })
+  }, async (lock) => {
+    if (lock === null) throw new WriterHeldByAnotherTabError()
+    clearTimeout(timer)
+    owned = granted = true
+    acquired.resolve({
+      lost: lost.promise,
+      assertOwned: () => { if (!owned) throw new WriterMovedToAnotherTabError() },
+      release: async () => {
+        owned = false
+        released.resolve()
+        await request.catch(() => {})
+      }
+    })
     await released.promise
+  }))
+  void request.catch(error => {
+    clearTimeout(timer)
+    owned = false
+    if (granted) {
+      // Fence synchronously before any store/UI listener runs. A stolen
+      // request rejects even while its callback still awaits release.
+      lost.resolve()
+      released.resolve()
+    } else {
+      acquired.reject(abort.signal.aborted ? new WriterHeldByAnotherTabError() : error)
+    }
   })
-  void request.catch(acquired.reject)
   return acquired.promise
 }
 

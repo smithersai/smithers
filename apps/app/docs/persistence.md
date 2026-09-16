@@ -67,9 +67,17 @@ rapid edits, inactive-branch recovery and privacy boundaries.
 SQLite checks expected row versions and bytes inside its write transaction.
 Even a repair or compaction includes the head in its compare-and-swap read
 set. A stale independent writer is refused, along with its dependent work.
-The actual browser localStorage fallback additionally holds an exclusive Web
-Lock for its lifetime and refuses to open a second writer or run without the
-locking API. Its envelope checks the previous committed bytes. Explicitly
+Browser AppStores hold an exclusive origin-wide Web Lock for their lifetime,
+across both persistence backends. Boot waits up to 1500 ms for a closing tab
+before showing “Smithers is open in another tab”, with **Use Smithers here**
+and **Reload**. Taking over reloads with a one-use, tab-local request to steal
+the lock; that new boot keeps the lease. The losing tab fences queued commits
+and local recovery writes, disposes its store, and replaces the app with
+“Smithers moved to another tab” and **Use Smithers here**. Neither ownership
+panel offers reset, recovery download, or an internal stack trace. Reset uses
+the same bounded wait and still reports held storage if it expires. Opening
+without Web Locks remains refused. The localStorage envelope also checks the
+previous committed bytes. Explicitly
 injected isolated test stores use their host contract and the same stale-base
 checks.
 
@@ -266,7 +274,8 @@ Filesystem erasure is not a multi-file transaction: an I/O failure
 can leave a partial reset, so the failure copy never claims unchanged bytes.
 
 
-The startup failure panel offers two acts, both flows with their actor recorded
+For failures other than writer ownership, the startup failure panel offers two
+acts, both flows with their actor recorded
 (`state/StorageRecoveryAction.ts`, `flows/StorageRecoveryFlow.ts`), never DOM
 code of their own:
 

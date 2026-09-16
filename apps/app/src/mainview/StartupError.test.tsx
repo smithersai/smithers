@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client"
 import type { Root } from "react-dom/client"
 import { createStartupErrorElement, StartupErrorPanel } from "./StartupError"
 
+import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
+
 GlobalRegistrator.register()
 const roots = new Set<Root>()
 
@@ -87,3 +89,21 @@ describe("the startup error panel", () => {
     }
   })
 })
+
+for (const [reason, heading, buttons] of [
+  [new WriterHeldByAnotherTabError(), "Smithers is open in another tab", ["Use Smithers here", "Reload"]],
+  [new WriterMovedToAnotherTabError(), "Smithers moved to another tab", ["Use Smithers here"]]
+] as const) {
+  test(heading, () => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.add(root)
+    flushSync(() => root.render(<StartupErrorPanel reason={reason} />))
+    expect(host.querySelector("h1")?.textContent).toBe(heading)
+    expect([...host.querySelectorAll("button")].map(button => button.textContent)).toEqual([...buttons])
+    expect(host.querySelector("pre")).toBeNull()
+    expect(host.textContent).not.toContain("recovery")
+    expect(host.textContent).not.toContain("Reset")
+  })
+}

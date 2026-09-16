@@ -36,3 +36,23 @@ export class HeldBrowserStorageError extends Error {
 }
 export const RECOVERY_RESET_FAILED =
   "This browser's saved data could not be erased. The reset did not finish; reload and try again."
+
+export class WriterHeldByAnotherTabError extends Error {
+  override readonly name = "WriterHeldByAnotherTabError"
+  readonly kind = "writer-held" as const
+  constructor() {
+    super("Smithers is already open in another tab of this browser. Use Smithers here or close that tab and reload.")
+  }
+}
+
+export class WriterMovedToAnotherTabError extends Error {
+  override readonly name = "WriterMovedToAnotherTabError"
+  readonly kind = "writer-moved" as const
+  constructor() {
+    super("Smithers moved to another tab.")
+  }
+}
+
+export type WriterOwnershipError = WriterHeldByAnotherTabError | WriterMovedToAnotherTabError
+export const isWriterOwnershipError = (error: unknown): error is WriterOwnershipError =>
+  error instanceof WriterHeldByAnotherTabError || error instanceof WriterMovedToAnotherTabError

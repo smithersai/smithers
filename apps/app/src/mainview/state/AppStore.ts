@@ -1,3 +1,4 @@
+import { consumeWriterTakeover, reportWriterMoved } from "./WriterOwnership"
 import { isCurrentApprovalAnswer, type ApprovalAnswerInput } from "./ApprovalAnswerState"
 import { EMPTY_PERSISTED_LOAD, PERSISTED_LOAD_TOAST_KEY, PERSISTED_LOAD_TOAST_TITLE, persistedLoadNotice } from "../chain/PersistenceBudget"
 import type { PersistedLoadReport } from "../chain/PersistenceBudget"
@@ -454,7 +455,7 @@ export const resetLocalBrowserStorage = async (reload: () => void = () => window
     const root = await navigator.storage.getDirectory() as OpfsDirectory
     const owned: Array<string> = []
     for await (const name of root.keys()) if (ownedOpfsEntry(name)) owned.push(name)
-    for (const name of owned) await removeOpfsEntry(root, name)
+    for (const name of owned) { writer.assertOwned(); await removeOpfsEntry(root, name) }
   }
   if (record !== undefined && typeof record.length === "number" && typeof record.key === "function") {
     const keys: Array<string> = []
@@ -462,8 +463,9 @@ export const resetLocalBrowserStorage = async (reload: () => void = () => window
       const key = record.key(index)
       if (key !== null && key !== RESET_ERASURE_OUTBOX_KEY && (key.startsWith(PERSISTED_KEY_PREFIX) || key.startsWith(SCHEMA_QUARANTINE_PREFIX))) keys.push(key)
     }
-    for (const key of keys) record.removeItem(key)
+    for (const key of keys) { writer.assertOwned(); record.removeItem(key) }
   }
+  writer.assertOwned()
   reload()
   } finally { await writer.release() }
 }
@@ -501,15 +503,15 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
   bootRecord: bootRecordStorage,
   openDatabase: openOpfsDatabaseWithinBudget,
   databaseExists: browserDatabaseExists
-}): Promise<ResolvedPersistence> => {
-  const record = host.bootRecord()
+}, assertOwned: () => void = () => {}): Promise<ResolvedPersistence> => {
+  const record = fenceStorage(host.bootRecord(), assertOwned)
   const retirement = record === undefined ? undefined : readPrivacyRetirement(record)
   const privacy: NonNullable<ResolvedPersistence["privacy"]> = {
     record,
     eraseInactiveDatabase: async () => {
       if (host.databaseExists === undefined) throw new PrivacyRetirementError()
       if (!await host.databaseExists()) return
-      const inactive = await host.openDatabase(OPFS_OPEN_ATTEMPTS)
+      const inactive = fenceDatabase(await host.openDatabase(OPFS_OPEN_ATTEMPTS), assertOwned)
       try { await eraseSqliteRecoveryCopies(inactive) } finally { await inactive.close?.() }
     }
   }
@@ -535,7 +537,7 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
   }
   let database: SqliteRowDatabase
   try {
-    database = await host.openDatabase(recorded === "opfs" ? OPFS_OPEN_ATTEMPTS : 1)
+    database = fenceDatabase(await host.openDatabase(recorded === "opfs" ? OPFS_OPEN_ATTEMPTS : 1), assertOwned)
   } catch (error) {
     if (recorded === "opfs") {
       if (retirement?.phase === "pending") throw new PrivacyRetirementError()
@@ -761,6 +763,8 @@ export interface AppStore {
   readonly readRecovery: () => Promise<StorageRecoverySnapshot>
   /** Content-free diagnostics; delete capabilities never leave the storage owner. */
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
+  /** Stop controller producers before replacing the revoked document's UI. */
+  readonly onWriterLost?: (listener: () => void) => () => void
   /** Commit a pending draft, then release persistence resources acquired for this store. */
   readonly dispose?: () => void | Promise<void>
   /** Durable writes accepted so far, settled (chain/DurableCollection.ts); awaited before a navigation that leaves the page. */
@@ -945,13 +949,27 @@ export const createAppStore = async (
   if (options.journalBudgetBytes !== undefined && (!Number.isSafeInteger(options.journalBudgetBytes) || options.journalBudgetBytes <= 0)) throw new Error("The journal budget must be a positive byte count.")
   // One origin owner covers BOTH backends, boot/migration, retirement and writes.
   // Explicit isolated injected hosts provide their own exclusion contract.
-  const writer = persistence === undefined ? await acquireLocalStorageWriter() : undefined
+  const writer = persistence === undefined ? await acquireLocalStorageWriter(undefined, { steal: consumeWriterTakeover() }) : undefined
+  const assertOwned = () => writer?.assertOwned()
+  const lostListeners = new Set<() => void>()
+  let stopLostStore: (() => void | Promise<void>) | undefined
+  if (writer !== undefined) void writer.lost.then(() => {
+    // The lease is already fenced. Disposal rejects queued writes before
+    // closing SQLite; the UI must not keep dispatching into the stale owner.
+    for (const listener of lostListeners) listener()
+    const closing = stopLostStore?.()
+    reportWriterMoved()
+    void Promise.resolve(closing).catch(() => {})
+  })
   let resolved: ResolvedPersistence | undefined
   try {
     resolved = persistence === undefined
-      ? await resolvePersistence()
+      ? await resolvePersistence(undefined, assertOwned)
       : "backend" in persistence ? persistence : { backend: persistence, mode: persistence.kind, degraded: false }
-    const store = await initializeAppStore(resolved, options)
+    assertOwned()
+    const store = await initializeAppStore(resolved, options, assertOwned)
+    stopLostStore = store.dispose
+    assertOwned()
     resolved.recordSuccessfulOpen?.()
     if (writer === undefined) return store
     const dispose = async (): Promise<void> => {
@@ -961,9 +979,13 @@ export const createAppStore = async (
       }
     }
     openBrowserAppStore = dispose
-    return { ...store, dispose }
+    return { ...store, dispose, onWriterLost: listener => {
+      lostListeners.add(listener)
+      return () => { lostListeners.delete(listener) }
+    } }
   } catch (error) {
     try {
+      await Promise.resolve(stopLostStore?.()).catch(() => {})
       if (resolved?.backend.kind === "opfs") {
         try { await resolved.backend.close() } catch {
           // Preserve the boot failure; close can repeat a failed durable flush.
@@ -975,24 +997,49 @@ export const createAppStore = async (
   }
 }
 
+/** Check again at every SQL statement, especially COMMIT after asynchronous I/O.
+ * Rollback and close must remain available to the revoked owner. */
+const fenceDatabase = (database: SqliteRowDatabase, assertOwned: () => void): SqliteRowDatabase => ({
+  execute: (sql, params) => {
+    if (sql !== "ROLLBACK") assertOwned()
+    return database.execute(sql, params)
+  },
+  close: () => database.close?.()
+})
+
+/** Fence sidecar writes as well as queued collection commits after ownership loss. */
+const fenceStorage = (storage: StorageApi | undefined, assertOwned: () => void): StorageApi | undefined =>
+  storage === undefined ? undefined : new Proxy(storage, {
+    get: (target, key) => {
+      if (key === "setItem") return (name: string, value: string) => { assertOwned(); target.setItem(name, value) }
+      if (key === "removeItem") return (name: string) => { assertOwned(); target.removeItem(name) }
+      // Recovery export also needs Storage.length/key; native Storage methods
+      // and accessors require their original receiver.
+      const value: unknown = Reflect.get(target, key, target)
+      return typeof value === "function" ? value.bind(target) : value
+    }
+  })
+
 /** Ownership transfers to the returned store only after every boot step succeeds. */
-const initializeAppStore = async (resolved: ResolvedPersistence, options: AppStoreOptions): Promise<AppStore> => {
+const initializeAppStore = async (
+  resolved: ResolvedPersistence, options: AppStoreOptions, assertOwned: () => void = () => {}
+): Promise<AppStore> => {
   let resolvedBackend = resolved.backend
-  const draftRecoveryStorage = resolved.mode === "memory" ? undefined : bootRecordStorage()
+  const draftRecoveryStorage = resolved.mode === "memory" ? undefined : fenceStorage(bootRecordStorage(), assertOwned)
   const draftRecovery = readDraftRecovery(draftRecoveryStorage)
   const wikiRecovery = readWikiRecovery(draftRecoveryStorage)
   const entityRecoveries = readEntityRecoveries(draftRecoveryStorage)
   let recoveryBoundary: PendingRecoveryBoundary | undefined
   let recoverySnapshot: AppProjectionSnapshot | undefined
   let recoveringInputs = true
-  const privacyRecord = resolved.privacy?.record
+  const privacyRecord = fenceStorage(resolved.privacy?.record, assertOwned)
   const bootRetirement = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)
   let wakeRemoteRetirement = (): void => {}
   let stopRemoteRetirement = async (): Promise<void> => {}
   /* Validate persisted rows before creating collections. Compatible older
    * rows migrate; a newer store stays untouched. Only a successful open
    * advances the version stamp. */
-  const persistedLocally = storageOf(resolvedBackend)
+  const persistedLocally = fenceStorage(storageOf(resolvedBackend), assertOwned)
   let transactional: TransactionalStorage | undefined
   if (persistedLocally !== undefined && resolvedBackend.kind === "localStorage") {
     if (bootRetirement !== undefined) {
@@ -1018,6 +1065,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
     }
     : undefined
   const durable = createCollectionPersistence({
+    authorize: assertOwned,
     storage: storageOf(resolvedBackend) ?? memoryStorage(),
     batch: resolvedBackend.kind === "opfs" ? resolvedBackend : transactional,
     ...(resolvedBackend.kind === "opfs" ? { flush: resolvedBackend.flush } : {}),
@@ -1182,7 +1230,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
   let committedEvents: AppEventRecord[] = [...collections.appEvents.values()].map(event => structuredClone(storedRow(event)))
   let generation = 0
   let privacyRejected = false
-  const assertReadable = (): void => { if (privacyRejected) throw new PrivacyRetirementError() }
+  const assertReadable = (): void => { assertOwned(); if (privacyRejected) throw new PrivacyRetirementError() }
   const pendingWrites = new Set<Transaction>()
   const mutateTracked = (transaction: Transaction, mutate: () => void): void => {
     pendingWrites.add(transaction)
@@ -1403,8 +1451,8 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
   }
 
   const dispatch = (transition: AppTransition): Transaction => {
-    assertReadable()
     if (disposed) throw new Error("The app state owner is closed. Open the current store before dispatching.")
+    assertReadable()
     if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
     if (resetTransaction !== undefined) return resetTransaction
     if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
@@ -1460,6 +1508,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence, options: AppSto
     const recoveredEntity = recordPendingEntity(previous, next, transition, eventId)
     const draft = { previous, write, eventId, createdAt, deadline: createdAt + DRAFT_COMMIT_MAX_MS, recoveryRaw }
     const clearPendingInputs = (): void => {
+      try { assertOwned() } catch { return }
       if (draft.recoveryRaw !== undefined) clearDraftRecovery(draftRecoveryStorage, draft.recoveryRaw)
       if (recoveredWikiRaw !== undefined) clearWikiRecovery(draftRecoveryStorage, recoveredWikiRaw)
       if (recoveredEntity !== undefined) clearEntityRecovery(draftRecoveryStorage, recoveredEntity)
