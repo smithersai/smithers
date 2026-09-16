@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url"
 import { NodeServices } from "@effect/platform-node"
 import { Effect, FileSystem, Stream } from "effect"
 import { loadProject } from "../coding/project-config.ts"
+import { reviewEvidence } from "../wiki/evidence.ts"
+import { sections } from "../wiki/operations.ts"
 
 const valid = () => ({ wikiOutput: "../wiki", implementation: "coding/implementation", reviewer: "product-engineering-v1",
   pages: [{ id: "runtime", title: "Runtime", purpose: "Runtime contracts", kind: "current", document: "RUNTIME.md",
@@ -41,6 +43,14 @@ test("repository coding project decodes with registered flows, real source paths
     for (const input of [page.document, ...page.inputs]) {
       assert.ok((await stat(resolve(root, input))).isFile(), `Wiki source must be a file: ${input}`)
     }
+    const sources = await Promise.all([...new Set([page.document, ...page.inputs])].map(async path => ({
+      path, text: await readFile(resolve(root, path), "utf8"), digest: "size-validation"
+    })))
+    const markdown = sources.find(source => source.path === page.document)!.text
+    // Real source must fit the same evidence contract used before a cloud run.
+    // Merely checking that these paths exist misses oversized review inputs.
+    assert.doesNotThrow(() => reviewEvidence({ spec: page, sources, markdown,
+      sections: sections(markdown), contentDigest: "size-validation", inputDigest: "size-validation" }), page.id)
   }
   const output = relative(root, project.wikiOutput)
   assert.ok(isAbsolute(project.wikiOutput))

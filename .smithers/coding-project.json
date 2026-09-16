@@ -8,7 +8,7 @@
       "title": "Smithers runtime packages",
       "purpose": "Explain packages/smithers: the CLI host, durable flow runtime, agent composition, and build targets.",
       "kind": "current",
-      "document": "packages/smithers/README.md",
+      "document": "factory/wiki/pages/runtime-packages.md",
       "inputs": [
         "packages/smithers/package.json",
         "packages/smithers/src/Application.ts",
@@ -16,6 +16,11 @@
         "packages/smithers/agent/README.md",
         "packages/smithers/build/README.md"
       ],
+      "excerpts": {
+        "packages/smithers/package.json": [{ "start": 1, "end": 56 }],
+        "packages/smithers/agent/README.md": [{ "start": 1, "end": 26 }],
+        "packages/smithers/build/README.md": [{ "start": 1, "end": 41 }]
+      },
       "related": ["app", "server", "flows"]
     },
     {
