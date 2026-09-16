@@ -33,6 +33,7 @@ export type CommandActions =
     | "store"
     // Control focus is the composition root's DOM-owned projection, never a flow's act.
     | "controlFocus"
+    | "formFocus"
     // The mounted guide reports host visibility independently of command admission.
     | "observeGuideVisibility"
     | "storageRecoveryState"

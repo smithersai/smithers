@@ -61,6 +61,8 @@ export interface FormsController {
   readonly submitForm: (cardId: string, invocation?: AgentInvocation, gesture?: CommandGesture) => Promise<string | void | { readonly value: string }>
   /** `card.dismiss <cardId>`: drop a form card (the form's Cancel). */
   readonly dismissCard: (cardId: string) => string | void
+  /** The form the human's own invocation just rendered, until its card takes the keyboard. */
+  readonly focusHandoff: FormFocusHandoff
 }
 
 export interface FormsControllerDependencies {
@@ -73,6 +75,20 @@ export const formCardId = (flow: string): string => `form-${flow}`
 /** The tool text an agent reads when its invocation rendered a form instead of running. */
 export const formRenderedText = (missing: ReadonlyArray<string>): string =>
   `rendered a form for ${missing.join(", ")}: ask the user to fill it in`
+
+/*
+ * Focus is the human's gesture (THE THREE-DOOR LAW's `userOnly` reason), so it
+ * is never a journal transition and never in the card payload: a reload would
+ * replay it. The controller records the one form the human's own invocation
+ * just rendered; the card claims it once when it mounts or is re-requested
+ * (cards/FlowFormCards.tsx) and drops it if the human has moved on. An
+ * agent-rendered form, a form the agent principal rendered, a restored form,
+ * and a draft edit never hold one.
+ */
+export interface FormFocusHandoff {
+  /** Whether this card is the form the human just asked for: true once, then false until they ask again. */
+  readonly take: (cardId: string) => boolean
+}
 
 const coerce = (field: FormField, value: string): { readonly value: FieldValue } | { readonly error: string } => {
   switch (field.kind) {
@@ -122,6 +138,15 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
   // Authority comes only from a registry invocation, never from persisted or model-authored payloads.
   const continuations = actorSharedState(ctx, "form-continuations", () =>
     new Map<string, { readonly invocation: AgentInvocation; readonly payload: string }>())
+  // One slot, shared by both principals, holding the card id the human's own act just rendered.
+  const focus = actorSharedState(ctx, "form-focus", () => ({ cardId: undefined as string | undefined }))
+  const focusHandoff: FormFocusHandoff = {
+    take: (cardId) => {
+      if (focus.cardId !== cardId) return false
+      focus.cardId = undefined
+      return true
+    }
+  }
   const continuationFor = (card: FlowFormCard): AgentInvocation | undefined => {
     const saved = continuations.get(card.id)
     if (saved?.payload === JSON.stringify(card.payload)) return saved.invocation
@@ -299,6 +324,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       return { cardId, missing: missingFields(existing.payload.fields, existing.payload.draft) }
     }
     continuations.delete(cardId)
+    // The human's own act continues in the form, so the keyboard does too (cards/FlowFormCards.tsx).
+    if (request.via === "user" && ctx.commandActor === "user") focus.cardId = cardId
     const rendered = store.dispatch({
       type: "card.upsert",
       actor: ctx.commandActor,
@@ -461,5 +488,5 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     store.dispatch({ type: "card.removed", actor: ctx.commandActor, id: cardId })
   }
 
-  return { renderFlowForm, setFormField, submitForm, dismissCard }
+  return { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff }
 }

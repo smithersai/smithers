@@ -207,7 +207,7 @@ describe("the flow form card", () => {
     expect(submit.disabled).toBe(true)
   })
 
-  test("Enter submits a complete single-line field once, without blurring; composition and incomplete or busy forms do not submit", () => {
+  test("Enter submits a complete single-line field once and holds focus in the form; composition and incomplete or busy forms do not submit", () => {
     for (const state of ["ready", "composing", "empty", "busy", "acted"] as const) {
       const { calls, onRunCommand } = recorder()
       const host = mount(<FlowFormCardBody card={formCard({
@@ -218,7 +218,7 @@ describe("the flow form card", () => {
       field.focus()
       flushSync(() => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, isComposing: state === "composing" })))
       expect(calls).toEqual(state === "ready" ? [["form.submit", "form-tab.harness"]] : [])
-      if (state === "ready") expect(document.activeElement).toBe(field)
+      if (state === "ready") expect(document.activeElement).toBe(host.querySelector("form"))
     }
   })
 
@@ -311,4 +311,138 @@ test("invoking a persisted form again hands focus back without refocusing on dra
  second.focus()
  render(2, { id: "saved" })
  expect(document.activeElement).toBe(second)
+})
+
+/*
+ * The slash door (CT005, 2026-09-16): the composer hides before the form
+ * mounts, so `document.activeElement` is <body> and no button names the flow.
+ * The controller records the human's own request as a focus handoff
+ * (controller/forms.ts); the card claims it once. Nothing persisted, so a
+ * restored form, an agent's form, and a draft edit never take the keyboard.
+ */
+import { ControllerTestProvider } from "../ControllerContext"
+import type { AppController } from "../state/AppController"
+
+const handoffFor = (cardId: string | undefined) => {
+  let pending = cardId
+  const controller = {
+    formFocus: { take: (id: string): boolean => { if (pending !== id) return false; pending = undefined; return true } }
+  } as unknown as AppController
+  return { controller, pending: () => pending }
+}
+
+const mountWith = (controller: AppController, card: FlowFormCard, onRunCommand: (name: string, args?: string) => void = () => {}) =>
+  mount(<ControllerTestProvider controller={controller}><FlowFormCardBody card={card} onRunCommand={onRunCommand} /></ControllerTestProvider>)
+
+describe("form focus handoff from the slash door", () => {
+  test("a user form the controller handed focus takes it on mount from <body>, on its first unfilled required field", () => {
+    const { controller, pending } = handoffFor("form-tab.harness")
+    expect(document.activeElement).toBe(document.body)
+    const host = mountWith(controller, formCard({ via: "user", draft: { id: "reviewer" } }))
+    expect(document.activeElement).toBe(host.querySelector("[data-testid=flow-form-harness]"))
+    expect(pending()).toBeUndefined()
+  })
+
+  test("the composer textarea, hidden once its slash ran, still counts as where the keyboard came from", () => {
+    const wrap = document.createElement("div")
+    wrap.className = "composer-wrap"
+    wrap.hidden = true
+    const textarea = document.createElement("textarea")
+    wrap.append(textarea)
+    document.body.append(wrap)
+    cleanups.push(() => wrap.remove())
+    textarea.focus()
+    const { controller } = handoffFor("form-tab.harness")
+    const host = mountWith(controller, formCard({ via: "user" }))
+    expect(document.activeElement).toBe(host.querySelector("input"))
+  })
+
+  test("a restored form (no handoff), an agent's form, and a form the human has moved past leave focus alone", () => {
+    mountWith(handoffFor(undefined).controller, formCard({ via: "user" }))
+    expect(document.activeElement).toBe(document.body)
+    const agent = handoffFor("form-tab.harness")
+    mountWith(agent.controller, formCard({ via: "agent" }))
+    expect(document.activeElement).toBe(document.body)
+    expect(agent.pending()).toBeUndefined()
+    const editor = document.createElement("textarea")
+    document.body.append(editor)
+    cleanups.push(() => editor.remove())
+    editor.focus()
+    const moved = handoffFor("form-tab.harness")
+    mountWith(moved.controller, formCard({ via: "user" }))
+    expect(document.activeElement).toBe(editor)
+    // A request the human moved past is dropped, never fired later.
+    expect(moved.pending()).toBeUndefined()
+  })
+
+  test("the handoff is claimed once: draft edits and a later re-request never refocus a form the human left", () => {
+    const { controller } = handoffFor("form-tab.harness")
+    const card = formCard({ via: "user" })
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+    const render = (ordinal: number, draft = {}) => flushSync(() => root.render(
+      <ControllerTestProvider controller={controller}><FlowFormCardBody card={{ ...card, ordinal, payload: { ...card.payload, draft } }} onRunCommand={() => {}} /></ControllerTestProvider>
+    ))
+    render(1)
+    const first = host.querySelector("input")!
+    expect(document.activeElement).toBe(first)
+    const second = host.querySelector("select")!
+    second.focus()
+    render(1, { id: "saved" })
+    expect(document.activeElement).toBe(second)
+    const elsewhere = document.createElement("button")
+    document.body.append(elsewhere)
+    cleanups.push(() => elsewhere.remove())
+    elsewhere.focus()
+    render(2, { id: "saved" })
+    expect(document.activeElement).toBe(elsewhere)
+  })
+
+  test("a keyboard submission keeps focus at the card while its controls disable, returns it to the open field when refused, and holds it once acted", () => {
+    const card = formCard({ fields: [{ name: "id", label: "Id", kind: "text", required: true }], draft: { id: "reviewer" } })
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+    const render = (payload: Partial<FlowFormCard["payload"]>, status: Card["status"] = "active") => flushSync(() => root.render(
+      <FlowFormCardBody card={{ ...card, status, payload: { ...card.payload, ...payload } }} onRunCommand={() => {}} />
+    ))
+    render({})
+    const field = host.querySelector("input")!
+    const form = host.querySelector("form")!
+    field.focus()
+    render({ submitting: true })
+    expect(field.disabled).toBe(true)
+    expect(document.activeElement).toBe(form)
+    render({ submitting: false, error: "The harness is unavailable." }, "error")
+    expect(document.activeElement).toBe(field)
+    field.focus()
+    render({ submitting: true })
+    render({ submitting: false }, "acted")
+    expect(document.activeElement).toBe(form)
+    // A submission that never held focus (pointer, or another field) does not grab it.
+    field.focus()
+    const editor = document.createElement("textarea")
+    document.body.append(editor)
+    cleanups.push(() => editor.remove())
+    editor.focus()
+    render({ submitting: true })
+    expect(document.activeElement).toBe(editor)
+  })
+
+  test("Cancel from the keyboard moves focus to the next control after the card before the card leaves", () => {
+    const { calls, onRunCommand } = recorder()
+    const host = mount(<FlowFormCardBody card={formCard()} onRunCommand={onRunCommand} />)
+    const chat = document.createElement("button")
+    chat.textContent = "Chat"
+    document.body.append(chat)
+    cleanups.push(() => chat.remove())
+    const cancel = host.querySelector<HTMLButtonElement>("[data-testid=flow-form-cancel]")!
+    cancel.focus()
+    cancel.click()
+    expect(document.activeElement).toBe(chat)
+    expect(calls).toEqual([["card.dismiss", "form-tab.harness"]])
+  })
 })

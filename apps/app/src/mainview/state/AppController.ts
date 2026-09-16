@@ -49,7 +49,7 @@ import { createDictation } from "./controller/dictation"
 import type { ExplainConfig,ExplainController } from "./controller/explain"
 import { createExplainController } from "./controller/explain"
 import { createFailureController,humanCommandText } from "./controller/failures"
-import type { FormsController } from "./controller/forms"
+import type { FormFocusHandoff, FormsController } from "./controller/forms"
 import { createFormsController } from "./controller/forms"
 import { createFramesController } from "./controller/frames"
 import { createHealthStatusController } from "./controller/health-status"
@@ -141,6 +141,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly store: AppStore
   /** Control focus ("spotlight"): the one surface the human is driving right now (controller/controlFocus.ts). */
   readonly controlFocus: ControlFocusController
+  /** The form the human's own invocation just rendered, until its card takes the keyboard (controller/forms.ts). */
+  readonly formFocus: FormFocusHandoff
   readonly bootstrap: AppBootstrap | undefined
   /** Immutable repository pointer from this page's entry URL. */
   readonly repositoryApp: string | null
@@ -932,7 +934,7 @@ export const createAppController = (
     notePtyExit,
     installKeyboard
   } = actors.pair(ctx, (context) => createTabsController(context))
-  const { renderFlowForm, setFormField, submitForm, dismissCard } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal }))
+  const { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff: formFocus } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal }))
   const {
     loadAgents,
     listAgents,
@@ -1815,6 +1817,7 @@ export const createAppController = (
     ...sharedActions,
     store,
     controlFocus,
+    formFocus,
     storageRecoveryState,
     downloadUrl,
     features,

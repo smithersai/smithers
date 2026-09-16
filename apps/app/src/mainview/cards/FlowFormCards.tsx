@@ -1,6 +1,7 @@
 import { flowAction } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
-import { useCallback, type KeyboardEvent } from "react"
+import { useCallback, useContext, type KeyboardEvent } from "react"
+import { ControllerContext } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { flowArgs } from "../flows/FlowArgs"
@@ -15,6 +16,16 @@ import { flowArgs } from "../flows/FlowArgs"
  * and runs the flow as whoever asked for it), Cancel is `card.dismiss`.
  * Every act names its flow through onRunCommand. An option the human cannot
  * pick is disabled and carries its reason.
+ *
+ * The keyboard (apps/app/AGENTS.md, keyboard-only access): the form the
+ * human's own act rendered takes focus on its first unfilled required field.
+ * The button door still has its trigger focused; the slash door's composer is
+ * hidden by the time the form mounts, so the controller records that request
+ * as a focus handoff (controller/forms.ts) and the card claims it once. A
+ * submission disables the control that held focus, so focus is held at the
+ * form (never <body>) until the outcome: refused returns it to the open field,
+ * acted leaves it there. Cancel moves it to the next control after the card
+ * before the card leaves.
  */
 
 type FlowFormCard = Extract<Card, { kind: "flow-form" }>
@@ -30,6 +41,30 @@ const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>): void => {
 
 const blank = (value: string | number | boolean | undefined): boolean =>
   value === undefined || (typeof value === "string" && value.trim() === "")
+
+const CONTROLS = "input:not(:disabled), textarea:not(:disabled), select:not(:disabled)"
+
+/** The first required control the draft has not filled, else the first control. */
+const firstOpenControl = (form: HTMLFormElement): HTMLElement | undefined => {
+  const controls = [...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(CONTROLS)]
+  return controls.find((control) => control.closest("[data-required='true']") !== null && control.type !== "checkbox" && control.value.trim() === "") ?? controls[0]
+}
+
+/** Hold focus at an element that is not a control (runtime/KeyboardPanes.focusControl's tabindex trick). */
+const holdFocus = (target: HTMLElement): void => {
+  target.tabIndex = -1
+  target.addEventListener("blur", () => target.removeAttribute("tabindex"), { once: true })
+  target.focus({ preventScroll: true })
+}
+
+/** The next tabbable control after the form's card, else the last one before it. */
+const focusNeighbor = (form: HTMLFormElement): void => {
+  const card = form.closest<HTMLElement>(".smithers-card") ?? form
+  const controls = [...form.ownerDocument.querySelectorAll<HTMLElement>("button, a[href], input, textarea, select, [tabindex]")]
+    .filter((node) => !card.contains(node) && node.tabIndex >= 0 && !node.matches(":disabled") && node.closest("[hidden], [inert], [aria-hidden='true']") === null)
+  const after = controls.find((node) => (card.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0)
+  ;(after ?? controls.at(-1))?.focus()
+}
 
 /** The required fields the draft has not filled (a boolean is answered either way). */
 export const unfilled = (payload: FlowFormCard["payload"]): ReadonlyArray<FlowFormField> =>
@@ -47,18 +82,43 @@ export const FlowFormCardBody = ({
   const busy = card.payload.submitting === true
   const commit = (field: string, value: string): void => onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field, value }))
   const complete = unfilled(card.payload).length === 0
-  // Hand a button invocation to its mounted form. Historical/agent cards and
-  // delayed results must not steal focus after the user has moved elsewhere.
-  const focusFromTrigger = useCallback((node: HTMLFormElement | null): void => {
-    if (node === null || card.payload.via !== "user" || settled || busy) return
+  // Static previews and isolated tests mount without a controller; they keep the button handoff only.
+  const handoff = useContext(ControllerContext)?.formFocus
+  // Runs on mount and whenever the request (ordinal) or the submission state
+  // changes, never on a draft edit: the DOM keeps in-flight editing and focus.
+  const bindFocus = useCallback((node: HTMLFormElement | null): void => {
+    if (node === null) return
+    // Claim the handoff even when it cannot be honored: a request the human moved past must not fire later.
+    const requested = handoff?.take(card.id) === true
     const active = node.ownerDocument.activeElement
-    if (active?.getAttribute("data-flow") !== flow || node.contains(active)) return
-    node.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), select:not(:disabled)")?.focus()
-  }, [card.id, card.ordinal, card.payload.via, flow, settled, busy])
+    if (settled || busy) {
+      // The control that held focus just disabled (Chrome drops it to <body> on the next frame): hold focus at the form.
+      if (active !== null && active !== node && node.contains(active) && active.matches(":disabled")) holdFocus(node)
+      return
+    }
+    // A refused submission: the keyboard goes back to the field it left.
+    if (active === node) {
+      firstOpenControl(node)?.focus()
+      return
+    }
+    if (card.payload.via !== "user") return
+    const fromButton = active?.getAttribute("data-flow") === flow
+    if ((!requested && !fromButton) || (active !== null && node.contains(active))) return
+    // The human has moved on when focus rests on some other control; <body> and
+    // the composer (hidden once its slash ran) are where the slash door left it.
+    if (!fromButton && active !== null && active !== node.ownerDocument.body && active.closest(".composer-wrap") === null) return
+    firstOpenControl(node)?.focus()
+  }, [card.id, card.ordinal, card.payload.via, flow, settled, busy, handoff])
+  const cancel = flowAction(onRunCommand, "card.dismiss", card.id)
   return (
-    <form ref={focusFromTrigger} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
+    <form ref={bindFocus} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
       event.preventDefault()
-      if (complete && !busy && !settled) onRunCommand("form.submit", card.id)
+      if (complete && !busy && !settled) {
+        // Move before React disables the active input: browsers clear focus
+        // synchronously on disable, before the updated ref can observe it.
+        if (event.currentTarget.contains(event.currentTarget.ownerDocument.activeElement)) holdFocus(event.currentTarget)
+        onRunCommand("form.submit", card.id)
+      }
     }}>
       {fields.map((field) => {
         const value = draft[field.name]
@@ -68,10 +128,10 @@ export const FlowFormCardBody = ({
         const options = field.options ?? []
         const restoreDraft = (node: HTMLInputElement | HTMLTextAreaElement | null): void => {
           if (node === null || node.value === text) return
-          // form.set normalizes whitespace before the durable row comes back.
-          // Keep that in-flight whitespace while this field owns focus, but
-          // replace materially different text when history changes branches.
-          if (node.ownerDocument.activeElement === node && node.value.trim() === text) return
+          // A durable snapshot can lag the next input event. Replaying it
+          // into the active editor drops keystrokes; every input has already
+          // dispatched form.set, so retain its buffer until focus moves on.
+          if (node.ownerDocument.activeElement === node) return
           node.value = text
         }
         return (
@@ -141,7 +201,11 @@ export const FlowFormCardBody = ({
       })}
       {settled ? null : (
         <div className="flow-run-actions">
-          <Button variant="ghost" size="sm"  data-testid="flow-form-cancel" disabled={busy} {...flowAction(onRunCommand, "card.dismiss", card.id)}>
+          <Button variant="ghost" size="sm" data-testid="flow-form-cancel" disabled={busy} {...cancel} onClick={(event) => {
+            // The card leaves with this act; a keyboard user's focus moves on before it does.
+            if (event.currentTarget.form?.contains(event.currentTarget.ownerDocument.activeElement) === true) focusNeighbor(event.currentTarget.form)
+            cancel.onClick()
+          }}>
             Cancel
           </Button>
           <Button type="submit" size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy}>
