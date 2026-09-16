@@ -1,13 +1,38 @@
 /** Private deployment artifact; the existing Plue provisioner stages one executable. */
 import { build } from "esbuild"
-import { chmod, mkdir, writeFile } from "node:fs/promises"
+import { chmod, mkdir, writeFile, readFile, readdir } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 /** Used to build the same runtime acceptance entry with the deployment bundler; not a package export. */
 export const bundle = async (entryPoint, outfile) => {
+  // Resolve workspace packages from this checkout even when node_modules is
+  // shared with another worktree. Otherwise a release silently bundles old code.
+  const root = fileURLToPath(new URL("../../", import.meta.url))
+  const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"))
+  const alias = {}
+  for (const pattern of manifest.workspaces) {
+    const paths = pattern.endsWith("/*")
+      ? (await readdir(resolve(root, pattern.slice(0, -2)), { withFileTypes: true }))
+        .filter(entry => entry.isDirectory()).map(entry => resolve(root, pattern.slice(0, -2), entry.name))
+      : [resolve(root, pattern)]
+    for (const path of paths) {
+      try {
+        const pkg = JSON.parse(await readFile(resolve(path, "package.json"), "utf8"))
+        if (pkg.name) {
+          for (const [key, target] of Object.entries(pkg.exports ?? {})) {
+            if (typeof target !== "string" || key.includes("*")) continue
+            alias[pkg.name + (key === "." ? "" : key.slice(1))] = resolve(path, target)
+          }
+        }
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error
+      }
+    }
+  }
   const result = await build({
+    alias,
     entryPoints: [entryPoint], outfile, write: false, bundle: true, platform: "node", format: "esm", target: "node22.19",
     banner: { js: "#!/usr/bin/env node\nimport {createRequire as __smithersCreateRequire} from 'node:module'; const require=__smithersCreateRequire(import.meta.url);" },
     plugins: [{
