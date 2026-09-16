@@ -106,7 +106,8 @@ describe("chat-first shell: panes never replace the conversation", () => {
     expect(store.session().draft).toBe("a draft that must survive")
 
     expect((await controller.commands.run("connect")).status).toBe("executed")
-    expect(store.session().surface).toBe("connectors")
+    expect(store.session().surface).toBe("chat")
+    expect(store.collections.cards.get("connect-embedded")?.kind).toBe("connect")
     expect([...store.collections.messages.values()].map((message) => message.id)).toEqual(before)
     expect(store.session().draft).toBe("a draft that must survive")
   })
@@ -144,12 +145,12 @@ describe("chat-first shell: panes never replace the conversation", () => {
     expect(store.session().surface).toBe("world")
   })
 
-  test("with the Connectors pane open the transcript and composer still render", async () => {
+  test("with the embedded Connect card open the transcript and composer still render", async () => {
     const { controller } = await harness()
     await controller.commands.run("connect")
 
     const markup = renderApp(controller)
-    expect(markup).toContain("connectors-surface")
+    expect(markup).toContain("connect-store-list")
     expect(markup).toContain("smithers-transcript")
     expect(markup).toContain("smithers-composer")
   })
@@ -205,7 +206,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
     for (const pane of ["connect", "world"] as const) {
       await view.act(() => {
         if (pane === "world") store.dispatch({ type: "surface.changed", actor: "user", surface: "world" })
-        else controller.commands.run(pane)
+        else store.dispatch({ type: "surface.changed", actor: "user", surface: "connectors" })
       })
       expect(store.session().surface).toBe(pane === "connect" ? "connectors" : "world")
       expect(view.host.querySelector(".embedded-pane")).not.toBeNull()
@@ -244,7 +245,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
   test("the pane's close affordance is a real, registered, back-to-conversation button", async () => {
     const { store, controller } = await harness()
     const view = mount(controller)
-    await view.act(() => void controller.commands.run("connect"))
+    await view.act(() => { store.dispatch({ type: "surface.changed", actor: "user", surface: "connectors" }) })
 
     const close = view.host.querySelector<HTMLButtonElement>(
       ".embedded-pane [data-flow=\"chat\"]"
@@ -259,20 +260,20 @@ describe("chat-first shell: panes never replace the conversation", () => {
     expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).not.toBeNull()
   })
 
-  test("the summoned composer's slash door opens panes without leaving the conversation", async () => {
+  test("the summoned composer's slash door embeds cards without leaving the conversation", async () => {
     const { store, controller } = await harness()
     const view = mount(controller)
     await view.act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="chat.open"]')?.click())
     expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(false)
     expect(view.host.querySelector(".composer-menu-trigger")).toBeNull()
     const before = [...store.collections.messages.values()]
-    for (const [command, paneClass] of [["connect", "connectors-surface"], ["wiki", "world-card-workspace"]] as const) {
+    for (const [command, paneClass] of [["connect", "connect-store-list"], ["wiki", "world-card-workspace"]] as const) {
       await view.act(() => controller.send(`/${command}`))
-      expect(store.session().surface).toBe(command === "connect" ? "connectors" : "chat")
+      expect(store.session().surface).toBe("chat")
       expect(view.host.querySelector(`.${paneClass}`)).not.toBeNull()
       await view.act(() => controller.send(`/${command}`))
       expect(store.session().surface).toBe("chat")
-      expect(view.host.querySelector(`.${paneClass}`) !== null).toBe(command === "wiki")
+      expect(view.host.querySelector(`.${paneClass}`)).not.toBeNull()
       expect([...store.collections.messages.values()]).toEqual(before)
       expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).not.toBeNull()
       expect(view.host.querySelector(".smithers-transcript")).not.toBeNull()

@@ -74,34 +74,26 @@ export const createPresentationController = (
   }
 
   const showConnectors = (): void => {
-    if (ctx.commandActor === "smithers") {
-      const identity = ctx.store.collections.identitySessions.get("identity")
-      let highest = -1
-      for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
-      for (const card of ctx.store.collections.cards.values()) highest = Math.max(highest, card.ordinal)
-      const card: Card = {
-        id: "connect-embedded",
-        kind: "connect",
-        title: "Connect work to Smithers",
-        status: "active",
-        createdAt: Date.now(),
-        ordinal: highest + 1,
-        payload: {
-          github: {
-            connected: identity?.state === "signed-in",
-            login: identity?.login ?? null
-          },
-          nativeAvailable: ctx.repositories.available
-        }
+    const identity = ctx.store.collections.identitySessions.get("identity")
+    let highest = -1
+    for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
+    for (const card of ctx.store.collections.cards.values()) highest = Math.max(highest, card.ordinal)
+    const card: Card = {
+      id: "connect-embedded",
+      kind: "connect",
+      title: "Connect work to Smithers",
+      status: "active",
+      createdAt: Date.now(),
+      ordinal: highest + 1,
+      payload: {
+        github: {
+          connected: identity?.state === "signed-in",
+          login: identity?.login ?? null
+        },
+        nativeAvailable: ctx.repositories.available
       }
-      ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-      return
     }
-    ctx.store.dispatch({
-      type: "surface.changed",
-      actor: "user",
-      surface: ctx.store.session().surface === "connectors" ? "chat" : "connectors"
-    })
+    ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
   }
 
   const toggleDevtools = (): void => {

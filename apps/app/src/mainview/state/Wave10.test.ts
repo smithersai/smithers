@@ -109,6 +109,17 @@ describe("wave 10 — the embed law's in-app half (§2c″)", () => {
   })
 })
 
+test("the human connect door embeds the same repository controls without opening a pane", async () => {
+  const store = await webStore()
+  const controller = createAppController(store, unavailableRepositories, silentAgent)
+  await signIn(store)
+  expect((await controller.commands.run("connect")).status).toBe("executed")
+  expect(store.session().surface).toBe("chat")
+  expect(store.collections.cards.get("connect-embedded")?.kind).toBe("connect")
+  await controller.dispose()
+  await store.dispose?.()
+})
+
 describe("wave 10 — transcript hygiene (§2b)", () => {
   test("a tool act is one compact line; a raw JSON payload can never reach transcript text", async () => {
     const store = await webStore()
