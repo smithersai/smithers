@@ -489,3 +489,12 @@ The full contributor guide lives with the rest of the documentation under [`apps
 ### Repository JSDoc gate
 
 `pnpm test:jsdoc` tests the rule; `pnpm lint:jsdoc` lints package source exports with the root `eslint.config.js`. CI runs both. New packages inherit the root source patterns automatically; explicit exclusions for the frontend UI packages live in that config with their scope rationale. Package ESLint configs continue to use `jsdocConvention` for local lint runs.
+
+## Developing in the cloud workspace
+
+You can develop Smithers in its cloud workspace through the Smithers UI. In the app,
+select this repository's cloud workspace, ask for one focused change in Chat, and review
+the validated change in the run card. When the review is clean, land it with **Vibe this
+change**. The Chat request runs the repository's registered `coding/request` flow and
+the landing runs `coding/vibe`, so the gates this guide lists apply to the changes the
+workspace produces.
