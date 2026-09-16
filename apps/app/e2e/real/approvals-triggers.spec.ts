@@ -81,6 +81,7 @@ authenticatedTest("production dispatcher and approvals are read from the authent
   ],
   description: "An authenticated production browser reads both workspace projections, verifies empty-state truth from the real canary workspace, and checks the dispatcher card's keyboard activation."
 }), async ({ page, request }) => {
+  authenticatedTest.setTimeout(240_000)
   await bootProductionRepository(page)
   const reads: Array<{ method: string; path: string; status: number }> = []
   let approvalsRequest: Record<string, unknown> | undefined
@@ -105,7 +106,7 @@ authenticatedTest("production dispatcher and approvals are read from the authent
   await command(page, `/approvals.list ${PRODUCTION_REPO}`)
   await closeComposer(page)
   const approvals = page.locator('.smithers-card[data-kind="approvals-inbox"]').last()
-  await expect(approvals).toBeVisible()
+  await expect(approvals).toBeVisible({ timeout: 180_000 })
   await expect(approvals).toContainText(new RegExp(`No approvals are pending on ${PRODUCTION_REPO.replace("/", "\\/")}`))
   await expect.poll(() => approvalsRequest).toBeDefined()
 

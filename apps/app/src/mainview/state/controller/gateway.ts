@@ -160,17 +160,25 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
     const runId = candidate.runId ?? asRecord(candidate.selector).runId ?? asRecord(candidate.target).runId
     const target = binding ?? transport.bindingFor?.(repo, typeof runId === "string" ? runId : undefined) ?? {}
     if ("error" in target) return { status: "error", message: target.error }
-    let body: { ok?: unknown; payload?: unknown; error?: unknown; message?: unknown } | undefined
+    let body: { ok?: unknown; payload?: unknown; error?: unknown; message?: unknown; status?: unknown } | undefined
+    const resumeDeadline = Date.now() + 180_000
     try {
-      const response = await transport.fetch(`${baseUrl}${WORKFLOW_RPC_PATH}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ repo, procedure, payload, ...target })
-      })
-      if (!response.ok) {
-        return { status: "error", message: await errorMessageOf(response, "The workspace didn't answer.") }
+      for (;;) {
+        if (!stillOwned()) return { status: "error", message: "This workspace request no longer belongs to the current session." }
+        const response = await transport.fetch(`${baseUrl}${WORKFLOW_RPC_PATH}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ repo, procedure, payload, ...target })
+        })
+        if (!response.ok) {
+          return { status: "error", message: await errorMessageOf(response, "The workspace didn't answer.") }
+        }
+        body = (await response.json().catch(() => undefined)) as typeof body
+        // A snapshot is a read. Keep its original binding while a sleeping VM
+        // resumes; never retry mutations or turn a pending response into rows.
+        if (procedure !== "Projection.Snapshot" || body?.status !== "provisioning" || Date.now() >= resumeDeadline) break
+        await new Promise<void>(resolve => setTimeout(resolve, 2_000))
       }
-      body = (await response.json().catch(() => undefined)) as typeof body
     } catch {
       return { status: "error", message: "The workspace didn't answer: the flow service is unreachable." }
     }

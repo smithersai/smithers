@@ -310,3 +310,50 @@ test("runEvents forwards the exact cursor and preserves the issued revision", as
   await seam.runEvents("o/r", "run-1")
   expect(calls[1]?.payload).toEqual({ selector })
 })
+
+
+test("an approval snapshot waits for resume with the original workspace binding", async () => {
+  const requests: Array<Record<string, unknown>> = []
+  const seam = createGatewaySeam({
+    baseUrl: "https://app.test",
+    fetch: async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)))
+      return Response.json(requests.length === 1
+        ? { status: "provisioning", message: "resuming" }
+        : rowsAnswer([]))
+    },
+    errorMessageOf: async (_response, fallback) => fallback
+  })
+  expect(await seam.approvalsInbox("o/r", { workspaceId: "workspace-a" })).toMatchObject({ status: "ok", value: [] })
+  expect(requests).toHaveLength(2)
+  expect(requests[1]).toEqual(requests[0])
+  expect(requests[1]?.workspaceId).toBe("workspace-a")
+})
+
+test("a consequential gateway call does not retry a provisioning response", async () => {
+  let calls = 0
+  const seam = createGatewaySeam({
+    baseUrl: "https://app.test",
+    fetch: async () => { calls++; return Response.json({ status: "provisioning", message: "resuming" }) },
+    errorMessageOf: async (_response, fallback) => fallback
+  })
+  expect(await seam.call("o/r", "Run", {})).toEqual({ status: "error", message: "resuming" })
+  expect(calls).toBe(1)
+})
+
+test("a resuming snapshot stops when its session changes", async () => {
+  let owned = true
+  let calls = 0
+  const seam = createGatewaySeam({
+    baseUrl: "https://app.test",
+    observationGuard: () => () => owned,
+    fetch: async () => {
+      calls++
+      owned = false
+      return Response.json({ status: "provisioning", message: "resuming" })
+    },
+    errorMessageOf: async (_response, fallback) => fallback
+  })
+  expect(await seam.approvalsInbox("o/r")).toMatchObject({ status: "error" })
+  expect(calls).toBe(1)
+})
