@@ -259,7 +259,9 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
 export const handleRequest = (request: Request): Effect.Effect<Response, never, RequestServices> =>
   Effect.gen(function* () {
     const url = new URL(request.url)
-    if (url.protocol === "http:" || url.hostname === "www.smithers.sh") {
+    const loopback = url.hostname === "localhost" || url.hostname === "[::1]"
+      || /^127\.\d+\.\d+\.\d+$/.test(url.hostname)
+    if ((url.protocol === "http:" && !loopback && !url.port) || url.hostname === "www.smithers.sh") {
       url.protocol = "https:"
       if (url.hostname === "www.smithers.sh") url.hostname = "smithers.sh"
       return Response.redirect(url.toString(), 301)

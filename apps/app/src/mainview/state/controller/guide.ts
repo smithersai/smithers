@@ -71,14 +71,12 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     const signedIn = ctx.store.collections.identitySessions.get("identity")?.state === "signed-in"
     const repo = signedIn && !guide.declined?.some(choice => choice === "login" || choice === "install")
       && active && !active.startsWith("practice:") ? active : "smithersai/smithers"
-    const refusal = await onFinish?.(repo)
-    if (ctx.disposed) return
-    if (refusal) return refusal
     for (const toast of ctx.store.collections.toasts.values()) {
       if (["reel-notify-", "reel-wait-", "guide-hello-", "guide-tip-"].some(prefix => toast.key.startsWith(prefix))) {
         ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id })
       }
     }
+    return onFinish?.(repo)
   }
   const reelAct = createReelController(ctx)
   const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {
@@ -87,7 +85,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
      * Restore the demonstration's borrowed resources (theme, composer, its
      * example wait) before ordinary navigation or replay reads the guide.
      */
-    if (["back", "finish", "restart"].includes(action) && ctx.store.session().guide?.reelIndex !== undefined) {
+    if (["back", "finish", "skip", "restart"].includes(action) && ctx.store.session().guide?.reelIndex !== undefined) {
       await reelAct("reel-exit", "")
       if (ctx.disposed) return
       if (action === "back") return
@@ -285,8 +283,6 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
           guide.practiceSkippedFrom = guide.step
           guide.autoPaused = false
         }
-        const refusal = await finish()
-        if (refusal) return refusal
         guide.finished = true
         guide.step = GUIDE_LAST_STEP
         guide.conversationOpen = false
@@ -302,7 +298,10 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     // The receipt may settle after shutdown began. It never grants a closed
     // controller permission to launch the next repository read or navigation.
     if (ctx.disposed) return
-    if (action === "finish" || action === "skip") onFinished?.()
+    if (action === "finish" || action === "skip") {
+      onFinished?.()
+      return finish()
+    }
     if (action === "start" || action === "restart") {
       await onStart?.()
     }

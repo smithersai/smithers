@@ -7,6 +7,7 @@ import { createLiveTutorialController, liveSnapshotOf } from "./liveTutorial"
 import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
 import { createDiffFilesSeam, PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
 import { createGuideController } from "./guide"
+import { GUIDE_LAST_STEP } from "../../onboarding/lessons"
 import { createFailureController } from "./failures"
 import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
 const base = "a".repeat(40), sha = "b".repeat(40)
@@ -346,3 +347,31 @@ for (const operation of ["implement", "change"] as const) {
     t.dispose()
   })
 }
+
+for (const action of ["finish", "skip"]) test(`${action} persists completion before a pending repository open refuses`, async () => {
+  const t = await setup()
+  let refuse!: (reason: string) => void
+  let opened!: () => void
+  const opening = new Promise<void>(resolve => { opened = resolve })
+  const pending = new Promise<string>(resolve => { refuse = resolve })
+  let cleanedUrl = false
+  await t.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 4, conversationOpen: true } }).isPersisted.promise
+  await t.store.dispatch({ type: "toast.shown", actor: "system", key: "guide-tip-old", title: "Tutorial tip" }).isPersisted.promise
+  const guide = createGuideController(t.ctx, undefined, async () => {
+    expect(cleanedUrl).toBe(true)
+    expect(t.store.session().guide).toMatchObject({ finished: true, step: GUIDE_LAST_STEP, conversationOpen: false })
+    opened()
+    return pending
+  }, () => { cleanedUrl = true })
+  const result = guide.guideAct(action)
+  await opening
+  await t.store.settled?.()
+  const restored = await createAppStore({ kind: "localStorage", storage: t.storage })
+  expect(restored.session().guide).toMatchObject({ finished: true, step: GUIDE_LAST_STEP, conversationOpen: false })
+  expect([...t.store.collections.toasts.values()].some(toast => toast.key === "guide-tip-old")).toBe(false)
+  refuse("The public repository catalog answered HTTP 502")
+  expect(await result).toBe("The public repository catalog answered HTTP 502")
+  expect(t.store.session().guide?.finished).toBe(true)
+  restored.dispose?.()
+  t.dispose()
+})

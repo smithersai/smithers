@@ -97,9 +97,19 @@ describe("HTML headers and platform gaps", () => {
     }
   })
 
+  test("loopback hosts and explicit ports serve HTTP without redirecting", async () => {
+    for (const origin of ["http://127.0.0.1:8788", "http://127.0.0.1", "http://127.42.0.9", "http://localhost", "http://[::1]", "http://smithers.sh:8788"]) {
+      // This checkout has no health handler; preserve its 404 instead of redirecting.
+      for (const [path, status] of [["/api/health", 404], ["/api/bootstrap", 200]] as const) {
+        const response = await worker.fetch(new Request(origin + path), siteEnv())
+        expect([origin, response.status, response.headers.get("location")]).toEqual([origin, status, null])
+      }
+    }
+  })
+
   test("HTTP and www redirect before the assets or API execute, retaining path and query", async () => {
     for (const origin of ["http://smithers.sh", "http://www.smithers.sh", "https://www.smithers.sh"]) {
-      for (const path of ["/docs/?q=hello", "/api/bootstrap"]) {
+      for (const path of ["/x", "/docs/?q=hello", "/api/bootstrap"]) {
         const response = await worker.fetch(new Request(origin + path), { ...memoryDurableObjects(), ASSETS: { fetch: async () => { throw new Error("must redirect first") } } })
         expect([response.status, response.headers.get("location")]).toEqual([301, "https://smithers.sh" + path])
       }

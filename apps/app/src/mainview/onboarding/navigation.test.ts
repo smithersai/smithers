@@ -65,13 +65,10 @@ for (const refusal of [undefined, "Repository unavailable"]) test(`Skip shares f
     async repo => { repos.push(repo); return refusal }, () => { finished++ })
   expect(await controller.guideAct("skip")).toBe(refusal)
   expect(repos).toEqual(["smithersai/smithers"])
-  expect(finished).toBe(refusal ? 0 : 1)
-  if (refusal) expect(store.session().guide).toEqual(original)
-  else {
-    expect(store.session().guide).toMatchObject({ finished: true, step: 14, conversationOpen: false })
-    expect(store.session().guide?.notice).toBeUndefined()
-    expect(store.session().guide?.noticeDetail).toBeUndefined()
-    expect([...store.collections.toasts.values()].some(toast => toast.key === "guide-tip-skip")).toBe(false)
-  }
+  expect(finished).toBe(1)
+  expect(store.session().guide).toMatchObject({ finished: true, step: 14, conversationOpen: false })
+  expect(store.session().guide?.notice).toBeUndefined()
+  expect(store.session().guide?.noticeDetail).toBeUndefined()
+  expect([...store.collections.toasts.values()].some(toast => toast.key === "guide-tip-skip")).toBe(false)
   await store.dispose?.()
 })

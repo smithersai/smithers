@@ -38,7 +38,7 @@ test("final reel Next marks the tutorial finished and clears borrowed UI", async
 })
 
 
-for (const finish of ["finish", "reel-next"]) test(`${finish} clears tutorial notifications and prepares the destination before finishing`, async () => {
+for (const finish of ["finish", "reel-next"]) test(`${finish} clears tutorial notifications and finishes before preparing the destination`, async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14,
     ...(finish === "reel-next" ? { reelIndex: REEL_STAGES.length - 1, reelEpoch: 1 } : {}) } }).isPersisted.promise
@@ -47,7 +47,7 @@ for (const finish of ["finish", "reel-next"]) test(`${finish} clears tutorial no
   }
   const destinations: string[] = []
   const controller = createGuideController({ store, commandActor: "user" } as unknown as ControllerContext, undefined, async repo => {
-    expect(store.session().guide?.finished).not.toBe(true)
+    expect(store.session().guide?.finished).toBe(true)
     destinations.push(repo)
   })
   await controller.guideAct(finish, `1:${REEL_STAGES.length - 1}`)
