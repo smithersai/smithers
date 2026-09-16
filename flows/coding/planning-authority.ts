@@ -12,6 +12,7 @@ const restricted = new Set([
   "coding/select-owner-repair",
   "coding/draft-poc",
   "coding/review-poc",
+  "coding/review-final-history",
   "wiki/review-page"
 ])
 

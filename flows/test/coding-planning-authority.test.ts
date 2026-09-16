@@ -47,6 +47,7 @@ const declarations = [
   "wiki/review-page",
   "coding/draft-poc",
   "coding/review-poc",
+  "coding/review-final-history",
   "coding/edit-atom"
 ]
   .map((name) => {
@@ -263,17 +264,17 @@ test(
     }
     assert.equal(await readFile(f.target, "utf8"), "captured evidence\n")
     await assert.rejects(readFile(f.marker), { code: "ENOENT" })
-    assert.equal(f.authorities.length, 12)
+    assert.equal(f.authorities.length, 14)
     for (const authority of f.authorities) {
       assert.equal(authority.empty, true)
       assert.equal(authority.envelope, 0)
       assert.equal(authority.budget, f.authorities[0]!.budget)
       assert.equal(authority.steering, f.authorities[0]!.steering)
     }
-    assert.equal(f.counters().pluginRequests, 12)
+    assert.equal(f.counters().pluginRequests, 14)
     assert.ok(f.requests.every((request) => request.includes("Keep the existing host teaching.")))
     assert.ok(f.requests.every((request) => request.includes("Captured evidence only.")))
-    assert.equal(f.seats.filter((seat) => seat === "coding/implement").length, 8)
+    assert.equal(f.seats.filter((seat) => seat === "coding/implement").length, 10)
     assert.equal(f.seats.filter((seat) => seat === "coding/poc").length, 4)
   }
 )
