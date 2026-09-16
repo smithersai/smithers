@@ -260,6 +260,25 @@ describe("pure app event projection", () => {
     expect(appTransitionErasesPrivateState(state, { ...signedIn, state: "unavailable", login: null })).toBe(false)
   })
 
+  test("toast progress updates only running notifications and preserves their action", () => {
+    const progress = { type: "toast.progressed", actor: "system", key: "desktop", detail: "Booting · 8s elapsed", title: "Starting" } as const
+    let state = apply(boot(), progress, 100)
+    expect(state.toasts).toEqual([])
+    state = apply(state, { type: "toast.shown", actor: "system", key: "desktop", title: "Desktop",
+      action: { flow: "workspace.view", args: "ws-1", label: "Open details" } }, 200)
+    state = apply(state, progress, 300)
+    expect(state.toasts[0]).toMatchObject({ title: "Starting", detail: progress.detail, updatedAt: 300, createdAt: 200,
+      action: { flow: "workspace.view", args: "ws-1", label: "Open details" } })
+    state = apply(state, { ...progress, title: undefined, detail: "Activating" }, 350)
+    expect(state.toasts[0]!.title).toBe("Starting")
+    for (const status of ["ok", "failed"] as const) {
+      state = apply(state, { type: "toast.resolved", actor: "system", key: "desktop", status, detail: "Settled" }, 400)
+      const settled = state.toasts[0]
+      state = apply(state, progress, 500)
+      expect(state.toasts[0]).toEqual(settled)
+    }
+  })
+
   test("cloud observations answer prompts only with sufficient scopes and toast reuse clears its old answer", () => {
     let state = apply(boot(), { type: "message.appended", actor: "system", text: "Connect Cloud",
       action: { flow: "cloud.sign-in", label: "Sign in" } })

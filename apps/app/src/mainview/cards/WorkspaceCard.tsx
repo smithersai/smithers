@@ -30,7 +30,7 @@ import { fileArgs, parseFileArgs } from "../flows/FileArgs"
  * it would be a dead control.
  */
 import { useState, useSyncExternalStore } from "react"
-import { Button, StatusPill } from "@smthrs/ui"
+import { Button, Spinner, StatusPill } from "@smthrs/ui"
 import { Camera, Copy, Globe, Monitor, Play, RefreshCw, Server, Square, TerminalSquare, Trash2 } from "lucide-react"
 import { useController } from "../ControllerContext"
 import type { Card } from "../state/AppState"
@@ -226,7 +226,7 @@ const WorkspaceDesktopBody = ({
     return (
       <div className="world-card-list">
         {/* The one-command open's own line: where the box got to, and the way out of the wait. */}
-        {stage === null ? null : <p className="world-card-path">{DESKTOP_STAGE_LINE[stage]}</p>}
+        {stage === null ? null : <p className="world-card-path" role="status"><Spinner size="sm" aria-label="Starting desktop" />{payload.desktopProgress ?? DESKTOP_STAGE_LINE[stage]}</p>}
         {refusal === null ? null : (
           <>
             <p className="world-card-empty" data-refusal-fault={refusal.fault}>{refusalLead(refusal)}</p>

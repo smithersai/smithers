@@ -250,6 +250,7 @@ export const APP_TRANSITION_TYPES = {
   "billing.plans.loaded": true,
   "billing.unavailable": true,
   "toast.shown": true,
+  "toast.progressed": true,
   "toast.resolved": true,
   "toast.dismissed": true,
   "card.removed": true,
@@ -2547,7 +2548,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             title: transition.title,
             status: "running",
             detail: "",
-            action: undefined,
+            action: transition.action,
             answeredAction: undefined,
             createdAt: existing?.createdAt ?? createdAt,
             updatedAt: createdAt
@@ -2559,6 +2560,17 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               Object.assign(draft, toast)
             })
           }
+          break
+        }
+
+        case "toast.progressed": {
+          const id = `toast-${transition.key}`
+          if (collections.toasts.get(id)?.status !== "running") return
+          collections.toasts.update(id, (draft) => {
+            draft.detail = transition.detail
+            if (transition.title !== undefined) draft.title = transition.title
+            draft.updatedAt = createdAt
+          })
           break
         }
 

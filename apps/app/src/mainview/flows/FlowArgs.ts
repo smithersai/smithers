@@ -17,6 +17,7 @@
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
   readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string }
   readonly "runs.attention": { readonly repo?: string; readonly sourceCard?: string }
@@ -142,6 +143,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
       keyed(payload, "query")
     ),
   "target.select": (payload) => line(token(payload, "repoId"), token(payload, "label")),
+  "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),
   "workspace.template": (payload) => {
     const name = token(payload, "name")
     return line(token(payload, "snapshotId"), token(payload, "workspaceId"), name === undefined ? undefined : `--name ${name}`)

@@ -1548,6 +1548,7 @@ export type AppTransition =
     actor: "system"
     key: string
     title: string
+    action?: Toast["action"]
   }
   | {
     /* Settled: ok resolves (auto-dismisses); failed stays honest until dismissed. */
@@ -1560,6 +1561,7 @@ export type AppTransition =
     detail: string
     action?: Toast["action"]
   }
+  | { type: "toast.progressed"; actor: "system"; key: string; detail: string; title?: string }
   | { type: "toast.dismissed"; actor: "user" | "system"; id: string }
 	| { type: "card.removed"; actor: Actor; id: string }
   | {

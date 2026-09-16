@@ -43,7 +43,7 @@ export function ToastStack({
           <div className="toast-body">
             <AlertTitle className="toast-title">{toast.title}</AlertTitle>
             {toast.detail !== "" ? <AlertDescription className="toast-detail">{toast.detail}</AlertDescription> : null}
-            <ToastActionButton toast={toast} onAction={action => { onDismiss(toast.id); onAction(action) }} />
+            <ToastActionButton toast={toast} onAction={action => { if (toast.status !== "running") onDismiss(toast.id); onAction(action) }} />
           </div>
           {toast.status === "failed" ?
             (

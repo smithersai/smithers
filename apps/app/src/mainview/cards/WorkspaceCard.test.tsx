@@ -857,8 +857,9 @@ describe("the workspace card's desktop facet", () => {
    */
   test("the wait names its stage and offers Stop, with no frame and no Retry until the server refuses", () => {
     dropDesktopStream()
-    const { host, commands } = render(desktopCard({ facet: "desktop", status: "starting", desktopStage: "starting" }))
-    expect(host.textContent).toContain("starting the box")
+    const { host, commands } = render(desktopCard({ facet: "desktop", status: "starting", desktopStage: "starting", desktopProgress: "Booting the box · 8s elapsed · usually about 20s" }))
+    expect(host.textContent).toContain("Booting the box · 8s elapsed · usually about 20s")
+    expect(host.querySelector('[aria-label="Starting desktop"]')).not.toBeNull()
     expect(host.querySelector("iframe")).toBeNull()
     /* Nothing was refused, so the facet offers no Retry and no Resume — only a wait to stop. */
     const labels = (): Array<string | null> => [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"))

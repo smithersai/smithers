@@ -812,6 +812,7 @@ export const createAppController = (
    * apply because boundedFetch wraps the tapped http.
    */
   const seamCtx: SeamContext = {
+    resolveToast,
     http: (input, init) => {
       const write = init?.method && !["GET", "HEAD"].includes(init.method.toUpperCase()) && !input.endsWith("/api/repo/files")
       if (write) invalidatePreparedViews(store)

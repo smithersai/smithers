@@ -94,10 +94,10 @@ export const readDiagnostics = (input: {
   }
   for (const record of [...input.transitions].sort((a, b) => a.revision - b.revision)) {
     const payload = payloadOf(record)
-    if (record.type === "toast.shown" || record.type === "toast.resolved") {
+    if (record.type === "toast.shown" || record.type === "toast.progressed" || record.type === "toast.resolved") {
       const key = string(payload.key)
       if (typeof payload.title === "string") toastTitles.set(key, payload.title)
-      const status = record.type === "toast.shown" ? "running" : string(payload.status)
+      const status = record.type !== "toast.resolved" ? "running" : string(payload.status)
       lastToast.set(key, add({
         id: record.id, source: "toast", at: record.createdAt, status,
         title: toastTitles.get(key) ?? key, detail: string(payload.detail), error: status === "failed"

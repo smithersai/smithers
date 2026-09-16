@@ -13,6 +13,7 @@ import { isRecord } from "@smthrs/canonical/Record"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import type { FailureController } from "../controller/failures"
 import type { AppStore } from "../AppStore"
 
 export type SeamFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -32,6 +33,7 @@ export interface SeamContext {
   readonly baseUrl: string
   readonly store: AppStore
   readonly dispatch: AppStore["dispatch"]
+  readonly resolveToast?: FailureController["resolveToast"]
   /** The acting principal for dispatches: "user", or "smithers" in the agent's actor projection (ActorBindings). */
   readonly actor: () => "user" | "smithers"
   /** The next transcript ordinal — new cards surface at the end, never mid-history. */

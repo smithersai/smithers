@@ -2134,6 +2134,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * A stage is a state, never a credential: the minted stream URL stays
        * in module memory (apps/app state/seams/DesktopStream.ts).
        */
+      desktopProgress: z.string().optional(),
       desktopStage: z.enum(["creating", "resuming", "starting", "activating", "streaming"]).optional(),
       /**
        * plue#504: how the terminal session POST refused, on the terminal
