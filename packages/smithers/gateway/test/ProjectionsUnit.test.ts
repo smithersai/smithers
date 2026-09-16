@@ -404,6 +404,34 @@ describe("Projections resource bounds", () => {
       expect(summary.cursor.value).toBe(history.length)
     }))
 
+  it.effect("preserves native engine evidence across bounded journal pages", () =>
+    Effect.gen(function*() {
+      const payload = { version: 1, executionId: "native-request", payload: {
+        result: { description: "x".repeat(3 * 1024 * 1024), status: "validated" }
+      } }
+      const history = [event(1, "control.engine.event", payload), event(2, "control.engine.event", payload)]
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.fromIterable(history)
+      }))
+      const selector = { _tag: "run-events" as const, runId: run.runId }
+      const first = yield* projections.snapshot(selector)
+      expect(first.rows).toEqual([history[0]])
+      const second = yield* projections.snapshot(selector, first.cursor)
+      expect(second.rows).toEqual([history[1]])
+      expect(second.cursor.value).toBe(2)
+    }))
+
+  it.effect("refuses a native event too large for a page instead of corrupting its contract", () =>
+    Effect.gen(function*() {
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.succeed(event(1, "control.engine.event", { result: "x".repeat(Projections.maxProjectionBytes) }))
+      }))
+      expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
+        .toBe("resource_limit")
+    }))
+
   it.effect("clips an oversized payload instead of refusing the projection", () =>
     Effect.gen(function*() {
       const projections = make(control({

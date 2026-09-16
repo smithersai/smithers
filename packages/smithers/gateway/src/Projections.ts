@@ -132,8 +132,9 @@ export const maxProjectionBytes = 4 * 1024 * 1024
  * outcome, a token count, a first line. A retained event is therefore clipped
  * to this budget rather than held whole, which is what keeps one wiki refresh
  * that retried a model call nine times from costing a run card its whole
- * history. `run-events` pages carry the same clipped events, so a reader that
- * wants a full body reads it from the run's artifacts, not from a projection.
+ * history. `run-events` pages preserve native engine evidence because clients
+ * decode its complete contracts to offer actions. Other large bodies remain
+ * clipped; their full content belongs in run artifacts.
  *
  * @since 1.0.0
  * @category models
@@ -739,7 +740,13 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             if (after !== undefined && comparePosition(position, after) <= 0) {
               return Effect.succeed({ ...page, seen })
             }
-            const event = retainedEvent(decoded)
+            // Native results are contracts, not display text. Clipping changes
+            // their meaning and can hide validated actions such as Vibe.
+            // Match live deltas, which already carry the original event.
+            const event = decoded.kind === "control.engine.event" ? decoded : retainedEvent(decoded)
+            if (encodedSize(event) + 2 > maxProjectionBytes) {
+              return Effect.fail(resourceLimit(`One journal event exceeds ${maxProjectionBytes} encoded bytes`))
+            }
             const bytes = page.bytes + encodedSize(event) + (page.events.length === 0 ? 0 : 1)
             if (page.events.length > 0 && bytes > maxProjectionBytes) {
               stopped = true
