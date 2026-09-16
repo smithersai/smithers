@@ -287,6 +287,7 @@ export const APP_TRANSITION_TYPES = {
   "repo.pinned": true,
   "repo.unpinned": true,
   "repo.selected": true,
+  "repository.entry.changed": true,
   "repository-flows.loaded": true,
   "repo-tree.toggled": true,
   "repo-tree.loading": true,
@@ -3086,6 +3087,21 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             if (draft.activeRepoKey === transition.id) draft.activeRepoKey = null
             const selected = draft.activeRepoKey
             if (selected !== undefined && selected !== null && selected.endsWith(`#${transition.id}`)) {
+              draft.activeRepoKey = null
+            }
+          })
+          break
+        }
+        case "repository.entry.changed": {
+          const entry = transition.entry
+          if (entry !== null && entry.phase !== "pending" && collections.sessions.get(SESSION_ID)?.repositoryEntry?.requestId !== entry.requestId) break
+          collections.sessions.update(SESSION_ID, draft => {
+            draft.repositoryEntry = entry
+            if (entry?.phase !== "pending") return
+            const selected = draft.activeRepoKey == null ? null : parseRepoSelection(draft.activeRepoKey)
+            // Keep the same repository's selected working copy across reload.
+            // A different entry must not inherit practice or a saved checkout.
+            if (selected === null || !("repoId" in selected) || selected.repoId.toLowerCase() !== entry.repo.toLowerCase()) {
               draft.activeRepoKey = null
             }
           })

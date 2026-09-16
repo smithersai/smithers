@@ -510,12 +510,20 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       return { status: "failed", error: userOnlyError(nameOf(target), target.metadata.userOnlyReason) }
     }
     const acting = invoker === "agent" ? agentActions : actions
+    // Parse once before prerequisites: an explicit public repository is a
+    // read source even when the current URL could not be opened.
+    const parsed: Parsed = named === undefined
+      ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
+      : { payload: named }
+    const repo = "payload" in parsed && typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
+    const sourcePath = target.metadata.requires?.includes("repo-source") && "payload" in parsed && typeof parsed.payload.path === "string"
+      ? parsed.payload.path : undefined
     /*
      * The practice repository needs no account (onboarding SCRIPT v4 §4): a
      * flow aimed at the bundled practice key skips its identity gates, and
      * only that key does — every other target keeps them.
      */
-    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, actions.snapshot(), flowRequirements)[0]
+    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, actions.snapshot(repo, sourcePath), flowRequirements)[0]
     if (unmet !== undefined) {
       if (invoker === "agent") {
         /*
@@ -543,19 +551,6 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
       return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]))
     }
-    /*
-     * The composer boundary: argument text becomes the flow's typed payload
-     * exactly once, here, and a text that cannot be parsed is refused before
-     * the binding runs.
-     */
-    /*
-     * A named submission is already past this boundary: its payload keeps the
-     * field identity the form collected, and the declaration's input schema
-     * validates it inside the binding. Only text is parsed here, once.
-     */
-    const parsed: Parsed = named === undefined
-      ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
-      : { payload: named }
     // JSON can parse successfully while omitting a required schema field.
     // Let the form collect it before the binding can produce an input error.
     const fields = formFieldsFor(target.input, target.metadata.form)

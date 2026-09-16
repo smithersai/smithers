@@ -5,7 +5,7 @@ import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { createAgentSeat } from "./chain/ChainRuntime"
 import { nativeOpenExternal, nativeRepositories, nativeShellAvailable } from "./native/NativeBridge"
 import { createAppFetch } from "./runtime/LocalSession"
-import { openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
+import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
 import { createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
@@ -50,6 +50,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, {
         seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => true), eraseTurn: createTurnEraser(http)
       })))
+    const repositoryEntryId = yield* Effect.sync(() => beginRepositoryEntry(store, requested))
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,
@@ -132,7 +133,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
     // The path stays in the address bar; the parameter leaves it.
     if (requested !== null) {
-      yield* Effect.sync(() => void openRequestedRepo(controller, runtime.http, requested))
+      yield* Effect.sync(() => void openRequestedRepo(controller, runtime.http, requested, repositoryEntryId))
       if (window.location.search !== "") {
         window.history.replaceState(window.history.state, "", withoutRepoParam(window.location))
       }

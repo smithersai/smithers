@@ -1,5 +1,6 @@
 import { describe,expect,test } from "bun:test"
 import {
+beginRepositoryEntry,
 catalogRepository,
 openRequestedRepo,
 paramRepo,
@@ -9,6 +10,7 @@ signInReturnTo,
 withoutRepoParam
 } from "./RepoLink"
 import { createAppStore } from "./state/AppStore"
+import { resolveOpenRepo, resolveTargetRepo } from "./state/RepoContext"
 import type { ControllerContext } from "./state/controller/context"
 import { createTabsController } from "./state/controller/tabs"
 
@@ -196,6 +198,59 @@ describe("signInReturnTo", () => {
 })
 
 describe("openRequestedRepo", () => {
+  test("an unresolved URL blocks the saved selection and lone-repository fallback without blocking explicit targets", async () => {
+    const { store, controller } = await fixture()
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    let answer!: (response: Response) => void
+    const catalogRead = new Promise<Response>(resolve => { answer = resolve })
+    const opening = openRequestedRepo(controller, () => catalogRead, "missing/repository")
+    expect(store.session().activeRepoKey).toBeNull()
+    expect(store.collections.repositories.size).toBe(1)
+    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "Opening missing/repository. Try again when it is ready." })
+    expect(resolveOpenRepo(store)).toEqual({ error: "Opening missing/repository. Try again when it is ready." })
+    expect(resolveTargetRepo(store, "smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
+    answer(jsonResponse(catalog))
+    const refusal = await opening
+    expect(refusal).toBe("missing/repository is not in the public repository catalog.")
+    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "missing/repository is not in the public repository catalog." })
+    expect(resolveTargetRepo(store, "smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
+  })
+
+  test("a failed catalog read cannot revive a previous selection, and a root entry clears the URL constraint", async () => {
+    const { store, controller } = await fixture()
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, async () => jsonResponse({}, 503), "missing/repository")
+    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "The public repository catalog answered HTTP 503." })
+    beginRepositoryEntry(store, null)
+    expect(store.session().repositoryEntry).toBeNull()
+    expect(resolveTargetRepo(store, undefined)).toEqual({ repo: "smithersai/smithers" })
+  })
+
+  test("a late catalog response cannot select an earlier URL or overwrite the newer refusal", async () => {
+    const { store, controller, ran } = await fixture()
+    let answer!: (response: Response) => void
+    const catalogRead = new Promise<Response>(resolve => { answer = resolve })
+    const earlier = openRequestedRepo(controller, () => catalogRead, "smithersai/smithers")
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "missing/repository")
+    answer(jsonResponse(catalog))
+    await earlier
+    expect(store.session().activeRepoKey).toBeNull()
+    expect(store.session().repositoryEntry).toMatchObject({ repo: "missing/repository", phase: "failed" })
+    expect(store.collections.repositories.size).toBe(0)
+    expect(ran).toEqual([])
+  })
+
+  test("boot records the entry before starting catalog I/O and reuses that request", async () => {
+    const { store, controller } = await fixture()
+    store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" })
+    const requestId = beginRepositoryEntry(store, "smithersai/smithers")
+    expect(store.session().activeRepoKey).toBeNull()
+    expect(resolveTargetRepo(store, undefined)).toHaveProperty("error")
+    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers", requestId)
+    expect(store.session().repositoryEntry).toMatchObject({ requestId, phase: "ready" })
+    expect(resolveTargetRepo(store, undefined)).toEqual({ repo: "smithersai/smithers" })
+  })
+
   test("reopening the repository URL keeps its selected cloud computer", async () => {
     const { store, controller } = await fixture()
     await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")

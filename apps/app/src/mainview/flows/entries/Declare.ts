@@ -52,7 +52,7 @@ export type CommandActions =
     | "dispose"
   >
   & {
-    readonly snapshot: () => CommandState
+    readonly snapshot: (repo?: string, path?: string) => CommandState
   }
 
 /**

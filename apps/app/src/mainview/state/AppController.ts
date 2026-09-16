@@ -102,7 +102,7 @@ import { createEgressSeam } from "./seams/EgressSeam"
 import type { EnvironmentSeam } from "./seams/EnvironmentSeam"
 import { createEnvironmentSeam } from "./seams/EnvironmentSeam"
 import type { FilesSeam } from "./seams/FilesSeam"
-import { createFilesSeam } from "./seams/FilesSeam"
+import { createFilesSeam, resolveFileTarget } from "./seams/FilesSeam"
 import type { GitHubSeam } from "./seams/GitHubSeam"
 import { createGitHubSeam } from "./seams/GitHubSeam"
 import type { HistorySeam } from "./seams/HistorySeam"
@@ -1727,9 +1727,11 @@ export const createAppController = (
     adminRequests,
     adminQueueApprove,
     adminHealth,
-    snapshot: () => {
+    snapshot: (repo, path) => {
       const identity = store.collections.identitySessions.get("identity")
       const signedIn = identity?.state === "signed-in"
+      const fileTarget = path === undefined ? undefined : resolveFileTarget(store, path, repo)
+      const requestedRepo = fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" ? fileTarget.repo : repo
       return {
         pluginLibrary: features.pluginLibrary,
         surface: store.session().surface,
@@ -1747,7 +1749,9 @@ export const createAppController = (
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
         hasOpenRepos: store.collections.repos.size > 0,
-        publicRepo: activeCatalogRepositoryId(store) !== null,
+        publicRepo: requestedRepo === undefined
+          ? activeCatalogRepositoryId(store) !== null
+          : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase()),
         recent: store.session().recentCommands ?? [],
         identity: identity === undefined
           ? "unknown"

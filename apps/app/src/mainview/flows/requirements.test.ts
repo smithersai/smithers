@@ -56,11 +56,11 @@ const deadBackend: AppServices = {
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-const freshController = async () => {
+const freshController = async (services: AppServices = deadBackend) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, deadBackend)
+    controller: createAppController(store, unavailableRepositories, unavailableAgent, services)
   }
 }
 
@@ -134,6 +134,41 @@ describe("requirement axis — the pure model", () => {
 })
 
 describe("requirement axis — the run path", () => {
+  test("a typed catalog target satisfies only the read-source prerequisite, independent of a failed URL", async () => {
+    const reads: string[] = []
+    const { store, controller } = await freshController({ fetchImpl: async input => {
+      reads.push(String(input))
+      return json(200, [])
+    } })
+    try {
+      await signedOut(store)
+      store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+        id: "public/repo", org: "public", name: "repo", ownerKind: "user", head: null, catalog: true
+      } })
+      store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
+        requestId: "entry", repo: "missing/repo", phase: "pending"
+      } })
+      store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
+        requestId: "entry", repo: "missing/repo", phase: "failed", error: "missing/repo could not be opened."
+      } })
+      expect((await controller.commands.runForAgent("files.list", "/ public/repo")).status).toBe("executed")
+      expect(reads).toEqual(["/api/repos/public/repo/contents"])
+      expect(store.session().pendingCommand ?? null).toBeNull()
+      expect((await controller.commands.runForAgent("files.list", "/public/repo/docs")).status).toBe("executed")
+      expect(reads).toEqual(["/api/repos/public/repo/contents", "/api/repos/public/repo/contents/docs"])
+
+      reads.length = 0
+      store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+        id: "private/repo", org: "private", name: "repo", ownerKind: "user", head: null
+      } })
+      expect((await controller.commands.runForAgent("files.list", "/ private/repo")).status).toBe("failed")
+      expect((await controller.commands.runForAgent("flow.list", "public/repo")).status).toBe("failed")
+      expect(reads).toEqual([])
+    } finally {
+      await controller.dispose()
+    }
+  })
+
   test("a user-invoked command with an unmet requirement parks durably and renders the sign-in prompt", async () => {
     const { store, controller } = await freshController()
     await signedOut(store)

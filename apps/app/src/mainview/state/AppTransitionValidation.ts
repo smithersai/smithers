@@ -9,7 +9,7 @@ import {
 ActorSchema,AgentRoleSchema,BranchSchema,CardHistorySchema,CardPatchSchema,CardSchema,ChangeRowSchema,
 CloudRepositorySchema,CloudWorkspaceRowSchema,FrameSchema,GitHubAppStatusRowSchema,
 HarnessSchema,MessageSchema,PALETTES,
-PinnedRepoSchema,RecommendationSourceSchema,RepoSchema,RepositoryFlowSchema,
+PinnedRepoSchema,RecommendationSourceSchema,RepoSchema,RepositoryEntrySchema,RepositoryFlowSchema,
 SessionSchema,StarredTargetSchema,SuggestionSchema,TabSchema,ToastSchema,
 WorkingCopySchema,WorldDocumentSchema,
 type AppTransition,type Card,type Tab
@@ -166,6 +166,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "repo.pinned": z.object({ "type": z.literal("repo.pinned"), "actor": ActorSchema, "pin": PinnedRepoSchema }).strict(),
   "repo.unpinned": z.object({ "type": z.literal("repo.unpinned"), "actor": z.literal("user"), "id": z.string() }).strict(),
   "repo.selected": z.object({ "type": z.literal("repo.selected"), "actor": ActorSchema, "id": z.string() }).strict(),
+  "repository.entry.changed": z.object({ type: z.literal("repository.entry.changed"), actor: z.literal("system"), entry: RepositoryEntrySchema.nullable() }).strict(),
   "repo-tree.toggled": z.object({ "type": z.literal("repo-tree.toggled"), "actor": ActorSchema, "copyId": z.string(), "path": z.string(), "expanded": z.boolean() }).strict(),
   "repo-tree.loading": z.object({ "type": z.literal("repo-tree.loading"), "actor": ActorSchema, "copyId": z.string(), "path": z.string() }).strict(),
   "repo-tree.loaded": z.object({ "type": z.literal("repo-tree.loaded"), "actor": z.literal("system"), "copyId": z.string(), "path": z.string(), "entries": z.array(RepoFileEntrySchema), "truncated": z.boolean() }).strict(),

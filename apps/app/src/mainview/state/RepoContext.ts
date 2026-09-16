@@ -101,6 +101,12 @@ export const catalogRepositoryOf = (
 export const activeCatalogRepositoryId = (store: AppStore): string | null =>
   catalogRepositoryOf(store.session().activeRepoKey, store.collections.repositories.values())
 
+const repositoryEntryRefusal = (store: AppStore): string | undefined => {
+  const entry = store.session().repositoryEntry
+  if (entry?.phase === "pending") return `Opening ${entry.repo}. Try again when it is ready.`
+  if (entry?.phase === "failed") return entry.error ?? `${entry.repo} could not be opened.`
+}
+
 /** The resolved target repository, or the honest error stating the choice. */
 export const resolveTargetRepo = (
   store: AppStore,
@@ -112,6 +118,8 @@ export const resolveTargetRepo = (
     }
     return { repo: explicit }
   }
+  const refusal = repositoryEntryRefusal(store)
+  if (refusal !== undefined) return { error: refusal }
   /*
    * Lane piper: the active selection is the target — a working copy's
    * repository, the selected repository, or a local-only checkout. A
@@ -139,6 +147,8 @@ export const resolveTargetRepo = (
  * collection as remote-backed checkouts.
  */
 export const resolveOpenRepo = (store: AppStore): { readonly repo: Repo } | { readonly error: string } => {
+  const refusal = repositoryEntryRefusal(store)
+  if (refusal !== undefined) return { error: refusal }
   const key = store.session().activeRepoKey ?? null
   const selection = key === null ? null : parseRepoSelection(key)
   if (selection !== null) {

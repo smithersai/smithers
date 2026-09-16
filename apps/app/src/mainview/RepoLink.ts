@@ -1,6 +1,7 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { AppController } from "./state/AppController"
+import type { AppStore } from "./state/AppStore"
 import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf } from "./state/AppState"
 
 /*
@@ -135,6 +136,15 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
   }
 }
 
+/** Record the URL before the controller starts any background inventory work. */
+export const beginRepositoryEntry = (store: AppStore, requested: string | null): string | undefined => {
+  const requestId = requested === null ? undefined : crypto.randomUUID()
+  store.dispatch({ type: "repository.entry.changed", actor: "system", entry: requested === null ? null : {
+    requestId: requestId!, repo: requested, phase: "pending"
+  } })
+  return requestId
+}
+
 /**
  * Select the requested repository from the signed-in inventory or public catalog. The
  * catalog row joins the repositories collection beside whatever the cloud
@@ -147,31 +157,40 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
 export const openRequestedRepo = async (
   controller: Pick<AppController, "store" | "selectRepo" | "runCommand" | "loadRepositories">,
   http: FetchLike,
-  requested: string
+  requested: string,
+  requestId = beginRepositoryEntry(controller.store, requested)!
 ): Promise<string | void> => {
+  const current = () => controller.store.session().repositoryEntry?.requestId === requestId
+  const finish = (error?: string): string | void => {
+    controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
+      requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error })
+    } })
+    return error
+  }
   let catalog: unknown
   try {
     const response = await http(PUBLIC_REPOS_PATH, { headers: { accept: "application/json" } })
-    if (!response.ok) return `The public repository catalog answered HTTP ${response.status}.`
+    if (!response.ok) return finish(`The public repository catalog answered HTTP ${response.status}.`)
     catalog = await response.json()
   } catch (cause) {
-    return `The public repository catalog could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
+    return finish(`The public repository catalog could not be read: ${cause instanceof Error ? cause.message : String(cause)}`)
   }
+  if (!current()) return
   const repository = catalogRepository(catalog, requested)
   if (repository === null) {
     // A URL grants no access. A signed-in user's inventory is the authority
     // for repositories outside the public catalog; wait for that read before selecting.
     if (controller.store.collections.identitySessions.get("identity")?.state === "signed-in") {
       const failure = await controller.loadRepositories()
+      if (!current()) return
       const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
       if (failure === undefined && own !== undefined) {
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
-        if (refusal !== undefined) return refusal
-        return
+        return finish(refusal === undefined ? undefined : refusal)
       }
     }
     // App's route welcome names this path and owns its sign-in door.
-    return `${requested} is not in the public repository catalog.`
+    return finish(`${requested} is not in the public repository catalog.`)
   }
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
@@ -189,7 +208,9 @@ export const openRequestedRepo = async (
     })
   }
   const refusal = await controller.selectRepo(selectionForRepo(controller, repository.id))
-  if (refusal !== undefined) return refusal
+  if (!current()) return
+  if (refusal !== undefined) return finish(refusal)
+  finish()
   /*
    * The shared copy's tree opens once, on the first paint of the catalog
    * repository: `repo.tree <copyId>` through the registry, the same act the

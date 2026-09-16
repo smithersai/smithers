@@ -631,6 +631,14 @@ export const DEFAULT_PALETTE: Palette = "night-owl"
 
 export const isPalette = (value: string): value is Palette => (PALETTES as ReadonlyArray<string>).includes(value)
 
+export const RepositoryEntrySchema = z.object({
+  requestId: z.string(),
+  repo: z.string(),
+  phase: z.enum(["pending", "ready", "failed"]),
+  error: z.string().optional()
+})
+export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>
+
 export const SessionSchema = z.object({
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
@@ -796,6 +804,8 @@ export const SessionSchema = z.object({
    * terminal or agent starts. Optional (missing = the first open repo).
    */
   activeRepoKey: z.string().nullable().optional(),
+  /** An explicit entry URL blocks ambient repository fallback until it resolves. */
+  repositoryEntry: RepositoryEntrySchema.nullable().optional(),
   /*
    * The sidebar heading's name (docs/workbench-lanes/sidebar-tree.md):
    * `workspace.rename <name>` writes it; the heading renders "Workspace"
@@ -1596,6 +1606,7 @@ export type AppTransition =
   | { type: "repo.pinned"; actor: Actor; pin: PinnedRepo }
   | { type: "repo.unpinned"; actor: "user"; id: string }
   | { type: "repo.selected"; actor: Actor; id: string }
+  | { type: "repository.entry.changed"; actor: "system"; entry: RepositoryEntry | null }
   /*
    * The sidebar's file tree (docs/workbench-lanes/sidebar-tree.md): a caret
    * toggles a directory row; a first expand (or a retry of a failed one)
