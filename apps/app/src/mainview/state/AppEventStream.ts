@@ -1,4 +1,5 @@
 import { digest } from "@smthrs/core/Digest"
+import { makeDigestPartsSync } from "@smthrs/crypto"
 import { z } from "zod"
 import { type AppTransition } from "./AppState"
 import {
@@ -104,6 +105,7 @@ export const normalizeAppProjection = (input: unknown): AppProjectionSnapshot =>
 /** Physical row order and optional undefined properties are not distinct materialized facts. */
 const immutableRowJson = new WeakMap<object, string>()
 const immutableTables = new WeakMap<object, Map<string, string>>()
+const projectionDigest = makeDigestPartsSync()
 const immutableHashes = new WeakMap<object, string>()
 export const appProjectionHash = (snapshot: AppProjectionSnapshot): string => {
   const previous = immutableHashes.get(snapshot)
@@ -138,7 +140,7 @@ export const appProjectionHash = (snapshot: AppProjectionSnapshot): string => {
     return encoded
   })
   // Identical v1 wire bytes to hash("projection", normalizedRows), without its repeated tree copies.
-  const result = digest(`smithers-app/projection/v1:{"value":{${entries.join(",")}},"undefinedPaths":[]}`)
+  const result = projectionDigest(['smithers-app/projection/v1:{"value":{', ...entries.flatMap((entry, index) => index ? [",", entry] : [entry]), '},"undefinedPaths":[]}'])
   if (isImmutableProjectionValue(snapshot)) immutableHashes.set(snapshot, result)
   return result
 }

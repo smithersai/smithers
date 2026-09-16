@@ -12,7 +12,7 @@ export const createHealthStatusController = (ctx: Pick<ControllerContext, "store
     let deadline = Infinity
     const statuses = [
       ...[...ctx.store.collections.tabs.values()].flatMap((tab) => tab.kind === "terminal" || tab.kind === "harness" ? [tab.statusRollup] : []),
-      ...[...ctx.store.collections.cards.values()].flatMap((card) => card.kind === "agent" || card.kind === "run-trace" ? [card.payload.statusRollup] :
+      ...[...ctx.store.collections.cards.values()].flatMap((card) => (card.kind === "agent" && !("cloud" in card.payload)) || card.kind === "run-trace" ? [card.payload.statusRollup] :
         card.kind === "run-list" ? card.payload.runs.map((run) => run.statusRollup) : [])
     ]
     for (const status of statuses) {

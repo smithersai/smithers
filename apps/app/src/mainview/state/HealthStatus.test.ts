@@ -104,3 +104,15 @@ test("one controller deadline expires hidden tabs and cards durably while offlin
   expect(exited?.kind === "agent" && exited.payload.statusRollup).toMatchObject({ state: "exited", health: "unknown" })
   await reopened.dispose?.()
 })
+
+test("cloud agent status does not arm a timer the local status projector cannot expire", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "cloud", kind: "agent", title: "Cloud", status: "active", createdAt: 1, ordinal: 1,
+    payload: { cloud: true, displayName: "Cloud", sessionId: "cloud", repo: "o/r", provider: null, workspaceId: null, state: "active", transcript: [], statusRollup: reading() } } }).isPersisted.promise
+  const finalizers: Array<() => void> = []
+  let timers = 0
+  createHealthStatusController({ store, unref: () => { timers++ }, onDispose: fn => { finalizers.push(fn) } })
+  expect(timers).toBe(0)
+  for (const finalize of finalizers) finalize()
+  await store.dispose?.()
+})

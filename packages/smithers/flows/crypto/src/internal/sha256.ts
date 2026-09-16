@@ -89,25 +89,7 @@ const initial = new Uint32Array([
 
 const rotateRight = (value: number, bits: number): number => (value >>> bits) | (value << (32 - bits))
 
-/**
- * Returns a fresh 32-byte SHA-256 digest.
- *
- * @since 1.0.0
- * @private
- */
-export const sha256 = (message: Uint8Array): Uint8Array => {
-  const blocks = Math.floor((message.length + 8) / 64) + 1
-  const padded = new Uint8Array(blocks * 64)
-  padded.set(message)
-  padded[message.length] = 0x80
-  const view = new DataView(padded.buffer)
-  view.setUint32(padded.length - 8, Math.floor(message.length / 0x20000000), false)
-  view.setUint32(padded.length - 4, (message.length << 3) >>> 0, false)
-
-  const hash = initial.slice()
-  const schedule = new Uint32Array(64)
-  for (let block = 0; block < blocks; block++) {
-    const offset = block * 64
+const compress = (hash: Uint32Array, view: DataView, offset: number, schedule: Uint32Array): void => {
     for (let index = 0; index < 16; index++) schedule[index] = view.getUint32(offset + index * 4, false)
     for (let index = 16; index < 64; index++) {
       const previous = schedule[index - 15]!
@@ -149,10 +131,65 @@ export const sha256 = (message: Uint8Array): Uint8Array => {
     hash[5] = (hash[5]! + f) >>> 0
     hash[6] = (hash[6]! + g) >>> 0
     hash[7] = (hash[7]! + h) >>> 0
+}
+
+/**
+ * Returns a fresh 32-byte SHA-256 digest.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const sha256 = (message: Uint8Array): Uint8Array => {
+  const blocks = Math.floor((message.length + 8) / 64) + 1
+  const padded = new Uint8Array(blocks * 64)
+  padded.set(message)
+  padded[message.length] = 0x80
+  const view = new DataView(padded.buffer)
+  view.setUint32(padded.length - 8, Math.floor(message.length / 0x20000000), false)
+  view.setUint32(padded.length - 4, (message.length << 3) >>> 0, false)
+
+  const hash = initial.slice()
+  const schedule = new Uint32Array(64)
+  for (let block = 0; block < blocks; block++) {
+    const offset = block * 64
+    compress(hash, view, offset, schedule)
   }
 
   const digest = new Uint8Array(32)
   const digestView = new DataView(digest.buffer)
   for (let word = 0; word < 8; word++) digestView.setUint32(word * 4, hash[word]!, false)
   return digest
+}
+
+/** Cloneable prefix state; the same compression routine as the one-shot digest. */
+export class Sha256Prefix {
+  private hash = initial.slice()
+  private tail = new Uint8Array(0)
+  private length = 0
+  clone(): Sha256Prefix {
+    const copy = new Sha256Prefix()
+    copy.hash = this.hash.slice(); copy.tail = this.tail.slice(); copy.length = this.length
+    return copy
+  }
+  update(bytes: Uint8Array): this {
+    this.length += bytes.length
+    const data = new Uint8Array(this.tail.length + bytes.length)
+    data.set(this.tail); data.set(bytes, this.tail.length)
+    const complete = data.length - data.length % 64
+    const view = new DataView(data.buffer), schedule = new Uint32Array(64)
+    for (let offset = 0; offset < complete; offset += 64) compress(this.hash, view, offset, schedule)
+    this.tail = data.slice(complete)
+    return this
+  }
+  finish(): Uint8Array {
+    const copy = this.clone(), padding = new Uint8Array((this.tail.length < 56 ? 64 : 128) - this.tail.length)
+    padding[0] = 0x80
+    const view = new DataView(padding.buffer)
+    view.setUint32(padding.length - 8, Math.floor(this.length / 0x20000000), false)
+    view.setUint32(padding.length - 4, (this.length << 3) >>> 0, false)
+    copy.update(padding)
+    const result = new Uint8Array(32), output = new DataView(result.buffer)
+    for (let word = 0; word < 8; word++) output.setUint32(word * 4, copy.hash[word]!, false)
+    return result
+  }
 }

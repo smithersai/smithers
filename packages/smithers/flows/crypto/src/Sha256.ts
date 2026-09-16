@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
-import { sha256 } from "./internal/sha256.ts"
+import { sha256, Sha256Prefix } from "./internal/sha256.ts"
 
 const digestBytes = 32
 const digestPattern = /^[0-9a-f]{64}$/
@@ -322,3 +322,24 @@ const Sha256Schema = Schema.declareConstructor<Digest, string | Uint8Array>()(
  * @since 0.1.0
  */
 export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync })
+
+/**
+ * Hash individually well-formed UTF-8 text fragments with bounded prefix reuse.
+ * Results equal digestSync(parts.join("")); only the last call's prefixes live.
+ * @since 1.0.0
+ */
+export const makeDigestPartsSync = (): ((parts: ReadonlyArray<string>) => Digest) => {
+  let previous: ReadonlyArray<string> = [], prefixes: Sha256Prefix[] = []
+  return parts => {
+    let same = 0
+    while (same < parts.length && same < previous.length && parts[same] === previous[same]) same++
+    let state = same ? prefixes[same - 1]!.clone() : new Sha256Prefix()
+    const next = prefixes.slice(0, same)
+    for (let index = same; index < parts.length; index++) {
+      state.update(snapshotSync(parts[index]!))
+      next.push(state.clone())
+    }
+    previous = [...parts]; prefixes = next
+    return encodeHex(state.finish()) as Digest
+  }
+}
