@@ -1,6 +1,6 @@
 # Repository coding workflow
 
-The private configured coding host composes the existing native Control host, executable catalog, agent actions, QuickJS sandbox, native JJ adapter and immutable command checks. Node and Bun use the same Effect composition with their own platform adapters.
+The private configured coding host composes the existing native Control host, executable catalog, agent actions, QuickJS sandbox, Plue JJ adapter and immutable command checks. Node and Bun use the same Effect composition with their own platform adapters.
 
 ## Configuration
 
