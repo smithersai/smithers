@@ -3,8 +3,9 @@
  * Wordmark.ts) as a 64x64 tile, in the app's colors — #3a756b on #f7f6f1 in
  * light, #9bd5c6 on #101e24 in dark via a prefers-color-scheme media query.
  * Writes the SVG to apps/site/public and apps/app/src/mainview/public, then
- * rasterizes the site PNGs with rsvg-convert.
+ * rasterizes every desktop, website, and documentation icon with rsvg-convert.
  */
+import { sites } from "../../docs/shared/manifest.mjs"
 import { WORDMARK } from "../src/mainview/Wordmark.ts"
 
 const S = WORDMARK.map((row) => [...row].slice(0, 8))
@@ -92,21 +93,37 @@ export function buildFaviconSvg(): string {
   )
 }
 
+/** Every shipped raster mark is rendered from the same wordmark SVG. */
+export const rasterIcons: ReadonlyArray<readonly [number, URL]> = [
+  ...([[32, "public/favicon.png"], [256, "public/icon.png"],
+    [256, "public/apple-touch-icon.png"], [256, "src/docs-assets/logo.png"],
+    [32, "src/docs-assets/favicon.png"]] as const).map(([size, path]) =>
+    [size, new URL(`../../site/${path}`, import.meta.url)] as const),
+  [256, new URL("../../docs/shared/assets/logo.png", import.meta.url)],
+  [32, new URL("../../docs/shared/assets/favicon.png", import.meta.url)],
+  ...sites.flatMap((site) => [
+    [256, new URL(`../../docs/${site.slug}/src/docs-assets/logo.png`, import.meta.url)] as const,
+    [32, new URL(`../../docs/${site.slug}/public/favicon.png`, import.meta.url)] as const,
+  ]),
+  ...[16, 32, 128, 256, 512].flatMap((size) => [1, 2].map((scale) =>
+    [size * scale, new URL(`../icon.iconset/icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`, import.meta.url)] as const)),
+]
+
 if (import.meta.main) {
-  const rsvg = "/opt/homebrew/bin/rsvg-convert"
+  const rsvg = Bun.which("rsvg-convert")
+  if (!rsvg) throw new Error("Install librsvg (rsvg-convert) to render branding assets")
   const siteSvg = new URL("../../site/public/favicon.svg", import.meta.url)
   const appSvg = new URL("../src/mainview/public/favicon.svg", import.meta.url)
   const svg = buildFaviconSvg()
   await Bun.write(siteSvg, svg)
   await Bun.write(appSvg, svg)
-  for (const [size, out] of [[32, "favicon.png"], [256, "icon.png"]] as const) {
-    const png = new URL(`../../site/public/${out}`, import.meta.url)
+  for (const [size, png] of rasterIcons) {
     const proc = Bun.spawnSync(
       [rsvg, "-w", String(size), "-h", String(size), siteSvg.pathname, "-o", png.pathname],
     )
     if (!proc.success) {
-      throw new Error(`rsvg-convert failed for ${out}: ${proc.stderr.toString()}`)
+      throw new Error(`rsvg-convert failed for ${png.pathname}: ${proc.stderr.toString()}`)
     }
   }
-  console.log("wrote favicon.svg x2, favicon.png (32x32), icon.png (256x256)")
+  console.log(`wrote favicon.svg x2 and ${rasterIcons.length} raster branding assets`)
 }

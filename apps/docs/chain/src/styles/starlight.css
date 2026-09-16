@@ -30,9 +30,9 @@
 	--sl-color-gray-7: #06182a;
 	--sl-color-black: #011627; /* --bg */
 
-	--sl-color-accent-low: #3a2450;
-	--sl-color-accent: #c792ea; /* --brand */
-	--sl-color-accent-high: #e3c7f5;
+	--sl-color-accent-low: #183e37;
+	--sl-color-accent: #9bd5c6; /* --brand */
+	--sl-color-accent-high: #cce9e1;
 
 	--sl-color-bg-nav: var(--sl-color-gray-6);
 	--sl-color-bg-sidebar: var(--sl-color-gray-6);
@@ -43,7 +43,7 @@
 	--sl-color-orange: #ecc48d; /* --warning */
 	--sl-color-red: #ef5350; /* --danger */
 	--sl-color-blue: #82aaff; /* --info */
-	--sl-color-purple: #c792ea; /* --brand */
+	--sl-color-purple: #9bd5c6; /* --brand */
 }
 
 :root[data-theme="light"],
@@ -59,9 +59,9 @@
 	--sl-color-gray-7: #f7f7f9;
 	--sl-color-black: #fbfbfb; /* --bg */
 
-	--sl-color-accent-low: #efe1f8;
-	--sl-color-accent: #994cc3; /* --brand */
-	--sl-color-accent-high: #5f2b7d;
+	--sl-color-accent-low: #e2efea;
+	--sl-color-accent: #3a756b; /* --brand */
+	--sl-color-accent-high: #275249;
 
 	--sl-color-bg-nav: var(--sl-color-gray-7);
 	--sl-color-bg-sidebar: var(--sl-color-bg);
@@ -71,7 +71,7 @@
 	--sl-color-orange: #826601; /* --warning */
 	--sl-color-red: #ba3f3b; /* --danger */
 	--sl-color-blue: #4876d6; /* --info */
-	--sl-color-purple: #994cc3; /* --brand */
+	--sl-color-purple: #3a756b; /* --brand */
 }
 
 /* The site title reads as a wordmark rather than as body copy. */

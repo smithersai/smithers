@@ -167,13 +167,13 @@ const tree = [
   }
   button.node { cursor: pointer; }
   button.node:hover { background: rgb(199 146 234 / 8%); color: #fff; }
-  button.node:focus-visible { outline: 2px solid #c792ea; outline-offset: -2px; }
+  button.node:focus-visible { outline: 2px solid #9bd5c6; outline-offset: -2px; }
   .node.dir::after { content: ""; margin-left: auto; border: 4px solid transparent; border-top-color: currentColor; opacity: 0.55; transition: transform 200ms var(--ease); }
   .tree li.collapsed .node.dir::after { transform: rotate(-90deg); }
   .tree li.hidden { display: none; }
   @keyframes pop { to { opacity: 1; transform: none; } }
   .node i { width: 12px; height: 12px; border-radius: 3px; background: #82aaff; opacity: 0.85; flex: none; }
-  .node.dir i { background: #c792ea; }
+  .node.dir i { background: #9bd5c6; }
   .node.muted { color: #6f8aa0; } .node.muted i { background: #1d3b53; }
   .node.active { background: rgb(199 146 234 / 14%); color: #fff; }
 
@@ -187,7 +187,7 @@ const tree = [
   @keyframes typed { to { opacity: 1; transform: none; } }
   .run { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 18px; background: linear-gradient(to top, #011627 70%, transparent); color: #d6deeb; opacity: 0; animation: typed 400ms var(--ease) forwards; animation-delay: calc(var(--base) + 1600ms); }
   .prompt { color: #addb67; } .str { color: #ecc48d; }
-  .caret { display: inline-block; width: 8px; height: 1em; background: #c792ea; vertical-align: text-bottom; margin-left: 4px; animation: blink 1s steps(2) infinite; }
+  .caret { display: inline-block; width: 8px; height: 1em; background: #9bd5c6; vertical-align: text-bottom; margin-left: 4px; animation: blink 1s steps(2) infinite; }
   @keyframes blink { to { opacity: 0; } }
 
   @media (max-width: 720px) {
