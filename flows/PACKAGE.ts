@@ -105,7 +105,7 @@ const codingDependencies = [...codingBackend, codingScripts]
 // The repository config test reads the public page documents and evidence too.
 // Declare them so both runtime targets track changes outside their TS sources.
 const codingProjectSources = [
-  ".smithers/coding-project.json", ".smithers/factory.json",
+  ".smithers/coding-project.json", ".smithers/factory.json", "factory/wiki/pages/runtime-packages.md",
   "packages/smithers/README.md", "packages/smithers/agent/README.md", "packages/smithers/build/README.md",
   "apps/app/README.md", "apps/app/package.json", "apps/app/docs/LOCAL-APP.md",
   "apps/app/src/mainview/cards/CodingPlan.ts", "apps/app/src/bun/SessionMonitor.ts",
