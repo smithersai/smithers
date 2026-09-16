@@ -70,9 +70,11 @@ if (parsed.values.version) {
     ])
     runtime.runMain(run(platform, http.layer))
   } else {
-    const [{ platform }, runtime, http] = await Promise.all([
+    const [{ platform, environmentDispatcher }, runtime, http] = await Promise.all([
       import("../../packages/smithers/src/internal/NodeControlHost.ts"), import("@effect/platform-node/NodeRuntime"), import("@effect/platform-node/NodeHttpClient")
     ])
-    runtime.runMain(run(platform, http.layerUndici))
+    runtime.runMain(run(platform, http.layerUndiciNoDispatcher.pipe(
+      Layer.provide(Layer.effect(http.Dispatcher)(environmentDispatcher(process.env)))
+    )))
   }
 }
