@@ -180,7 +180,7 @@ test("the paused answer keeps its sign-in door in view after Chat closes", async
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
   await page.keyboard.press("i")
   await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "2")
-  await page.keyboard.press("c")
+  await page.keyboard.press("Meta+k")
   await page.getByTestId("composer-input").fill("What is issue 3 about?")
   await page.getByTestId("composer-input").press("Enter")
   const card = page.locator('.guide-transcript [data-kind="anonymous-ceiling"]')

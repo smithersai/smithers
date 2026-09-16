@@ -11,7 +11,7 @@ test("each lesson's shortcuts are unique, single, lowercase, and clear of the sh
       ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])]
       : lesson.optionalAction === undefined ? [] : [lesson.optionalAction]
     for (const action of actions) {
-      if (action.key === "c" && "flow" in action && action.flow === "chat.open") continue // the Chat lesson teaches the global control itself
+      if (action.key === "⌘K" && "flow" in action && action.flow === "chat.open") continue // the Chat lesson teaches the global control itself
       expect(action.key).toMatch(/^[a-z]$/)
       keys.push(action.key)
     }
@@ -38,7 +38,7 @@ test("the terminal line follows the escape hatch taken, and {repo} is the user's
 test("declining sign-in teaches commands and offers finishing without sending a chat turn", () => {
   for (const touch of [false, true]) {
     const message = lessonMessage(13, { declined: ["login"] }, touch)
-    expect(message).toContain(touch ? "Tap Chat" : "Press C")
+    expect(message).toContain(touch ? "Tap Chat" : "Press Command/Control+K")
     expect(message).toContain("Sign in from Account to send a message")
     expect(message).toContain("finish this tutorial without sending anything")
   }

@@ -20,8 +20,8 @@ const cleanups: Array<() => void | Promise<void>> = []
 afterEach(async () => { while (cleanups.length) await cleanups.pop()?.() }, 5_000)
 afterAll(async () => { await settle(); await GlobalRegistrator.unregister() }, 5_000)
 const settle = async () => { for (let i = 0; i < 4; i++) { await new Promise(resolve => setTimeout(resolve, 0)); flushSync(() => {}) } }
-const press = async (key: string, target: EventTarget = document) => {
-  for (const type of ['keydown', 'keyup']) flushSync(() => (type === 'keyup' && target !== document ? document.activeElement ?? target : target).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true })))
+const press = async (key: string, target: EventTarget = document, modifiers: KeyboardEventInit = {}) => {
+  for (const type of ['keydown', 'keyup']) flushSync(() => (type === 'keyup' && target !== document ? document.activeElement ?? target : target).dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, ...modifiers })))
   await settle()
 }
 async function mount(step = 1) {
@@ -62,7 +62,7 @@ test('unsupported Dictation is explained and cannot be selected; Chat opens norm
   await settle()
   expect(store.session().inputMode).toBe('normal')
   await press('Escape')
-  await press('c')
+  await press('k', document, { metaKey: true })
   expect(store.session().paletteOpen).toBe(true)
   expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
 }, 5_000)
@@ -72,7 +72,7 @@ test('dictation preserves native Tab and Shift+Tab through the dock', async () =
   const { host, store, controller } = await mount()
   controller.runCommand('input.mode', 'dictation')
   await settle()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
   expect(stop.getAttribute('aria-keyshortcuts')).toBe('Escape')
@@ -98,7 +98,7 @@ test('dictation preserves native Tab and Shift+Tab through the dock', async () =
 
 for (const draft of ['', 'hello from a phone']) test(`Escape dismisses Chat together with its root palette and preserves ${JSON.stringify(draft)}`, async () => {
   const { host, store, controller } = await mount()
-  await press('c')
+  await press('k', document, { metaKey: true })
   controller.changeDraft(draft)
   await settle()
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
@@ -108,14 +108,14 @@ for (const draft of ['', 'hello from a phone']) test(`Escape dismisses Chat toge
   expect(store.session().guide?.conversationOpen).toBe(false)
   expect(host.querySelector('.guide-composer-dock')?.getAttribute('aria-hidden') === 'false').toBe(false)
   expect(store.session().draft).toBe(draft)
-  await press('c')
+  await press('k', document, { metaKey: true })
   expect(input.value).toBe(draft)
   expect(document.activeElement === input).toBe(true)
 }, 5_000)
 
 for (const draft of ['/issues', '/issues.']) test(`Escape dismisses the nested slash menu for ${draft} before Chat`, async () => {
   const { host, store, controller } = await mount()
-  await press('c')
+  await press('k', document, { metaKey: true })
   controller.changeDraft(draft)
   await settle()
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
@@ -135,7 +135,7 @@ test('Escape on dictation Stop releases only capture and restores composer focus
   const { host, store, controller } = await mount()
   controller.runCommand('input.mode', 'dictation')
   await settle()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
   stop.focus()
@@ -152,7 +152,7 @@ test('Escape on dictation Stop releases only capture and restores composer focus
 
 test('Chat is a nonmodal dock; the transcript and footer stay keyboard accessible; Mode remains inside', async () => {
   const { host } = await mount()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const dialog = host.querySelector('[role="dialog"][aria-label="Chat"]')!
   expect(dialog.getAttribute('aria-modal')).toBe('false')
   expect(dialog.getAttribute('aria-hidden')).toBe('false')
@@ -168,7 +168,7 @@ test('Enter on dictation Stop ends capture and returns focus to the open Chat co
   const { host, store, controller } = await mount()
   controller.runCommand('input.mode', 'dictation')
   await settle()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   expect(store.session().dictating).toBe(true)
   const stop = host.querySelector<HTMLButtonElement>('.guide-dictation-stop')!
@@ -186,7 +186,7 @@ test('Enter on dictation Stop ends capture and returns focus to the open Chat co
 
 test('composer exposes the palette and its moving selection to assistive technology', async () => {
   const { host } = await mount()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   const list = host.querySelector('[role="listbox"]')!
   expect(input.getAttribute('role')).toBe('combobox')
@@ -325,7 +325,7 @@ test('the keyboard-scrollable transcript has an explicit visible focus outline',
 
 for (const close of ['Escape', 'Control+k', 'button'] as const) test(`closing the dock by ${close} restores Chat focus after a keyboard open`, async () => {
   const { host, store } = await mount()
-  await press('c')
+  await press('k', document, { metaKey: true })
   const input = host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
   if (close === 'button') {
     const button = host.querySelector<HTMLButtonElement>('[aria-label="Close Chat"]')
@@ -339,3 +339,31 @@ for (const close of ['Escape', 'Control+k', 'button'] as const) test(`closing th
   expect(store.session().paletteOpen).toBe(false)
   expect(document.activeElement === host.querySelector('.guide-footer [data-flow="chat.open"]')).toBe(true)
 }, 5_000)
+
+for (const tutorial of [true, false]) for (const modifier of ['metaKey', 'ctrlKey'] as const) test(`Chat uses only Cmd/Ctrl+K (${modifier}, tutorial=${tutorial})`, async () => {
+  const { host, store } = await mount()
+  if (!tutorial) {
+    await store.dispatch({ type: 'guide.changed', actor: 'user', guide: { ...store.session().guide!, finished: true } }).isPersisted.promise
+    await settle()
+  }
+  const chat = host.querySelector<HTMLButtonElement>('[data-flow="chat.open"]')!
+  expect(chat.getAttribute('aria-keyshortcuts')).toBe('Meta+K Control+K')
+  expect(chat.querySelector('kbd')?.textContent).toBe('⌘ K')
+  const open = () => tutorial ? store.session().guide?.conversationOpen === true : store.session().paletteOpen === true
+  for (const key of ['c', 'k']) {
+    await press(key)
+    expect(open()).toBe(false)
+  }
+  for (const extra of ['altKey', 'shiftKey'] as const) {
+    // Shift+Cmd/Ctrl+K remains the separate command-palette action outside the guide.
+    if (!tutorial && extra === 'shiftKey') continue
+    await press('k', document, { [modifier]: true, [extra]: true })
+    expect(open()).toBe(false)
+  }
+  await press('k', document, { [modifier]: true })
+  expect(open()).toBe(true)
+  await press('c')
+  expect(open()).toBe(true)
+  await press('k', document, { [modifier]: true })
+  expect(open()).toBe(false)
+})

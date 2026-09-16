@@ -124,14 +124,14 @@ test('coarse pointers hide tutorial and repository key chips at desktop width', 
   document.body.append(host)
   const root = createRoot(host)
   cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
-  flushSync(() => root.render(<><footer className="app-chat-controls"><GuideButton shortcut="c">Chat</GuideButton></footer><div className="guide-shell"><GuideButton shortcut="m">Mode</GuideButton></div></>))
+  flushSync(() => root.render(<><footer className="app-chat-controls"><GuideButton shortcut="⌘K">Chat</GuideButton></footer><div className="guide-shell"><GuideButton shortcut="m">Mode</GuideButton></div></>))
   expect(matchMedia('(pointer: coarse)').matches).toBe(true)
   const chips = host.querySelectorAll('kbd')
   expect(chips.length).toBe(2)
   for (const chip of chips) expect(getComputedStyle(chip).display).toBe('none')
 })
 
-for (const sentence of ["Press C anytime to open Chat and commands.", "Start with the practice repository’s issues. Click Show issues or press i."]) {
+for (const sentence of ["Press Command/Control+K anytime to open Chat and commands.", "Start with the practice repository’s issues. Click Show issues or press i."]) {
   test(`help retains the complete sentence: ${sentence}`, () => {
     const host = document.createElement("div")
     const root = createRoot(host)

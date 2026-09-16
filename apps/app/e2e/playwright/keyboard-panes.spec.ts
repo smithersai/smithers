@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('edit a Vim buffer and navigate back to the workspace without closing its draft', async ({ page }) => {
-  await page.keyboard.press('c')
+  await page.keyboard.press('Meta+k')
   const input = page.getByTestId('composer-input')
   await expect(input).toBeFocused()
   await input.fill('alpha beta')
@@ -51,7 +51,7 @@ test('edit a Vim buffer and navigate back to the workspace without closing its d
 })
 
 test('pane selection enters search results and Escape cancels the prefix without editing', async ({ page }) => {
-  await page.keyboard.press('c')
+  await page.keyboard.press('Meta+k')
   const input = page.getByTestId('composer-input')
   await input.fill('/')
   await page.keyboard.press('Control+b')

@@ -45,7 +45,6 @@ export function SessionNavigation() {
           return action(toggleChat, event.metaKey ? 'meta+k' : 'control+k')
         }
         if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-        if (key === GUIDE_KEYS.chat) return action(toggleChat)
         if (key === GUIDE_KEYS.mode) return action(() => root.querySelector<HTMLButtonElement>('[aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
         if (sidebarShortcut(event)) return action(() => controller.runCommand('sidebar.toggle'))
       },

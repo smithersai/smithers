@@ -284,7 +284,7 @@ test("completed pills and their keys advance after Back, including the live appr
   }
 }, 5_000)
 
-/* Beat 13's key is the reserved C: it must still open Chat, and the rewound lesson moves on. */
+/* Beat 13's key is the global Cmd/Ctrl+K shortcut: it must still open Chat, and the rewound lesson moves on. */
 test("Chat still opens at a completed beat 13, and pressing it again resumes the lesson", async () => {
   for (const press of ["key", "pointer"] as const) {
     const timers: Array<() => void> = []
@@ -295,8 +295,8 @@ test("Chat still opens at a completed beat 13, and pressing it again resumes the
     expect(button.dataset.flow).toBe("chat.open")
     if (press === "pointer") button.click()
     else {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: GUIDE_KEYS.chat, bubbles: true }))
-      document.dispatchEvent(new KeyboardEvent("keyup", { key: GUIDE_KEYS.chat, bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent("keyup", { key: "k", metaKey: true, bubbles: true }))
     }
     await settle()
     expect(controller.store.session().paletteOpen).toBe(true)
@@ -605,7 +605,7 @@ test("lesson keys cannot collide with Back, Mode, Sound, or Vim navigation", () 
 
 test("Show issues, Chat, and Mode share a keycap control; Back starts at the next lesson", async () => {
   const host = await mountGuide(1, still)
-  for (const shortcut of ['i', 'c Meta+K Control+K', 'm']) {
+  for (const shortcut of ['i', 'Meta+K Control+K', 'm']) {
     const button = host.querySelector<HTMLButtonElement>(`button[aria-keyshortcuts="${shortcut}"]`)!
     expect(button !== null).toBe(true)
     expect(button.classList.contains('guide-button')).toBe(true)
@@ -622,12 +622,12 @@ test("Back and Chat compete on release; Wiki keeps its own key", async () => {
   const host = await mountGuide(12, still, { repo: 'acme/api' }, c => {
     spyOn(c, 'runCommand').mockImplementation((name, args) => { calls.push([name, args]); return true })
   })
-  const key = (type: string, key: string) => document.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true }))
-  key('keydown', 'b'); key('keydown', 'c')
+  const key = (type: string, key: string) => document.dispatchEvent(new KeyboardEvent(type, { key, metaKey: key === 'k', bubbles: true, cancelable: true }))
+  key('keydown', 'b'); key('keydown', 'k')
   expect(host.querySelector('[aria-keyshortcuts="b"]')!.hasAttribute('data-pressed')).toBe(true)
   expect(host.querySelector('[data-flow="chat.open"]')!.hasAttribute('data-pressed')).toBe(true)
   expect(calls).toEqual([])
-  key('keyup', 'b'); key('keyup', 'c')
+  key('keyup', 'b'); key('keyup', 'k')
   expect(calls).toEqual([['chat.open', undefined]])
   key('keydown', 'u'); key('keyup', 'u')
   expect(calls[1]).toEqual(['wiki.create', 'acme/api'])

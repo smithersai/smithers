@@ -56,7 +56,7 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
       touchContent: "Start with the practice repository’s issues. Tap Show issues.",
       introduction: [
         { target: "action", content: "Smithers makes suggestions as to what we should do next as you use it." },
-        { target: "chat", content: "Press C anytime to open Chat and commands.", touchContent: "Tap Chat anytime to open Chat and commands." },
+        { target: "chat", content: "Press Command/Control+K anytime to open Chat and commands.", touchContent: "Tap Chat anytime to open Chat and commands." },
       ] },
     instruction: "Lists the practice repository's open issues.",
     actions: [
@@ -105,10 +105,10 @@ export const GUIDE_STAGES: readonly GuideLesson[] = [
     actions: [{ label: "Create Wiki for {repo}", key: "u", flow: "wiki.create", args: "{repo}" },
       { label: "Create Mythical history", key: "y", flow: "history.bootstrap", args: "{repo}", subtitle: "On its own branch. Your branches stay untouched." }],
     secondary: { label: "Do this later", key: "z", flow: "onboarding.act", args: "decline background" } },
-  /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can press C to open Chat. From there you can type any message.\n\nPress M to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending.", completion: "palette.opened", skippable: false,
+  /* 13 */ { kind: "do", message: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can press Command/Control+K to open Chat. From there you can type any message.\n\nPress M to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending.", completion: "palette.opened", skippable: false,
     touchMessage: "If you ever need to just chat with me rather than using the fast controls or UI to interact you can tap Chat to open Chat. From there you can type any message.\n\nTap Mode to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending.",
     instruction: "Opens Chat. Escape closes it. Sending a message is optional.", success: "Choose Dictation from Mode before opening Chat to speak. Escape closes Chat. You can finish the tutorial without sending a message.",
-    actions: [{ label: "Chat", key: "c", flow: "chat.open" }],
+    actions: [{ label: "Chat", key: "⌘K", flow: "chat.open" }],
     secondary: { label: "Finish tutorial", key: "f", flow: "onboarding.act", args: "finish" } },
   /* 14 */ { kind: "say", terminal: true, optionalAction: REEL_BUTTON,
     message: "You're set. Your Wiki and history will land soon. When you're ready, pick one of {repo}'s issues and we'll make a real Change.",
@@ -123,7 +123,7 @@ export const GUIDE_PRACTICE_END = 9
 /** Where completed practice lands: the repository bridge. */
 export const GUIDE_BRIDGE = 10
 /** Global controls and Vim navigation cannot be assigned to lesson actions. */
-export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
+export const GUIDE_RESERVED_KEYS = ["s", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
 
 type GuideContext = Pick<GuideState, "repo" | "playthrough" | "librarianLaunches"> & {
   readonly signedIn?: boolean; readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number
@@ -134,7 +134,7 @@ export const lessonMessage = (step: number, guide: GuideContext, touch = false):
   const lesson = GUIDE_STAGES[step]
   if (lesson === undefined) return ""
   if (lesson.kind === "do" && lesson.completion === "palette.opened" && guide.declined?.includes("login")) {
-    return (touch ? "Tap Chat" : "Press C") + " to explore Chat and commands. Sign in from Account to send a message. You can finish this tutorial without sending anything.\n\n"
+    return (touch ? "Tap Chat" : "Press Command/Control+K") + " to explore Chat and commands. Sign in from Account to send a message. You can finish this tutorial without sending anything.\n\n"
       + (touch ? "Tap Mode" : "Press M") + " to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending."
   }
   if (lesson.kind === "say" && lesson.variants !== undefined) {

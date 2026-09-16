@@ -1,12 +1,11 @@
 import type { ComponentProps, ReactNode } from "react"
 
 /** Reserved tutorial controls; lesson keys must stay distinct from these. */
-export const GUIDE_KEYS = { back: "b", mode: "m", sound: "s", chat: "c", finish: "f", replay: "r" } as const
+export const GUIDE_KEYS = { back: "b", mode: "m", sound: "s", chat: "⌘K", finish: "f", replay: "r" } as const
 
 export function guideShortcut(shortcut: string): string | undefined {
   if (shortcut.toLowerCase() === "escape") return "Escape"
   if (shortcut.toLowerCase() === "enter") return "Enter"
-  if (shortcut === "c") return "c Meta+K Control+K"
   if (shortcut === "⌘K") return "Meta+K Control+K"
   if (shortcut === "Tab ↵") return undefined
   return shortcut.toLowerCase() === "arrowright" ? "ArrowRight" : shortcut.toLowerCase()
