@@ -1166,7 +1166,33 @@ export const deliverSignal = (
     // competing resolver may have won; the durable stored result is the proof.
     const completed = yield* state.deferred(bound)
     if (Option.isSome(completed)) return completionMatches(completed.value) ? "delivered" as const : "no-match" as const
-    return outcome === "NotWaiting" ? "no-match" as const : "unknown" as const
+    if (outcome !== "NotWaiting") return "unknown" as const
+    // A normal resume clears waiting before replay parks on the same token.
+    // Losing that CAS is not evidence that the admitted signal is wrong. Keep
+    // the command bound so the inbox retries this exact wait, never a later one.
+    const waiting = yield* state.waiting(bound.executionId)
+    if (
+      Option.isSome(waiting) && waiting.value.token !== null && waiting.value.token !== token
+    ) return "no-match" as const
+    const runs = yield* Effect.serviceOption(RunStore.RunStore)
+    if (Option.isSome(runs)) {
+      const row = yield* runs.value.get(bound.executionId).pipe(
+        Effect.map(Option.some),
+        Effect.catch((cause) =>
+          cause.code === "not_found_row" ? Effect.succeed(Option.none<RunStore.RunRow>()) : Effect.fail(
+            new PersistenceError({
+              operation: "AgentSession.deliverSignal",
+              message: "The bound signal execution could not be read",
+              cause
+            })
+          )
+        )
+      )
+      if (
+        Option.isNone(row) || ["completed", "failed", "cancelled"].includes(row.value.status)
+      ) return "no-match" as const
+    }
+    return "unknown" as const
   })
 
 /**

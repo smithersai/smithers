@@ -513,20 +513,37 @@ describe("durable signal admission and engine observation", () => {
     }))
   })
 
-  it("rejects a bound token when a competing wake removed the wait without completing it", async () => {
+  it("retains the bound command through a competing resume and delivers when the same wait parks again", async () => {
     await run(Effect.gen(function*() {
+      const control = yield* ControlRuntime
+      const engine = yield* FlowRuntime.FlowRuntime
       const state = yield* DurableEngineState.DurableEngineState
-      const waiting = yield* parkedRun("competing-wake", "approval")
+      const runId = yield* startControlRun
+      const waiting = yield* parkedRun(runId, "approval")
       if (waiting.token === null) return yield* Effect.die("missing token")
-      yield* state.wake("competing-wake")
-      expect(
-        yield* AgentSession.deliverSignal({
-          runId: "competing-wake",
-          token: waiting.token,
-          signal: { name: "approval", payload: "late" }
-        })
-      ).toBe("no-match")
+      yield* control.admitSignal("resume-race", runId, { name: "approval", payload: "retained reply" })
+      yield* AgentSession.drainRecordedSignals.pipe(Effect.provideService(FlowRuntime.FlowRuntime, {
+        ...engine,
+        deferredDoneIfWaiting: (deferred, options) =>
+          state.wake(runId).pipe(
+            Effect.andThen(engine.deferredDoneIfWaiting(deferred, options))
+          )
+      }))
+      expect(yield* control.signalCommand("resume-race")).toMatchObject({ state: "pending", token: waiting.token })
       expect(yield* state.deferred(DurableDeferred.TokenParsed.fromString(waiting.token))).toEqual(Option.none())
+      yield* engine.resume(Gated, runId)
+      for (
+        let attempt = 0;
+        attempt < 2_000 && (yield* control.signalCommand("resume-race"))?.state === "pending";
+        attempt++
+      ) {
+        yield* AgentSession.drainRecordedSignals
+        yield* Effect.yieldNow
+      }
+      expect(yield* control.signalCommand("resume-race")).toMatchObject({ state: "delivered", token: waiting.token })
+      expect(yield* settled(runId)).toBe("completed")
+      const completed = yield* state.deferred(DurableDeferred.TokenParsed.fromString(waiting.token))
+      expect(Option.isSome(completed) && completed.value.exit).toEqual(Exit.succeed("retained reply"))
     }))
   })
 
