@@ -5,13 +5,7 @@ import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { RepoHomeCardBody } from "./HomeCards"
 
-/*
- * The home pane rendered from a fixture: every declared block renders from
- * its value and in declaration order, the CI benchmark says "not measured
- * yet" for each measure it names, the featured flows are doors onto flow.run
- * carrying the flow and the repository, an absent catalog is the honest line,
- * links are anchors, and Open PACKAGE.ts is the files.read door.
- */
+/* Home blocks preserve their actions without summaries or unmeasured rows. */
 
 GlobalRegistrator.register()
 
@@ -61,11 +55,10 @@ describe("the home card", () => {
     expect([...host.querySelectorAll<HTMLElement>("[data-block]")].map((section) => section.dataset.block)).toEqual([
       "text",
       "flows",
-      "ci-benchmark",
       "links"
     ])
     expect(host.querySelector('[data-testid="home-text"]')?.textContent).toBe("Smithers builds itself with Smithers.")
-    expect([...host.querySelectorAll("h4")].map((heading) => heading.textContent)).toEqual(["Try first", "CI on Smithers", "Read more"])
+    expect([...host.querySelectorAll("h4")].map((heading) => heading.textContent)).toEqual(["Try first", "Read more"])
     const link = host.querySelector<HTMLAnchorElement>('[data-testid="home-links"] a')
     expect(link?.textContent).toBe("Source on GitHub")
     expect(link?.classList.contains("repo-home-link")).toBe(true)
@@ -73,13 +66,13 @@ describe("the home card", () => {
     expect(link?.getAttribute("rel")).toBe("noreferrer")
   })
 
-  test("the CI benchmark names each measure it asked for and says not measured yet", () => {
-    const { host } = render({ blocks: [{ type: "ci-benchmark", measures: ["cold", "cache-hit-rate"] }] })
+  test("an unmeasured CI benchmark renders neither rows nor title", () => {
+    const { host } = render({ blocks: [{ type: "ci-benchmark", title: "CI on Smithers", measures: ["cold", "cache-hit-rate"] }] })
     const rows = [...host.querySelectorAll<HTMLTableRowElement>('[data-testid="home-ci-benchmark"] tr')]
-    expect(rows.map((row) => [row.dataset.measure, ...[...row.cells].map((cell) => cell.textContent)])).toEqual([
-      ["cold", "Cold, full", "not measured yet"],
-      ["cache-hit-rate", "Cache hits", "not measured yet"]
-    ])
+    expect(rows).toEqual([])
+    expect(host.querySelector("[data-block=ci-benchmark]")).toBeNull()
+    expect(host.textContent).not.toContain("not measured yet")
+    expect(host.textContent).not.toContain("CI on Smithers")
     expect(host.textContent).not.toContain("One-file change")
     expect(host.textContent).not.toMatch(/\d+ ?(m|s|%)/)
   })
@@ -91,7 +84,8 @@ describe("the home card", () => {
     })
     const doors = buttons().filter((button) => button.dataset.flow === "flow.run")
     expect(doors.map((button) => button.textContent)).toEqual(["/review", "/lint"])
-    expect(host.querySelector('[data-testid="home-flows"]')?.textContent).toContain("Review the change.")
+    expect(host.querySelector('[data-testid="home-flows"]')?.textContent).not.toContain("Review the change.")
+    expect(doors[0]?.title).toBe("Review the change.")
     for (const door of doors) door.click()
     expect(ran).toEqual([["flow.run", `review ${REPO}`], ["flow.run", `lint ${REPO}`]])
   })
@@ -105,16 +99,12 @@ describe("the home card", () => {
     expect(host.querySelector('[data-testid="home-no-flows"]')?.textContent).toBe(
       `${REPO} has no .smithers/factory.json, so its featured flows are not published yet.`
     )
-    expect(buttons().map((button) => button.dataset.flow)).toEqual(["files.read"])
+    expect(buttons().map((button) => button.dataset.flow)).toEqual([])
   })
 
-  test("Open FACTORY.ts is the files.read door onto the declaring file", () => {
-    const { host, ran, buttons } = render({ blocks: [{ type: "text", text: "x" }] })
-    expect(host.querySelector('[data-testid="home-source"]')?.textContent).toContain(".smithers/home.json")
-    expect(host.querySelector('[data-testid="home-source"]')?.textContent).toContain(".smithers/FACTORY.ts")
-    const [door] = buttons()
-    expect(door?.dataset.flow).toBe("files.read")
-    door?.click()
-    expect(ran).toEqual([["files.read", `.smithers/FACTORY.ts ${REPO}`]])
+  test("omits the provenance footer and its extra door", () => {
+    const { host, buttons } = render({ blocks: [{ type: "text", text: "x" }] })
+    expect(host.querySelector('[data-testid="home-source"]')).toBeNull()
+    expect(buttons()).toEqual([])
   })
 })

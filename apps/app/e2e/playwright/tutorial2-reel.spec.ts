@@ -1,8 +1,25 @@
-import { expect, test } from "@playwright/test"
-import { lessonMessage } from "../../src/mainview/onboarding/lessons"
+import { expect, test, type Page } from "@playwright/test"
+import { GUIDE_STAGES, lessonMessage } from "../../src/mainview/onboarding/lessons"
 import { FINISH_BUTTON, REEL_BUTTON, REPLAY_KEY } from "../../src/mainview/onboarding/reel.ts"
 
 test.use({ contextOptions: { reducedMotion: "reduce" } })
+
+// Practice receipts are setup here; these tests exercise the terminal/reel handoff.
+const enterHandoff = async (page: Page) => {
+  for (let step = 1; step < 10; step++) {
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step))
+    const lesson = GUIDE_STAGES[step]!
+    if (lesson.kind !== "do") throw new Error("Expected a practice action")
+    const input = page.getByTestId("composer-input")
+    if (!(await input.isVisible())) await page.keyboard.press("Control+k")
+    await input.fill(`/onboarding.act signal ${lesson.completion}`)
+    await page.getByRole("button", { name: "Send message", exact: true }).click()
+    await expect(input).toHaveValue("")
+    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", String(step + 1))
+  }
+  if (await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+}
 
 for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
   test(`terminal read, keyed pills and optional reel at ${viewport.width}px`, async ({ page }) => {
@@ -17,7 +34,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     const shell = page.locator('.guide-shell')
     await expect(shell).toHaveAttribute('data-stage', '1')
     await expect(page.locator('.guide-app')).toHaveAttribute('data-repo', 'smithersai/smithers')
-    await page.keyboard.press('q')
+    await enterHandoff(page)
     await expect(shell).toHaveAttribute('data-stage', '10')
     await page.keyboard.press('x')
     await expect(shell).toHaveAttribute('data-stage', '13')
@@ -62,7 +79,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await page.screenshot({ path: test.info().outputPath(`terminal-${viewport.width}.png`) })
     await page.keyboard.press(REPLAY_KEY)
     await expect(shell).toHaveAttribute('data-stage', '1')
-    await page.keyboard.press('q')
+    await enterHandoff(page)
     await expect(shell).toHaveAttribute('data-stage', '10')
     await page.keyboard.press('x')
     await expect(shell).toHaveAttribute('data-stage', '13')
@@ -82,7 +99,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
 
 test.describe("capacity refusal handoff", () => {
   test.use({ timezoneId: "America/Los_Angeles" })
-  test("Finish leaves a limited practice run behind and opens the repository Home", async ({ page }) => {
+  test("Finish leaves a limited practice run behind and opens the selected repository Home", async ({ page }) => {
     await page.route("**/api/**", route => route.fulfill({ status: 404, json: {} }))
     await page.route("**/api/bootstrap", route => route.fulfill({ json: {
       apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "redirect", sandbox: null,
@@ -105,10 +122,6 @@ test.describe("capacity refusal handoff", () => {
     const skip = run.getByRole("button", { name: "Continue without practice", exact: true })
     await expect(skip).toHaveClass(/guide-button/)
     await skip.click()
-    await expect(shell).toHaveAttribute("data-stage", "10")
-    await page.keyboard.press("x")
-    await expect(shell).toHaveAttribute("data-stage", "13")
-    await page.keyboard.press("f")
     await expect(shell).toHaveCount(0)
     const first = page.getByTestId("transcript").locator(".smithers-card").first()
     await expect(first).toHaveAttribute("data-kind", "repo-home")
@@ -127,7 +140,7 @@ test.describe("capacity refusal handoff", () => {
  * clipped under the app header with no dismiss control; and the only door
  * back into the tutorial was a flow name typed into chat.
  */
-test("Finish clears the tutorial's own notification and leaves two doors back in", async ({ page }) => {
+test("Finish clears tutorial notifications and preserves explicit tutorial entry", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.route('**/api/bootstrap', route => route.fulfill({ json: {
     apiVersion: 1, host: 'cloud', version: 'test', buildSha: 'test', capabilities: ['identity', 'cloud'], authFlow: 'redirect', sandbox: null,
@@ -135,16 +148,16 @@ test("Finish clears the tutorial's own notification and leaves two doors back in
   await page.route('**/api/auth/session', route => route.fulfill({ json: { status: 'signed-out' } }))
   await page.route('**/api/public/repos', route => route.fulfill({ json: { repos: [{ name: 'smithersai/smithers' }] } }))
   await page.route('**/api/repos/smithersai/smithers', route => route.fulfill({ json: { default_bookmark: 'main' } }))
-  // Finish prepares the destination before the shell leaves, and that includes this read.
+  // The explicitly selected repository can declare a Home card.
   await page.route('**/contents/.smithers/home.json', route => route.fulfill({ json: {
     content: JSON.stringify({ blocks: [{ type: "text", text: "Repository home" }] }),
   } }))
   const shell = page.locator('.guide-shell')
   const replay = page.getByRole("button", { name: "Replay introduction", exact: true })
-  /** Beat 1 to the handoff beat, by the two escape hatches the reel test walks. */
+  /** Practice setup and declined sign-in reach the terminal lesson. */
   const walkToHandoff = async () => {
     await expect(shell).toHaveAttribute('data-stage', '1')
-    await page.keyboard.press('q')
+    await enterHandoff(page)
     await expect(shell).toHaveAttribute('data-stage', '10')
     await page.keyboard.press('x')
     await expect(shell).toHaveAttribute('data-stage', '13')
@@ -166,27 +179,28 @@ test("Finish clears the tutorial's own notification and leaves two doors back in
   await page.keyboard.press('Escape')
   await expect(shell).toHaveAttribute('data-stage', '14')
 
-  await page.keyboard.press(FINISH_BUTTON.key)
+  await page.getByRole("button", { name: FINISH_BUTTON.label, exact: true }).click()
   await expect(shell).toHaveCount(0)
   await expect(page).toHaveURL(/\/smithersai\/smithers\/$/)
   await expect(notification).toHaveCount(0)
 
-  // The footer remains available, and the explicit deep link starts again.
-  await expect(replay).toBeVisible()
+  // Replay has no footer button; the explicit deep link starts again.
+  await expect(replay).toHaveCount(0)
   await page.goto("/smithersai/smithers/?tutorial")
   await expect(shell).toHaveAttribute("data-stage", "1")
   await walkToHandoff()
-  await page.keyboard.press(FINISH_BUTTON.key)
+  await page.getByRole("button", { name: FINISH_BUTTON.label, exact: true }).click()
   await expect(shell).toHaveCount(0)
   await expect(page).toHaveURL(/\/smithersai\/smithers\/$/)
 
-  // The door survives a reload of the repository route it finished on.
+  // Reload keeps the tutorial finished.
   await page.goto("/smithersai/smithers/")
-  await expect(replay).toBeVisible()
+  await expect(replay).toHaveCount(0)
   await expect(shell).toHaveCount(0)
 
-  // The repository route mounts the guide from the footer's keyboard door.
-  await replay.focus()
-  await page.keyboard.press("Enter")
+  // The slash door still mounts the guide.
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
+  await page.getByTestId("composer-input").fill("/tut")
+  await page.getByRole("button", { name: "Send message", exact: true }).click()
   await expect(shell).toHaveAttribute("data-stage", "1")
 })

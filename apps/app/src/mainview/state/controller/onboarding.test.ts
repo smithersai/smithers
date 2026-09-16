@@ -13,7 +13,7 @@ import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
-import { parseActivity, PROTOTYPE_FLOW_ID, PROTOTYPE_RUN_KIND, summaryPredicate, welcomeSentence } from "./onboarding"
+import { parseActivity, PROTOTYPE_FLOW_ID, PROTOTYPE_RUN_KIND } from "./onboarding"
 
 /*
  * The repository welcome's decisions, through the one run path: the gate
@@ -65,7 +65,7 @@ const settled = async (ticks = 4): Promise<void> => {
 /** A route stub: the response for one path, given the request's init (the relay stubs read the body). */
 type Route = (init?: RequestInit) => Response
 
-const fixture = async (routes: Record<string, Route>) => {
+const fixture = async (routes: Record<string, Route>, selected = true) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requests: Array<string> = []
   const turns: Array<string> = []
@@ -96,7 +96,7 @@ const fixture = async (routes: Record<string, Route>) => {
     actor: "system",
     repositories: [{ id: REPO, org: "smithersai", ownerKind: "user", name: "smithers", head: null, catalog: true, summary: SUMMARY }]
   })
-  store.dispatch({ type: "repo.selected", actor: "user", id: REPO })
+  if (selected) store.dispatch({ type: "repo.selected", actor: "user", id: REPO })
   return { store, controller, requests, turns }
 }
 
@@ -120,17 +120,7 @@ const onboardingCards = (store: AppStore): Array<Extract<Card, { kind: "repo-onb
 const lastMessage = (store: AppStore) =>
   [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal).at(-1)
 
-describe("the welcome's sentence", () => {
-  test("turns the catalog's product sentence into a predicate of the repository", () => {
-    expect(summaryPredicate(REPO, SUMMARY)).toBe(
-      "a durable framework that lets agents plan, run, and review changes to a code repository through flows."
-    )
-    expect(welcomeSentence(REPO, summaryPredicate(REPO, SUMMARY))).toBe(`Welcome to Smithers. ${REPO} is ${summaryPredicate(REPO, SUMMARY)}`)
-    // A sentence that does not open on the repository's name is kept whole.
-    expect(summaryPredicate("acme/widgets", "A widget toolkit for the web.")).toBe("A widget toolkit for the web.")
-    expect(summaryPredicate(REPO, undefined)).toBeNull()
-    expect(summaryPredicate(REPO, "  ")).toBeNull()
-  })
+describe("repository activity", () => {
 
   test("the activity answer is read only in the route's shape", () => {
     expect(parseActivity({ sentence: "2 commits this week.", counts: { commits: 2, pullRequests: 0, issues: 0 }, since: "2026-08-31" }))
@@ -145,7 +135,7 @@ describe("the welcome's sentence", () => {
 })
 
 describe("repo.welcome", () => {
-  test("renders the welcome card for the selected catalog repository with its curated sentence", async () => {
+  test("renders the welcome card for the selected catalog repository without a summary sentence", async () => {
     const { store, controller } = await fixture({})
     const outcome = await controller.commands.run("repo.welcome")
     expect(outcome.status).toBe("executed")
@@ -154,7 +144,7 @@ describe("repo.welcome", () => {
     expect(card?.payload).toEqual({
       stage: "welcome",
       repo: REPO,
-      summary: "a durable framework that lets agents plan, run, and review changes to a code repository through flows."
+      summary: null
     })
   })
 
@@ -169,7 +159,7 @@ describe("repo.welcome", () => {
       expect([...store.collections.repositoryContexts.values()].some(row => JSON.stringify(row.data) === outcome.value)).toBe(true)
       expect(onboardingCards(store)[0]?.payload).toMatchObject({
         stage: "welcome",
-        summary: "a durable framework that lets agents plan, run, and review changes to a code repository through flows."
+        summary: null
       })
       const callable = controller.commands.callable().map(entry => entry.binding.descriptor.name)
       for (const name of ["repo.maintain", "repo.contribute", "repo.explore"]) expect(callable).toContain(name)
@@ -217,7 +207,7 @@ describe("repo.maintain", () => {
   })
 
   test("signed in, while the activity route answers 404 the card says so and still offers the maintainer's reads", async () => {
-    const { store, controller, requests } = await fixture({})
+    const { store, controller, requests } = await fixture({}, false)
     identity(store, "signed-in")
     await settled()
     const outcome = await controller.commands.run("repo.maintain")
@@ -381,7 +371,7 @@ describe("repo.home", () => {
     if (outcome.status === "executed") {
       expect(outcome.value).toContain("Smithers builds itself with Smithers.")
       expect(outcome.value).toContain("review (Review the change.)")
-      expect(outcome.value).toContain("not measured yet")
+      expect(outcome.value).not.toContain("not measured yet")
     }
   })
 
@@ -682,9 +672,36 @@ for (const state of ["signed-out", "signed-in", "declined"] as const) test(`Fini
     ...(state === "declined" ? { declined: ["install"] } : {}) } }).isPersisted.promise
   const outcome = await controller.commands.run("onboarding.act", "finish")
   expect(outcome.status).not.toBe("failed")
-  const expected = state === "signed-in" ? "acme/api" : REPO
+  const expected = "acme/api"
   expect(store.session().activeRepoKey).toBe(expected)
   expect(store.collections.cards.get(`repo-welcome-${expected}`)?.kind).toBe("repo-onboarding")
   expect(store.collections.cards.get(`repo-home-${expected}`)?.kind).toBe("repo-home")
   expect(store.session().guide?.finished).toBe(true)
+})
+
+for (const state of ["signed-out", "signed-in"] as const) for (const practice of [false, true]) test(`Finish opens nothing with ${practice ? "only practice" : "no selection"} while ${state}`, async () => {
+  const { store, controller, requests } = await fixture({}, false)
+  identity(store, state)
+  if (practice) {
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+      id: "practice:smithersai/hello-server", org: "practice:smithersai", name: "hello-server", ownerKind: "user", head: null,
+    } }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" }).isPersisted.promise
+  }
+  await settled()
+  const before = store.session().activeRepoKey
+  expect(before ?? null).toBe(practice ? "practice:smithersai/hello-server" : null)
+  requests.length = 0
+  await controller.guideAct("finish")
+  expect(store.session().guide?.finished).toBe(true)
+  expect(store.session().activeRepoKey).toBe(before)
+  expect(onboardingCards(store)).toEqual([])
+  expect(homeCards(store)).toEqual([])
+  expect(requests).toEqual([])
+  await controller.dispose()
+})
+
+test("welcome sentence helpers are deleted", async () => {
+  const source = await Bun.file(new URL("./onboarding.ts", import.meta.url)).text()
+  expect(source).not.toMatch(/welcomeSentence|summaryPredicate/)
 })

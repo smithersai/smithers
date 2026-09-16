@@ -58,13 +58,15 @@ test("Back at stage 1 leaves the guide unchanged", async () => {
 for (const refusal of [undefined, "Repository unavailable"]) test(`Skip shares finish cleanup and refusal handling: ${refusal ?? "accepted"}`, async () => {
   const original = { ...initialGuide(), step: 3, conversationOpen: true, notice: "Pending", noticeDetail: "Details" }
   const { store } = await setup(original)
+  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "acme/api", org: "acme", name: "api", ownerKind: "user", head: null } }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
   await store.dispatch({ type: "toast.shown", actor: "system", key: "guide-tip-skip", title: "Tip" }).isPersisted.promise
   const repos: string[] = []
   let finished = 0
   const controller = createGuideController({ store, commandActor: "user" } as ControllerContext, undefined,
     async repo => { repos.push(repo); return refusal }, () => { finished++ })
   expect(await controller.guideAct("skip")).toBe(refusal)
-  expect(repos).toEqual(["smithersai/smithers"])
+  expect(repos).toEqual(["acme/api"])
   expect(finished).toBe(1)
   expect(store.session().guide).toMatchObject({ finished: true, step: 14, conversationOpen: false })
   expect(store.session().guide?.notice).toBeUndefined()

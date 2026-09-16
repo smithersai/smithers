@@ -11,7 +11,6 @@ import { flowAction } from "../flows/FlowAction"
  */
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
-import { ACTIVITY_UNAVAILABLE, NO_CONTRIBUTING_GUIDE, welcomeSentence } from "../state/controller/onboarding"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { runtimeFlowName } from "../flows/FlowName"
@@ -48,7 +47,6 @@ export const RepoOnboardingCardBody = ({ card, onRunCommand }: { readonly card: 
   if (payload.stage === "welcome") {
     return (
       <div className="repo-onboarding" data-stage="welcome">
-        <p data-testid="onboarding-welcome">{welcomeSentence(repo, payload.summary)}</p>
         <p>I am</p>
         <div className="flow-run-actions">
           <Door flow="repo.maintain" args={repo} label="maintaining this repo" onRunCommand={onRunCommand} />
@@ -61,7 +59,7 @@ export const RepoOnboardingCardBody = ({ card, onRunCommand }: { readonly card: 
   if (payload.stage === "maintain") {
     return (
       <div className="repo-onboarding" data-stage="maintain">
-        <p data-testid="onboarding-activity">{payload.activity?.sentence ?? payload.reason ?? ACTIVITY_UNAVAILABLE}</p>
+        {payload.activity === null ? null : <p data-testid="onboarding-activity">{payload.activity.sentence}</p>}
         <div className="flow-run-actions">
           {payload.flows.flatMap((flow) => {
             const door = MAINTAINER_DOORS[flow]
@@ -83,30 +81,22 @@ export const RepoOnboardingCardBody = ({ card, onRunCommand }: { readonly card: 
             ? null
             : <Door flow="files.read" args={`${payload.guide} ${repo}`} label="learn more about contributing" onRunCommand={onRunCommand} />}
         </div>
-        {payload.guide === null
-          ? <p className="smithers-card-note" data-testid="onboarding-no-guide">{payload.reason ?? NO_CONTRIBUTING_GUIDE}</p>
-          : null}
       </div>
     )
   }
   return (
     <div className="repo-onboarding" data-stage="explore">
-      <p data-testid="onboarding-wiki">The wiki is {repo}'s generated guide for humans and agents.</p>
       {payload.guides.length === 0
         ? <p className="smithers-card-note" data-testid="onboarding-no-guides">{payload.reason}</p>
         : (
-          <>
-            <p className="smithers-card-note">Smithers has not generated a wiki for {repo} yet. These are the guide documents the repository holds.</p>
-            <ul className="world-card-list" data-testid="onboarding-guides">
-              {payload.guides.map((guide) => (
-                <li key={guide.path} className="world-card-row">
-                  <Door flow="files.read" args={`${guide.path} ${repo}`} label={guide.path} onRunCommand={onRunCommand} />
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul className="world-card-list" data-testid="onboarding-guides">
+            {payload.guides.map((guide) => (
+              <li key={guide.path} className="world-card-row">
+                <Door flow="files.read" args={`${guide.path} ${repo}`} label={guide.path} onRunCommand={onRunCommand} />
+              </li>
+            ))}
+          </ul>
         )}
-      <p data-testid="onboarding-ask">Ask any question about {repo} in the chat.</p>
     </div>
   )
 }

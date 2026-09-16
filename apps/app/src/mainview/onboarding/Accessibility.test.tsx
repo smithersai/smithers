@@ -283,18 +283,16 @@ test('tutorial sounds report new completions once, including goal ticks, and sta
   expect(chimes).toBe(2)
 }, 5_000)
 
-for (const [label, action] of [['Finish tutorial', 'finish'], ['Replay introduction', 'restart']]) {
+for (const [label, action] of [['Finish tutorial', 'finish']]) {
   test(`${label} advertises a distinct shortcut that runs its action`, async () => {
     const { host, controller } = await mount(14)
     const calls: unknown[] = []
     const spy = spyOn(controller, 'runCommand').mockImplementation((...args) => { calls.push(args); return true })
     const buttons = [...host.querySelectorAll<HTMLButtonElement>('button')]
     const finish = buttons.find(node => node.textContent?.includes('Finish tutorial'))!
-    const replay = buttons.find(node => node.textContent?.includes('Replay introduction'))!
-    const button = label === 'Finish tutorial' ? finish : replay
+    expect(buttons.some(node => node.textContent?.includes('Replay introduction'))).toBe(false)
+    const button = finish
     expect(finish.getAttribute('aria-keyshortcuts')).toBeTruthy()
-    expect(replay.getAttribute('aria-keyshortcuts')).toBeTruthy()
-    expect(finish.getAttribute('aria-keyshortcuts')).not.toBe(replay.getAttribute('aria-keyshortcuts'))
     await press(button.getAttribute('aria-keyshortcuts')!)
     expect(calls).toContainEqual(['onboarding.act', action])
     spy.mockRestore()

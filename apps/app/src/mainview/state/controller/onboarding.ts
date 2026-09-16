@@ -1,8 +1,7 @@
 /*
  * The repository welcome and its three answers.
  *
- * Any time a repository is opened the transcript opens on one card: "Welcome
- * to Smithers. owner/repo is <the catalog's one sentence>." followed by "I am"
+ * Any time a repository is opened the transcript opens on one card: "Welcome · owner/repo" followed by "I am"
  * and three buttons. Each button is the button door of one flow
  * (repo.maintain, repo.contribute, repo.explore), which the slash menu and the
  * agent reach through the same registry entry (THE THREE-DOOR LAW).
@@ -16,7 +15,7 @@
  * enqueue work that fires after its turn ends.
  *
  * Nothing here is invented: the activity sentence comes from the public
- * activity route or the card says it is not available yet; the guide
+ * activity route; the guide
  * documents are the ones the repository holds, read through the same public
  * contents route files.read uses.
  *
@@ -61,7 +60,7 @@ export interface OnboardingController {
   readonly maintainRepo: (repo?: string) => Answer
   /** `repo.contribute [owner/repo]`: sign-in when signed out, then the three contributor doors. */
   readonly contributeRepo: (repo?: string) => Answer
-  /** `repo.explore [owner/repo]`: what the wiki is, the repository's guide documents, and the invitation to ask. */
+  /** `repo.explore [owner/repo]`: the repository's guide documents. */
   readonly exploreRepo: (repo?: string) => Answer
   /** `repo.home [owner/repo]`: the repository's home pane, the blocks its .smithers/FACTORY.ts declares, read from .smithers/home.json. */
   readonly homeRepo: (repo?: string) => Answer
@@ -113,25 +112,6 @@ export const noHomePane = (repo: string): string => `${repo} declares no home pa
 export const noFlowCatalog = (repo: string): string =>
   `${repo} has no ${FACTORY_PROJECTION_PATH}, so its featured flows are not published yet.`
 export const NO_CONTRIBUTING_GUIDE = "This repository has no CONTRIBUTING.md."
-
-/** The sentence the welcome speaks: the catalog's summary as a predicate of the repository name. */
-export const welcomeSentence = (repo: string, summary: string | null): string =>
-  summary === null ? `Welcome to Smithers. This is ${repo}.` : `Welcome to Smithers. ${repo} is ${summary}`
-
-/**
- * The catalog's sentence names the product ("Smithers is a durable …"); the
- * welcome names the repository ("smithersai/smithers is a durable …"), so a
- * leading "<name> is " comes off when it is the repository's own short name.
- */
-export const summaryPredicate = (repo: string, summary: string | undefined): string | null => {
-  if (summary === undefined) return null
-  const text = summary.trim()
-  if (text === "") return null
-  const name = repo.slice(repo.indexOf("/") + 1).toLowerCase()
-  const match = /^(\S+)\s+is\s+(.+)$/s.exec(text)
-  if (match !== null && match[1]!.toLowerCase() === name) return match[2]!
-  return text
-}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -294,7 +274,7 @@ export const createOnboardingController = (ctx: ControllerContext, deps: Onboard
 
   /** What the model is told the pane shows: every block, in order, by what it says. */
   const homeValue = (payload: HomePayload): string => {
-    const parts = payload.blocks.map((block) => {
+    const parts = payload.blocks.filter(block => block.type !== "ci-benchmark").map((block) => {
       switch (block.type) {
         case "text":
           return block.text
@@ -306,8 +286,6 @@ export const createOnboardingController = (ctx: ControllerContext, deps: Onboard
             : `${block.title ?? "Featured flows"}: ${
               payload.featuredFlows.map((flow) => (flow.summary === null ? flow.id : `${flow.id} (${flow.summary})`)).join("; ")
             }`
-        case "ci-benchmark":
-          return `${block.title ?? "CI benchmark"}: ${block.measures.join(", ")} are not measured yet.`
       }
     })
     return `The home pane of ${payload.repo}, declared in its .smithers/FACTORY.ts: ${parts.join(" ")}`
@@ -317,18 +295,15 @@ export const createOnboardingController = (ctx: ControllerContext, deps: Onboard
     const target = resolveTargetRepo(store, explicit)
     if ("error" in target) return target.error
     const { repo } = target
-    const summary = summaryPredicate(repo, store.collections.repositories.get(repo)?.summary)
     // The home pane sits above the welcome. Ordinals are read off the transcript
     // (highest + 1), so the welcome takes the slot after the pane's and the
     // pane, read after the welcome renders, fills the one below it.
     const homeOrdinal = deps.nextOrdinal()
-    upsert(`repo-welcome-${repo}`, `Welcome · ${repo}`, { stage: "welcome", repo, summary }, homeOrdinal + 1)
+    upsert(`repo-welcome-${repo}`, `Welcome · ${repo}`, { stage: "welcome", repo, summary: null }, homeOrdinal + 1)
     const home = await readHome(repo)
     if (home !== null && !("refusal" in home)) upsertHome(repo, home, homeOrdinal)
     return {
-      value: `${welcomeSentence(repo, summary)} The card asks whether they are maintaining this repo (repo.maintain), contributing to it (repo.contribute), or just exploring (repo.explore).${
-        home !== null && !("refusal" in home) ? ` Above it, the repository's home pane (repo.home) shows what it declares.` : ""
-      }`
+      value: `Opened Welcome for ${repo}.`
     }
   }
 

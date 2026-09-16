@@ -615,11 +615,6 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             {!conversationOpen && <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />}
           </div>
         )}
-        {stage === GUIDE_LAST_STEP && (
-          <GuideButton tabIndex={0} data-flow="onboarding.act" shortcut={GUIDE_KEYS.replay} onClick={() => runCommandGuide("restart")}>
-            Replay introduction
-          </GuideButton>
-        )}
       </footer>
       <WikiDeleteDialog />
     </div>

@@ -26,3 +26,7 @@ This applies equally to normal use and every tutorial/onboarding lesson.
 Reference implementation: `apps/app/src/mainview/state/controller/liveTutorial.ts`.
 Shared notifications: `apps/app/src/mainview/state/controller/failures.ts`.
 App-specific rules: `apps/app/AGENTS.md`.
+
+## ⚖️ MINIMAL TEXT (Will, 2026-09-15, permanent)
+
+Cards, panes, toasts, and lessons carry the fewest words needed to act. No explanatory prose about how the product works, no provenance footers, no rows whose value is "not measured yet", no summary sentence beside a button. Show a button, a count, or a picture instead of a sentence. Unrequested buttons and unrequested copy are defects (NO INVENTION); delete them on sight.

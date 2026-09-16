@@ -5,16 +5,7 @@ import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { RepoOnboardingCardBody } from "./OnboardingCards"
 
-/*
- * The repository welcome and its three answers, rendered from fixtures: the
- * welcome speaks the curated sentence and offers exactly the three doors; the
- * maintain card says the activity sentence when the route answered and the
- * honest line when it did not, with only the reads this host registers; the
- * contribute card's three doors and the honest line when the guide is
- * missing; the explore card's wiki sentence, guide rows, and the invitation
- * to ask. Every button carries data-flow and dispatches through onRunCommand
- * with its args.
- */
+/* Repository doors remain usable without introductory prose or unavailable activity. */
 
 GlobalRegistrator.register()
 
@@ -51,15 +42,13 @@ const render = (payload: OnboardingCard["payload"]) => {
 }
 
 describe("the welcome card", () => {
-  test("speaks the curated sentence and offers exactly the three doors, each carrying the repository", () => {
+  test("omits the curated sentence and offers exactly the three doors, each carrying the repository", () => {
     const { host, ran, buttons } = render({
       stage: "welcome",
       repo: REPO,
       summary: "a durable framework that lets agents plan, run, and review changes to a code repository through flows."
     })
-    expect(host.querySelector('[data-testid="onboarding-welcome"]')?.textContent).toBe(
-      "Welcome to Smithers. smithersai/smithers is a durable framework that lets agents plan, run, and review changes to a code repository through flows."
-    )
+    expect(host.querySelector('[data-testid="onboarding-welcome"]')).toBeNull()
     expect(host.textContent).toContain("I am")
     expect(buttons().map((button) => [button.dataset.flow, button.textContent])).toEqual([
       ["repo.maintain", "maintaining this repo"],
@@ -70,9 +59,9 @@ describe("the welcome card", () => {
     expect(ran).toEqual([["repo.maintain", REPO], ["repo.contribute", REPO], ["repo.explore", REPO]])
   })
 
-  test("without a curated sentence it names the repository and invents nothing", () => {
+  test("without a curated sentence it still omits prose", () => {
     const { host } = render({ stage: "welcome", repo: "acme/widgets", summary: null })
-    expect(host.querySelector('[data-testid="onboarding-welcome"]')?.textContent).toBe("Welcome to Smithers. This is acme/widgets.")
+    expect(host.querySelector('[data-testid="onboarding-welcome"]')).toBeNull()
   })
 })
 
@@ -95,7 +84,7 @@ describe("the maintain card", () => {
     ])
   })
 
-  test("without the route it says recent activity is not available yet, and the reads still work", () => {
+  test("without activity it offers only the reads", () => {
     const { host, buttons } = render({
       stage: "maintain",
       repo: REPO,
@@ -103,7 +92,7 @@ describe("the maintain card", () => {
       reason: "Recent activity is not available yet.",
       flows: ["issues.list", "prs.list"]
     })
-    expect(host.querySelector('[data-testid="onboarding-activity"]')?.textContent).toBe("Recent activity is not available yet.")
+    expect(host.querySelector('[data-testid="onboarding-activity"]')).toBeNull()
     expect(buttons().map((button) => button.dataset.flow)).toEqual(["issues.list", "prs.list"])
   })
 })
@@ -120,34 +109,32 @@ describe("the contribute card", () => {
     expect(ran).toEqual([["issues.create", undefined], ["feature.prototype", undefined], ["files.read", `CONTRIBUTING.md ${REPO}`]])
   })
 
-  test("without a contributing guide it says so instead of offering a dead door", () => {
+  test("without a contributing guide it omits its door and explanatory text", () => {
     const { host, buttons } = render({ stage: "contribute", repo: REPO, guide: null, reason: "This repository has no CONTRIBUTING.md." })
     expect(buttons().map((button) => button.dataset.flow)).toEqual(["issues.create", "feature.prototype"])
-    expect(host.querySelector('[data-testid="onboarding-no-guide"]')?.textContent).toBe("This repository has no CONTRIBUTING.md.")
+    expect(host.querySelector('[data-testid="onboarding-no-guide"]')).toBeNull()
   })
 })
 
 describe("the explore card", () => {
-  test("says what the wiki is, lists the guide documents the repository holds, and invites a question", () => {
+  test("lists guide documents without explanatory prose", () => {
     const { host, ran, buttons } = render({
       stage: "explore",
       repo: REPO,
       guides: [{ path: "README.md" }, { path: "CONTRIBUTING.md" }, { path: "docs/README.md" }]
     })
-    expect(host.querySelector('[data-testid="onboarding-wiki"]')?.textContent).toBe(
-      "The wiki is smithersai/smithers's generated guide for humans and agents."
-    )
-    expect(host.textContent).toContain("Smithers has not generated a wiki for smithersai/smithers yet.")
+    expect(host.querySelector('[data-testid="onboarding-wiki"]')).toBeNull()
+    expect(host.textContent).not.toContain("Smithers has not generated a wiki for smithersai/smithers yet.")
     expect(buttons().map((button) => button.textContent)).toEqual(["README.md", "CONTRIBUTING.md", "docs/README.md"])
     buttons()[2]?.click()
     expect(ran).toEqual([["files.read", `docs/README.md ${REPO}`]])
-    expect(host.querySelector('[data-testid="onboarding-ask"]')?.textContent).toBe("Ask any question about smithersai/smithers in the chat.")
+    expect(host.querySelector('[data-testid="onboarding-ask"]')).toBeNull()
   })
 
   test("with no guide documents it carries the reason and no rows", () => {
     const { host, buttons } = render({ stage: "explore", repo: REPO, guides: [], reason: "The repository's files could not be listed (HTTP 502)." })
     expect(buttons()).toEqual([])
     expect(host.querySelector('[data-testid="onboarding-no-guides"]')?.textContent).toBe("The repository's files could not be listed (HTTP 502).")
-    expect(host.querySelector('[data-testid="onboarding-ask"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="onboarding-ask"]')).toBeNull()
   })
 })

@@ -66,17 +66,14 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
   }
   /* The optional capability reel owns its own reducer cases (onboarding/reelController.ts). */
   const finish = async (): Promise<string | void> => {
-    const guide = ctx.store.session().guide ?? initialGuide()
     const active = activeRepositoryId(ctx.store)
-    const signedIn = ctx.store.collections.identitySessions.get("identity")?.state === "signed-in"
-    const repo = signedIn && !guide.declined?.some(choice => choice === "login" || choice === "install")
-      && active && !active.startsWith("practice:") ? active : "smithersai/smithers"
+    const repo = active && !active.startsWith("practice:") ? active : undefined
     for (const toast of ctx.store.collections.toasts.values()) {
       if (["reel-notify-", "reel-wait-", "guide-hello-", "guide-tip-"].some(prefix => toast.key.startsWith(prefix))) {
         ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id })
       }
     }
-    return onFinish?.(repo)
+    return repo === undefined ? undefined : onFinish?.(repo)
   }
   const reelAct = createReelController(ctx)
   const applyGuideAction = async (action: string, value = ""): Promise<string | void> => {

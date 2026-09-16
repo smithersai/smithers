@@ -979,8 +979,10 @@ test("ArrowRight on an incomplete lesson gives quiet guidance without a flow-nam
   expect([...controller.store.collections.toasts.values()]).toEqual([])
 }, 5_000)
 
-test("Finish projects Home first, omits practice frames, and retains the working replay door", async () => {
+test("Finish projects Home first, omits practice frames, and omits the replay button while tut still works", async () => {
+  let replayController!: ReturnType<typeof createAppController>
   const host = await mountGuide(14, still, { finished: true }, async controller => {
+    replayController = controller
     const store = controller.store
     await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "acme/api", org: "acme", name: "api", ownerKind: "user", head: null } }).isPersisted.promise
     await store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
@@ -996,9 +998,8 @@ test("Finish projects Home first, omits practice frames, and retains the working
   expect(host.querySelector('.smithers-card')?.getAttribute("data-kind")).toBe("repo-home")
   expect(host.textContent).not.toContain("Issue #3 · Flows")
   expect(host.querySelector('[data-testid="card-real-read"]') !== null).toBe(true)
-  const replay = host.querySelector<HTMLButtonElement>('[data-flow="tut"]')!
-  expect(text(replay)).toBe("Replay introduction")
-  replay.click()
+  expect(host.querySelector('[data-flow="tut"]')).toBeNull()
+  replayController.runCommand("tut")
   for (let tick = 0; tick < 30 && !host.querySelector('.guide-shell[data-stage="1"]'); tick++) await settle()
   expect(host.querySelector('.guide-shell[data-stage="1"]') !== null).toBe(true)
 }, 2_000)

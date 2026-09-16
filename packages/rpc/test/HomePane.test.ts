@@ -21,7 +21,7 @@ describe("the projected .smithers/home.json of this repository", () => {
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     const types = parsed.document.blocks.map((block) => block.type)
-    expect(types).toContain("text")
+    expect(types).not.toContain("text")
     expect(types).toContain("flows")
     expect(types).toContain("ci-benchmark")
     const benchmark = parsed.document.blocks.find((block) => block.type === "ci-benchmark")

@@ -1,10 +1,6 @@
 {
   "blocks": [
     {
-      "type": "text",
-      "text": "Smithers builds itself with Smithers. Every change here is landed by the flows below, and the build, the tests, and the generated files are declared in this repository's PACKAGE.ts files."
-    },
-    {
       "type": "flows",
       "title": "Try first"
     },

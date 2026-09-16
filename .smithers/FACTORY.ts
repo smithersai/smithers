@@ -85,13 +85,9 @@ export const factory = S.Factory({
 // welcome: what this repository is, the flows to try first, and the CI
 // benchmark. Blocks are declared values, never raw HTML; the app renders each
 // from data. The benchmark numbers are not measured yet; the block names the
-// measures and the app says so until a measurement exists.
+// measures and the app hides them until a measurement exists.
 export const home = S.Factory.Home({
   blocks: [
-    S.Home.Text({
-      text:
-        "Smithers builds itself with Smithers. Every change here is landed by the flows below, and the build, the tests, and the generated files are declared in this repository's PACKAGE.ts files."
-    }),
     S.Home.Flows({ title: "Try first" }),
     S.Home.CiBenchmark({ title: "CI on Smithers" }),
     S.Home.Links({

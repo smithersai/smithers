@@ -15,7 +15,7 @@
  * instruction opener; prose comparing `a < b` passes.
  *
  * The CI benchmark carries no numbers. The block names the measures it
- * wants; the app says "not measured yet" for each until a measurement exists.
+ * wants; the app hides them until measurements exist.
  *
  * @since 1.0.0
  */

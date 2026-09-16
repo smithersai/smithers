@@ -13,11 +13,7 @@ export const attachJson = async (testInfo: TestInfo, name: string, value: unknow
 export const bootPracticeIssues = async (page: Page, state: "open" | "closed" | "all" = "open"): Promise<Locator> => {
   await openApp(page)
   const guide = page.locator(".guide-shell")
-  const replay = page.getByRole("button", { name: "Replay introduction", exact: true })
-  await expect(guide.or(replay).first()).toBeVisible()
-  if (!(await guide.isVisible())) {
-    await replay.click()
-  }
+  if (!(await guide.isVisible())) await runSlash(page, "/tut")
   await expect(guide).toHaveAttribute("data-stage", /^[1-9]\d*$/)
   await runSlash(page, `/issues.list ${state} ${PRACTICE_REPO}`)
   const card = page.getByTestId("card-practice-issues")

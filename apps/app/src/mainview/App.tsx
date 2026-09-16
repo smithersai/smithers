@@ -640,7 +640,6 @@ function AppContent() {
       {/* Keep Chat reachable while a terminal or another tab owns the view. */}
       {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
       {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <GuideButton  {...flowAction(controller.runCommand, "tut")}>Replay introduction</GuideButton>
         <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())

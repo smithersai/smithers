@@ -17,8 +17,7 @@ import "./index.css"
  * Which app a page opens. `onboarding` is the tutorial alone (GuidedApp) and
  * names no repository; `repo` is one repository's workspace at `/owner/name`
  * (RepositoryApp), which does not start a tutorial — but it does show one
- * already in flight, and its footer's Replay introduction door mounts the
- * guide over it without a navigation (three-door law, App.tsx).
+ * already in flight. The tut flow reopens the guide without a navigation.
  */
 export type AppMode = "onboarding" | "repo"
 

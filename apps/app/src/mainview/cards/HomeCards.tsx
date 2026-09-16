@@ -1,17 +1,6 @@
 import { flowAction } from "../flows/FlowAction"
-/*
- * The repository's home pane (controller/onboarding.ts repo.home): the first
- * card a repository shows, above the welcome. Every block is rendered from
- * the declared value the payload carries (@smthrs/rpc HomePane.ts refuses raw
- * HTML before it gets here); nothing is rendered that the payload does not
- * state. The featured flows are the catalog's rows or the honest line for
- * why they are absent; the CI benchmark names each measure and says "not
- * measured yet" until a number exists. Every button is the button door of a
- * registered flow through onRunCommand with its args carried and data-flow
- * set; links are anchors.
- */
+/* Repository-declared blocks and featured flow buttons. Unmeasured benchmarks stay hidden. */
 import { Button } from "@smthrs/ui"
-import { HOME_MEASURE_LABELS, NOT_MEASURED_YET } from "@smthrs/rpc/HomePane"
 import type { HomeBlock } from "@smthrs/rpc/HomePane"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -28,9 +17,10 @@ const Door = ({
   flow,
   args,
   label,
+  title,
   onRunCommand
-}: { readonly flow: FlowName; readonly args: string; readonly label: string } & HomeCardActions) => (
-  <Button variant="ghost" size="sm"  data-testid={`home-${flow}`} {...flowAction(onRunCommand, flow, args)}>
+}: { readonly flow: FlowName; readonly args: string; readonly label: string; readonly title?: string } & HomeCardActions) => (
+  <Button title={title} variant="ghost" size="sm"  data-testid={`home-${flow}`} {...flowAction(onRunCommand, flow, args)}>
     {label}
   </Button>
 )
@@ -59,40 +49,24 @@ const BlockBody = ({ block, card, onRunCommand }: { readonly block: HomeBlock; r
           <ul className="world-card-list" data-testid="home-flows">
             {featuredFlows.map((flow) => (
               <li key={flow.id} className="repo-home-flow">
-                <Door flow="flow.run" args={`${flow.id} ${repo}`} label={`/${flow.id}`} onRunCommand={onRunCommand} />
-                {flow.summary === null ? null : <span className="world-card-path">{flow.summary}</span>}
+                <Door flow="flow.run" args={`${flow.id} ${repo}`} label={`/${flow.id}`} title={flow.summary ?? undefined} onRunCommand={onRunCommand} />
               </li>
             ))}
           </ul>
         )
     case "ci-benchmark":
-      return (
-        <table className="repo-home-table" aria-label={block.title ?? "CI benchmark"} data-testid="home-ci-benchmark">
-          <tbody>
-            {block.measures.map((measure) => (
-              <tr key={measure} data-measure={measure}>
-                <td>{HOME_MEASURE_LABELS[measure]}</td>
-                <td>{NOT_MEASURED_YET}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )
+      return null
   }
 }
 
 export const RepoHomeCardBody = ({ card, onRunCommand }: { readonly card: HomeCard } & HomeCardActions) => (
   <div className="repo-home" data-testid="repo-home">
-    {card.payload.blocks.map((block, index) => (
+    {card.payload.blocks.filter(block => block.type !== "ci-benchmark").map((block, index) => (
       <section key={index} className="repo-home-block" data-block={block.type}>
         {block.title === undefined ? null : <h4>{block.title}</h4>}
         <BlockBody block={block} card={card} onRunCommand={onRunCommand} />
       </section>
     ))}
-    <p className="smithers-card-note" data-testid="home-source">
-      Declared in .smithers/FACTORY.ts as <code>export const home</code>, projected to <code>{card.payload.path}</code>.{" "}
-      <Door flow="files.read" args={`.smithers/FACTORY.ts ${card.payload.repo}`} label="Open FACTORY.ts" onRunCommand={onRunCommand} />
-    </p>
   </div>
 )
 
