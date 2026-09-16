@@ -82,9 +82,10 @@ if (await page.locator('button[data-flow="auth.sign-in"], button[data-flow="clou
   await fail("repository page still shows the sign-in door");
 }
 // Signed in, the header carries no account chrome; Account is the sidebar's button door.
-if (!(await page.locator("[data-testid=sidebar-account]").count())) await page.getByRole("button", { name: "Smithers", exact: true }).click();
 const acct = page.locator("[data-testid=sidebar-account]");
-if (!(await acct.count())) await fail("no Account sidebar button");
+if (!(await acct.isVisible())) await page.getByRole("button", { name: "Smithers", exact: true }).click();
+try { await acct.waitFor({ state: "visible", timeout: 10000 }); }
+catch { await fail("no Account sidebar button after opening the sidebar"); }
 await acct.click(); await page.waitForTimeout(3000);
 const t2 = await page.evaluate(() => document.body.innerText);
 if (!new RegExp(`Account · @${user}`, "i").test(t2)) await fail("Account card does not name the test user");
