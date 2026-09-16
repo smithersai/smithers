@@ -1,3 +1,4 @@
+import { FirstSightHint } from "../FirstSightHint"
 import { flowAction } from "../flows/FlowAction"
 import { isPracticeContext } from "../state/practice/PracticeContext"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -666,7 +667,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
         {/* Wiki: the button door of the `wiki` surface switch; the pane opens beside the chat, signed in or out. */}
         {canWiki ?
           (
-            <button
+            <FirstSightHint id="chrome-wiki" content="Read and edit your Wiki."><button
               type="button"
               className="chrome-action chrome-action-wiki"
               data-testid="chrome-wiki"
@@ -674,13 +675,13 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <BookOpen size={14} aria-hidden="true" />
               Wiki
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {/* Dispatcher: the button door of triggers.list; readable signed out from the declaration on the public mirror. */}
         {canDispatcher ?
           (
-            <button
+            <FirstSightHint id="chrome-dispatcher" content="Manage scheduled and triggered work."><button
               type="button"
               className="chrome-action chrome-action-dispatcher"
               data-testid="chrome-dispatcher"
@@ -688,13 +689,13 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <Timer size={14} aria-hidden="true" />
               Dispatcher
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {/* Flows: the button door of the `flows` surface switch; signed out the pane states that flows run on your own workspace. */}
         {canFlows ?
           (
-            <button
+            <FirstSightHint id="chrome-flows" content="Browse and run flows."><button
               type="button"
               className="chrome-action chrome-action-flows"
               data-testid="chrome-flows"
@@ -702,13 +703,13 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <Workflow size={14} aria-hidden="true" />
               Flows
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {/* Secrets: the button door of secrets.list; signed out, the run path defers it behind the sign-in step. */}
         {canSecrets ?
           (
-            <button
+            <FirstSightHint id="chrome-secrets" content="Manage credentials for your flows."><button
               type="button"
               className="chrome-action chrome-action-secrets"
               data-testid="chrome-secrets"
@@ -716,13 +717,13 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <KeyRound size={14} aria-hidden="true" />
               Secrets
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {/* History: the button door of history.show; readable signed out through the public mirror. */}
         {canHistory ?
           (
-            <button
+            <FirstSightHint id="chrome-history" content="Browse previous work."><button
               type="button"
               className="chrome-action chrome-action-history"
               data-testid="chrome-history"
@@ -730,13 +731,13 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <History size={14} aria-hidden="true" />
               History
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {/* Account: the button door of account.show; signed out, the same flow renders the sign-in step. */}
         {canAccount ?
           (
-            <button
+            <FirstSightHint id="chrome-account" content="Manage your account."><button
               type="button"
               className="chrome-action chrome-action-account"
               data-testid={identityInHeader ? "sidebar-account" : "chrome-account"}
@@ -744,7 +745,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             >
               <UserRound size={14} aria-hidden="true" />
               Account
-            </button>
+            </button></FirstSightHint>
           ) :
           null}
         {!guide.finished && (

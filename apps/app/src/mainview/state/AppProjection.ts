@@ -207,6 +207,7 @@ export const APP_TRANSITION_TYPES = {
   "chain.lineage.retired": true,
   "chain.event.appended": true,
   "chain.turn.resumed": true,
+  "hint.dismissed": true,
   "first-run.dismissed": true,
   "guide.changed": true,
   "theme.changed": true,
@@ -1904,6 +1905,12 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           })
           break
 
+        case "hint.dismissed": {
+          collections.sessions.update(SESSION_ID, draft => {
+            if (!draft.hintsSeen?.includes(transition.id)) draft.hintsSeen = [...(draft.hintsSeen ?? []), transition.id]
+          })
+          break
+        }
         case "first-run.dismissed": {
           collections.sessions.update(SESSION_ID, draft => { draft.firstRunDismissed = true })
           break

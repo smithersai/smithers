@@ -1,4 +1,5 @@
 import "./FirstRunActions.css"
+import { FirstSightHint } from "../FirstSightHint"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
 import { runtimeFlowName } from "../flows/FlowName"
@@ -52,11 +53,11 @@ export function FirstRunActions() {
   const session = sessions[0]
   if (session?.dismissed ?? controller.store.session().firstRunDismissed) return null
   const identity = identities[0]
-  return <FirstRunActionsCard commands={controller.commands.all()} state={{
+  return <FirstSightHint id="first-run" content="Choose an action to begin."><FirstRunActionsCard commands={controller.commands.all()} state={{
     surface: session?.surface ?? "chat", typing: session?.phase === "responding", plugins: session?.plugins,
     signedOut: identity?.state === "signed-out", admin: identity?.admin === true,
     hasConnectors: identity?.state === "signed-in" || connectors.length > 0, hasOpenRepos: repos.length > 0,
   }} onRunCommand={controller.runCommand} onDismiss={() => {
     controller.store.dispatch({ type: "first-run.dismissed", actor: "user" })
-  }} />
+  }} /></FirstSightHint>
 }

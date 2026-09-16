@@ -27,6 +27,7 @@ export function SessionNavigation() {
     const doc = node.ownerDocument
     const root = node.closest<HTMLElement>('.session-shell') ?? node
     const toggleChat = () => {
+      controller.store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
       if (controller.store.session().paletteOpen) { controller.cancelDictation(); controller.closePalette() }
       else {
         controller.runCommand('chat.open')

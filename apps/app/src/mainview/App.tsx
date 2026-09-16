@@ -1,3 +1,4 @@
+import { FirstSightHint, ChatHint } from "./FirstSightHint"
 import { FirstRunActions } from "./cards/FirstRunActions"
 import { flowAction } from "./flows/FlowAction"
 import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
@@ -418,7 +419,7 @@ function AppContent() {
         placeholder="Ask Smithers to work on something…"
       />
       {/* The next-step pills sit UNDER the chat box; DOM order is focus order: composer, then pills. Feature-flagged (features.suggestionPills), on for the cloud host. */}
-      {composerHost === undefined && controller.features.suggestionPills ? <SuggestionGroup className="smithers-suggestions">
+      {composerHost === undefined && controller.features.suggestionPills && suggestions.length > 0 ? <FirstSightHint id="recommendations" content="Choose a suggested next action."><SuggestionGroup className="smithers-suggestions">
         {suggestions.map((suggestion) => (
           <Suggestion
             className="smithers-suggestion"
@@ -433,7 +434,7 @@ function AppContent() {
             {suggestion.label}
           </Suggestion>
         ))}
-      </SuggestionGroup> : null}
+      </SuggestionGroup></FirstSightHint> : null}
     </div>
   )
 
@@ -642,10 +643,10 @@ function AppContent() {
       {/* Keep Chat reachable while a terminal or another tab owns the view. */}
       {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
       {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
+        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
-        }}>Chat</GuideButton>
+        }}>Chat</GuideButton></FirstSightHint>
         <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
       </footer>}
       </div>

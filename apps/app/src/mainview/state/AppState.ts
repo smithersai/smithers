@@ -755,6 +755,7 @@ export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice
 export const SessionSchema = z.object({
   /** Optional so previously saved sessions still parse. */
   firstRunDismissed: z.boolean().optional(),
+  hintsSeen: z.array(z.string()).optional(),
   sidebarOpen: z.boolean().optional(),
   guide: GuideSchema.optional(),
   /** Current view registration; reset on boot, never restored as visibility. */
@@ -1250,6 +1251,7 @@ export type AppTransition =
     interruptedTurnId?: string
   }
   | { type: "app.reset"; actor: Actor }
+  | { type: "hint.dismissed"; actor: Actor; id: string }
   | { type: "first-run.dismissed"; actor: Actor }
   | { type: "guide.visibility.changed"; actor: "system"; visible: boolean }
   | { type: "guide.changed"; actor: Actor; guide: GuideState }
