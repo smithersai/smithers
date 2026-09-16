@@ -236,7 +236,7 @@ const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
     }
   }
   const controller = createAppController(store, repositories, unavailableAgent, {
-    features: { pluginLibrary: true },
+    features: { pluginLibrary: true, wiki: true, mythicalHistory: true },
     bootstrap,
     socketUrl: () => undefined,
     fetchImpl: async (input, init) => {

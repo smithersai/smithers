@@ -39,12 +39,13 @@ checks the native source, retaining a fresh operation fence for the first
 mutation. Missing, collected, conflicting or ambiguous evidence refuses.
 
 These are new private action values in `vibe-schema.ts`: `VibeEvidence` stores
-existing request/control/approval/POC identities, original source and the
+existing request/control/approval/preparation identities, original source and the
 RequestResult; `VibeAdmission` adds the current validated head. There is no new
 database or public package service. Lookup is bounded to 16 MiB per retained
 state and 32 MiB of decoded state in total, checked after RunStore reads; it
-does not scan the global catalog. The unique POC lookup is a filtered two-row
-page from the existing RunCatalogRead. Admission is not cleanup or landing.
+does not scan the global catalog. The unique preparation lookup uses a filtered
+two-row page from the existing RunCatalogRead. Older executions retain the
+existing POC evidence path. Admission is not cleanup or landing.
 
 The same publication child accepts the cleaned source after final checks. Its
 private `PublicationInput` is `{ source: Revision, phase: "original" | "cleaned" }`.
@@ -58,11 +59,13 @@ pure `native-schema.ts` module so the browser can decode the same contracts;
 The immutable source base is the source captured before this entire request,
 including before any implementation which later steering revised. The final
 Plan's observedHead can already contain an earlier implementation. It is not
-sufficient proof of the request's starting tree. Read the unique completed Poc
-child directly under the Request using the existing RunCatalogRead/RunStore,
-require that its result source equals its input source, and retain that exact
-immutable commit. This uses the already retained source receipt without adding
-a second provenance ledger or duplicating the POC in RequestResult.
+sufficient proof of the request's starting tree. Read the unique completed
+`PrepareRequest` child directly under Request, verify its parent edge and input
+against the approved request, decode the completed Plan, and retain its observed
+source. Malformed or ambiguous modern receipts refuse. For legacy executions
+with no preparation child, the existing unique Poc child and matching
+input/result source remain required. Both paths use existing RunCatalogRead and
+RunStore receipts; no separate provenance ledger or POC prerequisite is needed.
 
 ## Clean the existing native history
 
@@ -205,8 +208,8 @@ check receipts; only actual successful delivery evidence can mark work shipped.
 The UI should expose each of these through the existing recursive cards and
 source-qualified flow actions, not infer them from a green parent run.
 
-Wiki freshness is part of source backpressure as well as final publication.
-The required slow Wiki check must inspect the exact immutable implementation
+When Wiki is explicitly enabled, its freshness participates in source
+backpressure and final publication. A configured required slow Wiki check inspects the exact immutable implementation
 export and return a normal Receipt/finding to the existing correction loop.
 Running a live-root wiki while optimistic editing continues would race the
 source identity. Publishing a verified final wiki requires a source fence and

@@ -1,4 +1,5 @@
 {
+  "wiki": false,
   "wikiOutput": "../smithers-coding-wiki",
   "reviewer": "smithers-public-engineering-v1",
   "implementation": "coding/implementation",

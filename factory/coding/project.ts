@@ -4,15 +4,15 @@ import { fileURLToPath } from "node:url"
 import { pages } from "../wiki/catalog.ts"
 import type { ProjectConfig } from "../../flows/coding/project-config.ts"
 
-export const smithersProject = (wikiOutput = "../smithers-wiki"): ProjectConfig => ({
-  wikiOutput, pages, reviewer: "smithers-public-engineering-v1", implementation: "coding/implementation",
+export const smithersProject = (wikiOutput = "../smithers-wiki", wiki = false): ProjectConfig => ({
+  wiki, ...(wiki ? { wikiOutput, pages, reviewer: "smithers-public-engineering-v1" } : {}), implementation: "coding/implementation",
   checks: [
     { id: "policy", target: "//flows:codingPolicy", flow: "checks/policy", tier: "fast", required: true },
     ...([ ["runtime", "codingRuntime"], ["native", "codingNative"], ["native-bun", "codingNativeBun"],
       ["bundle", "codingBundle"], ["bundle-bun", "codingBundleBun"] ] as const).map(([id, target]) => ({
       id, target: `//flows:${target}`, flow: `checks/${id}`, tier: "slow" as const, required: true
     })),
-    { id: "wiki", target: "public engineering wiki", flow: "checks/wiki", tier: "slow", required: true }
+    ...(wiki ? [{ id: "wiki", target: "public engineering wiki", flow: "checks/wiki", tier: "slow" as const, required: true }] : [])
   ], historyLimit: 100, maxMemoryBytes: 48 * 1024
 })
 

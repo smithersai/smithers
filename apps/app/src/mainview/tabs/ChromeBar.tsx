@@ -10,6 +10,7 @@ import { rovingKeyDown } from "../RovingKeyDown"
 import type { Repo,RepoTreeRow,TabRow,WorkingCopy } from "../state/AppState"
 import { DEFAULT_WORKSPACE_NAME,MAIN_TAB_ID,parseRepoSelection } from "../state/AppState"
 import { isPracticeContext } from "../state/practice/PracticeContext"
+import { knowledgeCardAvailable } from "../state/KnowledgeFeatures"
 import { isReadOnlyCopy,workingCopyLabel } from "../state/WorkspaceViews"
 import { StatusDetails } from "../StatusDetails"
 import { copyTreesOf,RepoTree } from "./RepoTree"
@@ -172,7 +173,8 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
   )
 
   /* A session row: a terminal, an agent, or a card opened in the sidebar. */
-  const sessionRow = (tab: TabRow) => (
+  const sessionRow = (tab: TabRow) => tab.kind === "card" &&
+    !knowledgeCardAvailable(collections.cards.get(tab.cardId)?.kind ?? "", controller.features) ? null : (
     <div
       key={tab.id}
       className="tab"

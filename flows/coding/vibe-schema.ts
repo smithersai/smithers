@@ -12,7 +12,10 @@ export const VibeEvidence = Schema.Struct({
   controlRunId: Schema.NonEmptyString,
   planId: Schema.NonEmptyString,
   planDigest: Schema.NonEmptyString,
-  pocExecutionId: Schema.NonEmptyString,
+  // Old completed requests retain their original POC. New requests retain
+  // their original prepared source without requiring an experiment.
+  pocExecutionId: Schema.optionalKey(Schema.NonEmptyString),
+  preparationExecutionId: Schema.optionalKey(Schema.NonEmptyString),
   originalSource: Revision,
   request: RequestResult
 })

@@ -15,9 +15,16 @@
  * hands the line a human typed straight through.
  */
 
+import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
+
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "sidebar.toggle": { readonly open?: boolean }
   readonly "issues.list": { readonly filter?: "open" | "closed" | "all"; readonly repo?: string }
+  readonly "setup.configure": { readonly cardId: string; readonly field: string; readonly value: unknown }
+  readonly "setup.view": { readonly cardId: string; readonly view: "flows" | "prompts" | "checks" | "evals" | "test" | "work"; readonly step?: string }
+  readonly "setup.work": { readonly cardId: string; readonly stepId: string; readonly field?: "prompt" | "source" | "number"; readonly value?: unknown }
+  readonly "setup.run": { readonly cardId: string; readonly operation: "inspect" | "evaluate" | "trial" | "apply" | "pause" | "run"; readonly manual?: SetupManualRequest }
   readonly "wiki.heading": { readonly line: string; readonly cardId?: string }
   readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
@@ -107,7 +114,12 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "sidebar.toggle": payload => JSON.stringify(payload),
   "issues.list": (payload) => line(token(payload, "filter") ?? "open", token(payload, "repo")),
+  "setup.configure": payload => JSON.stringify(payload),
+  "setup.view": payload => JSON.stringify(payload),
+  "setup.run": payload => JSON.stringify(payload),
+  "setup.work": payload => JSON.stringify(payload),
   "billing.upgrade": (payload) => line(token(payload, "plan")),
   "runs.list": (payload) => line(token(payload, "status"), token(payload, "flow"), keyed(payload, "lineage"), keyed(payload, "sourceCard"), token(payload, "repo")),
   "runs.attention": (payload) => line(keyed(payload, "sourceCard"), token(payload, "repo")),

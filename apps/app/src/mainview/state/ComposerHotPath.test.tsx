@@ -48,7 +48,7 @@ afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.()
 })
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 interface Counted {
   readonly controller: AppControllerType

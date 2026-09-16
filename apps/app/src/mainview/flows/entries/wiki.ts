@@ -17,7 +17,7 @@ export const namespace: Namespace = { id: "wiki", label: WIKI_DISPLAY_NAME, summ
 
 /** The Wiki leads connect once something is connected. */
 export const recommendations: ReadonlyArray<Recommendation> = [
-  { name: "wiki", when: () => true, rank: (state) => (state.hasConnectors ? 1 : 2) }
+  { name: "wiki", when: state => state.wiki === true, rank: (state) => (state.hasConnectors ? 1 : 2) }
 ]
 
 /** Why `wiki.heading` is the human's alone: it scrolls their editor, which is focus. */

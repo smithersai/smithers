@@ -8,6 +8,7 @@ import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { processRepositoryEvents } from "../RepositoryNotifications"
+import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 
 /*
  * The issues seam, driven through the one command run path: issues.list /
@@ -121,6 +122,31 @@ const wireIssue = (number: number, overrides: Record<string, unknown> = {}) => (
   updated_at: "2026-08-11T09:00:00Z",
   closed_at: null,
   ...overrides
+})
+
+test.each([
+  { name: "unconfigured", enabled: false, owner: "will", tips: 1 },
+  { name: "enabled CI", enabled: true, owner: "will", tips: 0 },
+  { name: "another account's CI", enabled: true, owner: "someone-else", tips: 1 }
+])("issue creation suggests optional CI once for $name", async scenario => {
+  const { store, controller } = await issuesController(backend({
+    "POST /api/repos/will/flows/issues": json(201, wireIssue(8)),
+    "GET /api/repos/will/flows/issues/8": json(200, wireIssue(8)),
+    "GET /api/repos/will/flows/issues/8/comments": json(200, [])
+  }))
+  try {
+    const setup = initialSetup("will/flows", "ci", scenario.owner)
+    if (scenario.enabled) setup.active = { revision: 1, digest: "test", registrationId: "test", sourceRevision: "test", enabled: true }
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "ci-settings", kind: "repository-setup", title: "CI", createdAt: 1, ordinal: 1, status: "active", payload: setup
+    } }).isPersisted.promise
+    await controller.commands.run("issues.create", "Improve logging")
+    await controller.commands.run("issues.create", "Improve tests")
+    await store.settled?.()
+    const tips = [...store.collections.toasts.values()].filter(toast => toast.action?.flow === "ci.setup")
+    expect(tips).toHaveLength(scenario.tips)
+    if (scenario.tips) expect(tips[0]).toMatchObject({ status: "ok", action: { label: "Set up CI", args: "will/flows" } })
+  } finally { await controller.dispose(); await store.dispose?.() }
 })
 
 /* GitHub's issue wire shape off the source read (multi src/smithersCloud/githubIssues.ts). */

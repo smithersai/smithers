@@ -4,7 +4,7 @@ import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { json, memoryStorage, scriptedToolAgent, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 /*
  * Wave 10 — the embed law's in-app half, transcript hygiene, /clear's sweep,

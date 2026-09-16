@@ -1,0 +1,20 @@
+[WebServer] (node:62089) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:62102) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:62102) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/williamcory/smithers/apps/app/tailwind.config.js?id=1789595501044 is not specified and it doesn't parse as CommonJS.
+[WebServer] Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+[WebServer] To eliminate this warning, add "type": "module" to /Users/williamcory/smithers/apps/app/package.json.
+
+Running 6 tests using 1 worker
+
+(node:62219) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › e2e/playwright/repository-setup.spec.ts:50:5 › setup preview offers all five jobs, keeps prompt edits and fits 320px (5.5s)
+  ✓  2 [chromium] › e2e/playwright/repository-setup.spec.ts:103:5 › Chat summons at the top over setup and closes with keyboard or an outside press (1.7s)
+  ✓  3 [chromium] › e2e/playwright/repository-setup.spec.ts:139:5 › held setup admission leaves Chat usable; only observed runs expose access (4.9s)
+  ✓  4 [chromium] › e2e/playwright/repository-setup.spec.ts:176:5 › activation needs current evals and a trial; pause requires testing a new revision (3.2s)
+  ✓  5 [chromium] › e2e/playwright/repository-setup.spec.ts:229:7 › ci trial selects an actual PR through the shared editable draft (2.2s)
+  ✓  6 [chromium] › e2e/playwright/repository-setup.spec.ts:229:7 › review trial selects an actual PR through the shared editable draft (2.3s)
+
+  6 passed (24.6s)

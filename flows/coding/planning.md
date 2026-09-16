@@ -36,17 +36,20 @@ normal completion checks and mutation authority.
 
 The default `GatherContext` implementation snapshots current bytes through the
 configured native `Jj` service, preserving the same JJ change. It asks Plue for
-a bounded, resolved linear native history, then uses the wiki's owning verifier
-to check source freshness, immutable publication integrity, and recorded
-semantic review. Missing or stale documentation refuses planning; this recipe
-does not yet regenerate it automatically.
+a bounded, resolved linear native history, then reads request paths and existing
+repository documents under the source byte and path bounds. Generated Wiki
+memory is empty by default. This path creates no knowledge artifact.
 
-The existing memory keyword scorer ranks complete current-behavior and intent
+With the operator's `wiki: true`, the owning Wiki verifier checks source
+freshness, publication integrity and recorded semantic review. Missing or stale
+Wiki artifacts refuse this explicitly enabled gather; `PrepareWithWiki` refreshes
+them before gathering in the composed request. The existing keyword scorer ranks
+complete current-behavior and intent
 pages against the request and saved feedback. It retains complete pages within
 a byte budget, with source identities and explicit current/intent labels.
 Repository content is evidence for the planning model, never authority to
-change the host's instructions. The provider context contains no private Ops
-material: inputs must come from the configured public engineering wiki catalog.
+change the host's instructions. Wiki inputs come from the configured public
+engineering page catalog; source attachments use the existing safe path reader.
 
 `ReviewRequest` explains material constraints and either proceeds or emits one
 bundled clarification. A nonempty question calls the existing durable
@@ -62,7 +65,8 @@ for the UI's explanation and detailed execution views.
 
 After any human wait and model draft, `VerifyContext` captures current bytes
 again, verifies every gathered native identity and parent chain, and rechecks
-wiki freshness. A code change while planning refuses the result as stale.
+source attachments and, when enabled, Wiki freshness. A code change while
+planning refuses the result as stale in either configuration.
 `FinalizePlan` binds choices to the original verified executable digests,
 memory identity, actual native base, and `observedHead`: the complete native
 source revision inspected during planning. An amendment's base can precede
@@ -104,8 +108,10 @@ The new `PlanningContext` is durable action input/output, not a database table:
 
 - `head` and oldest-to-newest `history` contain native change, commit, tree,
   parent, and operation IDs, plus native descriptions.
-- `memory` contains complete selected wiki pages, labeled `current` or `intent`,
-  with the publication source revision and each page's input digest.
+- `memory` is empty by default, or contains selected Wiki pages labeled
+  `current` or `intent`, with publication source revision and page input digest.
+- `sources` carries bounded existing file text and digests; `missing` records
+  paths whose bytes were unavailable.
 - `implementation`, `implementationDigest`, and `checks` identify verified
   catalog definitions. The model cannot supply replacement digests.
 - `memoryRevision` is a canonical digest of this measured evidence.

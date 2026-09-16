@@ -200,7 +200,7 @@ test("explicit maintenance can stop an incompatible owner without adopting its b
 
 test("conflicting concurrent port overrides cannot publish two owners for the same state", async () => {
   const f = await fixture()
-  const reserve = () => Bun.serve({ port: 0, fetch: () => new Response(null) })
+  const reserve = () => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null) })
   const ports = [reserve(), reserve()]
   const configurations = ports.map((host) => ({ ...f.configuration, port: host.port! }))
   for (const host of ports) host.stop(true)

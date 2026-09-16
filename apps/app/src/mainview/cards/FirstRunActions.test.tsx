@@ -5,50 +5,39 @@ import { createRoot } from "react-dom/client"
 import { ControllerContext } from "../ControllerContext"
 import { createAppController, type AppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
-import { FirstRunActions,FirstRunActionsCard,firstRunGroups } from "./FirstRunActions"
+import { FIRST_RUN_JOBS,FirstRunActions,FirstRunActionsCard,firstRunGroups } from "./FirstRunActions"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
-const commands = [{ name: "wiki", summary: "Wiki" }, { name: "auth.sign-in", summary: "Sign in" }, { name: "issues.list", summary: "List a repository's issues" }, { name: "auth.sign-out", summary: "Sign out", requires: ["signed-in"] }, { name: "system.recommend", summary: "Refresh suggestions" }, { name: "card.close", summary: "Close", hidden: true }]
+const jobTitles = ["Handle issues", "Review PRs", "Set up CI", "Build a feature", "Automate a chore"]
+const commands = [...FIRST_RUN_JOBS.map((name, index) => ({ name, summary: jobTitles[index]! })),
+  { name: "wiki", summary: "Wiki" }, { name: "auth.sign-in", summary: "Sign in" },
+  { name: "issues.list", summary: "List issues" }, { name: "admin.health", summary: "Diagnostics" },
+  { name: "chat.stop", summary: "Stop" }]
 const state = { surface: "chat" as const, typing: false, signedOut: true, hasConnectors: false, admin: false }
 
-test("only offerable catalog flows are grouped, with recommendations first", () => {
-  const groups = firstRunGroups(commands, state)
-  expect(groups[0]?.namespace).toBe("auth")
-  expect(groups.flatMap(group => group.flows.map(flow => flow.name)).sort()).toEqual(["auth.sign-in", "issues.list", "wiki"])
+test("first run projects five repository jobs without diagnostic or empty-context actions", () => {
+  expect(firstRunGroups(commands, state).flatMap(group => group.flows.map(flow => flow.name))).toEqual([...FIRST_RUN_JOBS])
+  expect(firstRunGroups(commands, { ...state, admin: true, signedOut: false }).flatMap(group => group.flows.map(flow => flow.name))).toEqual([...FIRST_RUN_JOBS])
 })
 
+test("missing or unavailable jobs are not invented; registry requirements still apply", () => {
+  const flows = [{ name: "ci.setup", summary: "Set up CI", requires: ["signed-in"] },
+    { name: "issues.setup", summary: "Handle issues", hidden: true },
+    { name: "feature.setup", summary: "Build a feature", requires: ["repo-source"] }]
+  expect(firstRunGroups(flows, state)).toEqual([])
+  expect(firstRunGroups(flows, { ...state, signedOut: false, publicRepo: true }).flatMap(group => group.flows.map(flow => flow.name))).toEqual(["ci.setup", "feature.setup"])
+})
 
-test("labels use summaries and human namespace titles, with recommended emphasis", () => {
+test("job buttons use short registry labels and native keyboard semantics", () => {
   const host = document.createElement("div")
   const root = createRoot(host)
   flushSync(() => root.render(<FirstRunActionsCard commands={commands} state={state} onRunCommand={() => {}} onDismiss={() => {}} />))
-  expect([...host.querySelectorAll("h3")].map(heading => heading.textContent)).toEqual(["Account", "Issues", "Wiki"])
-  const buttons = [...host.querySelectorAll<HTMLButtonElement>("section > button[data-flow]")]
-  expect(buttons.map(button => button.textContent)).toEqual(["Sign in", "List a repository's issues", "Wiki"])
-  expect(buttons.every(button => !button.hasAttribute("title"))).toBe(true)
-  expect(buttons[0]?.classList.contains("emphasis")).toBe(true)
-  expect(buttons[1]?.classList.contains("emphasis")).toBe(false)
-  expect(host.textContent).not.toContain("issues.list")
-  expect(host.querySelector('[data-flow="auth.sign-out"]')).toBeNull()
-  flushSync(() => root.unmount())
-})
-
-test("sign-in and repository requirements follow the registry predicates", () => {
-  const flows = [...commands, { name: "repo.files", summary: "Browse files", requires: ["repo-source"] }]
-  const names = (overrides: Partial<typeof state> & { publicRepo?: boolean } = {}) =>
-    firstRunGroups(flows, { ...state, ...overrides }).flatMap(group => group.flows.map(flow => flow.name))
-  expect(names()).not.toContain("auth.sign-out")
-  expect(names()).not.toContain("repo.files")
-  expect(names({ signedOut: false })).toContain("auth.sign-out")
-  expect(names({ publicRepo: true })).toContain("repo.files")
-})
-
-test("unmapped namespaces use a capitalized heading", () => {
-  const host = document.createElement("div")
-  const root = createRoot(host)
-  flushSync(() => root.render(<FirstRunActionsCard commands={[{ name: "appearance.theme", summary: "Choose a theme" }]} state={state} onRunCommand={() => {}} onDismiss={() => {}} />))
-  expect(host.querySelector("h3")?.textContent).toBe("Appearance")
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>('section[aria-label="Repository jobs"] > button')]
+  expect(buttons.map(button => button.textContent)).toEqual(jobTitles)
+  expect(buttons.every(button => button.type === "button" && !button.disabled && button.tabIndex === 0)).toBe(true)
+  expect(host.textContent).not.toContain("issues.setup")
+  expect(host.querySelector('[data-flow="admin.health"]')).toBeNull()
   flushSync(() => root.unmount())
 })
 
@@ -65,12 +54,12 @@ test("flow buttons dispatch once and dismissal survives the next render and relo
   render()
   await new Promise(resolve => setTimeout(resolve, 20))
   const buttons = host.querySelectorAll<HTMLButtonElement>("section > button[data-flow]")
-  expect(buttons.length).toBe(3)
-  flushSync(() => host.querySelector<HTMLButtonElement>('[data-flow="issues.list"]')!.click())
+  expect(buttons.length).toBe(5)
+  flushSync(() => host.querySelector<HTMLButtonElement>('[data-flow="issues.setup"]')!.click())
   await store.settled?.()
   await new Promise(resolve => setTimeout(resolve, 20))
   render()
-  expect(calls).toEqual([["issues.list", undefined]])
+  expect(calls).toEqual([["issues.setup", undefined]])
   expect(host.querySelector('[data-testid="first-run-actions"]')).toBeNull()
   flushSync(() => root.unmount())
   await store.dispose?.()
@@ -101,16 +90,28 @@ test("the live catalog keeps unavailable runtime and admin plugin flows out", as
   } })
   try {
     const names = () => firstRunGroups(controller.commands.all(), state).flatMap(group => group.flows.map(flow => flow.name))
-    expect(names()).toContain("auth.sign-in")
+    expect(names()).toEqual([...FIRST_RUN_JOBS])
     expect(names()).not.toContain("repo.open")
     expect(names()).not.toContain("files.list")
-    expect(names()).toContain("prs.list")
+    expect(names()).not.toContain("prs.list")
     expect(names()).not.toContain("admin.health")
     expect(names().some(name => name.startsWith("system."))).toBe(false)
     store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "admin", allowlisted: true, admin: true, scopesPlain: null })
-    expect(firstRunGroups(controller.commands.all(), { ...state, signedOut: false, admin: true }).flatMap(group => group.flows.map(flow => flow.name))).toContain("admin.health")
+    expect(firstRunGroups(controller.commands.all(), { ...state, signedOut: false, admin: true }).flatMap(group => group.flows.map(flow => flow.name))).not.toContain("admin.health")
   } finally {
     await controller.dispose()
     await store.dispose?.()
   }
+})
+
+test("first arrival binds every setup action to the explicit repository before catalog inspection finishes", () => {
+  const calls: Array<[string, string | undefined]> = []
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(<FirstRunActionsCard commands={commands} state={state} repo="requested/repo"
+      onRunCommand={(name, args) => { calls.push([name, args]) }} onDismiss={() => {}} />))
+    for (const button of host.querySelectorAll<HTMLButtonElement>('section[aria-label="Repository jobs"] > button')) button.click()
+    expect(calls).toEqual(FIRST_RUN_JOBS.map(name => [name, "requested/repo"]))
+  } finally { flushSync(() => root.unmount()) }
 })

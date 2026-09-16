@@ -7,6 +7,7 @@ import {
 import type { Branch, Frame, FrameSnapshot } from "../AppState"
 import type { FrameHistoryPort, FrameLocation } from "../../runtime/FrameHistory"
 import type { ControllerContext } from "./context"
+import { knowledgeCardAvailable } from "../KnowledgeFeatures"
 
 export interface FramesController {
   readonly maximizeCard: (id: string) => string | void
@@ -30,10 +31,13 @@ const validLocation = (ctx: ControllerContext, location: FrameLocation): boolean
   const workspace = ctx.store.collections.workspaces.get(location.workspaceId)
   const branch = ctx.store.collections.branches.get(location.branchId)
   const frame = ctx.store.collections.frames.get(location.frameId)
+  const card = frame?.cardId == null ? undefined : ctx.store.collections.cards.get(frame.cardId) ??
+    branch?.snapshot?.cards.find(card => card.id === frame.cardId)
   return workspace !== undefined &&
     branch?.workspaceId === workspace.id &&
     frame?.workspaceId === workspace.id &&
     frame.branchId === branch.id &&
+    (card === undefined || knowledgeCardAvailable(card.kind, ctx.services.features)) &&
     (frame.cardId === null || ctx.store.collections.cards.get(frame.cardId) !== undefined ||
       branch.snapshot?.cards.some((card) => card.id === frame.cardId) === true)
 }
@@ -67,6 +71,7 @@ export const createFramesController = (
 
   const maximizeCard: FramesController["maximizeCard"] = (id) => {
     if (ctx.store.collections.cards.get(id) === undefined) return `There is no card with id ${id}.`
+    if (!knowledgeCardAvailable(ctx.store.collections.cards.get(id)!.kind, ctx.services.features)) return "This feature is not enabled."
     const session = ctx.store.session()
     const workspaceId = session.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID
     const branchId = session.activeBranchId ?? DEFAULT_BRANCH_ID

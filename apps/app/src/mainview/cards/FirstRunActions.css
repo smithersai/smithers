@@ -1,10 +1,15 @@
 .first-run-actions {
-  border: 1px solid var(--border, #8884);
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
 }
 .first-run-actions > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .first-run-actions h2 { font-size: 1rem; margin: 0; }
-.first-run-actions h3 { font-size: .8rem; margin: 16px 0 8px; }
-.first-run-actions section > button { margin: 0 8px 8px 0; }
-.first-run-actions section > button.emphasis { font-weight: 600; }
+.first-run-actions section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.first-run-actions button { color: var(--text); font: inherit; }
+.first-run-actions section > button { min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 12px; text-align: left; overflow-wrap: anywhere; }
+.first-run-actions section > button:hover { background: var(--hover-subtle); }
+.first-run-actions button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (max-width: 480px) { .first-run-actions section { grid-template-columns: 1fr; } }

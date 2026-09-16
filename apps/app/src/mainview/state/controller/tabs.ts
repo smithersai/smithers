@@ -14,6 +14,7 @@ import { activeRepoOf, MAIN_TAB_ID, parseRepoSelection, repoKeyOf } from "../App
 import type { PinnedRepo, Repo, TabRow } from "../AppState"
 import type { CommandResult } from "../../flows/Flows"
 import type { ControllerContext } from "./context"
+import { knowledgeCardAvailable } from "../KnowledgeFeatures"
 import { z } from "zod"
 
 /*
@@ -101,7 +102,9 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
   const { collections } = store
 
   const orderedTabs = (): Array<TabRow> =>
-    [...collections.tabs.values()].sort((left, right) => left.ordinal - right.ordinal)
+    [...collections.tabs.values()].filter(tab => tab.kind !== "card" ||
+      knowledgeCardAvailable(collections.cards.get(tab.cardId)?.kind ?? "", ctx.services.features))
+      .sort((left, right) => left.ordinal - right.ordinal)
 
   const activeTab = (): TabRow | undefined => collections.tabs.get(store.session().activeTabId ?? MAIN_TAB_ID)
 
@@ -279,6 +282,7 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
     if (tab.kind === "card") {
       const card = collections.cards.get(tab.cardId)
       if (card === undefined) return `The card behind tab ${tabId} is no longer in the conversation.`
+      if (!knowledgeCardAvailable(card.kind, ctx.services.features)) return "This feature is not enabled."
       return { value: JSON.stringify({ kind: card.kind, title: card.title, status: card.status, payload: card.payload }) }
     }
     if (tab.kind === "terminal" && tab.workspaceId !== undefined) {
@@ -306,6 +310,7 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
   const openCardTab: TabsController["openCardTab"] = (cardId) => {
     const card = collections.cards.get(cardId)
     if (card === undefined) return `There is no card with id ${cardId}.`
+    if (!knowledgeCardAvailable(card.kind, ctx.services.features)) return "This feature is not enabled."
     const existing = orderedTabs().find((tab) => tab.kind === "card" && tab.cardId === cardId)
     if (existing !== undefined) {
       store.dispatch({ type: "tab.selected", actor: ctx.commandActor, id: existing.id })
@@ -339,6 +344,7 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
       // A position past the strip is a no-op keystroke, not an error.
       return position === undefined ? `There is no tab with id ${target}.` : undefined
     }
+    if (tab.kind === "card" && !knowledgeCardAvailable(collections.cards.get(tab.cardId)?.kind ?? "", ctx.services.features)) return "This feature is not enabled."
     store.dispatch({ type: "tab.selected", actor: "user", id: tab.id })
   }
 

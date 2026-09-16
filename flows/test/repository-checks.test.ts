@@ -1,0 +1,108 @@
+import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { test } from "node:test"
+import { NodeServices } from "@effect/platform-node"
+import * as Digest from "@smthrs/core/Digest"
+import { Effect, FileSystem, Layer } from "effect"
+import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
+import { assessSemantic, captureChecks, diffPaths, executeCommand, materializeProposal, selectedComparison, type Comparison } from "../repository/checks.ts"
+import type { Work } from "../repository/jobs.ts"
+import type { Check } from "../repository/schema.ts"
+
+const exporter = process.env.PLUE_JJ_EXPORT_BINARY
+test("repository checks use a committed PR comparison and immutable executable source, including proposed edits", {
+  skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the built Plue exporter" : false, timeout: 180_000
+}, async t => {
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), "repository-checks-")))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const root = join(temporary, "repo")
+  execFileSync("jj", ["git", "init", root], { stdio: "pipe" })
+  const jj = (...args: string[]) => execFileSync("jj", ["-R", root, ...args], { cwd: root, stdio: "pipe" }).toString()
+  jj("config", "set", "--repo", "user.name", "Repository CI Test")
+  jj("config", "set", "--repo", "user.email", "repository-ci@example.com")
+  await writeFile(join(root, "value.txt"), "old\n")
+  await writeFile(join(root, "verify.mjs"), "import{readFileSync}from'node:fs';const v=readFileSync('value.txt','utf8').trim();console.log(v);process.exit(v===process.argv[2]?0:7)")
+  jj("status")
+  const base = jj("log", "-r", "@", "--no-graph", "-T", "commit_id").trim()
+  jj("new", "-m", "Add a handler")
+  await mkdir(join(root, "src"))
+  await writeFile(join(root, "src", "new-handler.ts"), "export function handle() { return 42 }\n")
+  await writeFile(join(root, "package-lock.json"), JSON.stringify({ fixture: "x".repeat(300_000) }))
+  jj("status")
+  const commit = JSON.parse(jj("log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", "json(self)"))
+  const exported = JSON.parse(execFileSync(exporter!, [root, commit.commit_id, temporary], { stdio: "pipe" }).toString())
+  await rm(exported.path, { recursive: true, force: true })
+  const operationId = JSON.parse(jj("op", "log", "-n", "1", "--no-graph", "-T", "json(self)")).id
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const options = { repositoryPath: root, fs, exporterPath: exporter, environment: { PATH: process.env.PATH! } }
+  const command: typeof Check.Type = { id: "verify", name: "Verify", kind: "command", rule: `${JSON.stringify(process.execPath)} verify.mjs old`, paths: [], policy: "required" }
+  const ai: typeof Check.Type = { id: "observability", name: "Observability", kind: "ai", rule: "Each request handler records structured telemetry", paths: ["src/**"], policy: "required" }
+  const work: typeof Work.Type = { repo: "test/repo", job: "ci", step: { id: "checks", name: "Checks", mode: "automatic", prompt: "Run configured checks" },
+    checks: [command, ai], landing: "ask", replies: "draft", executionMode: "live", deadlineAt: Date.now() + 120_000,
+    event: { source: "github", type: "pull_request", action: "opened", deliveryKey: "event-1", payload: { pull_request: { base: { sha: base }, head: { sha: exported.commitId } } } },
+    evidence: { repo: "test/repo", source: { commitId: exported.commitId, treeId: exported.treeId, changeId: exported.changeId, parentCommitIds: commit.parents, operationId },
+      files: [], missing: [], history: [], records: [], sources: [] } }
+  const platform = NodeJj.layerSpawnerAt(root).pipe(Layer.provideMerge(NodeServices.layer))
+  const plan = await Effect.runPromise(captureChecks(options, work).pipe(Effect.provide(platform)))
+  assert.equal(plan.comparison.base, base)
+  assert.equal(plan.comparison.candidate, exported.commitId)
+  assert.ok(plan.comparison.diff.includes("new-handler.ts"), "committed changes cannot disappear because the worktree is clean")
+  assert.deepEqual(plan.comparison.paths, ["package-lock.json", "src/new-handler.ts"])
+  assert(!plan.comparison.diff.includes("package-lock.json"), "an unrelated large lockfile cannot exhaust this AI rule's source budget")
+  assert.deepEqual(selectedComparison(plan.comparison, ai).paths, ["src/new-handler.ts"], "a new handler is in semantic scope")
+  await writeFile(join(root, "value.txt"), "live edit\n"); jj("status")
+  const run = (rule: string, value = plan) => Effect.runPromise(executeCommand(options, value, { ...command, rule }, "check-execution").pipe(Effect.provide(NodeServices.layer)))
+  const passed = await run(command.rule)
+  assert.equal(passed.status, "passed")
+  assert.equal((passed.detail as { stdout: string }).stdout.trim(), "old")
+  assert.equal((await run("exit 7")).status, "failed")
+  assert.equal((await run("no-such-check-program-54321")).status, "error", "missing executables are execution errors")
+  const commandsOnly = await Effect.runPromise(captureChecks(options, { ...work, checks: [command] }).pipe(Effect.provide(platform)))
+  assert.equal(commandsOnly.comparison.files.length, 0, "command-only CI needs the real source tree, not bounded model attachments")
+  assert.equal((await run(command.rule, commandsOnly)).status, "passed")
+  const proposed = await Effect.runPromise(captureChecks(options, { ...work, proposal: [{ path: "value.txt", beforeDigest: Digest.digest("old\n"), content: "fixed\n" }] }).pipe(Effect.provide(platform)))
+  assert.ok(proposed.comparison.candidate.startsWith(exported.commitId + "+"))
+  assert.equal((await run(`${JSON.stringify(process.execPath)} verify.mjs fixed`, proposed)).status, "passed")
+  assert.equal(await readFile(join(root, "value.txt"), "utf8"), "live edit\n", "checks cannot mutate the editor's source")
+  await assert.rejects(Effect.runPromise(captureChecks(options, { ...work, event: { ...work.event, payload: { pull_request: { base: { sha: base }, head: { sha: "f".repeat(40) } } } } }).pipe(Effect.provide(platform))), /not the event's candidate/)
+  await assert.rejects(Effect.runPromise(captureChecks(options, { ...work, proposal: [{ path: "value.txt", beforeDigest: "f".repeat(64), content: "wrong" }] }).pipe(Effect.provide(platform))), /preimage differs/)
+})
+
+test("proposal writes refuse traversal, stale preimages and internal symlink aliases", async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "repository-proposal-")))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await writeFile(join(root, "a.ts"), "original")
+  await symlink("a.ts", join(root, "alias.ts"))
+  const outside = await realpath(await mkdtemp(join(tmpdir(), "repository-proposal-outside-")))
+  t.after(() => rm(outside, { recursive: true, force: true }))
+  await symlink(outside, join(root, "outside"))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const materialize = (path: string, beforeDigest: string | null) => Effect.runPromise(materializeProposal({ fs, repositoryPath: root }, root,
+    [{ path, beforeDigest, content: "changed" }]).pipe(Effect.provide(NodeServices.layer)))
+  await assert.rejects(materialize("../outside.ts", null), /cannot alter/)
+  await assert.rejects(materialize("a.ts", null), /preimage/)
+  await assert.rejects(materialize("alias.ts", Digest.digest("original")), /symbolic link/)
+  await assert.rejects(materialize("outside/new-parent/new.ts", null), /symbolic link/)
+  await assert.rejects(readFile(join(outside, "new-parent", "new.ts")), { code: "ENOENT" })
+  await assert.rejects(realpath(join(outside, "new-parent")), { code: "ENOENT" }, "a refused path cannot create an external directory")
+  assert.equal(await readFile(join(root, "a.ts"), "utf8"), "original")
+})
+
+test("semantic results cannot hide missing new handlers, fake source citations or contradictory success", () => {
+  const comparison: typeof Comparison.Type = { base: "a".repeat(40), candidate: "b".repeat(40), diff: "", paths: ["src/new.ts"],
+    files: [{ path: "src/new.ts", text: "export function handle() {}\n", digest: "c".repeat(64), truncated: false }], changes: [] }
+  const verdict = { verdict: "pass" as const, summary: "The rule holds", examinedPaths: ["src/new.ts"], findings: [] }
+  assert.equal(assessSemantic(comparison, verdict).status, "passed")
+  assert.equal(assessSemantic(comparison, { ...verdict, examinedPaths: [] }).status, "error")
+  assert.equal(assessSemantic(comparison, { ...verdict, verdict: "uncertain" }).status, "error")
+  const findings = [{ path: "src/new.ts", line: 1, message: "No request telemetry" }]
+  assert.equal(assessSemantic(comparison, { ...verdict, findings }).status, "error")
+  assert.equal(assessSemantic(comparison, { ...verdict, verdict: "fail", findings }).status, "failed")
+  assert.equal(assessSemantic(comparison, { ...verdict, verdict: "fail", findings: [{ ...findings[0]!, line: 100 }] }).status, "error")
+  assert.deepEqual(diffPaths(""), [])
+  assert.throws(() => diffPaths("binary or partial output"), /did not identify/)
+  assert.throws(() => diffPaths('diff --git "a/path with spaces" "b/path with spaces"'), /encoding/)
+})

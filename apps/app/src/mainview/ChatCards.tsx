@@ -41,6 +41,7 @@ export class CardBodyBoundary extends Component<{ readonly cardId: string; reado
   }
 }
 import type { Card } from "./state/AppState"
+import { knowledgeCardAvailable } from "./state/KnowledgeFeatures"
 import { timeLabel as clockLabel } from "./Timestamps"
 import { StatusDetails, statusPresentation } from "./StatusDetails"
 
@@ -90,6 +91,8 @@ export const CardView = memo(function CardView({
   workflowCatalogs,
   projectionStore,
   pluginLibrary,
+  wiki,
+  mythicalHistory,
   signedOut
 }: CardViewProps) {
   /*
@@ -133,7 +136,8 @@ export const CardView = memo(function CardView({
     pendingFocus.current = "maximize"
     onMinimize()
   }
-  if (card.kind === "retired" || (card.kind === "plugin-library" && !pluginLibrary)) return null
+  if (card.kind === "retired" || (card.kind === "plugin-library" && !pluginLibrary) ||
+      !knowledgeCardAvailable(card.kind, { wiki, mythicalHistory })) return null
   return (
     <>
       {maximized ?

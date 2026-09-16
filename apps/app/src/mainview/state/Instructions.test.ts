@@ -140,8 +140,8 @@ describe("a turn asking who you are is answered with the name", () => {
       expect(names).toContain("smithers.who")
       expect(instructions).toContain(instructionStageOf(instructions) === 3 ? "smithers (" : "/smithers.who")
       expect(instructions).toContain("Your name is exactly \"Smithers\"")
-      // The wiki is what the notes are called in the prompt; the flow ids keep their names.
-      expect(instructions).toContain("keep the Wiki notes")
+      expect(instructions).toContain("Do not suggest features absent from your catalog.")
+      expect(names).not.toContain("wiki")
     })
   }
 })

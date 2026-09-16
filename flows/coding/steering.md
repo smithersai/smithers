@@ -75,7 +75,7 @@ planner's existing 65,538-character feedback bound is checked without silent
 truncation. An overflow refuses planning and names the retained IDs: admission,
 promotion and native receipt remain inspectable in the existing journals.
 
-Receiving feedback is not a plan revision. A following `PrepareWithWiki` child
+Receiving feedback is not a plan revision. A following `PrepareRequest` child
 must complete with an actual validated Plan before the UI can show a revised
 plan. Feedback during implementation waits for the coordinator's next safe
 linear mutation boundary; this helper does not preempt an executing atom or

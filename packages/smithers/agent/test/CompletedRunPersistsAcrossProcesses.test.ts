@@ -368,14 +368,16 @@ const watchForReclaim = (root: string, runId: string, decisionCountBeforeRestart
   })
 
 /**
- * Holds a composition open until the engine row leaves `suspended`, or for the
- * whole window. The released-row sweep ticks once per
+ * Holds a composition open until the engine row is terminal, or for the
+ * whole window. A reclaimed row passes through `running`; closing its owner
+ * at that point interrupts the terminal write and releases the row again.
+ * The released-row sweep ticks once per
  * `Ownership.heartbeatInterval`, so this is several ticks' worth of chances.
  */
 const holdUntilSettled = (root: string, runId: string, ticks = 60) =>
   Effect.gen(function*() {
     for (let tick = 0; tick < ticks; tick++) {
-      if (readRun(root, "engine.db", runId)?.status !== "suspended") return
+      if (["completed", "failed", "cancelled"].includes(readRun(root, "engine.db", runId)?.status ?? "")) return
       yield* Effect.sleep("100 millis")
     }
   })
@@ -441,7 +443,7 @@ describe("a run the control plane reported completed", () => {
 
     // The launching process's own claim is the only one this run ever gets.
     expect(successorSweeps).toBeGreaterThan(0)
-    expect(decisionsAfterFirst).toEqual(["created", "claimed-and-activated", "transitioned"])
+    expect(decisionsAfterFirst).toEqual(["created", "claimed-and-activated", "resumed", "transitioned"])
     expect(readDecisions(root, runId)).toEqual(decisionsAfterFirst)
     expect(countTurns(root, runId)).toBe(turnsAfterFirst)
     expect(calls).toEqual(["completed-persist-first"])

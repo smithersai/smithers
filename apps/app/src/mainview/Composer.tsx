@@ -134,7 +134,8 @@ function ComposerMenu({
       icon: <Library size={14} aria-hidden="true" />,
       active: surface === "plugins"
     }
-  ].filter(entry => entry.flow !== "plugins" || controller.features.pluginLibrary)
+  ].filter(entry => (entry.flow !== "plugins" || controller.features.pluginLibrary) &&
+    (entry.flow !== "wiki" || controller.features.wiki))
 
   const openMenu = (): void => {
     setHighlighted(0)

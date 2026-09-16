@@ -152,7 +152,9 @@ export const cardObjectFields = (): ReadonlySet<string> => {
  * DOM contains. The manifest is the stronger source; the declarations are the
  * superset a suite driving an admin session may legitimately assert against.
  */
-const declarationStub = (): CommandActions => new Proxy({}, { get: () => () => undefined }) as unknown as CommandActions
+const declarationStub = (): CommandActions => new Proxy({}, {
+  get: (_, key) => key === "snapshot" ? () => ({ wiki: true, mythicalHistory: true, pluginLibrary: true }) : () => undefined
+}) as unknown as CommandActions
 
 export const declaredFlowNames = (): ReadonlySet<string> =>
   new Set([...baseFlows(declarationStub()), ...adminFlows(declarationStub())].map(nameOf))

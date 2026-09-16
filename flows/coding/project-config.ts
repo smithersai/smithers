@@ -8,15 +8,16 @@ import { separateWikiOutput } from "./wiki-output.ts"
 const { flowDigest: _flowDigest, ...checkFields } = Check.fields
 const text = Schema.NonEmptyString
 const Project = Schema.Struct({
-  wikiOutput: text,
-  pages: Schema.Array(PageSpec).check(Schema.isMinLength(1), Schema.isMaxLength(30)),
+  wiki: Schema.optionalKey(Schema.Boolean),
+  wikiOutput: Schema.optionalKey(text),
+  pages: Schema.optionalKey(Schema.Array(PageSpec).check(Schema.isMinLength(1), Schema.isMaxLength(30))),
   implementation: text,
   checks: Schema.Array(Schema.Struct(checkFields)),
   historyLimit: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100))),
   maxMemoryBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1024), Schema.isLessThanOrEqualTo(90 * 1024))),
-  reviewer: text
+  reviewer: Schema.optionalKey(text)
 })
-export type ProjectConfig = Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer: string }
+export type ProjectConfig = Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string }
 const invalid = (message: string) => new Error(`Invalid SMITHERS_CODING_PROJECT: ${message}`)
 const maximumBytes = 256 * 1024
 
@@ -49,20 +50,25 @@ export const loadProject = (repositoryPath: string, filename: string | undefined
     // Do not print operator configuration contents in startup diagnostics.
     Effect.mapError(() => invalid("fields must match the project schema; unknown fields are refused"))
   )
-  const pageIds = new Set(project.pages.map(page => page.id))
-  if (pageIds.size !== project.pages.length || project.pages.some(page => !/^[a-z][a-z0-9-]{0,80}$/.test(page.id))) {
+  const pages = project.pages ?? []
+  if (project.wiki === true && (!pages.length || project.wikiOutput === undefined || project.reviewer === undefined)) {
+    return yield* Effect.fail(invalid("enabled Wiki requires pages, wikiOutput and reviewer"))
+  }
+  const pageIds = new Set(pages.map(page => page.id))
+  if (pageIds.size !== pages.length || pages.some(page => !/^[a-z][a-z0-9-]{0,80}$/.test(page.id))) {
     return yield* Effect.fail(invalid("wiki page IDs must be valid and unique"))
   }
-  if (project.pages.some(page => page.related.some(id => !pageIds.has(id)))) {
+  if (pages.some(page => page.related.some(id => !pageIds.has(id)))) {
     return yield* Effect.fail(invalid("related wiki pages must exist in this configuration"))
   }
   if (new Set(project.checks.map(check => check.id)).size !== project.checks.length) {
     return yield* Effect.fail(invalid("check IDs must be unique"))
   }
-  if (!project.wikiOutput.trim() || project.wikiOutput.includes("\0") || !project.reviewer.trim() || !project.implementation.trim()) {
+  if ((project.wikiOutput !== undefined && (!project.wikiOutput.trim() || project.wikiOutput.includes("\0"))) ||
+      (project.reviewer !== undefined && !project.reviewer.trim()) || !project.implementation.trim()) {
     return yield* Effect.fail(invalid("output, reviewer and implementation must be nonempty"))
   }
-  const wikiOutput = yield* separateWikiOutput(repositoryPath, project.wikiOutput).pipe(
+  const wikiOutput = project.wikiOutput === undefined ? undefined : yield* separateWikiOutput(repositoryPath, project.wikiOutput).pipe(
     Effect.mapError(() => invalid("wikiOutput must resolve outside the source workspace, including .flows")))
-  return { ...project, wikiOutput }
+  return { ...project, wiki: project.wiki ?? false, ...(wikiOutput === undefined ? {} : { wikiOutput }) }
 })

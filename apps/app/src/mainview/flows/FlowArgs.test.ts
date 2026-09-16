@@ -154,3 +154,15 @@ test("import issue action keeps the repository after the default filter", () => 
  expect(args).toBe("open acme/web")
  expect(payloadFor("issues.list", args)).toMatchObject({payload: {filter:"open",repo:"acme/web"}})
 })
+
+test("manual setup work preserves source identity and multiline instructions across all command doors", () => {
+  const work = { cardId: "setup:repo:issues", operation: "run", manual: { stepId: "fix", prompt: "Preserve old APIs.\nAdd a regression test.", subject: { source: "smithers-cloud", kind: "issue", number: 42 } } } as const
+  roundTrip("setup.run", work, JSON.stringify(work), work)
+  const edit = { cardId: work.cardId, stepId: "fix", field: "prompt", value: work.manual.prompt } as const
+  roundTrip("setup.work", edit, JSON.stringify(edit), edit)
+})
+
+test("explicit sidebar close has the same typed grammar and remains a toggle when omitted", () => {
+  roundTrip("sidebar.toggle", { open: false }, '{"open":false}', { open: false })
+  expect(payloadFor("sidebar.toggle", "")).toEqual({ payload: {} })
+})

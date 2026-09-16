@@ -27,6 +27,11 @@ export const Operation = Schema.Union([
   Schema.Struct({ ...expected, operation: Schema.Literal("describe"), description: Schema.String }),
   Schema.Struct({ ...expected, operation: Schema.Literal("snapshot") }),
   Schema.Struct({ ...expected, operation: Schema.Literal("edit") }),
+  Schema.Struct({ ...expected, operation: Schema.Literal("apply_files"), files: Schema.Array(Schema.Struct({
+    path: Schema.NonEmptyString.check(Schema.isMaxLength(1000)),
+    beforeDigest: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))),
+    content: Schema.NullOr(Schema.String.check(Schema.isMaxLength(65536)))
+  })).check(Schema.isMinLength(1), Schema.isMaxLength(30)) }),
   Schema.Struct({ ...expected, operation: Schema.Literal("amend"), source: Expected }),
   Schema.Struct({ ...expected, operation: Schema.Literal("reorder"), after: Expected })
 ])
@@ -34,6 +39,7 @@ export type Operation = typeof Operation.Type
 export const ReadResult = Schema.Struct({
   status: Schema.Literal("read"), operationId: OperationId, head: NativeRevision,
   revisions: Schema.Array(NativeRevision),
+  capabilities: Schema.optionalKey(Schema.Array(Schema.String)),
   history: Schema.optionalKey(Schema.Array(NativeRevision)),
   historyComplete: Schema.optionalKey(Schema.Boolean)
 })
@@ -45,6 +51,8 @@ export const SourcePublication = Schema.Struct({
 })
 export type SourcePublication = typeof SourcePublication.Type
 export const PublishSource = Schema.Struct({ requestId: RequestId, source: Resolved })
+export const FileRecovery = Schema.Struct({ requestId: RequestId, path: Schema.String,
+  files: Schema.Array(Schema.Struct({ path: Schema.String, preimage: Schema.NullOr(Schema.String), proposed: Schema.NullOr(Schema.String) })) })
 export const OperationResult = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("accepted"), replayed: Schema.optionalKey(Schema.Boolean),
@@ -52,11 +60,11 @@ export const OperationResult = Schema.Union([
     head: NativeRevision, revision: NativeRevision, revisions: Schema.Array(NativeRevision),
     // The local native receipt is durable. Its asynchronous cloud projection
     // is acknowledged only by the head reporter, not by this guest process.
-    provenance: Schema.Literal("pending")
+    provenance: Schema.Literal("pending"), recovery: Schema.optionalKey(FileRecovery)
   }),
   Schema.Struct({ status: Schema.Literal("unchanged"), operationId: OperationId, revision: NativeRevision })
 ])
 export type OperationResult = typeof OperationResult.Type
 export class NativeCodingError extends Schema.TaggedError<NativeCodingError>()("coding/NativeCodingError", {
-  code: Schema.String, message: Schema.String
+  code: Schema.String, message: Schema.String, recovery: Schema.optionalKey(FileRecovery)
 }) {}

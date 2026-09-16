@@ -111,7 +111,17 @@ export const createWorkflowPumpController = (
       }
       rows.push(...answer.value)
       if (answer.value.length < JOURNAL_PAGE_LOOKS_FULL) return { status: "ok", value: rows, complete: true }
-      cursor = answer.cursor ?? cursor
+      // Older hosts omit cursor metadata. Advance from their recorded rows
+      // before requesting another page; rereading a full prefix would append
+      // it repeatedly and falsely report conflicting history.
+      if (answer.cursor !== undefined) cursor = answer.cursor
+      else {
+        const last = answer.value.at(-1)!
+        let offset = 0
+        for (let i = answer.value.length - 2; i >= 0 && answer.value[i]?.sequence === last.sequence; i--) offset++
+        if (cursor?.value === last.sequence) offset += cursor.offset + 1
+        cursor = { selector: { _tag: "run-events", runId }, projection: "run-events", runId, value: last.sequence, offset }
+      }
     }
     return { status: "ok", value: rows, complete: false }
   }

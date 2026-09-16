@@ -17,6 +17,7 @@ import { edgeCacheLayer, githubAppAuthLayer } from "./githubApp"
 import type { EdgeCache, GithubAppAuth } from "./githubApp"
 import { gatewaySessionsLayer } from "./gateway"
 import type { GatewaySessions } from "./gateway"
+import { setupRequestsLayer, SetupRequests } from "./repositorySetupStore"
 import { TransportLive } from "./Http"
 import { TerminalSockets, terminalSocketsLayer } from "./terminalRelay"
 import type { Transport } from "./Http"
@@ -235,6 +236,7 @@ export type AllServices =
   | DeploymentBindings
   | TurnCancels
   | GatewaySessions
+  | SetupRequests
   | TurnLimits
   | ClientErrors
   | RecommendLogStore
@@ -259,6 +261,7 @@ export const layersFromEnv = (env: WorkerEnv): Layer.Layer<AllServices> => {
     deploymentBindingsLayer(env),
     turnCancelsLayer(env.TURN_CANCELS),
     gatewaySessionsLayer(env.GATEWAY_SESSIONS),
+    setupRequestsLayer(env.GATEWAY_SESSIONS),
     turnLimitsLayer(env.TURN_LIMITS),
     clientErrorsLayer(env.CLIENT_ERRORS),
     recommendLogLayer(env.RECOMMEND_LOG),

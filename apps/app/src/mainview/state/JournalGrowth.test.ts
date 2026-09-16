@@ -211,7 +211,11 @@ describe("normalized run polling has no idle SQLite growth", () => {
     expect(reads.transcriptReads).toBe(40)
     expect(reads.journalAfter[0]).toBeUndefined()
     expect(reads.journalAfter[1]).toMatchObject({ value: 599, offset: 0 })
-    expect(reads.journalAfter[21]).toMatchObject({ value: 600, offset: 0 })
+    // The first full-looking page needs one extra empty read to close it;
+    // subsequent cycles continue from persisted cursors without idle writes.
+    expect(reads.journalAfter).toHaveLength(41)
+    for (const after of reads.journalAfter.slice(1, 22)) expect(after).toMatchObject({ value: 599, offset: 0 })
+    for (const after of reads.journalAfter.slice(22)) expect(after).toMatchObject({ value: 600, offset: 0 })
     const history = await first.store.eventHistory()
     const observations = history.events.map(row => decodeEventValue(row.input))
       .filter((value): value is { type: "gateway.run.observed"; observation: RuntimeRunObservation } =>

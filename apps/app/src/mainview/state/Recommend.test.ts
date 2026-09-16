@@ -28,6 +28,7 @@ const catalog: ReadonlyArray<CatalogItem> = [
 ]
 
 const state: CommandState = {
+  wiki: true,
   surface: "chat",
   typing: false,
   hasConnectors: true,

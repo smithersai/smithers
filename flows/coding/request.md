@@ -24,20 +24,21 @@ executor. The host advertises `coding-request/v1` only when its operator has
 provided the owning planning configuration and its verified declaration is
 available in the catalog.
 
-The composition refreshes the verified engineering wiki, prepares a first plan,
-admits its observed native source, and runs the disposable file-level POC. It
-checks that source again before refreshing memory and planning a second time
-with both the user's feedback and the measured POC findings. After the POC, the coordinator admits each prepared plan before the bounded
-correction workflow implements it. Queued request messages can cause a fresh
-planning pass at the boundaries described below. Any material planning question
-uses the existing durable HumanTask.
+The composition prepares a plan from current source files, existing repository
+documents and native JJ history. It admits the observed source before the
+coordinator can enter bounded correction. `planning.wiki: true` explicitly adds
+verified Wiki refresh and memory to preparation; Wiki is off by default. A
+repository without generated knowledge can run the same implementation and
+validation path. Queued messages cause fresh planning at the boundaries below.
+Material planning questions use the existing durable HumanTask.
 
-Each stage and its output belong to ordinary native execution records. The
-complete POC source preview stays in its child result; the request result does
-not duplicate its bounded file contents in every ancestor. Only its bounded
-feedback feeds the second planning pass. The private planning input allows
-65,538 characters so a valid 32,768-character user message and 32,768-character
-POC feedback both survive with their separating newlines. The request's external
+`coding/prototype` is a separate opt-in declaration backed by `RunPrototype`.
+It prepares and admits source, runs the disposable file-level POC, then checks
+source again. It does not enter correction or landing. A real fix does not need
+a prototype first. Both entries use ordinary native execution records. The
+request's original `PrepareRequest` child preserves the source receipt needed
+for finalization, including when feedback later produces a different plan.
+The private planning feedback limit is 65,538 characters; the external request
 feedback limit remains 32,768 characters.
 
 The correction result's product status is distinct from the surrounding engine's
@@ -45,9 +46,9 @@ completion: `blocked` carries the actual failed execution ID and does not assert
 validation. A discarded POC is `drafted-unvalidated`; its source preview is not
 an executed browser, passing test, vibed state or delivery receipt.
 
-`Options.planning` configures the existing memory action with the repository's
-public engineering wiki pages and registered implementation/check names.
-The required `reviewer` identifies the wiki review policy. Optional
+`Options.planning` configures registered implementation/check names. Setting
+`wiki: true` additionally requires public engineering Wiki pages, `wikiOutput`
+and the `reviewer` policy. Optional
 `planningModel`, `pocModel` and `wikiModel` select existing authorized provider
 routes; each defaults to the explicitly selected `implementationModel`. This
 allows a cheap prototype model without introducing another model client. The
@@ -85,9 +86,10 @@ tools, fast gates and asynchronous immutable-source slow checks.
 
 The configured-host acceptance fixture drives the actual gateway host's
 Control API with scripted models, real QuickJS cells, Plue JJ, SQLite and
-process checks. It starts without a published wiki and asserts generation before
-planning, unchanged-page review reuse before the second pass, retained user and
-POC feedback, and actual native implementation. Evidence-only model steps cannot
+process checks. It covers both a default configuration that creates no Wiki
+artifacts and an explicitly enabled Wiki configuration that generates and reuses
+verified pages. Both retain steered user feedback and perform actual native
+implementation without a POC. Evidence-only model steps cannot
 write. Implementation uses Write/Edit/ApplyPatch; ignored files are refused.
 The persisted request result identifies its final prepared source and the
 validated native atom. The same source and bundle fixture selects either Node
@@ -103,14 +105,13 @@ approved-owner proof and exact durable receipts are described in
 uses the coordinator lineage. Explicit leaf messages and model settings keep
 their existing behavior. There is no separate feedback store or transport.
 
-`ReceiveFeedback` runs after the POC, after each prepared plan but before
+`ReceiveFeedback` runs after each prepared plan but before
 implementation, and after each completed correction pass. A message delivered
 before implementation causes another planning pass before any plan mutation.
 A message delivered during implementation waits for `CorrectPlan` to settle,
-then causes a new plan against freshly gathered source and wiki evidence. The
+then causes a new plan against freshly gathered source and enabled Wiki evidence. The
 coordinator never edits an executing plan or interrupts a writer mid-operation.
 The next plan can select existing JJ atoms under the usual ownership policy.
-The POC is not repeated on these later planning passes.
 
 The Message receipt is an ordinary completed native Action result. Its exact
 notification IDs, text and attribution remain available even if combining the
@@ -122,14 +123,14 @@ plan completed: the subsequent actual Plan child is that evidence.
 ## Bounded ordinary Flow state
 
 A private `CoordinateRequest` cursor contains
-`{prompt, feedback, maxRounds, revision}`. `maxRounds` is the existing correction
-limit; `revision` counts the coordinator's post-POC planning passes. The cursor
+`{prompt, feedback, maxRounds, revision, preparedPlan?}`. `maxRounds` is the existing
+correction limit; `revision` counts planning passes. The original prepared plan
+is reused for the first pass and discarded when feedback requires a new plan. The cursor
 is ordinary durable Flow payload and uses the existing trampoline rather than
 a second run loop or ledger. The result does not acquire a duplicated transcript,
 POC artifact or collection of earlier plans.
 
-There are at most eight planning passes after the POC, in addition to the
-initial POC plan. Repeated messages at that limit produce a typed refusal naming
+There are at most eight planning passes. Repeated messages at that limit produce a typed refusal naming
 the retained message IDs. A source admission failure also refuses before
 implementation rather than silently updating the plan to a different source.
 Existing native per-operation fences still govern every later mutation.
@@ -141,14 +142,15 @@ the final drain receives it and another planning pass follows. If the empty
 drain wins, a new message is refused and the caller can start another request.
 An exact retry of an earlier accepted message retains its original receipt.
 No extra event, table or closure ledger is introduced. There is no claim of
-preemptive steering or an implicit human wait after every POC.
+preemptive steering or an implicit human wait after every plan.
 
 ## Verification
 
 The coordinator regression suite uses the real Flow engine and interpreter with
 explicitly scripted planning, prototype and correction children. It verifies
 constraint and attribution retention, feedback before mutation, replanning from
-the source left by correction, bounded continual steering, stale source refusal
-and completed execution replay. These tests do not measure model quality, native
+the source left by correction, bounded continual steering, independent prototype
+execution, stale source refusal before and after a prototype, and completed
+execution replay. These tests do not measure model quality, native
 JJ mutation or operating-system process containment. Those remain covered by
 the separate native request, correction and notification host acceptance tests.

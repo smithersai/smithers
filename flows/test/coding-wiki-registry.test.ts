@@ -19,6 +19,10 @@ const platform = process.versions.bun ? (await import("@effect/platform-bun/BunS
 
 test("the actual Smithers default check declarations lower under the configured host delegates", async () => {
   const config = smithersProject()
+  assert.equal(config.wiki, false)
+  assert.equal(config.pages, undefined)
+  assert.equal(config.checks.some(check => check.flow === "checks/wiki"), false)
+  assert.equal(smithersProject(undefined, true).checks.find(check => check.id === "wiki")?.required, true)
   const names = new Set(config.checks.map(check => check.flow))
   const base = await Effect.runPromise(Registry.make({ sources: [{ source: "project",
     root: fileURLToPath(new URL("../", import.meta.url)), naming: "path" }] })

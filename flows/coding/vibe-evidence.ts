@@ -9,6 +9,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, Option, Schema } from "effect"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import { Poc, PocInput } from "./poc.ts"
+import { PrepareRequest } from "./preparation.ts"
 import { Request, RunRequest } from "./request.ts"
 import { CodingError, RequestInput, sameRevision } from "./schema.ts"
 import { VibeEvidence, VibeInput } from "./vibe-schema.ts"
@@ -41,7 +42,7 @@ export const readVibeRequest = (input: typeof VibeInput.Type) => Effect.gen(func
   let totalBytes = 0
   const read = (id: string) => Effect.gen(function*() {
     const row = yield* store.get(id).pipe(Effect.mapError(error => error.code === "not_found_row"
-      ? refuse("Finalization ancestry or its original POC was collected; this request cannot supply the required receipt")
+      ? refuse("Finalization ancestry or its original source receipt was collected; this request cannot supply the required receipt")
       : error))
     totalBytes += new TextEncoder().encode(row.stateJson).length
     if (row.runId !== id || row.stateJson.length > 16 * 1024 * 1024 || totalBytes > 32 * 1024 * 1024) {
@@ -114,8 +115,29 @@ export const readVibeRequest = (input: typeof VibeInput.Type) => Effect.gen(func
       id = parentId
     }
   }
-  // The last steered plan can start after earlier implementation. Only the
-  // request's original POC proves its pre-implementation source.
+  // Later steered plans may start after implementation. The one original
+  // prepared child is source-qualified before any correction can mutate code.
+  const preparations = yield* catalog.listRuns({ filters: { flowName: PrepareRequest._tag, parentRunId: input.requestExecutionId }, limit: 2 })
+  if (preparations.cursor !== null || preparations.runs.length > 1) return yield* invalid("The request needs exactly one retained original preparation")
+  if (preparations.runs.length === 1) {
+    const preparationExecutionId = preparations.runs[0]!.runId
+    const preparation = yield* read(preparationExecutionId)
+    const parents = yield* graph.runParents(preparationExecutionId)
+    if (preparation.state.flowName !== PrepareRequest._tag || preparation.state.parentExecutionId !== input.requestExecutionId ||
+        parents.length !== 1 || parents[0]!.parentId !== input.requestExecutionId) {
+      return yield* invalid("The original preparation is not a direct child of this request")
+    }
+    const preparedInput = Schema.decodeUnknownOption(PrepareRequest.payloadSchema)(preparation.state.payload)
+    const plan = yield* completed(preparation.state, PrepareRequest.successSchema, PrepareRequest.errorSchema)
+    if (Option.isNone(preparedInput) || preparedInput.value.prompt !== payload.value.prompt ||
+        preparedInput.value.feedback !== (payload.value.feedback ?? "") || plan.observedHead === undefined ||
+        plan.prompt !== payload.value.prompt) {
+      return yield* invalid("The original prepared source does not match the approved request input")
+    }
+    return { ...input, ...root, preparationExecutionId, originalSource: plan.observedHead, request }
+  }
+  // Compatibility for requests completed before the independent-POC change.
+  // An absent modern receipt cannot borrow an unrelated prototype's source.
   const children = yield* catalog.listRuns({ filters: { flowName: Poc._tag, parentRunId: input.requestExecutionId }, limit: 2 })
   if (children.cursor !== null || children.runs.length !== 1) return yield* invalid("The request needs exactly one retained original POC")
   const pocExecutionId = children.runs[0]!.runId

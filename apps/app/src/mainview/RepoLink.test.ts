@@ -441,3 +441,15 @@ for (const search of ["?tutorial", "?tutorial=", "?repo=a/b&tutorial&tab=issues"
     expect(cleaned).toEndWith("#top")
   })
 }
+
+test("mobile repository entry selects the requested repo without opening an obstructing tree drawer", async () => {
+  const { controller, store, ran } = await fixture()
+  try {
+    const refusal = await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers", undefined, 320)
+    expect(refusal).toBeUndefined()
+    expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+    expect(store.session().repositoryEntry?.phase).toBe("ready")
+    expect(ran).toEqual([])
+    expect(store.session().sidebarOpen).not.toBe(true)
+  } finally { await store.dispose?.() }
+})

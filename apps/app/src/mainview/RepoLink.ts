@@ -158,7 +158,8 @@ export const openRequestedRepo = async (
   controller: Pick<AppController, "store" | "selectRepo" | "runCommand" | "loadRepositories">,
   http: FetchLike,
   requested: string,
-  requestId = beginRepositoryEntry(controller.store, requested)!
+  requestId = beginRepositoryEntry(controller.store, requested)!,
+  viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth
 ): Promise<string | void> => {
   const current = () => controller.store.session().repositoryEntry?.requestId === requestId
   const finish = (error?: string): string | void => {
@@ -213,12 +214,14 @@ export const openRequestedRepo = async (
   finish()
   /*
    * The shared copy's tree opens once, on the first paint of the catalog
-   * repository: `repo.tree <copyId>` through the registry, the same act the
+   * repository on wide screens: `repo.tree <copyId>` through the registry, the same act the
    * caret runs. The tree rows live for this launch only, so a row already
-   * there is this launch's own state, and the caret is the visitor's.
+   * there is this launch's own state, and the caret is the visitor's. On a
+   * phone this opens an obstructing drawer; keep the explicit tree action.
    */
   const sharedId = sharedCopyIdOf(repository.id)
   if (
+    viewportWidth > 600 &&
     controller.store.collections.workingCopies.get(sharedId) !== undefined &&
     controller.store.collections.repoTree.get(repoTreeRowId(sharedId, "")) === undefined
   ) {

@@ -9,7 +9,7 @@ import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, CODE_INTEL_LINE, INSTRUCTIONS_BUDGET_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf, smithersInstructions } from "./Instructions"
 import { WORLD_BODY_BUDGET, WORLD_BODY_PER_DOCUMENT } from "./WorldContext"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 /*
  * 2026-09-02: a turn failed with "Smithers Cloud chat failed (HTTP 400):

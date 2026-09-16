@@ -23,6 +23,9 @@ test("repository coding project decodes with registered flows, real source paths
     ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
   const project = await Effect.runPromise(loadProject(root, ".smithers/coding-project.json").pipe(Effect.provide(platform)))
   assert.ok(project)
+  assert.equal(project.wiki, false)
+  assert.ok(project.pages)
+  assert.ok(project.wikiOutput)
   assert.equal(project.implementation, "coding/implementation")
   const factory = JSON.parse(await readFile(join(root, ".smithers/factory.json"), "utf8")) as {
     flows: { id: string; path: string }[]
@@ -71,14 +74,21 @@ test("explicit operator JSON uses existing schemas and the injected Node/Bun fil
   await writeFile(join(directory, "smithers.json"), "not json")
   assert.equal(await load(undefined), undefined)
   await writeFile(join(directory, "project.json"), JSON.stringify(valid()))
-  const expected = { ...valid(), wikiOutput: join(await realpath(directory), "../wiki") }
+  const expected = { ...valid(), wiki: false, wikiOutput: join(await realpath(directory), "../wiki") }
   assert.deepEqual(await load("project.json"), expected)
   assert.deepEqual(await load(join(directory, "project.json")), expected)
+  // Core requests need ordinary checks, never a generated publication catalog.
+  const minimal = { implementation: valid().implementation, checks: valid().checks }
+  await writeFile(join(directory, "project.json"), JSON.stringify(minimal))
+  assert.deepEqual(await load("project.json"), { ...minimal, wiki: false })
+  await writeFile(join(directory, "project.json"), JSON.stringify({ ...minimal, wiki: true }))
+  await assert.rejects(load("project.json"), /enabled Wiki requires/)
   const exact = JSON.stringify(valid())
   await writeFile(join(directory, "project.json"), exact + " ".repeat(262144 - Buffer.byteLength(exact)))
   assert.deepEqual(await load("project.json"), expected)
   for (const filename of ["", "  ", "missing.json", "bad\0path"]) await assert.rejects(load(filename), /SMITHERS_CODING_PROJECT/)
   const bad = [
+    { ...valid(), wiki: "true" },
     { ...valid(), unknown: "refuse" }, { ...valid(), reviewer: "" }, { ...valid(), reviewer: "  " },
     { ...valid(), pages: [] }, { ...valid(), pages: [...valid().pages, ...valid().pages] },
     { ...valid(), pages: [{ ...valid().pages[0], related: ["absent"] }] },

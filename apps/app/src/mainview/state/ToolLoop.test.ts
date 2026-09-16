@@ -5,7 +5,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
 

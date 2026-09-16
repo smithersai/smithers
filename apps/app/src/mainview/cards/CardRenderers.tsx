@@ -1,4 +1,5 @@
 import { repositoryUpdateCardFamily } from "./RepositoryUpdateCard"
+import { repositorySetupCardFamily } from "./RepositorySetupCard"
 import { useLiveQuery } from "@tanstack/react-db"
 import { projectRepositoryUpdate, projectTargetStars } from "../state/CardProjection"
 /*
@@ -70,6 +71,7 @@ const retiredCardFamily: CardFamily<"retired"> = { retired: { render: () => null
 
 /** The families in registration order; the test reads this list to prove the slices are disjoint. */
 export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
+  repositorySetupCardFamily,
   retiredCardFamily,
   turnCardFamily,
   approvalCardFamily,
@@ -114,6 +116,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
 
 /** One entry per card kind. Written as a literal so a missing kind fails to compile. */
 export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
+  ...repositorySetupCardFamily,
   ...retiredCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,

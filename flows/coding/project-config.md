@@ -5,13 +5,13 @@ workspace executable. The ordinary Smithers CLI keeps its existing commands.
 The host uses the same Effect composition and durable engine on Node and Bun.
 
 Set `SMITHERS_CODING_PROJECT` to an explicit UTF-8 JSON file to enable the prompt
-route's owning wiki, implementation and check configuration. There is no filename
+route's owning implementation and check configuration. There is no filename
 discovery. An unset variable leaves the manual plan route available; an empty,
 missing, malformed or invalid explicit file refuses startup. The file is read
 once before host construction through the injected Effect filesystem. Restart
 the host to adopt a changed configuration or catalog.
 
-Both the config filename and `wikiOutput` resolve relative to `--root`; absolute
+Both the config filename and optional `wikiOutput` resolve relative to `--root`; absolute
 paths are accepted. The output may point at the separate wiki repository. JSON
 is limited to 256 KiB of actual streamed bytes. Unknown properties are refused,
 including nested page/check properties. Wiki page IDs and check IDs must be
@@ -20,17 +20,7 @@ source path admission, publication and semantic verification.
 
 ```json
 {
-  "wikiOutput": "../project-wiki",
-  "reviewer": "engineering-source-policy-v1",
-  "pages": [{
-    "id": "runtime",
-    "title": "Runtime",
-    "purpose": "Explain the runtime and its platform boundaries",
-    "kind": "current",
-    "document": "docs/runtime.md",
-    "inputs": ["src/runtime.ts"],
-    "related": []
-  }],
+  "wiki": false,
   "implementation": "coding/implementation",
   "checks": [{
     "id": "types",
@@ -43,6 +33,15 @@ source path admission, publication and semantic verification.
   "maxMemoryBytes": 49152
 }
 ```
+
+Wiki is off by default. Source files, existing project documents and resolved
+native JJ history provide planning context without generated artifacts. To
+enable Wiki, add `"wiki": true`, an external `wikiOutput`, a `reviewer` identity,
+and the non-empty `pages` inventory using the Wiki `PageSpec`. Supplied optional
+metadata is still validated while the feature is off. This flag leaves native
+history, source identity and validation invariants intact. An explicitly required
+`checks/wiki` refuses while Wiki is off; update that operator policy deliberately.
+Optional generated-Wiki checks are omitted while the feature is off.
 
 The example names must identify real registered implementation/check flows in
 that repository. This file does not define shell commands or accept claimed
@@ -80,7 +79,7 @@ printing the JSON contents.
 
 
 For this Smithers repository, generate the opinionated configuration from the
-same public page catalog rather than copying its page inventory:
+repository-owned target configuration:
 
 ```sh
 node factory/coding/project.ts ../smithers-wiki > /tmp/smithers-project.json
@@ -89,7 +88,9 @@ SMITHERS_CODING_PROJECT=/tmp/smithers-project.json smithers-coding-host serve --
 
 `factory/coding/project.ts` selects existing PACKAGE targets: codingPolicy blocks
 as the policy gate; codingRuntime, native Node/Bun, deployment bundle Node/Bun,
-and semantic wiki review run as required slow checks. The ordinary `checks/*`
+run as required slow checks. Wiki is off in this generated default; calling
+`smithersProject(output, true)` includes the public page catalog and required
+semantic Wiki check. The ordinary `checks/*`
 declarations contain only target invocations, not copied test lists. The host
 must provide `smithers-build`, the declared toolchain, native helpers and build
 cache through its existing command environment. An immutable source export does

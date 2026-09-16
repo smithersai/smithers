@@ -59,6 +59,7 @@ import * as repos from "./entries/repos"
 import * as review from "./entries/review"
 import * as runs from "./entries/runs"
 import * as search from "./entries/search"
+import * as setup from "./entries/setup"
 import * as smithers from "./entries/smithers"
 import * as secrets from "./entries/secrets"
 import * as sync from "./entries/sync"
@@ -335,6 +336,8 @@ export interface CommandState {
   readonly hasConnectors: boolean
   /** The plugins installed on this workspace (the session's shelf); optional so state fixtures stay minimal. */
   readonly pluginLibrary?: boolean
+  readonly wiki?: boolean
+  readonly mythicalHistory?: boolean
   readonly plugins?: ReadonlyArray<string>
   /** The validated session carries admin:true; the admin plugin registers only then. */
   readonly admin: boolean
@@ -420,6 +423,9 @@ export interface Namespace {
 
 /** The namespaces in display order; one the table lacks lists last, by id. */
 export const NAMESPACES: ReadonlyArray<Namespace> = [
+  setup.namespace,
+  setup.ciNamespace,
+  setup.choresNamespace,
   chat.namespace,
   appearance.namespace,
   repo.namespace,

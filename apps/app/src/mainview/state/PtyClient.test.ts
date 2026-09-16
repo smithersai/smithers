@@ -17,6 +17,7 @@ const serve = (): Harness => {
   const seen: Array<Record<string, unknown>> = []
   const open = new Set<{ send: (data: string) => void }>()
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (request, self) => self.upgrade(request) ? undefined : new Response("no"),
     websocket: {
@@ -141,6 +142,7 @@ test("reconnect requests only missing output, reports a retention gap and never 
   let socket: Bun.ServerWebSocket<unknown> | undefined
   let connections = 0
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (request, host) => host.upgrade(request) ? undefined : new Response(null, { status: 404 }),
     websocket: {

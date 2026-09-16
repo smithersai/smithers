@@ -51,11 +51,12 @@ const freshController = async (bootstrap?: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+    controller: createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap, features: { wiki: true } })
   }
 }
 
 const chatState: CommandState = {
+  wiki: true,
   surface: "chat",
   typing: false,
   hasConnectors: false,

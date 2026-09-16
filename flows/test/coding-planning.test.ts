@@ -142,7 +142,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
     assert.equal(catalog.entries.length, 3)
     return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [atomDelegate, checkDelegate] }))
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
-  const options = { repositoryPath: root, wikiOutput: output, pages: [spec], implementation: "coding/atoms", checks: context.checks.map(({ flowDigest: _, ...check }) => check) }
+  const options = { wiki: true, repositoryPath: root, wikiOutput: output, pages: [spec], implementation: "coding/atoms", checks: context.checks.map(({ flowDigest: _, ...check }) => check) }
   let reviewed = 0, drafted = 0
   const registrations = Layer.mergeAll(memoryLayer(options), planningPolicy, HumanTask.layer, Interpreter.layer(PreparePlan),
     ReviewRequest.toLayer(() => Effect.sync(() => { reviewed++; return { explanation: "The current answer is 42.", clarification: "Should the next feature preserve the answer?" } })),

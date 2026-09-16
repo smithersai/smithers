@@ -67,7 +67,7 @@ const openLibrary = async (enabled = true, saved = false): Promise<{
     } })
   }
   const controller = createAppController(store, noRepositories, silentAgent, {
-    features: { pluginLibrary: enabled },
+    features: { pluginLibrary: enabled, wiki: true, mythicalHistory: true },
     fetchImpl: async () => new Response("{}", { headers: { "content-type": "application/json" } })
   })
   const host = document.createElement("div")

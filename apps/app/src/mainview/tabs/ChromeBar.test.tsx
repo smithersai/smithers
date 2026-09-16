@@ -81,6 +81,7 @@ const localHarness = async (services: AppServices = {}): Promise<{ store: AppSto
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
     ...services,
+    features: { wiki: true, mythicalHistory: true, ...services.features },
     bootstrap: {
       apiVersion: 1,
       host: "local",
@@ -101,6 +102,7 @@ const cloudHarness = async (services: AppServices = {}): Promise<{ store: AppSto
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
     ...services,
+    features: { wiki: true, mythicalHistory: true, ...services.features },
     bootstrap: {
       apiVersion: 1,
       host: "cloud",
@@ -1093,6 +1095,17 @@ describe("the chrome-actions footer's download button", () => {
  * seventh button, a renamed one, or an invented one.
  */
 describe("the chrome buttons", () => {
+  test("disabled knowledge features have no sidebar door or visible restored pane", async () => {
+    const { store, controller } = await cloudHarness({ features: { wiki: false, mythicalHistory: false } })
+    await persisted(store, { type: "surface.changed", actor: "user", surface: "world" })
+    const { host } = mount(controller)
+    expect(host.querySelector('[data-testid="chrome-wiki"]')).toBeNull()
+    expect(host.querySelector('[data-testid="chrome-history"]')).toBeNull()
+    expect(host.querySelector(".world-surface")).toBeNull()
+    expect(host.querySelector('[data-testid="chrome-flows"]')).not.toBeNull()
+    expect(controller.commands.find("triggers.list")).toBeDefined()
+  })
+
   /** The canonical row: label, the registered flow the button runs, and its test id. */
   const CHROME = [
     { label: "Wiki", flow: "wiki", testid: "chrome-wiki" },

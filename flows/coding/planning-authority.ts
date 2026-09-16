@@ -57,16 +57,25 @@ const evidence = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
  * Wrapping the executing handlers matters: ModuleAuthority restores the parent
  * Host at invocation and resume, after the action layers were constructed.
  */
-export const evidenceOnly = <A, E, R>(actions: Layer.Layer<A, E, R>) =>
-  actions.pipe(
+export const evidenceOnly = <A, E, R>(actions: Layer.Layer<A, E, R>, additionalNames: ReadonlySet<string> = new Set()) => {
+  const included = (name: string) => restricted.has(name) || additionalNames.has(name)
+  const execute = <A, E, R>(effect: Effect.Effect<A, E, R>, payload: unknown) => {
+    const deadline = payload !== null && typeof payload === "object" && "deadlineAt" in payload ? payload.deadlineAt : undefined
+    const bounded = typeof deadline === "number" ? effect.pipe(Effect.timeoutOrElse({
+      duration: Math.max(1, deadline - Date.now()),
+      orElse: () => Effect.die(new Error("The repository job reached its configured deadline"))
+    })) : effect
+    return evidence(bounded)
+  }
+  return actions.pipe(
     Layer.provide(Layer.mergeAll(
       Layer.effect(FlowRuntime.FlowRuntime)(Effect.map(FlowRuntime.FlowRuntime, (runtime) => ({
         ...runtime,
         register: (flow, handler) =>
           runtime.register(
             flow,
-            restricted.has(flow._tag)
-              ? (payload, executionId) => evidence(handler(payload, executionId))
+            included(flow._tag)
+              ? (payload, executionId) => execute(handler(payload, executionId), payload)
               : handler
           )
       }))),
@@ -74,11 +83,12 @@ export const evidenceOnly = <A, E, R>(actions: Layer.Layer<A, E, R>) =>
         ...table,
         add: (implementation, options) =>
           table.add(
-            restricted.has(implementation.name)
-              ? { ...implementation, action: (payload) => evidence(implementation.action(payload)) }
+            included(implementation.name)
+              ? { ...implementation, action: (payload) => execute(implementation.action(payload), payload) }
               : implementation,
             options
           )
       })))
     ))
   )
+}

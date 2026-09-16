@@ -1063,10 +1063,6 @@ const parseWakeToken = (
     )
   )
 
-/** The wait point a durable token addresses, or nothing when it names none. */
-const waitPointOf = (deferredName: string): string | undefined =>
-  deferredName.startsWith("WaitFor/") ? deferredName.slice("WaitFor/".length) : undefined
-
 /**
  * Completes the `WaitFor` wait point a run is parked on with a signal's
  * payload.
@@ -1143,6 +1139,7 @@ export const deliverSignal = (
       if (token === null) return "no-match" as const
     }
     const bound = yield* Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(token).pipe(Effect.orDie)
+    if (!namesWaitPoint(bound.deferredName, input.signal.name)) return "no-match" as const
     const completionMatches = (row: DurableEngineState.DeferredRow): boolean => {
       const exit = row.exit as Exit.Exit<unknown, unknown>
       return Exit.isExit(exit) && Exit.isSuccess(exit) &&
@@ -1152,7 +1149,7 @@ export const deliverSignal = (
     if (Option.isSome(previous)) return completionMatches(previous.value) ? "delivered" as const : "no-match" as const
     const engine = yield* FlowRuntime.FlowRuntime
     const outcome = yield* engine.deferredDoneIfWaiting(
-      WaitFor.deferred(waitPointOf(bound.deferredName) ?? input.signal.name),
+      WaitFor.deferred(bound.deferredName.slice("WaitFor/".length)),
       {
         flowName: bound.flowName,
         executionId: bound.executionId,

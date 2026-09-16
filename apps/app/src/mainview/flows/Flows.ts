@@ -59,6 +59,7 @@ import { formFlows } from "./entries/form"
 import { frameFlows } from "./entries/frame"
 import { githubFlows } from "./entries/github"
 import { issuesFlows } from "./entries/issues"
+import { setupFlows } from "./entries/setup"
 import { notificationsFlows } from "./entries/notifications"
 import { paletteFlows } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON, pluginsFlows, pluginsSurfaceFlows } from "./entries/plugins"
@@ -118,8 +119,8 @@ export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly 
 
 export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   ...connectSurfaceFlows(actions),
-  ...wikiSurfaceFlows(actions),
-  ...worldSurfaceFlows(actions),
+  ...(actions.snapshot?.()?.wiki === true ? wikiSurfaceFlows(actions) : []),
+  ...(actions.snapshot?.()?.wiki === true ? worldSurfaceFlows(actions) : []),
   ...flowsSurfaceFlows(actions),
   ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsSurfaceFlows(actions) : []),
   ...appearanceFlows(actions),
@@ -138,8 +139,8 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...chatCopyFlows(actions),
   ...approvalFlows(actions),
   ...connectorFlows(actions),
-  ...wikiFlows(actions),
-  ...worldFlows(actions),
+  ...(actions.snapshot?.()?.wiki === true ? wikiFlows(actions) : []),
+  ...(actions.snapshot?.()?.wiki === true ? worldFlows(actions) : []),
   ...authFlows(actions),
   ...accountFlows(actions),
   ...appFlows(actions),
@@ -150,12 +151,13 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...billingPlanFlows(actions),
   ...reposImportFlows(actions),
   ...issuesFlows(actions),
+  ...setupFlows(actions),
   ...prsFlows(actions),
   ...featureFlows(actions),
   ...notificationsFlows(actions),
   ...envFlows(actions),
   ...secretsFlows(actions),
-  ...historyFlows(actions),
+  ...(actions.snapshot?.()?.mythicalHistory === true ? historyFlows(actions) : []),
   ...branchesFlows(actions),
   ...commitsFlows(actions),
   ...filesFlows(actions),

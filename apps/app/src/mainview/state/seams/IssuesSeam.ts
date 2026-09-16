@@ -4,6 +4,7 @@ import { isPracticeRepo } from "../practice/PracticeRepository"
 import { mutatePracticeIssue,practiceViewIssue,readRepositoryListError,tutorialRepositoryRead,type RepositoryForm } from "./tutorial2-issues_prs"
 
 import type { Card } from "../AppState"
+import { repositoryCiConfigured } from "../RepositoryJobs"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
 import { errorText,readErrorMessage,readResult,unreachableSentence } from "./SeamContext"
@@ -432,6 +433,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target
+      const owner = ctx.store.collections.identitySessions.get("identity")?.login ?? null
       let response: Response
       try {
         response = await ctx.http(issuesPath(repo), {
@@ -451,6 +453,15 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const created = isRecord(body) ? asInt(body.number) : null
       if (created === null) {
         return `The issue was created in ${repo}, but the backend answered with an unreadable payload`
+      }
+      const key = `setup-ci:${owner}:${repo}`
+      if (owner === (ctx.store.collections.identitySessions.get("identity")?.login ?? null)
+        && !repositoryCiConfigured(ctx.store.collections.cards.values(), repo, owner)
+        && ![...ctx.store.collections.toasts.values()].some(toast => toast.key === key)) {
+        const action = { label: "Set up CI", flow: "ci.setup" as const, args: repo }
+        ctx.dispatch({ type: "toast.shown", actor: "system", key, title: "Improve issue checks", action })
+        if (ctx.resolveToast) ctx.resolveToast(key, { status: "ok", detail: "", action })
+        else ctx.dispatch({ type: "toast.resolved", actor: "system", key, status: "ok", detail: "", action })
       }
       return refreshDetail(`Issue #${created} was created in ${repo}`, repo, created)
     },

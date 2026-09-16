@@ -5,11 +5,12 @@ import { configLayer } from "./Config"
 import type { ServerConfig, ServerEnvVars } from "./Config"
 import { storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
-import { gatewayResolutionsLayer, gatewaySessionRequest, makeGatewayResolutions } from "./gateway"
+import { GatewaySessionRegistry, gatewayResolutionsLayer, gatewaySessionRequest, makeGatewayResolutions } from "./gateway"
 import type { GatewayRecord } from "./gateway"
 import { TransportLive } from "./Http"
 import type { Transport } from "./Http"
 import { TurnCancelRegistry } from "./turns"
+import { setupStorageMutexLayer } from "./repositorySetupStore"
 
 /*
  * Test fixture: the Worker's two required Durable Object bindings driven
@@ -29,6 +30,7 @@ export interface MemoryDurableObjectsOptions {
   readonly env?: ServerEnvVars
   /** The transport and config the registry runs under, for injected-layer tests. */
   readonly services?: Layer.Layer<Transport | ServerConfig>
+  readonly nativeAlarms?: boolean
 }
 
 /** Every stub's `fetch` is the native Durable Object boundary: `runDurable` over the object's Effect. */
@@ -36,6 +38,8 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   const services = options.services ?? Layer.mergeAll(TransportLive, configLayer(options.env ?? {}))
   const gatewayData = new Map<string, Map<string, unknown>>()
   const gatewayObjects = new Map<string, Layer.Layer<any>>()
+  const nativeGatewayObjects = new Map<string, GatewaySessionRegistry>()
+  const gatewayAlarms = new Map<string, number>()
   const cancelData = new Map<string, Map<string, unknown>>()
   const cancelObjects = new Map<string, TurnCancelRegistry>()
   const retained = (maps: Map<string, Map<string, unknown>>, name: string): Map<string, unknown> => {
@@ -64,10 +68,19 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
     idFromName: (name) => name,
     get: (id) => {
       const name = String(id)
+      if (options.nativeAlarms) {
+        let object = nativeGatewayObjects.get(name)
+        if (!object) {
+          object = new GatewaySessionRegistry({ storage: { ...nativeStorageOver(retained(gatewayData, name)),
+            setAlarm: time => { gatewayAlarms.set(name, time); return Promise.resolve() } } }, options.env)
+          nativeGatewayObjects.set(name, object)
+        }
+        return object
+      }
       let object = gatewayObjects.get(name)
       if (object === undefined) {
         // The join map is made once per object, exactly as the native class does.
-        object = Layer.mergeAll(storageOver(retained(gatewayData, name)), services, gatewayResolutionsLayer(makeGatewayResolutions()))
+        object = Layer.mergeAll(storageOver(retained(gatewayData, name)), services, gatewayResolutionsLayer(makeGatewayResolutions()), setupStorageMutexLayer())
         gatewayObjects.set(name, object)
       }
       const layers = object
@@ -90,6 +103,12 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   return {
     GATEWAY_SESSIONS,
     TURN_CANCELS,
+    /** Deliver one platform alarm per pending object, without a browser request. */
+    runGatewayAlarms: (): Promise<void> => runDurable(Effect.forEach([...gatewayAlarms.keys()], login => Effect.gen(function* () {
+        gatewayAlarms.delete(login)
+        yield* Effect.promise(() => (GATEWAY_SESSIONS.get(login) as GatewaySessionRegistry).alarm())
+    }), { discard: true })),
+    pendingGatewayAlarms: () => [...gatewayAlarms.keys()],
     /** The rows one login's registry holds, by storage key, for a test to inspect. */
     gatewayRows: (login: string): Map<string, unknown> => retained(gatewayData, login),
     /**
@@ -116,12 +135,15 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
     reset: (): void => {
       gatewayData.clear()
       gatewayObjects.clear()
+      nativeGatewayObjects.clear()
+      gatewayAlarms.clear()
       cancelData.clear()
       cancelObjects.clear()
     },
     /** Forgets the objects but keeps their rows: a Worker restart. */
     restart: (): void => {
       gatewayObjects.clear()
+      nativeGatewayObjects.clear()
       cancelObjects.clear()
     }
   }

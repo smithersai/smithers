@@ -11,6 +11,7 @@ import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts
 import { Poc, type PocResult } from "../coding/poc.ts"
 import { Request, RunRequest } from "../coding/request.ts"
 import { CodingError, RequestResult, checkInputDigest, type Revision, type Plan, type Implementation } from "../coding/schema.ts"
+import { PrepareRequest } from "../coding/preparation.ts"
 import { readVibeRequest } from "../coding/vibe-evidence.ts"
 
 const revision = (name: string, parent?: string): Revision => ({ changeId: `jj-${name}`, commitId: `commit-${name}`,
@@ -39,7 +40,7 @@ const row = (runId: string, flowName: string, payload: unknown, result?: unknown
 })
 const requestResult = (value: typeof RequestResult.Type) => Schema.encodeSync(Schema.toCodecJson(Flow.Result({ success: Request.successSchema, error: Request.errorSchema })))(new Flow.Complete({ exit: Exit.succeed(value) }))
 const pocResult = (value: PocResult) => Schema.encodeSync(Schema.toCodecJson(Flow.Result({ success: Poc.successSchema, error: Poc.errorSchema })))(new Flow.Complete({ exit: Exit.succeed(value) }))
-const modes = ["valid", "forked-root", "trampoline-parent", "pending", "domain-blocked", "duplicate-receipt", "wrong-input", "wrong-wrapper", "wrong-control-flow", "missing-delegate", "wrong-bridge-input", "extra-parent", "missing-poc", "two-pocs", "poc-running", "poc-mismatch", "poc-wrong-parent", "collected", "oversized", "outside-vibe", "no-owner"] as const
+const modes = ["valid", "prepared", "prepared-wrong-input", "prepared-missing-source", "prepared-wrong-parent", "two-preparations", "forked-root", "trampoline-parent", "pending", "domain-blocked", "duplicate-receipt", "wrong-input", "wrong-wrapper", "wrong-control-flow", "missing-delegate", "wrong-bridge-input", "extra-parent", "missing-poc", "two-pocs", "poc-running", "poc-mismatch", "poc-wrong-parent", "collected", "oversized", "outside-vibe", "no-owner"] as const
 for (const mode of modes) test(`vibe evidence: ${mode}`, async () => {
   const program = Effect.gen(function*() {
     const control = yield* ControlRuntime.ControlRuntime, graph = yield* DurableEngineState.DurableEngineState
@@ -68,6 +69,18 @@ for (const mode of modes) test(`vibe evidence: ${mode}`, async () => {
     if (mode === "trampoline-parent") rows.set("delegate", { ...row("delegate", "coding/request", { input }), parentRunId: root })
     if (mode === "poc-running") rows.set("poc", { ...rows.get("poc")!, status: "running" })
     if (mode === "oversized") rows.set("request", { ...rows.get("request")!, stateJson: " ".repeat(16 * 1024 * 1024 + 1) })
+    const prepared = mode.startsWith("prepared") || mode === "two-preparations"
+    if (prepared) {
+      const { observedHead: _, ...withoutSource } = plan
+      const preparedPlan = { ...withoutSource, base: original, ...(mode === "prepared-missing-source" ? {} : { observedHead: original }) }
+      const result = Schema.encodeSync(Schema.toCodecJson(Flow.Result({ success: PrepareRequest.successSchema, error: PrepareRequest.errorSchema })))(
+        new Flow.Complete({ exit: Exit.succeed(preparedPlan) }))
+      rows.set("preparation", row("preparation", PrepareRequest._tag,
+        { prompt: mode === "prepared-wrong-input" ? "another request" : input.prompt, feedback: "" }, result,
+        mode === "prepared-wrong-parent" ? "delegate" : "request"))
+      rows.delete("poc")
+      yield* graph.recordRunParent("preparation", mode === "prepared-wrong-parent" ? "delegate" : "request")
+    }
     yield* graph.recordRunParent("request", "delegate")
     if (mode !== "trampoline-parent") yield* graph.recordRunParent("delegate", root)
     yield* graph.recordRunParent("poc", mode === "poc-wrong-parent" ? "delegate" : "request")
@@ -75,6 +88,15 @@ for (const mode of modes) test(`vibe evidence: ${mode}`, async () => {
     const catalog: RunCatalogRead.Service = {
       listRunIds: () => Effect.die("Vibe must not scan the global run catalog"),
       listRuns: options => Effect.sync(() => {
+        if (options?.filters?.flowName === PrepareRequest._tag) {
+          assert.deepEqual(options, { filters: { flowName: PrepareRequest._tag, parentRunId: "request" }, limit: 2 })
+          return { source: "0".repeat(32), revision: 1, cursor: null,
+            runs: (prepared ? mode === "two-preparations" ? ["preparation", "another"] : ["preparation"] : []).map(runId => ({
+              _tag: "Observed" as const, runId, source: "0".repeat(32), revision: 1, status: "completed" as const,
+              flowName: PrepareRequest._tag, createdAtMs: 1, startedAtMs: 1, finishedAtMs: 2, parentRunId: "request", lineageId: root, roundOrdinal: 0,
+              cancellation: { requestedAtMs: null, acknowledgement: null }, waiting: null
+            })) }
+        }
         assert.deepEqual(options, { filters: { flowName: Poc._tag, parentRunId: "request" }, limit: 2 })
         return { source: "0".repeat(32), revision: 1, cursor: null, runs: (mode === "missing-poc" ? [] : mode === "two-pocs" ? ["poc", "second"] : ["poc"]).map(runId => ({
           _tag: "Observed" as const, runId, source: "0".repeat(32), revision: 1, status: "completed" as const,
@@ -92,9 +114,14 @@ for (const mode of modes) test(`vibe evidence: ${mode}`, async () => {
   }).pipe(Effect.provide(Layer.mergeAll(DurableEngineState.layerMemory, ControlRuntime.layerMemory({ flows: ["coding/request", "other"].map(flowId => ({
     flowId, description: "fixture", deployClass: false, envelope: { capabilities: [], flows: [RunRequest._tag], budget: {} }
   })) }).pipe(Layer.provide(NodeServices.layer)))))
-  if (mode === "valid" || mode === "forked-root" || mode === "trampoline-parent") {
+  if (mode === "valid" || mode === "prepared" || mode === "forked-root" || mode === "trampoline-parent") {
     const result = await Effect.runPromise(program)
-    assert.deepEqual(result.originalSource, original, "source comes from the original POC, not the newer steered Plan")
+    assert.deepEqual(result.originalSource, original, "source comes from the original receipt, not the newer steered Plan")
+    if (mode === "prepared") {
+      assert("preparationExecutionId" in result)
+      assert.equal(result.preparationExecutionId, "preparation")
+      assert.equal("pocExecutionId" in result, false)
+    }
     assert.deepEqual(result.request.plan.observedHead, intermediate)
     assert.equal(result.controlRunId, "run-1")
   } else {

@@ -6,7 +6,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
-import { ChangeId, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourcePublication } from "./native-schema.ts"
+import { ChangeId, FileRecovery, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourcePublication } from "./native-schema.ts"
 export * from "./native-schema.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow
@@ -35,7 +35,7 @@ export interface NativeOptions {
   readonly sourcePublication?: "cloud" | "local-only"
 }
 
-const failure = (code: string, message: string) => new NativeCodingError({ code, message })
+const failure = (code: string, message: string, recovery?: typeof FileRecovery.Type) => new NativeCodingError({ code, message, ...(recovery === undefined ? {} : { recovery }) })
 const capture = <E>(stream: Stream.Stream<Uint8Array, E>, limit: number) =>
   Stream.runFoldEffect(stream, () => ({ text: "", bytes: 0, decoder: new TextDecoder() }), (state, chunk) => {
     const bytes = state.bytes + chunk.length
@@ -50,7 +50,8 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const invoke = (request: object) => Effect.gen(function*() {
     const input = JSON.stringify({ ...request, repositoryPath: options.repositoryPath })
-    if (new TextEncoder().encode(input).length > 64 * 1024) return yield* failure("invalid_request", "Native coding request exceeds 64 KiB")
+    const bound = "operation" in request && request.operation === "apply_files" ? 2 * 1024 * 1024 : 64 * 1024
+    if (new TextEncoder().encode(input).length > bound) return yield* failure("invalid_request", "Native coding request exceeds its bounded payload size")
     const process = yield* spawner.spawn(ChildProcess.make(options.python ?? "python3", [
       options.adapterPath ?? "/usr/local/lib/smithers/workspace-coding.py", "--local"
     ], { stdin: Stream.make(new TextEncoder().encode(input)), cwd: options.repositoryPath }))
@@ -59,9 +60,9 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
     ], { concurrency: "unbounded" })
     const result = yield* Effect.try({ try: () => JSON.parse(stdout) as unknown, catch: () => failure("outcome_unknown", "Native adapter returned no valid receipt; retry the identical operation") })
     if (result !== null && typeof result === "object" && "error" in result) {
-      const error = yield* Schema.decodeUnknownEffect(Schema.Struct({ code: Schema.String, message: Schema.String }))(result.error)
+      const error = yield* Schema.decodeUnknownEffect(Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.optionalKey(FileRecovery) }))(result.error)
         .pipe(Effect.mapError(() => failure("outcome_unknown", "Native adapter returned an invalid error envelope")))
-      return yield* failure(error.code, error.message)
+      return yield* failure(error.code, error.message, error.recovery)
     }
     if (exitCode !== 0) return yield* failure("outcome_unknown", "Native adapter exited without an accepted receipt; retry the identical operation")
     return result

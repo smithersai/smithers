@@ -9,7 +9,7 @@ import type { AppController, AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { repoKeyOf } from "./AppState"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 const controllers: AppController[] = []
 afterEach(() => { for (const controller of controllers.splice(0)) controller.dispose() })

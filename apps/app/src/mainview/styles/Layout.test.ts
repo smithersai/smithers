@@ -72,6 +72,47 @@ describe("the slash menu overlays instead of displacing the transcript", () => {
     expect(slashMenu).toContain("position: absolute;")
     expect(slashMenu).toMatch(/z-index:\s*\d+;/)
   })
+
+  /*
+   * A long summary made flex shrink the name's box below its content; a
+   * dotted name (/workspace.desktop.open) has no break opportunities, so
+   * its text overflowed the box and painted over the description.
+   */
+  test("the command name never shrinks under a long summary", () => {
+    const name = /\.slash-menu-name\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
+    expect(name).toContain("flex-shrink: 0;")
+  })
+})
+
+/*
+ * The Command-K summon (the 2026-09-14 direction): the composer is a
+ * floating card in a transparent layer over the content at the top of the
+ * page — never docked at the bottom of the chat, never displacing the
+ * transcript. The hidden attribute must beat the layer's flex display, and
+ * summoned at the top, the palette drops below the box instead of opening
+ * off-window.
+ */
+describe("the summoned composer overlays the content at the top of the page", () => {
+  test("the layer is fixed and transparent; hidden really hides it", () => {
+    const overlay = /^\.composer-overlay\s*\{[^}]*\}/m.exec(chat)?.[0] ?? ""
+    expect(overlay).toContain("position: fixed;")
+    expect(overlay).toContain("inset: 0;")
+    expect(overlay).not.toContain("background")
+    expect(overlay).toMatch(/z-index:\s*\d+;/)
+
+    const hidden = /\.composer-overlay\[hidden\]\s*\{[^}]*\}/.exec(chat)?.[0] ?? ""
+    expect(hidden).toContain("display: none;")
+  })
+
+  test("the palette drops below the summoned box instead of floating above it", () => {
+    const menu = /\.composer-overlay \.composer-wrap > \.slash-menu\s*\{[^}]*\}/.exec(chat)?.[0] ?? ""
+    expect(menu).toContain("top: calc(100% + 6px);")
+    expect(menu).toContain("bottom: auto;")
+  })
+
+  test("reduced motion summons without the drop-in animation", () => {
+    expect(chat).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.composer-overlay \.composer-wrap\s*\{[^}]*animation:\s*none;/)
+  })
 })
 
 /*

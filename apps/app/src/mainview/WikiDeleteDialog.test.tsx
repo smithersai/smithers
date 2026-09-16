@@ -4,7 +4,7 @@ import { scopedControllers } from "./state/ControllerTestScope"
 import { memoryStorage, silentAgent } from "./state/TestFixtures"
 import { pendingWikiDeleteDocument } from "./WikiDeleteDialog"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 test("the delete question keeps its exact target through cancel and confirm", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

@@ -4,6 +4,7 @@ import { useController } from "./ControllerContext"
 import { KeyboardNavigation } from "./KeyboardNavigation"
 import { WORDMARK } from "./Wordmark"
 import { flowAction } from "./flows/FlowAction"
+import { flowArgs } from "./flows/FlowArgs"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
 import { bindPressActions } from "./runtime/PressActions"
 import { ChromeBar } from "./tabs/ChromeBar"
@@ -26,15 +27,47 @@ export function SessionNavigation() {
     if (!node) return
     const doc = node.ownerDocument
     const root = node.closest<HTMLElement>('.session-shell') ?? node
+    const mobile = () => (doc.defaultView?.innerWidth ?? 1024) <= 600
+    let closeFrame: number | undefined
+    let returnFocus = false
+    const closeDrawer = (focus = false) => {
+      if (!mobile() || !controller.store.session().sidebarOpen) return
+      returnFocus ||= focus
+      if (closeFrame !== undefined) return
+      // Collection observers run inside projection. Dispatch the chrome
+      // command after that transaction has finished, never reentrantly.
+      closeFrame = requestAnimationFrame(() => {
+        closeFrame = undefined
+        if (!node.isConnected) return
+        const focusAfterClose = returnFocus
+        returnFocus = false
+        void controller.commands.run('sidebar.toggle', flowArgs('sidebar.toggle', { open: false })).then(() => {
+          if (focusAfterClose && node.isConnected) requestAnimationFrame(() => node.querySelector<HTMLButtonElement>('button[aria-label="Smithers"]')?.focus())
+        })
+      })
+    }
+    const selection = controller.store.collections.transitions.subscribeChanges(changes => {
+      if (changes.some(change => change.type === 'insert' && change.value.type === 'repo.selected')) closeDrawer(true)
+    })
+    const setupCards = controller.store.collections.cards.subscribeChanges(changes => {
+      if (changes.some(change => change.type === 'insert' && change.value.kind === 'repository-setup')) closeDrawer(true)
+    })
+    const outside = (event: PointerEvent) => {
+      if (!(event.target as Element | null)?.closest?.('.session-sidebar,.session-navigation')) closeDrawer()
+    }
+    root.addEventListener('pointerdown', outside)
     const toggleChat = () => {
       controller.dismissHint("chat")
-      if (controller.store.session().paletteOpen) { controller.cancelDictation(); controller.closePalette() }
+      if (controller.store.session().paletteOpen) {
+        controller.closePalette(controller.store.session().draft)
+        requestAnimationFrame(() => doc.querySelector<HTMLButtonElement>('.app-chat-controls [data-flow="chat.open"]')?.focus())
+      }
       else {
         controller.runCommand('chat.open')
         requestAnimationFrame(() => doc.querySelector<HTMLTextAreaElement>('.app-shell [data-testid="composer-input"]')?.focus())
       }
     }
-    return bindPressActions({ root,
+    const pressActions = bindPressActions({ root,
       enabled: () => !doc.querySelector('.input-mode-menu'),
       resolveShortcut: event => {
         const key = event.key.toLowerCase()
@@ -45,11 +78,14 @@ export function SessionNavigation() {
           if (event.shiftKey) return action(() => controller.runCommand('palette.open', controller.store.session().paletteLastQuery ?? ''))
           return action(toggleChat, event.metaKey ? 'meta+k' : 'control+k')
         }
+        if (key === 'escape' && mobile() && controller.store.session().sidebarOpen && !controller.store.session().paletteOpen
+          && !doc.querySelector('[role="menu"]')) return action(() => closeDrawer(true), 'w')
         if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
         if (key === GUIDE_KEYS.mode) return action(() => root.querySelector<HTMLButtonElement>('[aria-haspopup="menu"][aria-keyshortcuts="m"]')?.click())
         if (sidebarShortcut(event)) return action(() => controller.runCommand('sidebar.toggle'))
       },
     })
+    return () => { pressActions(); selection.unsubscribe(); setupCards.unsubscribe(); root.removeEventListener('pointerdown', outside); if (closeFrame !== undefined) cancelAnimationFrame(closeFrame) }
 
   }, [controller])
   return <>

@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest"
+import { editSetup, initialSetup, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
+
+const caseFixture = { id: "unrelated", name: "Unrelated change", input: "synthetic case fixture", expected: "Take no unrelated actions", required: true }
+
+function receipt(setup: RepositorySetup, operation: SetupReceipt["operation"]): SetupReceipt {
+  return { requestId: `${operation}-request`, runId: `${operation}-run`, revision: setup.revision, operation, phase: "completed", digest: setupCandidate(setup), updatedAt: 100,
+    results: setup.draft.cases.map(test => ({ caseId: test.id, status: "passed", observed: test.expected, evidence: [`execution:${test.id}`], executionId: test.id })),
+    evidence: ["webhook:delivery-1", "run:trial-run"], sourceRevision: "candidate-commit", trialIssue: { source: "github", number: 12, url: "https://github.com/example/repo/issues/12" }
+  }
+}
+const proven = (): RepositorySetup => {
+  const setup = initialSetup("example/repo", "issues", "maintainer")
+  setup.draft.cases = [{ ...caseFixture }]
+  return { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
+}
+
+describe("repository setup activation evidence", () => {
+  it("manual work selects an enabled step and an explicit subject, without accepting signed event data", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    const input = { requestId: "manual-request", repo: setup.repo, job: setup.job, revision: setup.revision,
+      draft: setup.draft, digest: setupCandidate(setup), operation: "run",
+      manual: { stepId: "poc", prompt: "Try the reported fix", subject: { source: "github", kind: "issue", number: 12 } } }
+    expect(SetupHostInputSchema.safeParse(input).success).toBe(true)
+    expect(SetupHostInputSchema.parse({ ...input, event: { sender: "admin" } })).not.toHaveProperty("event")
+    for (const manual of [undefined, { ...input.manual, stepId: "missing" }, { ...input.manual, subject: undefined },
+      { ...input.manual, subject: { ...input.manual.subject, number: -1 } }]) {
+      expect(SetupHostInputSchema.safeParse({ ...input, manual }).success).toBe(false)
+    }
+    expect(SetupHostInputSchema.safeParse({ ...input, operation: "trial" }).success).toBe(false)
+  })
+  it("does not let two expected cases share the same execution result id", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    expect(SetupDraftSchema.safeParse({ ...setup.draft, cases: [{ ...caseFixture }, { ...caseFixture, expected: "A different expectation" }] }).success).toBe(false)
+  })
+  it("is opt-in with production fixes and POCs independent and manually started", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    expect(setup.active).toBeUndefined()
+    expect(setup.draft.steps.filter(step => step.mode === "automatic").map(step => step.id)).toEqual(["research", "duplicates", "reproduce"])
+    expect(setup.draft.steps.find(step => step.id === "poc")?.mode).toBe("manual")
+    expect(setup.draft.steps.find(step => step.id === "fix")?.mode).toBe("manual")
+    expect(setup.draft.replies).toBe("draft")
+    expect(setupActivationProblems(setup)).toHaveLength(2)
+  })
+  it("requires both current evals and a real live issue trial", () => {
+    const setup = proven()
+    expect(setupActivationProblems(setup)).toEqual([])
+    setup.trial!.phase = "running"
+    expect(setupActivationProblems(setup)).toContain("Complete the live trial for this draft.")
+    setup.trial!.phase = "completed"
+    delete setup.trial!.trialIssue
+    expect(setupActivationProblems(setup)).toContain("The live trial needs a real issue receipt.")
+  })
+  it("does not accept launch success, cross-repository receipts, or mismatched operation receipts", () => {
+    const setup = proven()
+    setup.evaluation!.phase = "queued"
+    expect(setupActivationProblems(setup)).toContain("Run evals for this draft.")
+    setup.evaluation = receipt(initialSetup("other/repo", "issues", "maintainer"), "evaluate")
+    expect(setupActivationProblems(setup)).toContain("Run evals for this draft.")
+    setup.evaluation = receipt(setup, "trial")
+    expect(setupActivationProblems(setup)).toContain("Run evals for this draft.")
+  })
+  it.each(["failed", "review", "error"] as const)("a required case that is %s blocks activation", status => {
+    const setup = proven()
+    setup.evaluation!.results[0]!.status = status
+    expect(setupActivationProblems(setup)).toContain("Resolve eval: Unrelated change.")
+  })
+  it("rejects missing, duplicate, and unsupported passing results", () => {
+    const setup = proven()
+    setup.evaluation!.results.shift()
+    expect(setupActivationProblems(setup)).toContain("Resolve eval: Unrelated change.")
+    setup.evaluation = receipt(setup, "evaluate")
+    setup.evaluation.results.push(setup.evaluation.results[0]!)
+    expect(setupActivationProblems(setup)).toContain("Resolve eval: Unrelated change.")
+    setup.evaluation = receipt(setup, "evaluate")
+    setup.evaluation.results[0]!.evidence = []
+    expect(setupActivationProblems(setup)).toContain("Resolve eval: Unrelated change.")
+  })
+  it("prompt edits invalidate candidate evidence while preserving the active policy", () => {
+    const setup = proven()
+    setup.active = { revision: 1, digest: setupCandidate(setup), registrationId: "registration-1", sourceRevision: "commit-1", enabled: true }
+    const changed = editSetup(setup, { ...setup.draft, steps: setup.draft.steps.map(step => step.id === "research" ? { ...step, prompt: "A revised rule" } : step) })
+    expect(changed.revision).toBe(2)
+    expect(changed.active).toEqual(setup.active)
+    expect(changed.evaluation).toBeUndefined()
+    expect(changed.trial).toBeUndefined()
+    expect(setupActivationProblems({ ...changed, evaluation: setup.evaluation, trial: setup.trial })).toHaveLength(2)
+    expect(editSetup(changed, changed.draft)).toBe(changed)
+  })
+  it("requires a label for label-scoped activation and at least one enabled flow", () => {
+    const setup = proven()
+    setup.draft.scope = "label"
+    setup.draft.steps = setup.draft.steps.map(step => ({ ...step, mode: "off" }))
+    expect(setupActivationProblems(setup)).toContain("Choose the issue label.")
+    expect(setupActivationProblems(setup)).toContain("Choose a flow to enable.")
+  })
+  it("waits for repository inspection to author real cases and refuses empty-case activation", () => {
+    for (const job of ["issues", "ci", "review", "feature", "chores"] as const) {
+      const setup = initialSetup("example/repo", job, null)
+      expect(setup.draft.cases).toEqual([])
+      setup.evaluation = receipt(setup, "evaluate"); setup.trial = receipt(setup, "trial")
+      expect(setupActivationProblems(setup)).toContain("Add required eval cases.")
+    }
+  })
+})

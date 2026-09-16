@@ -38,7 +38,7 @@ const unavailableRepositories: NativeRepositories = {
 
 const harness = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, idleAgent)
+  const controller = createAppController(store, unavailableRepositories, idleAgent, { features: { wiki: true } })
   return { store, commands: controller.commands }
 }
 

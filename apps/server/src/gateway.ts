@@ -16,6 +16,8 @@ import type { UpstreamFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readJsonOrUndefined, readText, TransportLive } from "./Http"
 import type { Transport } from "./Http"
 import { upstreamProse } from "./Responses"
+import { pendingSetupRequests, repositorySetupStorageRequest, setupRequestsLayer, SetupStorageMutex, setupStorageMutexLayer } from "./repositorySetupStore"
+import { advanceRepositorySetup } from "./repositorySetupExecution"
 
 /*
  * Wave 11 — the per-user gateway seam. The product Worker provisions (or
@@ -58,6 +60,8 @@ export interface GatewayRecord {
   readonly renewAfter: number
   /** When this record was minted — the floor under a forced re-provision. */
   readonly provisionedAt: number
+  /** Capabilities verified by the owning host's live provision response. */
+  readonly verifiedCapabilities?: ReadonlyArray<string>
 }
 
 /** The persisted row: `provisionedAt` is absent on records written before it existed. */
@@ -70,7 +74,9 @@ interface GatewayRecordRow {
   readonly expiresAt: number
   readonly renewAfter: number
   readonly provisionedAt?: number
+  readonly verifiedCapabilities?: ReadonlyArray<string>
 }
+type GatewayCapability = "repository-jobs/v1"
 
 /*
  * A separator no login or repo can contain (NUL): `${login}${repo}` alone would
@@ -126,7 +132,7 @@ export const gatewayResolutionsLayer = (resolutions: Map<string, Deferred.Deferr
   Layer.succeed(GatewayResolutions, resolutions)
 
 /** Everything the registry object runs under: its storage, the deployment's config and transport, its join map. */
-export type GatewayRegistryServices = DurableStorage | Transport | ServerConfig | GatewayResolutions
+export type GatewayRegistryServices = DurableStorage | Transport | ServerConfig | GatewayResolutions | SetupStorageMutex
 
 /**
  * The Layer one registry object runs under, built ONCE per in-memory object
@@ -135,7 +141,7 @@ export type GatewayRegistryServices = DurableStorage | Transport | ServerConfig 
  * itself, so it needs the identity door, the Cloud origin and the deadline.
  */
 export const gatewayRegistryLayers = (storage: NativeStorage, env: ServerEnvVars): Layer.Layer<GatewayRegistryServices> =>
-  Layer.mergeAll(storageLayer(storage), configLayer(env), TransportLive, gatewayResolutionsLayer(makeGatewayResolutions()))
+  Layer.mergeAll(storageLayer(storage), configLayer(env), TransportLive, gatewayResolutionsLayer(makeGatewayResolutions()), setupStorageMutexLayer())
 
 /** A record the object holds, or undefined: a store that cannot answer a read is cold, as the Worker side treats it. */
 const readStored = (repo: string, workspaceId: string | undefined): Effect.Effect<GatewayRecord | undefined, never, DurableStorage> =>
@@ -152,10 +158,11 @@ const readStored = (repo: string, workspaceId: string | undefined): Effect.Effec
 const provisionAndStore = (
   login: string,
   repo: string,
-  workspaceId: string | undefined
+  workspaceId: string | undefined,
+  requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, DurableStorage | Transport | ServerConfig> =>
   Effect.gen(function* () {
-    const outcome = yield* provisionWithRemint(login, repo, workspaceId)
+    const outcome = yield* provisionWithRemint(login, repo, workspaceId, requiredCapability)
     if (outcome.status !== "ready") return outcome
     const storage = yield* DurableStorage
     const stored = yield* Effect.result(storage.put(storageKey(repo, workspaceId), outcome.record))
@@ -184,22 +191,25 @@ const resolveRecord = (
   login: string,
   repo: string,
   workspaceId: string | undefined,
-  force: boolean
+  force: boolean,
+  requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, GatewayRegistryServices> =>
   Effect.gen(function* () {
     if (!force) {
       const cached = yield* readStored(repo, workspaceId)
       const now = yield* Clock.currentTimeMillis
-      if (cached !== undefined && now < cached.renewAfter) return { status: "ready", record: cached } as const
+      if (cached !== undefined && now < cached.renewAfter &&
+        (requiredCapability === undefined || cached.verifiedCapabilities?.includes(requiredCapability))) return { status: "ready", record: cached } as const
     }
-    const key = storageKey(repo, workspaceId)
+    const key = storageKey(repo, workspaceId) + (requiredCapability === undefined ? "" : `\u0000capability:${requiredCapability}`)
     const resolutions = yield* GatewayResolutions
     const pending = resolutions.get(key)
     if (pending !== undefined) {
       const outcome = yield* Deferred.await(pending)
       if (outcome.status !== "ready") return outcome
       const persisted = yield* readStored(repo, workspaceId)
-      return persisted === undefined ? outcome : { status: "ready", record: persisted } as const
+      return persisted === undefined || (requiredCapability !== undefined && !persisted.verifiedCapabilities?.includes(requiredCapability))
+        ? outcome : { status: "ready", record: persisted } as const
     }
     // Claimed in one synchronous step: no other caller can slip between the
     // lookup above and this registration.
@@ -209,7 +219,7 @@ const resolveRecord = (
       return deferred
     })
     yield* Effect.forkDetach(
-      provisionAndStore(login, repo, workspaceId).pipe(
+      provisionAndStore(login, repo, workspaceId, requiredCapability).pipe(
         // Cleared only once the record write inside the task has settled, so
         // a later caller either joins this task or reads the fresh record.
         Effect.ensuring(Effect.sync(() => {
@@ -235,6 +245,7 @@ export const gatewaySessionRequest = (request: Request): Effect.Effect<Response,
   Effect.gen(function* () {
     const storage = yield* DurableStorage
     const url = new URL(request.url)
+    if (url.pathname === "/repository-setup" && request.method === "POST") return yield* repositorySetupStorageRequest(request)
     if (url.pathname === "/record" && request.method === "GET") {
       const repo = url.searchParams.get("repo") ?? ""
       const record = yield* storage.get<GatewayRecordRow>(storageKey(repo, url.searchParams.get("workspace_id") ?? undefined))
@@ -254,16 +265,18 @@ export const gatewaySessionRequest = (request: Request): Effect.Effect<Response,
     }
     if (url.pathname === "/resolve" && request.method === "POST") {
       const body = (yield* readJsonOrUndefined(request)) as
-        | { login?: unknown; repo?: unknown; workspaceId?: unknown; force?: unknown }
+        | { login?: unknown; repo?: unknown; workspaceId?: unknown; force?: unknown; requiredCapability?: unknown }
         | undefined
       if (typeof body?.login !== "string" || body.login === "" || typeof body.repo !== "string" || body.repo === "") {
         return new Response("bad request", { status: 400 })
       }
+      if (body.requiredCapability !== undefined && body.requiredCapability !== "repository-jobs/v1") return new Response("bad capability", { status: 400 })
       const outcome = yield* resolveRecord(
         body.login,
         body.repo,
         typeof body.workspaceId === "string" ? body.workspaceId : undefined,
-        body.force === true
+        body.force === true,
+        body.requiredCapability
       )
       return answer(outcome)
     }
@@ -290,6 +303,22 @@ export class GatewaySessionRegistry {
   fetch(request: Request): Promise<Response> {
     return runDurable(gatewaySessionRequest(request).pipe(Effect.provide(this.services)))
   }
+
+  /** Durable continuation: closing the browser cannot strand admitted setup work. */
+  alarm(): Promise<void> {
+    const registry = this
+    return runDurable(Effect.gen(function* () {
+      const queue = yield* pendingSetupRequests()
+      if (!queue || !Object.keys(queue.requests).length) return
+      // In-process doors reuse this object's locks and storage. No recursive
+      // network call to the same Durable Object and no credential in its queue.
+      const local: NativeNamespace = { idFromName: name => name, get: id => ({ fetch: request =>
+        id === queue.login ? registry.fetch(request) : Promise.resolve(new Response("Wrong setup owner", { status: 403 })) }) }
+      const execution = Layer.mergeAll(registry.services, setupRequestsLayer(local), gatewaySessionsLayer(local))
+      yield* Effect.forEach(Object.keys(queue.requests), requestId => advanceRepositorySetup(queue.login, requestId), { concurrency: 2, discard: true }).pipe(
+        Effect.provide(execution), Effect.timeoutOrElse({ duration: 25_000, orElse: () => Effect.void }))
+    }).pipe(Effect.provide(this.services), Effect.catch(error => Effect.die(error))))
+  }
 }
 
 /**
@@ -309,7 +338,7 @@ export const isRelayRepoName = (value: string): boolean =>
  */
 export interface GatewaySessionsShape {
   readonly read: (login: string, repo: string, workspaceId?: string) => Effect.Effect<GatewayRecord | undefined>
-  readonly resolve: (login: string, repo: string, workspaceId: string | undefined, force: boolean) => Effect.Effect<ProvisionOutcome>
+  readonly resolve: (login: string, repo: string, workspaceId: string | undefined, force: boolean, requiredCapability?: GatewayCapability) => Effect.Effect<ProvisionOutcome>
 }
 
 export class GatewaySessions extends Context.Service<GatewaySessions, GatewaySessionsShape>()("smithers-server/GatewaySessions") {}
@@ -368,7 +397,7 @@ const durableGatewaySessions = (namespace: NativeNamespace): GatewaySessionsShap
       if (record === undefined || record === null || record.workspaceId !== workspaceId) return undefined
       return recordFromRow(record)
     }).pipe(Effect.catch(() => Effect.succeed(undefined))),
-  resolve: (login, repo, workspaceId, force) =>
+  resolve: (login, repo, workspaceId, force, requiredCapability) =>
     Effect.gen(function* () {
       const answered = yield* Effect.result(namespaceCall(
         "gateway.ts:resolve",
@@ -377,7 +406,8 @@ const durableGatewaySessions = (namespace: NativeNamespace): GatewaySessionsShap
         new Request("https://gateway-sessions.internal/resolve", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ login, repo, ...(workspaceId === undefined ? {} : { workspaceId }), force })
+          body: JSON.stringify({ login, repo, ...(workspaceId === undefined ? {} : { workspaceId }), force,
+            ...(requiredCapability === undefined ? {} : { requiredCapability }) })
         })
       ))
       if (Result.isFailure(answered)) {
@@ -532,7 +562,8 @@ const refusalCode = (detail: string): string | undefined => /"code"\s*:\s*"([A-Z
 const provisionGateway = (
   repo: string,
   cloudToken: string,
-  workspaceId?: string
+  workspaceId?: string,
+  requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome | { readonly status: "cloud_token_rejected" }, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
@@ -543,9 +574,11 @@ const provisionGateway = (
         method: "POST",
         headers: {
           authorization: `Bearer ${cloudToken}`,
-          ...(workspaceId === undefined ? {} : { "content-type": "application/json" })
+          ...(workspaceId === undefined && requiredCapability === undefined ? {} : { "content-type": "application/json" })
         },
-        ...(workspaceId === undefined ? {} : { body: JSON.stringify({ workspace_id: workspaceId }) })
+        ...(workspaceId === undefined && requiredCapability === undefined ? {} : { body: JSON.stringify({
+          ...(workspaceId === undefined ? {} : { workspace_id: workspaceId }),
+          ...(requiredCapability === undefined ? {} : { required_capability: requiredCapability }) }) })
       },
       config.upstreamTimeoutMs
     ))
@@ -579,7 +612,7 @@ const provisionGateway = (
     if (response.status === 409) {
       const refusal = (yield* readJsonOrUndefined(response)) as { code?: unknown; message?: unknown } | undefined
       return {
-        status: refusal?.code === "coding_host_unavailable" ? "unavailable" : "provisioning",
+        status: refusal?.code === "coding_host_unavailable" || refusal?.code === "coding_host_upgrade_required" ? "unavailable" : "provisioning",
         detail: typeof refusal?.message === "string" ? refusal.message : `The workspace for ${repo} is still being prepared.`
       } as const
     }
@@ -663,7 +696,8 @@ const provisionGateway = (
       // floor so a bogus upstream timestamp cannot spin the provision loop.
       expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + 60 * 60 * 1000,
       renewAfter: Number.isFinite(expiresAt) ? now + Math.max((expiresAt - now) / 2, 60 * 1000) : now + 30 * 60 * 1000,
-      provisionedAt: now
+      provisionedAt: now,
+      ...(requiredCapability === undefined ? {} : { verifiedCapabilities: [requiredCapability] })
     }
     return { status: "ready", record } as const
   })
@@ -679,7 +713,8 @@ export const ensureGateway = (
   login: string,
   repo: string,
   force = false,
-  workspaceId?: string
+  workspaceId?: string,
+  requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, GatewaySessions> =>
   Effect.gen(function* () {
     // The routes refuse a malformed repo before reaching here; the seam refuses
@@ -688,14 +723,15 @@ export const ensureGateway = (
       return { status: "unavailable", detail: `${repo} is not a repository this seam can address.` } as const
     }
     const sessions = yield* GatewaySessions
-    return yield* sessions.resolve(login, repo, workspaceId, force)
+    return yield* sessions.resolve(login, repo, workspaceId, force, requiredCapability)
   })
 
 /** The token door, the provision POST, and exactly one re-mint on a 401 (the registry's leader runs this). */
 const provisionWithRemint = (
   login: string,
   repo: string,
-  workspaceId?: string
+  workspaceId?: string,
+  requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const cloudToken = yield* fetchCloudToken(login)
@@ -703,7 +739,7 @@ const provisionWithRemint = (
       if (cloudToken.status === "not_found") return { status: "no_cloud_token", detail: cloudToken.detail } as const
       return { status: "unavailable", detail: cloudToken.detail } as const
     }
-    const first = yield* provisionGateway(repo, cloudToken.token, workspaceId)
+    const first = yield* provisionGateway(repo, cloudToken.token, workspaceId, requiredCapability)
     if (first.status !== "cloud_token_rejected") return first
     // The vaulted Cloud token was rejected (plue-side expiry/revocation): the
     // door re-exchanges from the vaulted GitHub token, so one fresh mint may
@@ -714,7 +750,7 @@ const provisionWithRemint = (
         ? { status: "no_cloud_token", detail: reminted.detail } as const
         : { status: "unavailable", detail: reminted.detail } as const
     }
-    const second = yield* provisionGateway(repo, reminted.token, workspaceId)
+    const second = yield* provisionGateway(repo, reminted.token, workspaceId, requiredCapability)
     if (second.status === "cloud_token_rejected") {
       return { status: "unavailable", detail: "Smithers Cloud rejected a freshly minted identity token." } as const
     }

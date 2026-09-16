@@ -18,11 +18,13 @@ import type { FrameHistoryPort } from "../runtime/FrameHistory"
 import { localSocketProtocols } from "../runtime/LocalSession"
 import { createActorBindings } from "./ActorBindings"
 import type { AppTransition } from "./AppState"
+import { DEFAULT_BRANCH_ID, DEFAULT_WORKSPACE_ID, MAIN_TAB_ID, rootFrameId } from "./AppState"
 import type { AppStore } from "./AppStore"
 import { createCloudLspClient,pageCloudLspSocketUrl } from "./CloudLspClient"
 import type { CloudTerminalClient } from "./CloudTerminalClient"
 import { createCloudTerminalClient,pageCloudSocketUrl } from "./CloudTerminalClient"
 import type { InputMode } from "./InputMode"
+import { knowledgeCardAvailable } from "./KnowledgeFeatures"
 import { createLspClient } from "./LspClient"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { PtyClient } from "./PtyClient"
@@ -55,6 +57,7 @@ import { createFramesController } from "./controller/frames"
 import { createHealthStatusController } from "./controller/health-status"
 import { createInputModeController } from "./controller/inputMode"
 import { createIssueFlowsController,type IssueFlowsController } from "./controller/issueFlows"
+import { createRepositorySetupController, type RepositorySetupController } from "./controller/repositorySetup"
 import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
 import { createLiveTutorialController } from "./controller/liveTutorial"
 import type { OnboardingController } from "./controller/onboarding"
@@ -129,7 +132,7 @@ import { createTriggersSeam } from "./seams/TriggersSeam"
 import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
 import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
 
-export interface AppController extends TutorialChangeController, IssueFlowsController {
+export interface AppController extends TutorialChangeController, IssueFlowsController, RepositorySetupController {
   /* Tutorial stage 6: the two Librarian generators and their monitored runs. */
   readonly createWiki: LibrarianRunsController["createWiki"]
   readonly bootstrapHistory: LibrarianRunsController["bootstrapHistory"]
@@ -367,7 +370,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly openChat: () => Promise<string | void>
   readonly toggleDictation: () => Promise<string | void>
   readonly cancelDictation: () => void
-  readonly toggleSidebar: () => Promise<void>
+  readonly toggleSidebar: (open?: boolean) => Promise<void>
   readonly openPalette: (prefix?: string) => void
   readonly closePalette: (lastQuery?: string) => void
   readonly togglePaletteActions: (ref: string) => void
@@ -704,6 +707,8 @@ export interface AppServices {
 
 export interface AppFeatures {
   readonly pluginLibrary?: boolean
+  readonly wiki?: boolean
+  readonly mythicalHistory?: boolean
   readonly suggestionPills?: boolean
 }
 
@@ -717,7 +722,13 @@ export const createAppController = (
   agent: AgentPort,
   services: AppServices = {}
 ): AppController => {
-  const ctx = createControllerContext(store, repositories, agent, services)
+  const knowledge = {
+    wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
+    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true"
+  }
+  const ctx = createControllerContext(store, repositories, agent, {
+    ...services, features: { ...services.features, ...knowledge }
+  })
   const actors = createActorBindings(ctx.onDispose)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
@@ -728,11 +739,20 @@ export const createAppController = (
   const { baseUrl, http } = ctx
   const features: Required<AppFeatures> = {
     pluginLibrary: services.features?.pluginLibrary ?? false,
+    ...knowledge,
     suggestionPills: services.features?.suggestionPills ?? services.bootstrap?.host === "cloud"
   }
-  if (!features.pluginLibrary && store.session().surface === "plugins") {
+  if ((!features.pluginLibrary && store.session().surface === "plugins") || (!features.wiki && store.session().surface === "world")) {
     store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
+  const restored = store.session()
+  const maximized = restored.maximizedCardId === null ? undefined : store.collections.cards.get(restored.maximizedCardId)
+  if (maximized && !knowledgeCardAvailable(maximized.kind, features)) store.dispatch({ type: "frame.navigated", actor: "system",
+    workspaceId: restored.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID, branchId: restored.activeBranchId ?? DEFAULT_BRANCH_ID,
+    frameId: rootFrameId(restored.activeBranchId ?? DEFAULT_BRANCH_ID) })
+  const activeTab = restored.activeTabId === undefined ? undefined : store.collections.tabs.get(restored.activeTabId)
+  const tabCard = activeTab?.kind === "card" && activeTab.cardId ? store.collections.cards.get(activeTab.cardId) : undefined
+  if (tabCard && !knowledgeCardAvailable(tabCard.kind, features)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome) => {
     // Storage recovery owns this failure; a toast would itself be another failed write.
@@ -1028,6 +1048,12 @@ export const createAppController = (
 
   const workflowController: WorkflowController = actors.pair(ctx, (context, select) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun, select(renderFlowForm)))
   const liveTutorial = actors.pair(ctx, context => createLiveTutorialController(context, store.nextOrdinal))
+  const repositorySetup = actors.pair(ctx, (context, select) => createRepositorySetupController(context, {
+    promptSignIn: () => promptSignIn(),
+    chooseRepository: () => select(tutorialRepository).chooseTutorialRepository(),
+    openRun: (runId, repo, sourceCard) => select(runs).openRun(runId, repo, sourceCard),
+    send: (text) => send(text)
+  }))
   const tutorialChange = actors.pair(ctx, (context, select) => {
     const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))
     const live = select(liveTutorial)
@@ -1427,7 +1453,7 @@ export const createAppController = (
    * embedded cards and record via:"agent", never user chrome.
    */
   const commandActions: CommandActions = {
-    toggleSidebar: async () => { await ctx.store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: !ctx.store.session().sidebarOpen }).isPersisted.promise },
+    toggleSidebar: async (open) => { await ctx.store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: open ?? !ctx.store.session().sidebarOpen }).isPersisted.promise },
     promptStorageRecovery,
     exportStorageRecovery,
     resetStorageRecovery,
@@ -1478,6 +1504,7 @@ export const createAppController = (
     openBrowser,
     ...tutorialChange,
     ...issueFlows,
+    ...repositorySetup,
     retryLiveTutorial: liveTutorial.retry,
     inspectLiveTutorial: liveTutorial.inspect,
     createWorkflow,
@@ -1734,6 +1761,8 @@ export const createAppController = (
       const requestedRepo = fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" ? fileTarget.repo : repo
       return {
         pluginLibrary: features.pluginLibrary,
+        wiki: features.wiki,
+        mythicalHistory: features.mythicalHistory,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",
@@ -1788,6 +1817,9 @@ export const createAppController = (
   }
 
   liveTutorial.resume()
+  repositorySetup.resumeRepositorySetups()
+  const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => repositorySetup.resumeRepositorySetups())
+  ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()

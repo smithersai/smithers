@@ -81,13 +81,6 @@ interface Excuse {
  * list cannot outlive what it excuses.
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
-  { literal: "plugins", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
-    reason: "Negative assertion: the default-off Library must expose no command controls." },
-  { literal: "plugins.install", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
-    reason: "Negative assertion: the default-off Library must expose no command controls." },
-  { literal: "plugins.remove", file: "e2e/real/search-plugins-notifications-sync.spec.ts",
-    reason: "Negative assertion: the default-off Library must expose no command controls." },
-
   {
     literal: "workspace-rename-",
     file: "e2e/real/workspace-lifecycle.spec.ts",
@@ -122,6 +115,11 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "fixture-live-",
     file: "e2e/playwright/tutorial-stubs.ts",
     reason: "test-owned live tutorial run id echoed by the fixture, not a card id prefix"
+  },
+  {
+    literal: "fixture-job-",
+    file: "e2e/playwright/repository-setup.spec.ts",
+    reason: "test-owned job execution ID returned by the explicit setup backend fixture, not a card ID prefix"
   },
   {
     literal: "storage-test-",

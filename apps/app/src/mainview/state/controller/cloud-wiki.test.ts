@@ -83,6 +83,7 @@ const fixture = async (storage = memory()) => {
       cancelTurn: async () => {},
       subscribe: () => () => {}
     }, {
+      features: { wiki: true },
       fetchImpl: async (input, init) => {
         const url = String(input)
         if (url.includes("/stream?")) {

@@ -34,7 +34,7 @@ type WorkflowServices = Transport | ServerConfig | GatewaySessions
  * session — the same gate as a turn. Returns the validated identity or the
  * refusal response.
  */
-const requireWorkflowSession = (request: Request): Effect.Effect<ValidatedIdentity | Response, never, Transport | ServerConfig> =>
+export const requireWorkflowSession = (request: Request): Effect.Effect<ValidatedIdentity | Response, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
     if (config.identityUpstreamUrl === undefined) {

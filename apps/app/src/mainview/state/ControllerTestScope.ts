@@ -1,6 +1,6 @@
 import { afterEach } from "bun:test"
 import { createAppController } from "./AppController"
-import type { AppController } from "./AppController"
+import type { AppController, AppFeatures } from "./AppController"
 
 /**
  * Call once at a test file's top level to register that file's cleanup hook.
@@ -8,7 +8,7 @@ import type { AppController } from "./AppController"
  * identity listeners running in later tests. Explicit early disposal remains
  * safe because the controller's dispose contract is idempotent.
  */
-export const scopedControllers = (): typeof createAppController => {
+export const scopedControllers = (features: AppFeatures = {}): typeof createAppController => {
   const controllers = new Set<AppController>()
   afterEach(async () => {
     const errors: unknown[] = []
@@ -26,7 +26,10 @@ export const scopedControllers = (): typeof createAppController => {
     if (errors.length > 0) throw new AggregateError(errors, "Controller fixture cleanup failed")
   })
   return (...args) => {
-    const controller = createAppController(...args)
+    const [store, repositories, agent, services] = args
+    const controller = createAppController(store, repositories, agent, {
+      ...services, features: { ...features, ...services?.features }
+    })
     controllers.add(controller)
     return controller
   }

@@ -22,6 +22,7 @@ const poll = async (cycles: Cycle[], options: {
   initialEvents?: ReturnType<typeof event>[]
   inspectAt?: number
   cloneStored?: boolean
+  pageSize?: number
 } = {}) => {
   let card: Extract<Card, { kind: "run-trace" }> = {
     id: "run-card", kind: "run-trace", title: "test", status: "active", createdAt: 1, ordinal: 1,
@@ -58,6 +59,7 @@ const poll = async (cycles: Cycle[], options: {
           return payload.after === undefined || row.sequence > payload.after.value ||
             (row.sequence === payload.after.value && offset > payload.after.offset)
         })
+        if (options.pageSize !== undefined) rows = rows.slice(0, options.pageSize)
         rowsRequested += rows.length
         if (options.inspectAt === iteration) {
           runtimeRuns.set(key, observeRuntimeRun(runtimeRuns.get(key), { scope, journal: { mode: "full", events: cycle.events } }, Date.now(), iteration + 1))
@@ -143,6 +145,26 @@ test("without revisions polling still requests only the suffix and skips unchang
   const result = await poll(Array.from({ length: 4 }, () => ({ events })))
   expect(result.rowsRequested).toBe(2)
   expect(result.journalRequests).toEqual([undefined, cursor("run-events", 2), cursor("run-events", 2), cursor("run-events", 2)])
+  expect(result.updates).toHaveLength(1)
+})
+test("a full page without cursor metadata advances from recorded event positions", async () => {
+  const events = Array.from({ length: 600 }, (_, index) => event(index))
+  const result = await poll([{ events }, { events }], { pageSize: 256 })
+  expect(result.journalRequests).toEqual([
+    undefined, cursor("run-events", 255), cursor("run-events", 511), cursor("run-events", 599)
+  ])
+  expect(result.rowsRequested).toBe(600)
+  expect(result.card.payload.events).toEqual(events)
+  expect(result.updates).toHaveLength(1)
+})
+test("cursor-free pages keep duplicate-sequence offsets across page boundaries", async () => {
+  const events = Array.from({ length: 600 }, () => event(0))
+  const result = await poll([{ events }, { events }], { pageSize: 256 })
+  expect(result.journalRequests).toEqual([
+    undefined, cursor("run-events", 0, 255), cursor("run-events", 0, 511), cursor("run-events", 0, 599)
+  ])
+  expect(result.rowsRequested).toBe(600)
+  expect(result.card.payload.events).toEqual(events)
   expect(result.updates).toHaveLength(1)
 })
 test("a failed journal read is retried at the same revision without losing the prefix", async () => {

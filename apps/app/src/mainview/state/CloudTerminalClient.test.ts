@@ -39,6 +39,7 @@ const serve = (options: ServeOptions = {}): Harness => {
     { send: (data: string | ArrayBuffer) => void; close: (code?: number, reason?: string) => void; terminate: () => void }
   >()
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (request, self) => {
       protocols.push(request.headers.get("sec-websocket-protocol"))
@@ -234,12 +235,14 @@ test("a closed socket reconnects while an attachment lives", async () => {
   }))
   const output: Array<string> = []
   terminal.attach("will/smithers", "sess-1", { onOutput: (data) => output.push(data) })
-  await until(() => first.protocols.length === 1)
+  // An HTTP upgrade request is not an open socket. Drop only after the
+  // connection exists; a transient handshake retry is not the behavior under test.
+  await until(() => first.live() === 1)
   first.stop()
   const second = serve()
   url = second.url
-  // The reconnect lands when the replacement sees the upgrade; output before that is nobody's to hear.
-  await until(() => second.protocols.length > 0)
+  // Wait for the actual socket before sending output, not just the HTTP request.
+  await until(() => second.live() === 1)
   second.output("back\r\n")
   await until(() => output.includes("back\r\n"))
   terminal.dispose()

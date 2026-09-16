@@ -24,6 +24,7 @@ const serve = (): Harness => {
   const seen: Array<Record<string, unknown>> = []
   const open = new Set<{ send: (data: string) => void; close: () => void }>()
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (request, self) => (self.upgrade(request) ? undefined : new Response("no")),
     websocket: {

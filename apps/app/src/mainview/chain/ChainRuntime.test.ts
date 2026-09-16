@@ -16,7 +16,7 @@ import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
 import { createAgentSeat, createChainRuntime } from "./ChainRuntime"
 
-const createAppController = scopedControllers()
+const createAppController = scopedControllers({ wiki: true })
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -151,7 +151,7 @@ describe("registered flow cancellation", () => {
     }))
     const actions = new Proxy({
       bootstrap: undefined,
-      snapshot: () => ({ admin: false, signedOut: false }),
+      snapshot: () => ({ admin: false, signedOut: false, wiki: true }),
       createWorldDocument
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined })
     const commands = createCommandRegistry(actions as unknown as CommandActions)

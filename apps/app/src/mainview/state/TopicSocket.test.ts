@@ -8,7 +8,7 @@
  * stay in each client's own test.
  */
 import { afterEach, expect, test } from "bun:test"
-import { createTopicSocket } from "./TopicSocket"
+import { createTopicSocket as createSocket, type TopicSocketOptions } from "./TopicSocket"
 
 interface Harness {
   readonly url: string
@@ -17,17 +17,30 @@ interface Harness {
   readonly raw: (data: string | Uint8Array) => void
   readonly drop: () => void
   readonly sockets: () => number
+  readonly upgrades: () => number
   readonly stop: () => void
 }
 
 const harnesses: Array<Harness> = []
+const clients: Array<{ dispose: () => void; isOpen: () => boolean }> = []
+const createTopicSocket = <Listener>(options: TopicSocketOptions<Listener>) => {
+  const client = createSocket(options)
+  clients.push(client)
+  return client
+}
 
-const start = (): Harness => {
+const start = async (): Promise<Harness> => {
   const seen: Array<Record<string, unknown>> = []
+  let upgrades = 0
   const open = new Set<{ send: (data: string) => void; close: () => void }>()
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
-    fetch: (request, self) => (self.upgrade(request) ? undefined : new Response("no")),
+    fetch: (request, self) => {
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("ready")
+      upgrades++
+      return self.upgrade(request) ? undefined : new Response("no")
+    },
     websocket: {
       open: (ws) => void open.add(ws as never),
       close: (ws) => void open.delete(ws as never),
@@ -53,21 +66,31 @@ const start = (): Harness => {
       for (const ws of open) ws.close()
     },
     sockets: () => open.size,
+    upgrades: () => upgrades,
     stop: () => server.stop(true)
   }
   harnesses.push(harness)
+  // Verify this exact loopback endpoint belongs to this fixture before dialing.
+  const ready = await fetch(harness.url.replace("ws:", "http:"))
+  expect(await ready.text()).toBe("ready")
   return harness
 }
 
 const until = async (predicate: () => boolean, budgetMs = 4000): Promise<void> => {
   const deadline = Date.now() + budgetMs
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error("the condition never held")
+    if (Date.now() > deadline) throw new Error(`the condition never held: ${JSON.stringify({
+      servers: harnesses.map(server => ({ upgrades: server.upgrades(), sockets: server.sockets(), frames: server.seen.length })),
+      clientsOpen: clients.map(client => client.isOpen())
+    })}`)
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
 }
 
 afterEach(() => {
+  // A failed assertion must not leave clients redialing dead ports throughout
+  // the remaining app suite. Dispose before stopping their real servers.
+  for (const client of clients.splice(0)) client.dispose()
   for (const harness of harnesses.splice(0)) harness.stop()
 })
 
@@ -81,7 +104,7 @@ const heard = (message: unknown, listeners: (key: string) => ReadonlySet<(value:
 }
 
 test("one subscription serves every listener on a key, and the last one releases the topic", async () => {
-  const server = start()
+  const server = await start()
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
     topicOf: (key) => `demo:${key}`,
@@ -116,7 +139,7 @@ test("one subscription serves every listener on a key, and the last one releases
 })
 
 test("onSubscribe announces after the subscription, on the first attach and after every reconnect", async () => {
-  const server = start()
+  const server = await start()
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
     reconnectMs: 10,
@@ -146,7 +169,7 @@ test("onSubscribe announces after the subscription, on the first attach and afte
 })
 
 test("a dropped socket reconnects while listeners remain and delivers again", async () => {
-  const server = start()
+  const server = await start()
   const closes: Array<number> = []
   const values: Array<string> = []
   const socket = createTopicSocket<(value: string) => void>({
@@ -171,7 +194,7 @@ test("a dropped socket reconnects while listeners remain and delivers again", as
 })
 
 test("a socket with nothing attached never reconnects", async () => {
-  const server = start()
+  const server = await start()
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
     reconnectMs: 10,
@@ -189,7 +212,7 @@ test("a socket with nothing attached never reconnects", async () => {
 })
 
 test("dispose closes the socket, forgets the listeners and stops reconnecting", async () => {
-  const server = start()
+  const server = await start()
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
     reconnectMs: 10,
@@ -211,7 +234,7 @@ test("dispose closes the socket, forgets the listeners and stops reconnecting", 
 })
 
 test("binary frames and text that is not JSON never reach onMessage", async () => {
-  const server = start()
+  const server = await start()
   const seen: Array<unknown> = []
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
@@ -237,7 +260,7 @@ test("binary frames and text that is not JSON never reach onMessage", async () =
 })
 
 test("onDetach reports the key only when its last listener leaves", async () => {
-  const server = start()
+  const server = await start()
   const detached: Array<string> = []
   const socket = createTopicSocket<(value: string) => void>({
     socketUrl: () => server.url,
@@ -275,7 +298,7 @@ test("no socket exists where the app cannot make one", () => {
 })
 
 test("a socket that never connects errors, closes and retries until the backend is up", async () => {
-  const server = start()
+  const server = await start()
   /*
    * The backend is not listening yet — the app boots before it. The socket
    * errors, closes, and the retry is what eventually subscribes; a client that

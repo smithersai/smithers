@@ -35,6 +35,16 @@ export type Grammar = (args: string | undefined, known?: KnownRepositories) => P
 const ok = (payload: Record<string, unknown>): Parsed => ({ payload })
 const no = (error: string): Parsed => ({ error })
 
+/** Structured setup edits preserve prompt whitespace and typed setting values. */
+const setupObject = (args: string | undefined): Parsed => {
+  if (!(args ?? "").trim()) return ok({})
+  try {
+    const value: unknown = JSON.parse(args!)
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? ok(value as Record<string, unknown>) : no("Setup input must be a JSON object")
+  } catch { return no("Setup input must be a JSON object") }
+}
+
 /** The empty payload every no-argument flow takes. */
 const NONE: Parsed = { payload: {} }
 
@@ -207,6 +217,18 @@ const numberedChangeRef = (name: string, field: string, what: string, args: stri
 }
 
 const GRAMMAR: Readonly<Record<string, Grammar>> = {
+  "sidebar.toggle": args => trimmed(args) === "" ? NONE : setupObject(args),
+  "issues.setup": args => repoOnly("issues.setup", args),
+  "review.setup": args => repoOnly("review.setup", args),
+  "ci.setup": args => repoOnly("ci.setup", args),
+  "feature.setup": args => repoOnly("feature.setup", args),
+  "chores.setup": args => repoOnly("chores.setup", args),
+  "setup.configure": args => setupObject(args),
+  "setup.guide": args => required("cardId", args, "Choose the setup to configure"),
+  "setup.view": args => setupObject(args),
+  "setup.work": args => setupObject(args),
+  "setup.run": args => setupObject(args),
+  "setup.retry": args => required("cardId", args, "Choose the setup to retry"),
   "appearance.theme": (args) => ok({ palette: args ?? "" }),
   "chat.send": (args) => required("text", args, "send needs the text to submit"),
   "chat.clear": (args) => trimmed(args) === "" ? NONE : trimmed(args) === "--summarize"

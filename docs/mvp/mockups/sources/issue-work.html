@@ -1,0 +1,126 @@
+<div id="smithers-issue-work" aria-label="Issue investigation and independent flows">
+  <style>
+    #smithers-issue-work{color-scheme:light dark;--iw-bg:light-dark(#faf9f6,#141413);--iw-panel:light-dark(#fff,#1d1d1a);--iw-fg:light-dark(#24241f,#eeeee7);--iw-muted:light-dark(#62625a,#b4b4a7);--iw-line:light-dark(#dadad0,#3d3d34);--iw-soft:light-dark(#f1f0e8,#29291f);--iw-gold:light-dark(#6b5705,#e6d887);--iw-green:light-dark(#286740,#a5dab1);--iw-red:light-dark(#a52e2b,#ffa59d);--iw-primary:light-dark(#292920,#eeeee5);--iw-on:light-dark(#fff,#22221b);font:14px/1.5 Inter,system-ui,sans-serif;color:var(--iw-fg)}
+    #smithers-issue-work *{box-sizing:border-box;min-width:0}
+    #smithers-issue-work .iw-app{background:var(--iw-bg);border:1px solid var(--iw-line);border-radius:10px;overflow:hidden}
+    #smithers-issue-work .iw-bar{display:flex;gap:20px;align-items:center;flex-wrap:wrap;padding:15px 22px;border-bottom:1px solid var(--iw-line)}
+    #smithers-issue-work .iw-brand{font:500 15px/1.3 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:2px}
+    #smithers-issue-work .iw-repo{color:var(--iw-muted);flex:1;overflow-wrap:anywhere}
+    #smithers-issue-work .iw-body{padding:24px}
+    #smithers-issue-work .iw-heading{display:flex;justify-content:space-between;gap:15px;align-items:start;margin-bottom:20px}
+    #smithers-issue-work h2{font-size:22px;font-weight:500;line-height:1.3;margin:0 0 8px}
+    #smithers-issue-work h3{font-size:15px;font-weight:500;margin:0 0 13px}
+    #smithers-issue-work .iw-muted{color:var(--iw-muted)}
+    #smithers-issue-work .iw-state{color:var(--iw-gold)}
+    #smithers-issue-work button,#smithers-issue-work textarea,#smithers-issue-work input{font:inherit;color:inherit}
+    #smithers-issue-work button{background:var(--iw-panel);border:1px solid var(--iw-line);padding:8px 12px;border-radius:5px;cursor:pointer}
+    #smithers-issue-work .iw-primary{background:var(--iw-primary);color:var(--iw-on);border-color:var(--iw-primary)}
+    #smithers-issue-work .iw-grid{display:grid;grid-template-columns:minmax(230px,.85fr) minmax(0,1.2fr);gap:22px}
+    #smithers-issue-work .iw-lanes{display:grid;gap:11px;border-left:1px solid var(--iw-line);padding-left:18px;position:relative;margin:18px 0}
+    #smithers-issue-work .iw-lane{position:relative;display:flex;justify-content:space-between;gap:10px;text-align:left;align-items:center;padding:14px}
+    #smithers-issue-work .iw-lane:before{content:"";position:absolute;left:-19px;top:50%;width:18px;border-top:1px solid var(--iw-line)}
+    #smithers-issue-work .iw-lane[aria-pressed=true]{border-color:var(--iw-gold);background:var(--iw-soft)}
+    #smithers-issue-work .iw-result{background:var(--iw-panel);border:1px solid var(--iw-line);border-radius:7px;padding:20px;min-height:265px}
+    #smithers-issue-work .iw-tabs{display:flex;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--iw-line);margin-bottom:14px}
+    #smithers-issue-work .iw-tabs button{border:0;border-radius:0;background:none;padding:0 0 10px;color:var(--iw-muted)}
+    #smithers-issue-work .iw-tabs button[aria-current=true]{color:var(--iw-fg);border-bottom:2px solid var(--iw-gold)}
+    #smithers-issue-work .iw-detail-row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--iw-line);overflow-wrap:anywhere}
+    #smithers-issue-work .iw-detail-row span:first-child{color:var(--iw-muted)}
+    #smithers-issue-work .iw-actions{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}
+    #smithers-issue-work .iw-manual{margin-top:23px;border-top:1px solid var(--iw-line);padding-top:18px}
+    #smithers-issue-work .iw-code{font:13px/1.6 "IBM Plex Mono",ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--iw-soft);padding:12px;border-radius:5px}
+    #smithers-issue-work .iw-tip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--iw-soft);padding:10px 13px;margin:20px 0 0;border-left:2px solid var(--iw-gold)}
+    #smithers-issue-work .iw-tip span{flex:1}
+    #smithers-issue-work .iw-ok{color:var(--iw-green)}
+    #smithers-issue-work .iw-error{color:var(--iw-red)}
+    #smithers-issue-work .iw-field{display:grid;gap:6px;margin:12px 0}
+    #smithers-issue-work textarea,#smithers-issue-work input{width:100%;padding:9px;border:1px solid var(--iw-line);border-radius:5px;background:var(--iw-bg)}
+    #smithers-issue-work textarea{min-height:75px;resize:vertical}
+    #smithers-issue-work .iw-run{border-top:1px solid var(--iw-line);margin-top:20px;padding-top:20px}
+    #smithers-issue-work [hidden]{display:none!important}
+    @media(max-width:700px){#smithers-issue-work .iw-grid{grid-template-columns:1fr}#smithers-issue-work .iw-body{padding:20px 16px}#smithers-issue-work .iw-heading{flex-wrap:wrap}#smithers-issue-work textarea,#smithers-issue-work input{font-size:16px}}
+    @media(pointer:coarse){#smithers-issue-work button{min-height:44px}}
+  </style>
+  <div class="iw-app">
+    <header class="iw-bar"><span class="iw-brand">SMITHERS</span><span class="iw-repo">acme/workbench / Issues</span><button type="button" data-chat>Chat</button></header>
+    <main class="iw-body">
+      <div class="iw-heading"><div><h2 data-title>#84 Empty plugins list crashes</h2><div class="iw-muted" data-description>plugins: [] throws instead of returning an empty list.</div></div><span class="iw-state" data-state>Ready for a fix</span></div>
+      <div class="iw-grid">
+        <section aria-label="Parallel investigation"><h3>Investigation</h3><span class="iw-muted">New issue → parallel flows</span>
+          <div class="iw-lanes">
+            <button type="button" class="iw-lane" data-flow="research" aria-pressed="false"><span>Research</span><span class="iw-ok" data-research-state>Complete</span></button>
+            <button type="button" class="iw-lane" data-flow="duplicates" aria-pressed="false"><span>Duplicates</span><span data-duplicates-state>1 related</span></button>
+            <button type="button" class="iw-lane" data-flow="repro" aria-pressed="true"><span>Minimal repro</span><span class="iw-ok" data-repro-state>Reproduced</span></button>
+          </div>
+          <div class="iw-manual"><h3>Run a flow</h3><div class="iw-actions"><button type="button" data-next="poc">Quick POC</button><button type="button" data-next="fix">Fix for real</button><button type="button" data-next="split">Split issue</button></div></div>
+        </section>
+        <section class="iw-result" aria-label="Selected flow">
+          <h3 data-flow-title>Minimal reproduction</h3>
+          <nav class="iw-tabs" aria-label="Flow details"><button type="button" data-tab="result" aria-current="true">Result</button><button type="button" data-tab="prompt" aria-current="false">Prompt</button><button type="button" data-tab="evals" aria-current="false">Evals</button></nav>
+          <div data-detail aria-live="polite"></div>
+        </section>
+      </div>
+      <section class="iw-run" data-action-panel hidden aria-live="polite"></section>
+      <section data-chat-panel hidden class="iw-run"><label class="iw-field">Message<textarea data-message placeholder="Ask about this issue…"></textarea></label><button type="button" data-send>Send</button><span data-chat-result role="status"></span></section>
+      <div class="iw-tip" data-tip><span>Add checks for fixes.</span><button type="button" data-configure-ci>Configure CI</button><button type="button" data-dismiss aria-label="Dismiss CI suggestion">×</button></div>
+    </main>
+  </div>
+  <script>
+  (function(){
+    const root=document.getElementById('smithers-issue-work'),q=function(s){return root.querySelector(s);};
+    const design={issue:'Reproduced bug',ci:false};
+    let selected='repro',facet='result',dismissed=false,lastScenario=design.issue;
+    const prompts={research:'Classify the request using the report and source. Identify actionable facts and missing context.',duplicates:'Find the same underlying problem. Cite evidence and differences. Never close an issue from similarity alone.',repro:'Produce the smallest safe failing example on the captured revision. Distinguish missing reporter input from internal failures.'};
+    const names={research:'Research',duplicates:'Duplicate search',repro:'Minimal reproduction'};
+    function row(a,b){return '<div class="iw-detail-row"><span>'+a+'</span><span>'+b+'</span></div>';}
+    function detail(){
+      q('[data-flow-title]').textContent=names[selected];
+      root.querySelectorAll('[data-flow]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.flow===selected));});
+      root.querySelectorAll('[data-tab]').forEach(function(b){b.setAttribute('aria-current',String(b.dataset.tab===facet));});
+      if(facet==='prompt'){q('[data-detail]').textContent=prompts[selected];return;}
+      if(facet==='evals'){q('[data-detail]').innerHTML=row('Expected behavior','Evidence-backed result')+row('Source revision','Pinned')+row('Public side effects','Within policy')+'<div class="iw-actions"><button type="button" data-eval-detail>Inspect cases</button></div>';return;}
+      if(selected==='research'){q('[data-detail]').innerHTML=design.issue==='Large feature'?row('Type','Feature request')+row('Scope','Three independently useful adapters')+row('Suggested next flow','Split issue'):row('Type','Bug')+row('Affected code','config/load.ts')+row('Expected behavior','Empty list is accepted');return;}
+      if(selected==='duplicates'){q('[data-detail]').innerHTML=design.issue==='Large feature'?row('Related work','Adapter prototype PR #67')+row('Conclusion','No duplicate found'):row('Related issue','#61 Missing plugin config')+'<p>#61 concerns an omitted field. This report supplies an empty array.</p>'+row('Conclusion','Keep separate');return;}
+      if(design.issue==='Investigating'){q('[data-detail]').innerHTML='<p class="iw-state">Running reproduction…</p>'+row('Source','cf7a9d2')+row('Workspace','Isolated');return;}
+      if(design.issue==='Needs author'){q('[data-detail]').innerHTML='<p>Which config file triggers the error?</p>'+row('Reply','Draft awaiting approval')+row('Next','Send question, then resume on reply')+'<div class="iw-actions"><button type="button" data-approve-reply>Approve reply</button></div>';return;}
+      if(design.issue==='Worker failure'){q('[data-detail]').innerHTML='<p class="iw-error">Workspace unavailable after retry.</p>'+row('Owner','Maintainer')+row('Author reply','None')+'<button type="button" data-retry>Retry reproduction</button>';return;}
+      if(design.issue==='Large feature'){q('[data-detail]').innerHTML='<p>No bug reproduction required.</p>';return;}
+      q('[data-detail]').innerHTML=row('Source','cf7a9d2')+row('Command','pnpm test config-empty')+row('Expected','Returns []')+row('Observed','TypeError')+'<div class="iw-actions"><button type="button" data-fixture>Open minimal fixture</button></div>';
+    }
+    function render(){
+      if(lastScenario!==design.issue){q('[data-action-panel]').hidden=true;lastScenario=design.issue;}
+      const modes={'Reproduced bug':['Ready for a fix','Reproduced'],'Investigating':['Investigating','Running'],'Needs author':['Needs author','Waiting'],'Worker failure':['Needs maintainer','Failed'],'Large feature':['Scope proposal','Not applicable']};
+      q('[data-state]').textContent=modes[design.issue][0];q('[data-repro-state]').textContent=modes[design.issue][1];
+      q('[data-title]').textContent=design.issue==='Large feature'?'#92 Support hosted adapters':'#84 Empty plugins list crashes';
+      q('[data-description]').textContent=design.issue==='Large feature'?'Support Redis, SQLite, and webhooks through a shared contract.':'plugins: [] throws instead of returning an empty list.';
+      q('[data-repro-state]').className=design.issue==='Worker failure'?'iw-error':design.issue==='Reproduced bug'?'iw-ok':'iw-state';
+      q('[data-next="split"]').hidden=design.issue!=='Large feature';
+      q('[data-next="fix"]').textContent=design.issue==='Large feature'?'Implement feature':'Fix for real';
+      q('[data-duplicates-state]').textContent=design.issue==='Large feature'?'No duplicate':'1 related';
+      q('[data-tip]').hidden=design.ci||dismissed;detail();
+    }
+    root.addEventListener('click',function(e){
+      const b=e.target.closest('button');if(!b)return;
+      if(b.dataset.flow){selected=b.dataset.flow;facet='result';detail();}
+      if(b.dataset.tab){facet=b.dataset.tab;detail();}
+      if(b.hasAttribute('data-fixture')){q('[data-detail]').insertAdjacentHTML('beforeend','<pre class="iw-code">const config = { plugins: [] };<br>expect(loadConfig(config).plugins).toEqual([]);<br><br>// Observed: TypeError in config/load.ts</pre>');b.disabled=true;}
+      if(b.hasAttribute('data-eval-detail'))q('[data-detail]').innerHTML=row('Empty array regression','Pass')+row('Missing author input','Pass')+row('Worker failure','Needs review')+'<p>Worker failure must never request more evidence from the reporter.</p>';
+      if(b.dataset.next){const panel=q('[data-action-panel]');panel.hidden=false;
+        if(b.dataset.next==='poc')panel.innerHTML='<h3>Quick POC</h3>'+row('Output','Isolated experiment')+row('Landing','Not permitted')+'<label class="iw-field">Time limit (minutes)<input type="number" min="1" max="20" value="5"></label><button class="iw-primary" type="button" data-start="poc">Run POC</button>';
+        if(b.dataset.next==='fix')panel.innerHTML=(design.issue==='Large feature'?'<h3>Implement feature</h3><p>Define the adapter contract and implement the first adapter.</p>'+row('Checks','Adapter contract + repository checks'):'<h3>Fix for real</h3><p>Handle an empty plugin list and add a regression test.</p>'+row('Checks','Config regression + repository checks'))+row('Landing','Ask me')+'<button class="iw-primary" type="button" data-start="fix">Approve implementation</button>';
+        if(b.dataset.next==='split')panel.innerHTML='<h3>Proposed child issues</h3><label class="iw-field">1<input value="Define the adapter contract"></label><label class="iw-field">2<input value="Implement the first adapter"></label><label class="iw-field">3<input value="Verify compatibility and document usage"></label><button class="iw-primary" type="button" data-start="split">Create 3 linked issues</button>';
+      }
+      if(b.dataset.start){const labels={poc:'POC requested · isolated experiment',fix:'Implementation requested · landing still requires approval',split:'Three child issues linked to the parent'};q('[data-action-panel]').innerHTML='<h3>'+labels[b.dataset.start]+'</h3>';if(b.dataset.start==='fix')q('[data-state]').textContent='Fixing';}
+      if(b.hasAttribute('data-dismiss')){dismissed=true;render();}
+      if(b.hasAttribute('data-configure-ci')){const panel=q('[data-action-panel]');panel.hidden=false;panel.innerHTML='<h3>Set up CI</h3>'+row('Found','ci.yml · package.json')+'<label class="iw-field">Regression command<input value="pnpm test config-empty"></label><label class="iw-field">Repository checks<input value="pnpm test && pnpm typecheck"></label><button type="button" data-test-ci>Test checks</button>';}
+      if(b.hasAttribute('data-test-ci')){q('[data-action-panel]').innerHTML='<h3>Checks requested</h3><p>Issue investigation continues.</p>';}
+      if(b.hasAttribute('data-approve-reply'))q('[data-detail]').innerHTML='<p>Which config file triggers the error?</p>'+row('Reply','Posted once')+row('Next','Resume when config arrives');
+      if(b.hasAttribute('data-retry')){design.issue='Investigating';render();}
+      if(b.hasAttribute('data-chat')){q('[data-chat-panel]').hidden=!q('[data-chat-panel]').hidden;if(!q('[data-chat-panel]').hidden)q('[data-message]').focus();}
+      if(b.hasAttribute('data-send')&&q('[data-message]').value.trim()){q('[data-chat-result]').textContent='Message queued';q('[data-message]').value='';}
+    });
+    render();
+    if(globalThis.Tweak){const t=new Tweak({container:root,onChange:render});t.addSelect(design,'issue',{label:'Issue scenario',options:['Reproduced bug','Investigating','Needs author','Worker failure','Large feature']});t.addToggle(design,'ci',{label:'CI configured'});}
+  })();
+  </script>
+</div>

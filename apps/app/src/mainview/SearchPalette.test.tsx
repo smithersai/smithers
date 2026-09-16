@@ -76,6 +76,7 @@ interface View {
 const mount = async (): Promise<View> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    features: { wiki: true },
     fetchImpl: async () => json(404, { status: "error", message: "no backend" })
   })
   store.dispatch({
@@ -388,8 +389,12 @@ describe("§3 the keyboard contract", () => {
     await press(view, "ArrowLeft")
     expect(view.store.session().paletteActionsRef).toBeNull()
     expect(rows(view.host)).toEqual([runSearchRef("run-compose", "runs-1")])
-    // A second Cmd+K on the highlighted item opens the actions too.
+    // The summon chord closes Chat even with an item selected; reopening
+    // preserves its query. ArrowRight remains the item's actions door.
     await press(view, "k", { meta: true })
+    expect(view.store.session().paletteOpen).toBe(false)
+    await press(view, "k", { meta: true })
+    await press(view, "ArrowRight")
     expect(view.store.session().paletteActionsRef).toBe(runSearchRef("run-compose", "runs-1"))
     await press(view, "ArrowDown")
     await press(view, "Enter")

@@ -293,6 +293,44 @@
 	margin-bottom: 0;
 }
 
+/* The normal app summons one floating composer; the guide keeps its dock. */
+.composer-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	display: flex;
+	align-items: flex-start;
+	padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.composer-overlay[hidden] {
+	display: none;
+}
+
+.composer-overlay .composer-wrap {
+	padding-top: 0;
+	padding-bottom: 0;
+	background: none;
+	animation: composer-summon 120ms ease-out;
+}
+
+.composer-overlay .composer-wrap > .slash-menu {
+	top: calc(100% + 6px);
+	bottom: auto;
+	max-height: min(60vh, calc(100dvh - 220px));
+}
+
+@keyframes composer-summon {
+	from { opacity: 0; transform: translateY(-6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.composer-overlay .composer-wrap {
+		animation: none;
+	}
+}
+
 .app-shell .smithers-suggestions {
 	margin-top: 8px;
 	padding: 0;

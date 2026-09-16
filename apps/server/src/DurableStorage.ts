@@ -22,6 +22,7 @@ export interface DurableStorageShape {
   readonly put: (key: string, value: unknown) => Effect.Effect<void, StorageFailure>
   /** Optional host capability; callers requiring erasure fail closed when absent. */
   readonly delete?: (key: string) => Effect.Effect<void, StorageFailure>
+  readonly setAlarm?: (time: number) => Effect.Effect<void, StorageFailure>
 }
 
 export class DurableStorage extends Context.Service<DurableStorage, DurableStorageShape>()("smithers-server/DurableStorage") {}
@@ -31,6 +32,7 @@ export interface NativeStorage {
   readonly get: <T>(key: string) => Promise<T | undefined>
   readonly put: (key: string, value: unknown) => Promise<void>
   readonly delete?: (key: string) => Promise<boolean | void>
+  readonly setAlarm?: (time: number) => Promise<void>
 }
 
 export const storageFrom = (storage: NativeStorage): DurableStorageShape => ({
@@ -38,6 +40,9 @@ export const storageFrom = (storage: NativeStorage): DurableStorageShape => ({
     Effect.tryPromise({ try: () => storage.get<T>(key), catch: (cause) => new StorageFailure({ operation: `storage.get ${key}`, cause }) }),
   put: (key, value) =>
     Effect.tryPromise({ try: () => storage.put(key, value), catch: (cause) => new StorageFailure({ operation: `storage.put ${key}`, cause }) }),
+  ...(storage.setAlarm === undefined ? {} : { setAlarm: (time: number) => Effect.tryPromise({
+    try: () => storage.setAlarm!(time), catch: (cause) => new StorageFailure({ operation: "storage.setAlarm", cause })
+  }) }),
   ...(storage.delete === undefined ? {} : { delete: (key: string) => Effect.tryPromise({
     try: async () => { await storage.delete!(key) },
     catch: (cause) => new StorageFailure({ operation: `storage.delete ${key}`, cause })

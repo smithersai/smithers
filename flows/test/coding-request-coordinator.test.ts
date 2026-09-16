@@ -5,8 +5,9 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { CorrectPlan } from "../coding/correction.ts"
-import { PrepareWithWiki } from "../coding/planning-wiki.ts"
+import { PrepareRequest } from "../coding/preparation.ts"
 import { Poc } from "../coding/poc.ts"
+import { Prototype, prototypeRegistration } from "../coding/prototype.ts"
 import { Request, requestRegistration } from "../coding/request.ts"
 import { AdmitSource } from "../coding/source-admission.ts"
 import { ReceiveFeedback, type FeedbackReceipt } from "../coding/steering.ts"
@@ -27,7 +28,7 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
   let head = revision("initial")
   const registration = Layer.effectDiscard(Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime
-    yield* runtime.register(PrepareWithWiki, value => Effect.sync((): Plan => {
+    yield* runtime.register(PrepareRequest, value => Effect.sync((): Plan => {
       events.push(`plan:${plans++}`); feedback.push(value.feedback)
       return { prompt: value.prompt, memoryRevision: `memory-${plans}`, base: head, observedHead: head,
         changes: [{ id: "requested", title: "Requested", intent: "Apply request", implementation: "fixture/implement",
@@ -49,10 +50,10 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
         result: { status: "validated" as const, changes: [], findings: [] } }
     }))
   }))
-  const layer = Layer.mergeAll(requestRegistration, registration,
+  const layer = Layer.mergeAll(requestRegistration, prototypeRegistration, registration,
     AdmitSource.toLayer(({ plan }) => Effect.gen(function*() {
       events.push("admit")
-      if (stale && plans > 1) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture source moved" }))
+      if (stale) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture source moved" }))
       if (plan.observedHead?.commitId !== head.commitId) return yield* Effect.fail(new CodingError({ code: "stale_revision", message: "fixture POC changed original source" }))
       return { ...plan, observedHead: head }
     })),
@@ -65,15 +66,15 @@ const fixture = (arrivals: (boundary: string, revision: number) => ReadonlyArray
     counts: () => ({ plans, implementations, prototypes }), head: () => head }
 }
 
-test("POC feedback and original constraints precede the first real implementation", { timeout: 60_000 }, async t => {
-  const f = fixture(boundary => boundary === "after-poc" ? ["Use the denser layout"] : [])
+test("a real fix plans once, retains the original constraints and never requires a POC", { timeout: 60_000 }, async t => {
+  const f = fixture(() => [])
   t.after(() => f.host.dispose())
   const result = await f.host.runPromise(Request.execute(input, { executionId: "request-one" }))
-  assert.deepEqual(f.counts(), { plans: 2, implementations: 1, prototypes: 1 })
-  for (const text of [input.feedback, "POC evidence", "Use the denser layout", "human:fixture"]) assert(f.feedback[1]!.includes(text))
+  assert.deepEqual(f.counts(), { plans: 1, implementations: 1, prototypes: 0 })
+  assert.equal(f.feedback[0], input.feedback)
   assert.equal(result.outcome.status, "validated")
-  assert.deepEqual(f.events, ["plan:0", "admit", "poc", "admit", "after-poc:0", "plan:1", "before-implementation:0", "admit", "implement:0", "after-correction:0"])
-  // Completed replay must not run a second POC, drain, plan or mutation.
+  assert.deepEqual(f.events, ["plan:0", "admit", "before-implementation:0", "admit", "implement:0", "after-correction:0"])
+  // Completed replay must not repeat a drain, plan or mutation.
   const before = [...f.events]
   assert.deepEqual(await f.host.runPromise(Request.execute(input, { executionId: "request-one" })), result)
   assert.deepEqual(f.events, before)
@@ -84,10 +85,10 @@ test("feedback received while planning replans before mutation and feedback duri
     : boundary === "after-correction" && revision === 1 ? ["Now improve the labels"] : [])
   t.after(() => f.host.dispose())
   const result = await f.host.runPromise(Request.execute(input, { executionId: "request-steered" }))
-  assert.deepEqual(f.counts(), { plans: 4, implementations: 2, prototypes: 1 })
-  assert(f.events.indexOf("plan:2") < f.events.indexOf("implement:0"))
-  assert(f.events.indexOf("after-correction:1") < f.events.indexOf("plan:3"))
-  for (const text of [input.feedback, "POC evidence", "Keep keyboard navigation", "Now improve the labels"]) assert(f.feedback[3]!.includes(text))
+  assert.deepEqual(f.counts(), { plans: 3, implementations: 2, prototypes: 0 })
+  assert(f.events.indexOf("plan:1") < f.events.indexOf("implement:0"))
+  assert(f.events.indexOf("after-correction:1") < f.events.indexOf("plan:2"))
+  for (const text of [input.feedback, "Keep keyboard navigation", "Now improve the labels"]) assert(f.feedback[2]!.includes(text))
   assert.equal(result.plan.observedHead!.commitId, "commit-implemented-1")
   assert.equal(f.head().commitId, "commit-implemented-2")
 })
@@ -96,7 +97,7 @@ test("continually arriving feedback stops at a recorded bounded refusal without 
   const f = fixture((boundary, revision) => boundary === "before-implementation" ? [`revision-${revision}`] : [])
   t.after(() => f.host.dispose())
   await assert.rejects(f.host.runPromise(Request.execute(input, { executionId: "request-bound" })), /reached 8 planning passes.*revision-7/)
-  assert.deepEqual(f.counts(), { plans: 9, implementations: 0, prototypes: 1 })
+  assert.deepEqual(f.counts(), { plans: 8, implementations: 0, prototypes: 0 })
   assert.equal(f.events.at(-1), "before-implementation:7")
 })
 
@@ -104,13 +105,22 @@ test("a changed prepared source refuses before implementation", { timeout: 60_00
   const f = fixture(() => [], true)
   t.after(() => f.host.dispose())
   await assert.rejects(f.host.runPromise(Request.execute(input, { executionId: "request-stale" })), /fixture source moved/)
-  assert.deepEqual(f.counts(), { plans: 2, implementations: 0, prototypes: 1 })
+  assert.deepEqual(f.counts(), { plans: 1, implementations: 0, prototypes: 0 })
+})
+
+test("a separately requested POC retains its experiment without starting real implementation", { timeout: 60_000 }, async t => {
+  const f = fixture(() => [])
+  t.after(() => f.host.dispose())
+  const result = await f.host.runPromise(Prototype.execute(input, { executionId: "explicit-prototype" }))
+  assert.equal(result.status, "drafted-unvalidated")
+  assert.deepEqual(f.counts(), { plans: 1, implementations: 0, prototypes: 1 })
+  assert.deepEqual(f.events, ["plan:0", "admit", "poc", "admit"])
 })
 
 test("the post-POC source check runs after the prototype and prevents replanning over its unexpected mutation", { timeout: 60_000 }, async t => {
   const f = fixture(() => [], false, true)
   t.after(() => f.host.dispose())
-  await assert.rejects(f.host.runPromise(Request.execute(input, { executionId: "request-poc-mutated" })), /fixture POC changed original source/)
+  await assert.rejects(f.host.runPromise(Prototype.execute(input, { executionId: "request-poc-mutated" })), /fixture POC changed original source/)
   assert.deepEqual(f.counts(), { plans: 1, implementations: 0, prototypes: 1 })
   assert.deepEqual(f.events, ["plan:0", "admit", "poc", "admit"])
 })

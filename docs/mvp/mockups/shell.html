@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self'; img-src data:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>__TITLE__ — Smithers design prototype</title>
+  <style>
+    :root { color-scheme: light dark; background: light-dark(#f6f5f1, #10100f); color: light-dark(#252520, #eeeee7); font: 14px/1.5 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; }
+    .review { max-width: 1100px; margin: auto; }
+    .review-title { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 14px; }
+    h1 { font-size: 18px; font-weight: 500; margin: 0; }
+    .prototype-label { color: light-dark(#65655e, #b4b4a7); }
+    .review-controls { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 0 0 18px; }
+    .review-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .review-controls select { font: inherit; color: inherit; background: light-dark(#fff, #1c1c1a); border: 1px solid light-dark(#d8d8cf, #3c3c35); border-radius: 5px; padding: 6px; }
+    iframe { display: block; width: 100%; min-height: 700px; border: 0; }
+    @media(max-width: 600px) { body { padding: 12px; } .review-controls { display: grid; } select { max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <main class="review">
+    <div class="review-title"><h1>__TITLE__</h1><span class="prototype-label">Design prototype · simulated data</span></div>
+    <section class="review-controls" aria-label="Prototype scenarios"></section>
+    <iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="__TITLE__ prototype"></iframe>
+  </main>
+  <script>
+    const frame = document.querySelector("iframe");
+    const controls = document.querySelector(".review-controls");
+    addEventListener("message", event => {
+      if (event.source !== frame.contentWindow) return;
+      if (event.data?.type === "mvp-design:height") {
+        frame.style.height = Math.min(20000, Math.max(300, event.data.height)) + "px";
+      }
+      if (event.data?.type !== "mvp-design:controls") return;
+      for (const config of event.data.controls) {
+        let input = controls.querySelector('[data-control="' + config.id + '"]');
+        if (!input) {
+          const label = document.createElement("label");
+          label.append(document.createTextNode(config.label));
+          input = document.createElement(config.kind === "toggle" ? "input" : "select");
+          input.dataset.control = config.id;
+          input.setAttribute("aria-label", config.label);
+          if (config.kind === "toggle") input.type = "checkbox";
+          else for (const value of config.options) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            input.append(option);
+          }
+          input.addEventListener("change", () => frame.contentWindow.postMessage({
+            type: "mvp-design:set", id: config.id,
+            value: config.kind === "toggle" ? input.checked : input.value,
+          }, "*"));
+          label.append(input);
+          controls.append(label);
+        }
+        if (config.kind === "toggle") input.checked = config.value;
+        else input.value = config.value;
+      }
+    });
+    frame.srcdoc = __FRAME_JSON__;
+  </script>
+</body>
+</html>

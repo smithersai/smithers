@@ -1,4 +1,5 @@
-/** Default memory gathering reuses the verified wiki and native JJ history.
+/** Default gathering uses source files and native JJ history. Generated Wiki
+ * memory participates only when the operator explicitly enables it.
  * Projects can replace GatherContext's action layer with their own workflow.
  */
 import * as RecallKeyword from "../../packages/smithers/agent/memory/src/RecallKeyword.ts"
@@ -9,14 +10,15 @@ import { Effect, FileSystem, Layer, Path, Schema } from "effect"
 import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 import { NativeCoding } from "./native.ts"
-import { collectSources, extractPaths, readmePaths, reader as sourceReader, staleSources } from "./planning-sources.ts"
+import { collectSources, extractPaths, repositoryContextPaths, reader as sourceReader, staleSources } from "./planning-sources.ts"
 import { changedPaths, driftOf, GatherContext, memoryRevision, type Observed, PlanningContext, type PlanningInput, staleRevisionMessage, VerifyContext } from "./planning.ts"
 import { type Check, CodingError } from "./schema.ts"
 
 export interface MemoryOptions {
   readonly repositoryPath: string
-  readonly wikiOutput: string
-  readonly pages: ReadonlyArray<PageSpec>
+  readonly wiki?: boolean
+  readonly wikiOutput?: string
+  readonly pages?: ReadonlyArray<PageSpec>
   readonly implementation: string
   readonly checks: ReadonlyArray<Omit<Check, "flowDigest">>
   readonly historyLimit?: number
@@ -50,30 +52,35 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
   if (!before.history?.length || before.history.some(row => row.kind !== "resolved") || before.head.kind !== "resolved") {
     return yield* failure("Planning requires bounded resolved native history; inspect conflicts or update the installed adapter")
   }
-  const pointer = path.resolve(options.wikiOutput, "current.json")
-  if ((yield* fs.stat(pointer)).size > BigInt(16 * 1024 * 1024)) return yield* failure("Wiki pointer exceeds the bounded planning input size")
-  const captured = yield* fs.readFileString(pointer)
-  // Use the owning verifier. Digest equality alone does not prove semantic
-  // review, nor may old generated explanations silently stand in for new code.
-  yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
-  if ((yield* fs.readFileString(pointer)) !== captured) return yield* failure("Wiki publication changed while gathering memory; retry gathering")
-  const wiki = yield* Effect.try({ try: () => JSON.parse(captured) as unknown, catch: () => failure("Invalid verified wiki pointer") }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(Pointer)),
-    Effect.mapError(() => failure("The wiki has no valid verified snapshot; regenerate it before planning"))
-  )
-  const terms = RecallKeyword.normalizeQueryTerms(`${input.prompt}\n${input.feedback}`)
-  const ranked = wiki.pages.map(page => ({ page, score: RecallKeyword.scoreRow(terms, {
-    key: `${page.id} ${page.title}`, text: page.body, tags: [], updatedAtMs: 0
-  }) })).sort((left, right) => right.score - left.score || (left.page.id < right.page.id ? -1 : left.page.id > right.page.id ? 1 : 0))
   const memory: Array<typeof PlanningContext.Type["memory"][number]> = []
-  for (const { page } of ranked) {
-    const note = { id: page.id, title: page.title || page.id, kind: page.kind, markdown: page.body,
-      sourceRevision: wiki.sourceRevision, inputDigest: page.inputDigest }
-    // Keep complete pages. A truncated quotation or omitted caveat is not an
-    // equivalent explanation; a project can supply a finer-grained gather flow.
-    if (bytes([...memory, note]) <= maximum) memory.push(note)
+  let wikiDigest: string | null = null
+  if (options.wiki === true) {
+    if (!options.wikiOutput || !options.pages?.length) return yield* failure("Enabled Wiki memory requires a publication path and page configuration")
+    const pointer = path.resolve(options.wikiOutput, "current.json")
+    if ((yield* fs.stat(pointer)).size > BigInt(16 * 1024 * 1024)) return yield* failure("Wiki pointer exceeds the bounded planning input size")
+    const captured = yield* fs.readFileString(pointer)
+    // Use the owning verifier. Digest equality alone does not prove semantic
+    // review, nor may old generated explanations silently stand in for new code.
+    yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
+    if ((yield* fs.readFileString(pointer)) !== captured) return yield* failure("Wiki publication changed while gathering memory; retry gathering")
+    const wiki = yield* Effect.try({ try: () => JSON.parse(captured) as unknown, catch: () => failure("Invalid verified wiki pointer") }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Pointer)),
+      Effect.mapError(() => failure("The wiki has no valid verified snapshot; regenerate it before planning"))
+    )
+    const terms = RecallKeyword.normalizeQueryTerms(`${input.prompt}\n${input.feedback}`)
+    const ranked = wiki.pages.map(page => ({ page, score: RecallKeyword.scoreRow(terms, {
+      key: `${page.id} ${page.title}`, text: page.body, tags: [], updatedAtMs: 0
+    }) })).sort((left, right) => right.score - left.score || (left.page.id < right.page.id ? -1 : left.page.id > right.page.id ? 1 : 0))
+    for (const { page } of ranked) {
+      const note = { id: page.id, title: page.title || page.id, kind: page.kind, markdown: page.body,
+        sourceRevision: wiki.sourceRevision, inputDigest: page.inputDigest }
+      // Keep complete pages. A truncated quotation or omitted caveat is not an
+      // equivalent explanation; a project can supply a finer-grained gather flow.
+      if (bytes([...memory, note]) <= maximum) memory.push(note)
+    }
+    if (memory.length === 0) return yield* failure("No complete wiki page fits the configured memory budget")
+    wikiDigest = wiki.artifactDigest
   }
-  if (memory.length === 0) return yield* failure("No complete wiki page fits the configured memory budget")
   const catalog = yield* Executable.Catalog
   const identity = (name: string) => {
     const entry = catalog.executables.find(entry => entry.descriptor.name === name)
@@ -81,9 +88,17 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
     if (!digest) throw new CodingError({ code: "unavailable", message: `Planning executable is unavailable or unverified: ${name}` })
     return digest
   }
+  const checks = options.checks.filter(check => {
+    const descriptor = catalog.executables.find(entry => entry.descriptor.name === check.flow)?.descriptor
+    const generatedWiki = check.flow === "checks/wiki" || descriptor?.flows.includes("coding/WikiCheck") === true
+    return options.wiki === true || !generatedWiki
+  })
+  if (options.checks.some(check => check.required && !checks.includes(check))) {
+    return yield* failure("A required generated-Wiki check is configured while Wiki is disabled; explicitly update the operator policy or enable Wiki")
+  }
   const definitions = yield* Effect.try({ try: () => ({
     implementation: options.implementation, implementationDigest: identity(options.implementation),
-    checks: options.checks.map(check => ({ ...check, flowDigest: identity(check.flow) }))
+    checks: checks.map(check => ({ ...check, flowDigest: identity(check.flow) }))
   }), catch: error => error instanceof CodingError ? error : failure(String(error)) })
   const after = yield* native.read([], limit)
   if (before.operationId !== after.operationId || JSON.stringify(before.history) !== JSON.stringify(after.history)) {
@@ -100,10 +115,14 @@ export const gather = (options: MemoryOptions, input: typeof PlanningInput.Type,
   const reader = yield* sourceReader(options.repositoryPath, hostFilesystem)
   const named = extractPaths(input.prompt, input.feedback)
   const cited = extractPaths(...memory.map(note => note.markdown))
-  const collected = yield* collectSources(reader, [...named, ...cited, ...(yield* readmePaths(reader))])
+  const initial = yield* collectSources(reader, [...named, ...cited, ...(yield* repositoryContextPaths(reader))])
+  // Follow one bounded layer of paths cited by existing project documents.
+  // This gives a new repository useful code evidence without generating a Wiki.
+  const collected = yield* collectSources(reader, [...initial.sources.map(source => source.path), ...initial.missing,
+    ...extractPaths(...initial.sources.map(source => source.text))])
   const context = {
     head: before.head, history, memory, ...definitions, ...collected,
-    memoryRevision: memoryRevision({ wiki: wiki.artifactDigest, history, memory, definitions,
+    memoryRevision: memoryRevision({ wiki: wikiDigest, history, memory, definitions,
       sources: collected.sources.map(({ digest, path }) => ({ path, digest })), missing: collected.missing })
   }
   // Attached file text carries its own per-file and total caps, so the budget
@@ -150,7 +169,10 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
     const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem),
       { sources: context.sources ?? [], missing: context.missing ?? [] })
     if (stale.length > 0) return yield* failure(`Attached source files changed during planning or clarification; gather and plan again: ${stale.join(", ")}`)
-    yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
+    if (options.wiki === true) {
+      if (!options.wikiOutput || !options.pages?.length) return yield* failure("Enabled Wiki memory requires a publication path and page configuration")
+      yield* wikiOperations({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }).check(options.pages, true)
+    }
     return context
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : failure(
     "Planning context no longer matches current source: " + (error instanceof Error ? error.message : String(error))

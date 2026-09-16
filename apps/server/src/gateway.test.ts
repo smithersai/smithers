@@ -22,6 +22,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
+import { setupStorageMutexLayer } from "./repositorySetupStore"
 import { testConfigLayer } from "./Config"
 import type { ServerConfigShape } from "./Config"
 import { memoryStorage, storageLayer } from "./DurableStorage"
@@ -160,7 +161,7 @@ const seed = (login: string, repo: string, record: GatewayRecord): Promise<void>
 
 /** One registry object over `storage`, running under the seam's transport and config: a Durable Object double a test controls. */
 const registryOver = (storage: NativeStorage, fetch: FetchImplementation, overrides: Partial<ServerConfigShape> = {}) => {
-  const layers = Layer.mergeAll(storageLayer(storage), transportLayer(fetch), config(overrides), gatewayResolutionsLayer(makeGatewayResolutions()))
+  const layers = Layer.mergeAll(storageLayer(storage), transportLayer(fetch), config(overrides), gatewayResolutionsLayer(makeGatewayResolutions()), setupStorageMutexLayer())
   return { fetch: (request: Request) => Effect.runPromise(gatewaySessionRequest(request).pipe(Effect.provide(layers))) }
 }
 

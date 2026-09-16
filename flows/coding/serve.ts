@@ -11,6 +11,7 @@ import * as Landing from "./landing.ts"
 import { load as loadLanding } from "./landing-config.ts"
 import { loadProject } from "./project-config.ts"
 import * as CodingState from "./state.ts"
+import { remoteLayer } from "../repository/remote.ts"
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 
 const parsed = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
@@ -61,7 +62,10 @@ if (parsed.values.version) {
     Effect.all([loadProject(root, process.env.SMITHERS_CODING_PROJECT), loadLanding(root, process.env)]).pipe(
       Effect.flatMap(([planning, landing]) => Serve.host(bind, root).pipe(Effect.provide(layer(platform, {
         ...options, ...(planning === undefined ? {} : { planning }),
-        ...(landing === undefined ? {} : { landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie) })
+        ...(landing === undefined ? {} : {
+          landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie),
+          repositoryRemote: remoteLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" }).pipe(Layer.provide(http), Layer.orDie)
+        })
       })))),
       Effect.provide(platform.host)
     )

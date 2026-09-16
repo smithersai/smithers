@@ -69,7 +69,7 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const pages: PageSpec[] = ["answer", "stable"].map(id => ({ id, title: id, purpose: `Understand ${id}.`, kind: "current", document: `${id}.md`,
     inputs: [`src/${id}.ts`], related: [] }))
-  const options = { repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", hostPolicy: "artifact:planning-fixture-v1", implementation: "coding/atoms",
+  const options = { wiki: true, repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", hostPolicy: "artifact:planning-fixture-v1", implementation: "coding/atoms",
     checks: ["fast", "slow"].map(tier => ({ id: tier, target: tier, flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true })) }
   const reviews: string[] = []
   let requests = 0, drafts = 0

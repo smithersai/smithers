@@ -3,7 +3,7 @@
  * §1, §3, §9): ONE overlay anchored above the composer at composer width,
  * never a takeover (THE EMBED LAW). The slash tree is its `/` mode,
  * unchanged; every other prefix lists the seam's rows grouped as the ranking
- * left them; `→` or a second Cmd+K opens the actions panel for the
+ * left them; `→` opens the actions panel for the
  * highlighted item, whose rows are registered flows. The composer's draft IS
  * the query, so closing the overlay never touches the draft (§3 Esc).
  *
@@ -127,7 +127,7 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
     if (inActions && rows.actionsFor !== undefined) return { kind: "close-actions", ref: rows.actionsFor.ref }
     return { kind: "close", overlayOnly: true }
   }
-  if (key === "ArrowRight" || (meta && key.toLowerCase() === "k")) {
+  if (key === "ArrowRight") {
     if (row?.kind === "slash" && row.row.kind === "namespace") return { kind: "open-namespace", id: row.row.namespace.id }
     if (row?.kind === "item" && row.item.actions.length > 0) return { kind: "actions", ref: row.item.ref }
     return { kind: "none" }

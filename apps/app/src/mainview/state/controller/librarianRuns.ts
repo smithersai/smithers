@@ -4,6 +4,7 @@ import type { Card,Session } from "../AppState"
 import { LIBRARIAN_COMMANDS,LIBRARIAN_LAUNCH_OWNER,LIBRARIAN_UNCONFIRMED,librarianFailureMessage,librarianReceiptFor,librarianRunMetadata } from "../LibrarianLaunch"
 import type { ControllerContext } from "./context"
 import type { WorkflowController } from "./workflows"
+import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 
 /** Onboarding SCRIPT v4 beat 12: both background runs launched; the user never has to open either card. */
 export const LIBRARIAN_FLOWS = { wiki: "librarian/wiki", history: "librarian/history" } as const
@@ -73,6 +74,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   const recoverLaunches = async (): Promise<void> => {
     await reconcile()
     for (const entry of store.session().librarianLaunches ?? []) {
+      if (!knowledgeFlowAvailable(LIBRARIAN_FLOWS[entry.kind], ctx.services.features)) continue
       // Toasts are transient; the durable intent restores the Retry door after reload.
       if (entry.phase === "failed") { await saveIntent(entry); continue }
       if (entry.phase !== "preparing" && entry.phase !== "launching") continue
@@ -87,6 +89,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
     await reconcile()
   }
   const launch = async (kind: LibrarianKind, repo: string): Promise<CommandResult> => {
+    if (!knowledgeFlowAvailable(LIBRARIAN_FLOWS[kind], ctx.services.features)) return "This feature is not enabled."
     const rejected: LaunchIntent = { kind, repo, scope: scope(repo), phase: "failed", startedAt: Date.now() }
     const guard = runs.workflowIdentityGuard() ?? runs.workflowBalanceGuard()
     if (guard) return refuse(kind, guard, rejected)
@@ -159,6 +162,7 @@ export const createLibrarianRunsController = (ctx: ControllerContext, runs: Libr
   /** Card updates are the authority, including failures after launch acknowledgement and reload. */
   async function reconcile(): Promise<void> {
     for (const entry of store.session().librarianLaunches ?? []) {
+      if (!knowledgeFlowAvailable(LIBRARIAN_FLOWS[entry.kind], ctx.services.features)) continue
       if (entry.scope !== scope(entry.repo) || pending.has(`${entry.kind}:${entry.scope}`)) continue
       const card = receiptFor(entry)
       if (!card) continue

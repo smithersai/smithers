@@ -16,7 +16,9 @@ import { adminFlows, baseFlows } from "./Flows"
 import { nameOf } from "./registry"
 
 /** Every controller call answers with nothing: registration never invokes a handler. */
-const inertActions = new Proxy({}, { get: () => () => undefined }) as CommandActions
+const inertActions = new Proxy({}, {
+  get: (_, key) => key === "snapshot" ? () => ({ wiki: true, mythicalHistory: true, pluginLibrary: true }) : () => undefined
+}) as CommandActions
 
 /** baseFlows at the split, in registration order. */
 const PRE_SPLIT_BASE: ReadonlyArray<string> = [

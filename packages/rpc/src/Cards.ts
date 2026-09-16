@@ -25,6 +25,7 @@ import {
   RevisionPinSchema
 } from "./Changes.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
+import { RepositorySetupSchema } from "./RepositorySetup.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
@@ -661,6 +662,7 @@ const CommitSummarySchema = z.object({
  * @category schemas
  */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
+  z.object({ ...cardBaseShape, kind: z.literal("repository-setup"), payload: RepositorySetupSchema }),
   // Identity-only tombstones keep historical frames and journals loadable.
   z.object({ ...cardBaseShape, kind: z.literal("retired"), payload: z.object({}) }),
   z.object({

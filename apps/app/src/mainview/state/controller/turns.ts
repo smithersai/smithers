@@ -27,6 +27,7 @@ toolResultLaunchedRun
 } from "../RunClaims"
 import { toolActLine } from "../ToolActLine"
 import { WORLD_BODY_BUDGET,worldContextDocuments } from "../WorldContext"
+import { knowledgeCardAvailable } from "../KnowledgeFeatures"
 import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
 import { isPracticeContext,PRACTICE_CONTEXT_INSTRUCTION,practiceContextMessage } from "../practice/PracticeContext"
 import { readDesktopStream } from "../seams/DesktopStream"
@@ -223,13 +224,13 @@ export const createTurnController = (
      */
     const practice = isPracticeContext(store)
     const exploring = !practice && identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
-    const selected = current.selectedWorldDocumentId === null
+    const selected = ctx.services.features?.wiki !== true || current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
     return {
       repositoryUpdate: currentRepositoryUpdate(store),
       recentCards: [...store.collections.cards.values()]
-        .filter(card => inConversation(card, conversationTabIdOf(current)))
+        .filter(card => inConversation(card, conversationTabIdOf(current)) && knowledgeCardAvailable(card.kind, ctx.services.features))
         .sort((a, b) => a.ordinal - b.ordinal).slice(-12)
         .map(card => ({
           id: card.id, kind: card.kind, title: card.title.replace(/[\r\n]/g, " ").slice(0, 250),
@@ -310,9 +311,9 @@ export const createTurnController = (
        * a budget, open note first.
        */
       worldState: {
-        documentCount: snapshot.worldState.documents.length,
+        documentCount: ctx.services.features?.wiki === true ? snapshot.worldState.documents.length : 0,
         documents: worldContextDocuments(
-          snapshot.worldState.documents,
+          ctx.services.features?.wiki === true ? snapshot.worldState.documents : [],
           current.selectedWorldDocumentId,
           worldBodyBudget
         )

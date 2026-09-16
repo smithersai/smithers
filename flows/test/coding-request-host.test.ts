@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { appendFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { access, appendFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -27,7 +27,7 @@ import * as CodingState from "../coding/state.ts"
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const authoring = process.env.SMITHERS_ACCEPTANCE_SOURCE_ROOT ?? new URL("../", import.meta.url).pathname
-test("configured request host verifies wiki, prototypes, consumes steering, replans and implements through native correction", {
+for (const wikiEnabled of [false, true]) test(`configured request host ${wikiEnabled ? "with optional verified Wiki" : "without generated knowledge"} consumes steering and implements through native correction without a POC`, {
   skip: source === undefined || exporter === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE and PLUE_JJ_EXPORT_BINARY to Plue's native artifacts" : false,
   timeout: 1_200_000
 }, async t => {
@@ -70,9 +70,9 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
     document: "guide.md", inputs: ["verify.mjs"], related: [] }
   const wikiOutput = join(temporary, "wiki")
   const wiki = operations({ root, output: wikiOutput })
-  const evidence = await Effect.runPromise(wiki.collect(page).pipe(Effect.provide(platform.host)))
-  const wikiReview = { sections: evidence.sections.map(section => ({ id: section.id, verdict: "supported", explanation: "The fixture reads its file.",
-    citations: [{ path: "verify.mjs", line: 1, quote: "import {readFileSync} from 'node:fs';" }] })) }
+  const evidence = wikiEnabled ? await Effect.runPromise(wiki.collect(page).pipe(Effect.provide(platform.host))) : undefined
+  const wikiReview = { sections: evidence?.sections.map(section => ({ id: section.id, verdict: "supported", explanation: "The fixture reads its file.",
+    citations: [{ path: "verify.mjs", line: 1, quote: "import {readFileSync} from 'node:fs';" }] })) ?? [] }
   jj("status")
   const config = join(temporary, "coding.json"), reporter = join(temporary, "reporter"), wrapper = join(temporary, "adapter.py")
   await writeFile(config, JSON.stringify({ version: 1, workspaceId: "host-acceptance", actorId: 42, repositoryPath: root, username: userInfo().username }))
@@ -85,8 +85,9 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       { principal: platform.bearerPrincipal, scopes: ["once"], targets: ["Plan"] }
     ])),
     gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "test:scripted", exporterPath: exporter,
-    planning: { wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1", implementation: "coding/implementation", checks: ["fast", "slow", "wiki"].map(tier => ({
-      id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier === "fast" ? "fast" as const : "slow" as const, required: true
+    planning: { ...(wikiEnabled ? { wiki: true, wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1" } : {}),
+      implementation: "coding/implementation", checks: ["fast", "slow", "wiki"].map(tier => ({
+      id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier === "fast" ? "fast" as const : "slow" as const, required: tier !== "wiki" || wikiEnabled
     })) } }
   const initial = await Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read()).pipe(
     Effect.provide(nativeLayer(options)), Effect.provide(platform.host), Effect.scoped))
@@ -122,7 +123,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       : reviewingPoc ? { findings: ["The measured prototype greeting differs from the verifier's expected text; no checks ran."], nextPlan: "Use the exact expected real greeting for implementation." }
       : review ? { explanation: "The repository has a file verifier; preserve its expected contents.", clarification: "" }
       : { rationale: "Append one native atom and use both registered checks.", baseChangeId: initial.head.changeId,
-          changes: [{ id: "hello", title: "Hello", intent: "Write the requested file.", checks: ["fast", "slow", "wiki"],
+          changes: [{ id: "hello", title: "Hello", intent: "Write the requested file.", checks: ["fast", "slow", ...(wikiEnabled ? ["wiki"] : [])],
             atoms: [{ changeId: null, message: "✨ feat: add hello", intent: "Write hello.txt", reads: ["verify.mjs"], writes: ["hello.txt"] }] }] }
     const emitted = review || planning || wikiReviewing || draftingPoc || reviewingPoc ? `
       const forbidden = await ctx.call("write", ${JSON.stringify({path:join(root,"planner-mutation.txt"),content:"must not persist"})});
@@ -134,10 +135,10 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
       ModelEvent.Settle({ type: "settle", stopReason: "stop" })
     ])
-    // Hold the second planning response while the actual Control operation
+    // Hold the first planning response while the actual Control operation
     // admits a root message. The coordinator must consume it after this plan
     // completes and replan before any implementation begins.
-    return planning && ++planningPasses === 2
+    return planning && ++planningPasses === 1
       ? Stream.fromEffect(Deferred.succeed(planningEntered, undefined).pipe(
         Effect.andThen(Deferred.await(steeringAdmitted)))).pipe(Stream.flatMap(() => events))
       : events
@@ -161,7 +162,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
     assert.equal(health.protocolVersion, "1")
     assert.equal(health.workspaceHash, Serve.workspaceHash(root))
     assert.equal(health.gatewayId, options.gatewayId)
-    assert.deepEqual(health.capabilities, ["coding-plan/v1", "coding-request/v1"])
+    assert.deepEqual(health.capabilities, ["coding-plan/v1", "repository-jobs/v1", "coding-request/v1"])
     assert.equal(Serve.health(root).capabilities, undefined, "ordinary CLI health does not claim native coding")
     // Use the actual bearer-authenticated HTTP protocol for every mutation.
     // An in-process operator approval cannot prove a hosted UI can approve.
@@ -170,7 +171,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       transformClient: client => HttpClient.mapRequest(client, HttpClientRequest.bearerToken("fixture-key"))
     }).pipe(Layer.provide([FetchHttpClient.layer, RpcSerialization.layerNdjson])))
     const remote = yield* RpcClient.make(ControlRpcs.ControlRpcs).pipe(Effect.provide(protocol))
-    const card = yield* remote.Plan({ flowId: "coding/request", input: { prompt: "Write hello.txt", feedback: "Keep the verifier unchanged.", maxRounds: 2 } })
+    const card = yield* remote.Plan({ flowId: "coding/request", input: { prompt: "Write hello.txt using verify.mjs", feedback: "Keep the verifier unchanged.", maxRounds: 2 } })
     for (const scope of ["run", "remembered"] as const) {
       const denied = yield* remote.Approve({ ...card.approval, scope }).pipe(Effect.flip)
       assert.equal(denied._tag, "/control/Unauthorized", "explicit narrower authority overrides gateway defaults")
@@ -200,21 +201,25 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   assert.equal(await readFile(join(root, "ignored.txt"), "utf8").catch(() => null), null)
   assert.equal(await readFile(join(root, "planner-mutation.txt"), "utf8").catch(() => null), null)
   await writeFile(join(temporary, "model-requests.json"), JSON.stringify(calls.map(value => JSON.parse(value)), null, 2))
-  assert.equal(calls.length, 10, "One wiki review, three planning passes, POC draft/review and one implementation; unchanged wiki reviews reuse actual receipts")
+  assert.equal(calls.length, wikiEnabled ? 6 : 5, "Two planning passes and one implementation; only enabled Wiki performs a semantic review")
   const planningCalls = calls.filter(value => value.includes("Plan one linear mythical coding progression"))
-  assert.equal(planningCalls.length, 3)
+  assert.equal(planningCalls.length, 2)
   const implementationIndex = calls.findIndex(value => ![
     "Review a repository wiki page", "Review a coding request", "Plan one linear mythical coding progression",
     "Draft a small disposable file-level prototype", "Review this actually materialized"
   ].some(marker => value.includes(marker)))
-  assert(implementationIndex > calls.indexOf(planningCalls[2]!), "native implementation must follow the third, steered plan")
-  assert(planningCalls[1]!.includes("Keep the verifier unchanged."))
-  assert(planningCalls[1]!.includes("Saved disposable file-level POC: drafted-unvalidated"))
-  assert(!planningCalls[1]!.includes(feedbackText), "a root request message must not be consumed by the in-flight model turn")
-  for (const text of [feedbackText, "Keep the verifier unchanged.", "Saved disposable file-level POC: drafted-unvalidated", "request message"]) {
-    assert(planningCalls[2]!.includes(text), `replanning must retain ${text}`)
+  assert(implementationIndex > calls.indexOf(planningCalls[1]!), "native implementation must follow the steered plan")
+  assert(planningCalls[0]!.includes("Keep the verifier unchanged."))
+  assert(!planningCalls[0]!.includes(feedbackText), "a root request message must not be consumed by the in-flight model turn")
+  for (const text of [feedbackText, "Keep the verifier unchanged.", "request message"]) {
+    assert(planningCalls[1]!.includes(text), `replanning must retain ${text}`)
   }
-  assert.ok(calls.some(call => call.includes("The verifier reads hello.txt.")), "planning must receive verified repository memory")
+  if (wikiEnabled) assert.ok(calls.some(call => call.includes("The verifier reads hello.txt.")), "enabled Wiki supplies verified repository memory")
+  else {
+    assert.equal(await access(wikiOutput).then(() => true, () => false), false, "the default host never creates a Wiki publication")
+    assert.equal(calls.some(call => call.includes("Review a repository wiki page")), false)
+    assert.ok(planningCalls.every(call => call.includes("readFileSync")), "ordinary source contents reach the planner without generated memory")
+  }
   const completed = Schema.Struct({ payload: Schema.Struct({ state: Schema.Struct({
     flowName: Schema.Literal("coding/Request"), result: Schema.Struct({ _tag: Schema.Literal("Complete"),
       exit: Schema.Struct({ _tag: Schema.Literal("Success"), value: RequestResult }) })
@@ -233,12 +238,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
     const decoded = Schema.decodeUnknownOption(completedPoc)(event.payload)
     return Option.isSome(decoded) ? [decoded.value.payload.state.result.exit.value] : []
   })
-  assert.equal(prototypes.length, 1, "the discarded prototype remains inspectable in its own native child result")
-  assert.equal(prototypes[0]!.status, "drafted-unvalidated")
-  assert.equal(prototypes[0]!.source.commitId, initial.head.commitId)
-  assert.deepEqual(prototypes[0]!.changes.files.map(({ path, before, after }) => ({ path, before, after })),
-    [{ path: "hello.txt", before: null, after: "prototype greeting\n" }])
-  assert(prototypes[0]!.changes.preview.content.includes("prototype greeting"))
+  assert.equal(prototypes.length, 0, "a production fix must not execute a prototype")
   assert.equal(outcomes[0]!.plan.observedHead?.commitId, initial.head.commitId)
   assert.equal(outcomes[0]!.outcome.result?.changes[0]?.implementation.atoms[0]?.changeId,
     jj("log", "--no-graph", "-r", "@", "-T", "change_id").trim())

@@ -67,6 +67,7 @@ import {
 } from "./turnLimit"
 import { handleCancel, handleModelStream, handleTurn, handleTurnJournalAccess, handleTurnJournalErasure, readStartTurn, TurnCancelRegistry } from "./turns"
 import { handleWorkflowProvision, handleWorkflowRpc, handleWorkflowTriggers } from "./workflows"
+import { handleRepositorySetup } from "./repositorySetup"
 
 /*
  * The deployable Smithers MVP server: a Cloudflare Worker that serves the built
@@ -372,6 +373,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       }
       return yield* handleModelStream(request, gate)
     }
+    if (url.pathname.startsWith("/api/repository-setup/")) return yield* handleRepositorySetup(request)
     if (url.pathname === WORKFLOW_PROVISION_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       return yield* handleWorkflowProvision(request)

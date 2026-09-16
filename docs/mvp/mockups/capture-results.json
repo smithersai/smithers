@@ -1,0 +1,168 @@
+{
+  "kind": "design-prototype-capture",
+  "productionVerified": false,
+  "captures": [
+    {
+      "name": "01-start",
+      "width": 1080,
+      "height": 532,
+      "prototype": true
+    },
+    {
+      "name": "13-pr-review",
+      "width": 660,
+      "height": 447,
+      "prototype": true
+    },
+    {
+      "name": "14-ci",
+      "width": 660,
+      "height": 634,
+      "prototype": true
+    },
+    {
+      "name": "16-feature",
+      "width": 660,
+      "height": 522,
+      "prototype": true
+    },
+    {
+      "name": "17-chore",
+      "width": 660,
+      "height": 558,
+      "prototype": true
+    },
+    {
+      "name": "02-start-mobile",
+      "width": 366,
+      "height": 661,
+      "prototype": true
+    },
+    {
+      "name": "03-issues-flows",
+      "width": 1080,
+      "height": 815,
+      "prototype": true
+    },
+    {
+      "name": "04-issues-prompts",
+      "width": 677,
+      "height": 581,
+      "prototype": true
+    },
+    {
+      "name": "05-issues-test-preview",
+      "width": 677,
+      "height": 682,
+      "prototype": true
+    },
+    {
+      "name": "06-issues-trial-running",
+      "width": 1080,
+      "height": 897,
+      "prototype": true
+    },
+    {
+      "name": "07-issues-needs-author",
+      "width": 677,
+      "height": 883,
+      "prototype": true
+    },
+    {
+      "name": "08-issues-ready",
+      "width": 677,
+      "height": 925,
+      "prototype": true
+    },
+    {
+      "name": "09-issues-stale",
+      "width": 677,
+      "height": 961,
+      "prototype": true
+    },
+    {
+      "name": "10-issues-worker-failure",
+      "width": 677,
+      "height": 891,
+      "prototype": true
+    },
+    {
+      "name": "11-issue-repro",
+      "width": 1080,
+      "height": 740,
+      "prototype": true
+    },
+    {
+      "name": "12-issue-poc",
+      "width": 1080,
+      "height": 1021,
+      "prototype": true
+    },
+    {
+      "name": "12b-issue-fix",
+      "width": 1080,
+      "height": 950,
+      "prototype": true
+    },
+    {
+      "name": "12c-issue-split",
+      "width": 1080,
+      "height": 1006,
+      "prototype": true
+    },
+    {
+      "name": "18-evals-failure",
+      "width": 1080,
+      "height": 690,
+      "prototype": true
+    },
+    {
+      "name": "19-evals-prompt",
+      "width": 1080,
+      "height": 941,
+      "prototype": true
+    },
+    {
+      "name": "20-evals-stale",
+      "width": 1080,
+      "height": 711,
+      "prototype": true
+    },
+    {
+      "name": "13b-pr-evals",
+      "width": 1080,
+      "height": 638,
+      "prototype": true
+    },
+    {
+      "name": "17b-chore-evals",
+      "width": 1080,
+      "height": 638,
+      "prototype": true
+    }
+  ],
+  "widths": [
+    {
+      "name": "start",
+      "clientWidth": 296,
+      "scrollWidth": 296
+    },
+    {
+      "name": "issues-setup",
+      "clientWidth": 296,
+      "scrollWidth": 296
+    },
+    {
+      "name": "issue-work",
+      "clientWidth": 296,
+      "scrollWidth": 296
+    },
+    {
+      "name": "evals",
+      "clientWidth": 296,
+      "scrollWidth": 296
+    }
+  ],
+  "pageErrors": [],
+  "externalRequests": []
+}

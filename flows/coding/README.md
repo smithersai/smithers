@@ -79,22 +79,23 @@ after restart. It refuses unavailable or unverified project flows.
 
 ## Host composition
 
-The private [`coding/request`](request.md) entry accepts a prompt and composes
-verified wiki refresh, memory-backed planning, native source admission, a
-retained disposable [source prototype](poc.md), a second plan informed by the
-prototype and original user feedback, and bounded owner correction.
-Its result is decoded by the same pure schemas that the UI uses for recorded
-plan and validation evidence. It uses the existing gateway Control operations.
+The private [`coding/request`](request.md) entry accepts a prompt, gathers
+current source and native history, prepares a plan, admits its observed source,
+and performs bounded owner correction. A separate `coding/prototype` entry
+produces a disposable [source prototype](poc.md) without implementation or
+landing. A real fix does not require a prototype first.
 
-`planning.ts` adds the private `PreparePlan` workflow: verified wiki and native
-history gathering, a request review, an optional durable clarification, a model
-draft, and source verification before binding the existing `Plan` schema. See
-[planning.md](planning.md) for composition, new internal context/draft shapes,
-native-history window rules, and the current deployment-authority requirement.
-The memory action reuses the existing wiki verifier and keyword scorer and
-refuses stale documentation. The higher-level `PrepareWithWiki` child refreshes
-and verifies the owning page catalog before calling `PreparePlan`; unchanged
-pages reuse exact native review evidence. See [planning-wiki.md](planning-wiki.md).
+`planning.ts` provides `PreparePlan`: bounded source gathering, request review,
+optional durable clarification, a model draft, and source verification before
+binding the existing `Plan` schema. See [planning.md](planning.md) for context
+shapes, native-history windows and deployment authority.
+
+`PrepareRequest` uses this source-only path by default. With the operator's
+`planning.wiki: true`, it calls `PrepareWithWiki` to refresh and verify the
+configured page catalog first. Wiki memory reuses the owning verifier and
+keyword scorer, refusing stale documentation; unchanged pages reuse exact
+native review evidence. See [planning-wiki.md](planning-wiki.md). Mythical history
+is not required; ordinary native JJ history remains part of every coding plan.
 
 `registration.ts` is private repository configuration, not a new package API.
 Register `RunPlan` as a delegate when constructing the host's existing executable

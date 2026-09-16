@@ -1,0 +1,80 @@
+/** Repository jobs use the same editable setup contract as the app and Worker. */
+import { Schema } from "effect"
+import { SetupHostInputSchema, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { Revision } from "../coding/schema.ts"
+import { Source } from "../coding/planning-sources.ts"
+
+const text = (maximum: number) => Schema.String.check(Schema.isMaxLength(maximum))
+export const Job = Schema.Literals(["issues", "review", "ci", "feature", "chores"])
+export const Step = Schema.Struct({ id: text(100), name: text(120),
+  mode: Schema.Literals(["automatic", "manual", "off", "approved"]), prompt: text(16000) })
+export const Check = Schema.Struct({ id: text(100), name: text(120), kind: Schema.Literals(["command", "ai"]),
+  rule: text(16000), paths: Schema.Array(text(500)).check(Schema.isMaxLength(100)), policy: Schema.Literals(["report", "required"]) })
+export const EvalCase = Schema.Struct({ id: text(100), name: text(160), input: text(16000),
+  expected: Schema.NonEmptyString.check(Schema.isMaxLength(8000)), source: Schema.optionalKey(text(1000)), required: Schema.Boolean })
+export const Draft = Schema.Struct({
+  steps: Schema.Array(Step).check(Schema.isMaxLength(30)), checks: Schema.Array(Check).check(Schema.isMaxLength(50)),
+  cases: Schema.Array(EvalCase).check(Schema.isMaxLength(100)), replies: Schema.Literals(["draft", "automatic"]),
+  landing: Schema.Literals(["ask", "checks"]), scope: Schema.Literals(["future", "label"]), label: text(100),
+  schedule: text(200), budgetMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })),
+  connectIssues: Schema.Boolean, trialTitle: text(240), trialBody: text(16000)
+})
+export type Draft = typeof Draft.Type
+export const Proposal = Schema.Array(Schema.Struct({ path: text(1000), beforeDigest: Schema.NullOr(Schema.String),
+  content: Schema.NullOr(Schema.String.check(Schema.isMaxLength(65536))) })).check(Schema.isMaxLength(30))
+export const Operation = Schema.Literals(["inspect", "evaluate", "trial", "apply", "pause", "run"])
+export const Manual = Schema.Struct({ stepId: text(100), prompt: text(16000),
+  subject: Schema.optionalKey(Schema.Struct({ source: Schema.Literals(["github", "smithers-cloud"]),
+    kind: Schema.Literals(["issue", "pr"]), number: Schema.Int.check(Schema.isGreaterThan(0)) })) })
+export const SetupInput = Schema.Struct({
+  requestId: Schema.String, repo: Schema.String, job: Job, operation: Operation,
+  revision: Schema.Int, digest: Schema.String, draft: Draft, workspaceId: Schema.optionalKey(Schema.String), manual: Schema.optionalKey(Manual)
+}).check(Schema.makeFilter(value => SetupHostInputSchema.safeParse(value).success || "Invalid setup input or candidate digest"))
+export type SetupInput = typeof SetupInput.Type
+export const Event = Schema.Struct({
+  source: Schema.Literals(["github", "smithers-cloud", "schedule"]), type: Schema.NonEmptyString,
+  action: Schema.String, deliveryKey: Schema.NonEmptyString, issueNumber: Schema.optionalKey(Schema.Int), trial: Schema.optionalKey(Schema.Boolean),
+  manualStep: Schema.optionalKey(text(100)), payload: Schema.Json
+})
+export const JobInput = Schema.Struct({
+  repo: Schema.NonEmptyString, job: Job, revision: Schema.Int.check(Schema.isGreaterThan(0)),
+  digest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)), sourceRevision: Schema.NonEmptyString,
+  configuration: Draft, event: Event
+}).check(Schema.makeFilter(value => setupCandidate({ ...value, draft: JSON.parse(JSON.stringify(value.configuration)) }) === value.digest || "The job candidate changed"))
+export type JobInput = typeof JobInput.Type
+export const Record = Schema.Struct({
+  source: Schema.Literals(["github", "smithers-cloud"]), kind: Schema.Literals(["issue", "pr"]),
+  number: Schema.Int, title: text(1000), body: text(16000), state: Schema.String, url: Schema.String,
+  revision: Schema.optionalKey(Schema.String)
+})
+export const SourceStatus = Schema.Struct({ path: Schema.String, status: Schema.Literals(["read", "missing", "failed"]),
+  summary: Schema.String, revision: Schema.optionalKey(Schema.String) })
+export const RepositoryEvidence = Schema.Struct({
+  repo: Schema.NonEmptyString, source: Revision, files: Schema.Array(Source), missing: Schema.Array(Schema.String),
+  history: Schema.Array(Schema.Struct({ commitId: Schema.String, description: Schema.String })),
+  records: Schema.Array(Record).check(Schema.isMaxLength(120)), sources: Schema.Array(SourceStatus), subject: Schema.optionalKey(Schema.Json)
+})
+export type RepositoryEvidence = typeof RepositoryEvidence.Type
+export const StepResult = Schema.Struct({
+  stepId: Schema.String, status: Schema.Literals(["completed", "needs-author", "needs-maintainer", "skipped", "error"]),
+  summary: Schema.String, evidence: Schema.Array(Schema.String), output: Schema.Json, executionId: Schema.NonEmptyString
+})
+export const JobResult = Schema.Struct({
+  repo: Schema.String, job: Job, revision: Schema.Int, digest: Schema.String, sourceRevision: Schema.String,
+  eventKey: Schema.String, status: Schema.Literals(["completed", "partial", "needs-author", "needs-maintainer", "skipped", "error"]),
+  results: Schema.Array(StepResult), publicActions: Schema.Array(Schema.Json)
+})
+export type JobResult = typeof JobResult.Type
+export const EvalResult = Schema.Struct({ caseId: Schema.String, status: Schema.Literals(["passed", "failed", "review", "error"]),
+  observed: Schema.String, evidence: Schema.Array(Schema.String), executionId: Schema.NonEmptyString })
+export const Receipt = Schema.Struct({
+  requestId: Schema.String, runId: Schema.String, revision: Schema.Int, operation: Operation,
+  phase: Schema.Literals(["queued", "running", "waiting", "completed", "failed", "stopped"]), digest: Schema.String,
+  updatedAt: Schema.Number, results: Schema.Array(EvalResult), evidence: Schema.Array(Schema.String),
+  error: Schema.optionalKey(Schema.String),
+  trialIssue: Schema.optionalKey(Schema.Struct({ source: Schema.Literals(["github", "smithers-cloud"]), number: Schema.Int, url: Schema.optionalKey(Schema.String) })),
+  registrationId: Schema.optionalKey(Schema.String), sourceRevision: Schema.optionalKey(Schema.String), jobRunId: Schema.optionalKey(Schema.String)
+})
+export const OperationResult = Schema.Struct({ requestId: Schema.String, revision: Schema.Int, digest: Schema.String,
+  receipt: Schema.optionalKey(Receipt), inspection: Schema.optionalKey(Schema.Struct({ sources: Schema.Array(SourceStatus),
+    suggestedDraft: Draft, inspectedAt: Schema.Number })) })

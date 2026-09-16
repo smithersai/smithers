@@ -15,6 +15,7 @@ import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../fl
 import type { FormsController } from "./forms"
 import { flowArgs } from "../../flows/FlowArgs"
 import { projectRuntimeCard, runtimeApprovalIdOf, runtimeApprovalKey } from "../RuntimeProjection"
+import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 
 /**
  * A launch the workspace refused, in the wire's own words and shape: the
@@ -305,6 +306,7 @@ export const createWorkflowController = (
     readonly binding?: GatewayWorkspaceBinding
     readonly kind?: string
   }): Promise<{ readonly runId: string } | LaunchRefusal> => {
+    if (!knowledgeFlowAvailable(args.workflow, ctx.services.features)) return { message: "This feature is not enabled.", code: "FEATURE_DISABLED" }
     const launch = await gateway.launch(args.repo, args.workflow, args.input, args.binding)
     if (launch.status !== "ok") return { message: launch.message, ...(launch.code === undefined ? {} : { code: launch.code }) }
     const { runId } = launch.value
@@ -458,7 +460,7 @@ export const createWorkflowController = (
     return { id, title: `Flows: ${repo}`, before: () => provisionWorkspace(repo, binding), read: async () => {
     const list = await gateway.listFlows(repo, binding)
     if (list.status !== "ok") return list.message
-    const workflows = list.value.map((flow) => ({ key: flow.flowId, description: flow.description,
+    const workflows = list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).map((flow) => ({ key: flow.flowId, description: flow.description,
       ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }) }))
     const existing = store.collections.cards.get(id)
     const card: Card = {
@@ -499,6 +501,7 @@ export const createWorkflowController = (
   }
 
   const runWorkflow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
+    if (!knowledgeFlowAvailable(name, ctx.services.features)) return "This feature is not enabled."
     const input = inputArg ?? {}
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
@@ -547,7 +550,7 @@ export const createWorkflowController = (
       // A genuine miss: only now is it worth naming what the workspace has.
       const list = await gateway.listFlows(repo, binding)
       const available = list.status === "ok"
-        ? list.value.map((flow) => flow.flowId).slice(0, 8).join(", ")
+        ? list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).map((flow) => flow.flowId).slice(0, 8).join(", ")
         : ""
       return `There's no flow called ${name} on ${repo}${
         available === "" ? "." : `. The workspace has: ${available}.`

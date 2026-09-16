@@ -28,7 +28,7 @@ export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
 
 /** The exact collection subscriptions used by card decoration joins. */
 export interface CardProjectionAuthority {
-  readonly collections: Pick<AppStore["collections"], "repos" | "starredTargets" | "repositoryNotifications" | "notificationReceipts" | "runtimeRuns" | "runtimeApprovals">
+  readonly collections: Pick<AppStore["collections"], "repos" | "starredTargets" | "repositoryNotifications" | "notificationReceipts" | "runtimeRuns" | "runtimeApprovals"> & Partial<Pick<AppStore["collections"], "cards">>
 }
 
 /**
@@ -37,6 +37,8 @@ export interface CardProjectionAuthority {
  */
 export interface CardActions {
   readonly pluginLibrary?: boolean
+  readonly wiki?: boolean
+  readonly mythicalHistory?: boolean
   /** Read authority for derived decorations; absent only in isolated static previews. */
   readonly projectionStore?: CardProjectionAuthority
   /** Structured answers carry what the human wrote, already shaped for the question. */

@@ -116,6 +116,7 @@ function AppContent() {
   const surfacesTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
   const composerWrapRef = useRef<HTMLDivElement>(null)
+  const chatTriggerRef = useRef<HTMLButtonElement>(null)
   const readRequestRef = useRef(0)
   /* The connect trigger has the same shell-level Escape exit as surfaces. */
   const connectTriggerRef = useRef<HTMLButtonElement>(null)
@@ -154,6 +155,12 @@ function AppContent() {
   const streamingMessageId = typing ? messages[messages.length - 1]?.id : undefined
   const identity = identityRows[0]
 
+  const focusChatDoor = (): void => { requestAnimationFrame(() => chatTriggerRef.current?.focus()) }
+  const dismissComposer = (): void => {
+    controller.closePalette(controller.store.session().draft)
+    focusChatDoor()
+  }
+
   /*
    * Outside-pointer dismissal belongs to the shell that owns both menus.
    * Capture keeps the original click working and removes global listeners —
@@ -163,6 +170,7 @@ function AppContent() {
   const onShellPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const target = event.target
     if (!(target instanceof Element)) return
+    if (session.paletteOpen === true && target.matches(".composer-overlay")) dismissComposer()
     if (session.surfacesMenuOpen && target.closest(".composer-surfaces") === null) {
       const heldFocus = document.activeElement?.closest(".composer-surfaces") !== null
       controller.runCommand("chat.surfaces")
@@ -398,12 +406,26 @@ function AppContent() {
         if (event.target instanceof Element && event.target.closest("button[data-flow], [data-testid=composer-send]")) readRequestRef.current += 1
       }}
       onKeyDownCapture={event => {
+        // The summon chord toggles the whole composer from every pane. Item
+        // actions keep their ArrowRight path inside the palette.
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+          event.preventDefault()
+          event.stopPropagation()
+          const current = controller.store.session()
+          if (current.paletteOpen === true && !event.shiftKey) dismissComposer()
+          else {
+            const last = current.paletteLastQuery ?? ""
+            if (event.shiftKey && last !== "") controller.runCommand("palette.open", last)
+            else controller.runCommand("palette.open")
+            requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
+          }
+          return
+        }
         if (event.key === "Enter" && !event.shiftKey && event.target instanceof HTMLTextAreaElement && event.target.dataset.testid === "composer-input" && event.target.value.trim()) readRequestRef.current += 1
       }}
       onKeyDown={(event) => {
-        if (event.defaultPrevented) return
-        if (event.key === "Escape" && session.maximizedCardId !== null) {
-          controller.runCommand("card.minimize")
+        if (event.defaultPrevented) {
+          if (event.key === "Escape" && session.paletteOpen === true && controller.store.session().paletteOpen !== true) focusChatDoor()
           return
         }
         // The `+` menu is one more session menu the shell closes on Escape.
@@ -438,27 +460,20 @@ function AppContent() {
           })
           return
         }
+        if (event.key === "Escape" && session.paletteOpen === true) {
+          event.preventDefault()
+          dismissComposer()
+          return
+        }
+        if (event.key === "Escape" && session.maximizedCardId !== null) {
+          controller.runCommand("card.minimize")
+          return
+        }
         // The dev-tools keyboard path (§2b): unregistered for non-admins, so a no-op there.
         if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") {
           event.preventDefault()
           controller.runCommand("admin.devtools")
           return
-        }
-        /*
-         * The palette (Search and Command Palette Spec 2026-09-07 §3): Cmd+K
-         * focuses the composer and opens the overlay on the draft as it
-         * stands; Cmd+Shift+K reopens the last query. The composer handles a
-         * Cmd+K of its own while the overlay is open (the actions panel) and
-         * prevents the default first, so this is the closed-overlay path.
-         */
-        if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
-          event.preventDefault()
-          const last = session.paletteLastQuery ?? ""
-          if (event.shiftKey && last !== "") controller.runCommand("palette.open", last)
-          else controller.runCommand("palette.open")
-          requestAnimationFrame(() => {
-            composerWrapRef.current?.querySelector("textarea")?.focus()
-          })
         }
       }}
     >
@@ -556,7 +571,7 @@ function AppContent() {
 
         </div>
 
-        {session.surface === "world" ?
+        {session.surface === "world" && controller.features.wiki ?
           <WorldSurface documents={worldDocuments} /> :
           session.surface === "connectors" ?
           <ConnectorsSurface /> :
@@ -574,9 +589,11 @@ function AppContent() {
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
       {/* Keep Chat reachable while a terminal or another tab owns the view. */}
-      {composerWrap}
+      <div className="composer-overlay" data-testid="composer-overlay" hidden={session.paletteOpen !== true}>
+        {composerWrap}
+      </div>
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
+        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}>Chat</GuideButton></FirstSightHint>

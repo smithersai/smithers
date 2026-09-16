@@ -345,6 +345,20 @@ const waitingAs = (reason: string, token: string | null) =>
   } as DurableEngineState.Service)
 
 describe("the ports when a store answers badly", () => {
+  it("preserves status for a legacy row with malformed native identity", async () => {
+    await run(Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      yield* store.create("legacy-identity", "{}")
+      const row = yield* store.get("legacy-identity")
+      expect(
+        yield* AgentSession.readExecution(row.runId).pipe(Effect.provideService(RunStore.RunStore, {
+          ...store,
+          latestRound: () => Effect.succeed({ ...row, stateJson: "{corrupt legacy state" })
+        }))
+      ).toMatchObject({ _tag: "Observed", status: "accepted", executionView: undefined })
+    }))
+  })
+
   it("reports an engine that cannot record the cancellation as a typed failure", async () => {
     const failing = RunStore.layerNoop({
       requestCancelLineage: () =>
@@ -414,6 +428,55 @@ describe("the ports when a store answers badly", () => {
 })
 
 describe("durable signal admission and engine observation", () => {
+  it.each(["1", "2", "0", "-1", "broken", "9007199254740992"])(
+    "validates attempt %s on a re-asked question before admitting its bound reply",
+    async (attempt) => {
+      const token = new DurableDeferred.TokenParsed({
+        flowName: Gated._tag,
+        executionId: "reasked-question",
+        deferredName: `WaitFor/approval#${attempt}`
+      }).asToken
+      const delivery = await Effect.runPromise(
+        AgentSession.deliverSignal({
+          runId: "reasked-question",
+          token,
+          signal: { name: "approval", payload: "reply" }
+        }).pipe(
+          Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
+          Effect.provide(FlowEngine.layerMemory),
+          Effect.scoped
+        )
+      )
+      expect(delivery).toBe(attempt === "1" || attempt === "2" ? "unknown" : "no-match")
+    }
+  )
+
+  it("refuses a stored binding that addresses another signal", async () => {
+    await run(Effect.gen(function*() {
+      const control = yield* ControlRuntime
+      const state = yield* DurableEngineState.DurableEngineState
+      const runId = yield* startControlRun
+      const waiting = yield* parkedRun(runId, "approval")
+      const foreign = new DurableDeferred.TokenParsed({
+        flowName: Gated._tag,
+        executionId: runId,
+        deferredName: "WaitFor/shipped"
+      })
+      expect(
+        yield* AgentSession.deliverSignal({
+          runId,
+          commandId: "corrupt-binding",
+          signal: { name: "approval", payload: "reply" }
+        }).pipe(Effect.provideService(ControlRuntime, {
+          ...control,
+          bindSignal: () => Effect.succeed(foreign.asToken)
+        }))
+      ).toBe("no-match")
+      expect(yield* state.waiting(runId)).toEqual(Option.some(waiting))
+      expect(yield* state.deferred(foreign)).toEqual(Option.none())
+    }))
+  })
+
   it("refuses durable delivery without the admitting control runtime before completing the wait", async () => {
     const token = new DurableDeferred.TokenParsed({
       flowName: Gated._tag,
@@ -544,6 +607,174 @@ describe("durable signal admission and engine observation", () => {
       expect(yield* settled(runId)).toBe("completed")
       const completed = yield* state.deferred(DurableDeferred.TokenParsed.fromString(waiting.token))
       expect(Option.isSome(completed) && completed.value.exit).toEqual(Exit.succeed("retained reply"))
+    }))
+  })
+
+  it.each(["same", "different", "tokenless"] as const)(
+    "rechecks a %s waiting address after an atomic completion refuses",
+    async (address) => {
+      await run(Effect.gen(function*() {
+        const state = yield* DurableEngineState.DurableEngineState
+        const store = yield* RunStore.RunStore
+        const engine = yield* FlowRuntime.FlowRuntime
+        const runId = `refused-${address}`
+        const owner = { hostId: runId, pid: 1, nonce: runId }
+        const bound = new DurableDeferred.TokenParsed({
+          flowName: Gated._tag,
+          executionId: runId,
+          deferredName: "WaitFor/approval"
+        })
+        const next = new DurableDeferred.TokenParsed({ ...bound, deferredName: "WaitFor/approval/next" })
+        yield* store.create(runId, "{}")
+        yield* store.claimAndOwn(
+          runId,
+          { status: "pending", owner: null, heartbeatAtMs: null },
+          owner,
+          yield* Clock.currentTimeMillis
+        )
+        yield* state.park(runId, {
+          reason: "approval",
+          ...(address === "tokenless" ? {} : { token: address === "same" ? bound.asToken : next.asToken })
+        }, owner)
+        const before = yield* state.waiting(runId)
+        if (address === "tokenless") {
+          expect(yield* AgentSession.readExecution(runId)).not.toHaveProperty("pendingWaits")
+        }
+        if (address === "same") {
+          const row = yield* store.get(runId)
+          // A parent still marked running can already have a durable human
+          // wait. The observation must expose it before suspension catches up.
+          expect(
+            yield* AgentSession.readExecution(runId).pipe(Effect.provideService(RunStore.RunStore, {
+              ...store,
+              latestRound: () => Effect.succeed({ ...row, status: "running" })
+            }))
+          ).toMatchObject({ _tag: "Observed", status: "waiting-approval" })
+        }
+        const delivery = yield* AgentSession.deliverSignal({
+          runId,
+          token: bound.asToken,
+          signal: { name: "approval", payload: "late reply" }
+        }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, {
+          ...engine,
+          // Model an adapter that cannot complete yet; the durable read decides
+          // whether retrying the original address is still legitimate.
+          deferredDoneIfWaiting: () => Effect.succeed("NotWaiting" as const)
+        }))
+        expect(delivery).toBe(address === "different" ? "no-match" : "unknown")
+        expect(yield* state.waiting(runId)).toEqual(before)
+        expect(yield* state.deferred(bound)).toEqual(Option.none())
+      }))
+    }
+  )
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "refuses an uncompleted bound wait after its actual execution becomes %s",
+    async (status) => {
+      await run(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const state = yield* DurableEngineState.DurableEngineState
+        const runId = `bound-terminal-${status}`
+        const owner = { hostId: runId, pid: 1, nonce: runId }
+        const bound = new DurableDeferred.TokenParsed({
+          flowName: Gated._tag,
+          executionId: runId,
+          deferredName: "WaitFor/approval"
+        })
+        yield* store.create(runId, "{}")
+        yield* store.claimAndOwn(
+          runId,
+          { status: "pending", owner: null, heartbeatAtMs: null },
+          owner,
+          yield* Clock.currentTimeMillis
+        )
+        yield* store.transitionOwned(runId, owner, status, "{}")
+        expect(
+          yield* AgentSession.deliverSignal({
+            runId,
+            token: bound.asToken,
+            signal: { name: "approval", payload: "too late" }
+          })
+        ).toBe("no-match")
+        expect((yield* store.get(runId)).status).toBe(status)
+        expect(yield* state.deferred(bound)).toEqual(Option.none())
+      }))
+    }
+  )
+
+  it("refuses a bound wait whose execution is absent from the durable store", async () => {
+    await run(Effect.gen(function*() {
+      const state = yield* DurableEngineState.DurableEngineState
+      const bound = new DurableDeferred.TokenParsed({
+        flowName: Gated._tag,
+        executionId: "missing-bound-execution",
+        deferredName: "WaitFor/approval"
+      })
+      expect(
+        yield* AgentSession.deliverSignal({
+          runId: bound.executionId,
+          token: bound.asToken,
+          signal: { name: "approval", payload: "no execution" }
+        })
+      ).toBe("no-match")
+      expect(yield* state.deferred(bound)).toEqual(Option.none())
+    }))
+  })
+
+  it("keeps a refused wait unknown when the executor exposes no execution store", async () => {
+    const bound = new DurableDeferred.TokenParsed({
+      flowName: Gated._tag,
+      executionId: "remote-bound-execution",
+      deferredName: "WaitFor/approval"
+    })
+    const delivery = await Effect.runPromise(
+      AgentSession.deliverSignal({
+        runId: bound.executionId,
+        token: bound.asToken,
+        signal: { name: "approval", payload: "retain until observable" }
+      }).pipe(
+        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
+        Effect.provide(FlowEngine.layerMemory),
+        Effect.scoped
+      )
+    )
+    expect(delivery).toBe("unknown")
+  })
+
+  it("retains a bound command when the post-resume execution read fails", async () => {
+    await run(Effect.gen(function*() {
+      const control = yield* ControlRuntime
+      const engine = yield* FlowRuntime.FlowRuntime
+      const state = yield* DurableEngineState.DurableEngineState
+      const store = yield* RunStore.RunStore
+      const runId = yield* startControlRun
+      const waiting = yield* parkedRun(runId, "approval")
+      yield* control.admitSignal("unreadable-bound-run", runId, { name: "approval", payload: "retained" })
+      const command = (yield* control.signalCommand("unreadable-bound-run"))!
+      const cause = new RunStore.RunStoreError({
+        method: "get",
+        code: "persistence_failed",
+        message: "temporary read outage",
+        cause: undefined
+      })
+      const failure = yield* AgentSession.deliverSignal(command).pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, {
+          ...engine,
+          deferredDoneIfWaiting: (deferred, options) =>
+            state.wake(runId).pipe(Effect.andThen(engine.deferredDoneIfWaiting(deferred, options)))
+        }),
+        Effect.provideService(RunStore.RunStore, { ...store, get: () => Effect.fail(cause) }),
+        Effect.flip
+      )
+      expect(failure).toBeInstanceOf(PersistenceError)
+      expect(failure.operation).toBe("AgentSession.deliverSignal")
+      expect(failure.cause).toBe(cause)
+      expect(yield* control.signalCommand(command.commandId)).toMatchObject({
+        state: "pending",
+        token: waiting.token
+      })
+      expect(yield* state.deferred(DurableDeferred.TokenParsed.fromString(waiting.token!)))
+        .toEqual(Option.none())
     }))
   })
 

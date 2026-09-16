@@ -119,6 +119,13 @@ export const reader = (root: string, hostFilesystem?: FileSystem.FileSystem): Ef
 export const readmePaths = (reader: SourceReader) =>
   Effect.map(reader.names, names => names.filter(name => /^README(\.[A-Za-z0-9]+)?$/i.test(name)).sort())
 
+/** Existing project guidance and manifests, without generated artifacts or
+ * recursive scanning. Requested source paths keep first claim on the budget. */
+export const repositoryContextPaths = (reader: SourceReader) => Effect.map(reader.names, names => [
+  ...names.filter(name => /^README(\.[A-Za-z0-9]+)?$/i.test(name)).sort(),
+  ...names.filter(name => /^(?:AGENTS\.md|CONTRIBUTING(?:\.[A-Za-z0-9]+)?|package\.json|Cargo\.toml|go\.mod|pyproject\.toml)$/i.test(name)).sort()
+])
+
 export interface Collected {
   readonly sources: ReadonlyArray<Source>
   /** Named paths that do not exist, so a plan can state that instead of asking. */

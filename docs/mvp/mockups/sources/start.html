@@ -1,0 +1,93 @@
+<div id="smithers-job-start" aria-label="Smithers starting actions">
+  <style>
+    #smithers-job-start{color-scheme:light dark;--sj-bg:light-dark(#faf9f6,#141413);--sj-panel:light-dark(#ffffff,#1c1c1a);--sj-fg:light-dark(#22221f,#eeeee7);--sj-muted:light-dark(#65655e,#b4b4a7);--sj-line:light-dark(#d8d8cf,#3c3c35);--sj-soft:light-dark(#f1f0e8,#282820);--sj-gold:light-dark(#6a5607,#e6d887);--sj-primary:light-dark(#25251f,#eeeee4);--sj-on:light-dark(#ffffff,#20201b);font:14px/1.5 Inter,system-ui,sans-serif;color:var(--sj-fg)}
+    #smithers-job-start *{box-sizing:border-box;min-width:0}
+    #smithers-job-start .sj-app{background:var(--sj-bg);border:1px solid var(--sj-line);border-radius:10px;overflow:hidden}
+    #smithers-job-start .sj-bar{display:flex;align-items:center;gap:20px;padding:15px 22px;border-bottom:1px solid var(--sj-line);flex-wrap:wrap}
+    #smithers-job-start .sj-brand{font:500 15px/1.3 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:2px}
+    #smithers-job-start .sj-repo{color:var(--sj-muted);flex:1;overflow-wrap:anywhere}
+    #smithers-job-start button,#smithers-job-start input,#smithers-job-start textarea,#smithers-job-start select{font:inherit;color:inherit}
+    #smithers-job-start button{cursor:pointer;background:var(--sj-panel);border:1px solid var(--sj-line);border-radius:6px;padding:8px 13px}
+    #smithers-job-start .sj-body{padding:32px;max-width:900px;margin:auto;min-height:460px}
+    #smithers-job-start h2{font-size:22px;font-weight:500;line-height:1.3;margin:0 0 22px}
+    #smithers-job-start h3{font-size:15px;font-weight:500;margin:20px 0 10px}
+    #smithers-job-start .sj-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    #smithers-job-start .sj-job{display:flex;gap:12px;align-items:center;text-align:left;padding:22px 20px;font-size:17px;min-height:90px}
+    #smithers-job-start .sj-job i,#smithers-job-start .sj-job svg{width:20px;height:20px;color:var(--sj-gold)}
+    #smithers-job-start .sj-job .sj-arrow{margin-left:auto;color:var(--sj-muted)}
+    #smithers-job-start .sj-job:hover{background:var(--sj-soft)}
+    #smithers-job-start .sj-chrome-action{background:transparent;border:0;padding:4px 0}
+    #smithers-job-start .sj-primary{background:var(--sj-primary);color:var(--sj-on);border-color:var(--sj-primary)}
+    #smithers-job-start .sj-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}
+    #smithers-job-start .sj-field{display:grid;gap:6px;margin:13px 0}
+    #smithers-job-start .sj-field input,#smithers-job-start textarea,#smithers-job-start select{background:var(--sj-panel);border:1px solid var(--sj-line);border-radius:5px;padding:9px 10px;width:100%}
+    #smithers-job-start textarea{resize:vertical;min-height:88px}
+    #smithers-job-start .sj-check{display:flex;gap:10px;align-items:center;padding:10px 0}
+    #smithers-job-start input[type=checkbox]{accent-color:var(--sj-gold);width:16px;height:16px}
+    #smithers-job-start .sj-muted{color:var(--sj-muted)}
+    #smithers-job-start .sj-found{background:var(--sj-soft);border-radius:6px;padding:12px 14px;overflow-wrap:anywhere}
+    #smithers-job-start .sj-settings{max-width:660px}
+    #smithers-job-start .sj-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:20px}
+    #smithers-job-start .sj-title h2{margin:0}
+    #smithers-job-start .sj-command{font-family:"IBM Plex Mono",ui-monospace,monospace}
+    #smithers-job-start .sj-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    #smithers-job-start .sj-chat{border-top:1px solid var(--sj-line);background:var(--sj-panel);padding:18px 22px}
+    #smithers-job-start .sj-chat form{display:flex;gap:10px;align-items:end}
+    #smithers-job-start .sj-chat label{flex:1}
+    #smithers-job-start .sj-chat input{width:100%;padding:10px;border:1px solid var(--sj-line);border-radius:6px;background:var(--sj-bg)}
+    #smithers-job-start [hidden]{display:none!important}
+    #smithers-job-start .sj-status{color:var(--sj-gold);min-height:22px;margin-top:14px}
+    @media(max-width:600px){#smithers-job-start .sj-actions,#smithers-job-start .sj-two{grid-template-columns:1fr}#smithers-job-start .sj-body{padding:22px 16px}#smithers-job-start .sj-bar{padding:13px 16px;gap:12px}#smithers-job-start input,#smithers-job-start textarea,#smithers-job-start select{font-size:16px}}
+    @media(pointer:coarse){#smithers-job-start button{min-height:44px}}
+  </style>
+  <div class="sj-app">
+    <header class="sj-bar"><span class="sj-brand">SMITHERS</span><span class="sj-repo">acme/workbench</span><button type="button" data-action="chat" aria-expanded="false">Chat ⌘K</button></header>
+    <main class="sj-body">
+      <section data-home>
+        <h2>Recommended actions</h2>
+        <div class="sj-actions">
+          <button type="button" class="sj-job" data-job="issues"><i data-lucide="circle-dot" aria-hidden="true"></i>Handle issues<span class="sj-arrow">↗</span></button>
+          <button type="button" class="sj-job" data-job="prs"><i data-lucide="git-pull-request" aria-hidden="true"></i>Review PRs<span class="sj-arrow">↗</span></button>
+          <button type="button" class="sj-job" data-job="ci"><i data-lucide="check-check" aria-hidden="true"></i>Set up CI<span class="sj-arrow">↗</span></button>
+          <button type="button" class="sj-job" data-job="feature"><i data-lucide="code" aria-hidden="true"></i>Build a feature<span class="sj-arrow">↗</span></button>
+          <button type="button" class="sj-job" data-job="chore"><i data-lucide="repeat" aria-hidden="true"></i>Automate a chore<span class="sj-arrow">↗</span></button>
+        </div>
+      </section>
+      <section data-settings class="sj-settings" hidden aria-live="polite"></section>
+    </main>
+    <section class="sj-chat" data-chat hidden aria-label="Chat">
+      <form><label>Message<input name="message" placeholder="Ask Smithers…" autocomplete="off"></label><button class="sj-primary" type="submit">Send</button></form>
+      <div data-chat-answer class="sj-status" aria-live="polite"></div>
+    </section>
+  </div>
+  <script>
+  (function(){
+    const root=document.getElementById('smithers-job-start');
+    const home=root.querySelector('[data-home]'), settings=root.querySelector('[data-settings]');
+    const design={layout:'tiles'};
+    const titles={issues:'Handle issues',prs:'Review PRs',ci:'Set up CI',feature:'Build a feature',chore:'Automate a chore'};
+    const contents={
+      issues:'<div class="sj-found">Found: bug reports, feature requests, repeated config questions.</div><h3>Suggested flows</h3><label class="sj-check"><input type="checkbox" checked>Find duplicates</label><label class="sj-check"><input type="checkbox" checked>Research and reproduce bugs</label><label class="sj-check"><input type="checkbox">Draft a quick POC automatically</label><div class="sj-field"><label for="sj-replies">Replies</label><select id="sj-replies"><option>Draft for my approval</option><option>Post one consolidated update</option></select></div><div class="sj-row"><button type="button" class="sj-primary" data-save>Save setup draft</button><span class="sj-muted">Handling is off</span></div>',
+      prs:'<div class="sj-found">Found: CI checks and an existing review workflow.</div><h3>Reuse</h3><label class="sj-check"><input type="checkbox" checked>Existing code review</label><label class="sj-check"><input type="checkbox" checked>Required GitHub checks</label><label class="sj-check"><input type="checkbox" checked>Re-review after new commits</label><div class="sj-field"><label for="sj-pr-policy">Landing</label><select id="sj-pr-policy"><option>Ask me</option><option>When approved rules and checks pass</option></select></div><div class="sj-row"><button type="button" class="sj-primary" data-save>Save review draft</button><span class="sj-muted">Next: test on one PR</span></div>',
+      ci:'<div class="sj-found">.github/workflows/ci.yml · package.json</div><h3>Checks</h3><label class="sj-check"><input type="checkbox" checked>Unit tests</label><label class="sj-field">Command<input value="pnpm test" class="sj-command"></label><label class="sj-check"><input type="checkbox" checked>Typecheck</label><label class="sj-field">Command<input value="pnpm typecheck" class="sj-command"></label><div class="sj-two"><div><h3>Run in</h3><span>GitHub Actions</span></div><div><h3>Require for</h3><label class="sj-check"><input type="checkbox" checked>Issue fixes</label><label class="sj-check"><input type="checkbox" checked>PRs and features</label></div></div><button type="button" class="sj-primary" data-save>Test these checks</button>',
+      feature:'<div class="sj-found">Recurring change: add an adapter.<br><span class="sj-muted">PR #38 Redis · PR #51 SQLite · PR #67 Webhooks</span></div><label class="sj-field">Flow name<input value="Add an adapter"></label><label class="sj-field">Prompt<textarea>Add an adapter for the requested service. Follow the existing adapter contract. Include connection, error, and compatibility tests.</textarea></label><h3>Suggested steps</h3><div>Inspect contract → Implement adapter → Run checks → Review</div><label class="sj-check"><input type="checkbox">Start from approved feature issues</label><button type="button" class="sj-primary" data-save>Create and test flow</button>',
+      chore:'<div class="sj-found">Recurring chore: update dependencies.<br><span class="sj-muted">PR #44 · PR #58 · PR #72</span></div><label class="sj-field">Prompt<textarea>Update compatible dependencies. Run the repository checks. Ask before introducing a breaking upgrade.</textarea></label><div class="sj-two"><label class="sj-field">Run<select data-schedule><option>Every Monday at 09:00</option><option>Manually</option><option>After a release</option></select></label><label class="sj-field">Landing<select><option>Ask me</option><option>When required checks pass</option></select></label></div><label class="sj-field">Timezone<select data-timezone><option>America/Los_Angeles</option><option>UTC</option></select></label><div class="sj-row sj-muted" data-next-run>Next: Monday, September 21 · 09:00</div><button type="button" class="sj-primary" data-save>Create and test chore</button>'
+    };
+    function open(job){
+      home.hidden=true;settings.hidden=false;
+      settings.innerHTML='<div class="sj-title"><h2>'+titles[job]+'</h2><button type="button" data-action="back">Back</button></div>'+contents[job]+'<div class="sj-status" data-save-status role="status"></div>';
+    }
+    root.addEventListener('click',function(e){
+      const b=e.target.closest('button');if(!b)return;
+      if(b.dataset.job)open(b.dataset.job);
+      if(b.dataset.action==='back'){home.hidden=false;settings.hidden=true;}
+      if(b.dataset.action==='chat'){const panel=root.querySelector('[data-chat]');panel.hidden=!panel.hidden;b.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)panel.querySelector('input').focus();}
+      if(b.hasAttribute('data-save')){root.querySelector('[data-save-status]').textContent=b.textContent.includes('Test')||b.textContent.includes('test')?'Trial queued · automation remains off':'Draft saved · automation remains off';}
+    });
+    root.addEventListener('change',function(e){if(!e.target.matches('[data-schedule],[data-timezone]'))return;const run=root.querySelector('[data-schedule]').value;const next=root.querySelector('[data-next-run]');next.textContent=run==='Manually'?'Run when requested':run==='After a release'?'Next: release event':'Next: Monday, September 21 · 09:00 '+root.querySelector('[data-timezone]').value;});
+    root.querySelector('form').addEventListener('submit',function(e){e.preventDefault();const input=e.currentTarget.elements.message;if(!input.value.trim())return;root.querySelector('[data-chat-answer]').textContent='Message queued. You can continue configuring.';input.value='';});
+    function renderDesign(){root.querySelector('.sj-actions').style.gridTemplateColumns=design.layout==='list'?'1fr':'';}
+    if(globalThis.Tweak){const t=new Tweak({container:root,onChange:renderDesign});t.addSelect(design,'layout',{label:'Starting actions',options:['tiles','list']});}
+  })();
+  </script>
+</div>

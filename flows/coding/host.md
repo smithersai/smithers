@@ -77,15 +77,16 @@ project configuration is selected with
 
 Providing the private `planning` operator configuration also enables
 [`coding/request`](request.md) and its `coding-request/v1` health capability.
-This composes existing verified wiki, memory, first planning, discarded POC,
-second planning and correction flows. It returns their recorded `Plan` plus
-product outcome through the normal Control operations. The complete POC source
-preview remains in its ordinary child result.
+This composes source/native-history preparation, source admission and correction.
+It returns their recorded `Plan` and product outcome through the normal Control
+operations. `coding/prototype` is a separate disposable POC entry; a real fix
+never requires it. Wiki generation and semantic review register only with
+`planning.wiki: true`, which also requires its page, output and reviewer metadata.
 The same verified catalog is injected into those action layers before they
 register. Planning, prototype and wiki review receive their configured
 `planningModel`, `pocModel` and `wikiModel`, each falling back to the explicit
 implementation model, through the existing seat resolver. All these model roles
-use the evidence-only authority recipe. The required wiki `reviewer` policy,
+use the evidence-only authority recipe. When Wiki is enabled, its required `reviewer` policy,
 selected wiki model and gateway identity participate in review reuse identity.
 The same identity includes the running host's policy fingerprint. A deployed
 bundle embeds a digest of its exact compiled bytes before inserting the digest
@@ -109,7 +110,7 @@ Every native handler traverses recorded parent edges to its one active, approved
 
 Steering uses `Notifications.make` over the captured Control notification queue. It is addressed to the approved root, including after a cold descendant resume. Drain boundaries combine the native execution ID with the agent's frame boundary, so two descendants cannot accidentally replay each other's drain. Native usage and execution evidence remain in the native journal; Control lifecycle and steering remain in their existing stores.
 
-The default queue delivers a root steer to its first consuming boundary and does not broadcast it. When the operator enables `coding/request`, the private queue decorator routes root Messages to that request's coordinator. Model settings and explicit leaf messages keep their existing behavior. The coordinator receives messages after the POC, before implementation and after correction, then materializes a fresh source-bound plan before another mutation. Each admitted handler binds its verified root source once, avoiding a fresh ancestor walk and disk read on every frame. See [request.md](request.md) and [steering.md](steering.md) for the durable receipts, limits and current final-drain boundary.
+The default queue delivers a root steer to its first consuming boundary and does not broadcast it. When the operator enables `coding/request`, the private queue decorator routes root Messages to that request's coordinator. Model settings and explicit leaf messages keep their existing behavior. The coordinator receives messages before implementation and after correction, then materializes a fresh source-bound plan before another mutation. Each admitted handler binds its verified root source once, avoiding a fresh ancestor walk and disk read on every frame. See [request.md](request.md) and [steering.md](steering.md) for the durable receipts, limits and current final-drain boundary.
 
 The host catalog is pinned for its process lifetime. Deploying a changed executable definition requires restarting the host. A source change after approval explicitly fails the old plan; restarting cannot make that old approval describe the new source. An ordinary host without the configured catalog leaves native module runs parked.
 
@@ -165,7 +166,7 @@ proof with `node flows/test/coding-host-bundle.mjs` or
 QuickJS, builtin SQLite and contained processes; `--version` alone is insufficient.
 
 
-Configured planning also registers the private `coding/WikiCheck` delegate.
+Explicitly enabled Wiki planning also registers the private `coding/WikiCheck` delegate.
 Projects opt into continuous semantic backpressure by declaring `checks/wiki`
 and including it as a required slow check. Its catalog policy is derived from
 the operator's pages and the actual host reviewer. The same derived Registry is
