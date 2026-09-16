@@ -1,25 +1,25 @@
-import { PendingRecoveryScopeSchema } from "./PendingRecovery"
-import { BillingPlanSchema, SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
-import { CommandIntentSourceSchema, CommandIntentOutcomeSchema } from "./CommandIntent"
-import { z } from "zod"
-import { RuntimeRunObservationSchema, RuntimeScopeSchema, RuntimeObserverSchema, RuntimeApprovalObservationSchema, RuntimeApprovalSubmissionSchema } from "./RuntimeProjection"
-import { AgentTurnBatchSchema, AgentTurnCursorSchema, AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
+import { AgentTurnBatchSchema,AgentTurnCursorSchema,AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
+import { BillingPlanSchema,SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { RepoFileEntrySchema } from "@smthrs/rpc/LocalApp"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
+import { z } from "zod"
+import type { AppProjectionSnapshot } from "./AppProjection"
 import {
-  ActorSchema, AgentRoleSchema, BranchSchema, CardHistorySchema, CardPatchSchema, CardSchema, ChangeRowSchema,
-  CloudRepositorySchema, CloudWorkspaceRowSchema, FrameSchema, GitHubAppStatusRowSchema,
-  GuideSchema, HarnessSchema, LinearIntegrationRowSchema, MessageSchema, PALETTES,
-  PinnedRepoSchema, RecommendationSourceSchema, RepoSchema, RepositoryFlowSchema,
-  SessionSchema, StarredTargetSchema, SuggestionSchema, TabSchema, ToastSchema,
-  WorkingCopySchema, WorldDocumentSchema,
-  type AppTransition, type Card, type Tab
+ActorSchema,AgentRoleSchema,BranchSchema,CardHistorySchema,CardPatchSchema,CardSchema,ChangeRowSchema,
+CloudRepositorySchema,CloudWorkspaceRowSchema,FrameSchema,GitHubAppStatusRowSchema,
+HarnessSchema,LinearIntegrationRowSchema,MessageSchema,PALETTES,
+PinnedRepoSchema,RecommendationSourceSchema,RepoSchema,RepositoryFlowSchema,
+SessionSchema,StarredTargetSchema,SuggestionSchema,TabSchema,ToastSchema,
+WorkingCopySchema,WorldDocumentSchema,
+type AppTransition,type Card,type Tab
 } from "./AppState"
+import { CommandIntentOutcomeSchema,CommandIntentSourceSchema } from "./CommandIntent"
 import { INPUT_MODES } from "./InputMode"
+import { PendingRecoveryScopeSchema } from "./PendingRecovery"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
-import type { AppProjectionSnapshot } from "./AppProjection"
+import { RuntimeApprovalObservationSchema,RuntimeApprovalSubmissionSchema,RuntimeObserverSchema,RuntimeRunObservationSchema,RuntimeScopeSchema } from "./RuntimeProjection"
 
 const LocalRepositoryInspectionSchema = z.object({
   root: z.string(), name: z.string(), head: z.string().nullable(), branch: z.string().nullable(), remoteUrl: z.string().nullable()
@@ -60,11 +60,11 @@ export const APP_TRANSITION_SCHEMAS = {
   "repo.update.published": z.object({ "type": z.literal("repo.update.published"), "actor": ActorSchema, "card": cardOf("repo-update"), "notifications": z.array(RepositoryNotificationSchema) }).strict(),
   "notifications.read": z.object({ "type": z.literal("notifications.read"), "actor": ActorSchema, "receipts": z.array(z.object({ "id": z.string(), "version": z.string() }).strict()) }).strict(),
   "notification.tagged": z.object({ "type": z.literal("notification.tagged"), "actor": ActorSchema, "id": z.string(), "tag": z.string() }).strict(),
-  "card.recovered": z.object({ type: z.literal("card.recovered"), actor: ActorSchema, workspaceId: z.string(), branchId: z.string(), id: z.string(), card: CardSchema.nullable(), history: CardHistorySchema.optional(), explicitTutorial: z.literal(true).optional() }).strict(),
+  "card.recovered": z.object({ type: z.literal("card.recovered"), actor: ActorSchema, workspaceId: z.string(), branchId: z.string(), id: z.string(), card: CardSchema.nullable(), history: CardHistorySchema.optional() }).strict(),
   "card.view.loaded": z.object({ type: z.literal("card.view.loaded"), actor: ActorSchema, card: CardSchema }).strict(),
   "hint.dismissed": z.object({ type: z.literal("hint.dismissed"), actor: ActorSchema, id: z.string() }).strict(),
+  "librarian.launches.changed": z.object({ type: z.literal("librarian.launches.changed"), actor: ActorSchema, launches: SessionSchema.shape.librarianLaunches.unwrap() }).strict(),
   "first-run.dismissed": z.object({ type: z.literal("first-run.dismissed"), actor: ActorSchema }).strict(),
-  "guide.visibility.changed": z.object({ type: z.literal("guide.visibility.changed"), actor: z.literal("system"), visible: z.boolean() }).strict(),
   "card.navigated": z.object({ "type": z.literal("card.navigated"), "actor": ActorSchema, "card": CardSchema }).strict(),
   "card.history.moved": z.object({ "type": z.literal("card.history.moved"), "actor": ActorSchema, "id": z.string(), "delta": z.union([z.literal(-1), z.literal(1)]) }).strict(),
   "input.mode.changed": z.object({ "type": z.literal("input.mode.changed"), "actor": ActorSchema, "mode": z.enum(INPUT_MODES) }).strict(),
@@ -81,7 +81,6 @@ export const APP_TRANSITION_SCHEMAS = {
   "conversation.reset.asked": z.object({ "type": z.literal("conversation.reset.asked"), "actor": z.literal("user"), "open": z.boolean() }).strict(),
   "conversation.cleared": z.object({ "type": z.literal("conversation.cleared"), "actor": z.literal("user"), "branchId": z.string(), "notes": z.array(z.object({ "title": z.string(), "body": z.string(), "confidence": z.number().finite() }).strict()), "interruptedTurnId": z.string().optional() }).strict(),
   "app.reset": z.object({ "type": z.literal("app.reset"), "actor": ActorSchema }).strict(),
-  "guide.changed": z.object({ "type": z.literal("guide.changed"), "actor": ActorSchema, "guide": GuideSchema }).strict(),
   "theme.changed": z.object({ "type": z.literal("theme.changed"), "actor": z.enum(["user", "system"]), "theme": SessionSchema.shape["theme"] }).strict(),
   "sidebar.toggled": z.object({ "type": z.literal("sidebar.toggled"), "actor": z.enum(["user", "smithers"]), "open": z.boolean() }).strict(),
   "palette.changed": z.object({ "type": z.literal("palette.changed"), "actor": z.literal("user"), "palette": z.enum(PALETTES) }).strict(),

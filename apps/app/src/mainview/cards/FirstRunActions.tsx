@@ -1,11 +1,11 @@
-import "./FirstRunActions.css"
-import { FirstSightHint } from "../FirstSightHint"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
-import { runtimeFlowName } from "../flows/FlowName"
+import { FirstSightHint } from "../FirstSightHint"
 import { flowAction } from "../flows/FlowAction"
-import { recommendedNames, visible, type CatalogItem, type CommandState } from "../flows/registry"
+import { runtimeFlowName } from "../flows/FlowName"
+import { recommendedNames,visible,type CatalogItem,type CommandState } from "../flows/registry"
 import type { RunCommand } from "./CardFamily"
+import "./FirstRunActions.css"
 
 export function firstRunGroups(commands: readonly CatalogItem[], state: CommandState) {
   const recommended = recommendedNames(state)
@@ -22,24 +22,27 @@ export function firstRunGroups(commands: readonly CatalogItem[], state: CommandS
   })).sort((a, b) => rank(a.flows[0]!.name) - rank(b.flows[0]!.name) || a.namespace.localeCompare(b.namespace))
 }
 
-export function FirstRunActionsCard({ commands, state, onRunCommand, onDismiss }: {
+export function FirstRunActionsCard({ commands, state, onRunCommand: dispatchFlow, onDismiss }: {
   commands: readonly CatalogItem[]
   state: CommandState
   onRunCommand: RunCommand
   onDismiss: () => void
 }) {
-  const run: RunCommand = (flow, args) => { onDismiss(); return onRunCommand(flow, args) }
+  const onRunCommand: RunCommand = (flow, args) => {
+    onDismiss()
+    if (flow !== "app.first-run.dismiss") dispatchFlow(flow, args)
+  }
   return <section className="first-run-actions" data-testid="first-run-actions" aria-label="Recommended actions">
-    <header><h2>Recommended actions</h2><button type="button" aria-label="Dismiss recommended actions" onClick={onDismiss}>×</button></header>
+    <header><h2>Recommended actions</h2><button type="button" aria-label="Dismiss recommended actions" {...flowAction(onRunCommand, "app.first-run.dismiss")}>×</button></header>
     {firstRunGroups(commands, state).map(group => <section key={group.namespace} aria-label={group.namespace}>
       <h3>{group.namespace}</h3>
-      {group.flows.map(flow => <button type="button" key={flow.name} {...flowAction(run, runtimeFlowName(flow.name))} title={flow.summary}>{flow.name}</button>)}
+      {group.flows.map(flow => <button type="button" key={flow.name} {...flowAction(onRunCommand, runtimeFlowName(flow.name))} title={flow.summary}>{flow.name}</button>)}
     </section>)}
   </section>
 }
 
 /** Live session projection; no card row or model request. */
-export function FirstRunActions() {
+export function FirstRunActions({ commands }: { commands?: readonly CatalogItem[] }) {
   const controller = useController()
   const { collections } = controller.store
   const { data: sessions } = useLiveQuery(q => q.from({ session: collections.sessions }).select(({ session }) => ({
@@ -53,11 +56,11 @@ export function FirstRunActions() {
   const session = sessions[0]
   if (session?.dismissed ?? controller.store.session().firstRunDismissed) return null
   const identity = identities[0]
-  return <FirstSightHint id="first-run" content="Choose an action to begin."><FirstRunActionsCard commands={controller.commands.all()} state={{
+  return <FirstSightHint id="first-run" content="Choose an action to begin."><FirstRunActionsCard commands={commands ?? controller.commands.all()} state={{
     surface: session?.surface ?? "chat", typing: session?.phase === "responding", plugins: session?.plugins,
     signedOut: identity?.state === "signed-out", admin: identity?.admin === true,
     hasConnectors: identity?.state === "signed-in" || connectors.length > 0, hasOpenRepos: repos.length > 0,
   }} onRunCommand={controller.runCommand} onDismiss={() => {
-    controller.store.dispatch({ type: "first-run.dismissed", actor: "user" })
+    controller.dismissFirstRun()
   }} /></FirstSightHint>
 }

@@ -1,14 +1,14 @@
-import { projectRepositoryUpdate } from "../CardProjection"
-import { expect, test } from "bun:test"
+import { expect,test } from "bun:test"
+import { CardSchema } from "../AppState"
 import { createAppStore } from "../AppStore"
+import { projectRepositoryUpdate } from "../CardProjection"
+import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { memoryStorage } from "../TestFixtures"
+import { PRACTICE_REPO } from "../practice/PracticeRepository"
 import { createIssuesSeam } from "../seams/IssuesSeam"
 import { createLandingsSeam } from "../seams/LandingsSeam"
-import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { CardSchema, initialGuide } from "../AppState"
-import { createRepositoryUpdate } from "./repositoryUpdate"
 import type { SeamContext } from "../seams/SeamContext"
-import { PRACTICE_REPO } from "../practice/PracticeRepository"
+import { createRepositoryUpdate } from "./repositoryUpdate"
 async function setup(storage = memoryStorage(), http: SeamContext["http"] = async () => { throw new Error("offline") }) {
   const store = await createAppStore({ kind: "localStorage", storage })
   const ctx: SeamContext = { store, dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => 1, baseUrl: "", http }
@@ -145,16 +145,6 @@ test("a new notification version arriving during a slow detail read remains unre
   expect(row.readVersion).not.toBe(row.version)
   const overview = [...store.collections.cardHistories.values()][0]!.entries.find(card => card.kind === "repo-update")
   expect(overview?.kind === "repo-update" && overview.payload.items[0]?.read).toBe(false)
-})
-
-test("a changed account/playthrough cannot receive a late read receipt", async () => {
-  const { ctx, store, actions } = await setup()
-  await actions.showRepoOverview(PRACTICE_REPO)
-  await readRepositoryDetail(ctx, PRACTICE_REPO, "issue", 3, async () => {
-    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), playthrough: 1 } }).isPersisted.promise
-    return { value: "Loaded before the restart" }
-  })
-  expect([...store.collections.repositoryNotifications.values()].every(row => row.readVersion === undefined)).toBe(true)
 })
 
 test("read receipts stay isolated by repository, account, and source", async () => {

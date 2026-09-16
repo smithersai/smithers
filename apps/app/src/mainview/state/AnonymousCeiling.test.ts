@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test"
 import type { StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,test } from "bun:test"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { scopedControllers } from "./ControllerTestScope"
-import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled } from "./TestFixtures"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -59,12 +59,11 @@ const storeWith = async (state: IdentityFixture): Promise<AppStore> => {
   return store
 }
 
-const sendRefused = async (state: IdentityFixture, result: StartAgentTurnResult, tutorial = false) => {
+const sendRefused = async (state: IdentityFixture, result: StartAgentTurnResult, _tutorial = false) => {
   const store = await storeWith(state)
   const controller = createAppController(store, repositories, refusingAgent(result), {
     fetchImpl: async () => new Response("{}", { status: 200 })
   })
-  if (tutorial) await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
   controller.send("what does the kernel do with a denied capability?")
   await settled()
   await settled()
@@ -74,14 +73,6 @@ const sendRefused = async (state: IdentityFixture, result: StartAgentTurnResult,
 }
 
 describe("a signed-out turn refused by the anonymous ceiling", () => {
-  test("the system refusal retains the tutorial turn's ownership", async () => {
-    const { store, ceilingCards } = await sendRefused("signed-out", {
-      status: "error", message: PER_ADDRESS,
-      refusal: { code: "turn_rate_limited", message: PER_ADDRESS, retryAt: null },
-    }, true)
-    expect(ceilingCards).toHaveLength(1)
-    expect(store.session().guide?.transcript?.[ceilingCards[0]!.id]).toMatchObject({ source: "chat", owned: true })
-  })
   test("the per-address refusal renders the card with the server's sentence and reset time, no failure bubble", async () => {
     const { store, ceilingCards, failedMessages } = await sendRefused("signed-out", {
       status: "error",

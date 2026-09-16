@@ -9,7 +9,7 @@ const title = "Smithers"
 const description = project.tagline
 /*
  * Start Here opens the app in this document: the script below mounts
- * apps/app (AppMount.tsx) in onboarding mode and the wordmark becomes the
+ * apps/app (AppMount.tsx) directly and the wordmark becomes the
  * app's own. The href is the first catalog repository's app page
  * (src/pages/[owner]/[repo].astro) for a middle-click, a new tab, or a
  * browser without JavaScript. The documentation is not linked from the home
@@ -52,10 +52,10 @@ const githubHref = "https://github.com/smithersai/smithers"
    * island chunk and stylesheets, imports the chunk, and Start Here appears.
    * AppMount stays out of this page's module graph: Astro would link
    * every stylesheet the graph reaches into this page's head, render-blocking.
-   * Start Here, or S, mounts the app in onboarding mode inside a view
+   * Start Here, or S, mounts the app directly inside a view
    * transition: the hero wordmark glides onto the app's top-left mark, the
    * page fades away, and Suspense paints the shell while boot fills in the
-   * tutorial. The URL stays where it is.
+   * app. The URL stays where it is.
    */
   type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp"> & Partial<Pick<typeof import("../../../app/src/mainview/AppMount"), "warmApp">>
   type Sheet = HTMLLinkElement | HTMLStyleElement
@@ -258,7 +258,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     })
 
     /*
-     * GitHub sign-in (the tutorial's first step) returns to this page with
+     * GitHub sign-in returns to this page with
      * `?signed-in` or `?auth=failed|error`: the app resumes at once, where
      * it was, and reads the marker itself.
      */

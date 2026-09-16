@@ -1,0 +1,79 @@
+.guide-wordmark {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  color: var(--g-accent);
+  transform-origin: center;
+  animation: none;
+}
+.guide-wordmark pre {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 2.75px;
+  line-height: 1.07;
+  letter-spacing: 0;
+  margin: 0;
+  font-weight: 400;
+}
+.guide-wordmark span {
+  animation: none;
+}
+.guide-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 38px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--g-line);
+  border-radius: var(--r-full);
+  background: var(--g-panel);
+  color: var(--g-ink);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--g-ink) 7%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.guide-button-content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.guide-button.guide-primary {
+  min-height: var(--ctl-h-lg);
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
+  font-weight: 500;
+}
+.guide-button > .guide-button-key { margin-inline-start: auto; }
+@media (hover: hover) {
+  .guide-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--g-accent) 50%, var(--g-line));
+    background: color-mix(in srgb, var(--g-panel), var(--g-accent) 5%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px color-mix(in srgb, var(--g-ink) 10%, transparent);
+  }
+}
+.guide-button:focus-visible {
+  outline: 2px solid var(--g-accent);
+  outline-offset: 2px;
+}
+.guide-button[data-pressed] {
+  border-color: var(--g-accent);
+  background: color-mix(in srgb, var(--g-panel), var(--g-accent) 10%);
+  transform: translateY(1px) scale(.985);
+  box-shadow: inset 0 2px 4px color-mix(in srgb, var(--g-ink) 12%, transparent);
+}
+.guide-button[data-pressed] .guide-button-key {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--g-ink) 12%, transparent);
+}
+.guide-button:disabled { opacity: .45; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .guide-button:hover:not(:disabled),
+  .guide-button[data-pressed],
+  .guide-button[data-pressed] .guide-button-key { transform: none; }
+}
+
+
+.guide-button-key { font-size: .75em; opacity: .65; }
+@media (pointer: coarse) { .guide-button-key { display: none; } }

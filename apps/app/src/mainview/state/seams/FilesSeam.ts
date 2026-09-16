@@ -1,4 +1,4 @@
-import { preparedView, type ViewAction, type ViewResult } from "../PreparedView"
+import { preparedView,type ViewAction,type ViewResult } from "../PreparedView"
 /*
  * The repo files seam: GET /api/repos/{owner}/{repo}/contents[/path] lists a
  * directory ("file-list" card) or reads a file ("file" card, capped). A
@@ -13,17 +13,16 @@ import { preparedView, type ViewAction, type ViewResult } from "../PreparedView"
  * decodeContent :117). Parsing is defensive: unknown JSON in, typed card
  * payload out, malformed rows drop; failures are honest strings, never throws.
  */
-import { isPracticeRepo } from "../practice/PracticeRepository"
-import { practiceReadFile } from "./tutorial2-file_open"
-import { REPO_FILES_PATH, RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
-import type { Repo, RepoFilesResponse } from "@smthrs/rpc/LocalApp"
+import type { Repo,RepoFilesResponse } from "@smthrs/rpc/LocalApp"
+import { REPO_FILES_PATH,RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
-import { parseRepoSelection, repoIdFromRemote, repoKeyOf } from "../AppState"
+import { parseRepoSelection,repoIdFromRemote,repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
-import { errorText, readErrorMessage, unreachableSentence } from "./SeamContext"
-import { captureFileLesson, finishFileLesson } from "./tutorial2-file_open"
+import { isPracticeRepo } from "../practice/PracticeRepository"
+import { resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
+import { errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
+import { practiceReadFile } from "./tutorial2-file_open"
 
 /*
  * Both commands answer a `value` beside the card: the card is what the human
@@ -555,12 +554,9 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     const repoId = target.kind === "local" ? target.repo.id : target.repo
     const label = target.kind === "local" ? target.repo.name : target.repo
     const id = `${kind}-${repoId}-${target.path || "/"}`
-    const scope = captureFileLesson(ctx.store, repoId)
     return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]),
       read: () => kind === "file" ? readers.readFile(path, repo, anchor) : readers.listFiles(path, repo),
       after: kind === "file" ? async () => {
-        const card = ctx.store.collections.cards.get(id)
-        if (card?.kind === "file" && !card.payload.binary) await finishFileLesson(ctx, scope)
       } : undefined,
     }
   }

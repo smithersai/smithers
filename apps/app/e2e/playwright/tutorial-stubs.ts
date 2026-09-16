@@ -5,7 +5,7 @@ import commitsFixture from "../../src/mainview/state/practice/hello-server/commi
 import planFixture from "../../src/mainview/state/practice/hello-server/plan.json"
 
 /*
- * The tutorial's boundary double (onboarding SCRIPT v4, section 5 "Harness").
+ * Practice repository boundary double.
  *
  * Read-only example data remains bundled; research, planning, implementation,
  * and Change creation cross the anonymous live API. This TEST boundary uses

@@ -1,14 +1,14 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll,afterEach,describe,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "./App"
 import { ControllerTestProvider } from "./ControllerContext"
 import type { NativeRepositories } from "./native/NativeBridge"
 import type { AgentPort } from "./runtime/AgentPort"
-import { createAppController } from "./state/AppController"
 import type { AppController as AppControllerType } from "./state/AppController"
+import { createAppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
 
 /*
@@ -61,8 +61,7 @@ const silentAgent: AgentPort = {
 }
 
 const mount = (controller: AppControllerType): HTMLElement => {
-  const guide = controller.store.session().guide
-  if (guide) controller.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, finished: true } })
+
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)

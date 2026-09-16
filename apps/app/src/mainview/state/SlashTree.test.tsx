@@ -5,15 +5,15 @@
  * Enter still runs the flow. Pinned against the real App + registry.
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll,afterEach,describe,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,unavailableAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -104,13 +104,10 @@ describe("the slash menu is a tree", () => {
     expect(view.controller.store.session().recentCommands ?? []).toEqual(recent)
     await press(view, "ArrowLeft")
     expect(view.controller.store.session().draft).toBe("/")
-    // connect, wiki, plugins, flows, chat (the surface leaves) and tut, then the first namespace row.
-    await press(view, "ArrowDown")
-    await press(view, "ArrowDown")
-    await press(view, "ArrowDown")
-    await press(view, "ArrowDown")
-    await press(view, "ArrowDown")
-    await press(view, "ArrowDown")
+    // Move to the chat namespace using the rendered catalog order.
+    const chatIndex = rows(view.host).indexOf("chat/")
+    expect(chatIndex).toBeGreaterThanOrEqual(0)
+    for (let index = 0; index < chatIndex; index++) await press(view, "ArrowDown")
     const highlighted = view.host.querySelector<HTMLElement>(".slash-menu [data-highlighted='true']")
     expect(highlighted?.dataset["namespace"]).toBe("chat")
     await press(view, "ArrowRight")
@@ -124,33 +121,5 @@ describe("the slash menu is a tree", () => {
     await press(view, "Enter")
     expect(view.controller.store.session().draft).toBe("")
     expect(view.controller.store.session().recentCommands?.[0]).toBe("appearance.dark-mode")
-  })
-
-  test("Enter on exact /tut replays instead of opening the tutorial namespace", async () => {
-    const view = await mount()
-    const before = view.controller.store.session().guide?.playthrough ?? 0
-    await view.act(() => view.controller.changeDraft("/tut"))
-    expect(rows(view.host)[0]).toBe("tut")
-    expect(rows(view.host)).toContain("tutorial/")
-    await press(view, "Enter")
-    expect(view.controller.store.session().draft).toBe("")
-    expect(view.controller.store.session().guide).toMatchObject({ step: 1, playthrough: before + 1 })
-    expect(view.controller.store.session().recentCommands?.[0]).toBe("tut")
-  })
-
-  for (const finalDraft of ["/tut", "/tut "]) test(`typing ${JSON.stringify(finalDraft)} and Enter before the next render uses the current input`, async () => {
-    const view = await mount()
-    await view.act(() => view.controller.changeDraft("/tu"))
-    expect(rows(view.host)[0]).toBe("tutorial/")
-    const before = view.controller.store.session().guide?.playthrough ?? 0
-    await view.act(() => {
-      const input = textarea(view.host)!
-      input.value = finalDraft
-      view.controller.changeDraft(input.value)
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
-    })
-    expect(view.controller.store.session().draft).toBe("")
-    expect(view.controller.store.session().guide?.playthrough).toBe(before + 1)
-    expect(view.controller.store.session().recentCommands?.[0]).toBe("tut")
   })
 })

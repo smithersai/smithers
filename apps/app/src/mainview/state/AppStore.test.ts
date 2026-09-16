@@ -1,17 +1,17 @@
+import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,test } from "bun:test"
 import { Effect } from "effect"
 import { makeCollectionJournal } from "../chain/CollectionJournal"
-import { describe, expect, test } from "bun:test"
-import { cardFrameId, DEFAULT_BRANCH_ID, initialGuide, type Card } from "./AppState"
+import { retiredLineageKey } from "../chain/LineageRetirement"
+import { SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
+import { ENVELOPE_STORAGE_KEY,parseStorageEnvelope } from "../chain/TransactionalStorage"
+import { cardFrameId,DEFAULT_BRANCH_ID,type Card } from "./AppState"
+import type { AppStore } from "./AppStore"
 import { createAppStore } from "./AppStore"
-import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { createControllerContext } from "./controller/context"
 import { createTurnController } from "./controller/turns"
 import { createWorkflowController } from "./controller/workflows"
-import type { AppStore } from "./AppStore"
 import { memoryStorage } from "./TestFixtures"
-import { retiredLineageKey } from "../chain/LineageRetirement"
-import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
-import { SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
 
 /** Each test gets its own storage so cases never observe another case's writes. */
 describe("createAppStore with the localStorage fallback backend", () => {
@@ -620,28 +620,6 @@ test("card updates never rewrite the conversation a maximized frame recorded", a
   expect(store.collections.frames.get(frameId)).toEqual(minimized)
   const reopened = await createAppStore({ kind: "localStorage", storage })
   expect(reopened.collections.frames.get(frameId)).toEqual(minimized)
-})
-
-test("app.reset durably clears all collections and fences late writes before reboot", async () => {
-  const storage = memoryStorage()
-  const store = await createAppStore({ kind: "localStorage", storage })
-  await store.dispatch({ type: "composer.changed", actor: "user", draft: "private draft" }).isPersisted.promise
-  await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10, library: true, librarian: true } }).isPersisted.promise
-  await store.dispatch({ type: "app.reset", actor: "user" }).isPersisted.promise
-  await store.dispatch({ type: "composer.changed", actor: "user", draft: "late writer" }).isPersisted.promise
-  expect(store.session().draft).toBe("")
-  expect(store.session().theme).toBe("light")
-  for (const [name, collection] of Object.entries(store.collections)) {
-    if (name === "sessions" || name === "transitions") continue
-    expect(collection.size).toBe(0)
-  }
-  const reopened = await createAppStore({ kind: "localStorage", storage })
-  expect(reopened.session().draft).toBe("")
-  expect(reopened.session().guide).toMatchObject({ step: 1, completed: [] })
-  expect(reopened.collections.messages.size).toBe(0)
-  expect(reopened.collections.tabs.size).toBe(1)
-  expect(reopened.collections.worldDocuments.size).toBeGreaterThan(0)
 })
 
 

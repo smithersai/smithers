@@ -1,10 +1,10 @@
-import { isPracticeContext } from "./practice/PracticeContext"
+import { AgentRepositoryUpdateSchema,type AgentRepositoryUpdate } from "@smthrs/rpc/AgentContext"
 import { z } from "zod"
-import { AgentRepositoryUpdateSchema, type AgentRepositoryUpdate } from "@smthrs/rpc/AgentContext"
-import type { AppStore } from "./AppStore"
 import { conversationTabIdOf } from "./AppState"
+import type { AppStore } from "./AppStore"
 import { resolveTargetRepo } from "./RepoContext"
-import { isPracticeRepo, PRACTICE_REPO } from "./practice/PracticeRepository"
+import { isPracticeContext } from "./practice/PracticeContext"
+import { isPracticeRepo,PRACTICE_REPO } from "./practice/PracticeRepository"
 
 /** Durable background observations are separate from presentation and human read receipts. */
 export const RepositoryContextSchema = z.object({
@@ -13,7 +13,7 @@ export const RepositoryContextSchema = z.object({
 export type RepositoryContext = z.infer<typeof RepositoryContextSchema>
 
 export function repositoryScope(store: AppStore, repo: string): string {
-  if (isPracticeRepo(repo)) return `practice:${store.session().guide?.playthrough ?? 0}`
+  if (isPracticeRepo(repo)) return `practice:${0}`
   const identity = store.collections.identitySessions.get("identity")
   return identity?.state === "signed-in" ? `github:${identity.login}` : "anonymous"
 }

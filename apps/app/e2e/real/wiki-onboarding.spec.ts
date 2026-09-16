@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openApp, test } from "./support"
+import { closeComposer,command,expect,openApp,test } from "./support"
 import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
@@ -64,47 +64,5 @@ test(
     await expect(page.getByRole("dialog", { name: `Delete ${note.title}?`, exact: true })).toBeVisible()
     await page.keyboard.press("Escape")
     await expect(page.getByRole("dialog", { name: `Delete ${note.title}?`, exact: true })).toBeHidden()
-  }
-)
-
-test(
-  "onboarding finish and optional reel are real keyboard state transitions",
-  scenario("onboarding.finish-reel-persistence", {
-    capabilities: [],
-    coverage: [
-      "action:onboarding.act", "action:tut", "action:tut.more", "action:chat.open", "action:input.mode",
-      "host:local", "host:production", "path:success", "path:persistence", "path:keyboard",
-      "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:tutorial-finish", "dimension:optional-reel",
-      "dimension:replay-and-dismiss", "evidence:guide-stage-and-reel-state"
-    ],
-    description: "Uses the real bundled onboarding state, finishes it through its user-facing action, opens the optional capability reel, advances by keyboard, and verifies the finished state survives reload."
-  }),
-  async ({ page }) => {
-    await page.goto("/")
-    const guide = page.locator(".guide-shell")
-    await expect(guide).toBeVisible()
-    await page.keyboard.press("q")
-    await expect(guide).toHaveAttribute("data-stage", "10")
-    await command(page, "/onboarding.act finish")
-    await closeComposer(page)
-    await expect(guide).toHaveAttribute("data-stage", "14")
-    await command(page, "/tut.more")
-    await closeComposer(page)
-    const reel = page.getByRole("region", { name: "What else Smithers can do" })
-    await expect(reel).toBeVisible()
-    await expect(reel).toHaveAttribute("data-reel-stage", "0")
-    await page.keyboard.press("ArrowRight")
-    await expect(reel).toHaveAttribute("data-reel-stage", "1")
-    await page.keyboard.press("Escape")
-    await expect(reel).toBeHidden()
-    await page.reload()
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "14")
-    await command(page, "/tut")
-    await closeComposer(page)
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-    await page.keyboard.press("q")
-    await command(page, "/onboarding.act finish")
-    await closeComposer(page)
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "14")
   }
 )

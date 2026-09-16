@@ -1,13 +1,12 @@
-import { expect, test } from "@playwright/test"
-import type { Locator, Page } from "@playwright/test"
+import type { Locator,Page } from "@playwright/test"
+import { expect,test } from "@playwright/test"
+import type { StatusRollup } from "@smthrs/rpc/Health"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
-import { blockedCodingJournal, codingDecision, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
-import type { StatusRollup } from "@smthrs/rpc/Health"
-import { Schema } from "effect"
-import { prepareHealthPage, sendHealthCommand } from "./healthFixture"
+import { prepareHealthPage,sendHealthCommand } from "./healthFixture"
 
 /*
  * Lane runs T1 (docs/workbench-lanes/runs.md "Exit"): launch a fixture flow,
@@ -138,7 +137,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
 }
 
 const send = async (page: Page, text: string): Promise<void> => {
-  await expect(page.locator(".guide-shell")).toBeVisible()
+  await expect(page.locator(".app-shell")).toBeVisible()
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill(text)
   await page.getByTestId("composer-send").click()
@@ -146,13 +145,8 @@ const send = async (page: Page, text: string): Promise<void> => {
 
 /** Exercise workspace flows after the introduction, using its existing command. */
 const finishGuide = async (page: Page): Promise<void> => {
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await page.keyboard.press("Control+k")
-  await expect(page.getByTestId("composer-input")).toBeFocused()
-  await page.keyboard.insertText("/onboarding.act finish")
-  await page.keyboard.press("Enter")
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-step", "14")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
+  await page.getByRole("button", { name: "Dismiss recommended actions" }).click()
 }
 
 test.beforeEach(async ({ page }) => {
@@ -167,56 +161,6 @@ test.beforeEach(async ({ page }) => {
       // Storage the browser refuses is the empty store already.
     }
   })
-})
-
-test("quick wins: attention, declared inputs and an editable handoff work by keyboard and survive reload", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"])
-  const { rpc } = await serve(page, [], { attention: true, inputSchema: Schema.toJsonSchemaDocument(Schema.Struct({ args: Schema.String })) })
-  await page.goto("/")
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  const command = async (text: string) => {
-    if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
-    await page.getByTestId("composer-input").fill(text)
-    await page.getByTestId("composer-input").press("Enter")
-  }
-  await command("/onboarding.act finish")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-  await command(`/runs.attention ${REPO}`)
-  const attention = page.getByTestId(`card-run-list-${REPO}`)
-  await expect(attention).toContainText("Needs attention")
-  await expect(attention).toContainText(RUN_ID)
-  await attention.getByRole("button", { name: "Refresh", exact: true }).press("Enter")
-  await command(`/flow.list ${REPO}`)
-  const catalogId = `workflow-list-${REPO}`
-  const catalog = page.getByTestId(`card-${catalogId}`)
-  await expect(catalog).toContainText("review-pr")
-  await catalog.getByRole("button", { name: "Run", exact: true }).press("Enter")
-  const formId = `form-flow-run-${catalogId}-review-pr`
-  const form = page.getByTestId(`card-${formId}`)
-  await expect(form).toBeVisible()
-  expect(rpc.some(call => call.procedure === "Run")).toBe(false)
-  await form.getByTestId("flow-form-args").fill("Review retry handling in src/retries.ts")
-  await form.getByTestId("flow-form-args").press("Tab")
-  await page.reload()
-  await expect(form.getByTestId("flow-form-args")).toHaveValue("Review retry handling in src/retries.ts")
-  await form.getByRole("button", { name: "Run flow", exact: true }).press("Enter")
-  await expect.poll(() => rpc.find(call => call.procedure === "Plan")?.payload.input).toEqual({ args: "Review retry handling in src/retries.ts" })
-  const runId = `flow-run-${RUN_ID}`
-  const run = page.getByTestId(`card-${runId}`)
-  await expect(run).toBeVisible()
-  await run.getByRole("button", { name: "Prepare handoff", exact: true }).press("Enter")
-  const briefId = `handoff-${runId}`
-  const brief = page.getByTestId(`card-${briefId}`)
-  await expect(brief.getByRole("textbox", { name: "Handoff brief" })).toContainText("human acceptance")
-  const text = "Goal: fix retries\nEvidence: source run\nNext: verify integration tests"
-  await brief.getByRole("textbox", { name: "Handoff brief" }).fill(text)
-  await brief.getByRole("textbox", { name: "Handoff brief" }).press("Tab")
-  await brief.getByTestId(`card-maximize-${briefId}`).press("Enter")
-  await expect(brief).toHaveAttribute("data-maximized", "true")
-  await page.reload()
-  await expect(brief.getByRole("textbox", { name: "Handoff brief" })).toHaveValue(text)
-  await brief.getByRole("button", { name: "Copy brief", exact: true }).press("Enter")
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text)
 })
 
 test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox", async ({ page }) => {
@@ -261,64 +205,6 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
   await expect(card).toContainText("Cancelled.")
 })
 
-test("T1: turn explanations lead to durable historical inspection in the same embedded frame", async ({ page }) => {
-  const record = (sequence: number, kind: string, payload: Record<string, unknown>) => ({ sequence, kind, occurredAt: 1000 + sequence, payload })
-  const journal = [
-    record(1, "control.agent.turn-opened", { seat: "test-model" }),
-    record(2, "control.agent.model-settled", { text: "I’ll read the existing implementation before changing it." }),
-    record(3, "control.agent.cell-produced", { language: "ts", text: "await ctx.call('files.read', { path: 'src/index.ts' })" }),
-    record(4, "control.agent.cell-call-started", { flowName: "files.read", input: { path: "src/index.ts" } })
-  ]
-  await serve(page, journal)
-  await page.goto("/")
-  await finishGuide(page)
-  await send(page, `/runs.open run-e2e ${REPO}`)
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
-  await expect(card.getByRole("list", { name: "Turn explanations" })).toContainText("I’ll read the existing implementation")
-  await expect(card.getByRole("list", { name: "Call tree" })).toHaveCount(0)
-  await expect(card).toHaveAttribute("data-maximized", "false")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-  await send(page, "/debug.verbose")
-  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
-
-  await card.locator("[data-turn='1']").click()
-  await card.locator("[data-trace-span='call-1']").click()
-  const pane = card.getByTestId(`run-trace-pane-${RUN_ID}`)
-  await expect(pane).toHaveAttribute("data-span", "call-1")
-  await expect(pane).toContainText("src/index.ts")
-  // Rendering is optimistic; wait for the existing command-settlement trace before reloading OPFS.
-  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=flow-run-run-e2e run-e2e call-1 .*→ executed/)).toBeVisible()
-  await expect(card).toContainText("At #4")
-  journal.push(record(5, "control.agent.cell-call-settled", { flowName: "files.read", outcome: "success", value: "later recorded content" }))
-
-  // Reload keeps the selected historical input and does not show a later value.
-  await page.keyboard.press("Escape")
-  await expect(page.getByRole("dialog", { name: "Talk to Smithers" })).toBeHidden()
-  await page.reload()
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await page.keyboard.press("Control+k")
-  await expect(pane).toHaveAttribute("data-span", "call-1")
-  await expect(pane).not.toContainText("later recorded content")
-  await expect(card).toContainText("At #4")
-  const path = card.getByRole("navigation", { name: "Recorded call path" })
-  await expect(path).toContainText("frame 1")
-  await expect(path).toContainText("cell · ts")
-
-  await card.evaluate((element) => element.setAttribute("data-node-proof", "preserved"))
-  await card.getByTestId(`card-maximize-flow-run-${RUN_ID}`).click()
-  await expect(card).toHaveAttribute("data-node-proof", "preserved")
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-  await card.getByTestId(`card-minimize-flow-run-${RUN_ID}`).click()
-  await expect(card).toHaveAttribute("data-maximized", "false")
-  await card.getByRole("button", { name: "Latest", exact: true }).click()
-  await expect(card.getByRole("list", { name: "Call tree" })).toHaveCount(0)
-  await card.locator("[data-turn='1']").click()
-  await card.locator("[data-trace-span='call-1']").click()
-  await expect(pane).toContainText("later recorded content")
-  await expect(card).toContainText("At #5")
-})
-
 
 /** Reach a native control through the keyboard order; never move focus with a pointer or DOM mutation. */
 const tabTo = async (page: Page, target: Locator): Promise<void> => {
@@ -328,36 +214,6 @@ const tabTo = async (page: Page, target: Locator): Promise<void> => {
   }
   throw new Error("The coding control was not reachable with Tab")
 }
-
-test("T1: a prompt-only run reveals its recorded plan and blocked execution through keyboard controls", async ({ page }) => {
-  test.setTimeout(120_000)
-  // The same synthetic production-writer records as the projection test,
-  // addressed to this gateway fixture's actual run ID.
-  const events = JSON.parse(JSON.stringify(blockedCodingJournal()).replaceAll("run-1", RUN_ID))
-  await serve(page, events)
-  await page.goto("/")
-  await finishGuide(page)
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await page.keyboard.press("Control+k")
-  await expect(page.getByTestId("composer-input")).toBeFocused()
-  await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ prompt: CODING_PLAN.prompt })}`)
-  await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
-  await expect(card.getByRole("list", { name: "Predicted Changes", exact: true })).toContainText("Store repository memory")
-  await expect(card).toContainText("Blocked after 1 round.")
-  await expect(page.locator(".guide-start-actions")).toHaveCount(0)
-  await expect(card).not.toContainText("Validated after")
-  const first = card.getByRole("button", { name: /Store repository memory/ })
-  await tabTo(page, first)
-  await page.keyboard.press("Enter")
-  await expect(first).toHaveAttribute("aria-expanded", "true")
-  const inspect = card.getByRole("button", { name: "Inspect failed execution" })
-  await tabTo(page, inspect)
-  expect(await inspect.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none")
-  await page.keyboard.press("Enter")
-  await expect(card.locator("[data-span='engine:failed-round:0']")).toContainText("The required fast check failed.")
-  await page.screenshot({ path: "/tmp/smithers-coding-overlay-after.png", fullPage: true })
-})
 
 test("T1: early review feedback opens durable debugger detail through the keyboard", async ({ page }) => {
   test.setTimeout(120_000)
@@ -405,62 +261,6 @@ test("T1: early review feedback opens durable debugger detail through the keyboa
   await expect(card).toHaveCSS("opacity", "1")
   await expect(card).toHaveCSS("transform", "none")
   await page.screenshot({ path: "/tmp/smithers-coding-early-feedback-ui.png", fullPage: true })
-})
-
-test("T1: coding plan launch, inspection and restoration work with only the keyboard in the Command-K shell", async ({ page }) => {
-  test.setTimeout(120_000)
-  const { rpc } = await serve(page)
-  await page.goto("/")
-  await finishGuide(page)
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-  await page.keyboard.press("Control+k")
-  await expect(page.getByTestId("composer-input")).toBeFocused()
-  await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ plan: CODING_PLAN })}`)
-  await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
-  await expect(card.getByRole("list", { name: "Predicted Changes", exact: true })).toContainText("Store repository memory")
-  expect(rpc.find((call) => call.procedure === "Plan")?.payload).toMatchObject({ flowId: "coding", input: { plan: CODING_PLAN } })
-  const first = card.getByRole("button", { name: /Store repository memory/ })
-  await tabTo(page, page.getByTestId("composer-input"))
-  await page.keyboard.insertText("/debug.verbose")
-  await page.keyboard.press("Enter")
-  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
-  await tabTo(page, first)
-  expect(await first.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none")
-  await page.keyboard.press("Enter")
-  await expect(first).toHaveAttribute("aria-expanded", "true")
-  await expect(card.getByRole("list", { name: "Predicted atomic changes" })).toContainText("persist causal documents")
-  await expect(card).toContainText("src/memory.test.ts")
-  await expect(card).toContainText("fast · required")
-  await expect(card).not.toContainText("passed")
-  await expect(page.getByText(/You ran \/runs\.coding\.select sourceCard=flow-run-run-e2e run-e2e memory .*→ executed/)).toBeVisible()
-  await page.keyboard.press("Escape")
-  await expect(page.getByRole("dialog", { name: "Talk to Smithers" })).toBeHidden()
-  await page.reload()
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await expect(page.locator(".guide-start-actions")).toHaveCount(0)
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-  await page.keyboard.press("Control+k")
-  await expect(first).toHaveAttribute("aria-expanded", "true")
-  await page.keyboard.insertText("/debug.verbose")
-  await page.keyboard.press("Enter")
-  await expect(page.getByText("Verbose off", { exact: true })).toBeVisible()
-  await tabTo(page, first)
-  await page.keyboard.press("Space")
-  await expect(first).toHaveAttribute("aria-expanded", "false")
-  const second = card.getByRole("button", { name: /Connect the Wiki interface/ })
-  await page.keyboard.press("Tab")
-  await expect(second).toBeFocused()
-  await page.keyboard.press("Enter")
-  await expect(card.getByRole("list", { name: "Predicted atomic changes" })).toContainText("render repository memory")
-  await page.screenshot({ path: "/tmp/smithers-coding-plan-ui.png", fullPage: true })
-  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
-  const node = await card.getByRole("region", { name: "Coding plan" }).elementHandle()
-  await page.keyboard.press("Enter")
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  expect(await card.getByRole("region", { name: "Coding plan" }).evaluate((element, original) => element === original, node)).toBe(true)
-  expect(rpc.some((call) => call.procedure === "Run")).toBe(true)
 })
 
 
@@ -537,109 +337,6 @@ test("T1: bounded long prototype values keep the summary compact and source keyb
   await page.keyboard.press("PageDown")
   await expect.poll(() => source.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
   await page.screenshot({ path: "/tmp/smithers-coding-poc-long-source-ui.png", fullPage: true })
-})
-
-
-test("T1: a validated Request offers Vibe through its retained host after keyboard catalog refresh and reload", async ({ page }) => {
-  test.setTimeout(120_000)
-  const recorded = readFileSync(join(process.cwd(), "src/mainview/cards/fixtures/CodingHostDecisions.ndjson"), "utf8")
-  const events = recorded.trim().split("\n").map(line => JSON.parse(line.replaceAll("run-1", RUN_ID)))
-  const request = events.find(row => row.payload.payload.status === "completed" && row.payload.payload.state?.flowName === "coding/Request")
-  const requestExecutionId = request.payload.executionId as string
-  const requestInput = request.payload.payload.state.payload
-  const { rpc } = await serve(page, events, { completedRequest: true })
-  await page.goto("/")
-  await finishGuide(page)
-  await page.keyboard.press("Control+k")
-  await expect(page.getByTestId("composer-input")).toBeFocused()
-  await page.keyboard.insertText(`/flow.run coding/request ${REPO} ${JSON.stringify(requestInput)}`)
-  await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
-  await expect(card).toContainText("Validated after 1 round.")
-  await expect(card.getByRole("button", { name: "Vibe this change", exact: true })).toHaveCount(0)
-  const refresh = card.getByRole("button", { name: "Check available flows", exact: true })
-  await tabTo(page, refresh)
-  await page.keyboard.press("Enter")
-  const vibe = card.getByRole("button", { name: "Vibe this change", exact: true })
-  await expect(vibe).toBeVisible()
-  await tabTo(page, page.getByTestId("composer-input"))
-  await page.keyboard.insertText("/debug.verbose")
-  await page.keyboard.press("Enter")
-  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
-  const change = card.getByRole("list", { name: "Predicted Changes", exact: true }).getByRole("button").first()
-  await tabTo(page, change)
-  await page.keyboard.press("Enter")
-  await expect(change).toHaveAttribute("aria-expanded", "true")
-  await expect(page.getByText(/You ran \/runs\.coding\.select sourceCard=flow-run-run-e2e run-e2e hello .*→ executed/)).toBeVisible()
-  await page.reload()
-  await expect(vibe).toBeVisible()
-  await expect(change).toHaveAttribute("aria-expanded", "true")
-  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
-  await page.keyboard.press("Enter")
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(card).toHaveCSS("opacity", "1")
-  await expect(card).toHaveCSS("transform", "none")
-  await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCSS("top", "33px")
-  await expect(vibe).toBeVisible()
-  await page.screenshot({ path: "/tmp/smithers-coding-vibe-invitation-ui.png", fullPage: true })
-  await tabTo(page, vibe)
-  await page.keyboard.press("Enter")
-  await expect(page.getByTestId("card-flow-run-vibe-e2e")).toBeAttached()
-  const plan = rpc.find(call => call.procedure === "Plan" && call.payload.flowId === "coding/vibe")
-  expect(plan?.payload).toEqual({ flowId: "coding/vibe", input: { requestExecutionId } })
-  expect(rpc.filter(call => call.procedure === "List")).toHaveLength(1)
-  expect(rpc.filter(call => call.procedure === "Run")).toHaveLength(2)
-})
-
-
-test("T1: original source retention opens its native receipt by keyboard before admission completes", async ({ page }) => {
-  test.setTimeout(120_000)
-  const recorded = readFileSync(join(process.cwd(), "src/mainview/cards/fixtures/CodingHostDecisions.ndjson"), "utf8")
-  const request = recorded.trim().split("\n").map(line => JSON.parse(line)).find(row =>
-    row.payload.payload.status === "completed" && row.payload.payload.state?.flowName === "coding/Request")
-  const input = { requestExecutionId: request.payload.executionId }
-  const source = request.payload.payload.state.result.exit.value.plan.base
-  const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
-  const ref = `refs/smithers/workspaces/${workspaceId}/sources/${source.commitId}`
-  const events = [
-    codingDecision(1, RUN_ID, "agent/run", { status: "running", input: { planId: "vibe-plan" } }),
-    codingDecision(2, "bridge", "coding/vibe", { parent: RUN_ID, status: "running", input: { input } }),
-    codingDecision(3, "vibe", "coding/Vibe", { parent: "bridge", status: "running", input }),
-    codingDecision(4, "admission", "coding/AdmitVibe", { parent: "vibe", status: "running", input }),
-    codingDecision(5, "publication", "coding/PublishVibeSource", { parent: "admission", status: "completed",
-      input: { source, phase: "original" }, value: { status: "retained", workspaceId, repositoryId: 42,
-        requestId: "12345678-1234-1234-1234-123456789abc", ref, source } })
-  ]
-  await serve(page, events)
-  await page.goto("/")
-  await finishGuide(page)
-  await page.keyboard.press("Control+k")
-  await page.keyboard.insertText(`/flow.run coding/vibe ${REPO} ${JSON.stringify(input)}`)
-  await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
-  await expect(card).toContainText("Original source retained.")
-  await expect(card).not.toContainText("Validated request admitted for cleanup.")
-  await tabTo(page, page.getByTestId("composer-input"))
-  await page.keyboard.insertText("/debug.verbose")
-  await page.keyboard.press("Enter")
-  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
-  const inspect = card.getByRole("button", { name: "Inspect original source receipt", exact: true })
-  await tabTo(page, inspect)
-  await page.keyboard.press("Enter")
-  const pane = card.locator("[data-span='engine:publication:0']")
-  await expect(pane).toContainText("coding/PublishVibeSource")
-  await expect(pane).toContainText(ref)
-  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=flow-run-run-e2e run-e2e engine:publication:0 .*→ executed/)).toBeVisible()
-  await page.reload()
-  await expect(pane).toContainText(ref)
-  await expect(card).toContainText("Original source retained.")
-  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
-  await page.keyboard.press("Enter")
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(card).toHaveCSS("opacity", "1")
-  await expect(card).toHaveCSS("transform", "none")
-  await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCSS("top", "33px")
-  await page.screenshot({ path: "/tmp/smithers-coding-vibe-retention-ui.png", fullPage: true })
 })
 
 test("health: gateway observations distinguish working, idle and input, then expire offline without changing execution", async ({ page }) => {

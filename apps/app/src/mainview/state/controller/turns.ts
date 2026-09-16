@@ -1,40 +1,39 @@
-import { readDesktopStream } from "../seams/DesktopStream"
-import { prepareApprovalAnswer, isCurrentApprovalAnswer } from "../ApprovalAnswerState"
-import { toolActLine } from "../ToolActLine"
-import { createHttpTurnDriver } from "./httpTurns"
-import { currentRepositoryUpdate } from "../RepositoryContext"
-import { AGENT_RUNTIME_CONTEXT_VERSION, composeAgentInstructions, renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
-import type { AgentChatMessage, AgentTurnFrame, TurnRefusal } from "@smthrs/rpc/NativeAgent"
+import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import { agentFailureText, agentVisibleCatalog } from "../../flows/agentTools"
+import type { AgentChatMessage,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
-import type { CommandOutcome } from "../../flows/Commands"
-import { parseSubmit } from "../../flows/registry"
-import { boundToolResult, boundTurnRequest } from "../AgentTurnPolicy"
-import { conversationTabIdOf, inConversation, CardPatchSchema, CardSchema, MAIN_TAB_ID } from "../AppState"
-import type { Card } from "../AppState"
-import { parseApprovalActionId } from "../ApprovalReference"
-import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
 import { roleMenuEntries } from "../../AgentRoleMenu"
-import { GUIDE_LAST_STEP, GUIDE_LESSONS } from "../../onboarding/lessons"
-import { currentAgentRoles } from "./agents"
-import type { ImpossibleAskClass, InstructionRole, InstructionStage } from "../Instructions"
-import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, bytesOf, smithersInstructions } from "../Instructions"
+import type { CommandOutcome } from "../../flows/Commands"
+import { agentFailureText,agentVisibleCatalog } from "../../flows/agentTools"
+import { parseSubmit } from "../../flows/registry"
+import { boundToolResult,boundTurnRequest } from "../AgentTurnPolicy"
+import type { Card } from "../AppState"
+import { CardPatchSchema,CardSchema,conversationTabIdOf,inConversation,MAIN_TAB_ID } from "../AppState"
+import { isCurrentApprovalAnswer,prepareApprovalAnswer } from "../ApprovalAnswerState"
+import { parseApprovalActionId } from "../ApprovalReference"
+import type { ImpossibleAskClass,InstructionRole,InstructionStage } from "../Instructions"
+import { bytesOf,CHAT_INSTRUCTIONS_CAP_BYTES,INSTRUCTIONS_HEADROOM_BYTES,smithersInstructions } from "../Instructions"
+import { activeCatalogRepositoryId,activeRepositoryId } from "../RepoContext"
+import { currentRepositoryUpdate } from "../RepositoryContext"
 import {
-  impossibleAskOf,
-  renderedAskTurnText,
-  renderedRunTurnText,
-  RUN_LAUNCH_COMMANDS,
-  runLaunchCommandOf,
-  toolResultLaunchedRun
+impossibleAskOf,
+renderedAskTurnText,
+renderedRunTurnText,
+RUN_LAUNCH_COMMANDS,
+runLaunchCommandOf,
+toolResultLaunchedRun
 } from "../RunClaims"
-import { activeCatalogRepositoryId, activeRepositoryId } from "../RepoContext"
-import { WORLD_BODY_BUDGET, worldContextDocuments } from "../WorldContext"
-import { isPracticeContext, practiceContextMessage, PRACTICE_CONTEXT_INSTRUCTION } from "../practice/PracticeContext"
+import { toolActLine } from "../ToolActLine"
+import { WORLD_BODY_BUDGET,worldContextDocuments } from "../WorldContext"
+import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
+import { isPracticeContext,PRACTICE_CONTEXT_INSTRUCTION,practiceContextMessage } from "../practice/PracticeContext"
+import { readDesktopStream } from "../seams/DesktopStream"
+import { currentAgentRoles } from "./agents"
 import { downloadUrlOf } from "./app"
-import type { ActiveTurn, ControllerContext } from "./context"
+import type { ActiveTurn,ControllerContext } from "./context"
+import { createHttpTurnDriver } from "./httpTurns"
 
 /**
  * The client-side tool-loop leg cap, mirroring the chat worker's
@@ -101,7 +100,7 @@ export const createTurnController = (
     store.dispatch({
       type: "message.appended", actor: "system",
       text: "Sign in with GitHub to send this message. Your text is still here. You can keep using the controls and commands without sending a message."
-        + (store.session().guide && !store.session().guide?.finished ? " Close Chat to continue or finish the tutorial." : ""),
+,
       action: { flow: "auth.sign-in", label: "Sign in with GitHub" },
     })
   }
@@ -249,21 +248,6 @@ export const createTurnController = (
       surface: current.surface,
       theme: current.theme,
       selectedWorldDocument: selected?.path ?? null,
-      /*
-       * The guided introduction while it runs: the model sees the same
-       * lesson transcript the user has, with the rule that chatter defers
-       * to the lesson and real work skips it (onboarding.act finish).
-       * Absent once the workspace step is reached — the tutorial is done.
-       */
-      ...(!current.guideVisible || current.guide === undefined || current.guide.finished || current.guide.step >= GUIDE_LAST_STEP
-        ? {}
-        : {
-          onboarding: {
-            step: Math.max(0, current.guide.step - 1),
-            stepCount: GUIDE_LAST_STEP,
-            transcript: GUIDE_LESSONS.slice(1, current.guide.step + 1)
-          }
-        }),
       connectors: snapshot.connectors.map((connector) => ({
         kind: connector.kind,
         name: connector.name,

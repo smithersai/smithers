@@ -16,8 +16,8 @@ test("a late boot recovers after the startup watchdog without losing React's mou
   try {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await requested
-    await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCount(1)
-    const entrance = await page.locator(".session-shell > .guide-wordmark").elementHandle()
+    await expect(page.locator(".session-shell > .session-navigation > .guide-wordmark")).toHaveCount(1)
+    const entrance = await page.locator(".session-shell > .session-navigation > .guide-wordmark").elementHandle()
     await expect(page.locator("body")).not.toContainText("Smithers is starting your session.")
     /*
      * Settle the entrance before measuring its corner: the wordmark's anchor
@@ -38,7 +38,7 @@ test("a late boot recovers after the startup watchdog without losing React's mou
     await expect(page.locator("#root .session-shell")).toHaveCount(1)
     release()
     await page.clock.resume()
-    await expect(page.locator(".guide-shell")).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator(".app-shell")).toBeVisible({ timeout: 20_000 })
     expect(await entrance!.evaluate(node => node.isConnected)).toBe(true)
     await expect(page.locator(".guide-wordmark")).toHaveCount(1)
     expect((await entrance!.boundingBox())!.x).toBeCloseTo(corner!.x, 0)

@@ -1,4 +1,5 @@
 import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
+import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { createAgentSeat } from "./chain/ChainRuntime"
@@ -94,11 +95,11 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        * as the upstream took. It runs beside the other inventory loads, never
        * on the paint path: identity "unknown" is a first-class state the app
        * already renders, and the answer lands in the store whenever it comes.
-       * A fresh anonymous tutorial is likewise public practice content: its
+       * A fresh anonymous entry is public practice content: its
        * real controls need not wait on identity. Retained content/account
-       * ownership and progressed tutorials keep the cloud identity barrier.
+       * ownership keep the cloud identity barrier.
        */
-      yield* Effect.sync(() => void controller.loadSession())
+      yield* Effect.sync(() => void controller.loadSession().then(() => { if (requested === null) selectFirstRunRepository(store) }))
     } else {
       /*
        * The cloud host gates the transcript on the signed-out answer, so the
@@ -107,6 +108,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        */
       yield* promiseEffect("load identity session", () => controller.loadSession())
     }
+    if (requested === null) yield* Effect.sync(() => selectFirstRunRepository(store))
     if (runtime.backend.repositories !== undefined) {
       yield* Effect.sync(() => void controller.loadRepos())
       yield* Effect.sync(() => void controller.loadHarnesses())
@@ -120,7 +122,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     }
     // Both URL rewrites keep the entry's state: on a repository path the
     // frame history stores the frame location there, not in the URL.
-    // A GitHub App setup-URL return (onboarding SCRIPT v4 beat 11) carries its own parameters.
+    // A GitHub App setup-URL return carries its own parameters.
     if (controller.handleInstallReturn(entrySearch)) {
       window.history.replaceState(window.history.state, "", window.location.pathname)
     }

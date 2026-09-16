@@ -1,10 +1,9 @@
-import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import type { StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
-import { scopedControllers } from "./ControllerTestScope"
+import type { StartAgentTurnRequest,StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
-import { initialGuide } from "./AppState"
-import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,settled,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const cloud: AppBootstrap = { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity"], authFlow: "redirect", sandbox: null }
@@ -27,32 +26,6 @@ const setup = async (options: { bootstrap?: AppBootstrap; state?: "signed-in" | 
 }
 
 describe("anonymous tutorial chat", () => {
-  test("skipping sign-in can open Chat, retain a draft, and finish without a failed model request", async () => {
-    const { store, controller, requests, storage } = await setup()
-    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } }).isPersisted.promise
-    await controller.commands.run("onboarding.act", "decline login")
-    expect(store.session().guide?.step).toBe(13)
-    await controller.commands.run("chat.open")
-    expect(store.session().guide?.conversationOpen).toBe(true)
-    await store.dispatch({ type: "composer.changed", actor: "user", draft: question }).isPersisted.promise
-    await controller.commands.run("chat.send", question)
-    expect(requests).toHaveLength(0)
-    expect(store.session().draft).toBe(question)
-    expect(store.session().phase).toBe("idle")
-    const messages = [...store.collections.messages.values()]
-    expect(messages.some(message => message.status === "failed" || message.role === "user")).toBe(false)
-    expect(messages.find(message => message.action?.flow === "auth.sign-in")?.text).toContain("Close Chat to continue or finish")
-    await controller.commands.run("onboarding.act", "finish")
-    expect(store.session().guide?.finished).toBe(true)
-    expect(store.session().activeRepoKey).toBe("smithersai/smithers")
-    expect(store.collections.cards.get("repo-welcome-smithersai/smithers")?.kind).toBe("repo-onboarding")
-    expect(store.session().draft).toBe(question)
-    await controller.dispose()
-    const reopened = await createAppStore({ kind: "localStorage", storage })
-    expect(reopened.session().draft).toBe(question)
-    expect(reopened.session().guide?.finished).toBe(true)
-    await reopened.dispose?.()
-  })
 
   test("commands still execute while signed out", async () => {
     const { controller, store, requests } = await setup()

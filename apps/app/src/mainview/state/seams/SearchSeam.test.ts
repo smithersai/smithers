@@ -5,17 +5,17 @@
  * a human, the signed-out scope hides and defers, and a mode with no index
  * refuses with its reason.
  */
-import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
 import type { Card } from "@smthrs/rpc/Cards"
+import type { StorageApi } from "@tanstack/db"
+import { describe,expect,test } from "bun:test"
+import { runSearchRef } from "../../flows/RunCommand"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
-import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
-import { createAppStore } from "../AppStore"
+import { createAppController } from "../AppController"
 import type { AppStore } from "../AppStore"
-import { ASK_PROPOSED, NO_FOCUSED_FILE, NO_PEOPLE_SEAM, NO_SYMBOL_INDEX, NO_TEXT_INDEX } from "./SearchSeam"
-import { runSearchRef } from "../../flows/RunCommand"
+import { createAppStore } from "../AppStore"
+import { ASK_PROPOSED,NO_FOCUSED_FILE,NO_PEOPLE_SEAM,NO_SYMBOL_INDEX,NO_TEXT_INDEX } from "./SearchSeam"
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -474,26 +474,4 @@ describe("§6 the flow doors", () => {
     const value = JSON.parse(outcome.value ?? "{}") as { items: Array<{ ref: string; count: number }> }
     expect(value.items.map((item) => [item.ref, item.count])).toEqual([["a.ts", 2], ["run-1", 1]])
   })
-})
-
-
-test("practice file search ignores the host tree and opens bundled paths in the practice repository", async () => {
-  const { initialGuide } = await import("../AppState")
-  const { PRACTICE_REPO, practiceFilePaths } = await import("../practice/PracticeRepository")
-  const { store, controller } = await ready()
-  await store.dispatch({ type: "repo-tree.loaded", actor: "system", copyId: "host", path: "", entries: [{ name: "main-host.ts", kind: "file" }], truncated: false }).isPersisted.promise
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 2, completed: ["tutorial.started"] } }).isPersisted.promise
-  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
-  try {
-    const rows = controller.searchPalette("src/").groups.flatMap(group => group.items.map(row => row.item))
-    expect(rows.length).toBeGreaterThan(0)
-    expect(rows.every(row => row.subtitle === PRACTICE_REPO && practiceFilePaths().includes(row.ref))).toBe(true)
-    const file = rows.find(row => row.ref === "src/hello.ts")!
-    const open = file.actions.find(action => action.role === "open")!
-    await controller.commands.run(open.flow, open.args)
-    expect([...store.collections.cards.values()].some(card => card.kind === "file" && card.payload.repo === PRACTICE_REPO && card.payload.path === "src/hello.ts")).toBe(true)
-    expect(controller.searchPalette("main-host").groups.flatMap(group => group.items).length).toBe(0)
-    await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false }).isPersisted.promise
-    expect(controller.searchPalette("main-host").groups.flatMap(group => group.items).some(row => row.item.ref === "main-host.ts")).toBe(true)
-  } finally { controller.dispose() }
 })

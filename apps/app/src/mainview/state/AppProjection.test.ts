@@ -1,15 +1,15 @@
-import { describe, expect, test } from "bun:test"
+import { describe,expect,test } from "bun:test"
+import { appProjectionHash } from "./AppEventStream"
 import {
-  APP_PROJECTION_COLLECTION_NAMES, APP_PROJECTION_SCHEMAS, APP_TRANSITION_TYPES,
-  appProjectionKey, appTransitionErasesPrivateState, emptyAppProjection, projectAppEvent, seedAppProjection,
-  type AppProjectionSnapshot
+APP_PROJECTION_COLLECTION_NAMES,APP_PROJECTION_SCHEMAS,APP_TRANSITION_TYPES,
+appProjectionKey,appTransitionErasesPrivateState,emptyAppProjection,projectAppEvent,seedAppProjection,
+type AppProjectionSnapshot
 } from "./AppProjection"
-import { cardFrameId, DEFAULT_BRANCH_ID, parseRepoSelection, repoKeyOf } from "./AppState"
-import type { AppTransition, Card, CloudWorkspaceInput } from "./AppState"
+import type { AppTransition,Card,CloudWorkspaceInput } from "./AppState"
+import { cardFrameId,DEFAULT_BRANCH_ID,parseRepoSelection,repoKeyOf } from "./AppState"
+import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { RepositoryNotification } from "./RepositoryNotifications"
 import { workspaceCardFacts } from "./WorkspaceViews"
-import { appProjectionHash } from "./AppEventStream"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
 
 const boot = () => seedAppProjection(emptyAppProjection(), { createdAt: 100, theme: "dark", seedWiki: true })
 const apply = (state: AppProjectionSnapshot, transition: AppTransition, createdAt = 200): AppProjectionSnapshot =>
@@ -52,20 +52,6 @@ describe("pure app event projection", () => {
     expect(appProjectionKey("cards", fileCard)).toBe(fileCard.id)
     expect(() => appProjectionKey("cards", { repo: "org/repo" })).toThrow("projection key")
     expect(APP_TRANSITION_TYPES["card.navigated"]).toBe(true)
-  })
-
-  test("tutorial ownership follows visible guide turns and boot clears only visibility", () => {
-    const initial = boot()
-    const hidden = apply(initial, { type: "message.submitted", actor: "user", turnId: "hidden", text: "Plain repository chat" })
-    expect(hidden.sessions[0]!.guide?.transcript?.["message-hidden-user"]).toBeUndefined()
-    let shown = apply(initial, { type: "guide.visibility.changed", actor: "system", visible: true })
-    shown = apply(shown, { type: "message.submitted", actor: "user", turnId: "tutorial", text: "Tutorial question" })
-    expect(shown.sessions[0]!.guide?.transcript?.["message-tutorial-user"]?.owned).toBe(true)
-    shown = apply(shown, { type: "card.upsert", actor: "system", turnId: "tutorial", card: fileCard })
-    expect(shown.sessions[0]!.guide?.transcript?.[fileCard.id]).toMatchObject({ owned: true, source: "chat" })
-    const reopened = seedAppProjection(shown, { createdAt: 300, theme: "dark", seedWiki: true })
-    expect(reopened.sessions[0]!.guideVisible).toBe(false)
-    expect(reopened.sessions[0]!.guide?.transcript?.[fileCard.id]?.owned).toBe(true)
   })
 
   test("late prepared runtime views update only their historical destination and pin its projection revision", () => {
@@ -319,26 +305,6 @@ describe("pure app event projection", () => {
     expect(seeded.worldDocuments).toBe(state.worldDocuments)
     expect(seeded.sessions[0]!.theme).toBe("dark")
     expect(seedAppProjection(state, { createdAt: 500, theme: "light", seedWiki: true })).toEqual(seeded)
-  })
-
-  test("boot migrates legacy session fields without choosing a new theme or discarding user notes", () => {
-    const initial = boot()
-    const session = { ...initial.sessions[0]! } as Record<string, unknown>
-    delete session.inputMode
-    delete session.wikiPane
-    session.guide = { ...initial.sessions[0]!.guide!, sequence: "repository-v3", step: 3, completed: ["issues.opened"] }
-    const legacy = freeze({ ...initial, sessions: [session], worldDocuments: [...initial.worldDocuments, {
-      ...initial.worldDocuments[0]!, id: "personal-note", path: "Personal.md", title: "Personal", body: "Keep this note",
-      sources: ["user:note"], updatedBy: "user" as const
-    }] } as unknown as AppProjectionSnapshot)
-    const context = { createdAt: 700, theme: "light" as const, seedWiki: false }
-    const migrated = seedAppProjection(legacy, context)
-    expect(migrated).toEqual(seedAppProjection(legacy, context))
-    expect(migrated.sessions[0]).toMatchObject({ theme: "dark", inputMode: "normal", wikiPane: "document",
-      guide: { sequence: "practice-v4", completed: ["issues.opened", "tutorial.started"] } })
-    expect(migrated.worldDocuments.map(row => row.id)).toEqual(["personal-note"])
-    expect(legacy.worldDocuments).toHaveLength(2)
-    expect(legacy.sessions[0]!.inputMode).toBeUndefined()
   })
 
   test("reset clears the explicit projection roster and can be booted again", () => {

@@ -1,19 +1,19 @@
 import { Authorize } from "@smthrs/chain"
-import { Effect } from "effect"
-import { createChainPolicy } from "../../chain/Policy"
-import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { HomeDocument } from "@smthrs/rpc/HomePane"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
+import type { StorageApi } from "@tanstack/db"
+import { describe,expect,test } from "bun:test"
+import { Effect } from "effect"
+import { createChainPolicy } from "../../chain/Policy"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
 import type { Card } from "../AppState"
-import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+import { createAppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
-import { parseActivity, PROTOTYPE_FLOW_ID, PROTOTYPE_RUN_KIND } from "./onboarding"
+import { parseActivity,PROTOTYPE_FLOW_ID,PROTOTYPE_RUN_KIND } from "./onboarding"
 
 /*
  * The repository welcome's decisions, through the one run path: the gate
@@ -656,49 +656,6 @@ describe("feature.prototype", () => {
     expect(relay.procedures.map((call) => call.procedure)).toEqual(["List", "Plan", "Approval.Submit", "Run"])
     expect(runCards(store)).toEqual([])
   })
-})
-
-
-for (const state of ["signed-out", "signed-in", "declined"] as const) test(`Finish opens the destination Home and Welcome for ${state}`, async () => {
-  const home = { blocks: [{ type: "text", text: "Repository home" }] }
-  const { store, controller } = await fixture({
-    "/api/repos/acme/api/contents/.smithers/home.json": () => json(200, { content: JSON.stringify(home) }),
-    [`/api/repos/${REPO}/contents/.smithers/home.json`]: () => json(200, { content: JSON.stringify(home) }),
-  })
-  identity(store, state === "signed-out" ? "signed-out" : "signed-in")
-  await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "acme/api", org: "acme", name: "api", ownerKind: "user", head: null } }).isPersisted.promise
-  await store.dispatch({ type: "repo.selected", actor: "user", id: "acme/api" }).isPersisted.promise
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, step: 14,
-    ...(state === "declined" ? { declined: ["install"] } : {}) } }).isPersisted.promise
-  const outcome = await controller.commands.run("onboarding.act", "finish")
-  expect(outcome.status).not.toBe("failed")
-  const expected = "acme/api"
-  expect(store.session().activeRepoKey).toBe(expected)
-  expect(store.collections.cards.get(`repo-welcome-${expected}`)?.kind).toBe("repo-onboarding")
-  expect(store.collections.cards.get(`repo-home-${expected}`)?.kind).toBe("repo-home")
-  expect(store.session().guide?.finished).toBe(true)
-})
-
-for (const state of ["signed-out", "signed-in"] as const) for (const practice of [false, true]) test(`Finish opens nothing with ${practice ? "only practice" : "no selection"} while ${state}`, async () => {
-  const { store, controller, requests } = await fixture({}, false)
-  identity(store, state)
-  if (practice) {
-    await store.dispatch({ type: "repository.upserted", actor: "system", repository: {
-      id: "practice:smithersai/hello-server", org: "practice:smithersai", name: "hello-server", ownerKind: "user", head: null,
-    } }).isPersisted.promise
-    await store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" }).isPersisted.promise
-  }
-  await settled()
-  const before = store.session().activeRepoKey
-  expect(before ?? null).toBe(practice ? "practice:smithersai/hello-server" : null)
-  requests.length = 0
-  await controller.guideAct("finish")
-  expect(store.session().guide?.finished).toBe(true)
-  expect(store.session().activeRepoKey).toBe(before)
-  expect(onboardingCards(store)).toEqual([])
-  expect(homeCards(store)).toEqual([])
-  expect(requests).toEqual([])
-  await controller.dispose()
 })
 
 test("welcome sentence helpers are deleted", async () => {

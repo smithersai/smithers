@@ -60,9 +60,9 @@ try {
         return true
       }
       const probe = () => {
-        const card = document.querySelector('.guide-message .guide-dialogue')
-        const actions = document.querySelector('.guide-navigation')
-        if (!stats.marks.cardVisible && visible(card) && [...card.querySelectorAll('.guide-word')].every(visible)) stats.marks.cardVisible = performance.now()
+        const card = document.querySelector('.first-run-actions')
+        const actions = document.querySelector('.first-run-actions')
+        if (!stats.marks.cardVisible && visible(card)) stats.marks.cardVisible = performance.now()
         if (!stats.marks.navigationVisible && visible(actions)) stats.marks.navigationVisible = performance.now()
         if (stats.marks.cardVisible && stats.marks.navigationVisible) {
           const button = actions.querySelector('button:not(:disabled)')
@@ -72,18 +72,18 @@ try {
       }
       requestAnimationFrame(probe)
       new MutationObserver(() => {
-        if (!stats.marks.guide && document.querySelector('.guide-shell')) {
-          stats.marks.guide = performance.now()
+        if (!stats.marks.app && document.querySelector('.app-shell')) {
+          stats.marks.app = performance.now()
 
         }
       }).observe(document, { childList: true, subtree: true })
     })
     try {
     await page.goto(baseURL, { waitUntil: 'domcontentloaded' })
-    await page.locator('.guide-shell').waitFor({ timeout: 60_000 })
+    await page.locator('.app-shell').waitFor({ timeout: 60_000 })
     await page.waitForFunction(() => window.__firstLoad.marks.keyboardReady, undefined, { timeout: 60_000 })
     await page.keyboard.press('Enter')
-    await page.waitForFunction(() => document.querySelector('.guide-shell')?.dataset.step === '1')
+    await page.waitForFunction(() => document.querySelector('.first-run-actions') === null)
     await page.evaluate(() => { window.__firstLoad.marks.keyboardActivationVerified = performance.now() })
     } catch (error) { errors.push(error.message) }
     await page.waitForTimeout(150)

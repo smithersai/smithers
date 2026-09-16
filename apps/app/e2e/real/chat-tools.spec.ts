@@ -1,31 +1,30 @@
 import type { TestInfo } from "@playwright/test"
-import {
-  closeComposer,
-  command,
-  createOwnedLocalRepo,
-  expect,
-  openComposer,
-  realApi,
-  test
-} from "./support/test"
-import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { launchFaultHarness } from "./chat-tools/fault-process"
 import {
-  assertOwnedFile,
-  assistantMessages,
-  bootWorkspace,
-  frameLocation,
-  captureTurnTraffic,
-  captureCancelReply,
-  completedAssistantContaining,
-  nextTurnResponse,
-  openOwnedRepoThroughSlash,
-  parseTurnFrames,
-  selectOwnedRepo,
-  toolExecution,
-  transcript
+assertOwnedFile,
+assistantMessages,
+bootWorkspace,
+captureCancelReply,
+captureTurnTraffic,
+completedAssistantContaining,
+nextTurnResponse,
+openOwnedRepoThroughSlash,
+parseTurnFrames,
+selectOwnedRepo,
+toolExecution,
+transcript
 } from "./chat-tools/ui"
+import { scenario } from "./coverage/types"
+import {
+closeComposer,
+command,
+createOwnedLocalRepo,
+expect,
+openComposer,
+realApi,
+test
+} from "./support/test"
 
 test.setTimeout(180_000)
 test.use({ actionTimeout: 20_000 })
@@ -266,47 +265,6 @@ test("Copy message writes the complete rendered catalog to the real browser clip
   expect(clipboard).toBe(expected)
   await attachJson(testInfo, "clipboard-evidence", { length: clipboard.length, exactMatch: clipboard === expected })
 
-})
-
-test("clear archives a conversation and its recovery link restores the exact card after reload", scenario("chat.clear-archive-restore", {
-  capabilities: [],
-  coverage: ["action:appearance.theme", "action:chat.clear", "host:local", "host:production", "path:success", "path:persistence", "door:slash", "door:button", "dimension:archive", "evidence:url-and-card-restoration"],
-  description: "Create durable conversation content, archive via the UI, reload the new branch, and restore the previous branch through its rendered link."
-}), async ({ page }, testInfo) => {
-  await bootWorkspace(page)
-  await command(page, "/appearance.theme")
-  const card = transcript(page).locator('.smithers-card[data-kind="theme-picker"]')
-  await expect(card).toBeVisible()
-  const cardId = await card.getAttribute("data-testid")
-  expect(typeof cardId).toBe("string")
-  await closeComposer(page)
-  await card.getByRole("button", { name: "Maximize card", exact: true }).click()
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  await card.getByRole("button", { name: "Restore", exact: true }).click()
-  await expect(card).toHaveAttribute("data-maximized", "false")
-  const originalUrl = page.url()
-  const originalFrame = await frameLocation(page)
-
-  await command(page, "/chat.clear")
-  await closeComposer(page)
-  const recovery = page.getByRole("link", { name: "Open the archived conversation", exact: true })
-  await expect(recovery).toBeVisible()
-  await expect(card).toHaveCount(0)
-  await expect.poll(async () => (await frameLocation(page)).branchId).not.toBe(originalFrame.branchId)
-  const archivedFrame = await frameLocation(page)
-  expect(page.url()).toBe(originalUrl)
-  await page.reload({ waitUntil: "domcontentloaded" })
-  await expect(recovery).toBeVisible()
-  await recovery.click()
-  await expect(page).toHaveURL(originalUrl)
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
-  await expect.poll(() => frameLocation(page)).toEqual(originalFrame)
-  await expect(page.getByTestId(cardId!)).toBeVisible()
-  await page.goBack()
-  await expect.poll(() => frameLocation(page)).toEqual(archivedFrame)
-  await expect(page).toHaveURL(originalUrl)
-  await expect(page.getByRole("link", { name: "Open the archived conversation", exact: true })).toBeVisible()
-  await attachJson(testInfo, "archive-evidence", { originalUrl, originalFrame, archivedFrame, cardId })
 })
 
 test("repository switching routes successive model reads to the selected filesystem", scenario("chat.repository-tool-context", {

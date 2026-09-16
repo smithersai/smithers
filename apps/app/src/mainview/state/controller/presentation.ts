@@ -1,11 +1,11 @@
 import { TOOLS_BROWSER_FETCH_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { catalogRepository, PUBLIC_REPOS_PATH } from "../../RepoLink"
+import { catalogRepository,PUBLIC_REPOS_PATH } from "../../RepoLink"
 import { foldLineages } from "../../chain/DebugFolds"
-import { DEFAULT_PALETTE, isPalette, PALETTES, WIKI_DISPLAY_NAME } from "../AppState"
-import type { Card, Palette } from "../AppState"
+import type { Card,Palette } from "../AppState"
+import { DEFAULT_PALETTE,isPalette,PALETTES,WIKI_DISPLAY_NAME } from "../AppState"
 import { THEME_PICKER_CARD_ID } from "../AppStore"
-import { parseDiagnosticQuery, readDiagnostics } from "../Diagnostics"
-import type { ControllerContext, NetEntry } from "./context"
+import { parseDiagnosticQuery,readDiagnostics } from "../Diagnostics"
+import type { ControllerContext,NetEntry } from "./context"
 
 export interface PresentationController {
   readonly showChat: () => void
@@ -74,11 +74,7 @@ export const createPresentationController = (
   }
 
   const showConnectors = (): void => {
-    // During onboarding the workspace panes are inert behind the guide.
-    // Project the same connector card into its transcript so the command's
-    // repository actions remain reachable from every door.
-    const guide = ctx.store.session().guide
-    if (ctx.commandActor === "smithers" || (guide !== undefined && !guide.finished)) {
+    if (ctx.commandActor === "smithers") {
       const identity = ctx.store.collections.identitySessions.get("identity")
       let highest = -1
       for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
@@ -99,9 +95,6 @@ export const createPresentationController = (
         }
       }
       ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-      if (guide !== undefined && !guide.finished && ctx.commandActor === "user" && guide.conversationOpen) {
-        ctx.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, conversationOpen: false } })
-      }
       return
     }
     ctx.store.dispatch({

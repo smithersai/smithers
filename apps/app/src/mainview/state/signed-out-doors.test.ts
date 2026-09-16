@@ -28,7 +28,7 @@ for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secret
     const { controller, store, requests, redirects } = await setup()
     controller.runCommand(name, args)
     await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(1)
     expect(store.session().pendingCommand).toMatchObject({ name, args: args ?? null, requirement: "signed-in" })
     expect(requests).toEqual([])
     expect(redirects).toEqual([])
@@ -36,7 +36,7 @@ for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secret
     expect(toasts).toEqual([])
     controller.runCommand(name, args)
     await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(2)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(2)
     const events = [...store.collections.transitions.values()]
     expect(events.filter(record => record.type === "command.deferred")).toHaveLength(2)
     expect(events.filter(record => record.type.startsWith("toast."))).toEqual([])
@@ -51,7 +51,7 @@ for (const source of ["issues", "github", "prs"] as const) {
     })
     controller.runCommand(source === "prs" ? "prs.list" : "issues.list")
     await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(1)
     expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list" || card.kind === "pr-list")).toEqual([])
     expect([...store.collections.toasts.values()]).toEqual([])
     expect(redirects).toEqual([])
@@ -62,11 +62,11 @@ for (const source of ["issues", "github", "prs"] as const) {
 test("gates name the requested flow summary, with a plain fallback", async () => {
   const { controller, store } = await setup()
   await controller.commands.run("secrets.list")
-  let prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")
+  let prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)
   const summary = controller.commands.find("secrets.list")!.metadata.summary
   expect(prompts.at(-1)?.text).toBe(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
   await controller.commands.runForAgent("flow.run", "unpublished smithersai/smithers")
-  prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")
+  prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)
   expect(prompts.at(-1)?.text).toBe("Sign in with GitHub to run unpublished on smithersai/smithers.")
 })
 

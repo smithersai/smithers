@@ -1,18 +1,16 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
-import { flushSync } from "react-dom"
-import { createRoot } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
+import { afterAll,afterEach,describe,expect,test } from "bun:test"
+import { flushSync } from "react-dom"
+import { createRoot } from "react-dom/client"
 import App from "../App"
-import { openRequestedRepo, requestedRepo } from "../RepoLink"
 import { ControllerTestProvider } from "../ControllerContext"
-import { scopedControllers } from "./ControllerTestScope"
+import { openRequestedRepo,requestedRepo } from "../RepoLink"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { initialGuide } from "./AppState"
-import { GuideShell } from "../onboarding/GuideShell"
-import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories,waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -40,14 +38,14 @@ afterEach(() => {
   window.history.replaceState(null, "", "/")
 })
 
-const mount = (controller: AppControllerType, guide = false): { host: HTMLElement; markup: () => string } => {
+const mount = (controller: AppControllerType, _guide = false): { host: HTMLElement; markup: () => string } => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   flushSync(() =>
     root.render(
       <ControllerTestProvider controller={controller}>
-        {guide ? <GuideShell><div /></GuideShell> : <App />}
+        <App />
       </ControllerTestProvider>
     )
   )
@@ -325,10 +323,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
     expect(markup()).not.toContain(WEB_OPENING)
     expect(markup()).not.toContain("You are exploring")
     expect(host.querySelector(".smithers-chat-message .message-cta")).toBeNull()
-    const welcome = host.querySelector<HTMLElement>('[data-testid="onboarding-welcome"]')
-    expect(welcome?.textContent).toBe(
-      "Welcome to Smithers. smithersai/smithers is a durable framework that lets agents plan, run, and review changes to a code repository through flows."
-    )
+    expect(host.querySelector('.repo-onboarding[data-stage="welcome"]')).not.toBeNull()
     expect([...host.querySelectorAll<HTMLElement>('.repo-onboarding [data-flow]')].map((button) => button.dataset.flow))
       .toEqual(["repo.maintain", "repo.contribute", "repo.explore"])
     // Repository reads are open to the visitor; a write still waits on sign-in.
@@ -507,41 +502,6 @@ test("the expanded empty wiki carries the current repository through Create Wiki
   expect(store.session().pendingCommand).toMatchObject({ name: "wiki.create", args: "smithersai/smithers" })
 })
 
-for (const guide of [false, true]) {
-  test(`${guide ? "guide and login lesson" : "transcript"}: the persisted sign-in step visibly answers and loses its button`, async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    let signedIn = false
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
-      fetchImpl: async input => String(input).endsWith("/auth/session")
-        ? Response.json(signedIn ? { state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false }
-          : { state: "signed-out", login: null, allowlisted: false, admin: false })
-        : Response.json({}, { status: 404 })
-    })
-    await controller.loadSession()
-    if (guide) await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } }).isPersisted.promise
-    controller.deferCommand("secrets.list", null, "signed-in")
-    await store.dispatch({ type: "command.deferral.cleared", actor: "system" }).isPersisted.promise
-    const { host } = mount(controller, guide)
-    await controller.commands.runForAgent("auth.prompt")
-    await settled()
-    const prompt = [...store.collections.messages.values()].at(-1)!
-    expect(host.querySelector('[data-flow="auth.sign-in"]')).not.toBeNull()
-    signedIn = true
-    await controller.loadSession()
-    await settled()
-    flushSync(() => {})
-    expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
-    expect(document.querySelectorAll('.toast-action[data-flow="auth.sign-in"]').length).toBe(0)
-    expect(document.querySelector('.toast-stack')?.textContent ?? "").not.toContain("Signed in with GitHub as @codeplanesmithers.")
-    expect(host.textContent).toContain("Signed in with GitHub as @codeplanesmithers.")
-    expect(host.textContent).toContain(prompt.text)
-    expect(store.collections.messages.get(prompt.id)?.text).toBe(prompt.text)
-    if (guide) {
-      expect(host.querySelectorAll('.guide-actions [data-flow="auth.sign-in"]').length).toBe(0)
-      expect(store.session().guide?.completed).toContain("identity.signed-in")
-    }
-  })
-}
 
 test("the derived web opening sign-in door closes when its identity requirement is met", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

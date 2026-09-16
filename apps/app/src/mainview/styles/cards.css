@@ -519,21 +519,6 @@
 	position: relative;
 	z-index: 75;
 }
-/* The guide's layout containment used to trap fixed cards in the lesson
- * area. Lift it only for the presentation transition; the same card and
- * transcript stay mounted. The guide composer already sits above cards. */
-.guide-content:has([data-tutorial-cards] .smithers-card[data-maximized="true"]) {
-	contain: none;
-	isolation: auto;
-	overflow: visible;
-}
-.guide-shell [data-tutorial-cards] .smithers-card[data-maximized="true"] {
-	inset: 1.5rem;
-	max-height: none;
-}
-.guide-shell [data-tutorial-cards] .card-maximize-backdrop {
-	left: 0;
-}
 @media (prefers-reduced-motion: no-preference) {
 	.smithers-card[data-maximized="true"] {
 		animation: card-maximize-in var(--dur) var(--ease-current);
@@ -972,21 +957,6 @@
 }
 /* The workspace outro must not paint or catch wheel events over an explicit
  * maximize. Keep the footer's Chat door, and fill its remaining content area. */
-.guide-content:has(.guide-app .smithers-card[data-maximized="true"]) > .guide-main {
-	display: none;
-}
-.guide-content:has(.guide-app .smithers-card[data-maximized="true"]) > .guide-app {
-	z-index: 5;
-	overflow: visible;
-}
-.guide-shell .guide-app .smithers-card[data-maximized="true"] {
-	inset: 0;
-	max-height: none;
-	border-radius: 0;
-}
-.guide-shell .guide-app .card-maximize-backdrop {
-	left: 0;
-}
 /* Lane L3 — the repository, targets, html panel and target-run cards. */
 .repo-card,
 .targets-card,
@@ -2224,22 +2194,19 @@
 	gap: 0.5rem;
 }
 
-.secrets-table,
-.repo-home-table {
+.secrets-table {
 	width: 100%;
 	border-collapse: collapse;
 	font-size: var(--fs-small);
 }
-.secrets-table th,
-.repo-home-table th {
+.secrets-table th {
 	text-align: left;
 	font-size: var(--fs-small);
 	color: var(--muted-foreground);
 	font-weight: 600;
 	padding: 0.25rem 0.5rem 0.25rem 0;
 }
-.secrets-table td,
-.repo-home-table td {
+.secrets-table td {
 	padding: 0.25rem 0.5rem 0.25rem 0;
 	border-top: 1px solid var(--border);
 	vertical-align: top;

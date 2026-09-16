@@ -1,44 +1,7 @@
-import { expect, test } from "@playwright/test"
+import { expect,test } from "@playwright/test"
 
 test.use({ contextOptions: { reducedMotion: "reduce" } })
 
-test("the homepage's new-tab destination opens the tutorial directly", async ({ page }) => {
-  await page.goto("/smithersai/smithers/?tutorial")
-  await expect(page.getByRole("button", { name: "Show issues", exact: true })).toBeVisible()
-  await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Start tutorial", exact: true })).toHaveCount(0)
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-  await page.keyboard.press("i")
-  await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole("button", { name: "Read issue #3", exact: true })).toBeVisible()
-  expect(new URL(page.url()).searchParams.has("tutorial")).toBe(true)
-})
-
-for (const width of [1280, 390]) {
-  test(`entry opens practice without a second start at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 844 })
-    await page.clock.install()
-    await page.goto("/")
-    await expect(page.getByRole("button", { name: "Start tutorial" })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Show issues" })).toBeVisible()
-    await expect(page.getByRole("note", { name: "Help" })).toBeVisible()
-    await page.clock.fastForward(10_000)
-    await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-    await expect(page.locator(".guide-back:not(.guide-skip), [data-testid=card-practice-repo]")).toHaveCount(0)
-    await page.clock.runFor(1000)
-    await expect(page.locator(".guide-message, .guide-dialogue, .guide-speaker")).toHaveCount(0)
-    const goal = await page.getByRole("region", { name: "Goal", exact: true }).boundingBox()
-    const action = await page.getByRole("button", { name: "Show issues" }).boundingBox()
-    expect(goal).not.toBeNull()
-    expect(action).not.toBeNull()
-    expect(action!.y - (goal!.y + goal!.height)).toBeGreaterThanOrEqual(0)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Mode: Normal", exact: true })).toBeVisible()
-    await page.screenshot({ path: `/tmp/smithers-actions-${width}.png` })
-  })
-}
 
 test("dictation opens chat, appends recognized speech, and Escape releases the microphone", async ({ page }) => {
   await page.addInitScript(() => {
@@ -132,22 +95,3 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(page.getByRole('button', { name: "Jump to latest", includeHidden: true })).toHaveAttribute("data-active", "false")
   })
 }
-
-for (const chord of ['Control+k', 'Meta+k']) test(`${chord} opens only the dock, resizes the workspace, and closes to Chat`, async ({ page }) => {
-  await page.goto('/?tutorial')
-  const content = page.locator('.guide-content')
-  const before = (await content.boundingBox())!
-  await page.keyboard.press(chord)
-  const input = page.getByTestId('composer-input')
-  await expect(input).toBeFocused()
-  const dock = page.getByRole('dialog', { name: 'Chat', exact: true })
-  await expect(dock).toHaveAttribute('aria-modal', 'false')
-  const after = (await content.boundingBox())!
-  const dockBox = (await dock.boundingBox())!
-  expect(after.height).toBeLessThan(before.height)
-  expect(after.y + after.height).toBeLessThanOrEqual(dockBox.y)
-  await page.keyboard.press(chord)
-  await expect(input).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeFocused()
-  expect((await content.boundingBox())!.height).toBe(before.height)
-})

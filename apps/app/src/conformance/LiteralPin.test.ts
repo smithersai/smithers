@@ -97,11 +97,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "test repository basename containing a dot; the fixture preserves its full identity"
   },
   {
-    literal: "data-control-focus-host",
-    file: "e2e/playwright/control-focus.spec.ts",
-    reason: "negative assertion: the former stacking-host marker must remain absent after the single body dim layer change"
-  },
-  {
     literal: "section.smithers-card",
     file: "e2e/playwright/control-focus.spec.ts",
     reason: "tag and class composed by the geometry probe from the real card element, not a flow id"
@@ -110,16 +105,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "fixture-live-",
     file: "e2e/playwright/tutorial-stubs.ts",
     reason: "test-owned live tutorial run id echoed by the fixture, not a card id prefix"
-  },
-  {
-    literal: "do",
-    file: "e2e/playwright/tutorial-tip.spec.ts",
-    reason: "GuideLesson kind used to read the current lesson help, not a card kind"
-  },
-  {
-    literal: "data-practice",
-    file: "e2e/playwright/tutorial2-walk.spec.ts",
-    reason: "negative assertion: practice badges were deliberately removed from both issue and bridge cards"
   },
   {
     literal: "storage-test-",
@@ -160,16 +145,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "launch-checklist-d4-",
     file: "src/launch-checklist/Rows.ts",
     reason: "a run id the checklist coins for its own zero-balance turn probe; the server echoes it back and no card is ever built from it"
-  },
-  {
-    literal: "do",
-    file: "e2e/playwright/onboarding.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the walk switches on; it is a lesson kind and never a card kind"
-  },
-  {
-    literal: "do",
-    file: "e2e/playwright/tutorial2-walk.spec.ts",
-    reason: "the GuideLesson kind from src/mainview/onboarding/lessons.ts, which the script v4 walk switches on; a lesson kind, never a card kind"
   },
   {
     literal: "plan-",

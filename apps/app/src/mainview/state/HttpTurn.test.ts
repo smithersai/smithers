@@ -1,20 +1,20 @@
-import { scopedControllers } from "./ControllerTestScope"
-import { afterEach, expect, test } from "bun:test"
 import { digest } from "@smthrs/core/Digest"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnBatch, AgentTurnCursor, AgentTurnJournalDelivery, AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createWebAgent } from "../native/WebAgent"
-import { createAgentSeat } from "../chain/ChainRuntime"
 import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { createAppStore, type AppStore } from "./AppStore"
+import type { AgentTurnBatch,AgentTurnCursor,AgentTurnJournalDelivery,AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
+import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { afterEach,expect,test } from "bun:test"
+import { createAgentSeat } from "../chain/ChainRuntime"
+import { createWebAgent } from "../native/WebAgent"
+import type { AgentPort } from "../runtime/AgentPort"
 import type { AppController } from "./AppController"
-import { initialGuide, type AppTransition } from "./AppState"
-import { emptyAppProjection, projectAppEvent, seedAppProjection } from "./AppProjection"
 import { appProjectionHash } from "./AppEventStream"
+import { emptyAppProjection,projectAppEvent,seedAppProjection } from "./AppProjection"
+import { type AppTransition } from "./AppState"
+import { createAppStore,type AppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { httpToolItems } from "./HttpTurn"
-import { memoryStorage, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -100,7 +100,7 @@ afterEach(async () => { for (const controller of controllers.splice(0)) await Pr
 const until = async (predicate: () => boolean) => { for (let i = 0; i < 100 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 5)); expect(predicate()).toBe(true) }
 const open = async (storage = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false }); stores.push(store)
-  if (!store.session().guide?.finished) await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
+
   return store
 }
 const journalAgent = () => {

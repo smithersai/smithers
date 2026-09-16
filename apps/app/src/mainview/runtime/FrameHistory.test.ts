@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
-import { createBrowserFrameHistory, framePath, parseFramePath } from "./FrameHistory"
+import { describe,expect,test } from "bun:test"
 import type { FrameLocation } from "./FrameHistory"
+import { createBrowserFrameHistory,framePath,parseFramePath } from "./FrameHistory"
 
 describe("frame URLs", () => {
   test("round-trip opaque workspace, branch, and frame ids", () => {
@@ -60,15 +60,15 @@ const root: FrameLocation = { workspaceId: "workspace-default", branchId: "branc
 const card: FrameLocation = { workspaceId: "workspace-default", branchId: "branch-main", frameId: "frame-card:branch-main:card-1" }
 
 describe("browser frame history", () => {
-  test("tutorial entry survives frame navigation and a fresh history adapter", () => {
+  test("legacy tutorial query does not change repository frame navigation", () => {
     const { host, entries } = browser("/smithersai/smithers/?tutorial")
     const history = createBrowserFrameHistory(host)
     history.replace(root)
     history.push(card)
-    expect(entries()).toEqual(["/smithersai/smithers/?tutorial", "/smithersai/smithers/?tutorial"])
+    expect(entries()).toEqual(["/smithersai/smithers/", "/smithersai/smithers/"])
     const restored = createBrowserFrameHistory(host)
     restored.replace(card)
-    expect(host.location.search).toBe("?tutorial")
+    expect(host.location.search).toBe("")
     restored.back()
     expect(restored.current()).toEqual(root)
   })

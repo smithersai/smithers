@@ -1,58 +1,55 @@
-import { BillingPlanSchema, SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
-import type { PendingRecoveryScope } from "./PendingRecovery"
-import type { CommandIntent } from "./CommandIntent"
-import type { RuntimeScope, RuntimeRunObservation, RuntimeApprovalSubmission } from "./RuntimeProjection"
 import type { ApprovalRow } from "@smthrs/gateway/GatewayProjection"
-import { INPUT_MODES, type InputMode } from "./InputMode"
-import {
-  CardPatchSchema,
-  CardPlanItemSchema,
-  CardSchema,
-  EnvironmentImageRowSchema,
-  SandboxEgressRowSchema,
-  WorkspaceDesktopSchema,
-  WorkspaceEnvironmentSchema,
-  WorkspaceFileEntrySchema,
-  WorkspaceHeadSchema,
-  WorkspaceServiceSchema
-} from "@smthrs/rpc/Cards"
-import { AgentRoleIdSchema, AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
-import { StatusRollupSchema, type StatusRollup } from "@smthrs/rpc/Health"
-import { HARNESS_IDS, HarnessSchema, RepoFileEntrySchema, RepoSchema } from "@smthrs/rpc/LocalApp"
-import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
+import { AgentRoleIdSchema,AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
+import { BillingPlanSchema,SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
+import type { Card,CardPatch } from "@smthrs/rpc/Cards"
+import {
+CardPatchSchema,
+CardPlanItemSchema,
+CardSchema,
+EnvironmentImageRowSchema,
+SandboxEgressRowSchema,
+WorkspaceDesktopSchema,
+WorkspaceEnvironmentSchema,
+WorkspaceFileEntrySchema,
+WorkspaceHeadSchema,
+WorkspaceServiceSchema
+} from "@smthrs/rpc/Cards"
+import { StatusRollupSchema,type StatusRollup } from "@smthrs/rpc/Health"
+import type { Harness,Repo } from "@smthrs/rpc/LocalApp"
+import { HARNESS_IDS,HarnessSchema,RepoFileEntrySchema,RepoSchema } from "@smthrs/rpc/LocalApp"
+import type { LocalRepositoryInspection,RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
-import type { LocalRepositoryInspection, RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { z } from "zod"
 import { FLOW_NAMES } from "../flows/FlowName"
 import { CloudWikiState } from "../wiki/CloudWikiState"
+import type { CommandIntent } from "./CommandIntent"
+import { INPUT_MODES,type InputMode } from "./InputMode"
+import type { PendingRecoveryScope } from "./PendingRecovery"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
+import type { RuntimeApprovalSubmission,RuntimeRunObservation,RuntimeScope } from "./RuntimeProjection"
 
-export {
-  CardPatchSchema,
-  CardPlanItemSchema,
-  CardSchema,
-  EnvironmentImageRowSchema,
-  SandboxEgressRowSchema,
-  WorkspaceDesktopSchema,
-  WorkspaceEnvironmentSchema,
-  WorkspaceFileEntrySchema,
-  WorkspaceHeadSchema,
-  WorkspaceServiceSchema
-}
 export type {
-  EnvironmentImageRow,
-  SandboxEgressRow,
-  WorkspaceDesktop,
-  WorkspaceEnvironment,
-  WorkspaceFileEntry,
-  WorkspaceHead,
-  WorkspaceService
+Card,CardPatch,CardPlanItem,EnvironmentImageRow,
+SandboxEgressRow,
+WorkspaceDesktop,
+WorkspaceEnvironment,
+WorkspaceFileEntry,
+WorkspaceHead,
+WorkspaceService
 } from "@smthrs/rpc/Cards"
-import type { Card, CardPatch } from "@smthrs/rpc/Cards"
-export type { Card, CardPatch, CardPlanItem } from "@smthrs/rpc/Cards"
-export { AgentRoleSchema, HARNESS_IDS, HarnessSchema, RepoSchema }
-export type { AgentRole, Harness, Repo }
+export {
+AgentRoleSchema,CardPatchSchema,
+CardPlanItemSchema,
+CardSchema,
+EnvironmentImageRowSchema,HARNESS_IDS,HarnessSchema,RepoSchema,SandboxEgressRowSchema,
+WorkspaceDesktopSchema,
+WorkspaceEnvironmentSchema,
+WorkspaceFileEntrySchema,
+WorkspaceHeadSchema,
+WorkspaceServiceSchema
+}
+export type { AgentRole,Harness,Repo }
 
 /*
  * The sidebar's pinned repositories (docs/LOCAL-APP.md "Tabs"). A server
@@ -667,29 +664,7 @@ export const DEFAULT_PALETTE: Palette = "night-owl"
 
 export const isPalette = (value: string): value is Palette => (PALETTES as ReadonlyArray<string>).includes(value)
 
-export const GuideSchema = z.object({
-  finished: z.boolean().optional(),
-  sequence: z.enum(["repository-v3", "practice-v4"]).optional(),
-  /*
-   * Onboarding SCRIPT v4 (onboarding/lessons.ts). All optional so a guide
-   * row written before them stays readable.
-   *   said:     the producer's success line per signal ("Signed in as @ada.")
-   *   declined: the escape hatches taken (Skip tutorial, Not now, Later)
-   *   repo:     the user's repository once the GitHub App is installed
-   *   pick:     the commit picker's last checked set, restored by Back
-   *   notice:   why the current beat could not finish ("Nothing came back from GitHub.")
-   */
-  said: z.record(z.string(), z.string()).optional(),
-  declined: z.array(z.enum(["practice", "login", "install", "background"])).optional(),
-  /** Exact departure for Skip tutorial, including a skip after Back. */
-  practiceSkippedFrom: z.number().int().min(1).max(9).optional(),
-  repo: z.string().optional(),
-  pick: z.array(z.number().int().positive()).optional(),
-  notice: z.string().optional(),
-  noticeDetail: z.string().optional(),
-  /** The page load whose GitHub App check is in flight; another load's value is a reload, never a busy button. */
-  installCheck: z.string().optional(),
-  /** Launch intent is durable before provisioning; a reload can report an interrupted attempt. */
+export const SessionSchema = z.object({
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
     repo: z.string(),
@@ -701,65 +676,11 @@ export const GuideSchema = z.object({
     owner: z.string().optional(),
     reason: z.string().optional()
   })).optional(),
-  completed: z.array(z.string()).optional(),
-  autoPaused: z.boolean().optional(),
-  responseId: z.string().uuid().optional(),
-  demoRun: z.object({ id: z.string(), status: z.enum(["running", "succeeded", "interrupted"]), startedAt: z.number(), finishedAt: z.number().optional() }).optional(),
-  /*
-   * The optional capability reel after the last lesson (onboarding/reel.ts).
-   * Every field is optional so a guide row written before it stays readable.
-   */
-  reelSeen: z.boolean().optional(),
-  reelIndex: z.number().int().min(0).max(10).optional(),
-  reelEpoch: z.number().int().nonnegative().optional(),
-  reelDemo: z.enum(["theme", "notify", "sound", "profile", "wait", "create-flow", "composer", "prototype", "revision", "plan", "review"]).optional(),
-  reelTheme: z.enum(["light", "dark"]).optional(),
-  /*
-   * Beat 12's illustrated introductions (onboarding/introScript.ts): which
-   * slideshow is open and its slide, plus the kinds already shown, so each
-   * launch presents its introduction once and a retry does not replay it.
-   */
-  introSlides: z.object({ kind: z.enum(["wiki", "history"]), index: z.number().int().min(0).max(3) }).optional(),
-  introSeen: z.array(z.enum(["wiki", "history"])).optional(),
-  /*
-   * Version 1 persisted the 16-lesson introduction, where the light lesson
-   * stood alone at step 2 and the scale ran to 15. Version 2 folds it into
-   * the theme lesson, so every later lesson moved one down. Version 3 moves the Library opening to step 1. Older shapes stay
-   * readable; the store's seed remaps a version-1 guide once, by version.
-   */
-  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  playthrough: z.number().int().nonnegative().optional(),
-  step: z.number().int().min(0).max(15),
-  /** Where transcript entries arrived during this playthrough; survives a reload. */
-  transcript: z.record(z.string(), z.object({
-    step: z.number().int(), source: z.enum(["chat", "lesson"]),
-    /** Explicit ownership; older records indiscriminately included workspace chrome. */
-    owned: z.literal(true).optional(),
-    /** A reused card joins the new chat turn without changing its frame's ordinal. */
-    ordinal: z.number().optional(),
-  })).optional(),
-  conversationOpen: z.boolean(),
-  library: z.boolean(),
-  librarian: z.boolean(),
-  heard: z.string().max(500),
-  project: z.string().max(500),
-  prototypeTitle: z.string().max(100),
-  revised: z.boolean(),
-  acceptedPracticeTitle: z.string().max(100).optional(),
-  sound: z.boolean()
-})
-export type GuideState = z.infer<typeof GuideSchema>
-export const initialGuide = (): GuideState => ({ version: 3, sequence: "practice-v4", step: 1, completed: [], autoPaused: false, conversationOpen: false,
-  library: false, librarian: false, heard: "", project: "", prototypeTitle: "A little room for big ideas", revised: false, sound: false })
 
-export const SessionSchema = z.object({
   /** Optional so previously saved sessions still parse. */
   firstRunDismissed: z.boolean().optional(),
   hintsSeen: z.array(z.string()).optional(),
   sidebarOpen: z.boolean().optional(),
-  guide: GuideSchema.optional(),
-  /** Current view registration; reset on boot, never restored as visibility. */
-  guideVisible: z.boolean().optional(),
   id: z.literal("main"),
   draft: z.string(),
   phase: z.enum(["idle", "responding"]),
@@ -1182,7 +1103,7 @@ export type AppTransition =
   | { type: "card.view.loaded"; actor: Actor; card: Card }
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
   /** Boot-only restoration of one crash-recorded card projection and its local history. */
-  | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory; explicitTutorial?: true }
+  | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory }
   | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
@@ -1253,8 +1174,7 @@ export type AppTransition =
   | { type: "app.reset"; actor: Actor }
   | { type: "hint.dismissed"; actor: Actor; id: string }
   | { type: "first-run.dismissed"; actor: Actor }
-  | { type: "guide.visibility.changed"; actor: "system"; visible: boolean }
-  | { type: "guide.changed"; actor: Actor; guide: GuideState }
+  | { type: "librarian.launches.changed"; actor: Actor; launches: NonNullable<Session["librarianLaunches"]> }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
   | { type: "sidebar.toggled"; actor: "user" | "smithers"; open: boolean }

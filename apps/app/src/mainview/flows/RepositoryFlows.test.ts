@@ -148,7 +148,7 @@ const ready = async (services: AppServices, state: "signed-in" | "signed-out" = 
  * The listed bare leaves that are neither the app's surface switches nor its
  * own tutorial replay door: exactly the repository's.
  */
-const APP_BARE_FLOWS = ["tut"]
+const APP_BARE_FLOWS: string[] = []
 const repositoryLeaves = (controller: Awaited<ReturnType<typeof ready>>["controller"]): Array<string> =>
   visibleItems(controller.commands)
     .map((command) => command.name)

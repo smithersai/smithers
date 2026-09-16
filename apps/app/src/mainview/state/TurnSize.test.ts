@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test"
-import type { AgentChatMessage, AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import type { AgentChatMessage,AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,test } from "bun:test"
 import type { AgentPort } from "../runtime/AgentPort"
-import { MAX_TOOL_RESULT_BYTES, MAX_TURN_REQUEST_BYTES, turnRequestBytes, utf8Bytes } from "./AgentTurnPolicy"
-import { scopedControllers } from "./ControllerTestScope"
+import { MAX_TOOL_RESULT_BYTES,MAX_TURN_REQUEST_BYTES,turnRequestBytes,utf8Bytes } from "./AgentTurnPolicy"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,recordingAgent,settled,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -53,8 +53,7 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
 
-    if (practice) await controller.commands.run("onboarding.act", "start")
-    controller.observeGuideVisibility(practice)
+    if (practice) await controller.selectRepo("practice:smithersai/hello-server")
     controller.send("hello")
     await settled()
 

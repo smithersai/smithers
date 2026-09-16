@@ -4,15 +4,17 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
-import { flow, NoPayload } from "./Declare"
-import type { FlowEntry, Namespace } from "../registry"
+import type { FlowEntry,Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
+import { flow,NoPayload } from "./Declare"
 
 /** The `app` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "app", label: "App", summary: "The Smithers app itself" }
 
 /** The `app` flows registered as one aggregator block. */
 export const appFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "app.first-run.dismiss", hidden: true, summary: "Dismiss recommended actions", input: NoPayload, handler: () => actions.dismissFirstRun() }),
+  flow({ name: "app.hint.dismiss", hidden: true, summary: "Dismiss a hint", args: "<id>", input: Schema.Struct({ id: Schema.String }), handler: ({ id }) => actions.dismissHint(id) }),
   /*
    * The web app's one door to the native app (docs/web-mode/PLAN.md §3). The
    * split mirrors auth.sign-in / auth.prompt: `window.open` outside a user

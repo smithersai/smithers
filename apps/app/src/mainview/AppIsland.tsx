@@ -15,7 +15,7 @@ import { createClientErrorReporter } from "./state/ClientErrors"
  * AppRoot into a page that is already showing and arms the watchdog then.
  *
  * A repository path (`/owner/name`) opens that repository alone; the
- * homepage's `?tutorial` link and other entries open the tutorial alone.
+ * homepage and `?tutorial` entries open the same app.
  */
 
 function AppIsland() {

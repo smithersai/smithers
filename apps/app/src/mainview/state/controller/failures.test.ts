@@ -1,9 +1,8 @@
 import type { StorageApi } from "@tanstack/db"
-import { afterEach, describe, expect, test } from "bun:test"
-import { initialGuide } from "../AppState"
+import { afterEach,describe,expect,test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
-import { createFailureController, humanCommandText } from "./failures"
+import { createFailureController,humanCommandText } from "./failures"
 
 /*
  * The toast run counter used to be write-only: every withToast set an entry
@@ -199,40 +198,6 @@ test("a seam's sign-in notice uses human summaries and dismisses even with an ac
   expect(toast?.action).toEqual({ flow: "auth.sign-in", label: "Sign in with GitHub" })
   await settled()
   expect(store.collections.toasts.size).toBe(0)
-})
-
-
-test("a background setup failure already shown inline does not emit a duplicate command alert", async () => {
-  const { ctx, store } = await fakeContext()
-  const failures = createFailureController(ctx)
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 12,
-    librarianLaunches: [{ kind: "wiki", repo: "will/demo", scope: JSON.stringify(["will/demo", null, null, null, null, 0]), startedAt: 1, phase: "failed", reason: "setup failed" }],
-  } }).isPersisted.promise
-  failures.surfaceCommandFailure("wiki.create", { status: "failed", error: "setup failed" })
-  expect(store.collections.toasts.size).toBe(0)
-  failures.surfaceCommandFailure("wiki.create", { status: "failed", error: "different failure" })
-  expect(store.collections.toasts.get("toast-command.failed.wiki.create")?.detail).toBe("different failure")
-})
-
-test("a background failure after the lesson leaves its Retry toast as the only alert", async () => {
-  const { ctx, store } = await fakeContext()
-  await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), step: 13,
-    librarianLaunches: [{ kind: "history", repo: "will/demo", scope: JSON.stringify(["will/demo", null, null, null, null, 0]),
-      startedAt: 1, phase: "failed", runId: "history-run", reason: "Error: Error: git exited 1" }] }
-  }).isPersisted.promise
-  createFailureController(ctx).surfaceCommandFailure("history.bootstrap", { status: "failed", error: "Error: Error: git exited 1" })
-  expect(store.collections.toasts.size).toBe(0)
-})
-
-
-
-for (const name of ["onboarding.act", "tut", "tut.more"]) test(`${name} keeps a guide refusal under the lesson without a flow-name toast`, async () => {
-  const { ctx, store } = await fakeContext()
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 14 } }).isPersisted.promise
-  createFailureController(ctx).surfaceCommandFailure(name, { status: "failed", error: "The repository catalog could not be read." })
-  expect([...store.collections.toasts.values()]).toEqual([])
-  expect(store.session().guide?.notice).toBe("The repository catalog could not be read.")
-  await store.dispose?.()
 })
 
 

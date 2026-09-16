@@ -1,12 +1,12 @@
-import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import { initialGuide, RECOMMENDATION_ID } from "./AppState"
-import type { Repo } from "./AppState"
-import { scopedControllers } from "./ControllerTestScope"
+import { describe,expect,test } from "bun:test"
 import type { AppServices } from "./AppController"
+import type { Repo } from "./AppState"
+import { RECOMMENDATION_ID } from "./AppState"
 import { createAppStore } from "./AppStore"
-import { RECOMMEND_OUTCOME_PATH, RECOMMEND_PATH } from "./Recommend"
-import { json, memoryStorage, nativeRepositories, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { RECOMMEND_OUTCOME_PATH,RECOMMEND_PATH } from "./Recommend"
+import { json,memoryStorage,nativeRepositories,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -84,10 +84,9 @@ const recorder = (answers: Array<() => Response> = []) => {
 
 const answer = (id: string, commands: ReadonlyArray<string>) => () => json(200, { id, commands, model: "gpt-oss-120b" })
 
-const boot = async (services: AppServices = {}, repositories = unavailableRepositories, freshTutorial = false) => {
+const boot = async (services: AppServices = {}, repositories = unavailableRepositories, _freshTutorial = false) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   // Most tests isolate a later material event from the first-entry background read.
-  if (!freshTutorial) await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } }).isPersisted.promise
   const controller = createAppController(store, repositories, silentAgent, {
     bootstrap: cloudBootstrap,
     recommender: { enabled: true, debounceMs: 0 },
@@ -353,8 +352,8 @@ describe("recommend: the flow", () => {
 test("a background repository check regenerates suggestions using hidden observations", async () => {
   const worker = recorder([answer("repo-check", ["issues.list"])])
   const { store, controller } = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, true)
-  store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
-  await controller.commands.run("onboarding.act", "start")
+  controller.selectRepo("practice:smithersai/hello-server")
+  await controller.commands.run("repo.update", "practice:smithersai/hello-server")
   await settle(12)
   const request = worker.recommends().at(-1)?.body
   expect(request).toBeDefined()

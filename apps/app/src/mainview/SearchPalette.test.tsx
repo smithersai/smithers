@@ -9,19 +9,18 @@
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll,afterEach,describe,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "./App"
-import { runSearchRef } from "./flows/RunCommand"
 import { ControllerTestProvider } from "./ControllerContext"
+import { runSearchRef } from "./flows/RunCommand"
 import type { NativeRepositories } from "./native/NativeBridge"
 import type { AgentPort } from "./runtime/AgentPort"
-import { createAppController } from "./state/AppController"
 import type { AppController as AppControllerType } from "./state/AppController"
-import { createAppStore } from "./state/AppStore"
+import { createAppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
-import { initialGuide } from "./state/AppState"
+import { createAppStore } from "./state/AppStore"
 
 GlobalRegistrator.register()
 
@@ -322,19 +321,6 @@ describe("§3 the keyboard contract", () => {
     expect(palette(view.host)).toBeNull()
     expect(view.store.session().draft).toBe("Compose")
     expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
-  })
-
-  for (const finished of [false, true]) test(`an unmounted guide does not own the repository composer's Escape (finished=${finished})`, async () => {
-    const view = await mount()
-    await view.act(() => {
-      view.store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), finished, conversationOpen: true } })
-      view.controller.changeDraft("keep this draft")
-    })
-    await press(view, "k", { meta: true })
-    await press(view, "Escape")
-    expect(view.store.session().paletteOpen).toBe(false)
-    expect(view.host.querySelector<HTMLElement>(".composer-wrap")?.hidden).toBe(true)
-    expect(view.store.session().draft).toBe("keep this draft")
   })
 
   test("the arrows move and wrap; Tab and Shift+Tab keep native control navigation", async () => {

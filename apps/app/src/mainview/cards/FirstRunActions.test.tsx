@@ -1,11 +1,11 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, expect, test } from "bun:test"
+import { afterAll,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { ControllerContext } from "../ControllerContext"
 import type { AppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
-import { FirstRunActions, firstRunGroups } from "./FirstRunActions"
+import { FirstRunActions,firstRunGroups } from "./FirstRunActions"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
@@ -26,10 +26,10 @@ test("flow buttons dispatch once and dismissal survives the next render and relo
   const host = document.createElement("div")
   document.body.append(host)
   let root = createRoot(host)
-  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, commands: { all: () => commands }, runCommand: (...args: unknown[]) => { calls.push(args) } } as unknown as AppController}><FirstRunActions /></ControllerContext>))
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, dismissFirstRun: () => store.dispatch({ type: "first-run.dismissed", actor: "user" }), dismissHint: (id: string) => store.dispatch({ type: "hint.dismissed", actor: "user", id }), commands: { all: () => commands }, runCommand: (...args: unknown[]) => { calls.push(args) } } as unknown as AppController}><FirstRunActions /></ControllerContext>))
   render()
   await new Promise(resolve => setTimeout(resolve, 20))
-  const buttons = host.querySelectorAll<HTMLButtonElement>("[data-flow]")
+  const buttons = host.querySelectorAll<HTMLButtonElement>("section > button[data-flow]")
   expect(buttons.length).toBe(3)
   flushSync(() => host.querySelector<HTMLButtonElement>('[data-flow="issues.list"]')!.click())
   await store.settled?.()

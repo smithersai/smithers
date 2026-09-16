@@ -1,7 +1,7 @@
-import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
+import { invalidatePreparedViews,preparedView,type ViewAction,type ViewResult } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { isPracticeRepo } from "../practice/PracticeRepository"
-import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
+import { mutatePracticeIssue,practiceViewIssue,readRepositoryListError,tutorialRepositoryRead,type RepositoryForm } from "./tutorial2-issues_prs"
 /*
  * The issues seam: /api/repos/{owner}/{repo}/issues* through the product
  * Worker's platform proxy. List and detail render as cards ("issue-list",
@@ -23,8 +23,8 @@ import { mutatePracticeIssue, finishIssueLesson, practiceViewIssue, tutorialRepo
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
-import { errorText, readErrorMessage, readResult, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
+import { errorText,readErrorMessage,readResult,unreachableSentence } from "./SeamContext"
 
 export interface IssuesSeam {
   /** Renders the list card and answers the rows as text (the model reads the value, never the card). */
@@ -460,9 +460,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if ("error" in target) return target.error
       if (source === "github") return readRepositoryDetail(ctx, target.repo, "issue", number,
         () => issueView(number, target.repo, "github"), "github")
-      const playthrough = ctx.store.session().guide?.playthrough
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
-      if (shown !== undefined && typeof shown !== "string") await finishIssueLesson(ctx, playthrough)
       return shown
     }, { preload: issueView.preload }),
 

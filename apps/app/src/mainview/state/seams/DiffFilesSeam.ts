@@ -1,21 +1,13 @@
 import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
+import { isPracticeRepo,PRACTICE_CARD,PRACTICE_REPO,practiceImplementation } from "../practice/PracticeRepository"
+import { CARD_CONTENT_CAP,encodeRepoPath,unsafePath } from "./FilesSeam"
 import type { SeamContext } from "./SeamContext"
-import { lessonCompletion } from "../../onboarding/completion"
-import { PRACTICE_REPO, PRACTICE_CARD, practiceImplementation, isPracticeRepo } from "../practice/PracticeRepository"
-import { unsafePath, encodeRepoPath, CARD_CONTENT_CAP } from "./FilesSeam"
-import { readErrorMessage, readResult } from "./SeamContext"
+import { readErrorMessage,readResult } from "./SeamContext"
 
 export const PRACTICE_DIFF_CARD = "practice-implementation-diff"
 export const createDiffFilesSeam = (ctx: SeamContext) => {
-  const complete = async (signal: string, playthrough: number | undefined) => {
-    const guide = ctx.store.session().guide
-    const next = guide?.playthrough === playthrough ? lessonCompletion(guide, signal) : undefined
-    if (next) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
-  }
   return {
     showPracticeDiff: async () => {
-      const guide = ctx.store.session().guide
-      if (!guide?.completed?.includes("commits.made")) return "Implement the fix before viewing its diff."
       const implementation = practiceImplementation()
       const existing = ctx.store.collections.cards.get(PRACTICE_DIFF_CARD)
       await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
@@ -24,7 +16,6 @@ export const createDiffFilesSeam = (ctx: SeamContext) => {
         payload: { repo: PRACTICE_REPO, changeId: implementation.changeId, from: implementation.base, to: implementation.commitId,
           pin: { changeId: implementation.changeId, seq: null, commitId: implementation.commitId }, files: implementation.files }
       } }).isPersisted.promise
-      await complete("diff.opened", guide.playthrough)
       return readResult(implementation.files.map(file => `${file.path}\n${file.patch}`).join("\n\n"))
     },
     openDiffFile: async (cardId: string, path: string) => {
@@ -36,7 +27,6 @@ export const createDiffFilesSeam = (ctx: SeamContext) => {
       if (file.isBinary) return "This file is binary."
       const commitId = card.payload.pin.commitId
       if (!commitId) return "This diff has no pinned commit to read. Refresh the diff first."
-      const playthrough = ctx.store.session().guide?.playthrough
       let content: string
       if (isPracticeRepo(card.payload.repo)) {
         const implementationCard = ctx.store.collections.cards.get(PRACTICE_CARD.run)
@@ -66,7 +56,6 @@ export const createDiffFilesSeam = (ctx: SeamContext) => {
           content: content.slice(0, CARD_CONTENT_CAP), truncated: content.length > CARD_CONTENT_CAP,
           readAt: { changeId: card.payload.pin.changeId, commitId } }
       } }).isPersisted.promise
-      if (isPracticeRepo(card.payload.repo)) await complete("diff.file.opened", playthrough)
       return readResult(content.slice(0, CARD_CONTENT_CAP))
     }
   }

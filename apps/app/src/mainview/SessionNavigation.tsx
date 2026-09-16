@@ -1,11 +1,11 @@
-import { flowAction } from "./flows/FlowAction"
-import { useCallback, type CSSProperties } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
+import { useCallback,type CSSProperties } from "react"
 import { useController } from "./ControllerContext"
-import { WORDMARK } from "./Wordmark"
-import { bindPressActions } from "./runtime/PressActions"
 import { KeyboardNavigation } from "./KeyboardNavigation"
+import { WORDMARK } from "./Wordmark"
+import { flowAction } from "./flows/FlowAction"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
+import { bindPressActions } from "./runtime/PressActions"
 import { ChromeBar } from "./tabs/ChromeBar"
 
 const Mark = () => <pre aria-hidden="true">{WORDMARK.map((line, i) => <span key={i} style={{ "--row": i } as CSSProperties}>{line}{"\n"}</span>)}</pre>
@@ -15,7 +15,7 @@ export const SessionNavigationFallback = () => <header className="session-naviga
 export const modeShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === GUIDE_KEYS.mode && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
 export const sidebarShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "w" && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
 
-/** One global logo and navigation surface, including during the tutorial. */
+/** One global logo and navigation surface. */
 export function SessionNavigation() {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
@@ -27,7 +27,7 @@ export function SessionNavigation() {
     const doc = node.ownerDocument
     const root = node.closest<HTMLElement>('.session-shell') ?? node
     const toggleChat = () => {
-      controller.store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
+      controller.dismissHint("chat")
       if (controller.store.session().paletteOpen) { controller.cancelDictation(); controller.closePalette() }
       else {
         controller.runCommand('chat.open')
@@ -35,7 +35,7 @@ export function SessionNavigation() {
       }
     }
     return bindPressActions({ root,
-      enabled: () => !doc.querySelector('.guide-shell, .input-mode-menu'),
+      enabled: () => !doc.querySelector('.input-mode-menu'),
       resolveShortcut: event => {
         const key = event.key.toLowerCase()
         const action = (activate: () => void, shortcut = key) => ({

@@ -1,53 +1,48 @@
-import { FirstSightHint, ChatHint } from "./FirstSightHint"
-import { FirstRunActions } from "./cards/FirstRunActions"
-import { flowAction } from "./flows/FlowAction"
-import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
-import { pathRepo } from "./RepoLink"
-import { TranscriptMessage } from "./TranscriptMessage"
-import { GuideButton, GUIDE_KEYS } from "./onboarding/GuideButton"
-import { InputModeMenu } from "./InputModeMenu"
-import { GUIDE_LAST_STEP } from "./onboarding/lessons"
-import { GuideShell } from "./onboarding/GuideShell"
-import { GuideComposerHost } from "./onboarding/GuideComposerHost"
 import {
-  Button,
-  ChatMessage,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerButton,
-  EmptyState,
-  SmithersUiStyles,
-  Suggestion,
-  SuggestionGroup
+Button,
+ChatMessage,
+EmptyState,
+MessageScrollerButton,
+MessageScrollerContent,
+MessageScrollerItem,
+MessageScrollerProvider,
+MessageScrollerViewport,
+SmithersUiStyles,
+Suggestion,
+SuggestionGroup
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Sparkles } from "lucide-react"
-import { useMemo, useContext, useRef } from "react"
 import type { PointerEvent as ReactPointerEvent } from "react"
-import { createPortal } from "react-dom"
-import { CardView } from "./ChatCards"
+import { useMemo,useRef } from "react"
+import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { cardActions } from "./cards/CardActions"
+import { isPracticeRepo } from "./state/practice/PracticeRepository"
+import { FirstRunActions } from "./cards/FirstRunActions"
+import { CardView } from "./ChatCards"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
-import { FlowsSurface } from "./FlowsSurface"
-import { PluginsSurface } from "./plugins/PluginsSurface"
 import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
-import { initMessage, repoStep, repoSuggestion } from "./Onboarding"
+import { ChatHint,FirstSightHint } from "./FirstSightHint"
+import { flowAction } from "./flows/FlowAction"
+import { FlowsSurface } from "./FlowsSurface"
+import { InputModeMenu } from "./InputModeMenu"
 import type { InitMessage } from "./Onboarding"
-import type { Card, Message, Suggestion as SuggestionBinding } from "./state/AppState"
-import { conversationTabIdOf, inConversation, MAIN_TAB_ID } from "./state/AppState"
+import { initMessage,repoStep,repoSuggestion } from "./Onboarding"
+import { GUIDE_KEYS,GuideButton } from "./onboarding/GuideButton"
+import { PluginsSurface } from "./plugins/PluginsSurface"
+import { pathRepo } from "./RepoLink"
+import type { Card,Message,Suggestion as SuggestionBinding } from "./state/AppState"
+import { conversationTabIdOf,inConversation,MAIN_TAB_ID } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
+import { useCardRows,useWorkflowCatalogRows } from "./state/useCardRows"
 import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
 import { ToastStack } from "./ToastStack"
-import { visibleToasts } from "./state/Toasts"
-import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
-import { chatEntryIds, InTutorial, tutorialTranscript, workspaceTranscript } from "./onboarding/transcriptScope"
-import { WorldSurface } from "./WorldSurface"
+import { TranscriptMessage } from "./TranscriptMessage"
 import { WikiDeleteDialog } from "./WikiDeleteDialog"
+import { WorldSurface } from "./WorldSurface"
 
 type TranscriptEntry =
   | { readonly kind: "message"; readonly message: Message }
@@ -59,22 +54,6 @@ const entryOrdinal = (entry: TranscriptEntry): number =>
 
 const entryCreatedAt = (entry: TranscriptEntry): number =>
   entry.kind === "card" ? entry.card.createdAt : entry.message.createdAt
-
-/*
- * The one place the transcript departs from its ordinals: the workspace a
- * finished tutorial hands over (SCRIPT.md beat 14, "the workspace lands on
- * <repo>") opens ON that repository, so its home pane leads and the welcome
- * follows it, above whatever the walk left behind. Everything else — every
- * other repository's cards, the chat, and each card made after the handoff —
- * keeps its place in the conversation below them.
- */
-const handoffRank = (entry: TranscriptEntry, repo: string | undefined): number => {
-  if (entry.kind !== "card" || repo === undefined) return 2
-  const card = entry.card
-  if (!("repo" in card.payload) || card.payload.repo !== repo) return 2
-  if (card.kind === "repo-home") return 0
-  return card.kind === "repo-onboarding" && card.payload.stage === "welcome" ? 1 : 2
-}
 
 function AppContent() {
   const controller = useController()
@@ -101,6 +80,7 @@ function AppContent() {
   const { data: sessionRows } = useLiveQuery((q) =>
     q.from({ session: collections.sessions }).select(({ session }) => ({
       id: session.id,
+      firstRunDismissed: session.firstRunDismissed,
       phase: session.phase,
       theme: session.theme,
       surface: session.surface,
@@ -117,9 +97,6 @@ function AppContent() {
       paletteOpen: session.paletteOpen,
       dictating: session.dictating,
       inputMode: session.inputMode,
-      guideStep: session.guide?.step,
-      guideFinished: session.guide?.finished,
-      guideTranscript: session.guide?.transcript,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
@@ -140,17 +117,11 @@ function AppContent() {
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const readRequestRef = useRef(0)
-  /*
-   * The guide's composer host: inside the guide shell the composer is hidden
-   * by default and Command-K summons ONLY it into the bottom dock;
-   * outside the guide (undefined) the palette state controls the composer.
-   */
-  const composerHost = useContext(GuideComposerHost)
   /* The connect trigger has the same shell-level Escape exit as surfaces. */
   const connectTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer's `+` menu is the third session menu the shell closes the same way. */
   const addTriggerRef = useRef<HTMLButtonElement>(null)
-  const session = sessionRows[0] ?? { ...controller.store.session(), guideTranscript: controller.store.session().guide?.transcript, guideFinished: controller.store.session().guide?.finished }
+  const session = sessionRows[0] ?? controller.store.session()
   /*
    * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
    * Smithers, the first tab, aware of every other one — so the conversation is
@@ -159,17 +130,8 @@ function AppContent() {
    */
   const conversationTabId = conversationTabIdOf(session)
   const messages = messageRows.filter((message) => inConversation(message, conversationTabId))
-  // Beneath the tutorial, a repository route's entry cards stay with that route (onboarding/transcriptScope.ts).
-  const inTutorial = useContext(InTutorial)
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
-  const guideChatCards = chatEntryIds(session.guideTranscript)
-  // Once lessons finish, messages and cards share the workspace transcript.
-  // Chat-requested cards retain their place even when they name another repo.
-  const conversationCards = inTutorial ? tutorialTranscript(conversationRows, session.guideTranscript)
-    : composerHost !== undefined ? [
-      ...workspaceTranscript(conversationRows, session.activeRepoKey ?? null, guideChatCards),
-      ...conversationRows.filter(card => guideChatCards.has(card.id)),
-    ] : workspaceTranscript(conversationRows, null, new Set(), guideChatCards)
+  const conversationCards = conversationRows
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.
@@ -185,6 +147,7 @@ function AppContent() {
    * changes while its catalog does (admin sign-in, a repository's flow
    * leaves), so there is no identity to memoize the read on.
    */
+  useLiveQuery(collections.repositoryFlows)
   const flows = controller.commands.all()
   const typing = session.phase === "responding"
   const activeTabId = session.activeTabId ?? MAIN_TAB_ID
@@ -250,7 +213,7 @@ function AppContent() {
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && cloudHost
-  const authMessage: Message | undefined = identity?.state === "signed-out" && cloudHost
+  const authMessage: Message | undefined = isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
     ? repositoryNotice || (exploringRepo === null && !messages.some(message => message.action?.flow === "auth.sign-in"))
       ? {
         id: "auth-state",
@@ -373,16 +336,12 @@ function AppContent() {
   const entries: ReadonlyArray<TranscriptEntry> = [
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined ? [] : [{ kind: "message", message: authMessage } as const]),
-    ...(!inTutorial ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
+    ...messages.map((message): TranscriptEntry => ({ kind: "message", message })),
     // A missing URL owns this arrival; retained cards from the last repository
     // stay stored, but cannot become the requested repository's projection.
-    ...(repositoryNotice ? workspaceTranscript(conversationCards, missingBootRepository) : conversationCards)
+    ...(repositoryNotice ? conversationCards.filter(card => !("repo" in card.payload) || card.payload.repo === missingBootRepository) : conversationCards)
       .map((card): TranscriptEntry => ({ kind: "card", card }))
   ].sort((left, right) => {
-    if (session.guideFinished) {
-      const rank = handoffRank(left, session.activeRepoKey) - handoffRank(right, session.activeRepoKey)
-      if (rank !== 0) return rank
-    }
     if (entryOrdinal(left) !== entryOrdinal(right)) return entryOrdinal(left) - entryOrdinal(right)
     return entryCreatedAt(left) - entryCreatedAt(right)
   })
@@ -393,18 +352,13 @@ function AppContent() {
   // even when this profile has another repository's conversation above it.
   const homeReadId = session.activeRepoKey ? `repo-home-${session.activeRepoKey}` : undefined
   const welcomeReadId = session.activeRepoKey ? `repo-welcome-${session.activeRepoKey}` : undefined
-  const initialReadId = repositoryNotice ? authMessage?.id
+  const initialReadId = !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id
     : entries.some(entry => entry.kind === "card" && entry.card.id === homeReadId) ? homeReadId : welcomeReadId
   const showingArrival = latestReadId !== undefined && latestReadId === welcomeReadId
 
-  /*
-   * The composer's one home. Summoned beside the active tab when the app stands
-   * alone; hidden while the guide owns the window (the UI is full-screen
-   * without a composer by default); summoned through a portal into the
-   * guide's bottom Chat dock. After the lessons, this transcript owns chat too.
-   */
+  // Chat stays mounted when closed.
   const composerWrap = (
-    <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
+    <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={session.paletteOpen !== true}>
       <Composer
         minimal
         typing={typing}
@@ -415,11 +369,11 @@ function AppContent() {
         surfacesTriggerRef={surfacesTriggerRef}
         connectTriggerRef={connectTriggerRef}
         addTriggerRef={addTriggerRef}
-        autoFocus={composerHost ? true : authMessage === undefined}
+        autoFocus={authMessage === undefined}
         placeholder="Ask Smithers to work on something…"
       />
       {/* The next-step pills sit UNDER the chat box; DOM order is focus order: composer, then pills. Feature-flagged (features.suggestionPills), on for the cloud host. */}
-      {composerHost === undefined && controller.features.suggestionPills && suggestions.length > 0 ? <FirstSightHint id="recommendations" content="Choose a suggested next action."><SuggestionGroup className="smithers-suggestions">
+      {controller.features.suggestionPills && suggestions.length > 0 ? <FirstSightHint id="recommendations" content="Choose a suggested next action."><SuggestionGroup className="smithers-suggestions">
         {suggestions.map((suggestion) => (
           <Suggestion
             className="smithers-suggestion"
@@ -437,12 +391,6 @@ function AppContent() {
       </SuggestionGroup></FirstSightHint> : null}
     </div>
   )
-
-  // The tutorial owns the visible cards until the workspace beat. Keep only
-  // the composer mounted here, so labels, landmarks and frame ids exist once.
-  if (inTutorial && (sessionRows[0]?.guideStep ?? controller.store.session().guide?.step ?? 1) < GUIDE_LAST_STEP) {
-    return <div className="app-shell"><SmithersUiStyles />{composerHost ? createPortal(composerWrap, composerHost) : composerWrap}</div>
-  }
 
   return (
     // data-flows is the live registry manifest (visible AND hidden names):
@@ -524,14 +472,7 @@ function AppContent() {
     >
       <SmithersUiStyles />
 
-      {/*
-        * The control-focus dim ("spotlight") is NOT rendered here. The
-        * controller mounts one layer on the body with a hole cut where the
-        * controlled surface shows (state/controller/controlFocus.ts): a layer
-        * inside this shell painted nothing during the tutorial, where the
-        * shell is mounted inside `.guide-app` at `opacity: 0`, and it could
-        * never cover the window's own chrome above the shell.
-        */}
+      {/* The controller mounts the control-focus dim on the document body. */}
       {/* The chrome bar: the tab strip upper-left, the repo chip and chrome actions right. */}
 
 
@@ -593,8 +534,8 @@ function AppContent() {
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
-            <FirstRunActions />
-            {entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
+            {!session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
+            {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}
               messageId={entry.kind === "card" ? entry.card.id : entry.message.id} style={{ contentVisibility: "visible" }}>
@@ -613,7 +554,7 @@ function AppContent() {
                 ) :
                 <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
             </MessageScrollerItem>)}
-            {typing && !inTutorial && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
+            {typing && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
             </MessageScrollerContent>
             </MessageScrollerViewport>
             <MessageScrollerButton />
@@ -641,14 +582,14 @@ function AppContent() {
       {/* Terminal, harness, and card tabs; hidden while inactive, never unmounted. */}
       <TabBodies />
       {/* Keep Chat reachable while a terminal or another tab owns the view. */}
-      {composerHost ? createPortal(composerWrap, composerHost) : composerWrap}
-      {composerHost === undefined && <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
+      {composerWrap}
+      <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
         <FirstSightHint id="chat" content={<ChatHint />}><GuideButton shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}>Chat</GuideButton></FirstSightHint>
         <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
-      </footer>}
+      </footer>
       </div>
 
       {
@@ -671,41 +612,16 @@ function AppContent() {
         }}
         onCancel={() => controller.runCommand("admin.reset.cancel")}
       />
-      {composerHost === undefined ? <WikiDeleteDialog /> : null}
+      <WikiDeleteDialog />
     </div>
   )
 }
 
-function App({ guided = false }: { guided?: boolean }) {
+function App() {
   const controller = useController()
   const { data: toasts } = useLiveQuery(controller.store.collections.toasts)
-  const { data: sessions } = useLiveQuery(q => q.from({ session: controller.store.collections.sessions })
-    .select(({ session }) => ({ guide: session.guide })))
-  const inTutorial = useContext(InTutorial)
-  const content = useMemo(() => guided ? <GuideShell><AppContent /></GuideShell> : <AppContent />, [guided])
-  // Outside GuideShell, this single mount survives the tutorial-to-workspace handoff
-  // and serves the bare app too; its portal owns placement above any native modal.
-  return <>
-    {content}
-    <ToastStack toasts={visibleToasts(toasts, guided || inTutorial ? sessions[0]?.guide : undefined)}
-      onDismiss={id => controller.runCommand("toast.dismiss", id)}
-      onAction={action => controller.runCommand(action.flow, action.args)} />
-  </>
+  return <><AppContent /><ToastStack toasts={toasts}
+    onDismiss={id => controller.runCommand("toast.dismiss", id)}
+    onAction={action => controller.runCommand(action.flow, action.args)} /></>
 }
-
-/*
- * The bare app is the default export: the DOM suites mount it directly, and
- * inside it the composer opens on demand. The product mount is the
- * guide-wrapped shell (AppIsland takes GuidedApp), where the UI stands
- * full-screen and Command-K summons the composer.
- */
 export default App
-export function GuidedApp() { return <App guided /> }
-
-/** Repository pages can remount the guide through the same persisted /tut door. */
-export function RepositoryApp() {
-  const controller = useController()
-  const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
-  const guide = sessions[0]?.guide ?? controller.store.session().guide
-  return <App guided={(guide?.playthrough ?? 0) > 0 && !guide?.finished} />
-}

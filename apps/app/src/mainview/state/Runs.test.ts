@@ -987,7 +987,7 @@ describe("typed coding launch and plan inspection", () => {
     expect((await controller.commands.runForAgent("runs.coding.select", "sourceCard=flow-run-run-1 run-1 memory")).status).toBe("executed")
     const selected = store.collections.cards.get(original.id) as typeof original
     expect(selected.payload.codingChangeId).toBe("memory")
-    expect([...store.collections.transitions.values()].filter(row => row.type === "card.upsert").at(-1)?.actor).toBe("smithers")
+    expect([...store.collections.transitions.values()].filter(row => row.type === "card.upsert").sort((a, b) => a.revision - b.revision).at(-1)?.actor).toBe("smithers")
     await store.dispatch({ type: "card.upsert", actor: "user", card: { ...selected, payload: { ...selected.payload, cursorSeq: 3, liveTail: false } } })
     expect(said(await controller.commands.run("runs.coding.select", "sourceCard=flow-run-run-1 run-1 memory"))).toContain("no recorded planned Change")
   })
@@ -1004,7 +1004,7 @@ describe("typed coding launch and plan inspection", () => {
     expect((await controller.commands.runForAgent("runs.coding.select", "run-1 memory")).status).toBe("executed")
     let card = store.collections.cards.get("flow-run-run-1") as Extract<Card, { kind: "run-trace" }>
     expect(card.payload.codingChangeId).toBe("memory")
-    expect([...store.collections.transitions.values()].filter((row) => row.type === "card.upsert").at(-1)?.actor).toBe("smithers")
+    expect([...store.collections.transitions.values()].filter((row) => row.type === "card.upsert").sort((a, b) => a.revision - b.revision).at(-1)?.actor).toBe("smithers")
     await controller.commands.run("runs.open", `run-1 ${REPO}`)
     card = store.collections.cards.get("flow-run-run-1") as typeof card
     expect(card.payload.input).toEqual({ plan: CODING_PLAN })

@@ -1,17 +1,14 @@
-import { completeGuide, lessonCompletion } from "../../onboarding/completion"
-import { isPracticeRepo, PRACTICE_CARD, PRACTICE_NAME, PRACTICE_REPO, practiceFile, practiceSnapshot } from "../practice/PracticeRepository"
-import { GUIDE_STAGES } from "../../onboarding/lessons"
 import type { AppStore } from "../AppStore"
+import { isPracticeRepo,PRACTICE_CARD,PRACTICE_NAME,PRACTICE_REPO,practiceFile,practiceSnapshot } from "../practice/PracticeRepository"
+import { encodeRepoPath,parseEntry,requestLocalFiles,resolveFileTarget,unsafePath } from "./FilesSeam"
 import type { SeamContext } from "./SeamContext"
-import { readErrorMessage, readResult } from "./SeamContext"
-import { encodeRepoPath, parseEntry, requestLocalFiles, resolveFileTarget, unsafePath } from "./FilesSeam"
+import { readErrorMessage,readResult } from "./SeamContext"
 
 /** files.read on the practice repository: the bundled file, anchored, then the lesson's `file.opened`. */
 export const practiceReadFile = async (ctx: SeamContext, path: string, anchor?: { readonly line: number; readonly column?: number }): Promise<string | { readonly value: string }> => {
   const normalized = path.replace(/^\/+/, "")
   const content = practiceFile(normalized)
   if (content === undefined) return `Path not found: ${normalized} in ${PRACTICE_NAME}`
-  const playthrough = ctx.store.session().guide?.playthrough
   await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
     id: PRACTICE_CARD.file(normalized), kind: "file", title: `${normalized} · ${PRACTICE_NAME}`, status: "active",
     createdAt: Date.now(), ordinal: ctx.nextOrdinal(),
@@ -19,9 +16,6 @@ export const practiceReadFile = async (ctx: SeamContext, path: string, anchor?: 
       readAt: { changeId: null, commitId: practiceSnapshot.base.commitId, source: "head" },
       ...(anchor === undefined ? {} : { line: anchor.line, ...(anchor.column === undefined ? {} : { column: anchor.column }) }) }
   } }).isPersisted.promise
-  const guide = ctx.store.session().guide
-  const next = guide?.playthrough === playthrough ? lessonCompletion(guide, "file.opened") : undefined
-  if (next !== undefined) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
   const line = anchor === undefined ? undefined : content.split("\n")[anchor.line - 1]
   return readResult(line === undefined ? content : `${normalized}:${anchor!.line}  ${line}`)
 }
@@ -32,29 +26,6 @@ export const practiceTarget = (repo?: string): boolean => isPracticeRepo(repo)
 export const fileTargetKey = (store: AppStore, repo?: string): string | undefined => {
   const target = resolveFileTarget(store, "", repo)
   return "error" in target ? undefined : target.kind === "local" ? target.repo.id : target.repo
-}
-
-/** Capture before I/O; a reply from an earlier lesson, account, or selection cannot check this lesson. */
-export const captureFileLesson = (store: AppStore, repo?: string) => {
-  const session = store.session()
-  return {
-    guide: session.guide,
-    selection: session.activeRepoKey,
-    identity: JSON.stringify(store.collections.identitySessions.get("identity")),
-    repo: fileTargetKey(store, repo),
-    selectedRepo: fileTargetKey(store),
-  }
-}
-
-export const finishFileLesson = async (ctx: SeamContext, scope: ReturnType<typeof captureFileLesson>): Promise<void> => {
-  const current = captureFileLesson(ctx.store)
-  const guide = current.guide
-  const stage = guide === undefined ? undefined : GUIDE_STAGES[guide.step]
-  if (!guide || !scope.guide || scope.repo === undefined || scope.repo !== scope.selectedRepo ||
-    current.repo !== scope.repo || current.selection !== scope.selection || current.identity !== scope.identity ||
-    guide.playthrough !== scope.guide.playthrough || guide.step !== scope.guide.step ||
-    stage?.kind !== "do" || stage.completion !== "file.opened" || guide.completed?.includes("file.opened")) return
-  await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: completeGuide(guide, "file.opened") }).isPersisted.promise
 }
 
 /** Bounded breadth-first inventory, using the same local/cloud contents routes as files.read. No cards or completion. */

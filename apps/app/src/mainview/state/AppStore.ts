@@ -1,125 +1,126 @@
-import { consumeWriterTakeover, reportWriterMoved } from "./WriterOwnership"
-import { isCurrentApprovalAnswer, type ApprovalAnswerInput } from "./ApprovalAnswerState"
-import { EMPTY_PERSISTED_LOAD, PERSISTED_LOAD_TOAST_KEY, PERSISTED_LOAD_TOAST_TITLE, persistedLoadNotice } from "../chain/PersistenceBudget"
-import type { PersistedLoadReport } from "../chain/PersistenceBudget"
-import { HeldBrowserStorageError } from "./StorageRecoveryContract"
-import { canonicalStoredJsonValue } from "./EventValue"
-import { isTutorialCard } from "../onboarding/transcriptScope"
-import { clearWikiRecovery, readWikiRecovery, writeWikiRecovery, WIKI_RECOVERY_STORAGE_KEY } from "./WikiRecovery"
-import { clearEntityRecovery, readEntityRecoveries, writeEntityRecovery, ENTITY_RECOVERY_STORAGE_KEY, type EntityRecoveryRecord } from "./EntityRecovery"
-import { admitsPendingRecovery, pendingRecoveryScope, sameRecoveryScope, type PendingRecoveryAuthority, type PendingRecoveryBoundary } from "./PendingRecovery"
-import { clearDraftRecovery, DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery, writeDraftRecovery } from "./DraftRecovery"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { openBrowserWASQLiteOPFSDatabase } from "@tanstack/browser-db-sqlite-persistence"
-import type { InferSchemaOutput, StorageApi, StorageEventApi } from "@tanstack/db"
+import type { InferSchemaOutput,StorageApi,StorageEventApi } from "@tanstack/db"
 import { localOnlyCollectionOptions } from "@tanstack/db"
 import type { Transaction } from "@tanstack/react-db"
-import { createCollection, createTransaction } from "@tanstack/react-db"
-import type { CollectionPersistence, DurableRowSink } from "../chain/DurableCollection"
-import { createCollectionPersistence, durableCollectionOptions } from "../chain/DurableCollection"
+import { createCollection,createTransaction } from "@tanstack/react-db"
+import type { CollectionPersistence,DurableRowSink } from "../chain/DurableCollection"
+import { createCollectionPersistence,durableCollectionOptions } from "../chain/DurableCollection"
+import type { PersistedLoadReport } from "../chain/PersistenceBudget"
+import { EMPTY_PERSISTED_LOAD,PERSISTED_LOAD_TOAST_KEY,PERSISTED_LOAD_TOAST_TITLE,persistedLoadNotice } from "../chain/PersistenceBudget"
+import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
+import { createRemoteRetirementWorker } from "../chain/RemoteRetirement"
 import {
-  APP_SCHEMA_VERSION,
-  PERSISTED_KEY_PREFIX,
-  PERSISTENCE_BACKEND_STORAGE_KEY,
-  SCHEMA_QUARANTINE_PREFIX,
-  SCHEMA_VERSION_STORAGE_KEY,
-  enforceSchemaVersion,
-  readRecordedBackend,
-  recordBackend
+APP_SCHEMA_VERSION,
+PERSISTED_KEY_PREFIX,
+PERSISTENCE_BACKEND_STORAGE_KEY,
+SCHEMA_QUARANTINE_PREFIX,
+SCHEMA_VERSION_STORAGE_KEY,
+enforceSchemaVersion,
+readRecordedBackend,
+recordBackend
 } from "../chain/SchemaVersion"
+import { eraseSqliteRecoveryCopies } from "../chain/SqlitePrivacyRetirement"
 import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
 import { openSqliteRowStorage } from "../chain/SqliteRowStorage"
-import type { EnumerableRecoveryStorage, RecoveryTable, StorageRecoverySnapshot } from "../chain/StorageRecovery"
-import { StorageRecoveryError, readSqliteRecovery } from "../chain/StorageRecovery"
-import type { TransactionalStorage, ValidatedStorageRows } from "../chain/TransactionalStorage"
-import { ENVELOPE_STORAGE_KEY, STAGED_ENVELOPE_STORAGE_KEY, acquireLocalStorageWriter, matchesStoredStringId, openTransactionalStorage, parseStorageEnvelope } from "../chain/TransactionalStorage"
+import type { EnumerableRecoveryStorage,RecoveryTable,StorageRecoverySnapshot } from "../chain/StorageRecovery"
+import { StorageRecoveryError,readSqliteRecovery } from "../chain/StorageRecovery"
+import type { TransactionalStorage,ValidatedStorageRows } from "../chain/TransactionalStorage"
+import { ENVELOPE_STORAGE_KEY,STAGED_ENVELOPE_STORAGE_KEY,acquireLocalStorageWriter,matchesStoredStringId,openTransactionalStorage,parseStorageEnvelope } from "../chain/TransactionalStorage"
+import type { EraseRemoteTurn } from "../runtime/TurnErasure"
 import {
-  AppEventCheckpointSchema,
-  AppEventHeadSchema,
-  AppEventIntegrityError,
-  AppEventRecordSchema,
-  AppEventRetirementSchema,
-  appendAppEvent,
-  createAppCheckpoint,
-  initializeAppStream, replayAppEvents,
-  retiredAppStreamKey,
-  verifyAppProjection,
-  type AppEventCheckpoint,
-  type AppEventRecord,
-  type AppStateVerification,
-  type AppStreamState
+AppEventCheckpointSchema,
+AppEventHeadSchema,
+AppEventIntegrityError,
+AppEventRecordSchema,
+AppEventRetirementSchema,
+appendAppEvent,
+createAppCheckpoint,
+initializeAppStream,replayAppEvents,
+retiredAppStreamKey,
+verifyAppProjection,
+type AppEventCheckpoint,
+type AppEventRecord,
+type AppStateVerification,
+type AppStreamState
 } from "./AppEventStream"
 import {
-  APP_PROJECTION_COLLECTION_NAMES, TRACE_MESSAGE_PREFIX, appProjectionKey,
-  appTransitionErasesPrivateState,
-  seedAppProjection, MAX_CHAIN_EVENT_BYTES,
-  type AppProjectionSnapshot
+APP_PROJECTION_COLLECTION_NAMES,
+MAX_CHAIN_EVENT_BYTES,
+TRACE_MESSAGE_PREFIX,appProjectionKey,
+appTransitionErasesPrivateState,
+seedAppProjection,
+type AppProjectionSnapshot
 } from "./AppProjection"
-
-export { journalPayload, MAX_TRANSITION_PAYLOAD_BYTES } from "./TransitionDiagnostics"
 import type {
-  AppTransition,
-  Card,
-  LocalRepositoryConnector,
-  Message,
-  Palette,
-  Session,
-  TabRow,
-  WorldDocument
+AppTransition,
+Card,
+LocalRepositoryConnector,
+Message,
+Palette,
+Session,
+TabRow,
+WorldDocument
 } from "./AppState"
 import {
-  AgentRoleSchema,
-  BillingAccountSchema,
-  BranchSchema,
-  CardHistorySchema,
-  CardSchema,
-  ChainEventRecordSchema,
-  ChangeRowSchema,
-  CloudRepositorySchema,
-  CloudSessionRowSchema,
-  CloudWorkspaceRowSchema,
-  ConnectorOperationSchema,
-  DEFAULT_PALETTE,
-  FrameSchema,
-  GitHubAppStatusRowSchema,
-  HarnessSchema,
-  IdentitySessionSchema,
-  LinearIntegrationRowSchema,
-  LocalRepositoryConnectorSchema,
-  MAIN_TAB_ID,
-  MessageSchema,
-  PinnedRepoSchema,
-  PracticeIssueSchema,
-  RecommendationSchema,
-  RepoSchema,
-  RepoTreeRowSchema,
-  RepositoryFlowsRowSchema,
-  RetiredChainLineageSchema,
-  SessionSchema,
-  StarredTargetSchema,
-  TabSchema,
-  ToastSchema,
-  ToolCallRecordSchema,
-  TransitionRecordSchema,
-  WorkingCopySchema,
-  WorkspaceSchema,
-  WorldDocumentSchema,
-  conversationTabIdOf,
-  inConversation
+AgentRoleSchema,
+BillingAccountSchema,
+BranchSchema,
+CardHistorySchema,
+CardSchema,
+ChainEventRecordSchema,
+ChangeRowSchema,
+CloudRepositorySchema,
+CloudSessionRowSchema,
+CloudWorkspaceRowSchema,
+ConnectorOperationSchema,
+DEFAULT_PALETTE,
+FrameSchema,
+GitHubAppStatusRowSchema,
+HarnessSchema,
+IdentitySessionSchema,
+LinearIntegrationRowSchema,
+LocalRepositoryConnectorSchema,
+MAIN_TAB_ID,
+MessageSchema,
+PinnedRepoSchema,
+PracticeIssueSchema,
+RecommendationSchema,
+RepoSchema,
+RepoTreeRowSchema,
+RepositoryFlowsRowSchema,
+RetiredChainLineageSchema,
+SessionSchema,
+StarredTargetSchema,
+TabSchema,
+ToastSchema,
+ToolCallRecordSchema,
+TransitionRecordSchema,
+WorkingCopySchema,
+WorkspaceSchema,
+WorldDocumentSchema,
+conversationTabIdOf,
+inConversation
 } from "./AppState"
-import { PALETTE_MIRROR_KEY, THEME_MIRROR_KEY, rememberAppearance } from "./Appearance"
-import { captureBrowserStorageRecovery, recoveryStorage } from "./BrowserStorageRecovery"
-import { RepositoryContextSchema } from "./RepositoryContext"
-import { NotificationReadReceiptSchema, RepositoryNotificationSchema } from "./RepositoryNotifications"
-import { createWorkspaceViews } from "./WorkspaceViews"
+import { PALETTE_MIRROR_KEY,THEME_MIRROR_KEY,rememberAppearance } from "./Appearance"
+import { consumeWriterTakeover, reportWriterMoved } from "./WriterOwnership"
+import { isCurrentApprovalAnswer,type ApprovalAnswerInput } from "./ApprovalAnswerState"
+import { captureBrowserStorageRecovery,recoveryStorage } from "./BrowserStorageRecovery"
 import { CommandIntentSchema } from "./CommandIntent"
+import { DRAFT_RECOVERY_STORAGE_KEY,clearDraftRecovery,readDraftRecovery,writeDraftRecovery } from "./DraftRecovery"
+import { ENTITY_RECOVERY_STORAGE_KEY,clearEntityRecovery,readEntityRecoveries,writeEntityRecovery,type EntityRecoveryRecord } from "./EntityRecovery"
+import { canonicalStoredJsonValue } from "./EventValue"
+import { HttpTurnLegSchema,HttpTurnSchema } from "./HttpTurn"
 import { freezeProjectionValue } from "./ImmutableProjection"
-import { preserveResetErasures, RESET_ERASURE_OUTBOX_KEY, readResetErasures, beginPrivacyRetirement, completePrivacyRetirement, eraseLocalRecoveryCopies, privacyStorage, readPrivacyRetirement, PrivacyRetirementError, type PrivacyRetirement, type PermittedStorageRows, deriveTurnErasures, addPendingTurnErasures } from "../chain/PrivacyRetirement"
-import { eraseSqliteRecoveryCopies } from "../chain/SqlitePrivacyRetirement"
-import { HttpTurnSchema, HttpTurnLegSchema } from "./HttpTurn"
-import { RuntimeRunSchema, RuntimeApprovalSchema, type RuntimeRun, type RuntimeApproval } from "./RuntimeProjection"
-import { createRemoteRetirementWorker } from "../chain/RemoteRetirement"
-import type { EraseRemoteTurn } from "../runtime/TurnErasure"
+import { admitsPendingRecovery,pendingRecoveryScope,sameRecoveryScope,type PendingRecoveryAuthority,type PendingRecoveryBoundary } from "./PendingRecovery"
+import { RepositoryContextSchema } from "./RepositoryContext"
+import { NotificationReadReceiptSchema,RepositoryNotificationSchema } from "./RepositoryNotifications"
+import { RuntimeApprovalSchema,RuntimeRunSchema,type RuntimeApproval,type RuntimeRun } from "./RuntimeProjection"
+import { HeldBrowserStorageError } from "./StorageRecoveryContract"
+import { WIKI_RECOVERY_STORAGE_KEY,clearWikiRecovery,readWikiRecovery,writeWikiRecovery } from "./WikiRecovery"
+import { createWorkspaceViews } from "./WorkspaceViews"
+
+export { MAX_TRANSITION_PAYLOAD_BYTES,journalPayload } from "./TransitionDiagnostics"
 
 
 const SESSION_ID = "main"
@@ -132,8 +133,8 @@ const SESSION_ID = "main"
  * the newest records: the debuggable tail is the valuable end of a log.
  */
 export {
-  MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS, MAX_CHAIN_EVENT_BYTES, THEME_PICKER_CARD_ID,
-  TRACE_MESSAGE_PREFIX, VERBOSE_OFF_TEXT, VERBOSE_ON_TEXT, verboseTrace
+MAX_CHAIN_EVENT_BYTES,MAX_TOOL_CALL_RECORDS,MAX_TRANSITION_RECORDS,THEME_PICKER_CARD_ID,
+TRACE_MESSAGE_PREFIX,VERBOSE_OFF_TEXT,VERBOSE_ON_TEXT,verboseTrace
 } from "./AppProjection"
 
 /*
@@ -1443,11 +1444,9 @@ const initializeAppStore = async (
       pending.value.kind === "card" && pending.value.card?.kind === "flow-form" && card?.kind === "flow-form" &&
       pending.value.card.payload.flow === card.payload.flow &&
       canonicalStoredJsonValue(pending.value.card.payload.draft) !== canonicalStoredJsonValue(card.payload.draft)) return undefined
-    const session = after.snapshot.sessions.find(row => row.id === SESSION_ID)!
-    const explicitTutorial = card !== null && isTutorialCard(card) && session.guideVisible !== true && session.guide?.transcript?.[id]?.source === "chat"
     return writeEntityRecovery(draftRecoveryStorage, { key: `card:${authority.workspaceId}:${authority.branchId}:${id}`, revision: after.head.revision, authority,
       value: { kind: "card", workspaceId: authority.workspaceId, branchId: authority.branchId, id, card,
-        ...(history === undefined ? {} : { history }), ...(explicitTutorial ? { explicitTutorial: true } : {}) } })
+        ...(history === undefined ? {} : { history }) } })
   }
 
   const dispatch = (transition: AppTransition): Transaction => {
@@ -1586,7 +1585,7 @@ const initializeAppStore = async (
         if (value.kind === "card") {
           if (value.workspaceId === authority.workspaceId && value.branchId === authority.branchId) await dispatch({
             type: "card.recovered", actor: authority.actor, workspaceId: value.workspaceId, branchId: value.branchId,
-            id: value.id, card: value.card, history: value.history, explicitTutorial: value.explicitTutorial
+            id: value.id, card: value.card, history: value.history
           }).isPersisted.promise
         } else if (value.kind === "approval-answer") {
           await dispatch({ type: "approval.answer.changed", actor: "user", id: value.id, question: value.question, text: value.text }).isPersisted.promise
@@ -1613,13 +1612,6 @@ const initializeAppStore = async (
           decisionError: "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision." } : row)
       } } }).isPersisted.promise
     }
-  }
-
-  const interruptedGuide = collections.sessions.get(SESSION_ID)?.guide
-  if (interruptedGuide?.demoRun?.status === "running") {
-    await dispatch({ type: "guide.changed", actor: "system", guide: {
-      ...interruptedGuide, demoRun: { ...interruptedGuide.demoRun, status: "interrupted" },
-    } }).isPersisted.promise
   }
 
   // Boot reconciliation: a persisted "responding" phase means the app went

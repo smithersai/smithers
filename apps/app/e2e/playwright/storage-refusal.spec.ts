@@ -274,10 +274,7 @@ test("a pre-backend-stamp localStorage conversation survives boot without creati
     }
   })
   await page.goto("/")
-  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
-  await page.getByRole("button", { name: "Not now", exact: true }).click()
-  await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
-  await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
   await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill("/appearance.theme")
   await page.getByTestId("composer-send").click()
@@ -332,10 +329,7 @@ test("the running app offers the same private download through an embedded slash
   await page.evaluate(() =>
     localStorage.setItem("smithers-mvp-quarantine.private-test", "older quarantined private fixture")
   )
-  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
-  await page.getByRole("button", { name: "Not now", exact: true }).click()
-  await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
-  await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
   await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill("/storage.recovery")
   await page.getByTestId("composer-send").click()

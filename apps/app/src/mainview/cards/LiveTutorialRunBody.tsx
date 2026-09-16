@@ -1,19 +1,16 @@
-import { flowAction } from "../flows/FlowAction"
-import { useContext } from "react"
-import { InTutorial } from "../onboarding/transcriptScope"
-import { GuideButton } from "../onboarding/GuideButton"
-import { runSourceCommand } from "../flows/RunCommand"
-import { liveTutorialTranscript } from "../state/LiveTutorialTranscript"
-import { flowArgs } from "../flows/FlowArgs"
-import { Button, Markdown } from "@smthrs/ui"
 import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
+import { Button,Markdown } from "@smthrs/ui"
+import { flowAction } from "../flows/FlowAction"
+import { flowArgs } from "../flows/FlowArgs"
+import { runSourceCommand } from "../flows/RunCommand"
+import { GuideButton } from "../onboarding/GuideButton"
 import type { Card } from "../state/AppState"
+import { activeLiveTutorialLimit,liveTutorialLimitMessage } from "../state/LiveTutorialLimit"
+import { liveTutorialTranscript } from "../state/LiveTutorialTranscript"
 import type { RunCommand } from "./CardFamily"
-import { activeLiveTutorialLimit, liveTutorialLimitMessage } from "../state/LiveTutorialLimit"
 
 /** The official run card's live tutorial projection. Every row comes from observed execution. */
 export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card, {kind:"run-trace"}>; onRunCommand: RunCommand }) {
-  const inTutorial = useContext(InTutorial)
   const decoded = LiveTutorialRunSchema.safeParse(card.payload.input?.liveTutorialSnapshot)
   const run = decoded.success ? decoded.data : undefined
   const reproducesBug = run?.operation === "research" && run.events.some(event => event.id === "reproduce" && event.status === "completed")
@@ -62,7 +59,6 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
     </ol>}
     {limit && <p className="live-tutorial-limit" role="status">{liveTutorialLimitMessage(limit)}</p>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {inTutorial && (expired || limit) && <GuideButton className="guide-primary"  {...flowAction(onRunCommand, "onboarding.act", limit ? "skip" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
     {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" 
       {...flowAction(onRunCommand, "tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
     {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" 

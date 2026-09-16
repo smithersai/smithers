@@ -1,20 +1,19 @@
 import {
-  ADMIN_ALLOWLIST_PATH,
-  ADMIN_GRANT_PATH,
-  ADMIN_HEALTH_PATH,
-  ADMIN_REQUESTS_PATH,
-  AUTH_LOGOUT_PATH,
-  AUTH_NATIVE_CLAIM_PATH,
-  AUTH_NATIVE_START_PATH,
-  AUTH_RETURN_TO_PARAM,
-  AUTH_SCOPES_PATH,
-  AUTH_SESSION_PATH,
-  AUTH_SIGN_IN_PATH,
-  AUTH_SIGNED_IN_PARAM,
-  BILLING_BALANCE_PATH,
-  IDENTITY_REQUEST_ACCESS_PATH
+ADMIN_ALLOWLIST_PATH,
+ADMIN_GRANT_PATH,
+ADMIN_HEALTH_PATH,
+ADMIN_REQUESTS_PATH,
+AUTH_LOGOUT_PATH,
+AUTH_NATIVE_CLAIM_PATH,
+AUTH_NATIVE_START_PATH,
+AUTH_RETURN_TO_PARAM,
+AUTH_SCOPES_PATH,
+AUTH_SESSION_PATH,
+AUTH_SIGN_IN_PATH,
+AUTH_SIGNED_IN_PARAM,
+BILLING_BALANCE_PATH,
+IDENTITY_REQUEST_ACCESS_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
-import { lessonCompletion } from "../../onboarding/completion"
 import { signInReturnTo } from "../../RepoLink"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
@@ -56,17 +55,7 @@ export const createAuthBillingController = (
   // Only a session validated during this controller lifetime can complete login.
   // A hydrated identity row, local capability or cloud PAT is not proof.
   let disposed = false
-  let validatedLogin: string | undefined
-  const completeLoginLesson = (): void => {
-    const identity = store.collections.identitySessions.get("identity")
-    const guide = store.session().guide
-    if (disposed || !validatedLogin || identity?.state !== "signed-in" || identity.login !== validatedLogin || !guide) return
-    // Keyed on the lesson's signal: an already signed-in reader finishes the login beat on arrival.
-    const next = lessonCompletion(guide, "identity.signed-in", `Signed in as @${identity.login}.`)
-    if (next !== undefined) store.dispatch({ type: "guide.changed", actor: "system", guide: next })
-  }
-  const guideSubscription = store.collections.sessions.subscribeChanges(() => queueMicrotask(completeLoginLesson))
-  ctx.onDispose(() => { disposed = true; guideSubscription.unsubscribe() })
+  ctx.onDispose(() => { disposed = true })
   const withToast = ctx.withToast
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
@@ -182,8 +171,6 @@ export const createAuthBillingController = (
     })
     await persisted.isPersisted.promise
     if (ctx.disposed || ctx.accountEpoch !== epoch) return
-    validatedLogin = session.login ?? undefined
-    completeLoginLesson()
     if (previous?.state !== "signed-in" || previous.login !== session.login) ctx.identityChanged()
     // The balance read is driven by the session answer, not fired blind at
     // boot: signed out it could only come back 401 — the expected state,
@@ -205,7 +192,6 @@ export const createAuthBillingController = (
 
   const adoptSession = async (session: ResolvedSession): Promise<void> => {
     if (ctx.disposed) return
-    validatedLogin = undefined
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
     if (session.state === "signed-in" && typeof session.login === "string" && session.login.trim() !== "") {
@@ -228,7 +214,6 @@ export const createAuthBillingController = (
 
   const loadSession = async (signal?: AbortSignal): Promise<void> => {
     if (ctx.disposed || signal?.aborted) return
-    validatedLogin = undefined
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
     let response: Response

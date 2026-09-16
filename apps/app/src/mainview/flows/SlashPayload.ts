@@ -13,12 +13,12 @@
  * parsed is refused before the handler runs, which is why no handler below the
  * boundary contains an argument check.
  */
-import { splitRunSource, takesRunSource } from "./RunCommand"
-import { parseFileArgs } from "./FileArgs"
-import { isTraceFilter, TRACE_FILTER_IDS } from "../cards/RunTrace"
-import { isAgentProvider } from "../state/seams/AgentSessionSeam"
-import { REPO_TOKEN, splitTrailingRepo } from "../state/RepoContext"
+import { isTraceFilter,TRACE_FILTER_IDS } from "../cards/RunTrace"
 import type { KnownRepositories } from "../state/RepoContext"
+import { REPO_TOKEN,splitTrailingRepo } from "../state/RepoContext"
+import { isAgentProvider } from "../state/seams/AgentSessionSeam"
+import { parseFileArgs } from "./FileArgs"
+import { splitRunSource,takesRunSource } from "./RunCommand"
 
 /** A parsed invocation, or the honest refusal that names what is missing. */
 export type Parsed =
@@ -558,19 +558,11 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "search.boxes": (args) => required("query", args, "search.boxes needs a query"),
   "search.secrets": (args) => required("query", args, "search.secrets needs a query"),
   "search.people": (args) => required("query", args, "search.people needs a query"),
-  "tut.more": () => NONE,
   "tutorial.live.inspect": (args) => { const [cardId, eventId] = tokensOf(args); return ok({ ...(cardId ? { cardId } : {}), ...(eventId ? { eventId } : {}) }) },
   "tutorial.live.retry": (args) => required("cardId", args, "Choose a live tutorial run"),
+  "app.first-run.dismiss": () => NONE,
+  "app.hint.dismiss": args => required("id", args, "Choose a hint"),
   "input.mode": (args) => required("mode", args, "Choose an input mode."),
-  "onboarding.act": (args) => {
-    const [action = "next", ...rest] = trimmed(args).split(" ")
-    const raw = rest.join(" ")
-    if (raw.startsWith('"')) {
-      try { const value: unknown = JSON.parse(raw); return typeof value === "string" ? ok({ action, value }) : no("Expected text") }
-      catch { return no("Expected a quoted text value") }
-    }
-    return ok({ action, value: raw })
-  },
   "palette.open": (args) => optional("prefix", args),
   "palette.actions": (args) => required("ref", args, "palette.actions needs an item ref"),
   "history.show": (args) => repoOnly("history.show", args),

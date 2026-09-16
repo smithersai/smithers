@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
-import { initialGuide } from "../AppState"
 import { createIssueFlowsController } from "./issueFlows"
 import { createIssuesSeam } from "../seams/IssuesSeam"
 import type { SeamContext } from "../seams/SeamContext"
@@ -9,7 +8,6 @@ async function setup() {
   const data = new Map<string, string>()
   const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k,v) }, removeItem: (k: string) => { data.delete(k) } }
   const store = await createAppStore({ kind: "localStorage", storage })
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 3, playthrough: 1 } }).isPersisted.promise
   const ctx: SeamContext = { store, http: async () => { throw new Error("Practice must not fetch") }, baseUrl: "", dispatch: store.dispatch, actor: () => "user", nextOrdinal: store.nextOrdinal }
   return { store, ctx, storage }
 }
@@ -20,17 +18,14 @@ test("inspect repro, then research in the same official flow card before impleme
   const id = "practice-issue-flows-3"
   const first = store.collections.cards.get(id)
   expect(first?.kind).toBe("workflow-list")
-  expect(store.session().guide?.completed).toContain("issue.flows.opened")
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, step: 4 } }).isPersisted.promise
   expect(await flows.runIssueFlow("repro",3,PRACTICE_REPO)).toEqual({ value: expect.stringContaining("not a fresh test run") })
   const researched = store.collections.cards.get(id)
   expect(researched?.ordinal).toBe(first?.ordinal)
   expect(researched?.kind === "workflow-list" && researched.payload.research).toContain("empty name")
-  expect(store.session().guide?.completed).toContain("issue.researched")
   expect([...store.collections.cards.values()].some(card => card.kind === "run-trace")).toBe(false)
   await store.dispose?.()
 })
-test("practice comments and state survive reopening and reload; fresh playthrough is isolated", async () => {
+test("practice comments and state survive reopening and reload", async () => {
   const {store,ctx,storage} = await setup()
   const issues = createIssuesSeam(ctx)
   await issues.listIssues("open",PRACTICE_REPO)
@@ -48,10 +43,6 @@ test("practice comments and state survive reopening and reload; fresh playthroug
   await restoredIssues.listIssues("open",PRACTICE_REPO)
   let list = restored.collections.cards.get("practice-issues")
   expect(list?.kind === "issue-list" && list.payload.issues.map(i=>i.number)).toEqual([2])
-  await restored.dispatch({type:"guide.changed",actor:"user",guide:{...restored.session().guide!,playthrough:2}}).isPersisted.promise
-  await restoredIssues.listIssues("open",PRACTICE_REPO)
-  list = restored.collections.cards.get("practice-issues")
-  expect(list?.kind === "issue-list" && list.payload.issues.map(i=>i.number)).toEqual([3,2])
   await restored.dispose?.()
 })
 test("a live issue flow only launches an installed flow and carries the full issue context", async () => {
@@ -72,6 +63,5 @@ test("a live issue flow only launches an installed flow and carries the full iss
   const [name, repo, input, source] = calls[0] as [string, string, {args:string}, string]
   expect([name,repo,source]).toEqual(["issue/repro",issue.repo,"catalog"])
   expect(JSON.parse(input.args)).toEqual({issue})
-  expect(store.session().guide?.completed).not.toContain("issue.researched")
   await store.dispose?.()
 })

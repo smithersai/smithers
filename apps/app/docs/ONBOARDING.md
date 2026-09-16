@@ -1,75 +1,9 @@
-# Repository onboarding
+# First run
 
-`src/mainview/onboarding/lessons.ts` owns the current tutorial's copy, buttons, keyboard shortcuts, and completion signals. The earlier TUTORIAL2 planning documents describe historical implementation work; the running lesson table is authoritative.
+Start Here opens the app immediately and keeps the landing URL. Signed-out visitors use the practice repository; signed-in visitors retain their existing selection.
 
-| Stage | Action | Completion |
-|---:|---|---|
-| 1 | Follow the help bubble: Show issues (i) | issues.opened |
-| 2 | Read issue #3 in the same embedded frame | issue.opened |
-| 3 | Inspect the existing issue flows and repro prompt | issue.flows.opened |
-| 4 | Run live research | issue.researched |
-| 5 | Choose Implement to generate a plan | plan.ready |
-| 6 | Approve the plan and run live implementation | commits.made |
-| 7 | Review the actual implementation diff | diff.opened |
-| 8 | Open the changed file from the diff | diff.file.opened |
-| 9 | Select actual commits and create a local review Change | change.opened |
-| 10 | Optional GitHub sign-in | identity.signed-in |
-| 11 | Install the GitHub App for selected repositories | github.app.installed |
-| 12 | Optionally launch Wiki and Mythical history, or Do this later (Z) | librarian.runs.launched only after both run receipts persist |
-| 13 | Open Chat; learn Dictation, or finish without sending | palette.opened |
-| 14 | Finish, or explore capabilities at a manual pace | explicit Finish |
+Recommended actions are a live projection of visible registered flows, grouped by namespace with rule-based recommendations first. Every button dispatches its flow. Dismissal or dispatch persists `firstRunDismissed`; no card row is stored.
 
-## Live example before sign-in
+First-sight hints use `HelpBubble` and persist IDs in `hintsSeen`. Only the first unseen visible control in DOM order shows a hint. Dismissal or using its control retires it. Touch copy omits shortcuts. Hints never take focus.
 
-Research, planning, implementation, and POC use the anonymous live service through `/api/tutorial/live`. No GitHub login or installation is required to complete stages 1–9. The example issue and repository inventory are bundled; agent work, tests, commits, files, patches, and elapsed steps are actual execution results. No recorded run is substituted when the live service fails.
-
-The Worker scopes an HttpOnly signed visitor cookie to a credential-free example workspace. The coordinator runs Smithers AgentAction flows durably and delegates constrained filesystem/test/git operations to isolated gVisor pods. See [the coordinator](../../tutorial-coordinator/README.md) and [executor](../../tutorial-executor/README.md) for deployment, isolation, and lifetime details. The resulting Change is a local review artifact, not a published GitHub pull request.
-
-Requests persist an idempotency key before submission. Reload reconnects to the same operation. A playthrough guard prevents an old response from advancing a replay. A plan is reviewed before implementation; only actual commits with passing protected tests complete it. Failed or disconnected runs retain their error and expose Retry or Reconnect. Expired sessions preserve saved artifacts and explicitly require a new tutorial for new agent work.
-
-## Embedded interaction and persistence
-
-Issue list → issue detail and diff → file replace the current embedded frame, with persisted Back/Forward history. Pull requests open their own chat cards. Issue actions expose comment, close, repro, POC, implementation, existing flows, and Add flow through the shared flow registry.
-
-Starting the tutorial runs `repo.update` as a background read. It stores identity/repository/conversation-scoped observations and preserves notification receipts without rendering a card or marking anything announced. `repo.welcome` uses the same read. The latest bounded observation (counts, issue/PR titles and states, branch, check time, partial-source problems) accompanies each agent turn and triggers the existing recommender; its model chooses suggested actions from that data. Tutorial lesson actions remain authored, so Show issues is the first repository view. An explicit `repo.overview` uses the same reader and renders the existing overview, including Refresh and read receipts. A help bubble above Show issues explains clicking the action or pressing i. It stays until the action completes or the user dismisses it, and it reserves its own layout space so neither the button nor the footer is covered. Repository notifications are scoped by identity and repository, deduplicated by source and version, and track processing, announcement, read versions, and tags separately. Source failures appear as partial updates. Marking one update read cannot consume a newer notification version. The explicit Activity view has a quiet title/expand header; its checked timestamp lives under Details. Unread applies to individual activity versions: successful issue/PR detail navigation marks the versions captured before the read, updates Back/Forward history metadata, and preserves this receipt through reload. Failed reads, account/playthrough changes, and newer activity arriving during a read do not acknowledge that activity. Hosted details acknowledge Smithers-tracker items only; GitHub-source items are separate identities. Open/closed/merged states remain accessible through distinct icons without repeated status words on every row.
-
-`src/mainview/HelpBubble.tsx` is a reusable guidance component: the caller supplies a target control as children, content, an ID for `aria-describedby`, an open state, and a dismissal callback. The component neither moves focus when opened nor intercepts the target's action. Escape within the help/target dismisses it; dismissing from the bubble returns focus to the same target. Flow placement reserves space; above placement measures the target and footer so guidance stays within the viewport. Tutorial policy lives in lesson `help` metadata and `GuideShell`, outside the shared component. Future agent-driven UI permission guidance can reuse this presentation; permission decisions and click authorization must remain separate caller responsibilities.
-
-Start Here opens the first practice lesson directly: its checklist, help bubble, and Show issues action. Direct app entry and the `tut` flow use the same entry behavior; Back cannot return to a redundant start screen. Suggested actions follow short transcripts and remain reachable while long cards scroll. Body typography is 16px and the chat column is wider. Chat and Mode are separate footer controls; mode starts as Normal. Holding a registered key or pointer highlights its target; only the final outstanding input release runs its action. Text fields retain ordinary typing. Command/Control+K opens Chat; sending an accepted message closes it. Dictation fills a draft for review and submission. The sidebar starts closed on every launch; the Smithers logo or W toggles it, while text fields retain ordinary typing.
-
-Lesson completion comes from persisted outcomes in the current playthrough. Required actions are never completed by Next. The capability reel advances only when the user chooses Next and ends with Finish. Finishing persists `guide.finished` and removes the tutorial shell. All controls retain their registered slash, button, and agent paths, with native keyboard semantics.
-
-## Returning to the tutorial and installing GitHub
-
-The first practice screen offers Show issues and Review changes. Its help types an explanation of suggestions, then points to Chat and ⌘ K in the footer, then returns to Show issues. These are transient explanations, not extra lesson gates: both actions and Chat remain available immediately. Help pauses while hovered or focused, can be dismissed, and uses full static text for reduced motion and screen readers. `GuidanceText` owns text presentation; `HelpBubble` owns positioning and can clear an entire wrapped footer.
-
-There is no separate Start tutorial gate. Fresh entry and explicit replay persist the first useful lesson and run the shared start flow's hidden repository update. Stage 0 is a retired compatibility slot; saved lesson indices remain stable. Store hydration resumes an old entry cursor when durable tutorial cards, messages, or completion receipts already exist, including older sessions with no guide row. It preserves the existing transcript, commit selection, and playthrough. Older guide migrations keep completion receipts and map to the matching current lesson. An explicit replay starts a new playthrough and atomically clears that conversation's practice cards, their navigation history, and active-branch frames; other repositories and conversations stay intact. A partially completed recorded tutorial resumes at live research while retaining its old transcript and commit selection; recorded plans cannot authorize a live implementation.
-
-Beat 11 first checks `/api/user/github-app/installations`. One verified installation completes automatically with its most recently pushed repository active and the rest available in the repository menu. Several installations render the shared `github.app.choose` form; selecting one verifies it again. Only an empty verified inventory opens the registered `smitherspreviewrelease` GitHub App (app 4163546) in a separate browser tab after persistence settles. Returning focus to Smithers checks again; a setup callback can also supply an installation id to the same route. The server uses the caller's GitHub repository inventory and verifies each candidate's live GitHub App and user access diagnosis through the existing authenticated Cloud bridge. Inventory membership alone never completes installation. A callback id only filters verified results; it does not grant access. This source-only read does not require a prior repository import into Cloud; the diagnosis checks GitHub's live installation lookup and the user's own credential. Returns from another playthrough or an identity changed while verification was pending cannot advance the guide. Verification failures stay under the lesson with Install and Later available.
-
-Beat 12 persists each Wiki/history launch intent before preparing the user's workspace. Preparation has a three-minute deadline, allowing for the roughly 2.5-minute first cold VM startup, and the lesson names that bound. A missing Cloud import is reported explicitly: GitHub App access alone does not create a hosted repository. A failed or interrupted preparation retains its reason under the lesson and the launch pills remain available. Reload reports unfinished preparation; if submission had begun without a saved receipt, it asks the user to check Runs before retrying. Persisted run cards prevent duplicate launches and complete the lesson only when both runs are recorded for the same repository and scope. Sign-out clears the saved launch attempts.
-
-Wiki and Mythical history setup at stage 12 is optional. **Do this later (Z)** durably advances to Chat without recording `librarian.runs.launched` or claiming either run started. The final message explains that Chat can start these flows later. Deferring setup never disables the normal `wiki.create` or `history.bootstrap` flows; an existing matching run receipt still prevents a duplicate launch.
-
-Each launch also opens a short illustrated introduction while its run builds: a modal slideshow (`onboarding/IntroSlides.tsx`, copy in `onboarding/introScript.ts`) with one inline-SVG scene, one headline, and one caption per slide. Wiki presents in a deep blue/teal accent, Mythical history in a warm amber/violet; both are CSS token pairs that re-resolve under `data-theme`. Next is → or Enter, Back is B, Close is Escape, and the last slide's primary button returns to the tutorial. A small status chip projects the run's durable launch receipt (Building…/Started/Failed). Which slideshow is open and its slide index live in the guide record (`introSlides`), each kind presents once per playthrough (`introSeen`), so a retry launches again without replaying the show, and a reload resumes the open slide.
-
-After declining GitHub sign-in, the Chat lesson explains that sending needs sign-in and offers **Finish tutorial (F)** without sending. Opening Chat and using commands remain available. On authenticated cloud deployments, a signed-out send outside a selected public catalog repository preserves the draft and offers the existing GitHub sign-in action without starting a doomed turn. A coded sign-in refusal while identity is still loading restores the draft without replacing newer text. Local chat, public catalog chat, and signed-in chat retain their existing behavior.
-
-Each setup action shows Preparing while its launch is in flight, disables duplicate activation, and becomes Retry Wiki or Retry Mythical history on failure. Only an actual persisted run receipt changes the action to started, and both distinct receipts are required for the lesson's success. Preparation and failure state survive reload; preparation owned by an earlier page load becomes retryable instead of leaving a permanent spinner. One concise error stays beside the action row with technical output in a closed Technical details disclosure. Matching provisioning and command toasts do not repeat that failure. Older saved raw setup errors use the same presentation.
-
-A completed repository import offers **Show issues**, which opens the imported repository through the existing product session. This works even when no workspace ID was returned and does not send a GitHub-signed-in user into the separate legacy Cloud workspace sign-in flow.
-
-Chat opens with Command/Control+K. M selects Normal, Vim, or Dictation mode without opening Chat. Vim uses H/J/K/L to move focus; Dictation starts microphone capture on the next Chat open. Selecting Normal or Vim stops dictation. Back is B, Sound is S, and navigation is W. Sound on/off lives in the left sidebar during the tutorial; its S shortcut also works with the sidebar closed. Lesson keys reserve M/H/J/K/L: Make the Change is G, GitHub login is A, Wiki is U, and Mythical history is Y. All button shortcuts highlight on press and activate only on the final held input’s release.
-
-
-## Background work and instant chat
-
-The permanent interaction contract is in the root `AGENTS.md`: chat acknowledges
-immediately, and slow work runs in the background with shared toast notifications.
-The live practice research, prototype, plan, implementation, and Change commands
-persist their request and return before the launch network request finishes.
-The toast follows both launch and remote execution, resolving only from the real
-result. The running lesson action becomes **Chat while it runs**, usable by click
-or its existing shortcut. Dependent lessons still require real completion receipts;
-a background request never counts as a successful result. Reload reconnects the
-same idempotent request, and retry/failure details remain in the embedded run card.
+There is no lesson sequence or replay flow. Legacy session `guide` fields are stripped on parse. Practice repositories, general cards, and live practice execution remain available.

@@ -9,7 +9,7 @@ test("the split SQLite worker boots with OPFS and preserves a composer draft acr
     if (/\/wa-sqlite-[^/]+\.wasm$/.test(request.url())) wasm.push(request.url())
   })
   await page.goto("/")
-  await expect(page.locator(".guide-shell")).toBeVisible()
+  await expect(page.locator(".app-shell")).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
   expect(wasm.length).toBeGreaterThan(0)
   await page.keyboard.press("Control+k")
@@ -19,8 +19,7 @@ test("the split SQLite worker boots with OPFS and preserves a composer draft acr
   await expect(page.getByTestId("composer-input")).toBeHidden()
   const workspaceUrl = page.url()
   await page.reload()
-  // A durable workspace address resumes its view; only explicit onboarding
-  // entries replay the guide. The composer stays closed until invoked.
+  // A durable workspace address resumes its view. Chat stays closed until invoked.
   await expect(page).toHaveURL(workspaceUrl)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(page.getByTestId("composer-input")).toBeHidden()
@@ -33,7 +32,7 @@ test("the split SQLite worker boots with OPFS and preserves a composer draft acr
 test("an OPFS-backed multiline composer draft survives an immediate reload while the overlay stays closed on boot", async ({ page }) => {
   const draft = "first line\nsecond line"
   await page.goto("/")
-  await expect(page.locator(".guide-shell")).toBeVisible()
+  await expect(page.locator(".app-shell")).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
 
   await page.keyboard.press("ControlOrMeta+k")

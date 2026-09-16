@@ -1,5 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
+import { afterAll,afterEach,expect,spyOn,test } from "bun:test"
 import { useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -116,7 +116,7 @@ test('coarse pointers hide tutorial and repository key chips at desktop width', 
   Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 1 })
   cleanups.push(() => { if (touch) Object.defineProperty(navigator, 'maxTouchPoints', touch); else Reflect.deleteProperty(navigator, 'maxTouchPoints') })
   const style = document.createElement('style')
-  style.textContent = await Bun.file(new URL('./onboarding/guide.css', import.meta.url)).text()
+  style.textContent = await Bun.file(new URL('./SessionShell.css', import.meta.url)).text()
   document.head.append(style)
   cleanups.push(() => style.remove())
   const { GuideButton } = await import('./onboarding/GuideButton')

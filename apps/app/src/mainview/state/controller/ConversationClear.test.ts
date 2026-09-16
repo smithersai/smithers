@@ -1,17 +1,17 @@
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
-import { describe, expect, test } from "bun:test"
+import { describe,expect,test } from "bun:test"
 import { APP_SCHEMA_VERSION } from "../../chain/SchemaVersion"
-import { openSqliteRowStorage, ROW_TABLE_NAME } from "../../chain/SqliteRowStorage"
+import { openSqliteRowStorage,ROW_TABLE_NAME } from "../../chain/SqliteRowStorage"
 import { ENVELOPE_STORAGE_KEY } from "../../chain/TransactionalStorage"
-import { parseFramePath } from "../../runtime/FrameHistory"
 import type { FrameHistoryPort } from "../../runtime/FrameHistory"
-import { DEFAULT_BRANCH_ID, DEFAULT_WORKSPACE_ID, MessageSchema, rootFrameId, WorldDocumentSchema } from "../AppState"
-import { createAppStore } from "../AppStore"
+import { parseFramePath } from "../../runtime/FrameHistory"
+import { DEFAULT_BRANCH_ID,DEFAULT_WORKSPACE_ID,MessageSchema,rootFrameId,WorldDocumentSchema } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { writeLegacyCollection } from "../TestFixtures"
+import { createAppStore } from "../AppStore"
 import { archiveNotice } from "../ConversationArchive"
+import { writeLegacyCollection } from "../TestFixtures"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { createWorldController } from "./world"
@@ -365,31 +365,6 @@ describe("local archive and append-only summary notes", () => {
     expect(state(store)).toEqual(before)
     expect(await world.clearConversation()).toBeUndefined()
     ctx.dispose()
-  })
-
-  test("failed local persistence returns an honest failure and restores every projection", async () => {
-    const { store, storage, world, ctx } = await fixture(async () => response())
-    await signIn(store)
-    const before = state(store)
-    const committed = storage.getItem(ENVELOPE_STORAGE_KEY)
-    storage.arm()
-    expect(await world.clearConversation({ summarize: true })).toContain("archive could not be saved")
-    expect(state(store)).toEqual(before)
-    expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(committed)
-    storage.heal()
-    ctx.dispose()
-    await store.dispose?.()
-    const reopened = await createAppStore({ kind: "localStorage", storage })
-    // Boot deliberately marks a persisted first-time tutorial as started and
-    // paused; every archived projection still equals the pre-failure state.
-    expect(state(reopened)).toEqual({
-      ...before,
-      session: { ...before.session, guide: { ...before.session.guide!, autoPaused: true, completed: ["tutorial.started"] } }
-    })
-    const retry = attachWorld(reopened, async () => response())
-    expect(await retry.world.clearConversation({ summarize: true })).toBeUndefined()
-    retry.ctx.dispose()
-    await reopened.dispose?.()
   })
 })
 

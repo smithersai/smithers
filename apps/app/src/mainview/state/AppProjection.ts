@@ -1,108 +1,114 @@
-import { approvalQuestionKey } from "../cards/ApprovalQuestion"
-import { PERSISTED_COLLECTION_BUDGET_BYTES } from "../chain/PersistenceBudget"
-import { pendingRecoveryScope, sameRecoveryScope } from "./PendingRecovery"
-import { isLessonCard, isTutorialCard } from "../onboarding/transcriptScope"
-import { canonicalEventValue } from "./EventValue"
-import { journalPayload } from "./TransitionDiagnostics"
-import type { RuntimeApproval } from "./RuntimeProjection"
-import { CommandIntentSchema } from "./CommandIntent"
-import { RuntimeRunSchema, RuntimeApprovalSchema, RuntimeProjectionIntegrityError, observeRuntimeRun, observedRuntimeApproval, submitRuntimeApproval,
-  runtimeRunKey, runtimeApprovalKey, runtimeApprovalIdOf, runtimeScopeOf, projectRuntimeCard, snapshotRuntimeCard } from "./RuntimeProjection"
-import { HttpTurnSchema, HttpTurnLegSchema, httpToolLegCount, projectHttpFrame, settleHttpClaims, verifyHttpBatch } from "./HttpTurn"
-import { impossibleAskOf, runLaunchCommandOf, toolResultLaunchedRun } from "./RunClaims"
-import { toolActLine } from "./ToolActLine"
-import { z } from "zod"
-import { RepositoryContextSchema } from "./RepositoryContext"
-import { NotificationReadReceiptSchema, RepositoryNotificationSchema, notificationReceiptKey, notificationReadVersion, type RepositoryNotification } from "./RepositoryNotifications"
-import { sameApproval } from "./ApprovalReference"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
-import { acceptStatus, expireStatus, exitedStatus } from "./HealthStatus"
-import { migrateGuideV3 } from "./controller/guide"
-import { resumeTutorial } from "../onboarding/resume"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
+import { z } from "zod"
+import { approvalQuestionKey } from "../cards/ApprovalQuestion"
 import { retiredLineageKey } from "../chain/LineageRetirement"
-import { archiveNotice, conversationNotes } from "./ConversationArchive"
-import { projectWorkspaceCard, snapshotCard, sharedCopyOf } from "./WorkspaceViews"
+import { PERSISTED_COLLECTION_BUDGET_BYTES } from "../chain/PersistenceBudget"
 import { framePath } from "../runtime/FrameHistory"
-import {
-  initialGuide,
-  AgentRoleSchema,
-  BillingAccountSchema,
-  BranchSchema,
-  CardSchema,
-  CardHistorySchema,
-  PracticeIssueSchema,
-  CardPatchSchema,
-  cardFrameId,
-  ChainEventRecordSchema,
-  RetiredChainLineageSchema,
-  ChangeRowSchema,
-  CloudRepositorySchema,
-  CloudSessionRowSchema,
-  CloudWorkspaceRowSchema,
-  ConnectorOperationSchema,
-  DEFAULT_BRANCH_ID,
-  DEFAULT_WORKSPACE_ID,
-  FrameSchema,
-  GitHubAppStatusRowSchema,
-  HarnessSchema,
-  IdentitySessionSchema,
-  initialBillingAccount,
-  initialCloudSession,
-  initialConnectorOperation,
-  initialIdentitySession,
-  initialSession,
-  initialWorldDocuments,
-  LinearIntegrationRowSchema,
-  LocalRepositoryConnectorSchema,
-  conversationTabIdOf,
-  inConversation,
-  MAIN_TAB_ID,
-  mainTab,
-  MessageSchema,
-  PinnedRepoSchema,
-  RECOMMENDATION_ID,
-  RepoTreeRowSchema,
-  RepositoryFlowsRowSchema,
-  repoTreeRowId,
-  StarredTargetSchema,
-  RecommendationSchema,
-  repoIdFromRemote,
-  repoKeyOf,
-  RepoSchema,
-  rootFrameId,
-  parseRepoSelection,
-  SessionSchema,
-  TabSchema,
-  ToastSchema,
-  ToolCallRecordSchema,
-  TransitionRecordSchema,
-  WorkingCopySchema,
-  WorkspaceSchema,
-  WorldDocumentSchema
-} from "./AppState"
+import { sameApproval } from "./ApprovalReference"
 import type {
-  AppTransition,
-  Card,
-  ChangeRow,
-  CloudRepository,
-  CloudSessionRow,
-  CloudWorkspaceRow,
-  Frame,
-  FrameSnapshot,
-  GitHubAppStatusRow,
-  LinearIntegrationRow,
-  LocalRepositoryConnector,
-  Message,
-  Recommendation,
-  RepoTreeRow,
-  RepositoryCapabilityPattern,
-  Session,
-  TabRow,
-  Toast,
-  WorkingCopy,
-  WorldDocument
+AppTransition,
+Card,
+ChangeRow,
+CloudRepository,
+CloudSessionRow,
+CloudWorkspaceRow,
+Frame,
+FrameSnapshot,
+GitHubAppStatusRow,
+LinearIntegrationRow,
+LocalRepositoryConnector,
+Message,
+Recommendation,
+RepoTreeRow,
+RepositoryCapabilityPattern,
+Session,
+TabRow,
+Toast,
+WorkingCopy,
+WorldDocument
 } from "./AppState"
+import {
+AgentRoleSchema,
+BillingAccountSchema,
+BranchSchema,
+CardHistorySchema,
+CardPatchSchema,
+CardSchema,
+ChainEventRecordSchema,
+ChangeRowSchema,
+CloudRepositorySchema,
+CloudSessionRowSchema,
+CloudWorkspaceRowSchema,
+ConnectorOperationSchema,
+DEFAULT_BRANCH_ID,
+DEFAULT_WORKSPACE_ID,
+FrameSchema,
+GitHubAppStatusRowSchema,
+HarnessSchema,
+IdentitySessionSchema,
+LinearIntegrationRowSchema,
+LocalRepositoryConnectorSchema,
+MAIN_TAB_ID,
+MessageSchema,
+PinnedRepoSchema,
+PracticeIssueSchema,
+RECOMMENDATION_ID,
+RecommendationSchema,
+RepoSchema,
+RepoTreeRowSchema,
+RepositoryFlowsRowSchema,
+RetiredChainLineageSchema,
+SessionSchema,
+StarredTargetSchema,
+TabSchema,
+ToastSchema,
+ToolCallRecordSchema,
+TransitionRecordSchema,
+WorkingCopySchema,
+WorkspaceSchema,
+WorldDocumentSchema,
+cardFrameId,
+conversationTabIdOf,
+inConversation,
+initialBillingAccount,
+initialCloudSession,
+initialConnectorOperation,
+initialIdentitySession,
+initialSession,
+initialWorldDocuments,
+mainTab,
+parseRepoSelection,
+repoIdFromRemote,
+repoKeyOf,
+repoTreeRowId,
+rootFrameId
+} from "./AppState"
+import { CommandIntentSchema } from "./CommandIntent"
+import { archiveNotice,conversationNotes } from "./ConversationArchive"
+import { canonicalEventValue } from "./EventValue"
+import { acceptStatus,exitedStatus,expireStatus } from "./HealthStatus"
+import { HttpTurnLegSchema,HttpTurnSchema,httpToolLegCount,projectHttpFrame,settleHttpClaims,verifyHttpBatch } from "./HttpTurn"
+import { pendingRecoveryScope,sameRecoveryScope } from "./PendingRecovery"
+import { PRACTICE_REPO } from "./practice/PracticeRepository"
+import { RepositoryContextSchema } from "./RepositoryContext"
+import { NotificationReadReceiptSchema,RepositoryNotificationSchema,notificationReadVersion,notificationReceiptKey,type RepositoryNotification } from "./RepositoryNotifications"
+import { impossibleAskOf,runLaunchCommandOf,toolResultLaunchedRun } from "./RunClaims"
+import type { RuntimeApproval } from "./RuntimeProjection"
+import {
+RuntimeApprovalSchema,RuntimeProjectionIntegrityError,
+RuntimeRunSchema,
+observeRuntimeRun,observedRuntimeApproval,
+projectRuntimeCard,
+runtimeApprovalIdOf,
+runtimeApprovalKey,
+runtimeRunKey,
+runtimeScopeOf,
+snapshotRuntimeCard,
+submitRuntimeApproval
+} from "./RuntimeProjection"
+import { toolActLine } from "./ToolActLine"
+import { journalPayload } from "./TransitionDiagnostics"
+import { projectWorkspaceCard,sharedCopyOf,snapshotCard } from "./WorkspaceViews"
 
 /** The domain state whose meaning is defined by this reducer. Journal authority is never a domain row. */
 export const APP_PROJECTION_SCHEMAS = {
@@ -209,7 +215,7 @@ export const APP_TRANSITION_TYPES = {
   "chain.turn.resumed": true,
   "hint.dismissed": true,
   "first-run.dismissed": true,
-  "guide.changed": true,
+  "librarian.launches.changed": true,
   "theme.changed": true,
   "palette.changed": true,
   "composer.control.changed": true,
@@ -231,7 +237,6 @@ export const APP_TRANSITION_TYPES = {
   "practice.issue.updated": true,
   "card.recovered": true,
   "card.view.loaded": true,
-  "guide.visibility.changed": true,
   "card.navigated": true,
   "card.history.moved": true,
   "notifications.read": true,
@@ -721,11 +726,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       draft.selectedWorldDocumentId = [...collections.worldDocuments.values()][0]?.id ?? null
     }
     draft.activeRepoKey = null
-    if (draft.guide?.librarianLaunches !== undefined) {
-      delete draft.guide.librarianLaunches
-      delete draft.guide.noticeDetail
-      delete draft.guide.notice
-    }
+    delete draft.librarianLaunches
     draft.maximizedCardId = null
     draft.activeFrameId = rootFrameId(branchId)
   })
@@ -882,21 +883,8 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
           for (const key of missing) target[key] = seed[key]
         })
       }
-      const persistedGuide = collections.sessions.get(SESSION_ID)?.guide
-      // Anything but the current script (onboarding v4, "practice-v4") is remapped once, including the 10-lesson repository-v3 rows.
-      if (persistedGuide !== undefined && (persistedGuide.version < 3 || persistedGuide.sequence !== "practice-v4")) {
-        collections.sessions.update(SESSION_ID, draft => { draft.guide = migrateGuideV3(persistedGuide) })
-      }
     }
     if (collections.sessions.get(SESSION_ID)?.sidebarOpen === true) collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = false })
-  if (collections.sessions.get(SESSION_ID)?.guideVisible) collections.sessions.update(SESSION_ID, draft => { draft.guideVisible = false })
-    const currentGuide = collections.sessions.get(SESSION_ID)?.guide ?? initialGuide()
-    {
-      const resumed = resumeTutorial(currentGuide, collections.cards.values(), collections.messages.size > 0)
-      if (resumed !== currentGuide || collections.sessions.get(SESSION_ID)?.guide === undefined) {
-        collections.sessions.update(SESSION_ID, draft => { draft.guide = resumed })
-      }
-    }
     // Wave 14 §1: nothing seeds the transcript. Signed out, the auth message is
     // the whole conversation; signed in, the transcript opens clean and the
     // inventory seam fills the repositories. See AppState's note.
@@ -1140,32 +1128,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
        * collection here.
        */
       const conversationTabId = conversationTabIdOf(current)
-      const recordGuideEntry = (id: string, source: "chat" | "lesson", ordinal?: number, outsideGuide = false) => {
-        if (!current.guide || current.guide.finished || (!current.guideVisible && !outsideGuide)) return
-        collections.sessions.update(SESSION_ID, draft => {
-          if (draft.guide) (draft.guide.transcript ??= {})[id] = { step: current.guide!.step, source, owned: true,
-            ...(ordinal === undefined ? {} : { ordinal }),
-          }
-        })
-      }
-      const tutorialTurn = current.turnId !== undefined && current.turnId !== null
-        && current.guide?.transcript?.[`message-${current.turnId}-user`]?.owned === true
-      const recordGuideCard = (card: Card, ordinal?: number): void => {
-        const fromTurn = transition.actor === "smithers" || ("turnId" in transition && transition.turnId === current.turnId)
-        const explicitWikiOrForm = card.kind === "world" || card.kind === "wiki-links" || card.kind === "wiki-graph" ||
-          (card.kind === "flow-form" && card.payload.via === "user")
-        const explicitChatAct = transition.actor === "user" && current.guide?.conversationOpen === true && explicitWikiOrForm
-        const explicitPracticeAct = transition.actor === "user" && current.guideVisible !== true && isTutorialCard(card)
-        if (explicitPracticeAct) recordGuideEntry(card.id, "chat", ordinal, true)
-        else if (explicitChatAct || (current.phase === "responding" && tutorialTurn && fromTurn)) recordGuideEntry(card.id, "chat", ordinal)
-        else if (current.guide && isLessonCard(card, current.guide)) recordGuideEntry(card.id, "lesson", ordinal)
-      }
       const insertMessage = (row: Message): void => {
-        if (current.phase !== "responding" || tutorialTurn) recordGuideEntry(row.id, "chat")
         collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const insertCard = (row: Card): void => {
-        recordGuideCard(row)
         collections.cards.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
       const ensureCardFrame = (cardId: string): Frame => {
@@ -1362,8 +1328,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.draft = ""
             draft.phase = "responding"
-            // Sending dismisses search results, while the tutorial's chat dock stays open.
-            if (draft.guide?.conversationOpen && !draft.guide.finished) draft.paletteOpen = false
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
             draft.turnId = transition.turnId
@@ -1915,35 +1879,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, draft => { draft.firstRunDismissed = true })
           break
         }
-        case "guide.visibility.changed": {
-          collections.sessions.update(SESSION_ID, draft => { draft.guideVisible = transition.visible })
+        case "librarian.launches.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.librarianLaunches = transition.launches })
           break
         }
-        case "guide.changed": {
-          // Replay owns a new practice presentation as well as a new cursor.
-          // Clear both the cards and their local navigation atomically, so a
-          // reused practice card id cannot restore the previous run on Back.
-          const replay = (transition.guide.playthrough ?? 0) > (current.guide?.playthrough ?? 0)
-          const removedCards = new Set(replay ? [...collections.cards.values()]
-            .filter(card => inConversation(card, conversationTabId) && "repo" in card.payload && card.payload.repo === PRACTICE_REPO)
-            .map(card => card.id) : [])
-          const removedFrames = [...collections.frames.values()]
-            .filter(frame => frame.branchId === activeBranchId && frame.cardId !== null && removedCards.has(frame.cardId))
-            .map(frame => frame.id)
-          if (removedCards.size > 0) collections.cards.delete([...removedCards])
-          for (const id of removedCards) if (collections.cardHistories.has(id)) collections.cardHistories.delete(id)
-          if (removedFrames.length > 0) collections.frames.delete(removedFrames)
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.guide = !replay && draft.guide?.transcript ? { ...transition.guide,
-              // Async lesson producers may carry an older placement snapshot.
-              transcript: { ...transition.guide.transcript, ...draft.guide.transcript },
-            } : transition.guide
-            if (draft.maximizedCardId !== null && removedCards.has(draft.maximizedCardId)) draft.maximizedCardId = null
-            if (draft.activeFrameId !== undefined && removedFrames.includes(draft.activeFrameId)) draft.activeFrameId = rootFrameId(activeBranchId)
-          })
-          break
-        }
-
         case "theme.changed":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.theme = transition.theme
@@ -2150,8 +2089,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "card.navigated": {
           const currentCard = collections.cards.get(transition.card.id)
           if (!currentCard || isApprovalRequest(currentCard) || isApprovalRequest(transition.card) || approvalRequest(currentCard.id)) return
-          recordGuideCard(transition.card,
-            current.phase === "responding" ? nextOrdinal(collections) : undefined)
           const history = collections.cardHistories.get(currentCard.id)
           const snapshot = { ...capturedCard(currentCard), navigation: undefined }
           const entries = history ? [...history.entries.slice(0, history.index), snapshot] : [snapshot]
@@ -2210,7 +2147,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             if (collections.cardHistories.has(transition.id)) collections.cardHistories.delete(transition.id)
             break
           }
-          if (transition.explicitTutorial === true) recordGuideEntry(card.id, "chat", card.ordinal, true)
           if (existing) collections.cards.update(card.id, draft => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, card) })
           else collections.cards.insert(card)
           if (history) {
@@ -2310,11 +2246,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (existing === undefined) {
             insertCard(card)
           } else {
-            // A new view of an existing frame (for example picker → Change) is a fresh read.
-            const chat = current.phase === "responding"
-            if (existing.kind !== card.kind || !current.guide?.transcript?.[card.id]?.owned || (chat && current.guide?.transcript?.[card.id]?.source !== "chat")) {
-              recordGuideCard(card, chat ? nextOrdinal(collections) : undefined)
-            }
             collections.cards.update(card.id, (draft) => { Object.assign(draft, { loading: undefined, viewKey: undefined, viewRepo: undefined }, card) })
           }
           const history = collections.cardHistories.get(card.id)
@@ -2472,9 +2403,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.updatedAt = createdAt
             draft.revision = revision
           })
-          if (transition.state === "signed-out" && !collections.sessions.get(SESSION_ID)?.activeRepoKey) {
-            collections.sessions.update(SESSION_ID, draft => { draft.activeRepoKey = PRACTICE_REPO })
-          }
           if (transition.state === "signed-in") answerSignInPrompts(collections, "identity", transition.login, createdAt)
           break
         }
@@ -3182,6 +3110,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           break
         }
         case "repo.selected": {
+          if (transition.id === PRACTICE_REPO) {
+            collections.sessions.update(SESSION_ID, draft => { draft.activeRepoKey = PRACTICE_REPO })
+            break
+          }
           /*
            * Lane piper grammar: `org/repo` selects the repository (its
            * head), `org/repo#copyId` one working copy, and `local:/path` a

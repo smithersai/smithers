@@ -1,4 +1,4 @@
-import type { Card, GuideState } from "./AppState"
+import type { Card,Session } from "./AppState"
 import { runFailure } from "./RunFailure"
 
 /** A persisted preparation from another page load is retryable, never an endless spinner. */
@@ -10,24 +10,6 @@ export const librarianFailureMessage = (kind: "wiki" | "history", reason?: strin
   if (reason === LIBRARIAN_UNCONFIRMED) return `${label} may have started. Check Runs before retrying, or choose Do this later.`
   return `Create ${label} didn't start: ${runFailure(reason).message}`
 }
-
-/** Saved failures from before per-action receipts remain readable and retryable. */
-export function legacyLibrarianFailure(guide: GuideState): { kind: "wiki" | "history"; error: string } | undefined {
-  if (guide.step !== 12 || guide.librarianLaunches?.length) return
-  for (const [kind, label] of [["wiki", "Create Wiki"], ["history", "Create Mythical history"]] as const) {
-    const prefix = `${label} didn't start: `
-    if (guide.notice?.startsWith(prefix)) return { kind, error: guide.notice.slice(prefix.length) }
-  }
-}
-
-/** Select the latest intent for this guide's repository and playthrough. */
-export function librarianLaunchFor(guide: Pick<GuideState, "repo" | "playthrough" | "librarianLaunches">, kind: "wiki" | "history") {
-  return [...(guide.librarianLaunches ?? [])].reverse().find(entry => {
-    if (entry.kind !== kind || (guide.repo && entry.repo !== guide.repo)) return false
-    try { return JSON.parse(entry.scope)[5] === (guide.playthrough ?? 0) } catch { return false }
-  })
-}
-
 
 export type LibrarianRunCard = Extract<Card, { kind: "run-trace" }>
 export const librarianRunKey = (card: LibrarianRunCard): string => JSON.stringify([card.payload.repo, card.payload.workspaceId, card.payload.runId])
@@ -55,7 +37,7 @@ export const librarianRunCards = (cards: readonly Card[]): LibrarianRunCard[] =>
   return [...runs.values()].sort((a, b) => b.createdAt - a.createdAt || b.ordinal - a.ordinal)
 }
 
-export const librarianReceiptFor = (cards: readonly Card[], entry: NonNullable<GuideState["librarianLaunches"]>[number]): LibrarianRunCard | undefined =>
+export const librarianReceiptFor = (cards: readonly Card[], entry: NonNullable<Session["librarianLaunches"]>[number]): LibrarianRunCard | undefined =>
   librarianRunCards(cards).find(card => card.payload.repo === entry.repo
     && librarianRunMetadata(card)?.scope === entry.scope && librarianRunMetadata(card)?.kind === entry.kind
     && (entry.runId === undefined ? card.createdAt >= entry.startedAt : card.payload.runId === entry.runId))

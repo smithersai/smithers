@@ -1,11 +1,11 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, expect, test } from "bun:test"
+import { afterAll,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { ControllerContext } from "./ControllerContext"
+import { FirstSightHint } from "./FirstSightHint"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
-import { FirstSightHint } from "./FirstSightHint"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
@@ -18,7 +18,7 @@ test("one hint opens in DOM order, dismissal and actions persist across remount 
   const host = document.createElement("div")
   document.body.append(host)
   let root = createRoot(host)
-  const render = () => flushSync(() => root.render(<ControllerContext value={{ store } as AppController}>
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, dismissHint: (id: string) => store.dispatch({ type: "hint.dismissed", actor: "user", id }) } as unknown as AppController}>
     <FirstSightHint id="first" content="First hint."><button id="first-control">First</button></FirstSightHint>
     <FirstSightHint id="second" content="Second hint."><button id="second-control">Second</button></FirstSightHint>
   </ControllerContext>))
@@ -29,6 +29,13 @@ test("one hint opens in DOM order, dismissal and actions persist across remount 
   expect(host.querySelectorAll('[role="note"]').length).toBe(1)
   expect(host.querySelector('[role="note"]')?.textContent).toContain("First hint.")
   expect(document.activeElement).toBe(control)
+  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+  let bubbled = false
+  host.addEventListener("keydown", () => { bubbled = true }, { once: true })
+  control.dispatchEvent(escape)
+  expect(escape.defaultPrevented).toBe(false)
+  expect(bubbled).toBe(true)
+  expect(store.session().hintsSeen).toBeUndefined()
   flushSync(() => host.querySelector<HTMLButtonElement>('[aria-label="Dismiss help"]')!.click())
   await store.settled?.(); await tick()
   expect(host.querySelectorAll('[role="note"]').length).toBe(1)

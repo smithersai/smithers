@@ -4,10 +4,9 @@
 
 Users must be able to operate all of Smithers without a mouse. Every action needs an accessible keyboard path, visible focus, and predictable focus movement. Use native control semantics, Tab/Shift-Tab navigation, Enter/Space activation, Escape dismissal, and appropriate arrow-key navigation. Preserve normal text editing. No hover-only, drag-only, or pointer-only required action. Keyboard-only completion is a release check for every new workflow, including onboarding.
 
-## Current onboarding brief (Will, 2026-09-08)
+## First-run experience (Will, 2026-09-15)
 
-The new shell opens with a one-second SMITHERS entrance and progressively introduces capabilities. The UI is the default view: full-screen, no composer. Command-K summons ONLY the composer — a solid bottom dock that animates open and pushes the content up; the chat history lives in the workspace above. Escape or a second Command-K closes the dock with the reverse animation. This explicit brief supersedes the always-visible-chat and fixed-sidebar requirements below. Outputs still use the existing flows and shared state; the guide is documented in `docs/ONBOARDING.md`.
-
+Open the app directly. New sessions show registry-backed recommended actions, grouped by namespace, until dismissal or dispatch. Signed-out visitors start with the practice repository. First-sight hints use HelpBubble, persist dismissal, and show one at a time in DOM order. Command/Control-K opens Chat; touch hints omit key names. There is no scripted lesson sequence.
 
 ## ⚖️ THE EMBED LAW — read this before anything else (will, 2026-08-09, permanent)
 

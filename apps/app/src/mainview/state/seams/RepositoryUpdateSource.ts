@@ -1,6 +1,6 @@
-import type { RepositoryEvent } from "../RepositoryNotifications"
-import { isPracticeRepo, practiceIssueList, practicePrList, PRACTICE_BRANCH } from "../practice/PracticeRepository"
-import type { SeamContext } from "./SeamContext"
+import type { RepositoryEvent } from "../RepositoryNotifications";
+import { isPracticeRepo,practiceIssueList,practicePrList } from "../practice/PracticeRepository";
+import type { SeamContext } from "./SeamContext";
 
 type Section = { events: RepositoryEvent[]; problems: string[]; available: boolean }
 export interface RepositoryUpdateSnapshot { issues: Section; prs: Section; notifications: Section; branch?: string }
@@ -37,7 +37,7 @@ export async function readRepositoryUpdate(ctx: SeamContext, repo: string): Prom
   if (isPracticeRepo(repo)) return {
     issues: { events: practiceIssueList("all").issues.flatMap(row => { const item = activity(row, "practice", "issue"); return item ? [item] : [] }), problems: [], available: true },
     prs: { events: practicePrList().landings.flatMap(row => { const item = activity(row, "practice", "pr"); return item ? [item] : [] }), problems: [], available: true },
-    notifications: { events: [], problems: [], available: true }, branch: ctx.store.session().guide?.completed?.includes("commits.made") ? PRACTICE_BRANCH : "main"
+    notifications: { events: [], problems: [], available: true }, branch: "main"
   }
   const path = repo.split("/").map(encodeURIComponent).join("/")
   const results = await Promise.allSettled([

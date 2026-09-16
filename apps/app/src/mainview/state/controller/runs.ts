@@ -17,26 +17,24 @@
  * dropping the filter.
  */
 import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
-import { liveTutorialTranscript } from "../LiveTutorialTranscript"
-import type { TraceFilter, TraceView } from "../../cards/RunTrace"
-import { traceFromJournal } from "../../cards/RunTrace"
-import { codingPlanOf } from "../../cards/CodingPlan"
-import type { CommandResult } from "../../flows/Flows"
-import type { Card } from "../AppState"
 import { questionOf } from "../../cards/ApprovalQuestion"
+import { codingPlanOf } from "../../cards/CodingPlan"
+import { runHandoff } from "../../cards/RunHandoff"
+import type { TraceFilter,TraceView } from "../../cards/RunTrace"
+import { traceFromJournal } from "../../cards/RunTrace"
+import type { CommandResult } from "../../flows/Flows"
+import { framePath } from "../../runtime/FrameHistory"
+import type { Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
+import { liveTutorialTranscript } from "../LiveTutorialTranscript"
+import { gatewayBindingFor,gatewayRunContextFor } from "../RepoContext"
+import { approvalCardIdFor,cardContainsRun,runCardInScope,runScopeFromCard,sameRunScope,type RunScope } from "../RunReference"
+import { isPracticeRepo,practiceTranscript } from "../practice/PracticeRepository"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
+import type { FormsController } from "./forms"
 import type { RunSummaryRow } from "./gateway"
 import type { WorkflowController } from "./workflows"
-import { approvalCardIdFor, cardContainsRun, runCardInScope, runScopeFromCard, sameRunScope, type RunScope } from "../RunReference"
-import { completeGuide } from "../../onboarding/completion"
-import { canCompleteTutorialTrace, tutorialTraceScopeFor, type TutorialTraceScope } from "./tutorial2-turn_trace"
-import { activeRepositoryId, gatewayBindingFor, gatewayRunContextFor } from "../RepoContext"
-import { isPracticeRepo, practiceTranscript } from "../practice/PracticeRepository"
-import type { FormsController } from "./forms"
-import { runHandoff } from "../../cards/RunHandoff"
-import { framePath } from "../../runtime/FrameHistory"
 
 export interface RunsController {
   readonly prepareRunHandoff: (runId: string, sourceCard?: string) => CommandResult
@@ -84,7 +82,6 @@ export const createRunsController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
   workflows: WorkflowController,
-  tutorialTraceScope: (runId: string) => TutorialTraceScope | undefined = runId => tutorialTraceScopeFor(ctx.store, runId),
   renderFlowForm?: FormsController["renderFlowForm"]
 ): RunsController => {
   const { store, gateway } = ctx
@@ -504,21 +501,14 @@ export const createRunsController = (
       ...(kind === undefined ? {} : { kind })
     }, records)
     if (!model.rows.some((span) => span.id === nodeId)) return `Run ${runId} has no trace node ${nodeId}.`
-    const playthrough = store.session().guide?.playthrough ?? 0
-    const activeRepoKey = store.session().activeRepoKey
-    const accountEpoch = ctx.accountEpoch
-    // Persist the actual embedded inspection before completing the lesson.
+    // Persist the embedded inspection.
     await store.dispatch({
       type: "card.updated",
       actor: ctx.commandActor,
       id: card.id,
       patch: { payload: { ...card.payload, facet: "steps", selection: nodeId, liveTail: false, cursorSeq } }
     }).isPersisted.promise
-    const guide = store.session().guide
-    if (ctx.accountEpoch === accountEpoch && (guide?.playthrough ?? 0) === playthrough && store.session().activeRepoKey === activeRepoKey &&
-        canCompleteTutorialTrace(guide, tutorialTraceScope(runId), activeRepositoryId(store), runId, card.payload.repo, model, nodeId)) {
-      await store.dispatch({ type: "guide.changed", actor: ctx.commandActor, guide: completeGuide(guide!, "trace.opened") }).isPersisted.promise
-    }
+
     return { value: `trace-select run=${runId} node=${nodeId}${seq === undefined ? "" : ` seq=${seq}`}` }
   }
 

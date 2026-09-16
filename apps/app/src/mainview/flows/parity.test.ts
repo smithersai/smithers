@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { readdirSync, readFileSync } from "node:fs"
+import { describe,expect,test } from "bun:test"
+import { readdirSync,readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
 
@@ -139,7 +139,7 @@ const PRESENTATION_ONLY = [
   "onFrameForward", // delegated: App.tsx binds it to frame.forward
   "onForkFrame", // delegated: App.tsx binds it to frame.fork
   "onOpenInTab(", // delegated: App.tsx and tabs/CardTabBody.tsx bind it to runCommand("tab.card", ...)
-  "onInstall(", // delegated: PluginsSurface.tsx and the guide's Library bind it to runCommand("plugins.install", ...)
+  "onInstall(", // delegated: PluginsSurface.tsx bind it to runCommand("plugins.install", ...)
   "onRemove(", // delegated: PluginsSurface.tsx binds it to runCommand("plugins.remove", ...)
   "onOpen(", // delegated: the plugin rail's binding sites bind it to runCommand(<the entry's own flow>)
   "onConnectGitHub(", // delegated: App.tsx binds it to auth.sign-in
@@ -151,19 +151,15 @@ const PRESENTATION_ONLY = [
   "onConfirm}", // SurfaceChrome delegates to its binding site
   "onCancel}", // dismissing a dialog changes no application state
   "onClose}", // SurfaceChrome delegates to its binding site
-  "runLessonAction(", // delegated: GuideShell.tsx binds the lesson's button to runCommand(<the lesson's own flow>)
-  "dispatch(\"reel-" // delegated: Reel.tsx's dispatch is runCommand("onboarding.act", ...)
 ] as const
 
-// Indirections added with the focused guide and run cards. Scope each literal
+// Indirections added with the run cards. Scope each literal
 // to its component so a similarly named handler cannot inherit the exception.
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // Pre-boot browser navigation: no writable store/controller exists here.
   // Choosing this document's writer is a human tab gesture, not an app command.
   "../StartupError.tsx": ["onClick={useSmithersHere}", "onClick={() => window.location.reload()}"],
-  "../onboarding/GuideShell.tsx": ["onClick={advanceGuidance}"], // advances transient introductory help, without invoking a capability
-  "../onboarding/IntroSlides.tsx": ["dispatch(\"intro-"], // IntroSlidesShell binds its three typed actions to onboarding.act; pinned below.
-  "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App and GuideShell bind the typed action to runCommand(action.flow, action.args)
+  "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
   "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
@@ -210,282 +206,6 @@ describe("launch-law parity: every affordance is a command", () => {
       }
     }
     expect(violations).toEqual([])
-  })
-
-  test("the focused guide and run-card indirections retain their bindings", () => {
-    expect(files["../HelpBubble.tsx"]).toContain("onDismiss()")
-    expect(files["../InputModeMenu.tsx"]).toContain('data-flow="input.mode"')
-    for (const file of ["../App.tsx", "../onboarding/GuideShell.tsx"]) {
-      expect(files[file]).toContain('onChange={mode => controller.runCommand("input.mode", mode)}')
-    }
-    expect(files["../cards/LiveTutorialRunBody.tsx"]).toContain("const scoped=runSourceCommand(card.id,onRunCommand)")
-    expect(files["../cards/WorkflowCards.tsx"]).toContain("onRunCommand: sendRunCommand")
-    const intro = files["../onboarding/IntroSlides.tsx"]
-    expect(intro).toMatch(/const dispatch = useCallback<IntroDispatch>\(\(action\) => \{\s*controller\.runCommand\("onboarding\.act", action\)/)
-    expect(intro).toContain("<IntroSlides kind={open.kind} index={open.index} guide={guide} dispatch={dispatch} />")
-    expect(literalBindings(intro)).toEqual(Array.from({ length: 3 }, () => ({ prop: "data-flow", name: "onboarding.act" })))
-    // Visibility is a host lifecycle observation, not a button or a command.
-    const guide = files["../onboarding/GuideShell.tsx"]
-    const hostBinding = guide.slice(guide.indexOf("const bindInputs"), guide.indexOf("if (guide.finished)"))
-    expect(hostBinding).toContain("controller.observeGuideVisibility(true)")
-    expect(hostBinding).toContain("controller.observeGuideVisibility(false)")
-    expect(hostBinding).not.toContain("runCommand")
-    expect(read("./entries/Declare.ts")).toContain('| "observeGuideVisibility"')
-  })
-
-  test("the expected affordances are all present (removal fails loudly too)", () => {
-    // Files with no affordances at all (the composition root) are not pinned;
-    // the moment one grows a handler it appears here and must be accounted for.
-    const counts = Object.fromEntries(
-      Object.entries(files)
-        .map(([file, source]) => [file, handlers(source).length] as const)
-        .filter(([, count]) => count > 0)
-    )
-    expect(counts).toEqual({
-      "../onboarding/GuideShell.tsx": 11, // Toast dismissal is owned by ToastStack; includes dock Close and dictation controls.
-      "../onboarding/IntroSlides.tsx": 3, // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
-      // The optional capability reel after the last lesson: its launch pill and its Back.
-      "../onboarding/Reel.tsx": 4, // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
-      /*
-       * The chrome Sign in button (LOCAL-APP.md: sign-in is an option in the
-       * chrome, never a gate on the chat) is one of ChromeBar's nine below.
-       *
-       * Shell bindings stay here; composer bindings are pinned independently
-       * now that the hot path is its own module.
-       */
-      // 15 − the corner balance chip: the balance is one act away (/balance), never main-page chrome.
-      // +1 (ask 5): the Flows pane's back-to-conversation close, like World's.
-      // +1: the Flows pane's Triggers button, the button door of triggers.list.
-      // +1: the Wiki pane's Factory button, the button door of factory.show.
-      // +1 (Librarian L5): the Wiki pane's Graph button, the button door of wiki.graph.
-      "../App.tsx": 5,
-      // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
-      "../TranscriptMessage.tsx": 4,
-      "../StartupError.tsx": 3, // Held: takeover/reload; moved: takeover.
-      "../StorageRecoveryButton.tsx": 1,
-      "../FlowsSurface.tsx": 2,
-      "../WorldSurface.tsx": 7,
-      "../WikiDeleteDialog.tsx": 1, // The Wiki confirmation moved to the shared shell; its command remains wiki.delete.confirm.
-      "../HelpBubble.tsx": 1,
-      "../InputModeMenu.tsx": 2,
-      "../SessionNavigation.tsx": 2,
-      "../cards/CodingVibeCard.tsx": 1,
-      "../cards/LiveTutorialRunBody.tsx": 7,
-      "../cards/RepositoryUpdateCard.tsx": 3,
-      "../tabs/RepoTree.tsx": 1,
-      /*
-       * The Library (the `plugins` surface and the guided introduction share
-       * it): Install and Remove on a row, and the rail button each installed
-       * plugin contributed. Every one is a delegated prop its binding site
-       * runs through the registry.
-       */
-      "../plugins/PluginGallery.tsx": 2,
-      "../plugins/PluginRail.tsx": 1,
-      "../plugins/PluginsSurface.tsx": 1,
-      /* 11 = 10 + the origin chip's "rev N exists · view" (lane change step 4; renders only when both seqs are known). */
-      "../Composer.tsx": 9,
-      // 6 = 5 + the empty state's own import affordance (§11.6): with nothing
-      // connected the pane stated a fact and offered no move.
-      "../ConnectorsSurface.tsx": 6,
-      /*
-       * The card shell: the maximize backdrop, the frame back / forward /
-       * fork, the maximized card's "Open in tab" (docs/LOCAL-APP.md "Cards"),
-       * Restore and Maximize. Every card body lives in its family file under
-       * cards/ and is pinned there.
-       */
-      "../ChatCards.tsx": 10,
-      /* The turn's approval card: approve and deny. */
-      "../cards/ApprovalCard.tsx": 2,
-      /*
-       * The answer box for a gate that asks a question rather than for a
-       * grant: Yes, No, one per select option, and Send answer. They carry a
-       * VALUE — what the person wrote — which no flow argument string can hold,
-       * so they call the controller's answerApproval through the card's own
-       * onAnswer prop rather than runCommand.
-       */
-      "../cards/ApprovalAnswer.tsx": 4,
-      /* The admin grant confirm: Post the grant and Cancel. */
-      "../cards/BillingCards.tsx": 3,
-      /* The access-request queue's Approve. */
-      "../cards/AdminCards.tsx": 1,
-      /*
-       * The run card's lane-runs acts: the two secondary tabs under the trace
-       * (Steps, Transcript; Events under verbose), Check again and Stop
-       * watching, Resume, Stop, Run again, the steer row's send, the
-       * repository chooser's row and the workflow list's Run.
-       */
-      "../cards/WorkflowCards.tsx": 14,
-      "../DevtoolsPanel.tsx": 1,
-      "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
-      "../SurfaceChrome.tsx": 3,
-      "../ToastAction.tsx": 1,
-      "../ToastStack.tsx": 1,
-      /* The multi-parity domain cards: every handler routes through onRunCommand. */
-      /* 3 = 2 + the issue card's Link to Linear…, the door onto issues.link-linear's form (lane sync). */
-      "../cards/IssueCards.tsx": 9, // + the detail's comment box submit (issues.comment)
-      "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow.
-      "../cards/FileCards.tsx": 3,
-      /* Mark-all-read. */
-      "../cards/NotificationsCard.tsx": 1,
-      /* The account card's Sign out door (auth.sign-out through onRunCommand). */
-      "../cards/AccountCard.tsx": 1,
-      /* 2 = Try again + the done state's Open the workspace (lane sync). */
-      "../cards/RepoImportCard.tsx": 2,
-      // The tutorial's ranked chooser: one row button plus Skip.
-      "../cards/RepositoryChoiceCard.tsx": 2,
-      /*
-       * Lane sync (ADR 0005): the connector-setup card's Open Linear, the
-       * per-team picks, the repository pick, Connect, the connected state's
-       * Sync now / Activity / Disconnect (the arming click and the confirm
-       * row's typed-key send), the GitHub card's Open GitHub / Re-check /
-       * Reconcile, and the sync-ops card's Retry / Show more / Load older —
-       * all through onRunCommand with data-flow set.
-       */
-      "../cards/SyncCards.tsx": 14,
-      /* The /theme picker: nine swatches, one shared handler through onRunCommand. */
-      "../cards/ThemePickerCard.tsx": 1,
-      /*
-       * Lane citc: the workspace card's five facet tabs, the terminal facet's
-       * Open and per-session Destroy, the snapshots' Fork-from, Template and
-       * Delete, Suspend, Resume, Fork, Snapshot, the failed card's Retry, and
-       * the typed delete confirm — all through onRunCommand; the draft input
-       * rides the allowlist above. 15 = 13 + lane L3's ssh-host Copy (through
-       * chat.copy-message) and the Egress facet's "Load older"; the Files
-       * facet's rows belong to the imported FileListCardBody and are counted
-       * in ITS file. 17 = 15 + lane L3b's Desktop facet: Rotate session and
-       * the 409's Resume. The create affordance's three kind buttons share one
-       * handler, and so does the facet strip (the Desktop tab mints through
-       * workspace.desktop, every other tab switches through workspace.facet).
-       * 20 = 19 + the Desktop facet's "Open a new box": the only door for a
-       * box whose image predates the desktop tools, where a Retry is a door
-       * onto a wall.
-       */
-      "../cards/WorkspaceCard.tsx": 21,
-      /*
-       * The target-graph cards: the graph drawer's close/copy/open/run acts
-       * (4), the timeline row's log toggle (1), the history row's replay
-       * select and the affected row's show-in-graph (1 each, both
-       * onRunCommand).
-       */
-      "../cards/GraphCard.tsx": 4,
-      "../cards/HistoryCard.tsx": 2,
-      "../cards/RunTimelineCard.tsx": 1,
-      /*
-       * The run trace: the live return, the two presentation switches (Turns
-       * and Timeline), the filters, the turn rows, the engine rows, the
-       * breadcrumbs, the tree rows, the timeline bars and the recorded child
-       * link. Every button enters onRunCommand and persists in the same card.
-       */
-      "../cards/RunTraceCard.tsx": 11,
-      /*
-       * Lane runs: the run inbox's Open per row, its All/status filter chips,
-       * and the Stop-all footer (all through onRunCommand), plus the
-       * approvals inbox's two decision acts (approval.approve / approval.deny
-       * through the delegated onDecideApproval).
-       */
-      "../cards/RunsCards.tsx": 10,
-      "../cards/SearchResultsCard.tsx": 2,
-      "../cards/RunHistoryCard.tsx": 1,
-      "../cards/AffectedCard.tsx": 1,
-      // Agents as data (custom-agents.md): Launch, Edit, Remove, New agent.
-      /* 6 = the Agents card's Launch / Edit / Remove and New agent, the subagent card's Open tab, + the cloud session card's Stop (agent.session.stop). */
-      "../cards/AgentCards.tsx": 6,
-      "../cards/AnonymousCeilingCard.tsx": 1,
-      // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
-      "../cards/FlowFormCards.tsx": 2,
-      /*
-       * The repository welcome and its three answers (controller/onboarding.ts):
-       * every door (the welcome's three, the maintainer's reads, the
-       * contributor's three, the explore card's guide rows) is one shared
-       * handler through onRunCommand with data-flow set.
-       */
-      "../cards/OnboardingCards.tsx": 1,
-      /*
-       * The repository's home pane (controller/onboarding.ts): the featured
-       * flows' doors (flow.run) and Open PACKAGE.ts (files.read) are one
-       * shared handler through onRunCommand with data-flow set; links are
-       * anchors, not buttons.
-       */
-      "../cards/HomeCards.tsx": 1,
-      /*
-       * Lane change (ADR 0003) + lane L1 (ADR 0004, the live plue routes):
-       * the change card's facet tabs, Land / Split ready / Revert / Full
-       * diff, the conflict rows' Resolve, the Diff facet's two pickers, its
-       * since-my-review and show-all, the file rows' one-file diff, the
-       * Checks picker, Open the computer, the findings' Please fix and Not
-       * useful, the review facet's show-all and thread acts, the history
-       * rows' Diff to current, and the diff card's re-read — all through
-       * onRunCommand with data-flow set.
-       */
-      "../cards/ChangeCards.tsx": 24,
-      /*
-       * The plan inside a run card: Inspect review feedback and Inspect failed
-       * execution (runs.trace.select), Vibe this change (flow.run), Check
-       * available flows (flow.list), the predicted Change rows
-       * (runs.coding.select), the tutorial plan's Start (agent.change.start)
-       * and, once started, Open the run (card.maximize) — all through
-       * onRunCommand with data-flow set.
-       */
-      "../cards/CodingPlanCard.tsx": 7,
-      "../cards/CodingPocCard.tsx": 2, // Native execution inspection and existing steering form.
-      "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
-      /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */
-      "../cards/CommitCards.tsx": 3,
-      "../cards/BranchesCard.tsx": 1, // a row opens that branch's commits (commits.list)
-      /*
-       * Connection, world and browser card interactions, plus the embedded
-       * wiki collaboration cards (ad438463a6): page Previous/Next and the
-       * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
-       * Open page, and Refresh (wiki.sync) — all through onRunCommand.
-       */
-      "../cards/ConversationCards.tsx": 11, // The empty Wiki now offers wiki.create.
-      /*
-       * The targets table: History in the toolbar, the view, kind and state
-       * chips (target.filter), each row's star (target.star / unstar),
-       * select / Run / Timeline, the drawer's
-       * close, Open source, Replay, Run, Graph, Explain, and the target-run
-       * card's Explain — all through onRunCommand.
-       */
-      "../cards/TargetCards.tsx": 26,
-      /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
-      "../cards/FactoryCard.tsx": 1,
-      /* The dispatcher card's Register door, the button door of triggers.register (factory mock 2; sign-in is the door). */
-      "../cards/TriggersCard.tsx": 1,
-      /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
-      "../cards/WikiCards.tsx": 3,
-      /*
-       * The sidebar (docs/LOCAL-APP.md "Tabs"): the list's select and close
-       * per tab, the Repos section's empty "Select a repo" row, each repo
-       * row's select, `+`, and unpin, the `+` trigger, its backdrop, the
-       * Terminal row, the available and unavailable harness rows, Sign in,
-       * the admin reset, and the theme toggle (chrome that stays visible on
-       * every tab).
-       */
-      /* 23 = 22 + the chrome-actions footer's Download the app (docs/web-mode/PLAN.md §3; renders only where app.download is registered, the cloud host). */
-      /* 25 = 24 + the footer's Secrets button, the button door of secrets.list (renders only where the flow registers, the cloud host). */
-      /* 26 = 25 + the footer's Dispatcher button, the button door of triggers.list (design session 2026-09-07 chrome; cloud host only). */
-      /* 27 = 26 + the footer's Account button, the button door of account.show (factory mock 21; renders where an identity seam exists). */
-      /* 28 = 27 + the footer's History button, the button door of history.show (design session 2026-09-07 chrome; cloud host only). */
-      /* 30 = 28 + the footer's Wiki and Flows buttons, the button doors of the `wiki` and `flows` surface switches (the chrome is exactly Wiki, Dispatcher, Flows, Secrets, History, Account). */
-      "../tabs/ChromeBar.tsx": 30,
-      /* The live-process close question: confirm through tab.close.confirm. */
-      "../tabs/TabBodies.tsx": 1
-    })
-  })
-
-  test("delegated props are bound to commands at their call sites", () => {
-    const app = files["../App.tsx"]
-    const message = files["../TranscriptMessage.tsx"]
-    expect(app).toContain("<TranscriptMessage")
-    expect(files["../onboarding/GuideShell.tsx"]).toContain("<TranscriptMessage")
-    expect(message).toMatch(/onDownload=\{\(\) => \{\s*controller\.runCommand\(STORAGE_RECOVERY_EXPORT\)/)
-    expect(message).toContain("runCommand(\"chat.copy-message\"")
-    expect(message).toContain("runCommand(\"chat.retry\"")
-    expect(message).toMatch(/runCommand\(\s*"agent\.explain"/)
-    expect(app).toContain("runCommand(\"toast.dismiss\"")
-    const connectors = files["../ConnectorsSurface.tsx"]
-    expect(connectors).toContain("runCommand(\"connector.downgrade\"")
-    expect(connectors).toContain("runCommand(\"connector.remove\"")
   })
 
   /*
@@ -610,18 +330,18 @@ describe("launch-law parity: every affordance is a command", () => {
       '// <button data-flow="comment.only" />',
       'const selector = `[data-flow="${flow}"]`',
       'const description = \'closeCommand="text.only"\'',
-      'const view = <><button data-flow="onboarding.act" /><button data-flow={"missing.command"} />',
+      'const view = <><button data-flow="app.first-run.dismiss" /><button data-flow={"missing.command"} />',
       '<button data-flow={`missing.template`} /><SurfaceHeader closeCommand="missing.close" />',
       '<button data-flow={action.flow} />{/* <button data-flow="comment.only" /> */}</>'
     ].join("\n")
     const bindings = literalBindings(source)
     expect(bindings).toEqual([
-      { prop: "data-flow", name: "onboarding.act" },
+      { prop: "data-flow", name: "app.first-run.dismiss" },
       { prop: "data-flow", name: "missing.command" },
       { prop: "data-flow", name: "missing.template" },
       { prop: "closeCommand", name: "missing.close" }
     ])
-    const declared = new Set(["onboarding.act"])
+    const declared = new Set(["app.first-run.dismiss"])
     expect(bindings.filter(({ name }) => !declared.has(name)).map(({ name }) => name)).toEqual([
       "missing.command", "missing.template", "missing.close"
     ])

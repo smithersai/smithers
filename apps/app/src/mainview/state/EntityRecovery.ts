@@ -1,14 +1,14 @@
-import { canonicalStoredJsonValue } from "./EventValue"
-import { PendingRecoveryAuthoritySchema, type PendingRecoveryAuthority } from "./PendingRecovery"
 import type { StorageApi } from "@tanstack/db"
 import { PERSISTED_KEY_PREFIX } from "../chain/SchemaVersion"
-import { CardHistorySchema, CardSchema, StarredTargetSchema, type Card, type CardHistory, type StarredTarget } from "./AppState"
+import { CardHistorySchema,CardSchema,StarredTargetSchema,type Card,type CardHistory,type StarredTarget } from "./AppState"
+import { canonicalStoredJsonValue } from "./EventValue"
+import { PendingRecoveryAuthoritySchema,type PendingRecoveryAuthority } from "./PendingRecovery"
 
 export const ENTITY_RECOVERY_STORAGE_KEY = `${PERSISTED_KEY_PREFIX}entity-recovery`
 
 export type EntityRecoveryValue =
   | { readonly kind: "approval-answer"; readonly id: string; readonly question: string; readonly text: string }
-  | { readonly kind: "card"; readonly workspaceId: string; readonly branchId: string; readonly id: string; readonly card: Card | null; readonly history?: CardHistory; readonly explicitTutorial?: true }
+  | { readonly kind: "card"; readonly workspaceId: string; readonly branchId: string; readonly id: string; readonly card: Card | null; readonly history?: CardHistory }
   | { readonly kind: "target-star"; readonly id: string; readonly repoId: string; readonly star: StarredTarget | null }
 
 export interface EntityRecoveryRecord {
@@ -48,7 +48,7 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     !authority?.success || authority.data.actor !== "user" || authority.data.intentId !== candidate.preparedCommandId)) return undefined
   const binding = { ...(authority?.success ? { authority: authority.data } : {}),
     ...(typeof candidate.preparedCommandId === "string" ? { preparedCommandId: candidate.preparedCommandId } : {}) }
-  const value = candidate.value as { readonly kind?: unknown; readonly workspaceId?: unknown; readonly branchId?: unknown; readonly card?: unknown; readonly history?: unknown; readonly explicitTutorial?: unknown; readonly star?: unknown; readonly id?: unknown; readonly repoId?: unknown; readonly question?: unknown; readonly text?: unknown }
+  const value = candidate.value as { readonly kind?: unknown; readonly workspaceId?: unknown; readonly branchId?: unknown; readonly card?: unknown; readonly history?: unknown; readonly star?: unknown; readonly id?: unknown; readonly repoId?: unknown; readonly question?: unknown; readonly text?: unknown }
   if (value.kind === "card" && typeof value.workspaceId === "string" && typeof value.branchId === "string" && typeof value.id === "string" &&
     key === `card:${value.workspaceId}:${value.branchId}:${value.id}`) {
     const location = { workspaceId: value.workspaceId, branchId: value.branchId }
@@ -61,11 +61,9 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     if (history !== undefined && (!history.success || history.data.id !== value.id || history.data.index >= history.data.entries.length || history.data.entries.some(entry =>
       entry.id !== value.id || entry.kind === "env" || entry.kind === "approval" || entry.kind === "approvals-inbox" ||
       (entry.kind === "flow-form" && entry.payload.flow === "env.set")))) return undefined
-    if (value.explicitTutorial !== undefined && value.explicitTutorial !== true) return undefined
     return { key, revision: candidate.revision as number, ...binding, value: {
       kind: "card", ...location, id: value.id, card: card.data,
       ...(history?.success ? { history: history.data } : {}),
-      ...(value.explicitTutorial === true ? { explicitTutorial: true as const } : {})
     } }
   }
   if (value.kind === "approval-answer") {

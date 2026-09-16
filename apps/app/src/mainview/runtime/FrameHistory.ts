@@ -82,12 +82,10 @@ export const createBrowserFrameHistory = (
   host: BrowserHistoryHost,
   options: BrowserFrameHistoryOptions = {}
 ): FrameHistoryPort => {
-  // Tutorial entry is explicit even on a repository URL; retain it on reload.
-  const tutorial = () => new URLSearchParams(host.location.search).has("tutorial") ? "?tutorial" : ""
   const pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
-  const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned + tutorial()
+  const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned
   return {
     current,
     push: (location) => host.history.pushState({ smithersFrame: true, location }, "", url(location)),

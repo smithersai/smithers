@@ -1,16 +1,16 @@
-import { describe, expect, test } from "bun:test"
+import { describe,expect,test } from "bun:test"
 import {
-  catalogRepository,
-  openRequestedRepo,
-  paramRepo,
-  pathRepo,
-  requestedRepo,
-  signInReturnTo,
-  withoutRepoParam
+catalogRepository,
+openRequestedRepo,
+paramRepo,
+pathRepo,
+requestedRepo,
+signInReturnTo,
+withoutRepoParam
 } from "./RepoLink"
 import { createAppStore } from "./state/AppStore"
-import { createTabsController } from "./state/controller/tabs"
 import type { ControllerContext } from "./state/controller/context"
+import { createTabsController } from "./state/controller/tabs"
 
 /*
  * A repository's app lives at `/owner/name`; the landing page's older "Open in
@@ -401,11 +401,9 @@ test("opening a public URL records catalog provenance even when private inventor
 })
 
 for (const search of ["?tutorial", "?tutorial=", "?repo=a/b&tutorial&tab=issues"]) {
-  test(`empty tutorial flag stays bare while cleaning ${search}`, () => {
+  test(`legacy tutorial flag stays inert while cleaning ${search}`, () => {
     const cleaned = withoutRepoParam({ pathname: "/smithersai/smithers/", search, hash: "#top" })
     expect(cleaned).toContain("tutorial")
-    expect(cleaned).not.toContain("tutorial=")
     expect(cleaned).toEndWith("#top")
-    expect(signInReturnTo({ pathname: "/smithersai/smithers/", search })).not.toContain("tutorial=")
   })
 }

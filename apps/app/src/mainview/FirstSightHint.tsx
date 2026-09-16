@@ -1,7 +1,7 @@
-import { useCallback, useSyncExternalStore, type ReactNode } from "react"
+import { useCallback,useSyncExternalStore,type ReactNode } from "react"
 import { useController } from "./ControllerContext"
 import { HelpBubble } from "./HelpBubble"
-import type { AppStore } from "./state/AppStore"
+type AppStore = ReturnType<typeof useController>["store"]
 
 /** Visibility is a projection of mounted controls and durable dismissal receipts. */
 const registries = new WeakMap<AppStore, ReturnType<typeof createRegistry>>()
@@ -35,13 +35,14 @@ function createRegistry(store: AppStore) {
 }
 
 export function useFirstSightHint(id: string) {
-  const { store } = useController()
+  const controller = useController()
+  const { store } = controller
   let registry = registries.get(store)
   if (!registry) { registry = createRegistry(store); registries.set(store, registry) }
   const first = useSyncExternalStore(registry.subscribe, registry.first, () => undefined)
   const dismiss = useCallback(() => {
-    if (!store.session().hintsSeen?.includes(id)) store.dispatch({ type: "hint.dismissed", actor: "user", id })
-  }, [store, id])
+    if (!store.session().hintsSeen?.includes(id)) controller.dismissHint(id)
+  }, [controller, store, id])
   return { open: first === id, dismiss }
 }
 
@@ -50,7 +51,7 @@ export function FirstSightHint({ id, content, children }: { id: string; content:
   return <div data-first-sight-hint={id} onClickCapture={event => {
     if ((event.target as Element).closest("button, a[href]")) dismiss()
   }}>
-    <HelpBubble id={`hint-${id}`} open={open} content={content} onDismiss={dismiss}>{children}</HelpBubble>
+    <HelpBubble id={`hint-${id}`} open={open} dismissOnEscape={false} restoreFocusOnDismiss={false} content={content} onDismiss={dismiss} dismissBinding={{ "data-flow": "app.hint.dismiss", "data-flow-args": id }}>{children}</HelpBubble>
   </div>
 }
 

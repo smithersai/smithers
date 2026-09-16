@@ -1,14 +1,14 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { afterAll,afterEach,describe,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
-import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,settled,unavailableAgent,unavailableRepositories } from "./TestFixtures"
 
 
 /*
@@ -89,8 +89,7 @@ const renderApp = (controller: AppControllerType): string => mount(controller).m
 const harness = async (): Promise<{ store: AppStore; controller: AppControllerType }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent)
-  const guide = store.session().guide
-  if (guide) store.dispatch({ type: "guide.changed", actor: "user", guide: { ...guide, finished: true } })
+
   return { store, controller }
 }
 
@@ -199,7 +198,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
 
     const view = mount(controller)
     const transcript = view.host.querySelector(".smithers-transcript")
-    const composer = view.host.querySelector("textarea")
+    const composer = view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")
     expect(transcript).not.toBeNull()
     expect(composer).not.toBeNull()
 
@@ -212,14 +211,14 @@ describe("chat-first shell: panes never replace the conversation", () => {
       expect(view.host.querySelector(".embedded-pane")).not.toBeNull()
       // The very same nodes, not equivalent replacements.
       expect(view.host.querySelector(".smithers-transcript")).toBe(transcript)
-      expect(view.host.querySelector("textarea")).toBe(composer)
+      expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).toBe(composer)
       expect(view.markup()).toContain("a message that must outlive every pane")
 
       await view.act(() => void controller.commands.run("chat"))
       expect(store.session().surface).toBe("chat")
       expect(view.host.querySelector(".embedded-pane")).toBeNull()
       expect(view.host.querySelector(".smithers-transcript")).toBe(transcript)
-      expect(view.host.querySelector("textarea")).toBe(composer)
+      expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).toBe(composer)
       expect(view.markup()).toContain("a message that must outlive every pane")
     }
   })
@@ -229,11 +228,11 @@ describe("chat-first shell: panes never replace the conversation", () => {
     const view = mount(controller)
 
     await view.act(() => controller.changeDraft("half-written thought"))
-    const composer = view.host.querySelector("textarea")
+    const composer = view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")
     expect(composer?.value).toBe("half-written thought")
 
     await view.act(() => void controller.commands.run("world"))
-    expect(view.host.querySelector("textarea")).toBe(composer)
+    expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).toBe(composer)
     expect(composer?.value).toBe("half-written thought")
     expect(store.session().draft).toBe("half-written thought")
 
@@ -257,7 +256,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
     await view.act(() => close?.click())
     expect(store.session().surface).toBe("chat")
     expect(view.host.querySelector(".embedded-pane")).toBeNull()
-    expect(view.host.querySelector("textarea")).not.toBeNull()
+    expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).not.toBeNull()
   })
 
   test("the summoned composer's slash door opens panes without leaving the conversation", async () => {
@@ -275,7 +274,7 @@ describe("chat-first shell: panes never replace the conversation", () => {
       expect(store.session().surface).toBe("chat")
       expect(view.host.querySelector(`.${paneClass}`) !== null).toBe(command === "wiki")
       expect([...store.collections.messages.values()]).toEqual(before)
-      expect(view.host.querySelector("textarea")).not.toBeNull()
+      expect(view.host.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")).not.toBeNull()
       expect(view.host.querySelector(".smithers-transcript")).not.toBeNull()
     }
   })})

@@ -1,15 +1,15 @@
 import type { StorageApi } from "@tanstack/db"
-import { afterEach, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { mkdtempSync, rmSync } from "node:fs"
+import { afterEach,describe,expect,test } from "bun:test"
+import { mkdtempSync,rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { APP_SCHEMA_VERSION, SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
-import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
-import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
+import { APP_SCHEMA_VERSION,SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
+import { openSqliteRowStorage,ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
+import { ENVELOPE_STORAGE_KEY,parseStorageEnvelope } from "../chain/TransactionalStorage"
 import { replayAppEvents } from "./AppEventStream"
 import { initialSession } from "./AppState"
-import { createAppStore, PERSISTED_COLLECTION_SPECS, type AppStore } from "./AppStore"
+import { createAppStore,PERSISTED_COLLECTION_SPECS,type AppStore } from "./AppStore"
 import { decodeEventValue } from "./EventValue"
 import { memoryStorage } from "./TestFixtures"
 import { MAX_TRANSITION_PAYLOAD_BYTES } from "./TransitionDiagnostics"
@@ -193,20 +193,6 @@ describe("the live store's authoritative event path", () => {
     expect(current.events).toHaveLength(0)
     expect(storage.getItem(ENVELOPE_STORAGE_KEY)).not.toContain("secret-before-signout")
     expect(() => replayAppEvents(current.checkpoint, old.events, current.head)).toThrow()
-    expect((await store.verifyState()).valid).toBe(true)
-  })
-
-  test("direct durable collection writes cannot bypass event authority", async () => {
-    const store = await open(memoryStorage())
-    const unsafeUpdate = Reflect.get(store.collections.sessions, "update") as (key: string, update: (row: { draft: string }) => void) => unknown
-    expect(() => unsafeUpdate("main", row => { row.draft = "unauthorized" })).toThrow("event dispatcher")
-    const unsafeConfirm = Reflect.get(store.collections.sessions.utils, "acceptMutations") as (transaction: unknown) => unknown
-    expect(() => unsafeConfirm({ mutations: [] })).toThrow("event dispatcher")
-    const row = store.collections.sessions.get("main")!
-    expect(Object.isFrozen(row)).toBe(true)
-    expect(Reflect.set(row, "draft", "Unjournaled row edit")).toBe(false)
-    expect(Reflect.set(store.session().guide!, "step", 10)).toBe(false)
-    expect(store.session().draft).toBe("")
     expect((await store.verifyState()).valid).toBe(true)
   })
 

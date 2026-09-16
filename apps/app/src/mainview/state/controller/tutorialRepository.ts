@@ -1,8 +1,7 @@
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { AuthorizedLocalRepositoryInspection } from "@smthrs/rpc/NativeRepository"
-import { completeGuide } from "../../onboarding/completion"
 import { repoKeyOf } from "../AppState"
-import { rankTutorialRepositories, type RepositoryRanking } from "../seams/RepositoriesSeam"
+import { rankTutorialRepositories,type RepositoryRanking } from "../seams/RepositoriesSeam"
 import { adoptLocalRepository } from "./adoptLocalRepository"
 import type { ControllerContext } from "./context"
 
@@ -22,13 +21,8 @@ export interface TutorialRepositoryPorts {
 
 export function createTutorialRepositoryController(ctx: ControllerContext, ports: TutorialRepositoryPorts): TutorialRepositoryActions {
   const identity = () => ctx.store.collections.identitySessions.get("identity")
-  const scope = () => ({ playthrough: ctx.store.session().guide?.playthrough ?? 0, account: identity()?.login, epoch: ctx.accountEpoch })
-  const current = (before: ReturnType<typeof scope>) => before.playthrough === (ctx.store.session().guide?.playthrough ?? 0) && before.account === identity()?.login && before.epoch === ctx.accountEpoch
-  const finish = async (before: ReturnType<typeof scope>, key: string) => {
-    const guide = ctx.store.session().guide
-    if (!current(before) || guide?.step !== 2 || ctx.store.session().activeRepoKey !== key) return
-    await ctx.store.dispatch({ type: "guide.changed", actor: ctx.commandActor, guide: completeGuide(guide, "repository.ready") }).isPersisted.promise
-  }
+  const scope = () => ({ playthrough: 0, account: identity()?.login, epoch: ctx.accountEpoch })
+  const current = (before: ReturnType<typeof scope>) => before.playthrough === (0) && before.account === identity()?.login && before.epoch === ctx.accountEpoch
   return {
     chooseTutorialRepository: async (repo) => {
       const before = scope()
@@ -51,7 +45,6 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       }
       await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: repo }).isPersisted.promise
       await ports.publish({ ...ranking, selected: repo, created: null })
-      await finish(before, repo)
     },
     createTutorialRepository: async (name) => {
       if (!ctx.services.bootstrap || !hasCapability(ctx.services.bootstrap, "local.repositories")) return ports.localHandoff()
@@ -67,7 +60,6 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       const key = repoKeyOf(picked.root)
       await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: key }).isPersisted.promise
       await ports.publish({ cutoff: new Date().toISOString(), repositories: [], partial: false, error: null, selected: key, created: { name: picked.name, path: picked.root } })
-      await finish(before, key)
     }
   }
 }

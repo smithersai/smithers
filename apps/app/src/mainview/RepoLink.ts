@@ -1,7 +1,7 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { AppController } from "./state/AppController"
-import { parseRepoSelection, repoTreeRowId, sharedCopyIdOf } from "./state/AppState"
+import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf } from "./state/AppState"
 
 /*
  * A repository's app lives at `/owner/name` (https://smithers.sh/smithersai/smithers).
@@ -79,7 +79,7 @@ export const catalogRepository = (catalog: unknown, requested: string): CatalogR
 const RETURN_TO_MAX_BYTES = 512
 
 /** URLSearchParams adds '=' to flags; keep the tutorial's published bare key. */
-const queryString = (params: URLSearchParams): string => params.toString().replace(/(^|&)tutorial=(?=&|$)/g, "$1tutorial")
+const queryString = (params: URLSearchParams): string => params.toString()
 
 /**
  * The page a sign-in started from a repository path returns to: the path and

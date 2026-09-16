@@ -17,13 +17,12 @@ test("live research leaves chat usable and toasts the whole background run", asy
   })
   await page.route("**/api/tutorial/live/run/*", route => route.fulfill({ json: run() }))
   await page.goto("/")
-  for (const name of ["Show issues", "Read issue #3", "View issue flows", "Run repro"]) {
-    await page.getByRole("button", { name, exact: true }).click()
-  }
-  const chat = page.getByRole("button", { name: "Chat while it runs", exact: true })
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
+  await page.getByTestId("composer-input").fill("/issue.repro 3")
+  await page.getByTestId("composer-input").press("Enter")
+  const chat = page.getByRole("button", { name: "Chat", exact: true })
   await expect(chat).toBeEnabled()
   await expect(page.locator('.toast[data-toast-status="running"]')).toContainText("Researching issue")
-  await chat.click()
   const input = page.getByTestId("composer-input")
   await expect(input).toBeEditable()
   await input.fill("I can keep chatting while research runs")

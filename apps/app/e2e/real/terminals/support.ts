@@ -14,7 +14,6 @@ const ownedSessions = new Set<string>()
 
 export const bootWorkbench = async (page: Page): Promise<void> => {
   await page.goto("/smithersai/smithers", { waitUntil: "domcontentloaded" })
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(page.getByTestId("transcript")).toBeVisible()
 }

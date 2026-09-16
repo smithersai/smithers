@@ -3,9 +3,9 @@ import { Library } from "lucide-react"
 import { useController } from "../ControllerContext"
 import { SurfaceHeader } from "../SurfaceChrome"
 import { loadedApp } from "./appSurface"
+import { manifests } from "./catalog"
 import { PluginGallery } from "./PluginGallery"
 import { PluginRail } from "./PluginRail"
-import { manifests } from "./catalog"
 
 /*
  * The Library pane: the shelf beside the conversation.
@@ -21,7 +21,6 @@ export function PluginsSurface() {
     q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({
       id: session.id,
       plugins: session.plugins,
-      guide: session.guide
     }))
   )
   const installed = sessionRows[0]?.plugins ?? []

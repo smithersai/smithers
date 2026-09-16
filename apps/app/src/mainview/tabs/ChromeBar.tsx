@@ -1,19 +1,18 @@
-import { FirstSightHint } from "../FirstSightHint"
-import { flowAction } from "../flows/FlowAction"
-import { isPracticeContext } from "../state/practice/PracticeContext"
 import { useLiveQuery } from "@tanstack/react-db"
-import { StatusDetails } from "../StatusDetails"
-import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Volume2, VolumeX, Workflow, X } from "lucide-react"
+import { BookOpen,ChevronRight,Download,FolderGit2,History,KeyRound,Moon,Pencil,Plus,RotateCcw,Sun,Timer,UserRound,Workflow,X } from "lucide-react"
 import { useMemo } from "react"
 import { roleMenuEntries } from "../AgentRoleMenu"
 import { useController } from "../ControllerContext"
-import { rovingKeyDown } from "../RovingKeyDown"
-import { DEFAULT_WORKSPACE_NAME, MAIN_TAB_ID, initialGuide, parseRepoSelection } from "../state/AppState"
-import type { Repo, RepoTreeRow, TabRow, WorkingCopy } from "../state/AppState"
-import { isReadOnlyCopy, workingCopyLabel } from "../state/WorkspaceViews"
+import { FirstSightHint } from "../FirstSightHint"
+import { flowAction } from "../flows/FlowAction"
 import { SELECT_REPO_LABEL } from "../Onboarding"
-import { copyTreesOf, RepoTree } from "./RepoTree"
-import { GUIDE_KEYS, GuideKey } from "../onboarding/GuideButton"
+import { rovingKeyDown } from "../RovingKeyDown"
+import type { Repo,RepoTreeRow,TabRow,WorkingCopy } from "../state/AppState"
+import { DEFAULT_WORKSPACE_NAME,MAIN_TAB_ID,parseRepoSelection } from "../state/AppState"
+import { isPracticeContext } from "../state/practice/PracticeContext"
+import { isReadOnlyCopy,workingCopyLabel } from "../state/WorkspaceViews"
+import { StatusDetails } from "../StatusDetails"
+import { copyTreesOf,RepoTree } from "./RepoTree"
 
 /*
  * The sidebar (docs/workbench-lanes/sidebar-tree.md): the workspace heading
@@ -57,8 +56,6 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
       activeTabId: session.activeTabId,
       tabMenuOpen: session.tabMenuOpen,
       theme: session.theme,
-      guide: session.guide,
-      guideVisible: session.guideVisible,
       activeRepoKey: session.activeRepoKey,
       workspaceName: session.workspaceName,
       workspaceRenameOpen: session.workspaceRenameOpen
@@ -78,7 +75,6 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
   const identity = identityRows[0]
   const activeTabId = session?.activeTabId ?? MAIN_TAB_ID
   const dark = session?.theme === "dark"
-  const guide = session?.guide ?? initialGuide()
   const menuOpen = session?.tabMenuOpen === true
   const workspaceName = session?.workspaceName && session.workspaceName !== DEFAULT_WORKSPACE_NAME ? session.workspaceName : "Chat"
   const renameOpen = session?.workspaceRenameOpen === true
@@ -748,20 +744,6 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
             </button></FirstSightHint>
           ) :
           null}
-        {!guide.finished && (
-          <button
-            type="button"
-            className="chrome-action chrome-action-sound"
-            data-flow="onboarding.act"
-            aria-keyshortcuts={GUIDE_KEYS.sound}
-            aria-label={guide.sound ? "Mute tutorial sounds" : "Enable tutorial sounds"}
-            onClick={() => controller.runCommand("onboarding.act", "sound")}
-          >
-            {guide.sound ? <Volume2 size={14} aria-hidden="true" /> : <VolumeX size={14} aria-hidden="true" />}
-            <span>Sound {guide.sound ? "on" : "off"}</span>
-            <GuideKey shortcut={GUIDE_KEYS.sound} />
-          </button>
-        )}
         <div className="chrome-corner">
       {/* The bare reset is admin-only dev tooling (§2); users get /clear. */}
       {isAdmin ?

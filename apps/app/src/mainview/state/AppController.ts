@@ -1,141 +1,137 @@
-import { bindFlowPreloading } from "../flows/FlowAction"
-import { invalidatePreparedViews, disposePreparedViews } from "./PreparedView"
-import { createCommandIntentLifecycle } from "./controller/commandIntents"
-import { openRequestedRepo } from "../RepoLink"
-import { createInputModeController } from "./controller/inputMode"
-import type { InputMode } from "./InputMode"
-import { createControlFocus } from "./controller/controlFocus"
-import type { ControlFocusController } from "./controller/controlFocus"
-import { createLiveTutorialController } from "./controller/liveTutorial"
-import { createRepositoryUpdate } from "./controller/repositoryUpdate"
-import { createDictation } from "./controller/dictation"
-import { lessonCompletion, lessonResumed } from "../onboarding/completion"
-import { createGuideController } from "./controller/guide"
-import type { CommandActions } from "../flows/Flows"
-import { createActorBindings } from "./ActorBindings"
-import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
+import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
+import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import { repoStep } from "../Onboarding"
+import { createTargetGraphDevFixtures } from "../dev/fixtureRunStream"
+import type { CatalogItem,CommandRegistry } from "../flows/Commands"
 import { createCommandRegistry } from "../flows/Commands"
-import type { CommandRegistry } from "../flows/Commands"
-import type { CatalogItem } from "../flows/Commands"
-import type { SlashItem, SlashRow } from "../flows/registry"
+import { bindFlowPreloading } from "../flows/FlowAction"
+import type { CommandActions } from "../flows/Flows"
+import type { RepositoryFlowCatalog } from "../flows/entries/flow"
+import type { SlashItem,SlashRow } from "../flows/registry"
 import { flowRequirements } from "../flows/registry"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
-import { repoStep } from "../Onboarding"
-import { localSocketProtocols } from "../runtime/LocalSession"
 import type { FrameHistoryPort } from "../runtime/FrameHistory"
+import { localSocketProtocols } from "../runtime/LocalSession"
+import { createActorBindings } from "./ActorBindings"
 import type { AppTransition } from "./AppState"
 import type { AppStore } from "./AppStore"
-import { activeCatalogRepositoryId, activeRepositoryId, knownRepositories, resolveTargetRepo } from "./RepoContext"
-import type { KnownRepositories } from "./RepoContext"
-import { createPtyClient, pageSocketUrl } from "./PtyClient"
-import { createHealthStatusController } from "./controller/health-status"
-import { createSearchSeam } from "./seams/SearchSeam"
-import type { PaletteAnswer, SearchSeam } from "./seams/SearchSeam"
-import type { PtyClient } from "./PtyClient"
-import { createLspClient } from "./LspClient"
-import { createCloudLspClient, pageCloudLspSocketUrl } from "./CloudLspClient"
-import { createCloudTerminalClient, pageCloudSocketUrl } from "./CloudTerminalClient"
+import { createCloudLspClient,pageCloudLspSocketUrl } from "./CloudLspClient"
 import type { CloudTerminalClient } from "./CloudTerminalClient"
+import { createCloudTerminalClient,pageCloudSocketUrl } from "./CloudTerminalClient"
+import type { InputMode } from "./InputMode"
+import { createLspClient } from "./LspClient"
+import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
+import type { PtyClient } from "./PtyClient"
+import { createPtyClient,pageSocketUrl } from "./PtyClient"
+import type { KnownRepositories } from "./RepoContext"
+import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,resolveTargetRepo } from "./RepoContext"
+import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import { createTargetRunClient } from "./TargetRunClient"
-import { createAppShellController } from "./controller/app"
-import type { AppShellController } from "./controller/app"
-import { createAccountController } from "./controller/account"
 import type { AccountController } from "./controller/account"
+import { createAccountController } from "./controller/account"
+import type { AgentsController } from "./controller/agents"
+import { createAgentsController } from "./controller/agents"
+import type { AppShellController } from "./controller/app"
+import { createAppShellController } from "./controller/app"
 import { createAuthBillingController } from "./controller/auth-billing"
+import { createCloudWikiController } from "./controller/cloud-wiki"
+import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { createConnectorController } from "./controller/connectors"
-import { createControllerContext } from "./controller/context"
 import type { NetEntry } from "./controller/context"
-import { humanCommandText, createFailureController } from "./controller/failures"
+import { createControllerContext } from "./controller/context"
+import type { ControlFocusController } from "./controller/controlFocus"
+import { createControlFocus } from "./controller/controlFocus"
+import { createDictation } from "./controller/dictation"
+import type { ExplainConfig,ExplainController } from "./controller/explain"
+import { createExplainController } from "./controller/explain"
+import { createFailureController,humanCommandText } from "./controller/failures"
+import type { FormsController } from "./controller/forms"
+import { createFormsController } from "./controller/forms"
 import { createFramesController } from "./controller/frames"
+import { createHealthStatusController } from "./controller/health-status"
+import { createInputModeController } from "./controller/inputMode"
+import { createIssueFlowsController,type IssueFlowsController } from "./controller/issueFlows"
+import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
+import { createLiveTutorialController } from "./controller/liveTutorial"
+import type { OnboardingController } from "./controller/onboarding"
+import { createOnboardingController } from "./controller/onboarding"
 import { createPluginsController } from "./controller/plugins"
 import { createPresentationController } from "./controller/presentation"
-import { createExplainController } from "./controller/explain"
-import type { ExplainConfig, ExplainController } from "./controller/explain"
-import { createRecommendController } from "./controller/recommend"
 import type { RecommenderConfig } from "./controller/recommend"
-import { createTabsController } from "./controller/tabs"
-import { createAgentsController } from "./controller/agents"
-import { createFormsController } from "./controller/forms"
-import { createLibrarianRunsController, type LibrarianRunsController } from "./controller/librarianRuns"
-import { createIssueFlowsController, type IssueFlowsController } from "./controller/issueFlows"
-import { createTutorialChangeController, type TutorialChangeController } from "./controller/tutorialChange"
-import { createTutorialRepositoryController, type TutorialRepositoryActions } from "./controller/tutorialRepository"
-import type { FormsController } from "./controller/forms"
-import type { AgentsController } from "./controller/agents"
-import { createSidebarController } from "./controller/sidebar"
+import { createRecommendController } from "./controller/recommend"
+import { createRepositoryUpdate } from "./controller/repositoryUpdate"
+import { createRunsController,type RunsController } from "./controller/runs"
 import type { SidebarController } from "./controller/sidebar"
-import type { TabsController } from "./controller/tabs"
-import { createTargetsController } from "./controller/targets"
-import type { TargetsController } from "./controller/targets"
-import { createTargetGraphController } from "./controller/targetGraph"
-import type { TargetGraphController } from "./controller/targetGraph"
-import { createTargetGraphDevFixtures } from "../dev/fixtureRunStream"
-import { createTurnController } from "./controller/turns"
-import { createWorkflowPumpController } from "./controller/workflow-pump"
-import { createWorkflowController, type WorkflowController } from "./controller/workflows"
-import { createRunsController, type RunsController } from "./controller/runs"
-import { createWorldController } from "./controller/world"
-import { createCloudWikiController } from "./controller/cloud-wiki"
-import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
-import type { WikiEditorHandle } from "./controller/world"
-import { createGitHubSeam } from "./seams/GitHubSeam"
-import type { GitHubSeam } from "./seams/GitHubSeam"
-import { createBillingSeam } from "./seams/BillingSeam"
-import type { BillingSeam } from "./seams/BillingSeam"
-import { createBookmarksSeam } from "./seams/BookmarksSeam"
-import { createCommitsSeam } from "./seams/CommitsSeam"
-import { isPracticeRepo, practiceCommitsSource } from "./practice/PracticeRepository"
-import type { CommitsSeam } from "./seams/CommitsSeam"
-import type { BookmarksSeam } from "./seams/BookmarksSeam"
-import { createCloudSeam } from "./seams/CloudSeam"
-import type { CloudSeam } from "./seams/CloudSeam"
-import { createEnvironmentSeam } from "./seams/EnvironmentSeam"
-import type { EnvironmentSeam } from "./seams/EnvironmentSeam"
-import { createDiffFilesSeam } from "./seams/DiffFilesSeam"
-import { createFilesSeam } from "./seams/FilesSeam"
-import { createFactorySeam } from "./seams/FactorySeam"
-import type { FactorySeam } from "./seams/FactorySeam"
-import { createSecretsSeam } from "./seams/SecretsSeam"
-import { createHistorySeam } from "./seams/HistorySeam"
-import type { HistorySeam } from "./seams/HistorySeam"
-import { createTriggersSeam } from "./seams/TriggersSeam"
-import type { TriggersSeam } from "./seams/TriggersSeam"
-import { createRepositoryFlowsSeam } from "./seams/RepositoryFlowsSeam"
-import type { RepositoryFlowCatalog } from "../flows/entries/flow"
-import type { SecretsSeam } from "./seams/SecretsSeam"
-import { createOnboardingController } from "./controller/onboarding"
-import type { OnboardingController } from "./controller/onboarding"
-import type { FilesSeam } from "./seams/FilesSeam"
-import { createCodeIntelSeam } from "./seams/CodeIntelSeam"
-import type { CodeIntelSeam } from "./seams/CodeIntelSeam"
-import { createRepoTreeSeam } from "./seams/RepoTreeSeam"
-import { createIssuesSeam } from "./seams/IssuesSeam"
-import type { IssuesSeam } from "./seams/IssuesSeam"
-import { createLandingsSeam } from "./seams/LandingsSeam"
-import type { LandingsSeam } from "./seams/LandingsSeam"
-import { createNotificationsSeam } from "./seams/NotificationsSeam"
-import type { NotificationsSeam } from "./seams/NotificationsSeam"
-import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
-import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
-import { createEgressSeam } from "./seams/EgressSeam"
-import { createAgentSessionSeam } from "./seams/AgentSessionSeam"
-import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
-import type { EgressSeam } from "./seams/EgressSeam"
-import type { AgentSessionSeam } from "./seams/AgentSessionSeam"
-import { createChangeSeam } from "./seams/ChangeSeam"
-import type { ChangeSeam } from "./seams/ChangeSeam"
-import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
-import { createRepoImportSeam } from "./seams/RepoImportSeam"
-import { createLinearSeam } from "./seams/LinearSeam"
-import type { LinearSeam } from "./seams/LinearSeam"
-import type { RepoImportSeam } from "./seams/RepoImportSeam"
-import type { SeamContext } from "./seams/SeamContext"
+import { createSidebarController } from "./controller/sidebar"
 import { createStorageRecoveryController } from "./controller/storage-recovery"
-import type { StorageRecoveryAction, StorageRecoveryHost } from "./StorageRecoveryAction"
+import type { TabsController } from "./controller/tabs"
+import { createTabsController } from "./controller/tabs"
+import type { TargetGraphController } from "./controller/targetGraph"
+import { createTargetGraphController } from "./controller/targetGraph"
+import type { TargetsController } from "./controller/targets"
+import { createTargetsController } from "./controller/targets"
+import { createTurnController } from "./controller/turns"
+import { createTutorialChangeController,type TutorialChangeController } from "./controller/tutorialChange"
+import { createTutorialRepositoryController,type TutorialRepositoryActions } from "./controller/tutorialRepository"
+import { createWorkflowPumpController } from "./controller/workflow-pump"
+import { createWorkflowController,type WorkflowController } from "./controller/workflows"
+import type { WikiEditorHandle } from "./controller/world"
+import { createWorldController } from "./controller/world"
+import { isPracticeRepo,practiceCommitsSource } from "./practice/PracticeRepository"
+import type { AgentSessionSeam } from "./seams/AgentSessionSeam"
+import { createAgentSessionSeam } from "./seams/AgentSessionSeam"
+import type { BillingSeam } from "./seams/BillingSeam"
+import { createBillingSeam } from "./seams/BillingSeam"
+import type { BookmarksSeam } from "./seams/BookmarksSeam"
+import { createBookmarksSeam } from "./seams/BookmarksSeam"
+import type { ChangeSeam } from "./seams/ChangeSeam"
+import { createChangeSeam } from "./seams/ChangeSeam"
+import type { CloudSeam } from "./seams/CloudSeam"
+import { createCloudSeam } from "./seams/CloudSeam"
+import type { CodeIntelSeam } from "./seams/CodeIntelSeam"
+import { createCodeIntelSeam } from "./seams/CodeIntelSeam"
+import type { CommitsSeam } from "./seams/CommitsSeam"
+import { createCommitsSeam } from "./seams/CommitsSeam"
+import { createDiffFilesSeam } from "./seams/DiffFilesSeam"
+import type { EgressSeam } from "./seams/EgressSeam"
+import { createEgressSeam } from "./seams/EgressSeam"
+import type { EnvironmentSeam } from "./seams/EnvironmentSeam"
+import { createEnvironmentSeam } from "./seams/EnvironmentSeam"
+import type { FactorySeam } from "./seams/FactorySeam"
+import { createFactorySeam } from "./seams/FactorySeam"
+import type { FilesSeam } from "./seams/FilesSeam"
+import { createFilesSeam } from "./seams/FilesSeam"
+import type { GitHubSeam } from "./seams/GitHubSeam"
+import { createGitHubSeam } from "./seams/GitHubSeam"
+import type { HistorySeam } from "./seams/HistorySeam"
+import { createHistorySeam } from "./seams/HistorySeam"
+import type { IssuesSeam } from "./seams/IssuesSeam"
+import { createIssuesSeam } from "./seams/IssuesSeam"
+import type { LandingsSeam } from "./seams/LandingsSeam"
+import { createLandingsSeam } from "./seams/LandingsSeam"
+import type { LinearSeam } from "./seams/LinearSeam"
+import { createLinearSeam } from "./seams/LinearSeam"
+import type { NotificationsSeam } from "./seams/NotificationsSeam"
+import { createNotificationsSeam } from "./seams/NotificationsSeam"
+import type { RepoImportSeam } from "./seams/RepoImportSeam"
+import { createRepoImportSeam } from "./seams/RepoImportSeam"
+import { createRepoTreeSeam } from "./seams/RepoTreeSeam"
+import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
+import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
+import { createRepositoryFlowsSeam } from "./seams/RepositoryFlowsSeam"
+import type { SeamContext } from "./seams/SeamContext"
+import type { PaletteAnswer,SearchSeam } from "./seams/SearchSeam"
+import { createSearchSeam } from "./seams/SearchSeam"
+import type { SecretsSeam } from "./seams/SecretsSeam"
+import { createSecretsSeam } from "./seams/SecretsSeam"
+import type { TriggersSeam } from "./seams/TriggersSeam"
+import { createTriggersSeam } from "./seams/TriggersSeam"
+import type { WorkspaceSeam } from "./seams/WorkspaceSeam"
+import { createWorkspaceSeam } from "./seams/WorkspaceSeam"
 
 export interface AppController extends TutorialChangeController, IssueFlowsController {
   /* Tutorial stage 6: the two Librarian generators and their monitored runs. */
@@ -159,6 +155,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly nativeAgentAvailable: boolean
   readonly nativeRepositoriesAvailable: boolean
   /** The command registry: every interactive affordance routes through it. */
+  readonly dismissFirstRun: () => void
+  readonly dismissHint: (id: string) => void
   readonly commands: CommandRegistry
   /**
    * The active repository's declared flows (the `flows` rows of its
@@ -231,9 +229,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly retryLastTurn: () => string | void
   readonly inspectLiveTutorial: (cardId: string, eventId: string) => Promise<string | void>
   readonly retryLiveTutorial: (cardId: string) => Promise<string | { value: string }>
-  readonly guideAct: (action: string, value?: string) => Promise<string | void>
   /** The guide shell reports mount ownership; this is a system observation, not a user command. */
-  readonly observeGuideVisibility: (visible: boolean) => void
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
   readonly setPalette: (args: string) => string | void
@@ -759,34 +755,7 @@ export const createAppController = (
   services: AppServices = {}
 ): AppController => {
   const ctx = createControllerContext(store, repositories, agent, services)
-  // A reload resumes the lesson and work, with the conversation tucked away.
-  const restoredGuide = store.session().guide
-  if (restoredGuide?.conversationOpen) store.dispatch({ type: "guide.changed", actor: "system", guide: { ...restoredGuide, conversationOpen: false } })
   const actors = createActorBindings(ctx.onDispose)
-  const { guideAct, observeGuideVisibility } = actors.pair(ctx, (context, select) => createGuideController(context,
-    () => context.commands.run("repo.update", "practice:smithersai/hello-server", "automatic"),
-    async repo => {
-      if (!store.collections.repositories.get(repo)) {
-        const refusal = await openRequestedRepo(
-          { store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: () => true },
-          (input, init) => context.boundedFetch(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, init),
-          repo,
-        )
-        if (refusal) return refusal
-      }
-      const refusal = await selectRepo(repo)
-      if (refusal) return refusal
-      const welcome = await select(onboarding).welcomeRepo(repo)
-      if (typeof welcome === "string") return welcome
-    },
-    () => {
-      // A URL without ?tutorial acknowledges that Finish has reached SQLite.
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href)
-        url.searchParams.delete("tutorial")
-        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
-      }
-    }))
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
     // Mark the controller closed synchronously, before React unmount refs or
@@ -846,7 +815,7 @@ export const createAppController = (
   const tutorialRepository = actors.pair(ctx, (context) => createTutorialRepositoryController(context, {
     localHandoff: async () => { await promptDownload() },
     publish: async (payload) => {
-      const id = `tutorial-repository-${context.store.session().guide?.playthrough ?? 0}`
+      const id = `tutorial-repository-${0}`
       const existing = context.store.collections.cards.get(id)
       await context.store.dispatch({ type: "card.upsert", actor: context.commandActor, card: {
         id, kind: "repository-choice", title: "Repository", status: "active",
@@ -881,11 +850,6 @@ export const createAppController = (
   const gitHubSeam = actors.pair(seamCtx, (context) => createGitHubSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
-  /* Onboarding SCRIPT v4 beat 11: a reader whose repository Smithers already sees finishes the install lesson on arrival. */
-  const settleInstall = () => queueMicrotask(() => { if (!ctx.disposed) void gitHubSeam.settleInstallLesson() })
-  const installLessonSubscriptions = [store.collections.sessions.subscribeChanges(settleInstall), store.collections.repositories.subscribeChanges(settleInstall), store.collections.identitySessions.subscribeChanges(settleInstall)]
-  settleInstall()
-  ctx.onDispose(() => { for (const subscription of installLessonSubscriptions) subscription.unsubscribe() })
   const linearSeam = actors.pair(seamCtx, (context) => createLinearSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
@@ -1115,7 +1079,7 @@ export const createAppController = (
     const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))
     const live = select(liveTutorial)
     return { ...original,
-      suggestTutorialChange: (repo?: string, feature?: string) => isPracticeRepo(repo) ? live.plan() : original.suggestTutorialChange(repo, feature),
+      suggestTutorialChange: (repo?: string, feature?: string) => isPracticeRepo(repo ?? store.session().activeRepoKey) ? live.plan() : original.suggestTutorialChange(repo, feature),
       startTutorialChange: (cardId: string) => {
         const card = store.collections.cards.get(cardId)
         return card?.kind === "run-trace" && isPracticeRepo(card.payload.repo) ? live.implement(cardId) : original.startTutorialChange(cardId)
@@ -1125,8 +1089,11 @@ export const createAppController = (
   })
   const issueFlows = actors.pair(seamCtx, (context, select) => {
     const original = createIssueFlowsController(context, select(workflowController))
-    return { ...original, runIssueFlow: (name: "repro" | "poc", number: number, repo?: string) =>
-      isPracticeRepo(repo) ? number !== 3 ? Promise.resolve("Open issue #3 to run the example tutorial.") : name === "poc" ? select(liveTutorial).poc() : select(liveTutorial).research() : original.runIssueFlow(name, number, repo) }
+    return { ...original,
+      runIssueImplementation: (number: number, repo?: string) => isPracticeRepo(repo ?? store.session().activeRepoKey)
+        ? select(liveTutorial).plan() : original.runIssueImplementation(number, repo),
+      runIssueFlow: (name: "repro" | "poc", number: number, repo?: string) =>
+      isPracticeRepo(repo ?? store.session().activeRepoKey) ? number !== 3 ? Promise.resolve("Open issue #3 to run this example.") : name === "poc" ? select(liveTutorial).poc() : select(liveTutorial).research() : original.runIssueFlow(name, number, repo) }
   })
   ctx.finishTutorialChange = tutorialChange.finishTutorialChange
   /* A change run that settled while the app was closed still owes its receipt check. */
@@ -1143,7 +1110,7 @@ export const createAppController = (
     forwardInboxApprovalDecision
   } = workflowController
   const { listTriggers, registerTrigger } = triggersSeam
-  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), undefined, select(renderFlowForm)))
+  const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), select(renderFlowForm)))
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
   void librarianRuns.recoverLaunches()
   /*
@@ -1203,15 +1170,9 @@ export const createAppController = (
     setWikiCardView
   } = actors.pair(ctx, (context, select) => createWorldController(context, { nextOrdinal: store.nextOrdinal, cloudWiki: select(cloudWiki) }))
 
-  const { askWorldDelete } = actors.pair(ctx, (context, select) => ({
+  const { askWorldDelete } = actors.pair(ctx, (_context, select) => ({
     askWorldDelete: (id: string): string | void => {
       const refusal = select(removeWorldDocument)(id)
-      const guide = context.store.session().guide
-      if (refusal === undefined && context.commandActor === "user" && guide && !guide.finished && guide.conversationOpen) {
-        // The confirmation is now the top keyboard layer; retire the command
-        // composer without consuming the dialog's own accessible Escape cancel.
-        void select(guideAct)("close")
-      }
       return refusal
     }
   }))
@@ -1242,7 +1203,6 @@ export const createAppController = (
   const cancelDictation = dictation.cancel
   const toggleDictation = async (): Promise<string | void> => {
     if (!store.session().dictating) {
-      await guideAct("open")
       openPalette()
     }
     return dictation.toggle()
@@ -1252,20 +1212,13 @@ export const createAppController = (
   const openPalette = (prefix?: string): void => {
     if (prefix !== undefined && prefix !== "") store.dispatch({ type: "composer.changed", actor: "user", draft: prefix })
     if (store.session().paletteOpen !== true) store.dispatch({ type: "palette.toggled", actor: "user", open: true })
-    // The ⌘K lesson (onboarding SCRIPT v4 beat 13) finishes on the real open.
-    const learned = lessonCompletion(store.session().guide, "palette.opened")
-    if (learned !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: learned })
-    else {
-      // Opening Chat again after Back resumes that lesson; C never stops opening Chat.
-      const again = lessonResumed(store.session().guide, "palette.opened")
-      if (again !== undefined) store.dispatch({ type: "guide.changed", actor: "user", guide: again })
-    }
+    store.dispatch({ type: "hint.dismissed", actor: "user", id: "chat" })
   }
   const inputMode = createInputModeController(store, {
     actor: () => ctx.commandActor,
     cancelDictation,
     startDictation: dictation.toggle,
-    openChat: async () => { openPalette(); await guideAct("open") },
+    openChat: async () => { openPalette() },
   })
   const closePalette = (lastQuery?: string): void => {
     cancelDictation()
@@ -1696,7 +1649,6 @@ export const createAppController = (
     netTapEntries,
     resetGrants,
     debugSeams,
-    guideAct,
     toggleTheme,
     setPalette,
     adoptSession,
@@ -1720,6 +1672,8 @@ export const createAppController = (
     reloadApp,
     openDownload,
     promptDownload,
+    dismissFirstRun: () => { store.dispatch({ type: "first-run.dismissed", actor: ctx.commandActor }) },
+    dismissHint: (id: string) => { store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id }) },
     introduce,
     showAccount: account.showAccount,
     welcomeRepo: onboarding.welcomeRepo,
@@ -1935,7 +1889,6 @@ export const createAppController = (
   const { snapshot: _snapshot, ...sharedActions } = commandActions
   return {
     ...sharedActions,
-    observeGuideVisibility,
     store,
     controlFocus,
     storageRecoveryState,

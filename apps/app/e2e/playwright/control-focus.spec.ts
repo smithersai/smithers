@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
+import { expect,test } from "@playwright/test"
 
 /*
  * Control focus ("spotlight"): clicking into a card's markdown editor dims the
@@ -13,7 +13,7 @@ import type { Page } from "@playwright/test"
  * shipped broken: the dim composited two and three deep in visible bands, the
  * release affordance was scrolled out of reach while `toBeVisible()` still
  * passed (a bounding box is not a hit test), and its own styling lost every
- * declaration to `.sui-button-ghost` and `.guide-shell button`.
+ * declaration to `.sui-button-ghost` and `.first-run-actions button`.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -26,11 +26,10 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-/** Drive the tutorial to a world card showing its Document view: the markdown editor surface. */
+/** Open a world card showing its Document view: the markdown editor surface. */
 const openEditorSurface = async (page: Page) => {
   await page.goto("/")
-  /* The guide shell owns first paint; the composer hides until summoned (2026-09-08 brief). */
-  await expect(page.locator(".guide-shell")).toBeVisible()
+  await expect(page.locator(".app-shell")).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeVisible()
@@ -61,67 +60,6 @@ const releaseIsReachable = async (page: Page): Promise<boolean> =>
     const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
     return hit === button || button.contains(hit)
   })
-
-test("hover and wheel reach dimmed content; the releasing click is swallowed, the next one acts", async ({ page }) => {
-  /* A short window so the transcript scroller genuinely overflows. */
-  await page.setViewportSize({ width: 1100, height: 520 })
-  const { card, composer, editor } = await openEditorSurface(page)
-  await editor.click()
-
-  /* Controlled: the card wears the ring; ONE dim layer renders, on the body.
-     The marker is namespaced — a bare `data-controlled` is the guide shell's own flag on every bubble. */
-  await expect(card).toHaveAttribute("data-control-focus", "human")
-  const dim = page.locator("body > .control-focus-dim")
-  await expect(dim).toHaveCount(1)
-  /* And nowhere else: a layer per stacking ancestor is what composited the dim two and three deep. */
-  await expect(page.locator(".control-focus-dim")).toHaveCount(1)
-  /* Nothing is lifted to escape a stacking trap any more; the hole does that work. */
-  await expect(page.locator("[data-control-focus-host]")).toHaveCount(0)
-  /* The hole is cut where the surface shows, so the layer covers the window minus that rect. */
-  await expect(dim).toHaveAttribute("aria-hidden", "true")
-  expect(await dim.evaluate((element) => getComputedStyle(element).clipPath)).toMatch(/^path\(evenodd,/)
-
-  /* The dim never intercepts: what sits under the pointer is the content, not the layer. */
-  const chatButton = page.getByRole("button", { name: "Chat" }).first()
-  const underPoint = await chatButton.evaluate((element) => {
-    const rect = element.getBoundingClientRect()
-    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-    return hit === element || element.contains(hit)
-  })
-  expect(underPoint).toBe(true)
-
-  /* Hover styles still apply over dimmed content. */
-  await chatButton.hover()
-  expect(await chatButton.evaluate((element) => element.matches(":hover"))).toBe(true)
-
-  /* And the wheel scrolls the dimmed transcript. The lesson's scroller is the transcript itself:
-     the mount and the shell around it are `overflow: hidden` and can never move. */
-  const scroller = page.locator(".guide-transcript")
-  await expect
-    .poll(async () => scroller.evaluate((element) => element.scrollHeight - element.clientHeight), { timeout: 10_000 })
-    .toBeGreaterThan(0)
-  const before = await scroller.evaluate((element) => element.scrollTop)
-  const point = await scroller.evaluate((element) => {
-    const rect = element.getBoundingClientRect()
-    return { x: rect.x + 6, y: rect.y + rect.height / 2 }
-  })
-  await page.mouse.move(point.x, point.y)
-  await page.mouse.wheel(0, 400)
-  await expect.poll(async () => scroller.evaluate((element) => element.scrollTop)).not.toBe(before)
-
-  /* The releasing click only unfocuses: the Chat button it landed on did not summon the composer. */
-  await chatButton.click()
-  await expect(dim).toHaveCount(0)
-  await expect(card).not.toHaveAttribute("data-control-focus", /./)
-  await expect(composer).toBeHidden()
-  /* Focus landed on the surface's card section, never on body. */
-  const activeClass = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.className ?? "")
-  expect(activeClass).toContain("smithers-card")
-
-  /* The NEXT click is a normal click: the composer opens. */
-  await chatButton.click()
-  await expect(composer).toBeVisible()
-})
 
 /*
  * The invariant, measured in pixels rather than argued from stacking rules:
@@ -233,7 +171,7 @@ test("the hole is the card's box, not the inner element that took focus", async 
 
   /*
    * The card element comes from the locator the test clicked into: during the
-   * tutorial the app is mounted twice (the lesson's copy and the live shell
+   * app the controls can appear both in cards and the live shell
    * behind it, at `opacity: 0`), so a fresh `querySelector` can pick the copy
    * the user never sees.
    */
@@ -327,45 +265,11 @@ test("the release affordance is reachable at every viewport, and reads as a cont
   await expect(card).not.toHaveAttribute("data-control-focus", /./)
 })
 
-test('guidance glows separately from keyboard focus and the transcript shows its focus', async ({ page }) => {
-  await page.goto('/smithersai/smithers/?tutorial')
-  const guided = page.getByRole('button', { name: 'Show issues', exact: true })
-  const skip = page.getByRole('button', { name: 'Skip tutorial', exact: true })
-  await skip.focus()
-  await expect(skip).toBeFocused()
-  expect(await skip.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid')
-  expect(await guided.evaluate(node => getComputedStyle(node).outlineStyle)).not.toBe('solid')
-  await page.keyboard.press('Tab')
-  const transcript = page.getByRole('log', { name: 'Onboarding chat history' })
-  await expect(transcript).toBeFocused()
-  expect(await transcript.evaluate(node => getComputedStyle(node).outlineWidth)).toBe('2px')
-})
-
-test('Chat dims and blocks the top header too, with a modal focus boundary and valid palette references', async ({ page }) => {
-  await page.goto('/smithersai/smithers/?tutorial')
-  await page.getByRole('button', { name: 'Chat', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Chat', exact: true })
-  await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  expect(await page.locator('.guide-composer-dock').evaluate(node => node.matches(':modal'))).toBe(true)
-  expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, 20)?.classList.contains('guide-composer-dock'))).toBe(true)
-  await expect(page.locator('.guide-content')).toHaveAttribute('inert', '')
-  const input = page.getByRole('combobox', { name: 'Chat message' })
-  await expect(input).toBeFocused()
-  await expect(input).toHaveAttribute('aria-expanded', 'true')
-  await page.keyboard.press('ArrowDown')
-  expect(await input.evaluate(node => {
-    const list = document.getElementById(node.getAttribute('aria-controls')!)
-    const selected = document.getElementById(node.getAttribute('aria-activedescendant')!)
-    return !!list?.contains(selected) && selected?.getAttribute('aria-selected') === 'true'
-  })).toBe(true)
-  await page.locator('.guide-wordmark').evaluate((node: HTMLElement) => node.focus())
-  await expect(input).toBeFocused()
-  await page.keyboard.press('Escape')
-  // The active palette closes first; the modal boundary remains until Chat closes.
-  await expect(input).toHaveAttribute('aria-expanded', 'false')
-  await expect(dialog).toBeVisible()
-  await expect(page.locator('.guide-content')).toHaveAttribute('inert', '')
-  await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
-  await expect(page.locator('.guide-content')).not.toHaveAttribute('inert', '')
+test('first-sight help does not take keyboard focus', async ({ page }) => {
+  await page.goto('/?tutorial')
+  const dismiss = page.getByRole('button', { name: 'Dismiss recommended actions', exact: true })
+  await dismiss.focus()
+  await expect(dismiss).toBeFocused()
+  await expect(page.locator('.help-bubble')).toHaveCount(1)
+  await expect(dismiss).toBeFocused()
 })

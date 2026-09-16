@@ -1,11 +1,10 @@
+import reproDefinition from "../../../../../../flows/issue/repro/flow.mdx?raw"
 import type { Card } from "../AppState"
+import { gatewayBindingFor,resolveTargetRepo } from "../RepoContext"
+import { isPracticeRepo,PRACTICE_REPO,practiceIssue } from "../practice/PracticeRepository"
 import type { SeamContext } from "../seams/SeamContext"
 import { readResult } from "../seams/SeamContext"
-import { gatewayBindingFor, resolveTargetRepo } from "../RepoContext"
-import { isPracticeRepo, PRACTICE_REPO, practiceIssue } from "../practice/PracticeRepository"
-import { lessonCompletion } from "../../onboarding/completion"
 import type { WorkflowController } from "./workflows"
-import reproDefinition from "../../../../../../flows/issue/repro/flow.mdx?raw"
 
 export interface IssueFlowsController {
   readonly inspectIssueFlows: (number: number, repo?: string) => Promise<string | { readonly value: string }>
@@ -28,17 +27,11 @@ export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<Workflo
     }
     return payload === undefined ? { error: `Open issue #${number} before choosing its flows.` } : { repo: resolved.repo, payload }
   }
-  const finish = async (signal: string, playthrough: number | undefined) => {
-    const guide = ctx.store.session().guide
-    if (!guide || guide.playthrough !== playthrough) return
-    const next = lessonCompletion(guide, signal)
-    if (next) await ctx.dispatch({ type: "guide.changed", actor: ctx.actor(), guide: next }).isPersisted.promise
-  }
   const inspectIssueFlows: IssueFlowsController["inspectIssueFlows"] = async (number, explicit) => {
     const selected = target(number, explicit)
     if ("error" in selected) return selected.error
     const { repo, payload } = selected
-    const playthrough = ctx.store.session().guide?.playthrough
+    const playthrough = 0
     const scope = JSON.stringify([ctx.store.session().activeRepoKey, ctx.store.session().activeWorkspaceId, ctx.store.collections.identitySessions.get("identity")?.login, playthrough])
     let catalog: Extract<Card, { kind: "workflow-list" }>
     if (isPracticeRepo(repo)) {
@@ -49,13 +42,12 @@ export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<Workflo
     } else {
       const result = await flows.listWorkspaceWorkflows(repo)
       if (typeof result === "string") return result
-      if (scope !== JSON.stringify([ctx.store.session().activeRepoKey, ctx.store.session().activeWorkspaceId, ctx.store.collections.identitySessions.get("identity")?.login, ctx.store.session().guide?.playthrough])) return "The repository changed while loading its issue flows. Open the issue again."
+      if (scope !== JSON.stringify([ctx.store.session().activeRepoKey, ctx.store.session().activeWorkspaceId, ctx.store.collections.identitySessions.get("identity")?.login, 0])) return "The repository changed while loading its issue flows. Open the issue again."
       const source = cards().filter((card): card is Extract<Card, {kind:"workflow-list"}> => card.kind === "workflow-list" && card.payload.repo === repo).sort((a,b) => b.ordinal-a.ordinal)[0]
       if (!source) return "The workspace did not return its flow catalog."
       catalog = { ...source, title: `Issue #${number} · Flows`, payload: { ...source.payload, issueContext: { number, title: payload.title }, workflows: source.payload.workflows.filter(flow => /^issue[./]/.test(flow.key)) } }
     }
     await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: catalog }).isPersisted.promise
-    await finish("issue.flows.opened", playthrough)
     return readResult(catalog.payload.workflows.map(flow => `${flow.key}: ${flow.description ?? ""}${flow.prompt ? `\n${flow.prompt}` : ""}`).join("\n") || "No issue flows are installed on this workspace.")
   }
   return {
@@ -64,7 +56,7 @@ export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<Workflo
       const selected = target(number, explicit)
       if ("error" in selected) return selected.error
       const { repo, payload } = selected
-      if (isPracticeRepo(repo)) return "Choose Implement in the practice tutorial to prepare its plan."
+      if (isPracticeRepo(repo)) return "Choose change.suggest to prepare a plan."
       const binding = gatewayBindingFor(ctx.store, repo)
       if ("error" in binding) return binding.error
       if (binding.workspaceId === undefined) return `Open a cloud workspace for ${repo} with /workspace.open, select it, then choose Implement again.`
@@ -103,12 +95,10 @@ export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<Workflo
 The example fix defaults both missing and empty names with \`name || "world"\` in src/hello.ts. Add regression cases for both inputs and retain the named greeting case.
 
 This is a bundled demonstration, not a fresh agent run. Choose Implement to review the plan and apply the recorded fix.`
-      const playthrough = ctx.store.session().guide?.playthrough
       await inspectIssueFlows(number, repo)
       const card = ctx.store.collections.cards.get(`practice-issue-flows-${number}`)
       if (card?.kind !== "workflow-list") return "Open the issue's flows and try again."
       await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: { ...card, payload: { ...card.payload, research: result } } }).isPersisted.promise
-      if (name === "repro") await finish("issue.researched", playthrough)
       return readResult(result)
     }
   }

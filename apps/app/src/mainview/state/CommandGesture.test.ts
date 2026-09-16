@@ -1,9 +1,8 @@
+import { afterEach,expect,test } from "bun:test"
+import type { AppController,AppServices } from "./AppController"
+import { createAppStore,type AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { afterEach, expect, test } from "bun:test"
-import type { AppController, AppServices } from "./AppController"
-import { createAppStore, type AppStore } from "./AppStore"
-import { initialGuide } from "./AppState"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -25,7 +24,6 @@ const gate = () => {
 }
 const fixture = async (services: AppServices = {}, reject = false) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
-  await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
   if (services.bootstrap?.host === "local") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   const held = gate()
   const observed: AppStore = { ...store, dispatch: transition => {

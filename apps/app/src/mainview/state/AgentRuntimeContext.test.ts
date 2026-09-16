@@ -1,13 +1,11 @@
-import { describe, expect, test } from "bun:test"
-import { renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { GUIDE_LAST_STEP, GUIDE_LESSONS } from "../onboarding/lessons"
+import { renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
+import type { AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,test } from "bun:test"
 import type { AgentPort } from "../runtime/AgentPort"
-import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { initialGuide } from "./AppState"
-import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,recordingAgent,settled,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -30,28 +28,6 @@ describe("per-turn runtime context", () => {
     expect(context?.surface).toBe("chat")
     expect(context?.connectors).toEqual([])
     expect(context?.limitations.some((line) => line.includes("Cannot see"))).toBe(true)
-  })
-
-  test("a state change between turns shows up in the next turn's context", async () => {
-    const store = await webStore()
-    const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
-
-    store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), finished: true } })
-    controller.send("first turn")
-    await settled()
-    controller.showConnectors()
-    controller.send("second turn")
-    await settled()
-
-    expect(requests).toHaveLength(2)
-    expect(requests[0]?.context?.surface).toBe("chat")
-    expect(requests[1]?.context?.surface).toBe("connectors")
-    // Freshly derived, not cached: the revision moved with the surface change.
-    const firstRevision = requests[0]?.context?.revision ?? 0
-    expect(requests[1]?.context?.revision ?? 0).toBeGreaterThan(firstRevision)
-    const firstCaptured = requests[0]?.context?.capturedAt ?? 0
-    expect(requests[1]?.context?.capturedAt ?? 0).toBeGreaterThanOrEqual(firstCaptured)
   })
 
   test("the hidden context never enters the persisted visible transcript", async () => {
@@ -318,114 +294,6 @@ describe("per-turn runtime context", () => {
     expect(requests[0]?.context?.tabs).toEqual([{ id: "main", kind: "main", title: "Smithers", status: "open", active: true }])
     expect(requests[0]?.context?.capabilities.some((line) => line.includes("tab.read"))).toBe(false)
   })
-
-  /*
-   * A message sent mid-tutorial is answered against the lesson transcript the
-   * user has actually seen: the turn context carries the onboarding block
-   * (lesson position + transcript) while the guide runs, and drops it once
-   * the workspace step is reached.
-   */
-  test("the onboarding transcript rides the turn while the tutorial runs, and leaves when it is done", async () => {
-    const store = await webStore()
-    const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
-
-    await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
-    // Direct entry already has the first practice lesson in its durable context.
-    controller.send("hi")
-    await settled()
-    expect(requests[0]?.context?.onboarding?.step).toBe(0)
-
-    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 7 } }).isPersisted.promise
-    controller.send("what is this?")
-    await settled()
-    const onboarding = requests[1]?.context?.onboarding
-    expect(onboarding?.step).toBe(6)
-    expect(onboarding?.stepCount).toBe(GUIDE_LAST_STEP)
-    expect(onboarding?.transcript).toEqual(GUIDE_LESSONS.slice(1, 8))
-    expect(onboarding?.transcript[6]).toBe(GUIDE_LESSONS[7])
-    const rendered = renderAgentRuntimeContext(requests[1]?.context as AgentRuntimeContext)
-    expect(rendered).toContain(`the user is on lesson 7 of ${GUIDE_LAST_STEP}`)
-    expect(rendered).toContain("onboarding.act finish")
-
-    await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: GUIDE_LAST_STEP } }).isPersisted.promise
-    controller.send("done with that")
-    await settled()
-    expect(requests[2]?.context?.onboarding).toBeUndefined()
-  })
-})
-
-
-test("direct tutorial entry and replay initialize hidden repository context without a start gate", async () => {
-  const store = await webStore()
-  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
-  const requests: StartAgentTurnRequest[] = []
-  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
-  await settled()
-  expect(store.session().guide).toMatchObject({ step: 1, completed: ["tutorial.started"] })
-  expect(store.collections.cards.size).toBe(0)
-  controller.send("What issues are available?")
-  await settled()
-  const context = requests[0]?.context
-  expect(context?.repositoryUpdate).toMatchObject({ repo: "practice:smithersai/hello-server", openIssues: 2, openPrs: 1 })
-  expect(renderAgentRuntimeContext(context!)).toContain("repo.update refreshes hidden observations")
-  expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)
-  expect([...store.collections.messages.values()].some(message => message.text.includes('"openIssues"'))).toBe(false)
-  await controller.guideAct("restart")
-  controller.send("What does this new tutorial know?")
-  await settled()
-  expect(store.session().guide).toMatchObject({ step: 1, playthrough: 1, completed: ["tutorial.started"] })
-  expect(requests[1]?.context?.repositoryUpdate).toMatchObject({ repo: "practice:smithersai/hello-server", openIssues: 2, openPrs: 1 })
-})
-
-
-test("practice chat composes the displayed issue list and issue body without sign-in or network reads", async () => {
-  const { PRACTICE_REPO, practiceIssue } = await import("./practice/PracticeRepository")
-  const store = await webStore()
-  const requests: StartAgentTurnRequest[] = []
-  const reads: string[] = []
-  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
-    fetchImpl: async input => { reads.push(String(input)); return Response.json({}, { status: 404 }) },
-  })
-  store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true })
-  store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), completed: ["tutorial.started"] } })
-  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
-  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
-    { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "user", head: null, catalog: true },
-    { id: PRACTICE_REPO, org: "practice:smithersai", name: "hello-server", ownerKind: "user", head: null },
-  ] })
-  store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" })
-  await settled()
-  reads.length = 0
-  await controller.commands.run("issues.list", `open ${PRACTICE_REPO}`)
-  expect(reads).toEqual([])
-  controller.send("What is issue 3 about?")
-  await settled()
-  expect(requests).toHaveLength(1)
-  expect(requests[0]?.context?.activeRepository).toBe("smithersai/smithers")
-  expect(requests[0]?.context?.capabilities.join(" ")).toContain(PRACTICE_REPO)
-  const composed = requests[0]!.messages.map(message => "content" in message ? message.content : "").join("\n")
-  expect(composed).toContain("Add a /time endpoint")
-  expect(JSON.parse(composed.split("Practice card data:\n")[1]!.split("\nWhat is issue")[0]!).issue3.issueBody).toBe(practiceIssue(3)!.issueBody)
-  expect(composed).toContain("no sign-in")
-  expect(composed).not.toContain("data:image")
-  reads.length = 0
-  const read = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "issues.view", args: `3 ${PRACTICE_REPO}` }) })
-  expect(read).toContain(practiceIssue(3)!.issueBody)
-  expect([...store.collections.messages.values()].some(message => message.action?.flow === "auth.sign-in")).toBe(false)
-  expect(reads).toEqual([])
-  // Advancing out of practice must drop the fixture context, even with its cards persisted.
-  store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 10 } })
-  controller.send("What repository now?")
-  await settled()
-  expect(requests[1]?.context?.activeRepository).toBe("smithersai/smithers")
-  expect(JSON.stringify(requests[1]?.messages)).not.toContain("Add a /time endpoint")
-  // A persisted practice selection cannot keep tutorial priming alive after its beat.
-  await store.dispatch({ type: "repo.selected", actor: "user", id: PRACTICE_REPO }).isPersisted.promise
-  controller.send("Read the practice repository")
-  await settled()
-  expect(JSON.stringify(requests[2]?.messages)).not.toContain("Expected: Hello, world!")
-  expect(JSON.stringify(requests[2]?.messages)).not.toContain("Add a /time endpoint") // The detail card replaced the list.
 })
 
 

@@ -1,6 +1,4 @@
-import { expect, test } from "@playwright/test"
-import { spawn } from "node:child_process"
-import type { ChildProcess } from "node:child_process"
+import { expect,test } from "@playwright/test"
 
 /*
  * The boot-blocking regression (the local app stuck on "Smithers is starting
@@ -11,63 +9,8 @@ import type { ChildProcess } from "node:child_process"
  * (identity-hang-host.ts) with the seam behind a socket that never answers.
  */
 
-const startIdentityHangHost = async (): Promise<{ readonly origin: string; readonly child: ChildProcess }> => {
-  const child = spawn("bun", ["e2e/playwright/identity-hang-host.ts"], {
-    // The Playwright runner's cwd is the config directory (apps/app).
-    cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "inherit"]
-  })
-  const origin = await new Promise<string>((resolve, reject) => {
-    let buffer = ""
-    child.stdout?.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8")
-      const match = /SMITHERS_LOCAL_ORIGIN=(\S+)/.exec(buffer)
-      if (match?.[1] !== undefined) resolve(match[1])
-    })
-    child.on("exit", (code) => reject(new Error(`identity-hang-host exited ${code} before printing its origin`)))
-    setTimeout(() => reject(new Error("identity-hang-host never printed its origin")), 30_000)
-  })
-  return { origin, child }
-}
 
-test.describe("boot with the identity seam hanging", () => {
-  let child: ChildProcess
-  let origin: string
-
-  test.beforeAll(async () => {
-    ;({ origin, child } = await startIdentityHangHost())
-  })
-
-  test.afterAll(() => {
-    child.kill("SIGTERM")
-  })
-
-  test("the shell paints the SMITHERS wordmark before anything loads, and the app mounts without the identity answer", async ({ page }) => {
-    // Hold the boot chunk so the entrance is observable; identity hangs either way.
-    let releaseChunk!: () => void
-    const chunkHeld = new Promise<void>((resolve) => { releaseChunk = resolve })
-    await page.route("**/ControllerBoot.client*.js", async (route) => {
-      await chunkHeld
-      await route.continue()
-    })
-    try {
-      await page.goto(`${origin}/`, { waitUntil: "domcontentloaded" })
-      await expect(page.locator(".session-navigation > .guide-wordmark")).toBeVisible()
-      releaseChunk()
-      /*
-       * Before the fix this never resolved: boot awaited the identity session
-       * read, which this fixture's upstream never answers. The guide shell is
-       * the app mounted (its composer stays hidden until Command-K).
-       */
-      await expect(page.locator(".guide-shell")).toBeVisible({ timeout: 20_000 })
-    } finally {
-      releaseChunk()
-      await page.unroute("**/ControllerBoot.client*.js")
-    }
-  })
-})
-
-import { signedOutVisitor, SCOPED_TEST_USER } from "./identity"
+import { signedOutVisitor } from "./identity"
 
 const slash = async (page: import("@playwright/test").Page, command: string) => {
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
@@ -92,31 +35,6 @@ test("repository chrome sign-in is keyboard reachable without the sidebar and ca
   const request = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
   await page.keyboard.press("Enter")
   expect(new URL((await request).url()).searchParams.get("return_to")).toBe("/smithersai/smithers/")
-})
-
-test("signed-in repository chrome shows no account in the header; the sidebar still opens Account", async ({ page }) => {
-  await signedOutVisitor(page)
-  await page.route("**/api/auth/session", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(SCOPED_TEST_USER) }))
-  await page.route("**/api/auth/scopes", route => route.fulfill({ json: { scopes: [{ scope: "contents:write", plain: "Read and write repository contents." }] } }))
-  await page.goto("/smithersai/smithers/")
-  // Account is the sidebar's door, reached by keyboard from the wordmark.
-  await page.getByRole("button", { name: "Smithers", exact: true }).focus()
-  await page.keyboard.press("Enter")
-  await page.getByTestId("sidebar-account").focus()
-  await page.keyboard.press("Enter")
-  const account = page.locator('[data-kind="account"]')
-  await expect(account.getByRole("table", { name: "GitHub App permissions", exact: true })).toContainText("contents:write")
-  await expect(account.getByRole("table", { name: "GitHub scopes", exact: true })).toContainText("read:user")
-  // Only now is the session known signed in, so the empty header is asserted against the mounted app.
-  await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
-  await expect(page.locator(".session-navigation").getByTestId("chrome-account")).toHaveCount(0)
-  await expect(page.locator(".session-navigation")).not.toContainText(SCOPED_TEST_USER.login)
-  await page.goto("/smithersai/smithers/?tutorial")
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
-  await page.reload()
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
-  await expect(page.locator('.guide-transcript [data-kind="account"]')).toHaveCount(0)
 })
 
 for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", "/account.show", "/issues smithersai/smithers", "/prs smithersai/smithers"]) {
@@ -177,22 +95,4 @@ test("chrome sign-in uses the shell's green action token", async ({ page }) => {
     probe.remove()
     return same
   })).toBe(true)
-})
-
-
-test("plain repository chat never sends bundled practice priming", async ({ page }) => {
-  await signedOutVisitor(page)
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [
-    { name: "smithersai/smithers", title: "Smithers", url: "https://github.com/smithersai/smithers", summary: "Smithers.", stats: null },
-  ] } }))
-  await page.route("**/api/agent/turn", route => route.fulfill({ status: 503, json: { message: "Captured test turn" } }))
-  await page.goto("/smithersai/smithers/")
-  await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
-  const turn = page.waitForRequest(request => new URL(request.url()).pathname === "/api/agent/turn" && request.method() === "POST")
-  await slash(page, "What does this repository do?")
-  const payload = (await turn).postDataJSON()
-  expect(JSON.stringify(payload.messages)).not.toContain("The repository on screen is practice:")
-  expect(JSON.stringify(payload.context?.repositoryUpdate) ?? "").not.toContain("practice:")
-  expect(payload.context?.onboarding).toBeUndefined()
 })

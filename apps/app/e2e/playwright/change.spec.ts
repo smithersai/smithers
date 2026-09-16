@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
+import { expect,test } from "@playwright/test"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 /*
@@ -102,24 +102,6 @@ test.beforeEach(async ({ page }) => {
       // Storage the browser refuses is the empty store already.
     }
   })
-})
-
-test("quick wins: review evidence opens the current checks using the existing keyboard action", async ({ page }) => {
-  await serve(page)
-  await page.goto("/")
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill("/onboarding.act finish")
-  await page.getByTestId("composer-input").press("Enter")
-  await expect(page.getByTestId("composer-input")).toBeHidden()
-  await page.keyboard.press("Control+k")
-  await page.getByTestId("composer-input").fill("/change.view qupxosqw")
-  await page.getByTestId("composer-input").press("Enter")
-  const card = page.getByTestId("card-change-smithersai/smithers-qupxosqw")
-  const evidence = card.getByRole("region", { name: "Review evidence" })
-  await expect(evidence).toContainText("rev 1 · current")
-  await evidence.getByRole("button", { name: "Inspect checks", exact: true }).press("Enter")
-  await expect(card.getByRole("tab", { name: "Checks", exact: true })).toHaveAttribute("aria-selected", "true")
 })
 
 test("T1: /change.view renders a landing request's change end to end", async ({ page }) => {

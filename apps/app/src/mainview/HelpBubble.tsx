@@ -5,6 +5,9 @@ import "./HelpBubble.css"
 export type HelpBubbleProps = {
   /** The content ID can be included in the target control's aria-describedby. */
   id: string
+  dismissBinding?: { "data-flow": string; "data-flow-args"?: string }
+  dismissOnEscape?: boolean
+  restoreFocusOnDismiss?: boolean
   open: boolean
   content: ReactNode
   onDismiss: () => void
@@ -26,7 +29,7 @@ export type HelpBubbleProps = {
  * The caller owns when to show it; no tutorial, timer, or permission policy
  * belongs here. Opening guidance neither moves focus nor traps the keyboard.
  */
-export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow", avoid, below, pulse = false }: HelpBubbleProps) {
+export function HelpBubble({ id, open, content, onDismiss, children, placement = "flow", avoid, below, pulse = false, dismissBinding, dismissOnEscape = true, restoreFocusOnDismiss = true }: HelpBubbleProps) {
   const target = useRef<HTMLDivElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
   const anchor = useCallback((node: HTMLDivElement | null) => {
@@ -79,14 +82,14 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
     }
   }, [open, placement, avoid, below])
   const dismiss = () => {
-    if (bubble.current?.contains(document.activeElement)) {
+    if (restoreFocusOnDismiss && bubble.current?.contains(document.activeElement)) {
       target.current?.querySelector<HTMLElement>("button, a[href], input, select, textarea, [tabindex]")?.focus()
     }
     onDismiss()
   }
   return (
     <div className="help-anchor" ref={anchor} data-placement={placement} data-help-open={open || undefined} data-help-pulse={open && pulse || undefined} onKeyDown={event => {
-      if (!open || event.key !== "Escape") return
+      if (!dismissOnEscape || !open || event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
       dismiss()
@@ -95,7 +98,7 @@ export function HelpBubble({ id, open, content, onDismiss, children, placement =
         <div className="help-bubble" ref={bubble} role="note" aria-label="Help">
           <Lightbulb className="help-bubble-icon" size={17} aria-hidden="true" />
           <div id={id} className="help-bubble-content">{content}</div>
-          <button className="help-bubble-dismiss" type="button" aria-label="Dismiss help" onClick={dismiss}>
+          <button {...dismissBinding} className="help-bubble-dismiss" type="button" aria-label="Dismiss help" onClick={dismiss}>
             <X size={15} aria-hidden="true" />
           </button>
         </div>

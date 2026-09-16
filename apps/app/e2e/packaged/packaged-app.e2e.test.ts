@@ -63,12 +63,6 @@ const withApp = async (
     app = await launchApp({ executable, artifactsDirectory, stateDirectory })
     await app.ready()
     await app.waitFor<RenderedShell>(renderedShell, (value) => value.composer && value.transcript)
-    // Native scenarios exercise the workspace after the current tutorial,
-    // using the same public command and sidebar button as browser fixtures.
-    if (await app.eval<boolean>(`document.querySelector('.guide-shell') !== null`)) {
-      await sendMessage(app, "/onboarding.act finish")
-      await app.waitFor<boolean>(`document.querySelector('.guide-shell') === null`)
-    }
     await openSidebar(app)
     await run(app, fixture)
   } catch (error) {

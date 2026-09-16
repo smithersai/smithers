@@ -1,8 +1,7 @@
-import { expect, test } from "bun:test"
+import { expect,test } from "bun:test"
 import { createAppStore } from "../AppStore"
-import { initialGuide } from "../AppState"
-import { createPluginsController } from "./plugins"
 import type { ControllerContext } from "./context"
+import { createPluginsController } from "./plugins"
 
 const setup = async (guideStep?: number) => {
   const data = new Map<string, string>()
@@ -15,11 +14,6 @@ const setup = async (guideStep?: number) => {
     }
   })
   if (guideStep !== undefined) {
-    await store.dispatch({
-      type: "guide.changed",
-      actor: "user",
-      guide: { ...initialGuide(), step: guideStep, library: false }
-    }).isPersisted.promise
   }
   const controller = createPluginsController({ store, commandActor: "user" } as unknown as ControllerContext)
   return { store, controller }

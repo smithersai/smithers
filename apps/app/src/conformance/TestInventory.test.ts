@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url))
 const read = (path: string) => readFileSync(join(app, path), "utf8")
 const scripts: Record<string, string> = JSON.parse(read("package.json")).scripts
 const testFile = /\.(test|spec)\.[cm]?[jt]sx?$/
-const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", "apps/app"], {
+const files = execFileSync("jj", ["file", "list", "apps/app"], {
   cwd: root, encoding: "utf8"
 }).trim().split("\n").map((path) => path.slice("apps/app/".length)).filter((path) => testFile.test(path))
 
@@ -94,7 +94,6 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
-  expect(owners("e2e/playwright/tutorial-tip.spec.ts")).toContain("Playwright site")
   expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
   // The real tier's coverage gate is its own source, tested by Bun rather than
   // driven by Playwright, so the unit suite owns it.

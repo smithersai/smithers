@@ -1,6 +1,6 @@
-import { conversationTabIdOf, type Card } from "./AppState"
-import type { SeamContext } from "./seams/SeamContext"
-import { paneTarget } from "./EmbeddedHistory"
+import { conversationTabIdOf,type Card } from "./AppState";
+import { paneTarget } from "./EmbeddedHistory";
+import type { SeamContext } from "./seams/SeamContext";
 
 export type ViewResult = string | { readonly card: Card; readonly value?: string }
 export type ViewAction<A extends unknown[]> = ((...args: A) => Promise<string | void | { readonly value: string }>) & {
@@ -35,7 +35,6 @@ const scopeOf = (ctx: SeamContext) => JSON.stringify([
   ctx.store.session().activeWorkspaceId,
   ctx.store.session().activeBranchId,
   conversationTabIdOf(ctx.store.session()),
-  ctx.store.session().guide?.playthrough,
 ])
 
 /** Mutations and identity changes discard speculative reads, including in-flight results. */

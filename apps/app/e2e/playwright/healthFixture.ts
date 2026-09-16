@@ -1,13 +1,10 @@
 import { expect, type Page } from "@playwright/test"
 
-/** Health scenarios use the current tutorial exit and existing session navigation. */
+/** Open the app's existing session navigation. */
 export const prepareHealthPage = async (page: Page, sidebar = false): Promise<void> => {
-  await expect(page.locator(".guide-shell")).toBeVisible()
-  await page.keyboard.press("Control+k")
-  await expect(page.getByTestId("composer-input")).toBeFocused()
-  await page.getByTestId("composer-input").fill("/onboarding.act finish")
-  await page.getByTestId("composer-input").press("Enter")
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
+  await expect(page.locator(".app-shell")).toBeVisible()
+  const dismiss = page.getByRole("button", { name: "Dismiss recommended actions", exact: true })
+  if (await dismiss.isVisible()) await dismiss.click()
   if (sidebar) {
     const navigation = page.getByRole("button", { name: "Smithers", exact: true })
     await navigation.focus()

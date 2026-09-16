@@ -17,7 +17,6 @@ export const assistantMessages = (page: Page): Locator =>
 export const bootWorkspace = async (page: Page, origin?: string): Promise<void> => {
   const entry = process.env.SMITHERS_REAL_E2E_HOST === "production" ? appEntryPath() : "/smithersai/smithers"
   await page.goto(origin ? new URL(entry, origin).toString() : entry, { waitUntil: "domcontentloaded" })
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(transcript(page)).toBeVisible()
 }

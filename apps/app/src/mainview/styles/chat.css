@@ -90,9 +90,7 @@
 }
 
 .smithers-transcript .smithers-chat-message .sui-chat-bubble,
-.guide-transcript .smithers-chat-message .sui-chat-bubble,
-.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending,
-.guide-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
 	position: relative;
 	max-width: min(78%, 720px);
 	padding: var(--sp-2) var(--sp-3);
@@ -104,15 +102,13 @@
 	line-height: var(--lh-body);
 }
 
-.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble,
-.guide-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble {
+.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble {
 	border-bottom-right-radius: 3px;
 	background: var(--bubble-outgoing);
 	color: var(--bubble-outgoing-text);
 }
 
-.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble::after,
-.guide-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble::after {
+.smithers-transcript .smithers-chat-message[data-role="user"] .sui-chat-bubble::after {
 	position: absolute;
 	right: -6px;
 	bottom: 0;
@@ -124,16 +120,12 @@
 }
 
 .smithers-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble,
-.guide-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble,
-.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending,
-.guide-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending {
 	border-bottom-left-radius: 3px;
 }
 
 .smithers-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble::before,
-.guide-transcript .smithers-chat-message[data-role="assistant"] .sui-chat-bubble::before,
-.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending::before,
-.guide-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending::before {
+.smithers-transcript .sui-chat-message[data-role="assistant"] .sui-chat-bubble-pending::before {
 	position: absolute;
 	bottom: 0;
 	left: -6px;
@@ -144,107 +136,89 @@
 	content: "";
 }
 
-.smithers-transcript .smithers-chat-message p,
-.guide-transcript .smithers-chat-message p {
+.smithers-transcript .smithers-chat-message p {
 	margin: 0;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown,
-.guide-transcript .smithers-chat-message .message-markdown {
+.smithers-transcript .smithers-chat-message .message-markdown {
 	color: inherit;
 	font-size: inherit;
 	line-height: inherit;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-p,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-p {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-p {
 	margin: 4px 0;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-heading,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-heading {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-heading {
 	margin: 10px 0 4px;
 	color: inherit;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h1,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-h1 {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h1 {
 	font-size: 1.3em;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h2,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-h2 {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h2 {
 	font-size: 1.2em;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h3,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-h3 {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-h3 {
 	font-size: 1.1em;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-list,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-list {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-list {
 	margin: 4px 0;
 	padding-left: 20px;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-inline-code,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-inline-code {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-inline-code {
 	background: color-mix(in srgb, currentColor 10%, transparent);
 	font-family: var(--font-mono);
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-md-link,
-.guide-transcript .smithers-chat-message .message-markdown .sui-md-link {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-md-link {
 	color: var(--brand);
 }
 
-.smithers-transcript .smithers-chat-message[data-role="user"] .message-markdown .sui-md-link,
-.guide-transcript .smithers-chat-message[data-role="user"] .message-markdown .sui-md-link {
+.smithers-transcript .smithers-chat-message[data-role="user"] .message-markdown .sui-md-link {
 	color: inherit;
 }
 
-.smithers-transcript .smithers-chat-message .message-markdown .sui-codeblock,
-.guide-transcript .smithers-chat-message .message-markdown .sui-codeblock {
+.smithers-transcript .smithers-chat-message .message-markdown .sui-codeblock {
 	margin: 6px 0;
 	font-family: var(--font-mono);
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning,
-.guide-transcript .smithers-chat-message .message-reasoning {
+.smithers-transcript .smithers-chat-message .message-reasoning {
 	margin: 0 0 4px;
 	border-color: var(--border);
 	background: var(--hover-subtle);
 	color: var(--text);
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger,
-.guide-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger {
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger {
 	padding: var(--sp-2) var(--sp-3);
 	color: var(--text-muted);
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger:hover,
-.guide-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger:hover {
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-trigger:hover {
 	background: var(--hover-subtle);
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-title,
-.guide-transcript .smithers-chat-message .message-reasoning .sui-reasoning-title {
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-title {
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 	font-weight: 600;
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-body,
-.guide-transcript .smithers-chat-message .message-reasoning .sui-reasoning-body {
+.smithers-transcript .smithers-chat-message .message-reasoning .sui-reasoning-body {
 	padding: 0 var(--sp-3) var(--sp-2);
 	color: var(--text-muted);
 	font-size: var(--fs-small);
 }
 
-.smithers-transcript .smithers-chat-message .message-reasoning-text,
-.guide-transcript .smithers-chat-message .message-reasoning-text {
+.smithers-transcript .smithers-chat-message .message-reasoning-text {
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
 }
@@ -284,20 +258,17 @@
 	line-height: 1;
 }
 
-.smithers-transcript .sui-chat-bubble-pending,
-.guide-transcript .sui-chat-bubble-pending {
+.smithers-transcript .sui-chat-bubble-pending {
 	min-width: 58px;
 	min-height: 32px;
 	justify-content: center;
 }
 
-.smithers-transcript .sui-chat-typing,
-.guide-transcript .sui-chat-typing {
+.smithers-transcript .sui-chat-typing {
 	gap: 3px;
 }
 
-.smithers-transcript .sui-chat-typing span,
-.guide-transcript .sui-chat-typing span {
+.smithers-transcript .sui-chat-typing span {
 	width: 4px;
 	height: 4px;
 	background: var(--brand);
@@ -1111,8 +1082,7 @@
 		left: 14px;
 	}
 
-	.smithers-transcript .smithers-chat-message .sui-chat-bubble,
-	.guide-transcript .smithers-chat-message .sui-chat-bubble {
+	.smithers-transcript .smithers-chat-message .sui-chat-bubble {
 		max-width: 86%;
 	}
 
@@ -1310,4 +1280,3 @@
 /* The unknown-repository arrival is a single opening notice. */
 .app-shell .smithers-transcript[data-repository-missing] .sui-chat-messages > :first-child { margin-top: 0; }
 /* Lesson lines are centered; conversation bubbles retain normal reading alignment. */
-.guide-transcript .smithers-chat-message { text-align: start; }

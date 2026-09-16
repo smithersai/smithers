@@ -1,17 +1,16 @@
-import { scopedControllers } from "./ControllerTestScope"
-import { afterEach, describe, expect, test } from "bun:test"
 import { Authorize } from "@smthrs/chain"
-import { Effect, Schema } from "effect"
 import type { StorageApi } from "@tanstack/db"
+import { afterEach,describe,expect,test } from "bun:test"
+import { Effect,Schema } from "effect"
 import type { AgentInvocation } from "../flows/AgentInvocation"
-import type { AppController, AppServices } from "./AppController"
-import { createAppStore, type AppStore } from "./AppStore"
-import { createControllerContext } from "./controller/context"
+import type { AppController,AppServices } from "./AppController"
+import { emptyAppProjection,projectAppEvent,seedAppProjection } from "./AppProjection"
+import { createAppStore,type AppStore } from "./AppStore"
 import { createCommandIntentLifecycle } from "./controller/commandIntents"
+import { createControllerContext } from "./controller/context"
+import { scopedControllers } from "./ControllerTestScope"
 import { readEntityRecoveries } from "./EntityRecovery"
-import { initialGuide } from "./AppState"
-import { emptyAppProjection, seedAppProjection, projectAppEvent } from "./AppProjection"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -29,7 +28,6 @@ const deferred = () => {
 const open = async (storage: StorageApi = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   stores.push(store)
-  await store.dispatch({ type: "guide.changed", actor: "system", guide: { ...initialGuide(), finished: true } }).isPersisted.promise
   return store
 }
 const controllerFor = (store: AppStore, pick: () => void = () => {}, services: AppServices = {}) => {

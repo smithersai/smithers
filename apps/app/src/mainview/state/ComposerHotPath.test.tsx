@@ -66,8 +66,7 @@ const mountCounted = async (sidebar = false): Promise<Counted> => {
   const real = createAppController(store, unavailableRepositories, unavailableAgent, { recommender: { debounceMs: 0 } })
   // Initial onboarding now crosses a durable command receipt. Finish that
   // material update before measuring renders caused by later keystrokes.
-  await waitFor(() => [...store.collections.transitions.values()].some(row =>
-    row.type === "flow.invoked" && JSON.parse(row.payload).name === "onboarding.act"))
+  await real.recommend()
   // That startup observation also schedules the rule recommendation. Its
   // first row belongs to boot, so do not count it as a keystroke render.
   const bootRevision = Math.max(0, ...[...store.collections.transitions.values()].filter(row => isMaterialTransition(row.type)).map(row => row.revision))

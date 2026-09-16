@@ -1,18 +1,20 @@
 import { Schema } from "effect"
 import { Plan } from "../../../../../../flows/coding/schema"
-import type { ControllerContext } from "./context"
-import type { FormsController } from "./forms"
-import { flag, line, text } from "../../flows/FlowForms"
-import { formRenderedText } from "./forms"
-import type { WorkflowController } from "./workflows"
-import { resolveTargetRepo } from "../RepoContext"
-import { lessonCompletion } from "../../onboarding/completion"
-import { decodeChangeReceipt, receiptMatchesPlan, validateTutorialPlan } from "../../cards/tutorial2-agent_change-contract"
+import { decodeChangeReceipt,receiptMatchesPlan,validateTutorialPlan } from "../../cards/tutorial2-agent_change-contract"
+import { flag,line,text } from "../../flows/FlowForms"
 import type { Card } from "../AppState"
 import {
-  isPracticeRepo, PRACTICE_BRANCH, PRACTICE_CARD, PRACTICE_REPO, PRACTICE_RUN_ID,
-  practiceChange, practiceCommits, practiceJournal, practicePickOf, practicePicker, practicePlan, practiceStack
+isPracticeRepo,PRACTICE_BRANCH,PRACTICE_CARD,PRACTICE_REPO,PRACTICE_RUN_ID,
+practiceChange,practiceCommits,practiceJournal,
+practicePicker,
+practicePickOf,
+practicePlan,practiceStack
 } from "../practice/PracticeRepository"
+import { resolveTargetRepo } from "../RepoContext"
+import type { ControllerContext } from "./context"
+import type { FormsController } from "./forms"
+import { formRenderedText } from "./forms"
+import type { WorkflowController } from "./workflows"
 
 export interface TutorialChangeController {
   readonly suggestTutorialChange: (repo?: string, feature?: string) => Promise<string | { readonly value: string }>
@@ -43,19 +45,11 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     return response.json()
   }
   /** Finish the current lesson when it waits on `signal`, in the playthrough that asked. */
-  const finishLesson = async (signal: string, playthrough: number, said?: string, extra: { pick?: Array<number> } = {}) => {
-    const guide = ctx.store.session().guide
-    if (guide === undefined || (guide.playthrough ?? 0) !== playthrough) return
-    const next = lessonCompletion(guide, signal, said)
-    if (next === undefined && extra.pick === undefined) return
-    await ctx.store.dispatch({ type: "guide.changed", actor: "system", guide: { ...(next ?? guide), ...extra } }).isPersisted.promise
-  }
-
   /* ---- The practice repository: bundled plan, recorded replay, precomputed stacks. No network, no identity. ---- */
 
   const suggestPractice = async (): Promise<string | { readonly value: string }> => {
     const plan = validateTutorialPlan(Schema.decodeUnknownSync(Plan)(practicePlan))
-    const playthrough = ctx.store.session().guide?.playthrough ?? 0
+    const playthrough = 0
     const existing = ctx.store.collections.cards.get(PRACTICE_CARD.plan)
     await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
       id: PRACTICE_CARD.plan, kind: "run-trace", title: plan.changes[0]!.title, status: "active",
@@ -65,13 +59,12 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
         input: { plan, practice: true, atomTags: practiceCommits.map(commit => commit.tag),
           tutorialScope: { repoKey: PRACTICE_REPO, playthrough } } }
     } }).isPersisted.promise
-    await finishLesson("plan.ready", playthrough)
     return { value: `Planned 3 commits for #3 in ${PRACTICE_CARD.plan}: ${plan.changes[0]!.atoms.map(atom => atom.message).join("; ")}.` }
   }
 
   /** Beat 6: replay the recorded run over about ten seconds (at once with reduced motion), then the commit list. */
   const startPractice = async (card: RunCard): Promise<string | { readonly value: string }> => {
-    const playthrough = ctx.store.session().guide?.playthrough ?? 0
+    const playthrough = 0
     await ctx.store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: card.id,
       patch: { status: "acted", payload: { ...card.payload, input: { ...card.payload.input, started: { runId: PRACTICE_RUN_ID, cardId: PRACTICE_CARD.run } } } } }).isPersisted.promise
     const plan = card.payload.input?.plan
@@ -91,7 +84,7 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
       id: PRACTICE_CARD.run, kind: "run-trace", title: `Fix /hello without a name (#3) · ${PRACTICE_BRANCH}`, status: "active",
       createdAt: existing?.createdAt ?? Date.now(), ordinal: nextOrdinal(), payload: frame(reducedMotion() ? end : 0, reducedMotion() ? "completed" : "running")
     } }).isPersisted.promise
-    const stillHere = () => (ctx.store.session().guide?.playthrough ?? 0) === playthrough && ctx.store.collections.cards.has(PRACTICE_CARD.run)
+    const stillHere = () => (0) === playthrough && ctx.store.collections.cards.has(PRACTICE_CARD.run)
     const settle = async () => {
       if (!stillHere()) return
       await ctx.store.dispatch({ type: "card.updated", actor: "system", id: PRACTICE_CARD.run, patch: { payload: frame(end, "completed") } }).isPersisted.promise
@@ -100,7 +93,6 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
         id: PRACTICE_CARD.commits, kind: "commit-pick", title: `Commits on ${PRACTICE_BRANCH}`, status: "active",
         createdAt: commitsCard?.createdAt ?? Date.now(), ordinal: nextOrdinal(), payload: practicePicker()
       } }).isPersisted.promise
-      await finishLesson("commits.made", playthrough)
     }
     if (reducedMotion()) {
       await settle()
@@ -134,14 +126,13 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     const accountLogin = ctx.store.collections.identitySessions.get("identity")?.login
     try {
       const plan = validateTutorialPlan(Schema.decodeUnknownSync(Plan)(await post("plan", { repo: target.repo, feature })))
-      if (ctx.store.session().activeRepoKey !== scope.activeRepoKey || ctx.store.session().guide?.playthrough !== scope.guide?.playthrough || ctx.accountEpoch !== accountEpoch) return "The repository changed; request a new plan."
+      if (ctx.store.session().activeRepoKey !== scope.activeRepoKey || ctx.accountEpoch !== accountEpoch) return "The repository changed; request a new plan."
       const id = `tutorial-change-plan-${crypto.randomUUID()}`
       await ctx.store.dispatch({ type: "card.upsert", actor, card: {
         id, kind: "run-trace", title: plan.changes[0]!.title, status: "active", createdAt: Date.now(), ordinal: nextOrdinal(),
         payload: { repo: target.repo, runId: id, workflow: "tutorial-change", kind: "change-plan", phase: "completed", steps: [], result: null, lastSeq: 0,
-          input: { plan, tutorialScope: { repoKey: scope.activeRepoKey, playthrough: scope.guide?.playthrough ?? 0, accountEpoch, accountLogin } } }
+          input: { plan, tutorialScope: { repoKey: scope.activeRepoKey, playthrough: 0, accountEpoch, accountLogin } } }
       } }).isPersisted.promise
-      await finishLesson("plan.ready", scope.guide?.playthrough ?? 0)
       return { value: `Review the suggested feature and planned commit in ${id}.` }
     } catch (error) { return error instanceof Error ? error.message : String(error) }
   }
@@ -159,7 +150,7 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
       const plan = validateTutorialPlan(Schema.decodeUnknownSync(Plan)(card.payload.input?.plan))
       const scope = card.payload.input?.tutorialScope as { repoKey?: string; playthrough?: number; accountEpoch?: number; accountLogin?: string | null } | undefined
       const session = ctx.store.session()
-      if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (session.guide?.playthrough ?? 0) || scope.accountEpoch !== ctx.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return "The repository or tutorial changed; request a new plan."
+      if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (0) || scope.accountEpoch !== ctx.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return "The repository or tutorial changed; request a new plan."
       // Consume before awaiting the seam: concurrent activation cannot execute twice.
       const { error: _stale, ...payload } = card.payload
       await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, status: "acted", payload } }).isPersisted.promise
@@ -202,9 +193,8 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
         patch: { payload: { ...current.payload, input: { ...current.payload.input, tutorialReceipt: receipt } } } }).isPersisted.promise
       const scope = card.payload.input?.tutorialScope as { repoKey?: string; playthrough?: number; accountEpoch?: number; accountLogin?: string | null } | undefined
       const session = ctx.store.session()
-      if (!scope || session.activeRepoKey !== scope.repoKey || (session.guide?.playthrough ?? 0) !== scope.playthrough ||
+      if (!scope || session.activeRepoKey !== scope.repoKey || (0) !== scope.playthrough ||
         ctx.accountEpoch !== scope.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return
-      await finishLesson("commits.made", scope.playthrough ?? 0)
     } catch (error) {
       const current = ctx.store.collections.cards.get(cardId)
       if (current?.kind === "run-trace") ctx.store.dispatch({ type: "card.updated", actor: "system", id: cardId,
@@ -220,14 +210,12 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     if (typeof pick === "string") return pick
     const stack = practiceStack(pick)
     if (typeof stack === "string") return stack
-    const playthrough = ctx.store.session().guide?.playthrough ?? 0
     // The picker turns into the stack view: the same card id, now the Change.
     const picker = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
     await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
       id: PRACTICE_CARD.commits, kind: "change", title: `Change #${stack.landingNumber} · Fix /hello without a name (#3)`, status: "active",
       createdAt: picker?.createdAt ?? Date.now(), ordinal: picker?.ordinal ?? nextOrdinal(), payload: practiceChange(stack)
     } }).isPersisted.promise
-    await finishLesson("change.opened", playthrough, stack.line, { pick: [...stack.pick] })
     return { value: stack.line }
   }
 

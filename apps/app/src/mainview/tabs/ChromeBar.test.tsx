@@ -1,28 +1,28 @@
-import { ChromeBar } from "./ChromeBar"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
+import { DOWNLOAD_URL } from "@smthrs/rpc/AppLinks"
+import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
+import type { Repo } from "@smthrs/rpc/LocalApp"
 import * as SmithersUi from "@smthrs/ui"
+import type { StorageApi } from "@tanstack/db"
+import { afterAll,afterEach,describe,expect,spyOn,test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
+import type { NativeRepositories } from "../native/NativeBridge"
 import { openRequestedRepo } from "../RepoLink"
-import { DOWNLOAD_URL } from "@smthrs/rpc/AppLinks"
+import type { AgentPort } from "../runtime/AgentPort"
+import type { AppController as AppControllerType,AppServices } from "../state/AppController"
+import { createAppController } from "../state/AppController"
+import { repoKeyOf } from "../state/AppState"
+import type { AppStore } from "../state/AppStore"
+import { createAppStore } from "../state/AppStore"
+import { ChromeBar } from "./ChromeBar"
 
 /** A native release as the door tests see it; the product's constant is null until one carries an asset. */
 const RELEASE_URL = "https://example.test/download"
-import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import type { Repo } from "@smthrs/rpc/LocalApp"
-import type { NativeRepositories } from "../native/NativeBridge"
-import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "../state/AppController"
-import type { AppController as AppControllerType, AppServices } from "../state/AppController"
-import { repoKeyOf } from "../state/AppState"
-import { createAppStore } from "../state/AppStore"
-import type { AppStore } from "../state/AppStore"
 
 /*
  * The `+` menu (docs/LOCAL-APP.md "Tabs").
@@ -1060,7 +1060,7 @@ describe("the chrome-actions footer's download button", () => {
     expect(button?.querySelector("svg")).not.toBeNull()
     expect(button?.closest("[data-testid=chrome-actions]")).not.toBeNull()
     // Below the sign-in door, above the theme corner (the plan's footer order).
-    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(order.indexOf("app.download")).toBeGreaterThan(order.indexOf("auth.sign-in"))
     expect(order.indexOf("app.download")).toBeLessThan(order.indexOf("appearance.dark-mode"))
     const opened: Array<ReadonlyArray<unknown>> = []
@@ -1158,7 +1158,7 @@ describe("the chrome buttons", () => {
     // No word "workflow" reaches a person through the chrome.
     expect(host.querySelector<HTMLElement>("[data-testid=chrome-actions]")?.textContent?.toLowerCase()).not.toContain("workflow")
     // The Sign in line stands first; the theme toggle closes the footer; the six sit between them.
-    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(flows[0]).toBe("auth.sign-in")
     expect(flows.at(-1)).toBe("appearance.dark-mode")
     expect(flows.slice(1, 7)).toEqual(CHROME.map((row) => row.flow))
@@ -1180,7 +1180,7 @@ describe("the chrome buttons", () => {
     const { host } = mount(controller)
     expect(rendered(host).map((button) => button.textContent)).toEqual(["Wiki", "Dispatcher", "Flows", "Secrets", "History", "Account"])
     expect(host.querySelector("[data-testid=chrome-sign-in]")).toBeNull()
-    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(flows.slice(0, 6)).toEqual(CHROME.map((row) => row.flow))
     expect(flows.at(-1)).toBe("appearance.dark-mode")
   })
@@ -1292,7 +1292,7 @@ describe("the chrome-actions footer's Secrets button", () => {
     expect(button?.querySelector("svg")).not.toBeNull()
     expect(button?.closest("[data-testid=chrome-actions]")).not.toBeNull()
     // Above the theme corner, like the other footer doors.
-    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(order.indexOf("secrets.list")).toBeLessThan(order.indexOf("appearance.dark-mode"))
     // The slash door offers the same registry entry the button is bound to.
     const slashNames = controller.slashTree("secrets.list").flatMap((row) => (row.kind === "flow" ? [row.flow.name] : []))
@@ -1413,7 +1413,7 @@ describe("the chrome-actions footer's Dispatcher button", () => {
     expect(button?.querySelector("svg")).not.toBeNull()
     expect(button?.closest("[data-testid=chrome-actions]")).not.toBeNull()
     // Right after Wiki, right before Flows, and above the theme corner, like the other footer doors.
-    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(order.indexOf("triggers.list")).toBe(order.indexOf("wiki") + 1)
     expect(order.indexOf("flows")).toBe(order.indexOf("triggers.list") + 1)
     expect(order.indexOf("triggers.list")).toBeLessThan(order.indexOf("appearance.dark-mode"))
@@ -1516,7 +1516,7 @@ describe("the chrome-actions footer's Account button", () => {
     expect(button?.closest("[data-testid=chrome-actions]")).not.toBeNull()
     // Signed in, the chrome offers Account, not the sign-in line.
     expect(host.querySelector("[data-testid=chrome-sign-in]")).toBeNull()
-    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(order.indexOf("secrets.list")).toBeLessThan(order.indexOf("account.show"))
     expect(order.indexOf("account.show")).toBeLessThan(order.indexOf("appearance.dark-mode"))
     // The slash door offers the same registry entry the button is bound to.
@@ -1675,7 +1675,7 @@ describe("the chrome-actions footer's History button", () => {
     expect(button?.textContent).toBe("History")
     expect(button?.querySelector("svg")).not.toBeNull()
     expect(button?.closest("[data-testid=chrome-actions]")).not.toBeNull()
-    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
+    const order = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
     expect(order.indexOf("history.show")).toBe(order.indexOf("secrets.list") + 1)
     expect(order.indexOf("account.show")).toBe(order.indexOf("history.show") + 1)
     expect(order.indexOf("history.show")).toBeLessThan(order.indexOf("appearance.dark-mode"))
@@ -1739,21 +1739,4 @@ test("bookmark deduplication picks the newest workspace when an inventory lists 
   await act(() => {})
   expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:z-new"]')).toHaveLength(1)
   expect(host.querySelectorAll('.chrome-bar [data-testid="copy-workspace:a-old"]')).toHaveLength(0)
-})
-
-
-test("practice hides the host repository tree and restores it when the guide leaves", async () => {
-  const previousUrl = window.location.href
-  window.history.replaceState(null, "", "/")
-  mounted.push(() => window.history.replaceState(null, "", previousUrl))
-  const { initialGuide } = await import("../state/AppState")
-  const { store, controller } = await cloudHarness()
-  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "host/repository", org: "host", name: "repository", ownerKind: "user", head: null }] }).isPersisted.promise
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...initialGuide(), step: 2, completed: ["tutorial.started"] } }).isPersisted.promise
-  await store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: true }).isPersisted.promise
-  const { host, act } = mount(controller)
-  expect(host.querySelector('[data-testid="repo-host/repository"]')).toBeNull()
-  expect(host.querySelector('.chrome-bar')?.textContent ?? host.textContent).not.toContain("host/")
-  await act(() => { store.dispatch({ type: "guide.visibility.changed", actor: "system", visible: false }) })
-  expect([...host.querySelectorAll(".chrome-bar .repo-name")].map(node => node.textContent)).toContain("repository")
 })

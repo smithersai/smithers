@@ -1,14 +1,28 @@
-import { expect, test } from "@playwright/test"
+import { expect,test } from "@playwright/test"
 
 test("Start Here mounts the real island in place when it loads", async ({ page }) => {
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
+  await page.route("**/api/recommend", route => route.fulfill({ json: { suggestions: [] } }))
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
   } }))
   await page.goto("/")
   await page.getByRole("link", { name: "Start Here", exact: true }).click()
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await expect(page).toHaveURL("/")
   await expect(page.locator("#start-error")).toHaveCount(0)
+  const actions = page.getByTestId("first-run-actions")
+  expect(await actions.locator("button:not([data-flow])").count()).toBe(0)
+  await actions.locator('button[data-flow="appearance.theme"]').click()
+  await expect(actions).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Color themes' })).toBeVisible()
+  await page.reload()
+  await page.getByRole("link", { name: "Start Here", exact: true }).click()
+  await expect(page.locator(".app-shell")).toBeVisible()
+  await expect(actions).toHaveCount(0)
+  expect(errors).toEqual([])
 })
 
 test("Start Here swaps to the app before the boot answers", async ({ page }) => {
@@ -23,7 +37,7 @@ test("Start Here swaps to the app before the boot answers", async ({ page }) => 
   await page.keyboard.press("s")
   await expect(page.locator(".session-shell")).toBeVisible({ timeout: 1000 })
   await expect(page.locator("#start")).toHaveCount(0)
-  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
 })
 
 for (const failure of ["chunk", "page"] as const) {
@@ -40,7 +54,7 @@ for (const failure of ["chunk", "page"] as const) {
     expect(aborted).toBeGreaterThan(0)
     await expect(start).toBeHidden()
     await expect(page.locator("#start")).not.toHaveAttribute("aria-busy")
-    await expect(page.locator(".guide-shell")).toHaveCount(0)
+    await expect(page.getByTestId("first-run-actions")).toHaveCount(0)
     await expect(page).toHaveURL("/")
     const reload = page.getByRole("button", { name: "Reload", exact: true })
     await expect(reload).toBeFocused()
@@ -74,4 +88,35 @@ test.describe("touch landing", () => {
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
     await expect(page.locator("#start kbd")).toBeHidden()
   })
+})
+
+test("tutorial query opens the plain app and hint dismissal survives reload", async ({ page }) => {
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
+  } }))
+  await page.goto("/?tutorial")
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
+  const hint = page.locator('[data-first-sight-hint="first-run"] .help-bubble')
+  await expect(hint).toBeVisible()
+  await hint.getByRole("button", { name: "Dismiss help" }).click()
+  await expect(hint).toHaveCount(0)
+  await page.reload()
+  await page.getByRole("link", { name: "Start Here", exact: true }).click()
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
+  await expect(hint).toHaveCount(0)
+  await expect(page.locator(".help-bubble")).toHaveCount(1)
+})
+
+test("a signed-out first run opens practice issues from the recommended actions", async ({ page }) => {
+  await page.route("**/api/recommend", route => route.fulfill({ json: { suggestions: [] } }))
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity"], authFlow: "redirect", sandbox: null,
+  } }))
+  await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
+  await page.goto("/?tutorial")
+  const actions = page.getByTestId("first-run-actions")
+  await actions.locator('[data-flow="issues.list"]').click()
+  await expect(actions).toHaveCount(0)
+  await expect(page.getByTestId("card-practice-issues")).toContainText('GET /hello without a name')
+  await expect(page.getByText("This is the Smithers web app.", { exact: false })).toHaveCount(0)
 })

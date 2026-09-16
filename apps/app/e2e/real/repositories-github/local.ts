@@ -12,7 +12,6 @@ import {
 export const bootRepositoryWorkbench = async (page: Page): Promise<void> => {
   await page.goto("/smithersai/smithers", { waitUntil: "domcontentloaded" })
   await expect(page).toHaveURL(/\/smithersai\/smithers$/)
-  await expect(page.locator(".guide-shell")).toHaveCount(0)
   await expect(page.getByTestId("transcript")).toBeVisible()
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }

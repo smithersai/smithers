@@ -1,35 +1,35 @@
-import { flowAction } from "./flows/FlowAction"
-import { Button, ChatComposer } from "@smthrs/ui"
+import { Button,ChatComposer } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import {
-  BookOpen,
-  Bot,
-  ChevronDown,
-  Cloud,
-  FolderGit2,
-  GitPullRequest,
-  HardDrive,
-  Laptop,
-  Library,
-  MessageSquare,
-  Paperclip,
-  Plug,
-  Plus,
-  Server,
-  Workflow
+BookOpen,
+Bot,
+ChevronDown,
+Cloud,
+FolderGit2,
+GitPullRequest,
+HardDrive,
+Laptop,
+Library,
+MessageSquare,
+Paperclip,
+Plug,
+Plus,
+Server,
+Workflow
 } from "lucide-react"
-import { useId, useRef, useState } from "react"
-import type { KeyboardEvent, ReactNode, RefObject } from "react"
+import type { KeyboardEvent,ReactNode,RefObject } from "react"
+import { useId,useRef,useState } from "react"
 import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
+import { flowAction } from "./flows/FlowAction"
 import { actionForKey } from "./flows/SearchQuery"
 import { SELECT_REPO_LABEL } from "./Onboarding"
 import { rovingKeyDown } from "./RovingKeyDown"
-import { paletteKey, PaletteOverlay, paletteRows } from "./SearchPalette"
-import type { PaletteDecision, PaletteRow } from "./SearchPalette"
-import { activeRepoOf, parseRepoSelection, repoKeyOf, WIKI_DISPLAY_NAME } from "./state/AppState"
-import { workingCopyLabel } from "./state/WorkspaceViews"
+import type { PaletteDecision,PaletteRow } from "./SearchPalette"
+import { paletteKey,PaletteOverlay,paletteRows } from "./SearchPalette"
+import { activeRepoOf,parseRepoSelection,repoKeyOf,WIKI_DISPLAY_NAME } from "./state/AppState"
 import { shortId } from "./state/ids"
+import { workingCopyLabel } from "./state/WorkspaceViews"
 
 /** Stable Playwright handle; spread past ChatComposer's excess-property check. */
 const COMPOSER_INPUT_TEST_ID: Record<string, string> = { "data-testid": "composer-input" }
@@ -1144,7 +1144,6 @@ export function Composer({
       // Chat and its root palette are one dialog. The guide closes both on
       // release; slash and action menus own their dismissal before Chat.
       if (event.key === "Escape" && decision.kind === "close" && inputAnswer.parsed.mode !== "flows") {
-        if (event.currentTarget.closest(".guide-composer-layer")) return
         controller.closePalette(inputDraft)
       }
       event.preventDefault()

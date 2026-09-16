@@ -1,4 +1,4 @@
-import { defineConfig, devices } from "@playwright/test"
+import { defineConfig,devices } from "@playwright/test"
 
 // Exercise the built Astro landing and its real AppIsland chunk, not the SPA entry.
 export default defineConfig({
@@ -9,7 +9,6 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:47312", headless: true, trace: "retain-on-failure" },
   projects: [
     { name: "chromium", testMatch: "**/site/*.spec.ts", use: { ...devices["Desktop Chrome"] } },
-    { name: "chromium-guidance", testMatch: "**/playwright/tutorial-tip.spec.ts", grep: /landscape touch guidance/, use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
     command: "pnpm --filter @smithers/site run build && pnpm --filter @smithers/site run preview --host 127.0.0.1 --port 47312",

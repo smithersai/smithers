@@ -1,12 +1,11 @@
-import { LIVE_TUTORIAL_API, LiveTutorialRunSchema, type LiveTutorialOperation, type LiveTutorialRun, type LiveTutorialStart } from "@smthrs/rpc/LiveTutorial"
+import { LIVE_TUTORIAL_API,LiveTutorialRunSchema,type LiveTutorialOperation,type LiveTutorialRun,type LiveTutorialStart } from "@smthrs/rpc/LiveTutorial"
 import type { Card } from "../AppState"
 import { conversationTabIdOf } from "../AppState"
+import { LiveTutorialLimitSchema,activeLiveTutorialLimit,liveTutorialLimitMessage,type LiveTutorialLimit } from "../LiveTutorialLimit"
+import { PRACTICE_CARD,PRACTICE_REPO } from "../practice/PracticeRepository"
+import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
-import { PRACTICE_CARD, PRACTICE_REPO } from "../practice/PracticeRepository"
-import { lessonCompletion } from "../../onboarding/completion"
-import { PRACTICE_DIFF_CARD } from "../seams/DiffFilesSeam"
-import { LiveTutorialLimitSchema, activeLiveTutorialLimit, liveTutorialLimitMessage, type LiveTutorialLimit } from "../LiveTutorialLimit"
 
 class TutorialLimitError extends Error {
   constructor(readonly limit: LiveTutorialLimit) { super(liveTutorialLimitMessage(limit)) }
@@ -36,13 +35,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     sleepers.clear()
   })
   const readCard = (id: string): RunCard | undefined => { const card = ctx.store.collections.cards.get(id); return card?.kind === "run-trace" ? card : undefined }
-  const current = (id: string, request: Request) => !disposed && requestOf(readCard(id))?.idempotencyKey === request.idempotencyKey && (ctx.store.session().guide?.playthrough ?? 0) === request.playthrough
-  const finish = async (signal: string, playthrough: number) => {
-    const guide = ctx.store.session().guide
-    if (!guide || (guide.playthrough ?? 0) !== playthrough) return
-    const next = lessonCompletion(guide, signal)
-    if (next) await ctx.store.dispatch({ type: "guide.changed", actor: "system", guide: next }).isPersisted.promise
-  }
+  const current = (id: string, request: Request) => !disposed && requestOf(readCard(id))?.idempotencyKey === request.idempotencyKey && (0) === request.playthrough
+
   const upsert = (card: Card) => ctx.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
   const publish = async (id: string, request: Request, run: LiveTutorialRun, reconcile = false) => {
     if (!current(id, request)) return
@@ -61,9 +55,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     if (run.operation === "research" || run.operation === "poc") {
       const catalog = ctx.store.collections.cards.get("practice-issue-flows-3")
       if (catalog?.kind === "workflow-list") await upsert({ ...catalog, payload: { ...catalog.payload, research: run.result ?? "" } })
-      if (run.operation === "research") await finish("issue.researched", request.playthrough)
     }
-    if (run.operation === "plan" && run.plan) await finish("plan.ready", request.playthrough)
     if (run.operation === "implement") {
       if (!run.commits?.length || !run.diff || !run.files || run.tests?.exitCode !== 0) throw Error("The live run did not return verified commits, files and passing tests.")
       const previous = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
@@ -71,7 +63,6 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
         payload: { repo: PRACTICE_REPO, branch: run.branch ?? "tutorial", targetBookmark: "main",
           rows: run.commits.map((commit, index) => ({ index: index + 1, commitId: commit.commitId, changeId: commit.commitId, message: commit.message,
             additions: commit.additions, deletions: commit.deletions, locked: run.commits!.length === 1 })), picked: run.commits.map((_, index) => index + 1) } })
-      await finish("commits.made", request.playthrough)
     }
     if (run.operation === "change" && run.change) {
       const previous = ctx.store.collections.cards.get(PRACTICE_CARD.commits)
@@ -85,7 +76,6 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
           repos: [{ repo: PRACTICE_REPO, additions: commits.reduce((sum, item) => sum + item.additions, 0), deletions: commits.reduce((sum, item) => sum + item.deletions, 0) }],
           diff: null, checks: implementation?.tests ? [{ context: implementation.tests.command, state: implementation.tests.exitCode === 0 ? "success" : "failure" }] : [],
           findings: null, reviews: null, threads: null, conflicts: null, stack: null, changeset: null } } }).isPersisted.promise
-      await finish("change.opened", request.playthrough)
     }
     const applied = readCard(id)!
     await upsert({ ...applied, payload: { ...applied.payload, input: { ...applied.payload.input, liveTutorialAppliedRun: run.runId } } })
@@ -163,7 +153,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
   }
   const start = async (operation: LiveTutorialOperation, options: { planId?: string; commitIds?: string[] } = {}): Promise<string | { value: string }> => {
     const id = idFor(operation)
-    const playthrough = ctx.store.session().guide?.playthrough ?? 0
+    const playthrough = 0
     const old = readCard(id)
     const prior = old && requestOf(old)
     const limit = prior?.playthrough === playthrough ? activeLiveTutorialLimit(old) : undefined
@@ -198,7 +188,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       const card = readCard(cardId)
       const request = card && requestOf(card)
       const plan = liveSnapshotOf(card)?.plan
-      if (!plan || request?.playthrough !== (ctx.store.session().guide?.playthrough ?? 0)) return "Review a live plan before starting implementation."
+      if (!plan || request?.playthrough !== (0)) return "Review a live plan before starting implementation."
       const result = await start("implement", { planId: plan.id })
       if (typeof result !== "string") await ctx.store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: cardId, patch: { status: "acted" } }).isPersisted.promise
       return result
@@ -231,7 +221,6 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
       const old = ctx.store.collections.cards.get(PRACTICE_DIFF_CARD)
       await upsert({ id: PRACTICE_DIFF_CARD, kind: "diff", title: "Implementation diff · hello-server", status: "active", createdAt: old?.createdAt ?? Date.now(), ordinal: old?.ordinal ?? nextOrdinal(),
         payload: { repo: PRACTICE_REPO, changeId: top.commitId, from: run.baseCommitId, to: top.commitId, pin: { changeId: top.commitId, seq: null, commitId: top.commitId }, files: run.diff } })
-      await finish("diff.opened", ctx.store.session().guide?.playthrough ?? 0)
       return { value: run.diff.map(file => `${file.path}\n${file.patch ?? ""}`).join("\n") }
     },
     createChange: (commits: readonly string[]) => start("change", { commitIds: [...commits] }),

@@ -1,10 +1,10 @@
-import { describe, expect, spyOn, test } from "bun:test"
-import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnFrame,StartAgentTurnRequest,StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
+import { describe,expect,spyOn,test } from "bun:test"
 import type { AgentPort } from "../runtime/AgentPort"
-import { scopedControllers } from "./ControllerTestScope"
-import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage,settled,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -99,8 +99,7 @@ describe("/retry re-runs the last turn", () => {
     const controller = createAppController(store, unavailableRepositories, agent, {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
-    if (practice) await controller.commands.run("onboarding.act", "start")
-    controller.observeGuideVisibility(practice)
+    if (practice) await controller.selectRepo("practice:smithersai/hello-server")
     controller.send("what is my balance?")
     await settled()
     const turnId = launches[0]?.runId as string

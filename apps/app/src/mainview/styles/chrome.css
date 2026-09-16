@@ -620,8 +620,7 @@
 	background: var(--hover-subtle);
 	color: var(--text);
 }
-.app-chat-controls .guide-button .guide-button-key,
-.chrome-action-sound .guide-button-key {
+.app-chat-controls .guide-button .guide-button-key {
 	min-width: 20px;
 	min-height: 20px;
 	padding: 0 var(--sp-2);
@@ -633,12 +632,6 @@
 	font-size: var(--fs-caption);
 }
 .app-chat-controls .guide-button:focus-visible {
-	outline: 2px solid var(--brand);
-	outline-offset: 2px;
-}
-.chrome-action-sound .guide-button-key { margin-left: auto; }
-.chrome-action-sound[data-pressed] {
-	background: var(--rail-fill-strong);
 	outline: 2px solid var(--brand);
 	outline-offset: 2px;
 }

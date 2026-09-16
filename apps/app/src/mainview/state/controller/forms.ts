@@ -1,23 +1,22 @@
-import { decideApprovalAnswerInput } from "../ApprovalAnswerState"
-import { HarnessModelsResponseSchema, orderedAgentRoles } from "@smthrs/rpc/AgentRoles"
 import type { HarnessModelsResponse } from "@smthrs/rpc/AgentRoles"
-import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
+import { HarnessModelsResponseSchema,orderedAgentRoles } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "@smthrs/rpc/LocalApp"
+import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import { Schema } from "effect"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { AgentInvocation } from "../../flows/AgentInvocation"
 import type { CommandGesture } from "../../flows/CommandGesture"
 import type { CommandOutcome } from "../../flows/Commands"
-import { assembleArgs, declaredInput, draftFrom, formFieldsFor, missingFields, partialPayload, submissionPayload } from "../../flows/FlowForms"
-import type { FieldOption, FieldValue, FormDraft, FormField, FormHints, OptionProvider } from "../../flows/FlowForms"
+import type { FieldOption,FieldValue,FormDraft,FormField,FormHints,OptionProvider } from "../../flows/FlowForms"
+import { assembleArgs,declaredInput,draftFrom,formFieldsFor,missingFields,partialPayload,submissionPayload } from "../../flows/FlowForms"
 import { payloadFor } from "../../flows/SlashPayload"
 import { manifests } from "../../plugins/catalog"
 import { actorSharedState } from "../ActorBindings"
-import { knownRepositories } from "../RepoContext"
+import { decideApprovalAnswerInput } from "../ApprovalAnswerState"
 import type { Card } from "../AppState"
+import { knownRepositories } from "../RepoContext"
+import { fileOptions,fileTargetKey } from "../seams/tutorial2-file_open"
 import type { ControllerContext } from "./context"
-import { fileOptions, fileTargetKey } from "../seams/tutorial2-file_open"
-import { tutorialTraceScopeFor } from "./tutorial2-turn_trace"
 
 /*
  * THE FORM LAW (apps/app/AGENTS.md; docs/workbench-lanes/flow-forms.md), the
@@ -335,10 +334,9 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       const missing = missingFields(fields, draftFrom(fields, given))
       fields = fields.filter(field => missing.includes(field.name))
     }
-    const tutorialRun = request.name === "runs.steps" ? tutorialTraceScopeFor(store)?.runId : undefined
     const nested = request.payloadField === undefined ? undefined : given[request.payloadField]
     const draft = draftFrom(fields, request.payloadField === undefined
-      ? tutorialRun === undefined ? given : { runId: tutorialRun, ...given }
+      ? given
       : nested !== null && typeof nested === "object" ? nested as Record<string, unknown> : {})
     const nestedPayload = request.payloadField === undefined ? {} : {
       payloadField: request.payloadField, inputSchema: Schema.toJsonSchemaDocument(input)

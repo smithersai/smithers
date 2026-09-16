@@ -1,14 +1,11 @@
-import { expect, test } from "bun:test"
-import { renderToStaticMarkup } from "react-dom/server"
-import { CardSchema } from "@smthrs/rpc/Cards"
-import { InTutorial } from "../onboarding/transcriptScope"
-import { workflowCardFamily } from "./WorkflowCards"
-import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
-import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll } from "bun:test"
+import { CardSchema } from "@smthrs/rpc/Cards"
+import type { LiveTutorialRun } from "@smthrs/rpc/LiveTutorial"
+import { afterAll,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
+import { renderToStaticMarkup } from "react-dom/server"
+import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
 
 GlobalRegistrator.register()
 afterAll(async () => {
@@ -37,21 +34,6 @@ test("a completed reproduction event qualifies failed tests, while an unmarked f
   expect(render({ tests: { ...tests, exitCode: 0 }, events })).toContain("✓ Tests passed")
 })
 
-test("Start implementation has the house button anatomy and invokes its existing flow", () => {
-  const card = liveCard({ operation: "plan", plan: { id: "plan", title: "Fix", summary: "Fix greeting", baseCommitId: "base", steps: ["Fix line 2"], files: ["src/hello.ts"] } })
-  const host = document.createElement("div")
-  const root = createRoot(host)
-  const calls: unknown[] = []
-  try {
-    flushSync(() => root.render(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} /></InTutorial>))
-    const button = host.querySelector<HTMLButtonElement>('button[data-flow="agent.change.start"]')!
-    expect(button.classList.contains("guide-button")).toBe(true)
-    expect(button.querySelector(".guide-button-content")?.textContent).toBe("Start implementation")
-    button.click()
-    expect(calls).toEqual([["agent.change.start", "live"]])
-  } finally { flushSync(() => root.unmount()) }
-})
-
 test("live research renders its markdown result through the shared renderer", () => {
   const card = CardSchema.parse({ id: "research", kind: "run-trace", title: "Research", status: "active", ordinal: 1, createdAt: 1,
     payload: { repo: "practice:smithersai/hello-server", runId: "run", workflow: "issue.research", kind: "research", phase: "completed", steps: [], result: "Evidence", lastSeq: 0,
@@ -70,14 +52,13 @@ test("live transcript facet renders observed details and source-qualified view c
  expect(html).not.toContain('Write the test first')
 })
 
-test("an expired live session offers a new tutorial instead of a reconnect loop", () => {
+test("an expired live session keeps its saved results visible", () => {
   const card = CardSchema.parse({ id: "expired", kind: "run-trace", title: "Plan", status: "error", ordinal: 1, createdAt: 1,
     payload: { repo: "practice:smithersai/hello-server", runId: "old-run", workflow: "issue.plan", kind: "plan", phase: "stopped", steps: [], result: null, lastSeq: 0,
       observationError: "This live example session expired. Your saved results remain available.", input: { liveTutorial: { operation: "plan" } } } })
   if (card.kind !== "run-trace") throw Error("Expected run")
-  const html = renderToStaticMarkup(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={() => {}} /></InTutorial>)
-  expect(html).toContain('data-flow="onboarding.act"')
-  expect(html).toContain("Start new tutorial")
+  const html = renderToStaticMarkup(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />)
+  expect(html).not.toContain('data-flow="onboarding.act"')
   expect(html).not.toContain("Reconnect")
 })
 
@@ -90,20 +71,14 @@ test("a quota refusal explains that nothing started and offers the existing skip
   const root = createRoot(host)
   const calls: unknown[] = []
   try {
-    flushSync(() => root.render(<InTutorial value={true}><LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} /></InTutorial>))
+    flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={(...args) => { calls.push(args) }} />))
     expect(host.querySelector('[role="status"]')?.textContent).toContain("did not start")
     expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.textContent).toContain("did not start")
     expect(host.textContent).toContain("Return to practice after")
     expect(host.textContent).not.toContain("Old sign-in copy")
     expect(host.querySelector('[data-flow="tutorial.live.retry"]')).toBeNull()
-    const button = host.querySelector<HTMLButtonElement>('[data-flow="onboarding.act"]')!
-    expect(button.textContent?.trim()).toBe("Continue without practice")
-    expect(button.classList.contains("guide-button")).toBe(true)
-    expect(workflowCardFamily["run-trace"].pill(card)).toBe("paused")
-    expect(host.textContent).toContain("nothing was charged")
-    button.click()
-    expect(calls).toEqual([["onboarding.act", "skip"]])
+    expect(calls).toEqual([])
     card.payload.input.liveTutorialLimit = { kind: "rate-limit", retryAt: Date.now() - 1 }
     flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />))
     expect(host.querySelector('[data-flow="tutorial.live.retry"]')?.textContent).toBe("Retry")
