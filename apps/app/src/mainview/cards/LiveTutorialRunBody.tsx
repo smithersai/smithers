@@ -15,8 +15,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
   const run = decoded.success ? decoded.data : undefined
   const reproducesBug = run?.operation === "research" && run.events.some(event => event.id === "reproduce" && event.status === "completed")
   const plan = run?.operation === "plan" ? run.plan : undefined
-  const busy = card.payload.phase === "launching" || card.payload.phase === "running"
   const limit = activeLiveTutorialLimit(card)
+  const busy = !limit && !card.payload.observationError && (card.payload.phase === "launching" || card.payload.phase === "running")
   const failure = limit ? undefined : card.payload.observationError ?? run?.error
   const expired = failure?.toLowerCase().includes("expired") === true
   const facet=card.payload.facet??"steps"
@@ -51,7 +51,7 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
           <button type="button"  aria-expanded={selected}
             {...flowAction(onRunCommand, "tutorial.live.inspect", flowArgs("tutorial.live.inspect", { cardId: card.id, eventId: event.id }))}>
             <span className="live-event-mark" aria-label={event.status}>{event.status === "completed" ? "✓" : event.status === "failed" ? "!" : "·"}</span>
-            <span>{event.label}</span><time>{duration === undefined ? "Running" : `${duration.toFixed(1)}s`}</time>
+            <span>{event.label}</span><time>{duration === undefined ? busy ? "Running" : null : `${duration.toFixed(1)}s`}</time>
           </button>
           {selected && <pre tabIndex={0}>{event.detail ?? "No additional output for this step."}</pre>}
         </li>

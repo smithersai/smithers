@@ -98,7 +98,8 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     const card = readCard(id)!
     const limit = error instanceof TutorialLimitError ? error.limit : undefined
     await upsert({ ...card, ...(limit ? { status: "active" as const } : {}), payload: { ...card.payload,
-      phase: !limit && card.payload.phase === "completed" ? "failed" : "stopped",
+      // A transport or projection failure is not an execution receipt. Keep
+      // the last observed phase so reconnect cannot invent a stopped job.
       observationError: error instanceof Error ? error.message : String(error),
       input: { ...card.payload.input, liveTutorialLimit: limit } } })
     if (limit) scheduleLimitExpiry(id, request, limit)
@@ -162,7 +163,7 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
     if (prior?.playthrough === playthrough && !LiveTutorialLimitSchema.safeParse(old?.payload.input?.liveTutorialLimit).success
       && old?.payload.phase !== "failed" && snapshot?.phase !== "failed") {
       if (operation !== "change" || JSON.stringify(prior.commitIds) === JSON.stringify(options.commitIds)) {
-        if (snapshot?.phase === "completed") { await publish(id, prior, snapshot); return { value: `The live ${operation} is already complete.` } }
+        if (snapshot?.phase === "completed" && !old?.payload.observationError) { await publish(id, prior, snapshot); return { value: `The live ${operation} is already complete.` } }
         void send(id, prior)
         return { value: `Live ${operation} requested in the background. You can keep chatting.` }
       }

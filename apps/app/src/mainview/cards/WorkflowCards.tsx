@@ -454,6 +454,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
     ),
     pill: (card) => {
       if (LiveTutorialLimitSchema.safeParse(card.payload.input?.liveTutorialLimit).success) return "paused"
+      if (card.payload.input?.liveTutorial && card.payload.observationError) return "disconnected"
       /* A tutorial plan card wears the plan's state, not a run phase: pending until started, done once it is. */
       if (card.payload.kind === "change-plan") return card.status === "acted" ? "done" : "pending"
       if (card.payload.phase === "completed") return "done"

@@ -97,6 +97,58 @@ test("background launch failure resolves the running toast honestly", async () =
   const toast = [...t.store.collections.toasts.values()][0]!
   expect(toast.status).toBe("failed")
   expect(toast.detail).toBe("Connection lost")
+  const card = t.store.collections.cards.get("live-tutorial-research")!
+  expect(card.kind === "run-trace" && card.payload.phase).toBe("launching")
+  t.dispose()
+})
+
+test("losing observation preserves the remote phase and reconnects the same request", async () => {
+  let reconnect = false
+  const running = { ...complete("research"), phase: "running" as const }
+  const t = await setup(async (_operation, body) => {
+    if (reconnect) return complete("research")
+    if (!body.idempotencyKey) throw Error("Connection lost")
+    return running
+  })
+  await t.finished.research()
+  const interrupted = t.store.collections.cards.get("live-tutorial-research")!
+  if (interrupted.kind !== "run-trace") throw Error("Expected run")
+  expect(interrupted.payload.phase).toBe("running")
+  expect(interrupted.payload.runId).toBe(running.runId)
+  expect(interrupted.payload.input?.liveTutorialSnapshot).toEqual(running)
+  expect(interrupted.payload.observationError).toBe("Connection lost")
+  expect([...t.store.collections.toasts.values()][0]?.status).toBe("failed")
+  reconnect = true
+  await t.finished.retry(interrupted.id)
+  const launches = t.calls.filter(call => call.body.idempotencyKey)
+  expect(launches).toHaveLength(2)
+  expect(launches[1]?.body.idempotencyKey).toBe(launches[0]?.body.idempotencyKey)
+  const completed = t.store.collections.cards.get(interrupted.id)!
+  expect(completed.kind === "run-trace" && completed.payload.phase).toBe("completed")
+  expect(completed.kind === "run-trace" && completed.payload.observationError).toBeUndefined()
+  expect([...t.store.collections.toasts.values()][0]?.status).toBe("ok")
+  t.dispose()
+})
+
+test("an incomplete result keeps its completion receipt and retries without a new implementation", async () => {
+  let verified = false
+  const t = await setup(async operation => {
+    const run = complete(operation)
+    return operation === "implement" && !verified ? { ...run, commits: [] } : run
+  })
+  await t.finished.plan()
+  await t.finished.implement(PRACTICE_CARD.plan)
+  const interrupted = t.store.collections.cards.get(PRACTICE_CARD.run)!
+  if (interrupted.kind !== "run-trace") throw Error("Expected run")
+  expect(interrupted.payload.phase).toBe("completed")
+  expect(interrupted.payload.observationError).toContain("verified commits")
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)).toBeUndefined()
+  verified = true
+  await t.finished.retry(interrupted.id)
+  const launches = t.calls.filter(call => call.operation === "implement")
+  expect(launches).toHaveLength(2)
+  expect(launches[1]?.body.idempotencyKey).toBe(launches[0]?.body.idempotencyKey)
+  expect(t.store.collections.cards.get(PRACTICE_CARD.commits)?.kind).toBe("commit-pick")
   t.dispose()
 })
 

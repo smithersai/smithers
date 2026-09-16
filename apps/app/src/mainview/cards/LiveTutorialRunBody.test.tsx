@@ -6,6 +6,7 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
+import { workflowCardFamily } from "./WorkflowCards"
 
 GlobalRegistrator.register()
 afterAll(async () => {
@@ -60,6 +61,20 @@ test("an expired live session keeps its saved results visible", () => {
   const html = renderToStaticMarkup(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />)
   expect(html).not.toContain('data-flow="onboarding.act"')
   expect(html).not.toContain("Reconnect")
+})
+
+test("a disconnected observer offers reconnect without asserting a stopped or still-running job", () => {
+  const card = liveCard({ phase: "running", events: [{ id: "research", label: "Research issue", status: "running", startedAt: 1 }] })
+  card.payload.phase = "running"
+  card.payload.input!.liveTutorial = { operation: "research" }
+  card.payload.observationError = "Connection lost"
+  const html = renderToStaticMarkup(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />)
+  expect(html).toContain('aria-busy="false"')
+  expect(html).toContain("Connection lost")
+  expect(html).toContain("Reconnect")
+  expect(html).not.toContain("Running")
+  expect(html).not.toContain('class="live-tutorial-progress"')
+  expect(workflowCardFamily["run-trace"].pill(card)).toBe("disconnected")
 })
 
 test("a quota refusal explains that nothing started and offers the existing skip flow", () => {
