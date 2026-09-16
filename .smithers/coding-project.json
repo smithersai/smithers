@@ -17,74 +17,226 @@
         "packages/smithers/build/README.md"
       ],
       "excerpts": {
-        "packages/smithers/package.json": [{ "start": 1, "end": 56 }],
-        "packages/smithers/agent/README.md": [{ "start": 1, "end": 26 }],
-        "packages/smithers/build/README.md": [{ "start": 1, "end": 41 }]
+        "packages/smithers/package.json": [
+          {
+            "start": 1,
+            "end": 56
+          }
+        ],
+        "packages/smithers/agent/README.md": [
+          {
+            "start": 1,
+            "end": 26
+          }
+        ],
+        "packages/smithers/build/README.md": [
+          {
+            "start": 1,
+            "end": 41
+          }
+        ]
       },
-      "related": ["app", "server", "flows"]
+      "related": [
+        "app",
+        "server",
+        "flows"
+      ]
     },
     {
       "id": "app",
       "title": "Smithers application",
       "purpose": "Describe apps/app's React renderer, Electrobun desktop host, and workspace coding interactions.",
       "kind": "current",
-      "document": "apps/app/README.md",
+      "document": "factory/wiki/pages/app-workspace.md",
       "inputs": [
+        "apps/app/README.md",
         "apps/app/package.json",
         "apps/app/docs/LOCAL-APP.md",
         "apps/app/src/mainview/cards/CodingPlan.ts"
       ],
-      "related": ["packages", "server", "flows"]
+      "related": [
+        "packages",
+        "server",
+        "flows"
+      ],
+      "excerpts": {
+        "apps/app/docs/LOCAL-APP.md": [
+          {
+            "start": 1,
+            "end": 90
+          }
+        ]
+      }
     },
     {
       "id": "server",
       "title": "Cloud Worker and gateway",
       "purpose": "Explain apps/server's Cloudflare Worker entrypoint, Effect services, and gateway boundaries.",
       "kind": "current",
-      "document": "apps/server/docs/EFFECT.md",
+      "document": "factory/wiki/pages/worker-gateway.md",
       "inputs": [
+        "apps/server/docs/EFFECT.md",
         "apps/server/src/index.ts",
         "apps/server/src/Environment.ts",
         "apps/server/src/Boundary.ts"
       ],
-      "related": ["app", "packages", "flows"]
+      "related": [
+        "app",
+        "packages",
+        "flows"
+      ],
+      "excerpts": {
+        "apps/server/docs/EFFECT.md": [
+          {
+            "start": 1,
+            "end": 32
+          }
+        ],
+        "apps/server/src/index.ts": [
+          {
+            "start": 259,
+            "end": 290
+          },
+          {
+            "start": 420,
+            "end": 437
+          }
+        ]
+      }
     },
     {
       "id": "flows",
       "title": "Repository flows and coding host",
       "purpose": "Describe flows, the workspace-bound coding/request host, registered checks, and declared acceptance targets.",
       "kind": "current",
-      "document": "flows/coding/host.md",
+      "document": "factory/wiki/pages/coding-workspace.md",
       "inputs": [
+        "flows/coding/host.md",
         "flows/README.md",
         "flows/PACKAGE.ts",
         "flows/coding/serve.ts",
         "flows/coding/request/flow.ts",
         ".smithers/factory.json"
       ],
-      "related": ["packages", "app", "server", "docs"]
+      "related": [
+        "packages",
+        "app",
+        "server",
+        "docs"
+      ],
+      "excerpts": {
+        "flows/coding/host.md": [
+          {
+            "start": 1,
+            "end": 18
+          }
+        ],
+        ".smithers/factory.json": [
+          {
+            "start": 270,
+            "end": 305
+          },
+          {
+            "start": 367,
+            "end": 405
+          }
+        ],
+        "flows/README.md": [
+          {
+            "start": 1,
+            "end": 25
+          }
+        ]
+      }
     },
     {
       "id": "docs",
       "title": "Design documentation",
       "purpose": "Track docs/design's agent and flow health contract and distinguish intended behavior from implementation evidence.",
       "kind": "intent",
-      "document": "docs/design/agent-flow-health.md",
+      "document": "factory/wiki/pages/health-contract.md",
       "inputs": [
+        "docs/design/agent-flow-health.md",
         "packages/smithers/control/src/Health.ts",
         "apps/app/src/bun/SessionMonitor.ts"
       ],
-      "related": ["packages", "app", "flows"]
+      "related": [
+        "packages",
+        "app",
+        "flows"
+      ],
+      "excerpts": {
+        "docs/design/agent-flow-health.md": [
+          {
+            "start": 1,
+            "end": 49
+          }
+        ],
+        "packages/smithers/control/src/Health.ts": [
+          {
+            "start": 1,
+            "end": 110
+          }
+        ],
+        "apps/app/src/bun/SessionMonitor.ts": [
+          {
+            "start": 1,
+            "end": 75
+          }
+        ]
+      }
     }
   ],
   "checks": [
-    { "id": "policy", "target": "flows", "flow": "checks/policy", "tier": "fast", "required": true },
-    { "id": "runtime", "target": "flows", "flow": "checks/runtime", "tier": "fast", "required": true },
-    { "id": "native", "target": "flows", "flow": "checks/native", "tier": "slow", "required": true },
-    { "id": "native-bun", "target": "flows", "flow": "checks/native-bun", "tier": "slow", "required": true },
-    { "id": "bundle", "target": "flows", "flow": "checks/bundle", "tier": "slow", "required": true },
-    { "id": "bundle-bun", "target": "flows", "flow": "checks/bundle-bun", "tier": "slow", "required": true },
-    { "id": "wiki", "target": ".", "flow": "checks/wiki", "tier": "slow", "required": false }
+    {
+      "id": "policy",
+      "target": "flows",
+      "flow": "checks/policy",
+      "tier": "fast",
+      "required": true
+    },
+    {
+      "id": "runtime",
+      "target": "flows",
+      "flow": "checks/runtime",
+      "tier": "fast",
+      "required": true
+    },
+    {
+      "id": "native",
+      "target": "flows",
+      "flow": "checks/native",
+      "tier": "slow",
+      "required": true
+    },
+    {
+      "id": "native-bun",
+      "target": "flows",
+      "flow": "checks/native-bun",
+      "tier": "slow",
+      "required": true
+    },
+    {
+      "id": "bundle",
+      "target": "flows",
+      "flow": "checks/bundle",
+      "tier": "slow",
+      "required": true
+    },
+    {
+      "id": "bundle-bun",
+      "target": "flows",
+      "flow": "checks/bundle-bun",
+      "tier": "slow",
+      "required": true
+    },
+    {
+      "id": "wiki",
+      "target": ".",
+      "flow": "checks/wiki",
+      "tier": "slow",
+      "required": false
+    }
   ],
   "historyLimit": 100,
   "maxMemoryBytes": 49152

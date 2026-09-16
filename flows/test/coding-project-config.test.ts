@@ -49,8 +49,10 @@ test("repository coding project decodes with registered flows, real source paths
     const markdown = sources.find(source => source.path === page.document)!.text
     // Real source must fit the same evidence contract used before a cloud run.
     // Merely checking that these paths exist misses oversized review inputs.
-    assert.doesNotThrow(() => reviewEvidence({ spec: page, sources, markdown,
-      sections: sections(markdown), contentDigest: "size-validation", inputDigest: "size-validation" }), page.id)
+    const view = reviewEvidence({ spec: page, sources, markdown,
+      sections: sections(markdown), contentDigest: "size-validation", inputDigest: "size-validation" })
+    assert.ok(new TextEncoder().encode(JSON.stringify(view)).length <= 30_000,
+      `${page.id}: keep the cloud planning overview small; link manuals instead of reviewing them in full`)
   }
   const output = relative(root, project.wikiOutput)
   assert.ok(isAbsolute(project.wikiOutput))

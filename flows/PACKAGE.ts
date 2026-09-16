@@ -106,6 +106,8 @@ const codingDependencies = [...codingBackend, codingScripts]
 // Declare them so both runtime targets track changes outside their TS sources.
 const codingProjectSources = [
   ".smithers/coding-project.json", ".smithers/factory.json", "factory/wiki/pages/runtime-packages.md",
+  "factory/wiki/pages/app-workspace.md", "factory/wiki/pages/worker-gateway.md",
+  "factory/wiki/pages/coding-workspace.md", "factory/wiki/pages/health-contract.md",
   "packages/smithers/README.md", "packages/smithers/agent/README.md", "packages/smithers/build/README.md",
   "apps/app/README.md", "apps/app/package.json", "apps/app/docs/LOCAL-APP.md",
   "apps/app/src/mainview/cards/CodingPlan.ts", "apps/app/src/bun/SessionMonitor.ts",
