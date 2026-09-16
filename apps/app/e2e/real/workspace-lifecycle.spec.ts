@@ -2,19 +2,20 @@ import { scenario } from "./coverage/types"
 import { closeComposer, command, expect, realApi } from "./support/test"
 import { expectFlowOutcome } from "./repositories-github/local"
 import { attachProductionJson, bootProductionRepository, cloudRepoPath } from "./repositories-github/production"
-import { workflowTest } from "./flow-execution/fixture"
+import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
 import { bootWorkbench, createTargetFixture, openTargetFixture, runCommand } from "./targets-graph/fixture"
 import { test } from "./support"
 
 /*
- * These cases deliberately use the imported provider fixture. The fixture
- * creates a real GitHub source, imports it through Plue, and provisions a real
- * workspace; no route interception or fabricated workspace row can satisfy
- * this suite. Its teardown drains provider VMs before deleting repository
- * metadata, and preserves both dependencies when a provider job is ambiguous.
+ * Read/terminal cases use the explicitly configured canary workspace; their
+ * only mutation is an independently verified terminal session with cleanup.
+ * Suspend/delete and missing-model cases own a fresh imported repository.
+ * No route interception or fabricated provider rows are used.
  */
 workflowTest.setTimeout(600_000)
 workflowTest.use({ actionTimeout: 45_000, provisionCodingGateway: false })
+configuredGatewayTest.setTimeout(300_000)
+configuredGatewayTest.use({ actionTimeout: 45_000 })
 
 type WorkspaceWire = {
   readonly id?: unknown
@@ -34,11 +35,11 @@ const expectWorkspaceRow = (row: WorkspaceWire, repositoryId: number, id: string
   expect(typeof row.status, "provider workspace status").toBe("string")
 }
 
-workflowTest(
+configuredGatewayTest(
   "a real workspace card reads every provider facet and preserves repository scope",
   scenario("workspaces.cloud-facets-provider-readback", {
     capabilities: ["identity", "cloud"],
-    description: "Open the real imported workspace through the rendered UI, read files, services, sessions, snapshots, and egress from the provider, and verify every response remains bound to the exact repository and workspace id.",
+    description: "Open the configured canary workspace through the rendered UI, read files, services, sessions, snapshots, and egress from the provider, and verify every response remains bound to the exact repository and workspace id.",
     coverage: [
       "action:workspace.view", "action:workspace.facet", "action:workspace.files", "action:workspace.file",
       "action:workspace.services", "action:workspace.sessions", "action:workspace.egress",
@@ -75,14 +76,15 @@ workflowTest(
       const path = cloudRepoPath(workflowRepo.repo, suffix)
       const requestSeen = page.waitForResponse((response) =>
         response.request().method() === "GET" && new URL(response.url()).pathname + new URL(response.url()).search === path)
-        .then(async response => ({ status: response.status(), body: await response.json() }))
       const args = flow === "workspace.files" ? `/ ${workspaceId}` : workspaceId
       await command(page, `/${flow} ${args}`)
       await expectFlowOutcome(page, flow, args, "executed")
       await closeComposer(page)
       const response = await requestSeen
-      expect(response.status, `${bodyText} provider read`).toBe(200)
-      const body = response.body
+      expect(response.status(), `${bodyText} UI provider read`).toBe(200)
+      const readback = await realApi(page, request, "GET", path)
+      expect(readback.status(), `${bodyText} independent provider read`).toBe(200)
+      const body = await readback.json()
       observed[bodyText.toLowerCase()] = body
       expect(JSON.stringify(body), `${bodyText} response must remain workspace-scoped`).not.toContain("other-repository")
     }
@@ -224,11 +226,11 @@ workflowTest(
   }
 )
 
-workflowTest(
+configuredGatewayTest(
   "a cloud terminal accepts keyboard input and returns real shell output",
   scenario("workspaces.cloud-terminal-keyboard-output", {
     capabilities: ["identity", "cloud"],
-    description: "Open a terminal on an owned running cloud workspace through the UI, type a split marker, verify the shell's combined output, and destroy exactly the created session.",
+    description: "Open a new terminal session on the configured canary workspace through the UI, type a split marker, verify the shell's combined output, and destroy exactly the created session.",
     coverage: ["action:workspace.view", "action:workspace.terminal", "host:production", "path:success", "path:keyboard", "door:slash", "dimension:keyboard", "dimension:real-pty", "dimension:websocket", "evidence:rendered-shell-output-and-session-cleanup"]
   }),
   async ({ page, request, workflowRepo }, testInfo) => {
@@ -238,17 +240,19 @@ workflowTest(
     await expect(page.getByTestId(`card-workspace-${id}`)).toBeVisible()
     await closeComposer(page)
     const path = cloudRepoPath(workflowRepo.repo, "/workspace/sessions")
-    const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path && response.ok(), { timeout: 90_000 }).then(response => response.json())
+    const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path && response.ok(), { timeout: 90_000 })
     let sessionId: string | undefined
     try {
       await command(page, `/workspace.terminal ${id}`)
-      const session = await created as { readonly id?: unknown; readonly workspace_id?: unknown }
-      expect(typeof session.id).toBe("string")
-      sessionId = session.id as string
-      expect(session.workspace_id).toBe(id)
+      expect((await created).status()).toBe(201)
       await closeComposer(page)
-      const terminal = page.getByTestId(`card-workspace-${id}`).getByTestId(`terminal-${sessionId}`)
+      const terminal = page.getByTestId(`card-workspace-${id}`).locator('[data-testid^="terminal-"]')
       await expect(terminal).toBeVisible({ timeout: 60_000 })
+      sessionId = (await terminal.getAttribute("data-testid"))!.slice("terminal-".length)
+      expect(sessionId).not.toBe("")
+      const readback = await realApi(page, request, "GET", `${path}/${encodeURIComponent(sessionId)}`)
+      expect(readback.status()).toBe(200)
+      expect(await readback.json()).toMatchObject({ id: sessionId, workspace_id: id, status: "running" })
       await expect(page.getByRole("log", { name: "Conversation", exact: true })).toBeVisible()
       await expect(terminal).not.toContainText('{"type":"replay-complete"}')
       await terminal.locator(".xterm-helper-textarea").focus()

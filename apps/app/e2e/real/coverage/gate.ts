@@ -101,11 +101,16 @@ const generatedSearchFlowNames = (flowNameFile: string): readonly string[] => {
   }
   find(source)
   const initializer = declaration?.initializer
-  if (!initializer || !ts.isArrowFunction(initializer) || !ts.isArrayLiteralExpression(initializer.body)) {
+  const body = initializer && ts.isArrowFunction(initializer) ? initializer.body : undefined
+  // Feature gating may filter a literal registry. Inventory all declared names;
+  // availability still belongs to the live host's capability evidence.
+  const returned = body && ts.isCallExpression(body) && ts.isPropertyAccessExpression(body.expression)
+    && body.expression.name.text === "filter" ? body.expression.expression : body
+  if (!returned || !ts.isArrayLiteralExpression(returned)) {
     throw new Error(`Cannot inventory generated search actions from ${file}; searchFlows must expose its returned declarations`)
   }
   const names: string[] = []
-  for (const item of initializer.body.elements) {
+  for (const item of returned.elements) {
     if (!ts.isCallExpression(item) || !ts.isIdentifier(item.expression) || item.expression.text !== "search") continue
     const name = literal(item.arguments[1])
     if (!name || !/^search\.[a-z][a-z-]*$/.test(name)) throw new Error(`Generated search action in ${file} requires an explicit built-in name`)

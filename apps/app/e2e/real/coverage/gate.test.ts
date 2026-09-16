@@ -51,6 +51,16 @@ export const searchFlows = (actions) => [
     expect(report.declaredActions).not.toContain("search.unregistered")
   })
 
+  test("inventories a feature-filtered literal registry without claiming every action is enabled", () => {
+    const { root, flows } = fixture()
+    const entries = join(root, "entries")
+    mkdirSync(entries)
+    writeFileSync(join(entries, "search.ts"), `export const searchFlows = actions => [
+      search(actions, "search.files", "path"), search(actions, "search.wiki", "wiki")
+    ].filter(entry => enabled(entry))`)
+    expect(declaredFlowNames(flows)).toEqual(["chat.send", "repo.open", "search.files", "search.wiki"])
+  })
+
   test("fails closed when a search factory no longer exposes literal action names", () => {
     const { root, flows } = fixture()
     const entries = join(root, "entries")
