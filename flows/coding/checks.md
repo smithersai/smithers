@@ -53,6 +53,11 @@ bounded timeout, and a host-supplied build environment. It does not inherit the
 gateway's environment by default. Dependency installation and runtime selection
 belong to the project's declared command and existing toolchain; this recipe
 does not borrow mutable `node_modules` from the editing checkout.
+This repository's `scripts/ci/coding-check.sh` gives each frozen Bun install
+120 seconds, terminates a stalled installer, and retries it once. Other install
+failures retain their exit status; tests start only after installation succeeds.
+`SMITHERS_CHECK_INSTALL_TIMEOUT` can select a different GNU timeout duration
+for an operator or a bootstrap test. Coreutils is supplied by the workspace base.
 The example requires an explicit host `environment.PATH` containing `node`;
 without a supplied PATH the command must name an absolute executable. Tools
 that need HOME, a package cache or other build settings receive those explicitly.
