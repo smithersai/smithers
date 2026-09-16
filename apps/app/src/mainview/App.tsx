@@ -1,3 +1,4 @@
+import { FirstRunActions } from "./cards/FirstRunActions"
 import { flowAction } from "./flows/FlowAction"
 import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { pathRepo } from "./RepoLink"
@@ -591,6 +592,7 @@ function AppContent() {
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
+            <FirstRunActions />
             {entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}

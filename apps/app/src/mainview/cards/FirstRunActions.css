@@ -1,0 +1,9 @@
+.first-run-actions {
+  border: 1px solid var(--border, #8884);
+  border-radius: 12px;
+  padding: 16px;
+}
+.first-run-actions > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.first-run-actions h2 { font-size: 1rem; margin: 0; }
+.first-run-actions h3 { font-size: .8rem; margin: 16px 0 8px; }
+.first-run-actions section > button { margin: 0 8px 8px 0; }

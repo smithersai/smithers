@@ -62,6 +62,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "notification.tagged": z.object({ "type": z.literal("notification.tagged"), "actor": ActorSchema, "id": z.string(), "tag": z.string() }).strict(),
   "card.recovered": z.object({ type: z.literal("card.recovered"), actor: ActorSchema, workspaceId: z.string(), branchId: z.string(), id: z.string(), card: CardSchema.nullable(), history: CardHistorySchema.optional(), explicitTutorial: z.literal(true).optional() }).strict(),
   "card.view.loaded": z.object({ type: z.literal("card.view.loaded"), actor: ActorSchema, card: CardSchema }).strict(),
+  "first-run.dismissed": z.object({ type: z.literal("first-run.dismissed"), actor: ActorSchema }).strict(),
   "guide.visibility.changed": z.object({ type: z.literal("guide.visibility.changed"), actor: z.literal("system"), visible: z.boolean() }).strict(),
   "card.navigated": z.object({ "type": z.literal("card.navigated"), "actor": ActorSchema, "card": CardSchema }).strict(),
   "card.history.moved": z.object({ "type": z.literal("card.history.moved"), "actor": ActorSchema, "id": z.string(), "delta": z.union([z.literal(-1), z.literal(1)]) }).strict(),

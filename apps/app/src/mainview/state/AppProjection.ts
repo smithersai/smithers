@@ -207,6 +207,7 @@ export const APP_TRANSITION_TYPES = {
   "chain.lineage.retired": true,
   "chain.event.appended": true,
   "chain.turn.resumed": true,
+  "first-run.dismissed": true,
   "guide.changed": true,
   "theme.changed": true,
   "palette.changed": true,
@@ -1903,6 +1904,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           })
           break
 
+        case "first-run.dismissed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.firstRunDismissed = true })
+          break
+        }
         case "guide.visibility.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.guideVisible = transition.visible })
           break
