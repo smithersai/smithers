@@ -14,14 +14,6 @@ import "@fontsource/ibm-plex-mono/400.css"
 import "@fontsource/ibm-plex-mono/500.css"
 import "./index.css"
 
-/**
- * Which app a page opens. `onboarding` is the tutorial alone (GuidedApp) and
- * names no repository; `repo` is one repository's workspace at `/owner/name`
- * (RepositoryApp), which does not start a tutorial — but it does show one
- * already in flight. The tut flow reopens the guide without a navigation.
- */
-export type AppMode = "onboarding" | "repo"
-
 /*
  * The whole tree, without a watchdog of its own. AppIsland.tsx arms one at
  * module scope; AppMount.tsx arms one when it mounts, so the home page can
@@ -34,22 +26,18 @@ let preparedViews: typeof import("./App") | undefined
 void appModule.then(views => { preparedViews = views }, () => {})
 // React's lazy boundary owns the error even if the download fails before render.
 void appModule.catch(() => {})
-const GuidedApp = lazy(() => appModule.then(({ GuidedApp }) => ({ default: GuidedApp })))
-const RepoApp = lazy(() => appModule.then(({ RepositoryApp }) => ({ default: RepositoryApp })))
+
+const RepoApp = lazy(() => appModule.then(({ default: App }) => ({ default: App })))
 
 export function AppRoot({
-  mode,
   watchdog
 }: {
-  readonly mode: AppMode
   readonly watchdog: Pick<StartupWatchdog, "markMounted" | "handleRenderFailure">
 }) {
-  const View = preparedViews === undefined
-    ? (mode === "repo" ? RepoApp : GuidedApp)
-    : (mode === "repo" ? preparedViews.RepositoryApp : preparedViews.GuidedApp)
+  const View = preparedViews?.default ?? RepoApp
   const moved = useSyncExternalStore(subscribeWriterOwnership, writerOwnershipFailure, writerOwnershipFailure)
   if (moved !== undefined) return <StartupErrorPanel reason={moved} />
-  const boot = prepareControllerBoot({ mode })
+  const boot = prepareControllerBoot({})
   return (
     <StrictMode>
       <StartupErrorBoundary onError={watchdog.handleRenderFailure}>

@@ -1,7 +1,5 @@
 import { AppRoot } from "./AppRoot"
 import { mountApp, warmApp } from "./AppMount"
-import { pathRepo } from "./RepoLink"
-import { parseFramePath } from "./runtime/FrameHistory"
 import { browserStartupWatchdog } from "./StartupWatchdog"
 import { createAppFetch } from "./runtime/LocalSession"
 import { createClientErrorReporter } from "./state/ClientErrors"
@@ -23,9 +21,7 @@ import { createClientErrorReporter } from "./state/ClientErrors"
 function AppIsland() {
   // One watchdog per page (browserStartupWatchdog is a singleton), so a re-render re-reads it.
   const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
-  const tutorial = new URLSearchParams(window.location.search).has("tutorial")
-  const workspace = parseFramePath(window.location.pathname) !== undefined
-  return <AppRoot watchdog={watchdog} mode={tutorial || (pathRepo(window.location.pathname) === null && !workspace) ? "onboarding" : "repo"} />
+  return <AppRoot watchdog={watchdog} />
 }
 
 /*

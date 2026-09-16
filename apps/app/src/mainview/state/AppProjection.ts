@@ -2460,6 +2460,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.updatedAt = createdAt
             draft.revision = revision
           })
+          if (transition.state === "signed-out" && !collections.sessions.get(SESSION_ID)?.activeRepoKey) {
+            collections.sessions.update(SESSION_ID, draft => { draft.activeRepoKey = PRACTICE_REPO })
+          }
           if (transition.state === "signed-in") answerSignInPrompts(collections, "identity", transition.login, createdAt)
           break
         }

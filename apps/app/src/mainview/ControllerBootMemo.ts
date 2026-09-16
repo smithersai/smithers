@@ -29,13 +29,11 @@ export const loadControllerBootInputs = async <Bootstrap, Store extends { dispos
 }
 
 /** Only an empty anonymous practice entry may paint before cloud identity answers. */
-export const canPaintTutorialBeforeIdentity = (entry: {
-  mode?: "onboarding" | "repo"
-  step?: number
-  finished?: boolean
+export const canPaintAppBeforeIdentity = (entry: {
+  requestedRepo?: string | null
   hasTranscript: boolean
   identityState?: string
   identityLogin?: string | null
   accountOwnerLogin?: string | null
-}): boolean => entry.mode === "onboarding" && entry.step === 1 && !entry.finished &&
+}): boolean => entry.requestedRepo == null &&
   !entry.hasTranscript && entry.identityState !== "signed-in" && entry.identityLogin == null && entry.accountOwnerLogin == null

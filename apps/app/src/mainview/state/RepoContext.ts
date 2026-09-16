@@ -110,6 +110,7 @@ export const resolveTargetRepo = (
    * repository, the selected repository, or a local-only checkout. A
    * single loaded repository is the target when nothing is selected.
    */
+  if (store.session().activeRepoKey === "practice:smithersai/hello-server") return { repo: store.session().activeRepoKey! }
   const active = activeRepositoryId(store)
   if (active !== null) return { repo: active }
   const loaded = [...store.collections.repositories.values()]

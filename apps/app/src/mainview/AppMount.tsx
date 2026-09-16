@@ -1,6 +1,6 @@
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { AppRoot, type AppMode } from "./AppRoot"
+import { AppRoot } from "./AppRoot"
 import { configureControllerBoot } from "./ControllerProvider"
 import { browserStartupWatchdog } from "./StartupWatchdog"
 import { warmBootstrap } from "./runtime/Runtime"
@@ -16,7 +16,6 @@ import { createClientErrorReporter } from "./state/ClientErrors"
  */
 
 export interface MountAppOptions {
-  readonly mode: AppMode
   /** Keep the address bar on the current URL instead of frame paths (runtime/FrameHistory.ts). */
   readonly keepUrl?: boolean
 }
@@ -71,6 +70,6 @@ export function mountApp(container: HTMLElement, options: MountAppOptions): Moun
   configureControllerBoot({ keepUrl: options.keepUrl === true })
   const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
   const root = createRoot(container)
-  flushSync(() => root.render(<AppRoot mode={options.mode} watchdog={watchdog} />))
+  flushSync(() => root.render(<AppRoot watchdog={watchdog} />))
   return { unmount: () => root.unmount(), mark: appWordmark(container) }
 }

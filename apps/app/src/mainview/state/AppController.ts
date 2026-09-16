@@ -1903,18 +1903,6 @@ export const createAppController = (
     if (card.loading) store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
   }
 
-  // Enter the useful first lesson through the same durable flow as replay.
-  // The start receipt makes the background repository read once per playthrough.
-  if (store.session().guide?.step === 1 && !store.session().guide?.finished && (store.session().guide?.completed?.length ?? 0) === 0) {
-    const startup = commands.run("onboarding.act", "start", "automatic").then(outcome => {
-      if (!ctx.disposed) surfaceCommandFailure("onboarding.act", outcome)
-    })
-    // Join the initialization before releasing the store registered above.
-    // Observe rejection immediately; disposal still reports a failed startup.
-    void startup.catch(() => {})
-    ctx.onDispose(() => startup)
-  }
-
   liveTutorial.resume()
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.

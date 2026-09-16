@@ -176,7 +176,7 @@ const githubHref = "https://github.com/smithersai/smithers"
       const root = document.createElement("div")
       root.id = "root"
       document.body.append(root)
-      return mount.mountApp(root, { mode: "onboarding", keepUrl: true }).mark
+      return mount.mountApp(root, { keepUrl: true }).mark
     }
 
     /* Without same-document view transitions: fly the mark by hand, then swap. */

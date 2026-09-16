@@ -1,5 +1,4 @@
 import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
-import { shouldReplayTutorial } from "./onboarding/resume"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { createAgentSeat } from "./chain/ChainRuntime"
@@ -11,7 +10,7 @@ import { createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories
 import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
-import { canPaintTutorialBeforeIdentity, loadControllerBootInputs } from "./ControllerBootMemo"
+import { canPaintAppBeforeIdentity, loadControllerBootInputs } from "./ControllerBootMemo"
 import { createTurnEraser } from "./runtime/TurnErasure"
 
 const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
@@ -33,7 +32,6 @@ const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
 export interface ControllerBootOptions {
   /** Keep the address bar on the entry URL (runtime/FrameHistory.ts `keepUrl`). */
   readonly keepUrl?: boolean
-  readonly mode?: "onboarding" | "repo"
 }
 
 const bootProgram = (options: ControllerBootOptions = {}) =>
@@ -45,7 +43,6 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
-    const entryPathname = yield* Effect.sync(() => window.location.pathname)
     const http = yield* Effect.sync(() => createAppFetch())
     const bootstrapRead = warmBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
@@ -76,10 +73,6 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       )
     )
 
-    // Start Here and ?tutorial are explicit entries, including after a finished playthrough.
-    if (shouldReplayTutorial(options.mode, entrySearch, store.session().guide, entryPathname)) {
-      yield* promiseEffect("replay introduction", () => controller.guideAct("restart"))
-    }
     if (!hasCapability(bootstrap, "identity")) {
       yield* promiseEffect("record unavailable identity", () => controller.adoptSession({
         state: "unavailable",
@@ -87,10 +80,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         allowlisted: false,
         admin: false
       }))
-    } else if (bootstrap.host === "local" || canPaintTutorialBeforeIdentity({
-      mode: options.mode,
-      step: store.session().guide?.step,
-      finished: store.session().guide?.finished,
+    } else if (bootstrap.host === "local" || canPaintAppBeforeIdentity({
+      requestedRepo: requested,
       hasTranscript: store.collections.cards.size > 0 || store.collections.messages.size > 0,
       identityState: store.collections.identitySessions.get("identity")?.state,
       identityLogin: store.collections.identitySessions.get("identity")?.login,

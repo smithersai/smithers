@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { canPaintTutorialBeforeIdentity, createControllerBoot, loadControllerBootInputs } from "./ControllerBootMemo"
+import { canPaintAppBeforeIdentity, createControllerBoot, loadControllerBootInputs } from "./ControllerBootMemo"
 import type { AppController } from "./state/AppController"
 
 /*
@@ -77,12 +77,12 @@ describe("controller readiness", () => {
   })
 
   test("only fresh empty public practice skips the identity paint barrier", () => {
-    const fresh = { mode: "onboarding" as const, step: 1, hasTranscript: false, identityState: "unknown", accountOwnerLogin: null }
-    expect(canPaintTutorialBeforeIdentity(fresh)).toBe(true)
+    const fresh = { hasTranscript: false, identityState: "unknown", accountOwnerLogin: null }
+    expect(canPaintAppBeforeIdentity(fresh)).toBe(true)
     for (const changed of [
-      { mode: "repo" as const }, { mode: undefined }, { step: 5 }, { finished: true },
+      { requestedRepo: "owner/repo" },
       { hasTranscript: true }, { identityState: "signed-in" }, { accountOwnerLogin: "retained-owner" }, { identityLogin: "legacy-owner" },
-    ]) expect(canPaintTutorialBeforeIdentity({ ...fresh, ...changed })).toBe(false)
+    ]) expect(canPaintAppBeforeIdentity({ ...fresh, ...changed })).toBe(false)
   })
 })
 
