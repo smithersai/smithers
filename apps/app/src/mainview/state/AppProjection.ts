@@ -2740,6 +2740,17 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
         case "status.expired": {
           if (transition.actor !== "system" || !Number.isFinite(transition.now)) return
+          // Older events expired only stored cards. Preserve their exact replay;
+          // new events also expire the authoritative presentation source so the
+          // runtime card projection cannot revive an already-expired reading.
+          if (transition.runtime === true) for (const run of collections.runtimeRuns.values()) {
+            const previous = run.summary?.statusRollup
+            if (previous === undefined) continue
+            const status = expireStatus(previous, transition.now)
+            if (status !== previous) collections.runtimeRuns.update(run.id, draft => {
+              if (draft.summary !== undefined) draft.summary.statusRollup = status
+            })
+          }
           for (const tab of collections.tabs.values()) {
             if ((tab.kind !== "terminal" && tab.kind !== "harness") || tab.statusRollup === undefined) continue
             const status = expireStatus(tab.statusRollup, transition.now)

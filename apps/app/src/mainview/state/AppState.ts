@@ -1617,7 +1617,7 @@ export type AppTransition =
   | { type: "tab.menu.toggled"; actor: Actor; open: boolean }
   | { type: "pty.exited"; actor: "system"; sessionId: string; code: number | null }
   | { type: "pty.status.observed"; actor: "system"; sessionId: string; status: StatusRollup }
-  | { type: "status.expired"; actor: "system"; now: number }
+  | { type: "status.expired"; actor: "system"; now: number; runtime?: true }
   | { type: "harnesses.loaded"; actor: "system"; harnesses: ReadonlyArray<Harness> }
   /* Agents as data (custom-agents.md): `GET /api/agents` replaces the app-agents mirror the way the harness list does. */
   | { type: "agents.loaded"; actor: "system"; agents: ReadonlyArray<AgentRole> }

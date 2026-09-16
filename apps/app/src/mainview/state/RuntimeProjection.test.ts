@@ -214,3 +214,26 @@ test("question replacement retires draft and submission ownership; a late receip
   expect(submitRuntimeApproval(changed, { id: first.id, submissionId: "old-answer", state: "approved", decidedAt: 13 }, 13, 4)).toBe(changed)
   expect(changed.row.status).toBe("pending")
 })
+
+
+test("durable expiry reaches projected run health without changing legacy event replay", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const now = Date.now()
+  const health = { subjectId: "run:run", state: "running", activity: "working", health: "healthy", attention: "none", freshness: "fresh", updatedAt: now,
+    provenance: { checkerId: "test", monitorId: "test", observedAt: now, expiresAt: now + 60_000, evidenceSeq: 1, incarnation: "test", version: 1 } } as const
+  await store.dispatch({ type: "card.upsert", actor: "system", card: trace }).isPersisted.promise
+  await store.dispatch({ type: "gateway.run.observed", actor: "system", observation: { scope, summary: { ...summary(), statusRollup: health } } }).isPersisted.promise
+  // The original event's meaning is immutable: the fix is opt-in in new facts.
+  await store.dispatch({ type: "status.expired", actor: "system", now: now + 60_001 }).isPersisted.promise
+  const read = () => store.collections.cards.get("trace") as typeof trace
+  expect(read().payload.statusRollup?.freshness).toBe("fresh")
+  await store.dispatch({ type: "status.expired", actor: "system", now: now + 60_001, runtime: true }).isPersisted.promise
+  expect(read().payload.statusRollup?.freshness).toBe("stale")
+  expect(read().payload.statusRollup?.activity).toBe("unknown")
+  await store.verifyState()
+  await store.dispose?.()
+  const reopened = await createAppStore({ kind: "localStorage", storage })
+  expect((reopened.collections.cards.get("trace") as typeof trace).payload.statusRollup?.freshness).toBe("stale")
+  await reopened.dispose?.()
+})

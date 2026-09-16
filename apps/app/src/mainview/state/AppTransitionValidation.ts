@@ -148,7 +148,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "tab.menu.toggled": z.object({ "type": z.literal("tab.menu.toggled"), "actor": ActorSchema, "open": z.boolean() }).strict(),
   "pty.exited": z.object({ "type": z.literal("pty.exited"), "actor": z.literal("system"), "sessionId": z.string(), "code": z.union([z.number().finite(), z.null()]) }).strict(),
   "pty.status.observed": z.object({ "type": z.literal("pty.status.observed"), "actor": z.literal("system"), "sessionId": z.string(), "status": StatusRollupSchema }).strict(),
-  "status.expired": z.object({ "type": z.literal("status.expired"), "actor": z.literal("system"), "now": z.number().finite() }).strict(),
+  "status.expired": z.object({ "type": z.literal("status.expired"), "actor": z.literal("system"), "now": z.number().finite(), "runtime": z.literal(true).optional() }).strict(),
   "harnesses.loaded": z.object({ "type": z.literal("harnesses.loaded"), "actor": z.literal("system"), "harnesses": z.array(HarnessSchema) }).strict(),
   "agents.loaded": z.object({ "type": z.literal("agents.loaded"), "actor": z.literal("system"), "agents": z.array(AgentRoleSchema) }).strict(),
   "repos.loaded": z.object({ "type": z.literal("repos.loaded"), "actor": z.literal("system"), "repos": z.array(RepoSchema) }).strict(),

@@ -22,7 +22,7 @@ export const createHealthStatusController = (ctx: Pick<ControllerContext, "store
     if (!Number.isFinite(deadline)) return
     timer = setTimeout(() => {
       if (disposed) return
-      ctx.store.dispatch({ type: "status.expired", actor: "system", now: Date.now() })
+      ctx.store.dispatch({ type: "status.expired", actor: "system", now: Date.now(), runtime: true })
       schedule()
     }, Math.max(0, Math.min(2_147_483_647, deadline - now)))
     ctx.unref(timer)
