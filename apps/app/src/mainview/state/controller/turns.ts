@@ -1,3 +1,4 @@
+import { readDesktopStream } from "../seams/DesktopStream"
 import { prepareApprovalAnswer, isCurrentApprovalAnswer } from "../ApprovalAnswerState"
 import { toolActLine } from "../ToolActLine"
 import { createHttpTurnDriver } from "./httpTurns"
@@ -12,7 +13,7 @@ import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
 import type { CommandOutcome } from "../../flows/Commands"
 import { parseSubmit } from "../../flows/registry"
 import { boundToolResult, boundTurnRequest } from "../AgentTurnPolicy"
-import { CardPatchSchema, CardSchema, MAIN_TAB_ID } from "../AppState"
+import { conversationTabIdOf, inConversation, CardPatchSchema, CardSchema, MAIN_TAB_ID } from "../AppState"
 import type { Card } from "../AppState"
 import { parseApprovalActionId } from "../ApprovalReference"
 import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
@@ -228,6 +229,19 @@ export const createTurnController = (
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
     return {
       repositoryUpdate: currentRepositoryUpdate(store),
+      recentCards: [...store.collections.cards.values()]
+        .filter(card => inConversation(card, conversationTabIdOf(current)))
+        .sort((a, b) => a.ordinal - b.ordinal).slice(-12)
+        .map(card => ({
+          id: card.id, kind: card.kind, title: card.title.replace(/[\r\n]/g, " ").slice(0, 250),
+          status: card.status, maximized: current.maximizedCardId === card.id,
+          ...(card.kind === "workspace" ? { workspace: {
+            id: card.payload.workspaceId, repo: card.payload.repo,
+            kind: card.payload.workspaceKind ?? "unknown", status: card.payload.status,
+            facet: card.payload.facet ?? "terminal",
+            streaming: readDesktopStream(card.payload.workspaceId) !== null,
+          } } : {}),
+        })),
       version: AGENT_RUNTIME_CONTEXT_VERSION,
       product: "smithers",
       capturedAt: snapshot.capturedAt,
@@ -351,6 +365,9 @@ export const createTurnController = (
           : []),
         "Run app commands through the \"commands\" tool — the same code path as the UI buttons and slash commands.",
         "Render structured cards (plans, approvals, statuses, recommendations) in the transcript.",
+        ...(ctx.commands.find("workspace.desktop.open") === undefined ? [] : [
+          "Open a live cloud desktop inside this browser chat with workspace.desktop.open [bookmark] [owner/repo] (alias desktop). It creates or reuses a desktop workspace and embeds its live screen; the user can interact with it and explicitly maximize or restore the card. This feature does not require the native app. Use the existing workspace state in recent cards; an attached stream is already open, not a reason to offer sign-in. You cannot infer screen contents from the stream's presence.",
+        ]),
         "Create, list, and run Smithers flows on the user's loaded repositories (flow.create, flow.list, flow.run). Runs report live as embedded cards in this chat.",
         ...(store.collections.repos.size > 0
           ? [

@@ -781,20 +781,20 @@ test("chat cards still join their reply at the terminal beat", async () => {
     payload: { repo: "acme/api", path: ".smithers/home.json", blocks: [{ type: "text", text: "This is the repository overview." }], featuredFlows: null },
   } }).isPersisted.promise
   await settle()
-  expect(host.querySelector('.guide-transcript [data-testid="card-terminal-chat-home"]') !== null).toBe(true)
+  expect(host.querySelector('.smithers-transcript [data-testid="card-terminal-chat-home"]') !== null).toBe(true)
   expect(host.querySelectorAll('[data-testid="card-terminal-chat-home"]').length).toBe(1)
 }, 5_000)
 
 test("chat can show a practice card after the practice lessons have been skipped", async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(14, still, { declined: ["practice", "login"], conversationOpen: true }, c => { controller = c })
+  const host = await mountGuide(14, still, { declined: ["practice", "login"], conversationOpen: true }, c => { controller = c }, <App />)
   await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "practice-chat", text: "Show the practice repository" }).isPersisted.promise
   await controller.store.dispatch({ type: "card.upsert", actor: "smithers", card: {
     id: "practice-chat-home", kind: "repo-home", title: "Practice Home", status: "active", ordinal: 100, createdAt: 100,
     payload: { repo: PRACTICE_REPO, path: ".smithers/home.json", blocks: [], featuredFlows: null },
   } }).isPersisted.promise
   await settle()
-  expect(host.querySelector('.guide-transcript [data-testid="card-practice-chat-home"]') !== null).toBe(true)
+  expect(host.querySelector('.smithers-transcript [data-testid="card-practice-chat-home"]') !== null).toBe(true)
 }, 5_000)
 
 test("a Home card requested again in chat follows the user bubble", async () => {
@@ -1046,31 +1046,20 @@ test("touch Chat has a Close button that dismisses and restores focus", async ()
   expect(document.activeElement === opener).toBe(true)
 }, 5_000)
 
-test("an open chat keeps its question as the read anchor when beat 13 advances", async () => {
+test("chat transfers to the workspace transcript when beat 13 advances", async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(13, still, { conversationOpen: true }, c => { controller = c })
-  const viewport = host.querySelector<HTMLElement>('.guide-transcript')!
-  const geometry = spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
-    if (this === viewport) return { top: 100, bottom: 600, height: 500 } as DOMRect
-    const top = this.dataset.chatMessageId?.endsWith('-user') ? 850
-      : this.dataset.chatMessageId?.endsWith('-smithers') ? 910 : 1050
-    return { top: top - viewport.scrollTop, bottom: top + 50 - viewport.scrollTop, height: 50 } as DOMRect
-  })
-  viewport.scrollTo = (options: ScrollToOptions | number = {}) => {
-    if (typeof options !== 'number' && options.top !== undefined) viewport.scrollTop = options.top
-  }
-  try {
-    await controller.store.dispatch({ type: 'message.submitted', actor: 'user', turnId: 'intro-chat', text: 'hello' }).isPersisted.promise
-    await controller.store.dispatch({ type: 'message.response.delta', actor: 'smithers', turnId: 'intro-chat', channel: 'text', delta: 'hello back' }).isPersisted.promise
-    await controller.store.dispatch({ type: 'guide.changed', actor: 'system', guide: { ...controller.store.session().guide!, step: 14 } }).isPersisted.promise
-    await settle()
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(viewport.scrollTop).toBe(740)
-    await controller.guideAct("close")
-    await settle()
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    expect(viewport.scrollTop).toBe(740)
-  } finally { geometry.mockRestore() }
+  const host = await mountGuide(13, still, { conversationOpen: true }, c => { controller = c }, <App />)
+  await controller.store.dispatch({ type: 'message.submitted', actor: 'user', turnId: 'intro-chat', text: 'hello' }).isPersisted.promise
+  await controller.store.dispatch({ type: 'message.response.delta', actor: 'smithers', turnId: 'intro-chat', channel: 'text', delta: 'hello back' }).isPersisted.promise
+  await settle()
+  expect(text(host.querySelector('.guide-transcript'))).toContain('hello back')
+  await controller.store.dispatch({ type: 'guide.changed', actor: 'system', guide: { ...controller.store.session().guide!, step: 14 } }).isPersisted.promise
+  await settle()
+  expect(text(host.querySelector('.guide-transcript'))).not.toContain('hello back')
+  expect(text(host.querySelector('.smithers-transcript'))).toContain('hello back')
+  await controller.guideAct("close")
+  await settle()
+  expect(text(host.querySelector('.smithers-transcript'))).toContain('hello back')
 }, 5_000)
 
 
@@ -1120,4 +1109,29 @@ test("advancing a beat dismisses run outcomes before their read timer fires", as
   await settle()
   expect(host.querySelectorAll('[data-run-chip]')).toHaveLength(0)
   controller.dispose()
+}, 5_000)
+
+
+test("workspace desktop and subsequent messages share one chronological transcript after onboarding", async () => {
+  let controller!: ReturnType<typeof createAppController>
+  const host = await mountGuide(14, still, { conversationOpen: true }, c => { controller = c }, <App />)
+  await controller.store.dispatch({ type: "card.upsert", actor: "user", card: {
+    id: "workspace-desktop-order", kind: "workspace", title: "Desktop", status: "active", ordinal: 0, createdAt: 0,
+    payload: { workspaceId: "desktop-order", repo: "acme/api", name: "Desktop", targetBookmark: "main",
+      status: "running", provisioningStage: null, suspendedAt: null, bookmarkHead: null, snapshots: [], sessions: [],
+      workspaceKind: "desktop", facet: "desktop" },
+  } }).isPersisted.promise
+  await controller.store.dispatch({ type: "message.submitted", actor: "user", turnId: "after-desktop", text: "What can I do with this desktop?" }).isPersisted.promise
+  await controller.store.dispatch({ type: "message.appended", actor: "smithers", text: "The desktop is running." }).isPersisted.promise
+  await settle()
+  const transcript = host.querySelector('.smithers-transcript')!
+  const desktop = transcript.querySelector('[data-testid="card-workspace-desktop-order"]')!
+  const user = transcript.querySelector('[data-role="user"]')!
+  expect(desktop).not.toBeNull()
+  expect(user).not.toBeNull()
+  expect(desktop.getAttribute('data-maximized')).toBe('false')
+  expect(desktop.compareDocumentPosition(user) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(text(transcript)).toContain('The desktop is running.')
+  expect(text(host.querySelector('.guide-transcript'))).not.toContain('What can I do with this desktop?')
+  expect(host.querySelectorAll('[data-testid="card-workspace-desktop-order"]').length).toBe(1)
 }, 5_000)

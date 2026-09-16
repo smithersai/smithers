@@ -161,16 +161,13 @@ function AppContent() {
   const inTutorial = useContext(InTutorial)
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
   const guideChatCards = chatEntryIds(session.guideTranscript)
-  /*
-   * Three scopes: a running lesson shows the tutorial's own cards; the handoff
-   * beat shows the repository the user ended on, minus the cards a chat turn
-   * produced (the guide transcript above already carries those beside their
-   * reply); the finished workspace keeps those practice artifacts out too.
-   */
+  // Once lessons finish, messages and cards share the workspace transcript.
+  // Chat-requested cards retain their place even when they name another repo.
   const conversationCards = inTutorial ? tutorialTranscript(conversationRows, session.guideTranscript)
-    : composerHost !== undefined ?
-      workspaceTranscript(conversationRows, session.activeRepoKey ?? null, guideChatCards) :
-      workspaceTranscript(conversationRows, null, new Set(), guideChatCards)
+    : composerHost !== undefined ? [
+      ...workspaceTranscript(conversationRows, session.activeRepoKey ?? null, guideChatCards),
+      ...conversationRows.filter(card => guideChatCards.has(card.id)),
+    ] : workspaceTranscript(conversationRows, null, new Set(), guideChatCards)
   /*
    * A stable array: CardView is memoized, and re-sorting the same rows into a
    * fresh array on every render would re-render every card body regardless.
@@ -374,7 +371,7 @@ function AppContent() {
   const entries: ReadonlyArray<TranscriptEntry> = [
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined ? [] : [{ kind: "message", message: authMessage } as const]),
-    ...(composerHost === undefined ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
+    ...(!inTutorial ? messages.map((message): TranscriptEntry => ({ kind: "message", message })) : []),
     // A missing URL owns this arrival; retained cards from the last repository
     // stay stored, but cannot become the requested repository's projection.
     ...(repositoryNotice ? workspaceTranscript(conversationCards, missingBootRepository) : conversationCards)
@@ -402,7 +399,7 @@ function AppContent() {
    * The composer's one home. Summoned beside the active tab when the app stands
    * alone; hidden while the guide owns the window (the UI is full-screen
    * without a composer by default); summoned through a portal into the
-   * guide's bottom Chat dock; GuideShell projects the same chat messages above it.
+   * guide's bottom Chat dock. After the lessons, this transcript owns chat too.
    */
   const composerWrap = (
     <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={composerHost === null || (composerHost === undefined && session.paletteOpen !== true)}>
@@ -613,7 +610,7 @@ function AppContent() {
                 ) :
                 <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
             </MessageScrollerItem>)}
-            {typing && composerHost === undefined && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
+            {typing && !inTutorial && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
             </MessageScrollerContent>
             </MessageScrollerViewport>
             <MessageScrollerButton />

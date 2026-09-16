@@ -616,7 +616,10 @@
  * as that whole container lifting, which is what the 4px `var(--card)` outset
  * was drawn for (state/controller/controlFocus.ts picks the container).
  */
-[data-control-focus] {
+[data-control-focus="inline"] {
+	position: relative;
+}
+[data-control-focus="human"] {
 	position: relative;
 	z-index: calc(var(--control-focus-z) + 1);
 	box-shadow: 0 0 0 var(--control-focus-outset) var(--card), 0 8px 24px rgb(0 0 0 / 18%);

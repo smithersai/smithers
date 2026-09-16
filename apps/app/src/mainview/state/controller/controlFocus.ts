@@ -1,9 +1,10 @@
 /*
  * Control focus ("spotlight"): whenever the human is driving one surface —
- * a terminal, a box's desktop, a browser card, a markdown editor — the rest
+ * a terminal, a browser card, a markdown editor — the rest
  * of the app dims and blurs a touch, modal-style, and the surface wears an
  * outset ring. Clicking out releases, exactly like a modal backdrop, and the
- * releasing click never activates what it landed on.
+ * releasing click never activates what it landed on. Desktop embeds keep only
+ * the keyboard release affordance: no dim, elevation, or swallowed outside click.
  *
  * The state is one app-level record owned by the controller, never React
  * state and never a journal transition: it is a projection of where focus
@@ -423,7 +424,7 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
      */
     const anchor = containerOf(detection.element)
     current = { state: { surfaceId: detection.surfaceId, kind: detection.kind, since: Date.now() }, anchor }
-    anchor.setAttribute("data-control-focus", "human")
+    anchor.setAttribute("data-control-focus", detection.kind === "desktop" ? "inline" : "human")
     const win = doc?.defaultView ?? null
     if (doc !== undefined && win !== null) {
       /*
@@ -437,10 +438,13 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
       clippers = findClippers(anchor, win)
       outset = Number.parseFloat(win.getComputedStyle(anchor).getPropertyValue("--control-focus-outset"))
       if (!Number.isFinite(outset)) outset = FALLBACK_OUTSET
-      dim = doc.createElement("div")
-      dim.className = "control-focus-dim"
-      dim.setAttribute("aria-hidden", "true")
-      doc.body.append(dim)
+      // A desktop is an interactive transcript embed, not a modal spotlight.
+      if (detection.kind !== "desktop") {
+        dim = doc.createElement("div")
+        dim.className = "control-focus-dim"
+        dim.setAttribute("aria-hidden", "true")
+        doc.body.append(dim)
+      }
       mountReleaseButton(anchor, detection.kind)
       fit()
       /*
@@ -510,6 +514,10 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (!event.isTrusted || current === null) return
     const target = asElement(event.target)
     const inside = isInside(target)
+    if (!inside && current?.state.kind === "desktop") {
+      clear(false)
+      return
+    }
     gesture = { pointerId: event.pointerId, inside, touch: event.pointerType === "touch", x: event.clientX, y: event.clientY, sawMouseDown: false }
     if (inside) return
     /*
@@ -580,6 +588,10 @@ export const createControlFocus = (doc: Document | undefined): ControlFocusContr
     if (!event.isTrusted || current === null || compatTail()) return
     const target = asElement(event.target)
     const inside = isInside(target)
+    if (!inside && current?.state.kind === "desktop") {
+      clear(false)
+      return
+    }
     let held = gesture
     if (event.type === "mousedown") {
       if (held !== null && !held.sawMouseDown) {

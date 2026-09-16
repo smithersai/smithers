@@ -227,7 +227,8 @@ test("enter on window blur + activeElement === iframe: the browser card and the 
   expect(control.snapshot()?.kind).toBe("desktop")
   expect(control.snapshot()?.surfaceId).toBe("desktop:ws-1")
   expect(browserCard.hasAttribute("data-control-focus")).toBe(false)
-  expect(desktopCard.getAttribute("data-control-focus")).toBe("human")
+  expect(desktopCard.getAttribute("data-control-focus")).toBe("inline")
+  expect(document.querySelector(".control-focus-dim")).toBeNull()
 })
 
 /*
@@ -647,4 +648,17 @@ test("dispose releases everything: no listeners, no state, no scoped chrome", ()
   expect(releaseButton(doc)).toBeNull()
   mouseClick(win, outside)
   expect(outsideClicks).toEqual(["pointerup", "click"])
+})
+
+test("desktop focus leaves chat clear and an outside button works on the first click", () => {
+  const { win, doc, control, desktopFrame } = setup()
+  frameFocus(win, desktopFrame)
+  expect(doc.querySelector('.control-focus-dim')).toBeNull()
+  const button = doc.createElement('button')
+  doc.body.append(button)
+  let clicks = 0
+  button.addEventListener('click', () => { clicks++ })
+  mouseClick(win, button)
+  expect(clicks).toBe(1)
+  expect(control.snapshot()).toBeNull()
 })

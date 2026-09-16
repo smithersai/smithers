@@ -111,8 +111,8 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
     .filter(card => guide.transcript?.[card.id]?.source === "chat" || (showPractice && !skipped) || !cardRepo(card)?.startsWith("practice:"))
     .sort((a, b) => a.ordinal - b.ordinal)
   const messages = messageRows.filter(message => inConversation(message, conversation) && guide.transcript?.[message.id]?.owned === true && !isIdentityPrompt(message))
-  const entries = guideTranscriptEntries(lessonCards.filter(card => stage < GUIDE_LAST_STEP || guide.transcript?.[card.id]?.source === "chat"), messages, guide)
-  const typing = session.phase === "responding"
+  const entries = stage < GUIDE_LAST_STEP ? guideTranscriptEntries(lessonCards, messages, guide) : []
+  const typing = stage < GUIDE_LAST_STEP && session.phase === "responding"
   const streamingMessageId = typing ? messages.at(-1)?.id : undefined
   // Closing the composer keeps the chat read; the terminal beat retains the last question.
   const chatAnchorId = messages.filter(message => message.role === "user" && (guide.transcript?.[message.id]?.step === stage || stage === GUIDE_LAST_STEP)).at(-1)?.id
@@ -504,7 +504,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             })}
             {typing && <ChatMessage role="assistant" pending pendingLabel="Smithers is responding" />}
             <ReelShell clock={clock} />
-            {signInPrompts.map(message => (
+            {stage < GUIDE_LAST_STEP && signInPrompts.map(message => (
               <article key={message.id} className="message" data-testid="auth-prompt" data-chat-message-id={message.id}>
                 <p>{message.text}</p>
                 {message.answeredAction ? <p role="status">{message.answeredAction.answer}</p> :
