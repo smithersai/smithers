@@ -43,7 +43,7 @@ export function guideActionState(action: GuideAction, cards: readonly Card[], gu
     return request?.operation === operation.operation && request.playthrough === (guide.playthrough ?? 0)
   })
   if (card?.kind !== "run-trace") return action
-  if (activeLiveTutorialLimit(card)) return { ...action, label: "Continue without practice", flow: "onboarding.act", args: "skip-practice" }
+  if (activeLiveTutorialLimit(card)) return { ...action, label: "Continue without practice", flow: "onboarding.act", args: "skip" }
   const parsed = LiveTutorialRunSchema.safeParse(card.payload.input?.liveTutorialSnapshot)
   const run = parsed.success ? parsed.data : undefined
   const failure = card.payload.observationError ?? run?.error

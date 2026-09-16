@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client"
 import { ControllerTestProvider } from "../ControllerContext"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
+import { createGuideController } from "../state/controller/guide"
+import type { ControllerContext } from "../state/controller/context"
 import { scopedControllers } from "../state/ControllerTestScope"
 import { initialGuide, type Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
@@ -334,7 +336,7 @@ test("every beat has keyboard navigation, one pill shape, and no numbered instru
         expect(button?.getAttribute("aria-describedby")).toBe(`guide-instruction-${step}${lesson.help?.actionKey === action.key ? ` guide-help-${step}` : ""}`)
       }
       if (lesson.secondary !== undefined) expect(text(host.querySelector(".guide-actions [data-secondary]"))).toContain(lesson.secondary.label)
-      // Skip practice (Q) sits beside Back on the practice beats only.
+      // Skip tutorial (Q) sits beside Back on the practice beats only.
       expect(host.querySelector(".guide-skip") !== null).toBe(lesson.practice === true)
     }
     // The payoff stays pinned until the user acts on the bridge.
@@ -450,17 +452,38 @@ test("Not now at login skips the repository beats; Later at install skips the ba
   expect(controller.store.session().guide?.declined).toEqual(["install"])
 }, 5_000)
 
-test("Skip practice lands on an honest bridge without narrating unreached lessons", async () => {
+for (const input of ["click", "q"]) test(`Skip tutorial via ${input} at beat 3 finishes with the signed-out terminal line`, async () => {
   let controller!: ReturnType<typeof createAppController>
-  const host = await mountGuide(4, still, { completed: ["issues.opened", "issue.opened", "issue.flows.opened"] }, c => { controller = c })
-  await controller.guideAct("skip-practice")
+  const host = await mountGuide(3, still, { completed: ["issues.opened", "issue.opened"] }, c => {
+    controller = c
+    const guide = createGuideController({ store: c.store, commandActor: "user" } as ControllerContext)
+    spyOn(c, "runCommand").mockImplementation((name, args) => {
+      if (name === "onboarding.act") void guide.guideAct(args!)
+      return true
+    })
+  })
+  if (input === "click") host.querySelector<HTMLButtonElement>(".guide-skip")!.click()
+  else {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent("keyup", { key: "q", bubbles: true }))
+  }
   await settle()
-  expect(controller.store.session().guide?.step).toBe(GUIDE_BRIDGE)
-  expect(host.querySelector(".guide-goal")?.getAttribute("data-goal-state")).toBe("skipped")
-  expect(text(host)).toContain("Bring your own repository")
-  expect(text(host)).not.toContain("Everything you just did")
-  expect(host.querySelector('[data-message-step="4"]') !== null).toBe(true)
-  for (let step = 5; step <= 9; step++) expect(host.querySelector(`[data-message-step="${step}"]`) === null).toBe(true)
+  expect(controller.store.session().guide).toMatchObject({ step: GUIDE_LAST_STEP, finished: true, declined: ["practice"], practiceSkippedFrom: 3, conversationOpen: false })
+  expect(lessonMessage(GUIDE_LAST_STEP, controller.store.session().guide!)).toBe(lessonMessage(GUIDE_LAST_STEP, { declined: ["login"] }))
+  expect(host.querySelector(".guide-shell")).toBeNull()
+  expect(text(host)).not.toContain("Your Wiki and history will land soon")
+}, 5_000)
+
+test("Clear chat is the first focused terminal suggestion and uses the typed flow door", async () => {
+  const calls: Array<[string, string?]> = []
+  const host = await mountGuide(GUIDE_LAST_STEP, still, {}, c => {
+    spyOn(c, "runCommand").mockImplementation((name, args) => { calls.push([name, args]); return true })
+  })
+  const button = host.querySelector<HTMLButtonElement>('.guide-actions button')!
+  expect(text(button.querySelector('.guide-button-content'))).toBe("Clear chat")
+  expect(document.activeElement).toBe(button)
+  button.click()
+  expect(calls).toEqual([["chat.clear", undefined]])
 }, 5_000)
 
 
@@ -676,16 +699,16 @@ for (const declined of [[], ["login"], ["install"]]) {
     })
     expect(text(host.querySelector('[data-message-step="14"] [data-line="1"]'))).toBe(lessonMessage(14, { repo: "acme/api", declined }))
     const actions = [...host.querySelectorAll<HTMLButtonElement>('.guide-actions button')]
-    expect(actions.map(button => text(button.querySelector('.guide-button-content')))).toEqual(["Finish tutorial", "What else can you do?"])
+    expect(actions.map(button => text(button.querySelector('.guide-button-content')))).toEqual(["Clear chat", "Finish tutorial", "What else can you do?"])
     const keys = actions.map(button => button.getAttribute('aria-keyshortcuts')!)
-    expect(new Set(keys).size).toBe(2)
+    expect(new Set(keys).size).toBe(3)
     for (const key of keys) {
       expect(key).toMatch(/^[a-z]$/)
       expect(GUIDE_RESERVED_KEYS as readonly string[]).not.toContain(key)
       document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
       document.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }))
     }
-    expect(calls).toEqual([["onboarding.act", "finish"], ["tut.more", undefined]])
+    expect(calls).toEqual([["chat.clear", undefined], ["onboarding.act", "finish"], ["tut.more", undefined]])
   }, 5_000)
 }
 
@@ -880,9 +903,7 @@ test("replay keeps a persisted anonymous ceiling reply in its original playthrou
   expect(host.querySelector('.guide-transcript [data-kind="anonymous-ceiling"] [data-flow="auth.sign-in"]')).not.toBeNull()
 
   // Seed the persisted finished state, then replay through the real controller.
-  await controller.guideAct("skip-practice")
-  await controller.guideAct("decline", "login")
-  await store.dispatch({ type: "guide.changed", actor: "user", guide: { ...store.session().guide!, step: 14, finished: true } }).isPersisted.promise
+  await controller.guideAct("skip")
   await controller.guideAct("restart")
   await settle()
   expect(store.session().guide).toMatchObject({ playthrough: 2, step: 1 })

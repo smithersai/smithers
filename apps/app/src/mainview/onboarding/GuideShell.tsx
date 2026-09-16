@@ -1,5 +1,5 @@
 import { flowAction } from "../flows/FlowAction"
-import { REEL_BUTTON } from "./reel.ts"
+import { CLEAR_CHAT_BUTTON, REEL_BUTTON } from "./reel.ts"
 import { scrollToGuideRead } from "./transcriptScroll"
 import { TranscriptMessage } from "../TranscriptMessage"
 import { Button, ChatMessage } from "@smthrs/ui"
@@ -80,6 +80,8 @@ const frameIds = (card: Card | undefined): ReadonlyArray<string> => {
 export function GuideShell({ children, clock = guideClock }: { children: ReactNode; clock?: GuideClock }) {
   const controller = useController()
   const touch = useCoarsePointer()
+  const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
+  const signedIn = identities.some(identity => identity.state === "signed-in")
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const { data: messageRows } = useLiveQuery(controller.store.collections.messages)
   const cards = useCardRows(controller.store.collections.cards)
@@ -289,7 +291,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         ? [...lesson.actions, ...(lesson.secondary === undefined ? [] : [lesson.secondary])].find(candidate => candidate.key.toLowerCase() === key)
         : undefined
       if (lessonAction) return action(() => runLessonAction(lessonAction))
-      if (lesson?.kind === 'do' && lesson.practice === true && key === 'q') return action(() => runCommandGuide('skip-practice'))
+      if (lesson?.kind === 'do' && lesson.practice === true && key === 'q') return action(() => runCommandGuide('skip'))
       if (/^[1-9]$/.test(key) && lesson?.kind === 'do' && lesson.completion === 'change.opened' && picker?.kind === 'commit-pick') {
         return action(() => controller.runCommand('change.pick', key))
       }
@@ -301,6 +303,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
       if (key === 'arrowright') return action(() => runCommandGuide(guideForwardAction(stage)))
       if (key === GUIDE_KEYS.back && stage > 1) return action(() => runCommandGuide('back'))
       if (stage === GUIDE_LAST_STEP) {
+        if (key === CLEAR_CHAT_BUTTON.key) return action(() => controller.runCommand(CLEAR_CHAT_BUTTON.command))
         if (key === REEL_BUTTON.key) return action(() => controller.runCommand(REEL_BUTTON.command))
         if (key === GUIDE_KEYS.finish) return action(() => runCommandGuide('finish'))
         if (key === GUIDE_KEYS.replay) return action(() => runCommandGuide('restart'))
@@ -355,7 +358,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
         const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
         const ready = lesson !== undefined && (lesson.kind === "say" ? lesson.terminal !== true : done(stage))
         const token = `${guide.playthrough ?? 0}:${stage}`
-        const spoken = lesson?.kind === "say" ? `${lessonMessage(stage, guide, touch)} ${lesson.more ?? ""}` : ""
+        const spoken = lesson?.kind === "say" ? `${lessonMessage(stage, { ...guide, signedIn }, touch)} ${lesson.more ?? ""}` : ""
         const stopAdvance = !ready ? () => {} : scheduleGuideAdvance({
           target: lesson.kind === "say" ? document : new EventTarget(),
           clock,
@@ -398,7 +401,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
               </GuideButton>}
               {lesson?.kind === "do" && lesson.practice === true && (
                 <GuideButton className="guide-skip" shortcut="q" data-flow="onboarding.act"
-                  onClick={() => runCommandGuide("skip-practice")}>
+                  onClick={() => runCommandGuide("skip")}>
                   Skip tutorial
                 </GuideButton>
               )}
@@ -441,7 +444,7 @@ export function GuideShell({ children, clock = guideClock }: { children: ReactNo
             }}
           >
             {GUIDE_STAGES.slice(0, stage + 1).map((asked, messageStep) => {
-              const message = lessonMessage(messageStep, guide, touch)
+              const message = lessonMessage(messageStep, { ...guide, signedIn }, touch)
               const line = lineOf(messageStep)
               const words = (text: string, from = 0) => text.split(" ").map((word, index, all) => {
                 const pauses = all.slice(0, index).filter(part => /[.!?]$/.test(part)).length

@@ -52,7 +52,8 @@ test("declined installation and login do not create history for skipped lessons"
   expect(lessonVisible(12, { declined: ["login"] })).toBe(false)
   expect(lessonVisible(12, { declined: ["install"] })).toBe(false)
   expect(lessonVisible(13, { declined: ["login"] })).toBe(true)
-  expect(lessonMessage(10, { declined: ["practice"] })).not.toContain("Everything you just did")
+  expect(lessonMessage(14, { declined: ["practice"] })).toBe(lessonMessage(14, { declined: ["login"] }))
+  expect(lessonMessage(14, { declined: ["practice"], signedIn: true })).toBe(lessonMessage(14, { declined: ["background"] }))
 })
 
 

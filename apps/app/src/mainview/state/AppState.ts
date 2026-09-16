@@ -674,14 +674,14 @@ export const GuideSchema = z.object({
    * Onboarding SCRIPT v4 (onboarding/lessons.ts). All optional so a guide
    * row written before them stays readable.
    *   said:     the producer's success line per signal ("Signed in as @ada.")
-   *   declined: the escape hatches taken (Skip practice, Not now, Later)
+   *   declined: the escape hatches taken (Skip tutorial, Not now, Later)
    *   repo:     the user's repository once the GitHub App is installed
    *   pick:     the commit picker's last checked set, restored by Back
    *   notice:   why the current beat could not finish ("Nothing came back from GitHub.")
    */
   said: z.record(z.string(), z.string()).optional(),
   declined: z.array(z.enum(["practice", "login", "install", "background"])).optional(),
-  /** Exact departure for Skip practice, including a skip after Back. */
+  /** Exact departure for Skip tutorial, including a skip after Back. */
   practiceSkippedFrom: z.number().int().min(1).max(9).optional(),
   repo: z.string().optional(),
   pick: z.array(z.number().int().positive()).optional(),

@@ -120,25 +120,28 @@ export const GUIDE_LESSONS = GUIDE_STAGES.map(stage => stage.message)
 export const GUIDE_LAST_STEP = GUIDE_STAGES.length - 1
 /** The last practice beat; the goal card shows through here. */
 export const GUIDE_PRACTICE_END = 9
-/** Where "Skip practice" and a finished practice land: the bridge. */
+/** Where completed practice lands: the repository bridge. */
 export const GUIDE_BRIDGE = 10
 /** Global controls and Vim navigation cannot be assigned to lesson actions. */
 export const GUIDE_RESERVED_KEYS = ["s", "c", "m", "h", "j", "k", "l", "b", "w", "n", "q"] as const
 
 type GuideContext = Pick<GuideState, "repo" | "playthrough" | "librarianLaunches"> & {
-  readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number
+  readonly signedIn?: boolean; readonly declined?: ReadonlyArray<string>; readonly completed?: ReadonlyArray<string>; readonly step?: number
 }
 /** `{repo}` becomes the user's repository; the terminal line follows the escape hatch taken. */
 export const lessonText = (text: string, guide: GuideContext): string => text.replaceAll("{repo}", guide.repo ?? "your repository")
 export const lessonMessage = (step: number, guide: GuideContext, touch = false): string => {
   const lesson = GUIDE_STAGES[step]
   if (lesson === undefined) return ""
-  if (step === GUIDE_BRIDGE && guide.declined?.includes("practice")) return "Bring your own repository to Smithers. First, log in to GitHub."
   if (lesson.kind === "do" && lesson.completion === "palette.opened" && guide.declined?.includes("login")) {
     return (touch ? "Tap Chat" : "Press C") + " to explore Chat and commands. Sign in from Account to send a message. You can finish this tutorial without sending anything.\n\n"
       + (touch ? "Tap Mode" : "Press M") + " to choose Normal, Vim, or Dictation mode. Dictation starts when you next open Chat; review the text before sending."
   }
   if (lesson.kind === "say" && lesson.variants !== undefined) {
+    if (guide.declined?.includes("practice")) {
+      if (!guide.signedIn) return lesson.variants.login
+      if (!(["wiki", "history"] as const).some(kind => librarianLaunchFor(guide, kind)?.phase === "started")) return lessonText(lesson.variants.background, guide)
+    }
     if (guide.declined?.includes("login")) return lesson.variants.login
     if (guide.declined?.includes("install")) return lesson.variants.install
     if (guide.declined?.includes("background") || (["wiki", "history"] as const).some(kind => librarianLaunchFor(guide, kind)?.phase === "failed")) return lessonText(lesson.variants.background, guide)

@@ -24,9 +24,8 @@ test("a committed native reply survives lost delivery and browser reload without
   })
   await page.goto("/")
   await page.getByRole("button", { name: "Skip tutorial", exact: true }).click()
-  await page.getByRole("button", { name: "Not now", exact: true }).click()
-  await page.getByRole("button", { name: "Finish tutorial", exact: true }).click()
-  await expect(page.getByRole("button", { name: "Finish tutorial", exact: true })).toHaveCount(0)
+  await expect(page.locator('.guide-shell')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Skip tutorial', exact: true })).toHaveCount(0)
   await page.getByRole("button", { name: "Chat", exact: true }).click()
   const prompt = "recover this accepted reply"
   const input = page.getByTestId("composer-input")

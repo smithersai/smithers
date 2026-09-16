@@ -165,15 +165,6 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         }
         break
       }
-      case "skip-practice": {
-        const stage = GUIDE_STAGES[guide.step]
-        if (stage?.kind !== "do" || stage.practice !== true) return "Skip tutorial is offered on the practice lessons."
-        guide.declined = [...new Set([...(guide.declined ?? []), "practice" as const])]
-        guide.practiceSkippedFrom = guide.step
-        guide.autoPaused = false
-        guide.step = GUIDE_BRIDGE
-        break
-      }
       case "decline": {
         // "Not now" at login, "Later" at install: the ⌘K lesson still runs, and the terminal line says where to pick up.
         const stage = GUIDE_STAGES[guide.step]
@@ -285,7 +276,15 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
         await ctx.store.dispatch({ type: "theme.changed", actor: ctx.commandActor === "smithers" ? "system" : ctx.commandActor, theme: flipped }).isPersisted.promise
         break
       }
+      case "skip":
       case "finish": {
+        if (action === "skip") {
+          const stage = GUIDE_STAGES[guide.step]
+          if (stage?.kind !== "do" || stage.practice !== true) return "Skip tutorial is offered on the practice lessons."
+          guide.declined = [...new Set([...(guide.declined ?? []), "practice" as const])]
+          guide.practiceSkippedFrom = guide.step
+          guide.autoPaused = false
+        }
         const refusal = await finish()
         if (refusal) return refusal
         guide.finished = true
@@ -303,7 +302,7 @@ export function createGuideController(ctx: ControllerContext, onStart?: () => Pr
     // The receipt may settle after shutdown began. It never grants a closed
     // controller permission to launch the next repository read or navigation.
     if (ctx.disposed) return
-    if (action === "finish") onFinished?.()
+    if (action === "finish" || action === "skip") onFinished?.()
     if (action === "start" || action === "restart") {
       await onStart?.()
     }

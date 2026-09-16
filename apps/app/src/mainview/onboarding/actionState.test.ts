@@ -32,7 +32,7 @@ test("a known quota refusal offers continuation until its deadline, then an expl
   const rejected = card("failed", 0, "Daily practice limit")
   if (rejected.kind !== "run-trace") throw Error("run fixture")
   rejected.payload.input = { ...rejected.payload.input, liveTutorialLimit: { kind: "rate-limit", retryAt: Date.now() + 60_000 } }
-  expect(guideActionState(action, [rejected], initialGuide())).toMatchObject({ label: "Continue without practice", flow: "onboarding.act", args: "skip-practice" })
+  expect(guideActionState(action, [rejected], initialGuide())).toMatchObject({ label: "Continue without practice", flow: "onboarding.act", args: "skip" })
   expect(guideActionState(action, [rejected], { ...initialGuide(), playthrough: 1 })).toEqual(action)
   rejected.payload.input.liveTutorialLimit = { kind: "rate-limit", retryAt: Date.now() - 1 }
   expect(guideActionState(action, [rejected], initialGuide())).toMatchObject({ label: "Retry repro", flow: "tutorial.live.retry", args: "research" })

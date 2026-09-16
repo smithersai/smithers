@@ -62,7 +62,7 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
     </ol>}
     {limit && <p className="live-tutorial-limit" role="status">{liveTutorialLimitMessage(limit)}</p>}
     {failure && <p className="live-tutorial-error" role="alert">{failure}</p>}
-    {inTutorial && (expired || limit) && <GuideButton className="guide-primary"  {...flowAction(onRunCommand, "onboarding.act", limit ? "skip-practice" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
+    {inTutorial && (expired || limit) && <GuideButton className="guide-primary"  {...flowAction(onRunCommand, "onboarding.act", limit ? "skip" : "restart")}>{limit ? "Continue without practice" : "Start new tutorial"}</GuideButton>}
     {!expired && !limit && (failure || run?.phase === "failed") && <button type="button" className="guide-text-button" 
       {...flowAction(onRunCommand, "tutorial.live.retry", card.id)}>{run === undefined || run.phase === "failed" ? "Retry" : "Reconnect"}</button>}
     {run?.operation === "implement" && run.phase === "completed" && !failure && <button type="button" className="guide-primary" 

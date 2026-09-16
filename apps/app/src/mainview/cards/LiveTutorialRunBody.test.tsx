@@ -103,7 +103,7 @@ test("a quota refusal explains that nothing started and offers the existing skip
     expect(workflowCardFamily["run-trace"].pill(card)).toBe("paused")
     expect(host.textContent).toContain("nothing was charged")
     button.click()
-    expect(calls).toEqual([["onboarding.act", "skip-practice"]])
+    expect(calls).toEqual([["onboarding.act", "skip"]])
     card.payload.input.liveTutorialLimit = { kind: "rate-limit", retryAt: Date.now() - 1 }
     flushSync(() => root.render(<LiveTutorialRunBody card={card} onRunCommand={() => {}} />))
     expect(host.querySelector('[data-flow="tutorial.live.retry"]')?.textContent).toBe("Retry")

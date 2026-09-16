@@ -5,7 +5,7 @@ import { useController } from "../ControllerContext"
 import { guideClock, type GuideClock } from "./advance"
 import { GuideButton, GUIDE_KEYS } from "./GuideButton"
 import { GUIDE_LAST_STEP } from "./lessons"
-import { FINISH_BUTTON, REEL_BUTTON, REEL_STAGES, dispatchReelDemo, playReelChime, scheduleReel, type ReelDispatch, type ReelState } from "./reel.ts"
+import { CLEAR_CHAT_BUTTON, FINISH_BUTTON, REEL_BUTTON, REEL_STAGES, dispatchReelDemo, playReelChime, scheduleReel, type ReelDispatch, type ReelState } from "./reel.ts"
 
 /** Standalone projection: the parent supplies durable state and the shared dispatcher. */
 export function Reel({ index, epoch = 0, demo, dispatch, playSound = playReelChime }: {
@@ -48,14 +48,14 @@ export function ReelShell({ clock = guideClock, actions = false }: { clock?: Gui
   }, [controller])
   const launchRef = useCallback((node: HTMLButtonElement | null) => {
     if (!node) return
-    if (guide?.reelSeen) node.focus({ preventScroll: true })
-
-  }, [controller, guide?.reelSeen])
+    node.focus({ preventScroll: true })
+  }, [])
   if (guide?.step !== GUIDE_LAST_STEP) return null
   if (guide.reelIndex !== undefined) return actions ? null : <Reel index={guide.reelIndex} epoch={guide.reelEpoch} demo={guide.reelDemo} dispatch={dispatch} clock={clock} />
   if (!actions) return null
-  return <><GuideButton tabIndex={0} className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>{FINISH_BUTTON.label}</GuideButton>
-  <GuideButton tabIndex={0} ref={launchRef} className="guide-primary"  shortcut={REEL_BUTTON.key} {...flowAction(controller.runCommand, REEL_BUTTON.command)}>
+  return <><GuideButton tabIndex={0} ref={launchRef} className="guide-primary" shortcut={CLEAR_CHAT_BUTTON.key} {...flowAction(controller.runCommand, CLEAR_CHAT_BUTTON.command)}>{CLEAR_CHAT_BUTTON.label}</GuideButton>
+  <GuideButton tabIndex={0} className="guide-primary" data-flow="onboarding.act" shortcut={GUIDE_KEYS.finish} onClick={() => dispatch("finish")}>{FINISH_BUTTON.label}</GuideButton>
+  <GuideButton tabIndex={0} className="guide-primary"  shortcut={REEL_BUTTON.key} {...flowAction(controller.runCommand, REEL_BUTTON.command)}>
     {REEL_BUTTON.label}
   </GuideButton></>
 }
