@@ -1788,6 +1788,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
 
         case "command.deferred":
           collections.sessions.update(SESSION_ID, (draft) => {
+            if (transition.repositoryRetry !== undefined) draft.repositoryEntry = { ...transition.repositoryRetry, phase: "pending" }
             draft.pendingCommand = {
               name: transition.name,
               args: transition.args,

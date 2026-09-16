@@ -210,11 +210,17 @@ describe("auth is a conversation state — the chat is the only page", () => {
     test(`signed out at /${repo}/ names the requested path and links the available roster`, async () => {
       window.history.replaceState(null, "", `/${repo}/`)
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const http = backend({
+        "/api/auth/session": json(401, { status: "error" }),
+        "/api/auth/scopes": json(200, { scopes: [] }),
+        "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] })
+      })
       const controller = createAppController(store, unavailableRepositories, silentAgent, {
         bootstrap: WEB,
-        ...backend({ "/api/auth/session": json(401, { status: "error" }), "/api/auth/scopes": json(200, { scopes: [] }) })
+        ...http
       })
       await controller.loadSession()
+      await openRequestedRepo(controller, http.fetchImpl, repo)
       if (repo === "cached/selection") {
         store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{
           id: "smithersai/smithers", org: "smithersai", ownerKind: "user", name: "smithers", head: null, catalog: true
@@ -231,6 +237,37 @@ describe("auth is a conversation state — the chat is the only page", () => {
       if (repo !== "cached/selection") expect(controller.commands.state().publicRepo).toBe(false)
     })
   }
+
+  test("a URL projects pending, unavailable and runtime-public catalog receipts without a false sign-in notice", async () => {
+    window.history.replaceState(null, "", "/alpha/one/")
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      bootstrap: WEB,
+      ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) })
+    })
+    await controller.loadSession()
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "catalog", repo: "alpha/one", phase: "pending" } })
+    await settled()
+    const { host } = mount(controller)
+    expect(host.querySelector(".smithers-chat-message")).toBeNull()
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
+      requestId: "catalog", repo: "alpha/one", phase: "failed", failureKind: "unavailable", error: "The public repository catalog answered HTTP 503."
+    } })
+    await settled()
+    expect(host.querySelector(".smithers-chat-message")?.textContent).toContain("The public repository catalog answered HTTP 503.")
+    expect(host.querySelector(".smithers-chat-message .message-cta")).toBeNull()
+    expect(host.textContent).not.toContain("isn't on Smithers yet")
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "retry", repo: "alpha/one", phase: "pending" } })
+    await settled()
+    expect(host.querySelector(".smithers-chat-message")).toBeNull()
+    store.dispatch({ type: "repository.upserted", actor: "system", repository: {
+      id: "alpha/one", org: "alpha", name: "one", ownerKind: "user", head: null, catalog: true
+    } })
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "retry", repo: "alpha/one", phase: "ready" } })
+    await settled()
+    expect(host.querySelector(".smithers-chat-message")).toBeNull()
+    expect(host.querySelector('[data-repository-missing]')).toBeNull()
+  })
 
   for (const savedSignIn of [false, true]) {
     test(`an unknown repository boot shows its notice after a persisted repository selection (saved sign-in: ${savedSignIn})`, async () => {

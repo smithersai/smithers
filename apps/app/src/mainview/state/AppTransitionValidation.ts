@@ -97,7 +97,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "palette.toggled": z.object({ "type": z.literal("palette.toggled"), "actor": z.enum(["user", "system"]), "open": z.boolean(), "lastQuery": z.string().optional() }).strict(),
   "palette.actions.toggled": z.object({ "type": z.literal("palette.actions.toggled"), "actor": z.literal("user"), "ref": z.union([z.string(), z.null()]) }).strict(),
   "palette.item.opened": z.object({ "type": z.literal("palette.item.opened"), "actor": z.literal("user"), "ref": z.string(), "kind": z.string(), "at": z.number().finite() }).strict(),
-  "command.deferred": z.object({ "type": z.literal("command.deferred"), "actor": z.literal("user"), "name": z.string(), "args": z.union([z.string(), z.null()]), "requirement": z.string() }).strict(),
+  "command.deferred": z.object({ "type": z.literal("command.deferred"), "actor": z.literal("user"), "name": z.string(), "args": z.union([z.string(), z.null()]), "requirement": z.string(), repositoryRetry: z.object({ requestId: z.string(), repo: z.string() }).strict().optional() }).strict(),
   "command.deferral.cleared": z.object({ "type": z.literal("command.deferral.cleared"), "actor": z.literal("system") }).strict(),
   "command.ran": z.object({ "type": z.literal("command.ran"), "actor": z.literal("user"), "name": z.string() }).strict(),
   "toolcall.recorded": z.object({ "type": z.literal("toolcall.recorded"), "actor": z.literal("smithers"), "turnId": z.string(), "name": z.string(), "arguments": z.string(), "result": z.string() }).strict(),

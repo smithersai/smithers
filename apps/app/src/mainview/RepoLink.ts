@@ -153,16 +153,20 @@ export const beginRepositoryEntry = (store: AppStore, requested: string | null):
  * opens its root in the sidebar on this first paint, and the mirror's
  * default bookmark lands on the row so the copy names it. Returns the
  * refusal when the request could not be honoured.
+ * A command retry can resolve admission without activating the repository;
+ * its caller also supplies the account/selection ownership check.
  */
 export const openRequestedRepo = async (
   controller: Pick<AppController, "store" | "selectRepo" | "runCommand" | "loadRepositories">,
   http: FetchLike,
   requested: string,
   requestId = beginRepositoryEntry(controller.store, requested)!,
-  viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth
+  viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth,
+  options: { readonly activate?: boolean; readonly isCurrent?: () => boolean } = {}
 ): Promise<string | void> => {
-  const current = () => controller.store.session().repositoryEntry?.requestId === requestId
+  const current = () => controller.store.session().repositoryEntry?.requestId === requestId && (options.isCurrent?.() ?? true)
   const finish = (error?: string, failureKind: "unavailable" | "not-public" = "unavailable"): string | void => {
+    if (!current()) return
     controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
       requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind })
     } })
@@ -187,6 +191,7 @@ export const openRequestedRepo = async (
       if (!current()) return
       const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
       if (failure === undefined && own !== undefined) {
+        if (options.activate === false) return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         return finish(refusal === undefined ? undefined : refusal)
       }
@@ -209,6 +214,7 @@ export const openRequestedRepo = async (
       repository: { ...existing, ...repository, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
+  if (options.activate === false) return finish()
   const refusal = await controller.selectRepo(selectionForRepo(controller, repository.id))
   if (!current()) return
   if (refusal !== undefined) return finish(refusal)

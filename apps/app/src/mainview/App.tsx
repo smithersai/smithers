@@ -100,7 +100,8 @@ function AppContent() {
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,
       verbose: session.verbose,
-      activeRepoKey: session.activeRepoKey
+      activeRepoKey: session.activeRepoKey,
+      repositoryEntry: session.repositoryEntry
     }))
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
@@ -213,14 +214,29 @@ function AppContent() {
    */
   const cloudHost = controller.bootstrap?.host === "cloud"
   const bootRepository = useMemo(() => typeof window === "undefined" ? null : pathRepo(window.location.pathname), [])
-  const missingBootRepository = bootRepository !== null && !AVAILABLE_REPOS.some((repo) => repo.name.toLowerCase() === bootRepository.toLowerCase())
+  // The catalog receipt owns admission. A build-time roster cannot classify a
+  // pending/failed request, or reject a repository added since this build.
+  const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
+    ? session.repositoryEntry : undefined
+  const bootPending = bootRepository !== null && (bootEntry === undefined || bootEntry.phase === "pending")
+  const bootUnavailable = bootEntry?.phase === "failed" && bootEntry.failureKind !== "not-public"
+  const missingBootRepository = bootEntry?.phase === "failed" && bootEntry.failureKind === "not-public"
     ? bootRepository : null
   const exploringRepo = identity?.state === "signed-out" && cloudHost
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && cloudHost
   const authMessage: Message | undefined = isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
-    ? repositoryNotice || (exploringRepo === null && !messages.some(message => message.action?.flow === "auth.sign-in"))
+    ? bootPending ? undefined : bootUnavailable
+      ? {
+        id: "repository-state",
+        role: "smithers",
+        text: bootEntry.error ?? "The public repository catalog could not be read.",
+        status: "complete",
+        createdAt: 0,
+        ordinal: 0
+      }
+      : repositoryNotice || (bootEntry?.phase !== "ready" && exploringRepo === null && !messages.some(message => message.action?.flow === "auth.sign-in"))
       ? {
         id: "auth-state",
         role: "smithers",

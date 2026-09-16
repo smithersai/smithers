@@ -1255,6 +1255,8 @@ export type AppTransition =
     name: string
     args: string | null
     requirement: string
+    /** A user retry admits the request and replaces the failed catalog entry atomically. */
+    repositoryRetry?: { requestId: string; repo: string }
   }
   | {
     /* The deferred command resumed (or went stale) — the parking spot clears. */

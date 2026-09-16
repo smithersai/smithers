@@ -2,7 +2,11 @@ import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED, type FailureController } from "./failures"
 
 /** A catalog wait is admission, not authorization. The registry rechecks the bound payload after it settles. */
-export const createRepositoryReadiness = (ctx: ControllerContext, surfaceCommandFailure: FailureController["surfaceCommandFailure"]) => {
+export const createRepositoryReadiness = (
+  ctx: ControllerContext,
+  surfaceCommandFailure: FailureController["surfaceCommandFailure"],
+  refresh: (repo: string, requestId: string, isCurrent: () => boolean) => Promise<string | void>
+) => {
   const pending = () => ctx.store.session().pendingCommand
   const accountOwner = () => {
     const identity = ctx.store.collections.identitySessions.get("identity")
@@ -62,18 +66,38 @@ export const createRepositoryReadiness = (ctx: ControllerContext, surfaceCommand
   ctx.onDispose(() => { subscription.unsubscribe(); for (const wake of [...wakeups]) wake(); wakeups.clear() })
   return {
     resume,
-    defer: async (name: string, payload: Record<string, unknown>): Promise<void> => {
+    defer: async (name: string, payload: Record<string, unknown>, retry = false): Promise<void> => {
       const args = JSON.stringify(payload)
       const signature = JSON.stringify([name, args])
       const old = pending()
-      if (old?.requirement !== "repository-ready" || old.name !== name || old.args !== args) {
-        const saving = ctx.store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement: "repository-ready" }).isPersisted.promise
+      const entry = ctx.store.session().repositoryEntry
+      const repositoryRetry = retry && entry?.phase === "failed" && entry.failureKind !== "not-public" &&
+        typeof payload.repo === "string" && entry.repo.toLowerCase() === payload.repo.toLowerCase()
+        ? { repo: entry.repo, requestId: crypto.randomUUID() } : undefined
+      const epoch = ctx.accountEpoch
+      const owner = accountOwner()
+      const selection = ctx.store.session().activeRepoKey
+      if (repositoryRetry !== undefined || old?.requirement !== "repository-ready" || old.name !== name || old.args !== args) {
+        const saving = ctx.store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement: "repository-ready", ...(repositoryRetry === undefined ? {} : { repositoryRetry }) }).isPersisted.promise
         persisting.set(signature, saving)
         try { await saving } finally { if (persisting.get(signature) === saving) persisting.delete(signature) }
       } else {
         await persisting.get(signature)
       }
       resume()
+      if (repositoryRetry !== undefined) {
+        const stillOwned = () => !ctx.disposed && accountOwner() === owner && ctx.store.session().repositoryEntry?.requestId === repositoryRetry.requestId
+        const current = () => stillOwned() && ctx.accountEpoch === epoch && ctx.store.session().activeRepoKey === selection
+        const fail = (error: string) => {
+          if (stillOwned() && ctx.store.session().repositoryEntry?.phase === "pending") ctx.store.dispatch({
+            type: "repository.entry.changed", actor: "system", entry: { ...repositoryRetry, phase: "failed", failureKind: "unavailable", error }
+          })
+        }
+        if (!current()) { fail("The repository request changed. Run the command again."); return }
+        void refresh(repositoryRetry.repo, repositoryRetry.requestId, current)
+          .catch(() => { fail("The public repository catalog could not be read.") })
+          .finally(() => { if (!current()) fail("The repository request changed. Run the command again.") })
+      }
     }
   }
 }

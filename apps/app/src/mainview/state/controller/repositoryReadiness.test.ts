@@ -241,3 +241,115 @@ test("duplicate acknowledgment waits for the shared durable request commit", asy
     expect(await second).toMatchObject({ status: "executed", value: "Requested" })
   } finally { release(); spy.mockRestore(); await h.close() }
 })
+
+const catalogFailed = async (store: Awaited<ReturnType<typeof setup>>["store"]) => {
+  await store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { ...store.session().repositoryEntry!, phase: "failed", failureKind: "unavailable", error: "Catalog unavailable" } }).isPersisted.promise
+}
+
+test("a fresh command refreshes a failed catalog once without changing selection", async () => {
+  let release!: (response: Response) => void
+  const catalog = new Promise<Response>(resolve => release = resolve)
+  let refreshes = 0
+  const reads: string[] = []
+  const h = await setup(undefined, async input => {
+    if (String(input) === "/api/public/repos") { refreshes++; return catalog }
+    reads.push(String(input)); return json(200, [])
+  })
+  try {
+    await catalogFailed(h.store)
+    await h.store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "beta/two", org: "beta", name: "two", ownerKind: "user", head: null, catalog: true } }).isPersisted.promise
+    await h.store.dispatch({ type: "repo.selected", actor: "user", id: "beta/two" }).isPersisted.promise
+    expect(await h.controller.commands.run("files.list", `/${repo}/docs`)).toMatchObject({ status: "executed", value: "Requested" })
+    await h.controller.commands.run("files.list", `/${repo}/docs`)
+    expect(refreshes).toBe(1)
+    expect(reads).toEqual([])
+    expect(h.store.session().repositoryEntry?.phase).toBe("pending")
+    expect([...h.store.collections.messages.values()].some(m => m.action?.flow === "auth.sign-in")).toBe(false)
+    h.controller.changeDraft("usable during refresh")
+    expect(h.store.session().draft).toBe("usable during refresh")
+    release(json(200, { repos: [{ name: repo }] }))
+    await until(() => h.store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
+    expect(reads).toEqual([`/api/repos/${repo}/contents/docs`])
+    expect(h.store.session().activeRepoKey).toBe("beta/two")
+    expect(h.store.session().sidebarOpen).not.toBe(true)
+  } finally { release(json(200, { repos: [] })); await h.close() }
+})
+
+test("a failed refresh stays honest and the next user retry can succeed without reload", async () => {
+  let refreshes = 0
+  const h = await setup(undefined, async input => String(input) === "/api/public/repos"
+    ? ++refreshes === 1 ? json(503, {}) : json(200, { repos: [{ name: repo }] })
+    : json(200, []))
+  try {
+    await catalogFailed(h.store)
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    await until(() => h.store.session().repositoryEntry?.phase === "failed" && h.store.session().pendingCommand == null)
+    expect(h.store.session().repositoryEntry?.error).toContain("HTTP 503")
+    expect([...h.store.collections.messages.values()].some(m => m.action?.flow === "auth.sign-in")).toBe(false)
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    await until(() => h.store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
+    expect(refreshes).toBe(2)
+  } finally { await h.close() }
+})
+
+test("a retry resolving to not-public renders the sign-in gate and never loops the catalog", async () => {
+  let refreshes = 0
+  const h = await setup(undefined, async input => { if (String(input) === "/api/public/repos") refreshes++; return json(200, { repos: [] }) })
+  try {
+    await h.ready()
+    await catalogFailed(h.store)
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    await until(() => h.store.session().pendingCommand?.requirement === "repo-source")
+    expect(h.store.session().repositoryEntry?.failureKind).toBe("not-public")
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    expect(refreshes).toBe(1)
+    expect([...h.store.collections.messages.values()].some(m => m.action?.flow === "auth.sign-in")).toBe(true)
+  } finally { await h.close() }
+})
+
+for (const scope of ["account", "selection", "entry"] as const) {
+  test(`a stale refreshed catalog cannot cross ${scope} ownership`, async () => {
+    let release!: (response: Response) => void
+    const catalog = new Promise<Response>(resolve => release = resolve)
+    const reads: string[] = []
+    const h = await setup(undefined, async input => { if (String(input) === "/api/public/repos") return catalog; reads.push(String(input)); return json(200, []) })
+    try {
+      await catalogFailed(h.store)
+      await h.controller.commands.run("files.list", `docs ${repo}`)
+      if (scope === "account") await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      if (scope === "selection") await h.store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" }).isPersisted.promise
+      if (scope === "entry") beginRepositoryEntry(h.store, "beta/two")
+      release(json(200, { repos: [{ name: repo }] }))
+      await pause(50)
+      expect(reads.filter(path => path.includes("contents/docs"))).toEqual([])
+      expect(h.store.collections.repositories.get(repo)).toBeUndefined()
+      if (scope === "selection") expect(h.store.session().activeRepoKey).toBe("practice:smithersai/hello-server")
+      if (scope === "entry") expect(h.store.session().repositoryEntry?.repo).toBe("beta/two")
+    } finally { release(json(200, { repos: [] })); await h.close() }
+  })
+}
+
+test("refresh launch waits for the atomic retry admission commit", async () => {
+  let requests = 0
+  const h = await setup(undefined, async () => { requests++; return json(200, { repos: [] }) })
+  let release!: () => void
+  const gate = new Promise<void>(resolve => release = resolve)
+  await catalogFailed(h.store)
+  const dispatch = h.store.dispatch.bind(h.store)
+  const spy = spyOn(h.store, "dispatch").mockImplementation(transition => {
+    const result = dispatch(transition)
+    if (transition.type !== "command.deferred" || transition.repositoryRetry === undefined) return result
+    const persisted = { ...result.isPersisted, promise: gate.then(() => result.isPersisted.promise) }
+    return new Proxy(result, { get: (target, key, receiver) => key === "isPersisted" ? persisted : Reflect.get(target, key, receiver) })
+  })
+  try {
+    const command = h.controller.commands.run("files.list", `docs ${repo}`)
+    await until(() => h.store.session().repositoryEntry?.phase === "pending")
+    await pause(20)
+    expect(requests).toBe(0)
+    expect(h.store.session().pendingCommand?.requirement).toBe("repository-ready")
+    release()
+    expect(await command).toMatchObject({ status: "executed", value: "Requested" })
+    await until(() => requests === 1)
+  } finally { release(); spy.mockRestore(); await h.close() }
+})

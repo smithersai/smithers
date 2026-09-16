@@ -1,4 +1,5 @@
 import { createRepositoryReadiness } from "./controller/repositoryReadiness"
+import { openRequestedRepo } from "../RepoLink"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
@@ -442,7 +443,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * SATISFY a requirement calls resumeDeferredCommand after it settles.
    */
   readonly deferCommand: (name: string, args: string | null, requirement: string) => void
-  readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>) => Promise<void>
+  readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>, retry?: boolean) => Promise<void>
   readonly resumeDeferredCommand: () => void
   /** Record a visible command run for the slash menu's recency ranking. */
   readonly noteCommandRun: (name: string) => void
@@ -1169,7 +1170,9 @@ export const createAppController = (
    * the session row because sign-in is a
    * full OAuth redirect. One parking spot, latest wins.
    */
-  const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure)
+  const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure, (repo, requestId, isCurrent) =>
+    openRequestedRepo({ store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: (name, args) => runCommand(name, args) },
+      ctx.http, repo, requestId, 0, { activate: false, isCurrent }))
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
     // The fulfilling prompt owns the answer. Parking survives OAuth silently.
@@ -1768,11 +1771,15 @@ export const createAppController = (
         path.toLowerCase() === `/${requestedRepo.toLowerCase()}` || path.toLowerCase().startsWith(`/${requestedRepo.toLowerCase()}/`)
       ) ? requestedRepo : undefined
       const explicitRepo = repo ?? globalRepo
-      const repositoryPending = entry?.phase === "pending" && (
+      const needsCatalog = entry?.phase === "pending" || (entry?.phase === "failed" && entry.failureKind !== "not-public")
+      const repositoryReadiness = entry !== undefined && entry !== null && needsCatalog && (
         explicitRepo === undefined || explicitRepo.toLowerCase() === entry.repo.toLowerCase()
-      ) ? entry.repo : undefined
+      ) ? { repo: entry.repo, phase: entry.phase === "pending" ? "pending" as const : "unavailable" as const, error: entry.error } : undefined
+      const catalogRefused = entry?.phase === "failed" && entry.failureKind === "not-public" && (
+        requestedRepo === undefined || requestedRepo.toLowerCase() === entry.repo.toLowerCase()
+      )
       return {
-        repositoryPending,
+        repositoryReadiness,
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
@@ -1791,9 +1798,9 @@ export const createAppController = (
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
-        publicRepo: requestedRepo === undefined
+        publicRepo: !catalogRefused && (requestedRepo === undefined
           ? activeCatalogRepositoryId(store) !== null
-          : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase()),
+          : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())),
         recent: store.session().recentCommands ?? [],
         identity: identity === undefined
           ? "unknown"
