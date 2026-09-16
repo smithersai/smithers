@@ -635,6 +635,7 @@ export const RepositoryEntrySchema = z.object({
   requestId: z.string(),
   repo: z.string(),
   phase: z.enum(["pending", "ready", "failed"]),
+  failureKind: z.enum(["unavailable", "not-public"]).optional(),
   error: z.string().optional()
 })
 export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>

@@ -523,7 +523,21 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * flow aimed at the bundled practice key skips its identity gates, and
      * only that key does — every other target keeps them.
      */
-    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, actions.snapshot(repo, sourcePath), flowRequirements)[0]
+    const snapshot = actions.snapshot(repo, sourcePath)
+    const pendingPayload = "payload" in parsed ? parsed.payload : !args?.trim() ? {} : undefined
+    if (!namesPractice(args) && target.metadata.requires?.includes("repo-source") && snapshot.repositoryPending && pendingPayload !== undefined) {
+      if (invoker !== "user") return { status: "failed", error: "The repository is still loading. Try again when it is ready." }
+      const prefix = `/${snapshot.repositoryPending}`
+      const globalPath = repo === undefined && sourcePath !== undefined && (sourcePath.toLowerCase() === prefix.toLowerCase() || sourcePath.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
+      await actions.deferRepositoryCommand(nameOf(target), {
+        ...pendingPayload,
+        ...(globalPath ? { path: sourcePath!.slice(prefix.length).replace(/^\/+/, "") } : {}),
+        repo: repo ?? snapshot.repositoryPending
+      })
+      trace(invoker, name, args, startedAt, "deferred", "waits on repository catalog")
+      return { status: "executed", value: "Requested" }
+    }
+    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, snapshot, flowRequirements)[0]
     if (unmet !== undefined) {
       if (invoker === "agent") {
         /*

@@ -587,12 +587,16 @@ describe("files seam — a repository open in the local app", () => {
     expect(listCard(store, "files-repo-smithers-node_modules")?.payload.entries).toHaveLength(1000)
   })
 
-  test("the repository's owner/repo name or folder name routes locally; any other name is still a Cloud read", async () => {
+  test("local names route locally; other targets retain their Cloud sign-in requirement", async () => {
     const { store, controller, requests } = await localController([SMITHERS])
     expect((await controller.commands.run("files.read", "README.md smithersai/smithers")).status).toBe("executed")
     expect((await controller.commands.run("files.read", "README.md smithers")).status).toBe("executed")
     expect(requests.filter((request) => request.url === "/api/repo/files")).toHaveLength(2)
     expect(fileCard(store, "file-repo-smithers-README.md")?.payload.content).toBe("# Local — hi\n")
+    await controller.commands.run("files.read", "README.md will/flows")
+    expect(store.session().pendingCommand?.requirement).toBe("repo-source")
+    expect(requests.some((request) => request.url.includes("/api/repos/will/flows/contents/README.md"))).toBe(false)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     const cloud = await controller.commands.run("files.read", "README.md will/flows")
     expect(cloud.status).toBe("failed")
     expect(requests.some((request) => request.url.includes("/api/repos/will/flows/contents/README.md"))).toBe(true)

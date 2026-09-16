@@ -162,9 +162,9 @@ export const openRequestedRepo = async (
   viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth
 ): Promise<string | void> => {
   const current = () => controller.store.session().repositoryEntry?.requestId === requestId
-  const finish = (error?: string): string | void => {
+  const finish = (error?: string, failureKind: "unavailable" | "not-public" = "unavailable"): string | void => {
     controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
-      requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error })
+      requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind })
     } })
     return error
   }
@@ -177,6 +177,7 @@ export const openRequestedRepo = async (
     return finish(`The public repository catalog could not be read: ${cause instanceof Error ? cause.message : String(cause)}`)
   }
   if (!current()) return
+  if (typeof catalog !== "object" || catalog === null || !Array.isArray((catalog as { repos?: unknown }).repos)) return finish("The public repository catalog could not be read.")
   const repository = catalogRepository(catalog, requested)
   if (repository === null) {
     // A URL grants no access. A signed-in user's inventory is the authority
@@ -191,7 +192,7 @@ export const openRequestedRepo = async (
       }
     }
     // App's route welcome names this path and owns its sign-in door.
-    return finish(`${requested} is not in the public repository catalog.`)
+    return finish(`${requested} is not in the public repository catalog.`, "not-public")
   }
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)

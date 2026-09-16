@@ -347,6 +347,8 @@ export interface CommandState {
   readonly hasOpenRepos?: boolean
   /** The selected repository came from the public catalog: readable signed out. Optional like hasOpenRepos. */
   readonly publicRepo?: boolean
+  /** URL repository whose authoritative catalog read is still pending. */
+  readonly repositoryPending?: string
   /**
    * The user's recently run commands, most recent first (session
    * recentCommands). Optional so state fixtures stay minimal; missing = [].

@@ -1,3 +1,4 @@
+import { createRepositoryReadiness } from "./controller/repositoryReadiness"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
@@ -441,6 +442,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * SATISFY a requirement calls resumeDeferredCommand after it settles.
    */
   readonly deferCommand: (name: string, args: string | null, requirement: string) => void
+  readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>) => Promise<void>
   readonly resumeDeferredCommand: () => void
   /** Record a visible command run for the slash menu's recency ranking. */
   readonly noteCommandRun: (name: string) => void
@@ -1167,6 +1169,7 @@ export const createAppController = (
    * the session row because sign-in is a
    * full OAuth redirect. One parking spot, latest wins.
    */
+  const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure)
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
     // The fulfilling prompt owns the answer. Parking survives OAuth silently.
@@ -1389,7 +1392,7 @@ export const createAppController = (
 
   const resumeDeferredCommand = (): void => {
     const pending = store.session().pendingCommand
-    if (pending === undefined || pending === null) return
+    if (pending === undefined || pending === null || pending.requirement === "repository-ready") return
     const requirement = flowRequirements.find((candidate) => candidate.id === pending.requirement)
     // Still waiting (or the requirement id no longer exists): leave it parked.
     if (requirement !== undefined && !requirement.satisfied(commands.state())) return
@@ -1632,6 +1635,7 @@ export const createAppController = (
     handleInstallReturn: gitHubSeam.handleInstallReturn,
     deferCommand,
     resumeDeferredCommand,
+    deferRepositoryCommand: repositoryReadiness.defer,
     noteCommandRun,
     toggleVerbose,
     traceFlow,
@@ -1759,7 +1763,16 @@ export const createAppController = (
       const signedIn = identity?.state === "signed-in"
       const fileTarget = path === undefined ? undefined : resolveFileTarget(store, path, repo)
       const requestedRepo = fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" ? fileTarget.repo : repo
+      const entry = store.session().repositoryEntry
+      const globalRepo = repo === undefined && requestedRepo !== undefined && path !== undefined && (
+        path.toLowerCase() === `/${requestedRepo.toLowerCase()}` || path.toLowerCase().startsWith(`/${requestedRepo.toLowerCase()}/`)
+      ) ? requestedRepo : undefined
+      const explicitRepo = repo ?? globalRepo
+      const repositoryPending = entry?.phase === "pending" && (
+        explicitRepo === undefined || explicitRepo.toLowerCase() === entry.repo.toLowerCase()
+      ) ? entry.repo : undefined
       return {
+        repositoryPending,
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
@@ -1777,7 +1790,7 @@ export const createAppController = (
         admin: (signedIn && identity.admin) ||
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
-        hasOpenRepos: store.collections.repos.size > 0,
+        hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
         publicRepo: requestedRepo === undefined
           ? activeCatalogRepositoryId(store) !== null
           : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase()),
@@ -1816,6 +1829,7 @@ export const createAppController = (
     if (card.loading) store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
   }
 
+  repositoryReadiness.resume()
   liveTutorial.resume()
   repositorySetup.resumeRepositorySetups()
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => repositorySetup.resumeRepositorySetups())
