@@ -167,7 +167,7 @@ configuredGatewayTest(
       required: row.getAttribute("data-required")
     })))
     expect(renderedFields).toEqual(expectedFields)
-    expect(await form.locator("input, textarea, select").first().evaluate((element) => element === document.activeElement)).toBe(true)
+    await expect(form.locator("input, textarea, select").first()).toBeFocused()
     await attachProductionJson(testInfo, "runtime-workflow-catalog", { repo, declared, list })
   }
 )

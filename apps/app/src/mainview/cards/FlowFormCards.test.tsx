@@ -274,3 +274,22 @@ describe("the flow form card", () => {
     expect(refused.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")?.disabled).toBe(false)
   })
 })
+
+ test("a user form receives focus from its invoking button without stealing unrelated editing focus", () => {
+   const trigger = document.createElement("button")
+   trigger.dataset.flow = "tab.harness"
+   document.body.append(trigger)
+   cleanups.push(() => trigger.remove())
+   trigger.focus()
+   const form = mount(<FlowFormCardBody card={formCard({ via: "user" })} onRunCommand={() => {}} />)
+   expect(document.activeElement).toBe(form.querySelector("input"))
+   const editor = document.createElement("textarea")
+   document.body.append(editor)
+   cleanups.push(() => editor.remove())
+   editor.focus()
+   mount(<FlowFormCardBody card={formCard({ via: "user" })} onRunCommand={() => {}} />)
+   expect(document.activeElement).toBe(editor)
+   trigger.focus()
+   mount(<FlowFormCardBody card={formCard({ via: "agent" })} onRunCommand={() => {}} />)
+   expect(document.activeElement).toBe(trigger)
+ })

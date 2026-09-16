@@ -286,8 +286,8 @@ test("completed imports resolve button arguments before repository inventory ref
   const known = knownRepositories(store)
   expect(known.has("acme/new")).toBe(phase === "done")
   if (phase === "done") {
-   expect(payloadFor("issues.list", "open acme/new", known)).toEqual({payload:{filter:"open",repo:"acme/new"}})
-   expect(payloadFor("issues.create", "title acme/new", known)).toEqual({payload:{title:"title",repo:"acme/new"}})
+   expect(payloadFor("issues.list", "open acme/new", undefined, known)).toEqual({payload:{filter:"open",repo:"acme/new"}})
+   expect(payloadFor("issues.create", "title acme/new", undefined, known)).toEqual({payload:{title:"title",repo:"acme/new"}})
   }
  }
 })

@@ -1,6 +1,6 @@
 import { flowAction } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
-import type { KeyboardEvent } from "react"
+import { useCallback, type KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { flowArgs } from "../flows/FlowArgs"
@@ -47,8 +47,16 @@ export const FlowFormCardBody = ({
   const busy = card.payload.submitting === true
   const commit = (field: string, value: string): void => onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field, value }))
   const complete = unfilled(card.payload).length === 0
+  // Hand a button invocation to its mounted form. Historical/agent cards and
+  // delayed results must not steal focus after the user has moved elsewhere.
+  const focusFromTrigger = useCallback((node: HTMLFormElement | null): void => {
+    if (node === null || card.payload.via !== "user" || settled || busy) return
+    const active = node.ownerDocument.activeElement
+    if (active?.getAttribute("data-flow") !== flow || node.contains(active)) return
+    node.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), select:not(:disabled)")?.focus()
+  }, [card.id, card.payload.via, flow, settled, busy])
   return (
-    <form className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
+    <form ref={focusFromTrigger} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
       event.preventDefault()
       if (complete && !busy && !settled) onRunCommand("form.submit", card.id)
     }}>
