@@ -44,7 +44,10 @@ Two mounts are deliberate exceptions to edge authentication. `POST /rpc` authent
 The mounts above belong to `smthrs serve`. The web Worker has removed its raw
 gateway proxy: `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths
 return HTTP 410 with code `gateway_proxy_removed`, including WebSocket upgrades.
-Cross-origin requests may be refused earlier by the same-origin guard.
+A `GET` or `HEAD` of a former documentation address under `/rpc/` (a page the
+old site published) redirects to this page instead; an RPC-shaped request there
+is still the 410. Cross-origin requests may be refused earlier by the
+same-origin guard.
 `GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored and cannot restore
 the proxy. The Worker's `/health` is retired too.
 

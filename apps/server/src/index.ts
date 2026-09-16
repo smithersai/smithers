@@ -39,7 +39,7 @@ import { ClientErrorLog } from "./clientErrorLog"
 import { ServerConfig } from "./Config"
 import { Assets, BrowserEgress, DeploymentBindings, ExecutionContext, executionContextFrom, runtimeFor } from "./Environment"
 import type { NativeExecutionContext, RequestServices, WorkerEnv } from "./Environment"
-import { readJsonOrUndefined } from "./Http"
+import { discardBody, readJsonOrUndefined } from "./Http"
 import { GatewaySessionRegistry } from "./gateway"
 import { handleAuthNavigation, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
 import {
@@ -108,6 +108,26 @@ const retiredGatewayProxy = (): Response =>
 
 const isRetiredGatewayRoute = (pathname: string): boolean =>
   RETIRED_GATEWAY_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
+/*
+ * The former Mintlify site published its API reference under the same /rpc
+ * prefix (/rpc/list-runs was a page), and the site build's _redirects sends
+ * each of those addresses to the current reference. wrangler runs this Worker
+ * first for every path, so the assets layer only sees a retired path when the
+ * Worker asks. The boundary is the method: a GET or HEAD navigation asks, and
+ * keeps the redirect the site declares for it; a POST, any upgrade, and a
+ * path the site never redirected are the tombstone. The assets binding is the
+ * build on disk, never an upstream, so nothing here forwards.
+ */
+const answerRetiredGatewayRoute = (request: Request): Effect.Effect<Response, never, Assets> =>
+  Effect.gen(function* () {
+    const navigation = (request.method === "GET" || request.method === "HEAD") && !request.headers.has("upgrade")
+    if (!navigation) return retiredGatewayProxy()
+    const asset = yield* serveAsset(request)
+    if (asset.status >= 300 && asset.status < 400 && asset.headers.has("location")) return asset
+    yield* discardBody(asset)
+    return retiredGatewayProxy()
+  })
 
 const isApiRoute = (pathname: string): boolean => pathname.startsWith("/api/") || isRetiredGatewayRoute(pathname)
 
@@ -390,7 +410,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (platformProxyMatch(url.pathname, request.method)) return yield* handlePlatformProxy(request, url)
     if (url.pathname.startsWith(BILLING_ROUTE_PREFIX)) return yield* proxyToBilling(request)
     if (url.pathname.startsWith(ADMIN_ROUTE_PREFIX)) return yield* handleAdmin(request, url)
-    if (retiredGatewayRoute) return retiredGatewayProxy()
+    if (retiredGatewayRoute) return yield* answerRetiredGatewayRoute(request)
     // Any other /api/* path is an unknown route: the same canonical 404 the
     // admin surface answers non-admins with, so nothing is enumerable.
     if (url.pathname.startsWith("/api/")) return notFound()

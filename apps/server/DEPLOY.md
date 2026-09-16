@@ -312,7 +312,13 @@ The deployment-identity gateway proxy has been removed. `/rpc`, `/projections`,
 `/sync`, `/health` and their subpaths return HTTP 410 with
 `code: "gateway_proxy_removed"`, including WebSocket upgrade requests. They
 never forward under a deployment bearer or a placeholder user. Cross-origin
-requests may be refused earlier by the existing same-origin guard.
+requests may be refused earlier by the existing same-origin guard. One
+exception, by method: the former Mintlify site published its API reference
+under `/rpc/<page>`, and `apps/site/public/_redirects` sends each of those
+addresses to `/docs/reference/http-api/`. A `GET` or `HEAD` without an upgrade
+asks the assets binding and keeps that declared redirect; every other request,
+and any path the file does not redirect, is the 410
+(`src/RetiredGatewayProxy.test.ts`, `src/staticRedirects.test.ts`).
 
 `GATEWAY_UPSTREAM_URL`, `GATEWAY_AUTH_TOKEN` and
 `GATEWAY_SESSION_USER_ID` / `_ROLE` / `_SCOPES` no longer configure this Worker.
