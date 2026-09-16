@@ -772,6 +772,13 @@ describe("the change card", () => {
     host.remove()
   })
 
+  test("a practice Change's Full diff names its receipt through the practice flow", () => {
+    const { host, commands } = renderChange(changeCard({ repo: "practice:smithersai/hello-server", stack: null, changeId: "live-change" }))
+    click(host, "Open the full diff card")
+    expect(commands).toEqual([{ name: "files.implementation-diff", args: "live-change" }])
+    host.remove()
+  })
+
   test("an error the seam recorded renders on the card", () => {
     const { host } = renderChange(changeCard({ error: "the land failed: bookmark moved" }))
     expect(host.textContent ?? "").toContain("the land failed: bookmark moved")

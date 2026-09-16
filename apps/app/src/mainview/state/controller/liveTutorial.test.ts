@@ -170,3 +170,53 @@ for (const operation of ["implement", "change"] as const) {
     t.dispose()
   })
 }
+
+test("a practice Change opens only the matching completed implementation diff without another request", async () => {
+  const t = await setup()
+  await t.finished.plan()
+  await t.finished.implement(PRACTICE_CARD.plan)
+  await t.finished.createChange([sha])
+  const before = t.calls.length
+  expect(await t.live.showDiff("live-change")).toEqual({ value: "src/hello.ts\n@@ -1 +1 @@\n-old\n+new" })
+  expect(t.calls).toHaveLength(before)
+  const diff = [...t.store.collections.cards.values()].find(card => card.kind === "diff")
+  expect(diff?.payload).toMatchObject({ from: base, to: sha, files: complete("implement").diff })
+  t.dispose()
+})
+
+for (const mismatch of ["identity", "session", "base", "selection", "incomplete"] as const) {
+  test(`a practice Change refuses a ${mismatch} mismatch instead of borrowing the current diff`, async () => {
+    const t = await setup()
+    await t.finished.plan()
+    await t.finished.implement(PRACTICE_CARD.plan)
+    await t.finished.createChange([sha])
+    const changed = complete("change")
+    if (mismatch === "identity") changed.change!.id = "different-change"
+    if (mismatch === "session") changed.sessionId = "another-session"
+    if (mismatch === "base") changed.change!.baseCommitId = "c".repeat(40)
+    if (mismatch === "selection") changed.change!.commitIds = ["c".repeat(40)]
+    if (mismatch === "incomplete") changed.phase = "running"
+    t.store.dispatch({ type: "card.updated", actor: "system", id: "live-tutorial-change", patch: {
+      payload: { input: { liveTutorialSnapshot: changed } }
+    } })
+    const before = t.calls.length
+    expect(await t.live.showDiff("live-change")).toBe("No recorded diff matches this Change.")
+    expect([...t.store.collections.cards.values()].some(card => card.kind === "diff")).toBe(false)
+    expect(t.calls).toHaveLength(before)
+    t.dispose()
+  })
+}
+
+test("a selected subset cannot display the full implementation's aggregate diff", async () => {
+  const t = await setup(async operation => {
+    const run = complete(operation)
+    if (operation === "implement") run.commits!.push({ ...run.commits![0]!, commitId: "c".repeat(40), parentCommitId: sha })
+    return run
+  })
+  await t.finished.plan()
+  await t.finished.implement(PRACTICE_CARD.plan)
+  await t.finished.createChange([sha])
+  expect(await t.live.showDiff("live-change")).toBe("No recorded diff matches this Change.")
+  expect([...t.store.collections.cards.values()].some(card => card.kind === "diff")).toBe(false)
+  t.dispose()
+})

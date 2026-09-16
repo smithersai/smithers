@@ -23,6 +23,7 @@ import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { timeLabel, durationLabel } from "../Timestamps"
 import { shortId } from "../state/ids"
+import { isPracticeRepo } from "../state/practice/PracticeRepository"
 import { flowArgs } from "../flows/FlowArgs"
 import type { FlowName } from "../flows/FlowName"
 
@@ -1066,7 +1067,7 @@ export const ChangeCardBody = ({
           size="sm"
           variant="outline"
           aria-label="Open the full diff card"
-          {...flowAction(onRunCommand, "change.diff", flowArgs("change.diff", { changeId: payload.changeId }))}
+          {...flowAction(onRunCommand, isPracticeRepo(payload.repo) ? "files.implementation-diff" : "change.diff", payload.changeId)}
         >
           <GitPullRequest size={12} aria-hidden="true" /> Full diff
         </Button>

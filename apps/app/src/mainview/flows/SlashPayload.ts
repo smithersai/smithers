@@ -804,6 +804,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * Only a TRAILING numeric suffix comes off the token, so a repository path
    * with a colon of its own keeps working; the parser stays first-token-is-path.
    */
+  "files.implementation-diff": (args) => optional("changeId", args),
   "files.open-diff": (args) => {
     try { return ok(JSON.parse(args ?? "")) } catch {
       const [cardId, ...path] = (args ?? "").trim().split(/\s+/)

@@ -505,7 +505,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listCommits: CommitsSeam["listCommits"]
   readonly readCommit: CommitsSeam["readCommit"]
   readonly listFiles: FilesSeam["listFiles"]
-  readonly showPracticeDiff: () => Promise<string | { value: string }>
+  readonly showPracticeDiff: (changeId?: string) => Promise<string | { value: string }>
   readonly openDiffFile: ReturnType<typeof createDiffFilesSeam>["openDiffFile"]
   readonly readFile: FilesSeam["readFile"]
   /* Code intelligence (docs/code-intel/PLAN.md §4): the three code.* reads against the local language server (seams/CodeIntelSeam.ts). */

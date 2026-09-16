@@ -215,9 +215,20 @@ export function createLiveTutorialController(ctx: ControllerContext, nextOrdinal
         }
       })()
     },
-    showDiff: async () => {
+    showDiff: async (changeId?: string) => {
       const run = liveSnapshotOf(readCard(PRACTICE_CARD.run))
       if (run?.phase !== "completed" || !run.commits?.length || !run.diff || !run.baseCommitId) return "Wait for the live implementation and its tests to finish."
+      if (changeId !== undefined) {
+        const changeRun = liveSnapshotOf(readCard(idFor("change")))
+        const change = changeRun?.change
+        // This diff covers the entire implementation. A different Change,
+        // base, session or commit selection cannot borrow that receipt.
+        if (changeRun?.phase !== "completed" || changeRun.operation !== "change" || run.operation !== "implement" ||
+          change?.id !== changeId || changeRun.sessionId !== run.sessionId || change.baseCommitId !== run.baseCommitId ||
+          change.commitIds.length !== run.commits.length || change.commitIds.some((id, index) => id !== run.commits![index]?.commitId)) {
+          return "No recorded diff matches this Change."
+        }
+      }
       const top = run.commits.at(-1)!
       const old = ctx.store.collections.cards.get(PRACTICE_DIFF_CARD)
       await upsert({ id: PRACTICE_DIFF_CARD, kind: "diff", title: "Implementation diff · hello-server", status: "active", createdAt: old?.createdAt ?? Date.now(), ordinal: old?.ordinal ?? nextOrdinal(),
