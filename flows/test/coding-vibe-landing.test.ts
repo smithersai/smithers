@@ -32,10 +32,10 @@ const cleanup: VibeCleanup = { summary: "✨ feat: finish the validated request"
     originalSource: original, validatedHead: last, request: { plan, outcome: { status: "validated", rounds: 1, blocked: null, result } } } }
 const main = "5".repeat(40)
 const preparation: AppendPreparation = { status: "prepared", target_bookmark: "main", expected_commit_id: main, source_commit_id: last.commitId,
-  source_base_commit_id: original.commitId, changes: [base, first, last].map(atom => ({ change_id: atom.changeId, commit_id: atom.commitId })) }
+  source_base_commit_id: main, changes: [base, first, last].map(atom => ({ change_id: atom.changeId, commit_id: atom.commitId })) }
 const landed = (status: AppendObservation["status"]) => ({ status, task_id: 12, request: { change_ids: preparation.changes.map(change => change.commit_id),
   target_bookmark: "main" as const, expected_commit_id: main, operation_key: "existing", append: { source_commit_id: last.commitId,
-  source_base_commit_id: original.commitId, description: cleanup.summary } },
+  source_base_commit_id: main, description: cleanup.summary } },
   ...(status === "landed" ? { result: { landed_count: 3, target_bookmark: "main" as const, target_commit_id: "9".repeat(40) } } : {}) }) as AppendObservation
 const modes = ["valid", "pending-then-landed", "policy-failed", "foreign-tail", "unretained", "count-mismatch"] as const
 for (const mode of modes) test(`vibe landing: ${mode}`, { timeout: 60_000 }, async t => {
@@ -45,7 +45,7 @@ for (const mode of modes) test(`vibe landing: ${mode}`, { timeout: 60_000 }, asy
     binding: { repositoryId: 42, workspaceId: "11111111-1111-4111-a111-111111111111" },
     readMain: Effect.sync(() => { calls.push("main"); return main }),
     prepare: input => Effect.sync(() => { calls.push("prepare")
-      assert.deepEqual(input, { target_bookmark: "main", expected_commit_id: main, source_commit_id: last.commitId, source_base_commit_id: original.commitId })
+      assert.deepEqual(input, { target_bookmark: "main", expected_commit_id: main, source_commit_id: last.commitId, source_base_commit_id: main })
       return mode === "foreign-tail" ? { ...preparation, changes: [...preparation.changes, { change_id: "z".repeat(32), commit_id: "f".repeat(40) }] } : preparation }),
     create: (requestId, _preparation, description) => Effect.sync(() => { calls.push(`create:${requestId}`); assert.equal(description, cleanup.summary); return { requestId, number: 7 } }),
     queue: (identity, prepared, request) => Effect.sync(() => { calls.push("queue"); return { ...identity, taskId: 12, preparation: prepared, request } }),

@@ -51,7 +51,10 @@ if (parsed.values.version) {
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),
     ...(process.env.SMITHERS_CODING_POC_MODEL === undefined ? {} : { pocModel: process.env.SMITHERS_CODING_POC_MODEL }),
     ...(process.env.SMITHERS_CODING_WIKI_MODEL === undefined ? {} : { wikiModel: process.env.SMITHERS_CODING_WIKI_MODEL }),
-    ...(process.env.PATH === undefined ? {} : { checkEnvironment: { PATH: process.env.PATH } }) }
+    checkEnvironment: Object.fromEntries([
+      "PATH", "HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+      "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS"
+    ].flatMap(name => process.env[name] === undefined ? [] : [[name, process.env[name]!]])) }
   // The reserved repository credential leaves process.env here, before the
   // host, model seats or any approved shell tool can inherit it.
   const run = (platform: NativeControl.Platform, http: Layer.Layer<HttpClient.HttpClient>) =>

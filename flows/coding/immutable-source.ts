@@ -53,7 +53,12 @@ export const withImmutableSource = <A, E, R>(options: ImmutableSourceOptions, re
       return yield* invalid("Checks require full immutable native commit and tree IDs")
     }
     const fs = options.fs, path = yield* Path.Path
-    const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-check-" })
+    // Keep dependency hardlinks on the workspace filesystem. Cloud /tmp is a
+    // small tmpfs and copying the monorepo dependencies there exhausts it.
+    const checkCache = options.environment?.HOME
+      ? path.join(options.environment.HOME, ".cache", "smithers-checks") : undefined
+    if (checkCache) yield* fs.makeDirectory(checkCache, { recursive: true })
+    const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-check-", ...(checkCache ? { directory: checkCache } : {}) })
     const temporaryRoot = yield* fs.realPath(temporary)
     const exported = yield* runSourceProcess(options, [
       options.exporterPath ?? "/usr/local/bin/smithers-jj-export",

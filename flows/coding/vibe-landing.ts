@@ -65,7 +65,7 @@ export const landingLayers = Layer.mergeAll(
     }
     const main = yield* landing.readMain
     const preparation = yield* landing.prepare({ target_bookmark: "main", expected_commit_id: main,
-      source_commit_id: cleanup.head.commitId, source_base_commit_id: cleanup.admission.originalSource.commitId })
+      source_commit_id: cleanup.head.commitId, source_base_commit_id: main })
     // Plue computes the complete suffix after the shared immutable prefix. This
     // request's validated atoms must be that suffix's ordered tail, so earlier
     // steered implementation is covered and nothing foreign is appended as ours.
