@@ -707,7 +707,7 @@ describe("workspace seam terminal", () => {
     expect(tabsOf(store)).toEqual([])
   })
 
-  test("open creates a session, waits for running, and opens the workspace tab", async () => {
+  test("open creates a session, waits for running, and embeds it without switching away from chat", async () => {
     let polls = 0
     const { store, seam } = await harness({
       "POST api/repos/will/smithers/workspace/sessions": json(201, { id: "sess-1", status: "pending", workspace_id: "ws-1", created_at: null }),
@@ -721,19 +721,8 @@ describe("workspace seam terminal", () => {
     const result = await seam.openTerminal("ws-1")
     expect(typeof result).toBe("object")
     expect(polls).toBeGreaterThanOrEqual(2)
-    const tab = store.collections.tabs.get("sess-1")
-    expect(tab).toEqual(
-      expect.objectContaining({
-        id: "sess-1",
-        kind: "terminal",
-        sessionId: "sess-1",
-        workspaceId: "ws-1",
-        repo: "will/smithers",
-        repoKey: "workspace:ws-1"
-      })
-    )
-    // A workspace terminal carries no local cwd.
-    expect(tab?.kind === "terminal" ? tab.cwd : "x").toBeUndefined()
+    expect(tabsOf(store)).toEqual([])
+    expect(store.session().activeTabId).toBe("main")
     const payload = payloadOf(store)
     expect(payload?.terminalSessionId).toBe("sess-1")
     expect(payload?.facet).toBe("terminal")
@@ -749,7 +738,8 @@ describe("workspace seam terminal", () => {
     const result = await seam.openTerminal("ws-1")
     expect(typeof result).toBe("object")
     expect(requests).not.toContain("POST api/repos/will/smithers/workspace/sessions")
-    expect(store.collections.tabs.get("sess-1")).toBeDefined()
+    expect(store.collections.tabs.get("sess-1")).toBeUndefined()
+    expect(payloadOf(store)?.terminalSessionId).toBe("sess-1")
   })
 
   test("a 503 guest_not_ready reads plue's own body and code, and retries the session POST on the Retry-After it named (plue#504)", async () => {
@@ -781,7 +771,8 @@ describe("workspace seam terminal", () => {
       expect(posts).toBe(3)
       expect(requests.filter((request) => request === "POST api/repos/will/smithers/workspace/sessions")).toHaveLength(3)
       expect(typeof result).toBe("object")
-      expect(store.collections.tabs.get("sess-1")).toBeDefined()
+      expect(store.collections.tabs.get("sess-1")).toBeUndefined()
+    expect(payloadOf(store)?.terminalSessionId).toBe("sess-1")
       /* A POST that finally succeeded leaves no refusal behind. */
       expect(payloadOf(store)?.terminalRefusal).toBeUndefined()
     } finally {
@@ -875,7 +866,8 @@ describe("workspace seam terminal", () => {
 
       /* The first loop stopped at the second open instead of posting again. */
       expect(posts).toBe(2)
-      expect(store.collections.tabs.get("sess-1")).toBeDefined()
+      expect(store.collections.tabs.get("sess-1")).toBeUndefined()
+    expect(payloadOf(store)?.terminalSessionId).toBe("sess-1")
     } finally {
       Object.assign(terminalSessionRetry, previous)
     }
@@ -2399,7 +2391,8 @@ describe("workspace seam lifecycle cancellation", () => {
           expect(dispatched.length).toBe(count)
           expect(store.collections.tabs.get("sess-old")).toBeUndefined()
           if (cancellation === "second open") {
-            expect(store.collections.tabs.get("sess-new")).toBeDefined()
+            expect(store.collections.tabs.get("sess-new")).toBeUndefined()
+            expect(store.session().activeTabId).toBe("main")
             expect(payloadOf(store)?.terminalSessionId).toBe("sess-new")
           } else if (cancellation === "delete" || boundary !== "attached GET") {
             expect(cardOf(store)).toBeUndefined()

@@ -226,6 +226,9 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
       conn.pending.length = 0
     }
     opened.onmessage = (event: MessageEvent) => {
+      // Text frames carry transport control, while terminal bytes are binary.
+      // Never paint the replay handshake into the user's shell output.
+      if (typeof event.data === "string") return
       output = output.then(async () => {
         const text = await decode(event.data, decoder)
         if (text === null || text === "" || disposed) return

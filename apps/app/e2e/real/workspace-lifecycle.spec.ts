@@ -237,18 +237,19 @@ workflowTest(
     await expect(page.getByTestId(`card-workspace-${id}`)).toBeVisible()
     await closeComposer(page)
     const path = cloudRepoPath(workflowRepo.repo, "/workspace/sessions")
-    const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path && response.ok(), { timeout: 90_000 })
+    const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === path && response.ok(), { timeout: 90_000 }).then(response => response.json())
     let sessionId: string | undefined
     try {
       await command(page, `/workspace.terminal ${id}`)
-      const response = await created
-      const session = await response.json() as { readonly id?: unknown; readonly workspace_id?: unknown }
+      const session = await created as { readonly id?: unknown; readonly workspace_id?: unknown }
       expect(typeof session.id).toBe("string")
       sessionId = session.id as string
       expect(session.workspace_id).toBe(id)
       await closeComposer(page)
-      const terminal = page.getByTestId(`terminal-${sessionId}`)
+      const terminal = page.getByTestId(`card-workspace-${id}`).getByTestId(`terminal-${sessionId}`)
       await expect(terminal).toBeVisible({ timeout: 60_000 })
+      await expect(page.getByRole("log", { name: "Conversation", exact: true })).toBeVisible()
+      await expect(terminal).not.toContainText('{"type":"replay-complete"}')
       await terminal.locator(".xterm-helper-textarea").focus()
       const suffix = String(Date.now())
       await page.keyboard.type(`printf '%s%s\\n' 'CLOUD_TERMINAL_' '${suffix}'`)

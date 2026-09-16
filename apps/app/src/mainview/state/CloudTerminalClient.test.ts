@@ -27,7 +27,7 @@ interface Harness {
  */
 interface ServeOptions {
   /** What the server does to each socket as it opens (close it with a code, say). */
-  readonly onOpen?: (socket: { close: (code?: number, reason?: string) => void; terminate: () => void }) => void
+  readonly onOpen?: (socket: { send: (data: string | Uint8Array) => void; close: (code?: number, reason?: string) => void; terminate: () => void }) => void
 }
 
 const harnesses: Array<Harness> = []
@@ -416,4 +416,14 @@ test("reconnect dials across every session stay under the per-minute budget", as
 
 test("pageCloudSocketUrl is undefined outside a browser", () => {
   expect(pageCloudSocketUrl("will/smithers", "sess-1")).toBeUndefined()
+})
+
+test("replay control frames are not printed but identical binary shell output is preserved", async () => {
+ const marker = '{"type":"replay-complete"}'
+ const server = serve({ onOpen: socket => { socket.send(marker); socket.send(new TextEncoder().encode(marker)) } })
+ const terminal = client(server)
+ const output: string[] = []
+ terminal.attach("will/smithers", "sess-1", { onOutput: data => output.push(data) })
+ await until(() => output.length > 0)
+ expect(output.join("")).toBe(marker)
 })

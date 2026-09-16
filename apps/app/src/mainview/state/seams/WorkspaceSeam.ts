@@ -1917,32 +1917,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const current = (): boolean => authorized() && gate() === undefined && terminalOpenEpochs.get(workspace.id) === epoch
     const card = ctx.store.collections.cards.get(cardIdOf(workspace.id))
     const attached = card?.kind === "workspace" ? card.payload.terminalSessionId : undefined
-    const openTab = (sessionId: string): void => {
-      const existing = ctx.store.collections.tabs.get(sessionId)
-      if (existing !== undefined) {
-        ctx.dispatch({ type: "tab.selected", actor: ctx.actor(), id: existing.id })
-        return
-      }
-      ctx.dispatch({
-        type: "tab.opened",
-        actor: ctx.actor(),
-        tab: {
-          id: sessionId,
-          kind: "terminal",
-          title: `Terminal · ${workspace.name}`,
-          sessionId,
-          workspaceId: workspace.id,
-          repo: workspace.repoId,
-          repoKey: `workspace:${workspace.id}`
-        }
-      })
-    }
     if (attached !== undefined && attached !== "") {
       const session = await getJson(repoPath(workspace.repoId, `/workspace/sessions/${encodeURIComponent(attached)}`))
       if (!current()) return
       const parsed = "error" in session ? null : parseSession(session.body)
       if (parsed !== null && parsed.status === SESSION_LIVE) {
-        openTab(attached)
         renderWorkspace(workspace, { facet: "terminal" })
         return { value: `Re-attached to session ${attached} of "${workspace.name}" (${workspace.id}).` }
       }
@@ -2007,7 +1986,6 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     }
     const sessions = await loadSessions(workspace.repoId, workspace.id)
     if (!current()) return
-    openTab(live.id)
     renderWorkspace(workspace, {
       facet: "terminal",
       terminalSessionId: live.id,

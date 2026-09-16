@@ -269,7 +269,7 @@ describe("the workspace card", () => {
     const { host, commands } = render(
       workspaceCard({ sessions: [{ id: "sess-1", status: "running", createdAt: null }], terminalSessionId: "sess-1" })
     )
-    expect(host.textContent).toContain("Attached to session sess-1")
+    expect(host.querySelector('.workspace-terminal-embed [data-testid="terminal-sess-1"]')).not.toBeNull()
     expect(NATIVE.commands.find("workspace.terminal")).toBeDefined()
     click(host, "Open terminal")
     expect(commands[0]).toEqual({ name: "workspace.terminal", args: "ws-1" })

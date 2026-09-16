@@ -1,3 +1,4 @@
+import { TerminalView } from "../tabs/TerminalView"
 import { Copy } from "lucide-react"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { ViewSkeleton } from "../ViewSkeleton"
@@ -32,7 +33,7 @@ import { fileArgs, parseFileArgs } from "../flows/FileArgs"
  */
 import { useState, useSyncExternalStore } from "react"
 import { Button, Spinner, StatusPill } from "@smthrs/ui"
-import { Globe, Monitor, Play, RefreshCw, Server, Square, TerminalSquare, Trash2 } from "lucide-react"
+import { Globe, Monitor, Play, RefreshCw, Server, Square, Trash2 } from "lucide-react"
 import { useController } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import { readDesktopStream, subscribeDesktopStream } from "../state/seams/DesktopStream"
@@ -459,10 +460,10 @@ const WorkspaceFacetBody = ({
     <div className="world-card-list">
       {payload.terminalSessionId !== undefined ?
         (
-          <p className="world-card-row">
-            <TerminalSquare size={14} aria-hidden="true" />
-            <span className="world-card-title">Attached to session {payload.terminalSessionId}</span>
-          </p>
+          <div className="workspace-terminal-embed" style={{ height: 320 }}>
+            <TerminalView tab={{ id: payload.terminalSessionId, kind: "terminal", title: payload.name, ordinal: card.ordinal,
+              sessionId: payload.terminalSessionId, workspaceId: payload.workspaceId, repo: payload.repo }} />
+          </div>
         ) :
         <p className="world-card-empty">No terminal attached.</p>}
       {/*
