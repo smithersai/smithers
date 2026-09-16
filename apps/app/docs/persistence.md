@@ -33,6 +33,20 @@ Missing positions, conflicting identities, unsupported versions or broken
 hashes refuse recovery; cached rows cannot replace damaged event authority.
 The two per-launch caches are cleared by a recorded boot projection.
 
+The event format remains version 1; `APP_PROJECTOR_VERSION` is 2. Bump the
+projector version whenever an `APP_PROJECTION_SCHEMAS` row shape or the
+transition set changes. Checkpoint reasons are `created`, `legacy-baseline`,
+`compaction`, `privacy-reset`, and `projector-upgrade`. On an older-projector
+head/checkpoint pair, boot seeds the validated persisted collection rows into
+a fresh stream with a `projector-upgrade` checkpoint. The same atomic commit
+replaces the head/checkpoint, clears old events, and retires the old stream;
+failed commits preserve the old authority. Privacy markers follow the
+new stream only after its commit; interrupted marker updates resume on boot.
+This boundary does not replay old
+transitions with new schemas. Newer projectors are refused with a typed version
+error. Same-version replay retains all integrity checks, including rejection
+when normalization removes an unknown field from a hashed checkpoint.
+
 `store.eventHistory()` returns a detached host-only checkpoint, suffix and head.
 `store.verifyState()` replays committed evidence and compares it with current
 collections, returning hashes and row identities for discrepancies without

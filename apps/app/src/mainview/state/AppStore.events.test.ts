@@ -6,11 +6,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { APP_SCHEMA_VERSION,SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
 import { openSqliteRowStorage,ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
+import { PRIVACY_RETIREMENT_KEY, readPrivacyRetirement } from "../chain/PrivacyRetirement"
 import { ENVELOPE_STORAGE_KEY,parseStorageEnvelope } from "../chain/TransactionalStorage"
-import { replayAppEvents } from "./AppEventStream"
+import { digest } from "@smthrs/core/Digest"
+import { APP_PROJECTOR_VERSION, AppProjectorVersionError, AppEventIntegrityError, appProjectionHash, retiredAppStreamKey, replayAppEvents } from "./AppEventStream"
 import { initialSession } from "./AppState"
 import { createAppStore,PERSISTED_COLLECTION_SPECS,type AppStore } from "./AppStore"
-import { decodeEventValue } from "./EventValue"
+import { canonicalEventValue, decodeEventValue, encodeEventValue } from "./EventValue"
 import { memoryStorage } from "./TestFixtures"
 import { MAX_TRANSITION_PAYLOAD_BYTES } from "./TransitionDiagnostics"
 
@@ -30,6 +32,9 @@ const editEnvelope = (storage: StorageApi, edit: (entries: Record<string, string
   edit(envelope.entries)
   storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(envelope))
 }
+const envelopeRows = (storage: StorageApi) => Object.fromEntries(Object.entries(
+  parseStorageEnvelope(storage.getItem(ENVELOPE_STORAGE_KEY)!)!.entries
+).map(([key, value]) => [key, JSON.parse(value)]))
 const privateKeys = new Set(["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"].map(id => `smithers-mvp.${id}`))
 
 const sqliteStore = async (path: string) => {
@@ -45,7 +50,133 @@ const sqliteStore = async (path: string) => {
   return { store, db }
 }
 
+const installProjectorFixture = async (storage: StorageApi, version: number) => {
+  const store = await open(storage)
+  await store.dispatch({ type: "message.submitted", actor: "user", turnId: "kept", text: "Keep my work" }).isPersisted.promise
+  await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId: "kept" }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "user", card: {
+    id: "kept", kind: "file", title: "kept.ts", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: "org/repo", path: "kept.ts", content: "retained", truncated: false }
+  } }).isPersisted.promise
+  await store.dispatch({ type: "repo.pinned", actor: "user", pin: {
+    id: "kept", name: "kept", path: "/kept", branch: "main", origin: "local", pinnedAt: 1
+  } }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice",
+    allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "world.document.upserted", actor: "user", document: {
+    id: "kept", path: "kept.md", title: "Kept", body: "Retain wiki", links: [], tags: [], sources: [], confidence: 1
+  } }).isPersisted.promise
+  await store.compactEvents()
+  const history = await store.eventHistory()
+  const snapshot = structuredClone(history.checkpoint.snapshot)
+  Object.assign(snapshot.sessions![0]!, { guide: { version: 3, sequence: "practice-v4", step: 1,
+    completed: [], autoPaused: false, conversationOpen: false }, guideVisible: false })
+  const stateHash = appProjectionHash(snapshot as unknown as Parameters<typeof appProjectionHash>[0])
+  const head = { ...history.head, projectorVersion: version, stateHash }
+  const eventBody = { formatVersion: 1, projectorVersion: version, id: "retired-guide-event", streamId: head.streamId,
+    sequence: head.sequence + 1, revision: head.revision + 1, kind: "transition", type: "guide.visibility.changed",
+    actor: "user", createdAt: 1, persistenceMode: "localStorage",
+    input: encodeEventValue({ type: "guide.visibility.changed", actor: "user", visible: false }),
+    previousEventHash: head.eventHash, previousStateHash: stateHash, stateHash }
+  const event = { ...eventBody, hash: digest("smithers-app/event/v1:" + canonicalEventValue(eventBody)) }
+  if (version === 1) Object.assign(head, { sequence: event.sequence, revision: event.revision, eventHash: event.hash })
+  const { hash: _, ...body } = { ...history.checkpoint, projectorVersion: version, snapshot, stateHash }
+  const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+  await store.dispose?.()
+  opened.splice(opened.indexOf(store), 1)
+  editEnvelope(storage, entries => {
+    if (version === 1) {
+      entries["smithers-mvp.app-events"] = JSON.stringify({ "s:retired-guide-event": { versionKey: "fixture", data: event } })
+      const sessions = JSON.parse(entries["smithers-mvp.app-sessions"]!)
+      Object.assign(sessions["s:main"].data, { guide: (snapshot.sessions![0] as Record<string, unknown>).guide, guideVisible: false })
+      entries["smithers-mvp.app-sessions"] = JSON.stringify(sessions)
+    }
+    for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+      entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+    }
+  })
+  return history
+}
+
 describe("the live store's authoritative event path", () => {
+  test("rotates retired guide checkpoints without losing materialized rows", async () => {
+    const storage = memoryStorage()
+    const old = await installProjectorFixture(storage, 1)
+    const restored = await open(storage)
+    const next = await restored.eventHistory()
+    expect(next.head.projectorVersion).toBe(2)
+    expect(next.checkpoint.projectorVersion).toBe(2)
+    expect(next.checkpoint.reason).toBe("projector-upgrade")
+    expect(next.head.streamId).not.toBe(old.head.streamId)
+    expect(next.events).toHaveLength(0)
+    expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toContain(retiredAppStreamKey(old.head.streamId))
+    expect(restored.session()).not.toHaveProperty("guide")
+    expect(restored.session()).not.toHaveProperty("guideVisible")
+    expect(next.checkpoint.stateHash).toBe(old.checkpoint.stateHash)
+    for (const name of ["sessions", "cards", "messages", "worldDocuments", "pinnedRepos", "identitySessions"]) {
+      expect(next.checkpoint.snapshot[name]!.length).toBeGreaterThan(0)
+    }
+    expect((await restored.verifyState()).valid).toBe(true)
+    const reopened = await open(storage)
+    expect((await reopened.eventHistory()).head.streamId).toBe(next.head.streamId)
+  })
+
+  for (const phase of ["complete", "pending"] as const) test(`upgrade resumes a failed ${phase} privacy marker update`, async () => {
+    const bytes = new Map<string, string>()
+    const inner = { get length() { return bytes.size }, key: (index: number) => [...bytes.keys()][index] ?? null,
+      getItem: (key: string) => bytes.get(key) ?? null, setItem: (key: string, value: string) => { bytes.set(key, value) },
+      removeItem: (key: string) => { bytes.delete(key) } }
+    const old = await installProjectorFixture(inner, 1)
+    inner.setItem(PRIVACY_RETIREMENT_KEY, JSON.stringify({ version: 2, id: "previous-signout", mode: "account",
+      backend: "localStorage", targetStreamId: old.head.streamId, phase, erasures: [] }))
+    let failMarker = true
+    const storage = { ...inner, get length() { return inner.length }, setItem: (key: string, value: string) => {
+      if (failMarker && key === PRIVACY_RETIREMENT_KEY) throw new Error("marker unavailable")
+      inner.setItem(key, value)
+    } }
+    const boot = () => createAppStore({ backend: { kind: "localStorage", storage }, mode: "localStorage", degraded: false,
+      privacy: { record: storage, eraseInactiveDatabase: async () => {} } }, { seedWiki: false })
+    await expect(boot()).rejects.toThrow("marker unavailable")
+    failMarker = false
+    const restored = await boot(); opened.push(restored)
+    expect(readPrivacyRetirement(storage)?.targetStreamId).toBe((await restored.eventHistory()).head.streamId)
+    expect(restored.collections.messages.get("message-kept-user")?.text).toBe("Keep my work")
+    const reopened = await boot(); opened.push(reopened)
+    expect((await reopened.verifyState()).valid).toBe(true)
+  })
+
+  test("newer projectors refuse boot and preserve history", async () => {
+    const storage = memoryStorage()
+    await installProjectorFixture(storage, 3)
+    const before = storage.getItem(ENVELOPE_STORAGE_KEY)
+    await expect(open(storage)).rejects.toEqual(new AppProjectorVersionError(3))
+    expect(storage.getItem(ENVELOPE_STORAGE_KEY)).toBe(before)
+  })
+
+  test("row shape changes without a projector bump still fail checkpoint verification", async () => {
+    const storage = memoryStorage()
+    await installProjectorFixture(storage, APP_PROJECTOR_VERSION)
+    const before = envelopeRows(storage)
+    await expect(open(storage)).rejects.toEqual(new AppEventIntegrityError("checkpoint"))
+    expect(envelopeRows(storage)).toEqual(before)
+  })
+
+  test("a failed upgrade commit preserves the old authority for retry", async () => {
+    const inner = memoryStorage()
+    await installProjectorFixture(inner, 1)
+    const before = inner.getItem(ENVELOPE_STORAGE_KEY)
+    let writes = 0
+    const storage: StorageApi = { ...inner, setItem: (key, value) => {
+      if (key === ENVELOPE_STORAGE_KEY && ++writes === 2) throw new Error("disk full")
+      inner.setItem(key, value)
+    } }
+    await expect(open(storage)).rejects.toThrow("disk full")
+    const prior = parseStorageEnvelope(before!)!.entries
+    const retained = parseStorageEnvelope(inner.getItem(ENVELOPE_STORAGE_KEY)!)!.entries
+    for (const key of privateKeys) expect(JSON.parse(retained[key] ?? "null")).toEqual(JSON.parse(prior[key] ?? "null"))
+    expect((await (await open(inner)).eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+  })
+
   test("billing plan observations replay and erase with their account owner", async () => {
     const storage = memoryStorage()
     const first = await open(storage)

@@ -13,7 +13,8 @@ import { validateAppTransition } from "./AppTransitionValidation"
 import { freezeProjectionValue, isImmutableProjectionValue } from "./ImmutableProjection"
 
 export const APP_EVENT_FORMAT_VERSION = 1
-export const APP_PROJECTOR_VERSION = 1
+// Bump whenever APP_PROJECTION_SCHEMAS row shapes or the transition set change.
+export const APP_PROJECTOR_VERSION = 2
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)
@@ -51,10 +52,42 @@ export const AppEventCheckpointSchema = z.object({
   ...VersionFields,
   id: z.literal("current"), streamId: z.string().min(1), sequence: PositionSchema,
   revision: PositionSchema, eventHash: HashSchema, stateHash: HashSchema,
-  reason: z.enum(["created", "legacy-baseline", "compaction", "privacy-reset"]),
+  reason: z.enum(["created", "legacy-baseline", "compaction", "privacy-reset", "projector-upgrade"]),
   snapshot: z.record(z.string(), z.array(JsonSchema)), hash: HashSchema
 }).strict()
 export type AppEventCheckpoint = z.infer<typeof AppEventCheckpointSchema>
+
+/** Read boundary only: replay and all new writes still use the literal versions. */
+const StoredProjectorVersion = z.number().int().positive().max(Number.MAX_SAFE_INTEGER).transform(version => {
+  // Refuse before the storage opener can normalize or commit any rows.
+  if (version > APP_PROJECTOR_VERSION) throw new AppProjectorVersionError(version)
+  return version
+})
+export const StoredAppEventHeadSchema = AppEventHeadSchema.extend({ projectorVersion: StoredProjectorVersion })
+export const StoredAppEventCheckpointSchema = AppEventCheckpointSchema.extend({ projectorVersion: StoredProjectorVersion })
+export const StoredAppEventRecordSchema = AppEventRecordSchema.extend({ projectorVersion: StoredProjectorVersion })
+
+export class AppProjectorVersionError extends Error {
+  constructor(readonly savedVersion: number) {
+    super(`Saved app projector version ${savedVersion} is newer than this build (${APP_PROJECTOR_VERSION}). Update Smithers to open it. Saved history was preserved.`)
+    this.name = "AppProjectorVersionError"
+  }
+}
+
+/** An older projector cannot replay with today's row shapes or transition set. */
+export const needsAppProjectorUpgrade = (headInput: unknown, checkpointInput: unknown): boolean => {
+  const head = StoredAppEventHeadSchema.safeParse(headInput)
+  const checkpoint = StoredAppEventCheckpointSchema.safeParse(checkpointInput)
+  if (!head.success || !checkpoint.success) return fail("format")
+  const newest = Math.max(head.data.projectorVersion, checkpoint.data.projectorVersion)
+  if (newest > APP_PROJECTOR_VERSION) throw new AppProjectorVersionError(newest)
+  if (head.data.projectorVersion !== checkpoint.data.projectorVersion) return fail("format")
+  if (newest === APP_PROJECTOR_VERSION) return false
+  if (head.data.streamId !== checkpoint.data.streamId) return fail("scope")
+  if (checkpoint.data.sequence > head.data.sequence) return fail("head")
+  if (checkpoint.data.hash !== sealedHash("checkpoint", checkpoint.data)) return fail("checkpoint")
+  return true
+}
 
 export const AppEventRetirementSchema = z.object({ id: HashSchema }).strict()
 
@@ -180,7 +213,7 @@ export const createAppCheckpoint = (
 export const initializeAppStream = (
   input: AppProjectionSnapshot,
   streamId: string,
-  reason: "created" | "legacy-baseline" | "privacy-reset"
+  reason: "created" | "legacy-baseline" | "privacy-reset" | "projector-upgrade"
 ): AppStreamState & { readonly checkpoint: AppEventCheckpoint } => {
   if (!streamId) return fail("scope")
   const snapshot = normalizeAppProjection(input)

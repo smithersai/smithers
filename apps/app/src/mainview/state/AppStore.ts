@@ -8,7 +8,7 @@ import type { CollectionPersistence,DurableRowSink } from "../chain/DurableColle
 import { createCollectionPersistence,durableCollectionOptions } from "../chain/DurableCollection"
 import type { PersistedLoadReport } from "../chain/PersistenceBudget"
 import { EMPTY_PERSISTED_LOAD,PERSISTED_LOAD_TOAST_KEY,PERSISTED_LOAD_TOAST_TITLE,persistedLoadNotice } from "../chain/PersistenceBudget"
-import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
+import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,retargetPrivacyRetirement,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
 import { createRemoteRetirementWorker } from "../chain/RemoteRetirement"
 import {
 APP_SCHEMA_VERSION,
@@ -30,6 +30,7 @@ import { ENVELOPE_STORAGE_KEY,STAGED_ENVELOPE_STORAGE_KEY,acquireLocalStorageWri
 import type { EraseRemoteTurn } from "../runtime/TurnErasure"
 import {
 AppEventCheckpointSchema,
+StoredAppEventHeadSchema, StoredAppEventCheckpointSchema, StoredAppEventRecordSchema, needsAppProjectorUpgrade,
 AppEventHeadSchema,
 AppEventIntegrityError,
 AppEventRecordSchema,
@@ -873,7 +874,13 @@ const COLLECTION_DEFINITIONS = {
   }
 } as const
 
-export const PERSISTED_COLLECTION_SPECS = Object.values(COLLECTION_DEFINITIONS).filter((definition) => definition.persisted)
+export const PERSISTED_COLLECTION_SPECS = Object.values(COLLECTION_DEFINITIONS).filter((definition) => definition.persisted).map(definition => ({
+  ...definition,
+  // Load older authority unchanged until boot atomically commits its replacement.
+  schema: definition.id === "app-event-heads" ? StoredAppEventHeadSchema
+    : definition.id === "app-event-checkpoints" ? StoredAppEventCheckpointSchema
+    : definition.id === "app-events" ? StoredAppEventRecordSchema : definition.schema
+}))
 
 /** The strip's order: main first, then creation order. */
 const orderedTabs = (collections: Pick<StoredCollections, "tabs">): Array<TabRow> =>
@@ -1034,7 +1041,7 @@ const initializeAppStore = async (
   let recoverySnapshot: AppProjectionSnapshot | undefined
   let recoveringInputs = true
   const privacyRecord = fenceStorage(resolved.privacy?.record, assertOwned)
-  const bootRetirement = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)
+  let bootRetirement = privacyRecord === undefined ? undefined : readPrivacyRetirement(privacyRecord)
   let wakeRemoteRetirement = (): void => {}
   let stopRemoteRetirement = async (): Promise<void> => {}
   /* Validate persisted rows before creating collections. Compatible older
@@ -1190,20 +1197,30 @@ const initializeAppStore = async (
     if (savedHead === undefined || savedCheckpoint === undefined || collections.appEventHeads.size !== 1 ||
       collections.appEventCheckpoints.size !== 1) throw new AppEventIntegrityError("head")
     if (collections.appEventRetirements.has(retiredAppStreamKey(savedHead.streamId))) throw new AppEventIntegrityError("scope")
-    const verified = replayAppEvents(savedCheckpoint, [...collections.appEvents.values()].map(storedRow), savedHead)
+    const upgrading = needsAppProjectorUpgrade(savedHead, savedCheckpoint)
+    const upgraded = upgrading
+      ? initializeAppStream(seedAppProjection(readProjection(collections), seedContext), crypto.randomUUID(), "projector-upgrade")
+      : undefined
+    const verified = upgraded ?? replayAppEvents(savedCheckpoint, [...collections.appEvents.values()].map(storedRow), savedHead)
     if (bootRetirement?.phase !== "pending") {
-      recoveryBoundary = { head: verified.head, checkpoint: savedCheckpoint,
-        events: [...collections.appEvents.values()].map(storedRow), commands: verified.snapshot.commandIntents }
+      recoveryBoundary = { head: verified.head, checkpoint: upgraded?.checkpoint ?? savedCheckpoint,
+        events: upgraded === undefined ? [...collections.appEvents.values()].map(storedRow) : [], commands: verified.snapshot.commandIntents }
       recoverySnapshot = verified.snapshot
     }
-    if (bootRetirement !== undefined && bootRetirement.phase !== "pending" && savedHead.streamId !== bootRetirement.targetStreamId) throw new PrivacyRetirementError()
+    // A verified upgrade and the target tombstone also prove a privacy rotation
+    // committed when the subsequent marker update was interrupted.
+    const retirementApplied = bootRetirement !== undefined && (savedHead.streamId === bootRetirement.targetStreamId ||
+      (savedCheckpoint.reason === "projector-upgrade" && collections.appEventRetirements.has(retiredAppStreamKey(bootRetirement.targetStreamId))))
+    if (bootRetirement !== undefined && bootRetirement.phase !== "pending" && !retirementApplied) throw new PrivacyRetirementError()
     const boot = appendAppEvent(verified, { kind: "boot", seed: seedContext }, {
       eventId: crypto.randomUUID(), createdAt: seedContext.createdAt, persistenceMode: resolved.mode
     })
-    initial = boot === undefined ? { state: verified } : { state: boot, event: boot.event }
+    initial = upgraded !== undefined
+      ? { state: upgraded, checkpoint: upgraded.checkpoint, clearEvents: true, retire: savedHead.streamId }
+      : boot === undefined ? { state: verified } : { state: boot, event: boot.event }
     if (bootRetirement?.phase === "pending") {
       addPendingTurnErasures(privacyRecord!, bootRetirement, deriveTurnErasures(verified.snapshot.httpTurnLegs))
-      if (savedHead.streamId !== bootRetirement.targetStreamId) {
+      if (!retirementApplied) {
         const transition: AppTransition = bootRetirement.mode === "reset"
           ? { type: "app.reset", actor: "system" }
           : { type: "identity.session.cleared", actor: "user" }
@@ -1220,6 +1237,10 @@ const initializeAppStore = async (
     mutationFn: ({ transaction }) => persist(transaction, initial.state.head) })
   bootTransaction.mutate(() => writeStream(initial))
   await bootTransaction.isPersisted.promise
+  if (bootRetirement !== undefined && initial.state.head.streamId !== bootRetirement.targetStreamId) {
+    retargetPrivacyRetirement(privacyRecord!, bootRetirement, initial.state.head.streamId)
+    bootRetirement = { ...bootRetirement, targetStreamId: initial.state.head.streamId }
+  }
   if (bootRetirement?.phase === "pending") await finishRetirement(bootRetirement)
   if (persistedLocally !== undefined && resolvedBackend.kind === "localStorage") {
     persistedLocally.setItem(SCHEMA_VERSION_STORAGE_KEY, String(APP_SCHEMA_VERSION))

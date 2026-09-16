@@ -141,6 +141,15 @@ export const completePrivacyRetirement = (storage: StorageApi, intent: PrivacyRe
   storeMarker(storage, { ...current, phase: current.erasures.length === 0 ? "complete" : "remote-pending" })
 }
 
+/** Follow a committed projector rotation without losing remote erasure obligations. */
+export const retargetPrivacyRetirement = (storage: StorageApi, intent: PrivacyRetirement, targetStreamId: string): void => {
+  const current = readPrivacyRetirement(storage)
+  if (current?.id !== intent.id || current.targetStreamId !== intent.targetStreamId) {
+    throw new PrivacyRetirementError()
+  }
+  storeMarker(storage, { ...current, targetStreamId })
+}
+
 export const deriveTurnErasures = (legs: Iterable<{ readonly turnId: string; readonly journal: { readonly legId: string; readonly token: string } }>): AgentTurnErasure[] =>
   [...legs].map(leg => AgentTurnErasureSchema.parse({ runId: leg.turnId, legId: leg.journal.legId,
     retirementProof: digest(agentTurnJournalDigestInput("access", leg.journal.token)) }))
