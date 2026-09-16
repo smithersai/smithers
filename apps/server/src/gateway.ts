@@ -60,6 +60,10 @@ export interface GatewayRecord {
   readonly renewAfter: number
   /** When this record was minted — the floor under a forced re-provision. */
   readonly provisionedAt: number
+  /** Last forced resume attempt; an ordinary fresh record still gets its first wake. */
+  readonly resumeAttemptedAt?: number
+  /** A sleeping resume that may be retried after the attempt's cooldown. */
+  readonly resumeOutcome?: { readonly status: "provisioning" | "unavailable"; readonly detail: string }
   /** Capabilities verified by the owning host's live provision response. */
   readonly verifiedCapabilities?: ReadonlyArray<string>
 }
@@ -74,9 +78,15 @@ interface GatewayRecordRow {
   readonly expiresAt: number
   readonly renewAfter: number
   readonly provisionedAt?: number
+  readonly resumeAttemptedAt?: number
+  readonly resumeOutcome?: GatewayRecord["resumeOutcome"]
   readonly verifiedCapabilities?: ReadonlyArray<string>
 }
 type GatewayCapability = "repository-jobs/v1"
+type GatewayRefresh = boolean | "sleeping"
+
+const resumeCoolingDown = (record: GatewayRecord, now: number): boolean =>
+  record.resumeAttemptedAt !== undefined && now - record.resumeAttemptedAt < FORCED_REPROVISION_FLOOR_MS
 
 /*
  * A separator no login or repo can contain (NUL): `${login}${repo}` alone would
@@ -159,13 +169,49 @@ const provisionAndStore = (
   login: string,
   repo: string,
   workspaceId: string | undefined,
+  force: GatewayRefresh,
   requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, DurableStorage | Transport | ServerConfig> =>
   Effect.gen(function* () {
-    const outcome = yield* provisionWithRemint(login, repo, workspaceId, requiredCapability)
-    if (outcome.status !== "ready") return outcome
     const storage = yield* DurableStorage
-    const stored = yield* Effect.result(storage.put(storageKey(repo, workspaceId), outcome.record))
+    const previous = yield* readStored(repo, workspaceId)
+    const now = yield* Clock.currentTimeMillis
+    // Recheck under the registry's claimed resolution: another sleeping reply
+    // may have been in flight while a previous caller already resumed the host.
+    if (previous !== undefined && resumeCoolingDown(previous, now)) {
+      if (previous.resumeOutcome !== undefined) return previous.resumeOutcome
+      if (force === "sleeping" && now < previous.renewAfter &&
+        (requiredCapability === undefined || previous.verifiedCapabilities?.includes(requiredCapability))) {
+        return { status: "ready", record: previous } as const
+      }
+    }
+    const sleepingResume = force === "sleeping" || previous?.resumeOutcome !== undefined
+    const resumeAttemptedAt = force || sleepingResume ? now : previous?.resumeAttemptedAt
+    const resuming = { status: "provisioning", detail: "The workspace gateway is resuming." } as const
+    // Persist before the attempt: a pending/failed resume and an object restart
+    // must not let each sleeping poll spend another token-door/provision call.
+    // A refreshed host must prove its capabilities again before setup can use it.
+    if ((force || sleepingResume) && previous !== undefined) {
+      const marked = yield* Effect.result(storage.put(storageKey(repo, workspaceId), {
+        ...previous, resumeAttemptedAt, verifiedCapabilities: undefined,
+        resumeOutcome: sleepingResume ? resuming : undefined
+      }))
+      if (Result.isFailure(marked)) return { status: "unavailable", detail: "The gateway resume attempt could not be persisted." } as const
+    }
+    const outcome = yield* provisionWithRemint(login, repo, workspaceId, requiredCapability)
+    if (outcome.status !== "ready") {
+      if (sleepingResume && previous !== undefined) {
+        const resumeOutcome = outcome.status === "provisioning" || (outcome.status === "unavailable" && outcome.retryable === true)
+          ? { status: outcome.status, detail: outcome.detail } : undefined
+        const retained = yield* Effect.result(storage.put(storageKey(repo, workspaceId), {
+          ...previous, resumeAttemptedAt, verifiedCapabilities: undefined, resumeOutcome
+        }))
+        if (Result.isFailure(retained)) return { status: "unavailable", detail: "The gateway resume result could not be persisted." } as const
+      }
+      return outcome
+    }
+    const record = { ...outcome.record, ...(resumeAttemptedAt === undefined ? {} : { resumeAttemptedAt }) }
+    const stored = yield* Effect.result(storage.put(storageKey(repo, workspaceId), record))
     if (Result.isFailure(stored)) {
       return {
         status: "unavailable",
@@ -174,7 +220,7 @@ const provisionAndStore = (
         }`
       } as const
     }
-    return outcome
+    return { ...outcome, record }
   })
 
 /**
@@ -191,14 +237,15 @@ const resolveRecord = (
   login: string,
   repo: string,
   workspaceId: string | undefined,
-  force: boolean,
+  force: GatewayRefresh,
   requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, GatewayRegistryServices> =>
   Effect.gen(function* () {
+    const cached = yield* readStored(repo, workspaceId)
+    const now = yield* Clock.currentTimeMillis
+    if (cached !== undefined && cached.resumeOutcome !== undefined && resumeCoolingDown(cached, now)) return cached.resumeOutcome
     if (!force) {
-      const cached = yield* readStored(repo, workspaceId)
-      const now = yield* Clock.currentTimeMillis
-      if (cached !== undefined && now < cached.renewAfter &&
+      if (cached !== undefined && cached.resumeOutcome === undefined && now < cached.renewAfter &&
         (requiredCapability === undefined || cached.verifiedCapabilities?.includes(requiredCapability))) return { status: "ready", record: cached } as const
     }
     const key = storageKey(repo, workspaceId) + (requiredCapability === undefined ? "" : `\u0000capability:${requiredCapability}`)
@@ -219,7 +266,7 @@ const resolveRecord = (
       return deferred
     })
     yield* Effect.forkDetach(
-      provisionAndStore(login, repo, workspaceId, requiredCapability).pipe(
+      provisionAndStore(login, repo, workspaceId, force, requiredCapability).pipe(
         // Cleared only once the record write inside the task has settled, so
         // a later caller either joins this task or reads the fresh record.
         Effect.ensuring(Effect.sync(() => {
@@ -275,7 +322,7 @@ export const gatewaySessionRequest = (request: Request): Effect.Effect<Response,
         body.login,
         body.repo,
         typeof body.workspaceId === "string" ? body.workspaceId : undefined,
-        body.force === true,
+        body.force === "sleeping" ? "sleeping" : body.force === true,
         body.requiredCapability
       )
       return answer(outcome)
@@ -338,7 +385,7 @@ export const isRelayRepoName = (value: string): boolean =>
  */
 export interface GatewaySessionsShape {
   readonly read: (login: string, repo: string, workspaceId?: string) => Effect.Effect<GatewayRecord | undefined>
-  readonly resolve: (login: string, repo: string, workspaceId: string | undefined, force: boolean, requiredCapability?: GatewayCapability) => Effect.Effect<ProvisionOutcome>
+  readonly resolve: (login: string, repo: string, workspaceId: string | undefined, force: GatewayRefresh, requiredCapability?: GatewayCapability) => Effect.Effect<ProvisionOutcome>
 }
 
 export class GatewaySessions extends Context.Service<GatewaySessions, GatewaySessionsShape>()("smithers-server/GatewaySessions") {}
@@ -523,7 +570,7 @@ export type ProvisionOutcome =
    */
   | { readonly status: "quota_exceeded"; readonly detail: string }
   | { readonly status: "plan_limit_exceeded"; readonly detail: string; readonly refusal: ReturnType<typeof machineReadableRefusal> }
-  | { readonly status: "unavailable"; readonly detail: string }
+  | { readonly status: "unavailable"; readonly detail: string; readonly retryable?: boolean }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   /*
    * Wave 12 §4: the watched set is a GITHUB set, but a gateway needs a
@@ -601,6 +648,7 @@ const provisionGateway = (
       }
       return {
         status: "unavailable",
+        retryable: true,
         detail: `Smithers Cloud is unreachable: ${failureMessage(answered.failure)}`
       } as const
     }
@@ -660,6 +708,7 @@ const provisionGateway = (
       }
       return {
         status: "unavailable",
+        ...(response.status >= 500 ? { retryable: true } : {}),
         detail: `Provisioning the workspace answered HTTP ${response.status}${detail === "" ? "." : `: ${detail}`}`
       } as const
     }
@@ -712,7 +761,7 @@ const provisionGateway = (
 export const ensureGateway = (
   login: string,
   repo: string,
-  force = false,
+  force: GatewayRefresh = false,
   workspaceId?: string,
   requiredCapability?: GatewayCapability
 ): Effect.Effect<ProvisionOutcome, never, GatewaySessions> =>
@@ -818,6 +867,7 @@ export interface GatewayCallInit {
    */
   readonly provision?: boolean
   readonly workspaceId?: string
+  readonly requiredCapability?: GatewayCapability
 }
 
 /** One relay attempt; a failure is the sentence stating why, never swallowed. */
@@ -886,7 +936,8 @@ export const callGateway = (
       const sessions = yield* GatewaySessions
       const record = yield* sessions.read(login, repo, init.workspaceId)
       const now = yield* Clock.currentTimeMillis
-      if (record === undefined || now >= record.renewAfter) {
+      if (record === undefined || now >= record.renewAfter ||
+        (init.requiredCapability !== undefined && !record.verifiedCapabilities?.includes(init.requiredCapability))) {
         return { status: "unavailable", detail: "No live workspace holds an answer for this read." } as const
       }
       const attempted = yield* relayAttempt(record, path, init)
@@ -899,7 +950,7 @@ export const callGateway = (
       }
       return { status: "ok", response } as const
     }
-    const gateway = yield* ensureGateway(login, repo, false, init.workspaceId)
+    const gateway = yield* ensureGateway(login, repo, false, init.workspaceId, init.requiredCapability)
     if (gateway.status !== "ready") return gateway
     const first = yield* relayAttempt(gateway.record, path, init)
     /*
@@ -917,11 +968,12 @@ export const callGateway = (
     // A record minted moments ago has already had its chance: re-POSTing
     // again cannot resume anything and would only stampede the route.
     const now = yield* Clock.currentTimeMillis
-    if (tunnelFailed && now - gateway.record.provisionedAt < FORCED_REPROVISION_FLOOR_MS) {
+    if ((tunnelFailed && now - gateway.record.provisionedAt < FORCED_REPROVISION_FLOOR_MS) ||
+      (sleeping && resumeCoolingDown(gateway.record, now))) {
       return { status: "ok", response: first.success } as const
     }
     if (Result.isSuccess(first)) yield* discardBody(first.success)
-    const renewed = yield* ensureGateway(login, repo, true, init.workspaceId)
+    const renewed = yield* ensureGateway(login, repo, sleeping ? "sleeping" : true, init.workspaceId, init.requiredCapability)
     // Losing the headers does not establish whether the command was accepted.
     // Renew for subsequent callers, but preserve that uncertainty even if
     // renewal fails: its outcome says nothing about the original command.

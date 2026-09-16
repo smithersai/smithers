@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect"
 import { SetupOperationResponseSchema, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
 import { callGateway, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, type GatewaySessions } from "./gateway"
-import { decodeGatewayResponse, encodeGatewayRequest, GATEWAY_PROCEDURE_MOUNTS } from "./gatewayRpc"
+import { decodeGatewayResponse, encodeGatewayRequest, GATEWAY_PROCEDURE_MOUNTS, NON_REPLAYABLE_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import { discardBody, fetchWithDeadline, readBoundedJson, readBoundedText, type Transport } from "./Http"
 import { ServerConfig } from "./Config"
 import { SetupPlanSchema, SetupRequests, type SetupRecord } from "./repositorySetupStore"
@@ -45,8 +45,10 @@ const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(functi
 const rpc = (login: string, record: SetupRecord, procedure: string, payload: unknown) => Effect.gen(function* () {
   const outcome = yield* callGateway(login, record.input.repo, GATEWAY_PROCEDURE_MOUNTS[procedure]!, {
     method: "POST", workspaceId: record.binding?.workspaceId ?? record.input.workspaceId, text: encodeGatewayRequest(procedure, payload),
-    // Every mutation below carries a stable persisted request key.
-    replayable: true
+    requiredCapability: "repository-jobs/v1",
+    // A later durable retry retains the persisted key; this relay never
+    // repeats a consequential Run within one attempt after losing its answer.
+    replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)
   })
   if (outcome.status !== "ok") return yield* Effect.fail(failure(outcome.detail))
   const text = yield* readBoundedText(outcome.response, 240_000).pipe(

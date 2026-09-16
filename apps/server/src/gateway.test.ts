@@ -17,6 +17,7 @@
  * seam (`/api/workflow/*`) is proven beside the router.
  */
 import { afterEach, describe, expect, test } from "bun:test"
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
@@ -149,9 +150,10 @@ const config = (overrides: Partial<ServerConfigShape> = {}) =>
 let durable: ReturnType<typeof memoryDurableObjects> | undefined
 const seam = (
   fetch: FetchImplementation,
-  options: { readonly config?: Partial<ServerConfigShape>; readonly namespace?: NativeNamespace } = {}
+  options: { readonly config?: Partial<ServerConfigShape>; readonly namespace?: NativeNamespace; readonly clock?: Clock.Clock } = {}
 ) => {
-  const services = Layer.mergeAll(transportLayer(fetch), config(options.config))
+  const services = Layer.mergeAll(transportLayer(fetch), config(options.config),
+    ...(options.clock === undefined ? [] : [Layer.succeed(Clock.Clock, options.clock)]))
   durable ??= memoryDurableObjects({ services })
   return Layer.mergeAll(services, gatewaySessionsLayer(options.namespace ?? durable.GATEWAY_SESSIONS))
 }
@@ -752,6 +754,159 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(call.status).toBe("unavailable")
     expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(2)
     expect(calls.filter(entry => entry.url.endsWith("/rpc"))).toHaveLength(1)
+  })
+
+  test.each([200, 409])("sleeping polls retain one first wake and its cooldown across restart (resume HTTP %s)", async (resumeStatus) => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    const { calls, fetch } = relay({
+      provision: (_call, attempt) => resumeStatus === 409 && attempt > 1
+        ? json(409, { code: "repository_workspace_pending", message: "The workspace is resuming" })
+        : freshGateway(attempt, { workspace_id: workspaceId }),
+      gateway: () => json(409, { code: "conflict", message: "bound workspace is not running at the recorded VM" })
+    })
+    await run(Effect.scoped(Effect.gen(function* () {
+      const clock = yield* TestClock.make()
+      yield* Effect.promise(async () => {
+        await run(clock.setTime(Date.now()))
+        const layer = seam(fetch, { clock })
+        // Normal provisioning is fresh: it must not suppress the first actual wake.
+        await run(ensureGateway("alice", "org/repo", false, workspaceId).pipe(Effect.provide(layer)))
+        const read = () => run(callGateway("alice", "org/repo", "/projections", { method: "POST", workspaceId, replayable: true }).pipe(Effect.provide(layer)))
+        expect((await read()).status).toBe(resumeStatus === 200 ? "ok" : "provisioning")
+        for (let index = 0; index < 3; index += 1) await read()
+        durable!.restart()
+        await read()
+        expect(calls.filter(call => call.url.endsWith("/gateway"))).toHaveLength(2)
+        expect(calls.filter(call => call.url.endsWith("/projections"))).toHaveLength(resumeStatus === 200 ? 6 : 1)
+        expect(calls.filter(call => call.url.endsWith("/cloud-token")).every(call => (call.body as { login: string }).login === "alice")).toBe(true)
+        expect(calls.filter(call => call.url.endsWith("/gateway")).every(call => JSON.stringify(call.body) === JSON.stringify({ workspace_id: workspaceId }))).toBe(true)
+        await run(clock.adjust("31 seconds"))
+        await read()
+        expect(calls.filter(call => call.url.endsWith("/gateway"))).toHaveLength(3)
+      })
+    })))
+  })
+
+  test.each([409, 503])("required-capability setup polls cannot bypass a pending or failed resume cooldown (HTTP %s)", async (status) => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    let pending = true
+    const { calls, fetch } = relay({
+      provision: (_call, attempt) => attempt > 1 && pending
+        ? json(status, { code: status === 409 ? "repository_workspace_pending" : "unavailable", message: "The workspace is resuming" })
+        : freshGateway(attempt, { workspace_id: workspaceId }),
+      gateway: (_call, attempt) => attempt === 1
+        ? json(409, { code: "conflict", message: "bound workspace is not running at the recorded VM" })
+        : json(200, { ok: true, payload: [] })
+    })
+    await run(Effect.scoped(Effect.gen(function* () {
+      const clock = yield* TestClock.make()
+      yield* Effect.promise(async () => {
+        await run(clock.setTime(Date.now()))
+        const layer = seam(fetch, { clock })
+        const read = () => run(callGateway("alice", "org/repo", "/rpc", {
+          method: "POST", workspaceId, requiredCapability: "repository-jobs/v1", replayable: true
+        }).pipe(Effect.provide(layer)))
+        const waiting = status === 409 ? "provisioning" : "unavailable"
+        expect((await read()).status).toBe(waiting)
+        for (let index = 0; index < 3; index += 1) expect((await read()).status).toBe(waiting)
+        durable!.restart()
+        expect((await read()).status).toBe(waiting)
+        expect(calls.filter(call => call.url.endsWith("/gateway"))).toHaveLength(2)
+        expect(calls.filter(call => call.url.endsWith("/rpc"))).toHaveLength(1)
+        pending = false
+        await run(clock.adjust("31 seconds"))
+        expect((await read()).status).toBe("ok")
+        expect(calls.filter(call => call.url.endsWith("/gateway"))).toHaveLength(3)
+        expect(calls.filter(call => call.url.endsWith("/rpc"))).toHaveLength(2)
+        expect(calls.filter(call => call.url.endsWith("/gateway")).every(call =>
+          JSON.stringify(call.body) === JSON.stringify({ workspace_id: workspaceId, required_capability: "repository-jobs/v1" }))).toBe(true)
+      })
+    })))
+  })
+
+  test("a delayed sleeping reply cannot resume again after another caller already woke the same workspace", async () => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    let release!: (response: Response) => void
+    const held = new Promise<Response>(resolve => { release = resolve })
+    const sleeping = () => json(409, { code: "conflict", message: "bound workspace is not running at the recorded VM" })
+    const { calls, fetch } = relay({
+      provision: (_call, attempt) => freshGateway(attempt, { workspace_id: workspaceId }),
+      gateway: (_call, attempt) => attempt === 1 ? held : attempt === 2 ? sleeping() : json(200, { ok: true, payload: [] })
+    })
+    const layer = seam(fetch)
+    await seed("alice", "org/repo", {
+      gatewayId: "gw-before", workspaceId, baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-before",
+      token: "synthetic-alice", vmId: "bound-vm", expiresAt: Date.now() + 3_600_000,
+      renewAfter: Date.now() + 1_800_000, provisionedAt: Date.now() - 60_000,
+      verifiedCapabilities: ["repository-jobs/v1"]
+    })
+    const read = () => run(callGateway("alice", "org/repo", "/rpc", {
+      method: "POST", workspaceId, requiredCapability: "repository-jobs/v1", replayable: true
+    }).pipe(Effect.provide(layer)))
+    const delayed = read()
+    try {
+      await run(untilCalled(calls, "/rpc"))
+      expect((await read()).status).toBe("ok")
+      release(sleeping())
+      expect((await delayed).status).toBe("ok")
+      expect(calls.filter(call => call.url.endsWith("/gateway"))).toHaveLength(1)
+      expect(calls.filter(call => call.url.endsWith("/rpc"))).toHaveLength(4)
+      expect(calls.filter(call => call.url.endsWith("/rpc")).slice(-2).every(call => call.url.includes("/gw-1/"))).toBe(true)
+    } finally { release(sleeping()); await delayed }
+  })
+
+  test.each([401, 409, 502])("resolving a stale setup gateway rechecks capability before replay (HTTP %s)", async (status) => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    const { calls, fetch } = relay({
+      provision: () => json(409, { code: "coding_host_upgrade_required", message: "The host lacks repository setup" }),
+      gateway: () => json(status, { code: "conflict", message: "bound workspace is not running at the recorded VM" })
+    })
+    const layer = seam(fetch)
+    await seed("alice", "org/repo", {
+      gatewayId: "gw-bound", workspaceId, baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-bound",
+      token: "synthetic-alice", vmId: "bound-vm", expiresAt: Date.now() + 3_600_000,
+      renewAfter: Date.now() + 1_800_000, provisionedAt: Date.now() - 60_000,
+      verifiedCapabilities: ["repository-jobs/v1"]
+    })
+    const result = await run(callGateway("alice", "org/repo", "/rpc", {
+      method: "POST", workspaceId, requiredCapability: "repository-jobs/v1", replayable: true
+    }).pipe(Effect.provide(layer)))
+    expect(result.status).toBe("unavailable")
+    expect(calls.filter(call => call.url.endsWith("/rpc"))).toHaveLength(1)
+    expect(calls.filter(call => call.url.endsWith("/gateway")).map(call => call.body)).toEqual([
+      { workspace_id: workspaceId, required_capability: "repository-jobs/v1" }
+    ])
+    expect(calls.filter(call => call.url.endsWith("/cloud-token")).map(call => call.body)).toEqual([{ login: "alice" }])
+    const retained = durable!.gatewayRows("alice").get(`gateway:org/repo\u0000${workspaceId}`) as GatewayRecord
+    expect(retained.workspaceId).toBe(workspaceId)
+    expect(retained.verifiedCapabilities).toBeUndefined()
+    // A rejected refresh cannot leave old capability evidence trusted by the next setup call.
+    const retried = await run(callGateway("alice", "org/repo", "/rpc", {
+      method: "POST", workspaceId, requiredCapability: "repository-jobs/v1", replayable: true
+    }).pipe(Effect.provide(layer)))
+    expect(retried.status).toBe("unavailable")
+    expect(calls.filter(call => call.url.endsWith("/rpc"))).toHaveLength(1)
+  })
+
+  test("a read-only sleeping gateway neither wakes nor uses an unverified capability", async () => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+    const { calls, fetch } = relay({ gateway: () => json(409, {
+      code: "conflict", message: "bound workspace is not running at the recorded VM"
+    }) })
+    const layer = seam(fetch)
+    await seed("alice", "org/repo", {
+      gatewayId: "gw-bound", workspaceId, baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-bound",
+      token: "synthetic-alice", vmId: "bound-vm", expiresAt: Date.now() + 3_600_000,
+      renewAfter: Date.now() + 1_800_000, provisionedAt: Date.now()
+    })
+    const read = { method: "POST", workspaceId, provision: false } as const
+    expect((await run(callGateway("alice", "org/repo", "/projections", {
+      ...read, requiredCapability: "repository-jobs/v1"
+    }).pipe(Effect.provide(layer)))).status).toBe("unavailable")
+    expect(calls).toHaveLength(0)
+    expect((await run(callGateway("alice", "org/repo", "/projections", read).pipe(Effect.provide(layer)))).status).toBe("unavailable")
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url.endsWith("/projections")).toBe(true)
   })
 
   test("a tunnel failure never replays a call a repeat could duplicate", async () => {

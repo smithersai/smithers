@@ -19,6 +19,7 @@ async function fixture() {
   const background: Promise<unknown>[] = []
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
+    sleepBefore?: string; rejectResumedHost?: boolean;
     workspaceRefusal?: { status: number; code: string; message: string } } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
@@ -53,6 +54,11 @@ async function fixture() {
     expect(request.headers.get("authorization")).toBe(`Bearer synthetic-${login}`)
     const body = JSON.parse(await request.text()) as { tag: string; payload: Record<string, unknown> }
     calls.push({ login, ...body })
+    if (options.sleepBefore === body.tag) {
+      options.sleepBefore = undefined
+      options.incompatibleHost = options.rejectResumedHost
+      return Response.json({ code: "conflict", message: "bound workspace is not running at the recorded VM" }, { status: 409 })
+    }
     const id = `${login}:${input.requestId}`
     if (body.tag === "Plan") {
       if (options.beforePlan) await options.beforePlan
@@ -170,6 +176,43 @@ test("a cached old gateway cannot admit setup before live capability proof or mo
   await t.durable.runGatewayAlarms()
   expect(t.launched.size).toBe(1)
   expect((t.calls.find(call => call.tag === "Plan")!.payload.input as { workspaceId: string }).workspaceId).toBe(t.workspaceIds.alice)
+})
+
+test.each(["Plan", "Run", "Projection.Snapshot"])("a bound setup rechecks resumed capability before forwarding %s", async (procedure) => {
+  const t = await fixture()
+  t.options.sleepBefore = procedure
+  t.options.rejectResumedHost = true
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  expect(t.capabilityCalls).toHaveLength(2)
+  expect(t.calls.filter(call => call.tag === procedure)).toHaveLength(1)
+  expect(t.launched.size).toBe(procedure === "Projection.Snapshot" ? 1 : 0)
+  const stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as {
+    binding: { workspaceId: string }; observationError?: string
+  }
+  expect(stored.binding.workspaceId).toBe(t.workspaceIds.alice)
+  expect(stored.observationError).toContain("compatible coding host")
+  const callsBeforeRestart = t.calls.length
+  t.durable.restart()
+  await t.durable.runGatewayAlarms()
+  expect(t.calls).toHaveLength(callsBeforeRestart)
+  expect(t.capabilityCalls).toHaveLength(3)
+  expect(t.workspaceCalls.filter(call => call.method === "POST")).toHaveLength(1)
+})
+
+test("a sleeping setup Run is not replayed inline and a durable retry retains its original key", async () => {
+  const t = await fixture()
+  t.options.sleepBefore = "Run"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  expect(t.capabilityCalls).toHaveLength(2)
+  expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
+  expect(t.launched.size).toBe(0)
+  t.durable.restart()
+  await t.durable.runGatewayAlarms()
+  const attempts = t.calls.filter(call => call.tag === "Run")
+  expect(attempts).toHaveLength(2)
+  expect(attempts[1]?.payload).toEqual(attempts[0]?.payload)
+  expect(t.launched.size).toBe(1)
+  expect(t.workspaceCalls.filter(call => call.method === "POST")).toHaveLength(1)
 })
 
 test("a closed browser and a restarted Durable Object still launch and finish the admitted setup", async () => {
