@@ -329,7 +329,10 @@ authenticatedTest("an authenticated production user opens the exact live diff th
   await fileDoor.press("Enter")
   const clickedResponse = await clickedDiffResponse
   expect(clickedResponse.status()).toBe(200)
-  const clickedBody = await clickedResponse.json() as ChangeDiff
+  const clickedUrl = new URL(clickedResponse.url())
+  const readback = await realApi(page, request, "GET", clickedUrl.pathname + clickedUrl.search)
+  expect(readback.status()).toBe(200)
+  const clickedBody = await readback.json() as ChangeDiff
   const clickedFile = clickedBody.file_diffs?.find((candidate) => candidate.path === path)
   expect(clickedFile).toMatchObject({
     path,

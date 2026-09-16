@@ -91,10 +91,10 @@ configuredGatewayTest(
 
     // The file read is a second, independently observed path. The root list
     // determines the path; a guessed fixture filename would weaken this test.
-    const listing = observed.files as ReadonlyArray<{ readonly path?: unknown; readonly kind?: unknown }>
+    const listing = observed.files as ReadonlyArray<{ readonly path?: unknown; readonly type?: unknown }>
     expect(Array.isArray(listing), "provider file listing").toBe(true)
-    const candidate = listing.find((entry) => typeof entry.path === "string" && entry.kind === "file")
-    expect(candidate, "the imported README must be available to read").toBeDefined()
+    const candidate = listing.find((entry) => typeof entry.path === "string" && entry.type === "file")
+    expect(candidate, "the workspace must expose a readable repository file").toBeDefined()
     if (candidate?.path !== undefined) {
       const path = String(candidate.path)
       const readPath = cloudRepoPath(workflowRepo.repo, `/workspaces/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}`)
