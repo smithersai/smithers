@@ -45,6 +45,7 @@ const githubHref = "https://github.com/smithersai/smithers"
 
 <script>
   import { bindPressActions } from "../../../app/src/mainview/runtime/PressActions"
+  import { writerTakeoverRequested } from "../../../app/src/mainview/state/WriterOwnership"
   import { shouldResumeApp } from "../lib/appHistory"
   /*
    * The app arrives in this document. After `load` and an idle moment the
@@ -262,7 +263,7 @@ const githubHref = "https://github.com/smithersai/smithers"
      * `?signed-in` or `?auth=failed|error`: the app resumes at once, where
      * it was, and reads the marker itself.
      */
-    if (shouldResumeApp(location.search)) {
+    if (shouldResumeApp(location.search, writerTakeoverRequested())) {
       document.documentElement.classList.add("entering")
       void enter(true)
     } else if (document.readyState === "complete") idle()

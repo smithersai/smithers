@@ -10,3 +10,9 @@ test("the landing keeps Start Here on ordinary return visits, including finished
 test("authentication returns still resume the app immediately", () => {
   for (const search of ["?signed-in=github", "?auth=failed", "?auth=error"]) assert.equal(shouldResumeApp(search), true)
 })
+
+test("an explicit writer takeover enters the app without a tutorial or auth marker", () => {
+  assert.equal(shouldResumeApp("", true), true)
+  assert.equal(shouldResumeApp("?unrelated=1", true), true)
+  assert.equal(shouldResumeApp("", false), false)
+})
