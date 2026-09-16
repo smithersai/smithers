@@ -1253,10 +1253,13 @@ const initializeAppStore = async (
   let generation = 0
   let privacyRejected = false
   const assertReadable = (): void => { assertOwned(); if (privacyRejected) throw new PrivacyRetirementError() }
+  let scheduleAutoCompaction = (): void => {}
+  let compactionTimer: ReturnType<typeof setTimeout> | undefined
+  let compacting = false
   const pendingWrites = new Set<Transaction>()
   const mutateTracked = (transaction: Transaction, mutate: () => void): void => {
     pendingWrites.add(transaction)
-    void transaction.isPersisted.promise.then(() => pendingWrites.delete(transaction), () => pendingWrites.delete(transaction))
+    void transaction.isPersisted.promise.then(() => { pendingWrites.delete(transaction); scheduleAutoCompaction() }, () => pendingWrites.delete(transaction))
     try { transaction.mutate(mutate) } catch (error) { pendingWrites.delete(transaction); throw error }
   }
   const persistStream = async (transaction: Transaction, write: StreamWrite, acceptedGeneration: number): Promise<void> => {
@@ -1778,6 +1781,51 @@ const initializeAppStore = async (
     stopRemoteRetirement = remoteRetirement.dispose
     wakeRemoteRetirement()
   }
+  const compactEvents = async (): Promise<void> => {
+      assertReadable()
+      if (disposed) throw new Error("The app state owner is closed.")
+      if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
+      commitDraft()
+      // Compact a settled head. Preparations created while the checkpoint write
+      // is in flight then reference that same retained head, never an ancestor
+      // of optimistic writes that this compaction is about to discard.
+      while (pendingWrites.size > 0) await Promise.allSettled([...pendingWrites].map(transaction => transaction.isPersisted.promise))
+      assertReadable()
+      if (disposed) throw new Error("The app state owner is closed.")
+      if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
+      // A prepared human form edit may await command admission without any row
+      // write to drain. Retain the exact verified ancestor it references until
+      // its owning command applies or refuses it; never rebind pending input to
+      // a newer head just to make compaction possible.
+      const boundary = { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents,
+        commands: committed.snapshot.commandIntents }
+      if (readEntityRecoveries(draftRecoveryStorage).some(record => record.preparedCommandId !== undefined &&
+        record.authority !== undefined && record.authority.baseSequence < optimistic.head.sequence && admitsPendingRecovery(record, boundary))) {
+        throw new Error("Event compaction is deferred while a prepared form input awaits its command receipt.")
+      }
+      const write: StreamWrite = { state: optimistic, checkpoint: createAppCheckpoint(optimistic, "compaction"), clearEvents: true }
+      const acceptedGeneration = generation
+      const transaction = createTransaction({ metadata: { actor: "system", type: "app.event.compact" },
+        mutationFn: ({ transaction }) => persistStream(transaction, write, acceptedGeneration) })
+      mutateTracked(transaction, () => writeStream(write))
+      await transaction.isPersisted.promise
+  }
+  // Bound replay work without discarding any materialized conversation, frame,
+  // draft or run. The existing atomic checkpoint path retains those rows and
+  // refuses compaction while a prepared edit still needs the covered prefix.
+  scheduleAutoCompaction = () => {
+    if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 || committedEvents.length < 512) return
+    compactionTimer = setTimeout(() => {
+      compactionTimer = undefined
+      if (disposed || pendingWrites.size > 0) return
+      compacting = true
+      void compactEvents().catch(() => {
+        // Optional maintenance must not turn saved work into an app failure.
+        // The original suffix remains authoritative; retry after a later write.
+      }).finally(() => { compacting = false })
+    }, 1_000)
+  }
+  scheduleAutoCompaction()
   return {
     collections: Object.fromEntries(Object.entries({ ...publicCollections, ...views })
       .map(([name, collection]) => [name, readOnlyCollection(collection, assertReadable)])) as AppCollections,
@@ -1810,35 +1858,7 @@ const initializeAppStore = async (
       assertReadable()
       return verifyAppProjection(replayAppEvents(committedCheckpoint, committedEvents, committed.head), readProjection(collections))
     },
-    compactEvents: async () => {
-      assertReadable()
-      if (disposed) throw new Error("The app state owner is closed.")
-      if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
-      commitDraft()
-      // Compact a settled head. Preparations created while the checkpoint write
-      // is in flight then reference that same retained head, never an ancestor
-      // of optimistic writes that this compaction is about to discard.
-      while (pendingWrites.size > 0) await Promise.allSettled([...pendingWrites].map(transaction => transaction.isPersisted.promise))
-      assertReadable()
-      if (disposed) throw new Error("The app state owner is closed.")
-      if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyRetirementError()
-      // A prepared human form edit may await command admission without any row
-      // write to drain. Retain the exact verified ancestor it references until
-      // its owning command applies or refuses it; never rebind pending input to
-      // a newer head just to make compaction possible.
-      const boundary = { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents,
-        commands: committed.snapshot.commandIntents }
-      if (readEntityRecoveries(draftRecoveryStorage).some(record => record.preparedCommandId !== undefined &&
-        record.authority !== undefined && record.authority.baseSequence < optimistic.head.sequence && admitsPendingRecovery(record, boundary))) {
-        throw new Error("Event compaction is deferred while a prepared form input awaits its command receipt.")
-      }
-      const write: StreamWrite = { state: optimistic, checkpoint: createAppCheckpoint(optimistic, "compaction"), clearEvents: true }
-      const acceptedGeneration = generation
-      const transaction = createTransaction({ metadata: { actor: "system", type: "app.event.compact" },
-        mutationFn: ({ transaction }) => persistStream(transaction, write, acceptedGeneration) })
-      mutateTracked(transaction, () => writeStream(write))
-      await transaction.isPersisted.promise
-    },
+    compactEvents,
     readRecovery: () => captureBrowserStorageRecovery({
       session: resolved.mode,
       requirePrivacyBarrier: resolved.privacy !== undefined,
@@ -1859,6 +1879,7 @@ const initializeAppStore = async (
     dispose: () => {
       if (disposePromise !== undefined) return disposePromise
       disposed = true
+      if (compactionTimer !== undefined) clearTimeout(compactionTimer)
       disposePromise = (async () => {
         await stopRemoteRetirement()
         page?.removeEventListener("pagehide", commitDraft)

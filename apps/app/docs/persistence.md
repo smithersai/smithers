@@ -59,7 +59,11 @@ and deletes the covered suffix in one commit. It defers while a prepared form
 input still needs an older verified prefix; retry after that command settles.
 The diagnostic 500-transition
 and 250-tool-call limits never delete uncovered authoritative app events.
-There is no automatic compaction timer. Signout, account replacement and app
+After 512 committed events, an idle one-second maintenance task uses the same
+atomic checkpoint path. It waits for pending writes, preserves every projected
+row, and defers when a prepared edit still requires the old prefix. Startup
+schedules the same maintenance for an existing long suffix; failures preserve
+the authoritative suffix and retry after a later committed write. Signout, account replacement and app
 reset rotate the journal to a checkpoint of permitted state, erase old live
 event bytes and retain retired identities. Chain execution tombstones survive
 reset, so erased execution bytes cannot become a new runnable lineage.
