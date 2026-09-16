@@ -20,6 +20,7 @@
  */
 import { ControlSchema } from "@smthrs/control"
 import { uniqueCallEvents } from "./internal/callEvents.ts"
+import * as NativeResolution from "./internal/nativeResolution.ts"
 
 /**
  * Keeps one start and settlement per durable call identity, preferring a
@@ -108,6 +109,8 @@ export interface Digest {
   readonly outputTokens: number
   /** The final assistant output, when the run resolved. */
   readonly finalOutput: string | undefined
+  /** Root binding and committed native result, retained across bounded windows. */
+  readonly nativeResolution?: NativeResolution.NativeResolution | undefined
   /** The pending ask's question, when the run parked for approval. */
   readonly parkedQuestion: string | undefined
   /** The earliest time a kind this fold handles occurred at. */
@@ -262,6 +265,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
   const refusalCounts = new Map<string, number>()
   let startedAt: number | undefined
   let endedAt: number | undefined
+  let nativeResolution: NativeResolution.NativeResolution | undefined
 
   /**
    * Widens the span this digest reports.
@@ -278,6 +282,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
   }
 
   for (const event of uniqueCallEvents(events)) {
+    nativeResolution = NativeResolution.combine(nativeResolution, NativeResolution.fromEvent(event))
     const payload = asRecord(event.payload)
     const at = timeOf(event)
     const handler = Object.hasOwn(handlers, event.kind) ? handlers[event.kind] : undefined
@@ -308,6 +313,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
 
   return {
     ...accumulator,
+    ...(nativeResolution === undefined ? {} : { nativeResolution }),
     refusals: [...refusalCounts.entries()]
       .map(([message, count]) => ({ message, count }))
       .sort((left, right) => right.count - left.count),
@@ -333,6 +339,14 @@ export const duration = (value: Pick<Digest, "startedAt" | "endedAt">): string =
 }
 
 /**
+ * Assistant text, or a typed module's committed result under its bound root.
+ * @category projections
+ * @since 1.0.0
+ */
+export const resolvedOutput = (value: Pick<Digest, "finalOutput" | "nativeResolution">): string | undefined =>
+  value.finalOutput ?? NativeResolution.output(value.nativeResolution)
+
+/**
  * The one-line verdict: the status plus the reason that most explains it.
  *
  * Priority order mirrors what a reader needs first: a recorded failure cause,
@@ -345,6 +359,7 @@ export const duration = (value: Pick<Digest, "startedAt" | "endedAt">): string =
  */
 export const verdict = (value: Digest): string => {
   const status = value.status ?? "unlaunched"
+  const output = resolvedOutput(value)
   if (status === "failed") {
     return value.cause === undefined
       ? "failed — no cause recorded in the journal"
@@ -358,8 +373,8 @@ export const verdict = (value: Digest): string => {
   if (status === "completed" && value.calls > 0 && value.editsAttempted === 0) {
     return `completed — but 0 of ${value.calls} calls attempted an edit; the run only read`
   }
-  if (status === "completed" && value.finalOutput !== undefined && value.finalOutput.length > 0) {
-    return `completed — ${clip(firstLine(value.finalOutput), 100)}`
+  if (status === "completed" && output !== undefined && output.length > 0) {
+    return `completed — ${clip(firstLine(output), 100)}`
   }
   return status
 }
@@ -387,6 +402,7 @@ export interface Subject {
  * @category rendering
  */
 export const render = (subject: Subject, value: Digest): string => {
+  const output = resolvedOutput(value)
   const lines: Array<string> = [
     `${label("Verdict")}${verdict(value)}`,
     `${label("Run")}${subject.runId}${subject.flowId === undefined ? "" : ` · ${subject.flowId}`}${
@@ -401,8 +417,8 @@ export const render = (subject: Subject, value: Digest): string => {
     lines.push(`${label(index === 0 ? "Refusals" : "")}${refusal.count}× ${clip(refusal.message, 110)}`)
   }
   if (value.cause !== undefined) lines.push(`${label("Cause")}${clip(firstLine(value.cause), 120)}`)
-  if (value.finalOutput !== undefined && value.finalOutput.length > 0) {
-    lines.push(`${label("Output")}${clip(firstLine(value.finalOutput), 120)}`)
+  if (output !== undefined && output.length > 0) {
+    lines.push(`${label("Output")}${clip(firstLine(output), 120)}`)
   }
   return lines.join("\n")
 }
@@ -457,6 +473,7 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
     inputTokens: earlier.inputTokens + later.inputTokens,
     outputTokens: earlier.outputTokens + later.outputTokens,
     finalOutput: later.finalOutput ?? earlier.finalOutput,
+    nativeResolution: NativeResolution.combine(earlier.nativeResolution, later.nativeResolution),
     parkedQuestion: later.parkedQuestion ?? earlier.parkedQuestion,
     startedAt: earliest(earlier.startedAt, later.startedAt),
     endedAt: latest(earlier.endedAt, later.endedAt)

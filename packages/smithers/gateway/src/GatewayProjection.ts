@@ -272,7 +272,7 @@ export const runSummary = (
     outputTokens: facts.outputTokens,
     verdict: Diagnosis.verdict(facts),
     diagnosis: Diagnosis.render({ runId: run.runId, ...optional("flowId", run.flowId) }, facts),
-    ...optional("finalOutput", facts.finalOutput)
+    ...optional("finalOutput", Diagnosis.resolvedOutput(facts))
   }
 }
 

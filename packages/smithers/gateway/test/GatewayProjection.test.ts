@@ -52,6 +52,68 @@ const run: ControlSchema.RunSummary = {
 }
 
 describe("GatewayProjection.runSummary", () => {
+  it("returns a typed module's committed root result across bounded windows, never a child or unbound result", () => {
+    const value = { requestId: "setup-1", receipt: { phase: "completed" } }
+    const binding = event("control.engine.bound", { version: 1, controlRunId: run.runId, executionId: "native-root" })
+    const completion = (executionId = "native-root", status = "completed", tag = "Success") =>
+      event("control.engine.event", {
+        version: 1,
+        executionId,
+        generation: 0,
+        sequence: 10,
+        eventType: "flows.engine.run-decision",
+        payload: {
+          decision: "transitioned",
+          status,
+          executionFact: {
+            version: 1,
+            baseline: "created",
+            observation: { executionId, flowName: "agent/run", status }
+          },
+          state: {
+            version: 1,
+            flowName: "agent/run",
+            payload: { runId: run.runId, planId: "plan-1" },
+            result: { _tag: "Complete", exit: { _tag: tag, value } }
+          }
+        }
+      })
+    const settled = { ...run, status: "completed" as const }
+    const root = completion()
+    expect(GatewayProjection.runSummary(settled, [binding, root]).finalOutput).toBe(JSON.stringify(value))
+    const carry = Diagnosis.combine(Diagnosis.digest([binding]), Diagnosis.digest([root]))
+    expect(GatewayProjection.runSummary(settled, [], undefined, carry).finalOutput).toBe(JSON.stringify(value))
+    expect(Diagnosis.resolvedOutput(carry)).toBe(Diagnosis.resolvedOutput(Diagnosis.digest([binding, root])))
+    expect(GatewayProjection.runSummary(settled, [root], undefined, Diagnosis.digest([binding])).finalOutput).toBe(
+      JSON.stringify(value)
+    )
+    for (
+      const events of [
+        [root],
+        [binding, completion("child")],
+        [binding, completion("native-root", "failed", "Failure")],
+        [binding, completion("native-root", "cancelled")],
+        [binding, event("control.engine.bound", { version: 1, controlRunId: run.runId, executionId: "another" }), root],
+        [binding, event("control.engine.event", { ...(root.payload as object), version: 99 })]
+      ]
+    ) {
+      expect(GatewayProjection.runSummary(settled, events).finalOutput).toBeUndefined()
+    }
+    const child = completion("child")
+    const childBridge = child.payload as Record<string, unknown>
+    const childDecision = childBridge.payload as Record<string, unknown>
+    ;(childDecision.state as Record<string, unknown>).flowName = "repository/setup"
+    expect(GatewayProjection.runSummary(settled, [binding, child, root]).finalOutput).toBe(JSON.stringify(value))
+    expect(
+      GatewayProjection.runSummary(settled, [
+        binding,
+        root,
+        event("control.agent.resolved", { text: "existing assistant output" })
+      ]).finalOutput
+    )
+      .toBe("existing assistant output")
+  })
+
   it("maps the bound native round's pending, waiting and terminal state without inventing missing evidence", () => {
     const binding = event("control.engine.bound", { version: 1, controlRunId: run.runId, executionId: "native" })
     for (
