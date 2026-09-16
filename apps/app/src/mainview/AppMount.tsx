@@ -1,8 +1,9 @@
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { AppRoot, prepareAppRoot, type AppMode } from "./AppRoot"
+import { AppRoot, type AppMode } from "./AppRoot"
 import { configureControllerBoot } from "./ControllerProvider"
 import { browserStartupWatchdog } from "./StartupWatchdog"
+import { warmBootstrap } from "./runtime/Runtime"
 import { createAppFetch } from "./runtime/LocalSession"
 import { createClientErrorReporter } from "./state/ClientErrors"
 
@@ -10,8 +11,8 @@ import { createClientErrorReporter } from "./state/ClientErrors"
  * Mount the app into a page that is already showing something else: the
  * smithers.sh home page imports this module after its `load` event and calls
  * `mountApp` on Start Here, so the app arrives in the same document without a
- * navigation. Importing arms nothing; prepareApp starts boot on activation,
- * and mountApp arms the startup watchdog when the prepared tree is mounted.
+ * navigation. Importing arms nothing; warmApp only fetches bootstrap, and
+ * mountApp starts boot and arms the startup watchdog when the shell mounts.
  */
 
 export interface MountAppOptions {
@@ -26,9 +27,8 @@ export interface MountedApp {
   readonly mark: HTMLElement | null
 }
 
-/** Start only after activation; homepage preloading must not create saved app state. */
-export const prepareApp = (options: MountAppOptions): Promise<void> =>
-  prepareAppRoot(options.mode, { keepUrl: options.keepUrl === true })
+/** Warm only the GET; homepage preloading must not create saved app state. */
+export const warmApp = () => warmBootstrap(createAppFetch())
 
 /*
  * The app owns the lookup of its own mark so a caller (the home page's view
@@ -62,9 +62,9 @@ export const applyAppearance = (root: HTMLElement = document.documentElement): v
 
 /**
  * Render the app into `container` synchronously: the entrance wordmark
- * (SessionShell) is in the DOM when this returns, so a caller's view
- * transition can capture it. Call prepareApp first to include the real app
- * controls in that same transition without a later loading paint.
+ * (SessionNavigationFallback) is in the DOM when this returns, so a caller's
+ * view transition can capture it. Mount first; boot fills in the controls
+ * while the shell and body Suspense fallbacks keep the app visible.
  */
 export function mountApp(container: HTMLElement, options: MountAppOptions): MountedApp {
   applyAppearance()

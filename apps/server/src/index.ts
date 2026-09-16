@@ -259,9 +259,15 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
 export const handleRequest = (request: Request): Effect.Effect<Response, never, RequestServices> =>
   Effect.gen(function* () {
     const url = new URL(request.url)
-    const loopback = url.hostname === "localhost" || url.hostname === "[::1]"
-      || /^127\.\d+\.\d+\.\d+$/.test(url.hostname)
-    if ((url.protocol === "http:" && !loopback && !url.port) || url.hostname === "www.smithers.sh") {
+    // Cloudflare supplies the original scheme in cf-visitor. Wrangler dev omits
+    // it and rewrites the request URL to the first configured route, so using
+    // that URL's protocol would cause a redirect loop. Invalid or absent headers
+    // skip the scheme redirect; www canonicalization remains independent.
+    const visitor = yield* Effect.try(() => JSON.parse(request.headers.get("cf-visitor") ?? "null") as unknown).pipe(
+      Effect.catch(() => Effect.succeed(undefined))
+    )
+    const httpVisitor = typeof visitor === "object" && visitor !== null && "scheme" in visitor && visitor.scheme === "http"
+    if (httpVisitor || url.hostname === "www.smithers.sh") {
       url.protocol = "https:"
       if (url.hostname === "www.smithers.sh") url.hostname = "smithers.sh"
       return Response.redirect(url.toString(), 301)

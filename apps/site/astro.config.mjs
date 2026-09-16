@@ -35,6 +35,8 @@ export default defineConfig({
   experimental: { clientPrerender: true },
   vite: {
     server: {
+      // Start Here imports these lazily; a cold dev server otherwise compiles the graph on the first press.
+      warmup: { clientFiles: ["../app/src/mainview/ControllerBoot.client.ts", "../app/src/mainview/App.tsx"] },
       /*
        * Dev only: forward the app's API families to a local apps/server
        * (`wrangler dev`). Both timeouts are deliberate. Vite's proxy defaults

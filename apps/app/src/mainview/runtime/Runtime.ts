@@ -51,6 +51,16 @@ export const loadBootstrap = async (http: FetchLike): Promise<AppBootstrap> => {
   return parsed.data
 }
 
+// One bootstrap per document, shared by idle preloading and controller boot.
+let bootstrapRead: Promise<AppBootstrap> | undefined
+
+export const warmBootstrap = (http: FetchLike): Promise<AppBootstrap> => {
+  if (bootstrapRead !== undefined) return bootstrapRead
+  bootstrapRead = loadBootstrap(http)
+  void bootstrapRead.catch(() => { bootstrapRead = undefined })
+  return bootstrapRead
+}
+
 export const createRuntime = (options: {
   readonly bootstrap: AppBootstrap
   readonly http: FetchLike

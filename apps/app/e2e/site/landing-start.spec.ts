@@ -11,6 +11,21 @@ test("Start Here mounts the real island in place when it loads", async ({ page }
   await expect(page.locator("#start-error")).toHaveCount(0)
 })
 
+test("Start Here swaps to the app before the boot answers", async ({ page }) => {
+  await page.route("**/api/bootstrap", async route => {
+    await new Promise(resolve => setTimeout(resolve, 3000))
+    await route.fulfill({ json: {
+      apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
+    } })
+  })
+  await page.goto("/")
+  await expect(page.locator("#start")).toBeVisible()
+  await page.keyboard.press("s")
+  await expect(page.locator(".session-shell")).toBeVisible({ timeout: 1000 })
+  await expect(page.locator("#start")).toHaveCount(0)
+  await expect(page.locator(".guide-shell")).toHaveAttribute("data-stage", "1")
+})
+
 for (const failure of ["chunk", "page"] as const) {
   test(`Start Here reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
     let aborted = 0
@@ -42,9 +57,9 @@ for (const failure of ["chunk", "page"] as const) {
 }
 
 test("a returning entry reveals the landing error if its preloaded island fails", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("smithers-mvp.persistenceBackend", "sqlite"))
   await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, request => request.abort())
-  await page.goto("/")
+  // Only an authentication return resumes instantly; saved storage leaves Start Here visible.
+  await page.goto("/?signed-in")
   await expect(page.getByRole("alert")).toHaveText("Smithers couldn't load. Reload to try again.")
   await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible()
   await expect(page.locator("main.home")).toHaveCSS("visibility", "visible")

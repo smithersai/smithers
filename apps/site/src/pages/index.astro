@@ -54,9 +54,10 @@ const githubHref = "https://github.com/smithersai/smithers"
    * every stylesheet the graph reaches into this page's head, render-blocking.
    * Start Here, or S, mounts the app in onboarding mode inside a view
    * transition: the hero wordmark glides onto the app's top-left mark, the
-   * page fades away, and the tutorial eases in. The URL stays where it is.
+   * page fades away, and Suspense paints the shell while boot fills in the
+   * tutorial. The URL stays where it is.
    */
-  type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp" | "prepareApp">
+  type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp"> & Partial<Pick<typeof import("../../../app/src/mainview/AppMount"), "warmApp">>
   type Sheet = HTMLLinkElement | HTMLStyleElement
 
   const start = document.getElementById("start") as HTMLAnchorElement | null
@@ -126,10 +127,10 @@ const githubHref = "https://github.com/smithersai/smithers"
       const island = (await import(/* @vite-ignore */ new URL(chunk, start.href).href)) as { default?: Partial<AppMount> }
       await Promise.all(loaded)
       const mountApp = island.default?.mountApp
-      const prepareApp = island.default?.prepareApp
+      const warmApp = island.default?.warmApp
       if (typeof mountApp !== "function") throw new Error("The app chunk carries no mountApp.")
-      if (typeof prepareApp !== "function") throw new Error("The app chunk carries no prepareApp.")
-      return { mountApp, prepareApp }
+      if (typeof warmApp === "function") void warmApp().catch(() => {})
+      return { mountApp }
     }
     let app: Promise<AppMount> | undefined
     const load = (): Promise<AppMount> => {
@@ -220,14 +221,8 @@ const githubHref = "https://github.com/smithersai/smithers"
         if (!instant) reload.focus({ preventScroll: true })
         return
       }
-      try {
-        await mount.prepareApp({ mode: "onboarding", keepUrl: true })
-      } catch {
-        // A failed boot is cached for this document. A full entry gets a fresh
-        // attempt and the app's startup error UI instead of a dead Start link.
-        window.location.assign(start.href)
-        return
-      }
+      // Mount first: Suspense paints the shell while boot runs alongside the
+      // transition. The app owns boot failures through its boundary and watchdog.
       if (instant || reduced.matches || typeof document.startViewTransition !== "function") {
         if (!instant && !reduced.matches) await flight()
         swap(mount)

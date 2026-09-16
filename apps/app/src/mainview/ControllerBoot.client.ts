@@ -6,7 +6,7 @@ import { nativeOpenExternal, nativeRepositories, nativeShellAvailable } from "./
 import { createAppFetch } from "./runtime/LocalSession"
 import { openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
-import { createRuntime, loadBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
+import { createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
@@ -46,7 +46,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     const entrySearch = yield* Effect.sync(() => window.location.search)
     const entryPathname = yield* Effect.sync(() => window.location.pathname)
     const http = yield* Effect.sync(() => createAppFetch())
-    const bootstrapRead = loadBootstrap(http)
+    const bootstrapRead = warmBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
       loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, {
         seedWiki: bootstrapRead.then(bootstrap => bootstrap.host !== "cloud", () => true), eraseTurn: createTurnEraser(http)

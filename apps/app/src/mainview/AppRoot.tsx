@@ -5,7 +5,6 @@ import { SessionNavigation, SessionNavigationFallback } from "./SessionNavigatio
 import { SessionShell } from "./SessionShell"
 import { MountedSignal, StartupErrorBoundary } from "./StartupBoundary"
 import type { StartupWatchdog } from "./StartupWatchdog"
-import type { ControllerBootOptions } from "./ControllerBoot.client"
 import "@fontsource/inter/400.css"
 import "@fontsource/inter/500.css"
 import "@fontsource/inter/600.css"
@@ -35,11 +34,6 @@ void appModule.then(views => { preparedViews = views }, () => {})
 void appModule.catch(() => {})
 const GuidedApp = lazy(() => appModule.then(({ GuidedApp }) => ({ default: GuidedApp })))
 const RepoApp = lazy(() => appModule.then(({ RepositoryApp }) => ({ default: RepositoryApp })))
-
-/** Resolve the real controller and view before a homepage entrance swaps its DOM. */
-export const prepareAppRoot = async (mode: AppMode, options: Omit<ControllerBootOptions, "mode"> = {}): Promise<void> => {
-  await Promise.all([prepareControllerBoot({ ...options, mode }), appModule])
-}
 
 export function AppRoot({
   mode,

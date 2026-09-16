@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
-import { createRuntime, loadBootstrap } from "./Runtime"
+import { createRuntime, loadBootstrap, warmBootstrap } from "./Runtime"
 
 const cloud: AppBootstrap = {
   apiVersion: 1,
@@ -62,4 +62,23 @@ describe("runtime composition", () => {
     expect(seen).toEqual([APP_BOOTSTRAP_PATH])
     expect(loaded).toEqual(cloud)
   })
+})
+
+test("bootstrap warming shares the in-flight promise and retries after rejection", async () => {
+  const first = Promise.withResolvers<Response>()
+  let reads = 0
+  const http = () => { reads++; return first.promise }
+  const pending = warmBootstrap(http)
+  expect(warmBootstrap(http)).toBe(pending)
+  expect(reads).toBe(1)
+  first.reject(new Error("offline"))
+  await expect(pending).rejects.toThrow("offline")
+
+  const next = Promise.withResolvers<Response>()
+  const retry = warmBootstrap(() => { reads++; return next.promise })
+  expect(retry).not.toBe(pending)
+  expect(warmBootstrap(http)).toBe(retry)
+  expect(reads).toBe(2)
+  next.resolve(Response.json(cloud))
+  await expect(retry).resolves.toEqual(cloud)
 })
