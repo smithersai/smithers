@@ -83,8 +83,13 @@ authenticatedTest("production dispatcher and approvals are read from the authent
 }), async ({ page, request }) => {
   await bootProductionRepository(page)
   const reads: Array<{ method: string; path: string; status: number }> = []
+  let approvalsRequest: Record<string, unknown> | undefined
   page.on("response", (response) => {
     const url = new URL(response.url())
+    if (url.pathname === "/api/workflow/rpc") {
+      const body = response.request().postDataJSON()
+      if (body?.procedure === "Projection.Snapshot" && body?.payload?.selector?._tag === "approvals") approvalsRequest = body
+    }
     if (url.pathname.startsWith("/api/workflow/") || url.pathname.includes("/contents/.smithers/factory.json")) {
       reads.push({ method: response.request().method(), path: url.pathname, status: response.status() })
     }
@@ -102,13 +107,13 @@ authenticatedTest("production dispatcher and approvals are read from the authent
   const approvals = page.locator('.smithers-card[data-kind="approvals-inbox"]').last()
   await expect(approvals).toBeVisible()
   await expect(approvals).toContainText(new RegExp(`No approvals are pending on ${PRODUCTION_REPO.replace("/", "\\/")}`))
-  await expect.poll(() => reads.some(({ path }) => path === "/api/workflow/approvals")).toBe(true)
+  await expect.poll(() => approvalsRequest).toBeDefined()
 
-  const approvalApi = await realApi(page, request, "GET", `/api/workflow/approvals?repo=${encodeURIComponent(PRODUCTION_REPO)}`)
+  const approvalApi = await realApi(page, request, "POST", "/api/workflow/rpc", approvalsRequest!)
   expect(approvalApi.status()).toBe(200)
-  const body = await approvalApi.json() as { status?: unknown; approvals?: unknown }
-  expect(body.status).toBe("ok")
-  expect(body.approvals).toEqual([])
+  const body = await approvalApi.json() as { ok?: unknown; payload?: { rows?: unknown } }
+  expect(body.ok).toBe(true)
+  expect(body.payload?.rows).toEqual([])
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator('.smithers-card[data-kind="approvals-inbox"]').last()).toBeVisible()
 })

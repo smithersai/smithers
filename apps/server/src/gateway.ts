@@ -768,6 +768,16 @@ const provisionWithRemint = (
  */
 const isTunnelFailure = (status: number): boolean => status === 502 || status === 503 || status === 504
 
+// The authenticated API rejects a sleeping workspace before forwarding the
+// call. Its two exact conflicts invalidate a cached gateway; an application
+// conflict must remain untouched and must never cause a command replay.
+const isSleepingGateway = (response: Response): Effect.Effect<boolean> =>
+  response.status !== 409 ? Effect.succeed(false) : readJsonOrUndefined(response.clone()).pipe(
+    Effect.map((body) => typeof body === "object" && body !== null &&
+      "code" in body && body.code === "conflict" && "message" in body &&
+      (body.message === "repo gateway is not running" || body.message === "bound workspace is not running at the recorded VM"))
+  )
+
 /**
  * How long a freshly minted record is trusted before another tunnel failure may
  * force a second re-provision. Without it an EventSource that reconnects every
@@ -882,7 +892,7 @@ export const callGateway = (
       const attempted = yield* relayAttempt(record, path, init)
       if (Result.isFailure(attempted)) return unreachable(attempted.failure)
       const response = attempted.success
-      if (response.status === 401 || isTunnelFailure(response.status)) {
+      if (response.status === 401 || isTunnelFailure(response.status) || (yield* isSleepingGateway(response))) {
         // Stale record: the next provisioning call refreshes it. A read does not.
         yield* discardBody(response)
         return { status: "unavailable", detail: `The workspace gateway answered HTTP ${response.status} to a read.` } as const
@@ -902,7 +912,8 @@ export const callGateway = (
      */
     const lost = Result.isFailure(first)
     const tunnelFailed = Result.isSuccess(first) && isTunnelFailure(first.success.status)
-    if (!lost && first.success.status !== 401 && !tunnelFailed) return { status: "ok", response: first.success } as const
+    const sleeping = Result.isSuccess(first) && (yield* isSleepingGateway(first.success))
+    if (!lost && first.success.status !== 401 && !tunnelFailed && !sleeping) return { status: "ok", response: first.success } as const
     // A record minted moments ago has already had its chance: re-POSTing
     // again cannot resume anything and would only stampede the route.
     const now = yield* Clock.currentTimeMillis
@@ -927,7 +938,7 @@ export const callGateway = (
      * replayed: the gateway is resumed for the next one and this attempt is
      * reported as what it was.
      */
-    if (tunnelFailed && init.replayable === false) {
+    if ((tunnelFailed || sleeping) && init.replayable === false) {
       return {
         status: "unavailable",
         detail: "Your workspace had gone to sleep. It is awake again — ask me once more."

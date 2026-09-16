@@ -712,6 +712,48 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(rpcCalls[1]?.url).toContain("/api/gateways/gw-")
   })
 
+  test.each([
+    "repo gateway is not running",
+    "bound workspace is not running at the recorded VM"
+  ])("a cached sleeping gateway resumes before a safe read: %s", async (message) => {
+    const { calls, fetch } = relay({
+      gateway: (_call, attempt) => attempt === 1
+        ? json(409, { code: "conflict", message })
+        : json(200, { ok: true, payload: [] })
+    })
+    const call = await run(callGateway("will", "will/mvp", "/projections", {
+      method: "POST", replayable: true
+    }).pipe(Effect.provide(seam(fetch))))
+    expect(call.status).toBe("ok")
+    if (call.status === "ok") expect(call.response.status).toBe(200)
+    expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(2)
+    expect(calls.filter(entry => entry.url.endsWith("/projections"))).toHaveLength(2)
+  })
+
+  test("an application conflict is preserved without reprovision or replay", async () => {
+    const body = { code: "conflict", message: "approval already decided" }
+    const { calls, fetch } = relay({ gateway: () => json(409, body) })
+    const call = await run(callGateway("will", "will/mvp", "/rpc", {
+      method: "POST", replayable: true
+    }).pipe(Effect.provide(seam(fetch))))
+    expect(call.status).toBe("ok")
+    if (call.status === "ok") expect(await call.response.json()).toEqual(body)
+    expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(1)
+    expect(calls.filter(entry => entry.url.endsWith("/rpc"))).toHaveLength(1)
+  })
+
+  test("a sleeping gateway resumes without replaying a consequential command", async () => {
+    const { calls, fetch } = relay({ gateway: () => json(409, {
+      code: "conflict", message: "bound workspace is not running at the recorded VM"
+    }) })
+    const call = await run(callGateway("will", "will/mvp", "/rpc", {
+      method: "POST", replayable: false
+    }).pipe(Effect.provide(seam(fetch))))
+    expect(call.status).toBe("unavailable")
+    expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(2)
+    expect(calls.filter(entry => entry.url.endsWith("/rpc"))).toHaveLength(1)
+  })
+
   test("a tunnel failure never replays a call a repeat could duplicate", async () => {
     const { calls, fetch } = relay({ gateway: () => new Response("error code: 502\n", { status: 502 }) })
     const layer = seam(fetch)
