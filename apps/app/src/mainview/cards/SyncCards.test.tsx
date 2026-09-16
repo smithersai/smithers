@@ -339,7 +339,7 @@ describe("RepoImportCardBody — the job card (ADR 0005 \"Import a GitHub reposi
 
     expect(host.textContent).toContain("acme/web")
     click(host, "Show issues")
-    expect(commands).toEqual([{ name: "issues.list", args: "acme/web" }])
+    expect(commands).toEqual([{ name: "issues.list", args: "open acme/web" }])
   })
 })
 
@@ -349,7 +349,7 @@ test("a completed import without a workspace receipt still offers the next repos
     payload: { repo: "acme/web", jobId: "job-1", phase: "done", detail: null } }}
     onRunCommand={(name, args) => commands.push({ name, args })} />)
   click(host, "Show issues")
-  expect(commands).toEqual([{ name: "issues.list", args: "acme/web" }])
+  expect(commands).toEqual([{ name: "issues.list", args: "open acme/web" }])
 })
 
 describe("RepoImportCardBody — the rate-limited retry", () => {

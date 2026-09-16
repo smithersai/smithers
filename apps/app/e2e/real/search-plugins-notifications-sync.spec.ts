@@ -53,7 +53,7 @@ test("real search refuses unindexed modes and preserves an honest empty result",
 
 test("the Library is absent while its feature flag is off", scenario("plugins.library-disabled-real", {
   capabilities: [],
-  coverage: ["host:local", "host:production", "path:success", "door:slash", "dimension:plugin-shelf", "evidence:disabled-library"],
+  coverage: ["action:chat.open", "host:local", "host:production", "path:success", "door:slash", "dimension:plugin-shelf", "evidence:disabled-library"],
   description: "The default app does not register Library navigation or mutation commands. Enabled Library behavior is covered by the controller and component suites."
 }), async ({ page }) => {
   await boot(page)

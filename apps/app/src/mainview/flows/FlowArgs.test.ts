@@ -148,3 +148,9 @@ test("issue detail preserves the tracker even when native and GitHub numbers col
   roundTrip("wiki.heading", { line: "5", cardId: "wiki-open-plans" }, "5 wiki-open-plans", { line: "5", cardId: "wiki-open-plans" })
   roundTrip("wiki.heading", { line: "5" }, "5", { line: "5" })
 })
+
+test("import issue action keeps the repository after the default filter", () => {
+ const args = flowArgs("issues.list", {repo: "acme/web"})
+ expect(args).toBe("open acme/web")
+ expect(payloadFor("issues.list", args)).toMatchObject({payload: {filter:"open",repo:"acme/web"}})
+})
