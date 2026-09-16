@@ -54,7 +54,7 @@ export const FlowFormCardBody = ({
     const active = node.ownerDocument.activeElement
     if (active?.getAttribute("data-flow") !== flow || node.contains(active)) return
     node.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled), select:not(:disabled)")?.focus()
-  }, [card.id, card.payload.via, flow, settled, busy])
+  }, [card.id, card.ordinal, card.payload.via, flow, settled, busy])
   return (
     <form ref={focusFromTrigger} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
       event.preventDefault()

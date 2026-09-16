@@ -293,3 +293,22 @@ describe("the flow form card", () => {
    mount(<FlowFormCardBody card={formCard({ via: "agent" })} onRunCommand={() => {}} />)
    expect(document.activeElement).toBe(trigger)
  })
+
+test("invoking a persisted form again hands focus back without refocusing on draft edits", () => {
+ const trigger = document.createElement("button")
+ trigger.dataset.flow = "tab.harness"
+ const host = document.createElement("div")
+ document.body.append(trigger, host)
+ const root = createRoot(host)
+ cleanups.push(() => { flushSync(() => root.unmount()); host.remove(); trigger.remove() })
+ const card = formCard({ via: "user" })
+ const render = (ordinal: number, draft = {}) => flushSync(() => root.render(<FlowFormCardBody card={{ ...card, ordinal, payload: { ...card.payload, draft } }} onRunCommand={() => {}} />))
+ render(1)
+ trigger.focus()
+ render(2)
+ expect(document.activeElement).toBe(host.querySelector("input"))
+ const second = host.querySelector("select")!
+ second.focus()
+ render(2, { id: "saved" })
+ expect(document.activeElement).toBe(second)
+})
