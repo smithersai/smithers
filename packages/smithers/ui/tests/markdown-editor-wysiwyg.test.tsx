@@ -257,6 +257,10 @@ describe("MarkdownEditor scrollToLine (WYSIWYG path)", () => {
       ...stub.module,
       Crepe: class extends Base {
         override async create() {
+          const editor = document.createElement("div");
+          editor.setAttribute("contenteditable", "true");
+          editor.tabIndex = 0;
+          this.options.root.append(editor);
           for (const line of this.options.defaultValue.split("\n")) {
             const match = /^(#{1,6})\s+(.*)$/.exec(line);
             if (!match) continue;
@@ -291,6 +295,7 @@ describe("MarkdownEditor scrollToLine (WYSIWYG path)", () => {
       );
       expect(host().getAttribute("data-mode")).toBe("wysiwyg");
       expect(handle!.scrollToLine(9)).toBe(true);
+      expect(document.activeElement).toBe(host().querySelector('[contenteditable="true"]'));
       expect(handle!.scrollToLine(7)).toBe(true);
       expect(handle!.scrollToLine(1)).toBe(true);
       expect(seen).toEqual(["h2:Next", "h2:Next", "h1:Plans"]);

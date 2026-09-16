@@ -420,6 +420,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         if (!host || !readyRef.current) return false;
         const heading = renderedHeadingFor(host, markdown, line);
         if (heading === undefined) return false;
+        host.querySelector<HTMLElement>('[contenteditable="true"]')?.focus({ preventScroll: true });
         if (heading === null) {
           host.scrollTop = 0;
           return true;
