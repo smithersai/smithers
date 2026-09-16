@@ -102,7 +102,7 @@ export const make = (options: Options) => Effect.gen(function*() {
     for (let page = 0; page < 100; page++) {
       const response = yield* send(HttpClientRequest.get(`${base}/bookmarks`).pipe(
         HttpClientRequest.setUrlParams({ limit: "100", ...(cursor === "" ? {} : { cursor }) })), [200], BookmarkPage)
-      for (const bookmark of response.items) if (bookmark.name === "main" && !bookmark.is_tracking_remote) candidates.push(bookmark.target_commit_id)
+      for (const bookmark of response.items) if (bookmark.name === "main") candidates.push(bookmark.target_commit_id)
       if (response.next_cursor === "") {
         if (candidates.length !== 1 || !Schema.is(Resolved.fields.commitId)(candidates[0])) return yield* invalid("Repository must have one unambiguous immutable local main bookmark")
         return candidates[0]!

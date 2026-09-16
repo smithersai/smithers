@@ -40,10 +40,10 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 test("landing client uses native prepare, replay-safe creation, exact queue and immutable result", async () => {
   const { service, calls } = await configured((request, call) => {
     assert.equal(request.headers.authorization, "Bearer fixture-private-token")
-    if (call === 1) return json({ items: [{ name: "main", target_change_id: "remote", target_commit_id: "0".repeat(40), is_tracking_remote: true }], next_cursor: "opaque+next" })
+    if (call === 1) return json({ items: [{ name: "feature", target_change_id: "remote", target_commit_id: "0".repeat(40), is_tracking_remote: true }], next_cursor: "opaque+next" })
     if (call === 2) {
       assert.ok(request.urlParams.params.some(([key, value]) => key === "cursor" && value === "opaque+next"))
-      return json({ items: [{ name: "main", target_change_id: "native", target_commit_id: preparation.expected_commit_id, is_tracking_remote: false }], next_cursor: "" })
+      return json({ items: [{ name: "main", target_change_id: "native", target_commit_id: preparation.expected_commit_id, is_tracking_remote: true }], next_cursor: "" })
     }
     if (request.url.endsWith("/append/prepare")) return json(preparation)
     if (request.url.includes("/requests/")) return json(landing, 201)
