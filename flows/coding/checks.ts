@@ -22,14 +22,18 @@ export const checkDelegate = Flow.make("coding/CommandCheck", {
   body: invocation => CheckCommand.call(invocation)
 })
 
-export type CheckHostOptions = ImmutableSourceOptions
+export type CheckHostOptions = ImmutableSourceOptions & {
+  /** Optional deployment resource limit; ordinary checks may run concurrently. */
+  readonly concurrency?: number
+}
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 
 /** Supply this layer to the existing native action table and register checkDelegate. */
 export const checkLayers = (options: CheckHostOptions) => {
   // Each check owns an exported tree, dependency install and build processes.
-  // Bound their combined memory footprint for the whole workspace host.
-  const checks = Semaphore.makeUnsafe(1)
+  // The deploying host owns its resource limit; standalone compositions retain
+  // concurrent owner feedback, including cancellation of unrelated checks.
+  const checks = options.concurrency === undefined ? undefined : Semaphore.makeUnsafe(options.concurrency)
   return Layer.mergeAll(
   Interpreter.layer(checkDelegate),
   CheckCommand.toLayer(invocation => Effect.gen(function*() {
@@ -68,7 +72,7 @@ export const checkLayers = (options: CheckHostOptions) => {
     }))
   }).pipe(
     Effect.scoped,
-    checks.withPermits(1),
+    effect => checks === undefined ? effect : checks.withPermits(1)(effect),
     Effect.mapError(error => error instanceof CodingError ? error : new CodingError({
       code: "execution", message: "Revision check could not execute or finish its temporary source cleanup" +
         (error instanceof Error ? `: ${error.message.slice(0, 2_048)}` : "")

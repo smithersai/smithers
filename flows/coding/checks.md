@@ -97,4 +97,4 @@ pointer. The host binds its actual reviewer policy and configured page catalog
 to the ordinary check declaration's execution identity. The owning
 [semantic-check guide](wiki-check.md) describes the capture and reuse contract.
 
-The coding host runs one revision command check at a time. The permit covers source export, dependency installation, execution, and temporary-tree cleanup, so concurrent check flows do not multiply the workspace VM's memory and disk usage. Each check still records its own immutable-source receipt.
+The deployed coding host explicitly selects `concurrency: 1` to run one revision command check at a time. The permit covers source export, dependency installation, execution, and temporary-tree cleanup, so concurrent check flows do not multiply the workspace VM's memory and disk usage. Each check still records its own immutable-source receipt. Standalone `checkLayers` compositions retain concurrent execution unless they supply this resource limit; owner-feedback checks can therefore cancel unrelated pending checks without waiting for them to finish.

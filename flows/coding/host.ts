@@ -135,7 +135,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])
     )
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request,
-      checkLayers({ repositoryPath: options.repositoryPath, fs,
+      checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }))
       .pipe(Layer.provideMerge(nativeLayer(options)))
     // Loading verified declaration bytes reserves a sibling temporary module.
