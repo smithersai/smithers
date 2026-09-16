@@ -30,12 +30,15 @@ const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(functi
     response = yield* call(token.token)
   }
   const body = recordOf(yield* readBoundedJson(response, 16_000))
+  // A cold primary is only a candidate. Keep selection pending until Cloud
+  // proves its capability or chooses a different workspace within quota.
+  if (response.status === 409 && body.code === "repository_workspace_pending") return { status: "pending" } as const
   if (!response.ok) return yield* Effect.fail(failure(typeof body.message === "string" ? body.message : `The repository workspace answered HTTP ${response.status}`))
   if (!isGatewayWorkspaceId(body.id) || (workspaceId !== undefined && body.id !== workspaceId)
     || (body.repo_full_name !== undefined && body.repo_full_name !== record.input.repo)) return yield* Effect.fail(failure("Cloud returned a different repository workspace"))
   if (body.status === "failed" || body.status === "deleted") return yield* Effect.fail(failure(typeof body.failure_message === "string" ? body.failure_message : "The repository workspace could not start"))
   if (!["running", "starting", "pending", "stopped", "stopping", "suspended"].includes(String(body.status))) return yield* Effect.fail(failure("Cloud returned an unknown workspace state"))
-  return { id: body.id, ready: !["starting", "pending", "stopping"].includes(String(body.status)) }
+  return { status: "selected", id: body.id, ready: !["starting", "pending", "stopping"].includes(String(body.status)) } as const
 })
 
 /** Credentials stay in the existing gateway relay; the fixed caller chooses the procedure. */
@@ -67,10 +70,20 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
   if (!record || record.result) return
   if (!record.binding) {
     const workspace = yield* setupWorkspace(login, record)
+    if (workspace.status === "pending") {
+      if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
+      return
+    }
     if (record.workspaceId !== workspace.id) record = yield* requests.update(login, record, { ...record, workspaceId: workspace.id })
-    if (!workspace.ready) return
+    if (!workspace.ready) {
+      if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
+      return
+    }
     const gateway = yield* ensureGateway(login, record.input.repo, false, record.workspaceId, "repository-jobs/v1")
-    if (gateway.status === "provisioning") return
+    if (gateway.status === "provisioning") {
+      if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
+      return
+    }
     if (gateway.status !== "ready") return yield* Effect.fail(failure(gateway.detail))
     record = yield* requests.update(login, record, { ...record, binding: { gatewayId: gateway.record.gatewayId, workspaceId: gateway.record.workspaceId } })
   }

@@ -18,7 +18,8 @@ async function fixture() {
   const input = { requestId: "setup-test", repo: setup.repo, job: setup.job, revision: setup.revision, draft: setup.draft, digest: setupCandidate(setup) }
   const background: Promise<unknown>[] = []
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
-  const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean } = { runState: "running", workspaceState: "running" }
+  const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
+    workspaceRefusal?: { status: number; code: string; message: string } } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
   const plans = new Map<string, Record<string, unknown>>()
@@ -44,6 +45,7 @@ async function fixture() {
           token: `synthetic-${login}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() })
       }
       workspaceCalls.push({ method: request.method, path: url.pathname, ...(request.method === "POST" ? { body: await request.json() } : {}) })
+      if (options.workspaceRefusal) return Response.json(options.workspaceRefusal, { status: options.workspaceRefusal.status })
       return Response.json({ id: workspaceIds[login], status: options.workspaceState, kind: "vm", repo_full_name: "org/repo" })
     }
     if (url.hostname !== "gateway.test") throw Error("Unexpected upstream")
@@ -100,6 +102,51 @@ test("fresh setup acknowledges while workspace creation is unresolved, pins the 
     expect(t.launched.size).toBe(1)
     expect(t.capabilityCalls).toHaveLength(1)
   } finally { held.release(); await t.settle() }
+})
+
+test("a cold unverified primary stays queued across reload without pinning or launching", async () => {
+  const t = await fixture()
+  t.options.workspaceRefusal = { status: 409, code: "repository_workspace_pending", message: "The repository workspace is starting" }
+  expect((await t.send("POST", "evaluate", "alice", t.input)).status).toBe(202)
+  await t.settle()
+  t.durable.restart()
+  await t.durable.runGatewayAlarms()
+  const waiting = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as {
+    workspaceId?: string; binding?: unknown; observationError?: string; receipt: { phase: string }
+  }
+  expect(waiting.workspaceId).toBeUndefined()
+  expect(waiting.binding).toBeUndefined()
+  expect(waiting.observationError).toBeUndefined()
+  expect(waiting.receipt.phase).toBe("queued")
+  expect(t.capabilityCalls).toHaveLength(0)
+  expect(t.launched.size).toBe(0)
+  expect(t.workspaceCalls.length).toBeGreaterThanOrEqual(2)
+  expect(t.workspaceCalls.every(call => call.method === "POST")).toBe(true)
+  t.options.workspaceRefusal = undefined
+  await t.durable.runGatewayAlarms()
+  const selected = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as { workspaceId: string }
+  expect(selected.workspaceId).toBe(t.workspaceIds.alice)
+  expect(t.launched.size).toBe(1)
+  expect((t.calls.find(call => call.tag === "Plan")!.payload.input as { workspaceId: string }).workspaceId).toBe(t.workspaceIds.alice)
+})
+
+test("only typed pending clears a previous selection error; generic conflicts remain visible", async () => {
+  const t = await fixture()
+  t.options.workspaceRefusal = { status: 409, code: "conflict", message: "The workspace identity changed" }
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  let stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as { observationError?: string; workspaceId?: string }
+  expect(stored.observationError).toBe("The workspace identity changed")
+  expect(stored.workspaceId).toBeUndefined()
+  t.options.workspaceRefusal = { status: 503, code: "repository_workspace_pending", message: "Provider unavailable" }
+  await t.durable.runGatewayAlarms()
+  stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as typeof stored
+  expect(stored.observationError).toBe("Provider unavailable")
+  t.options.workspaceRefusal = { status: 409, code: "repository_workspace_pending", message: "The repository workspace is starting" }
+  await t.durable.runGatewayAlarms()
+  stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as typeof stored
+  expect(stored.observationError).toBeUndefined()
+  expect(stored.workspaceId).toBeUndefined()
+  expect(t.launched.size).toBe(0)
 })
 
 test("a cached old gateway cannot admit setup before live capability proof or move the pinned workspace", async () => {
