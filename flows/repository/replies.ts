@@ -30,14 +30,23 @@ export const consolidatedReply = (input: JobInput, result: JobResult): JobResult
   return { ...result, reply: input.event.source === "smithers-cloud" ? { body, issueNumber, state: "drafted" }
     : { body, issueNumber, state: "undeliverable", reason: "This release does not deliver replies to GitHub issues." } }
 }
-const post = (input: JobInput, result: JobResult, reply: Reply) => Effect.gen(function*() {
+/** The publication step of one author round.
+ *
+ * A dispatch consolidates once per round, and the step is what plue keys a
+ * comment by. The identity is the ROUND, never its text: two rounds can reach
+ * the same words and are still two approved publications, which a content key
+ * silently collapsed into one comment that both results called posted. The
+ * round's execution id is durable - `ContinueAuthor` derives it from the
+ * instance and the attempt (`flows/repository/execution.ts:212`), and a first
+ * reply from the parent execution and payload - so a retry, a replay or a
+ * restart of one round asks for the same step and plue returns that round's
+ * receipt, while its body equality check under that step refuses a changed
+ * body with HTTP 409. */
+const publicationStep = (round: string) => `response-${Digest.digest(Digest.canonical(round)).slice(0, 12)}`
+const post = (input: JobInput, result: JobResult, reply: Reply, round: string) => Effect.gen(function*() {
   const remote = yield* Effect.serviceOption(RepositoryRemote)
   if (Option.isNone(remote) || !remote.value.comment || remote.value.repo !== input.repo) return yield* invalid("The repository has no idempotent reply adapter")
-  // One dispatch can consolidate more than once, once per author round, and
-  // the publication step is what plue keys a comment by: naming every round
-  // "response" makes the second body HTTP 409. The body names its own step, so
-  // a retry of one reply still returns its receipt.
-  const step = `response-${Digest.digest(Digest.canonical(reply.body)).slice(0, 16)}`
+  const step = publicationStep(round)
   const receipt = yield* remote.value.comment(input.job, step, {
     repo: input.repo, workspace_id: remote.value.workspaceId, revision: input.revision, digest: input.digest,
     delivery_key: input.event.deliveryKey, source: "smithers-cloud", issue_number: reply.issueNumber, body: reply.body
@@ -65,11 +74,11 @@ export const replyLayers = Layer.mergeAll(Interpreter.layer(PublishReply), Inter
   Publish.toLayer(({ input, result }) => Effect.gen(function*() {
     const drafted = consolidatedReply(input, result), reply = drafted.reply
     if (reply === undefined || reply.state !== "drafted" || input.event.trial === true) return drafted
-    if (input.configuration.replies === "automatic") return yield* post(input, drafted, reply)
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
+    if (input.configuration.replies === "automatic") return yield* post(input, drafted, reply, instance.executionId)
     const decision = yield* runtime.execute(ConfirmReply, { executionId: `${instance.executionId}-approval`,
       payload: { reply, timeoutMs: input.configuration.budgetMinutes * 60_000 } })
       .pipe(Effect.catch(error => Effect.succeed(unanswered(reply, error))))
-    if (decision === true) return yield* post(input, drafted, reply)
+    if (decision === true) return yield* post(input, drafted, reply, instance.executionId)
     return { ...drafted, reply: decision === false ? { ...reply, state: "declined" as const } : decision }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The public reply could not be verified; retry the same dispatch")))))

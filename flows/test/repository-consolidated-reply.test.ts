@@ -72,6 +72,9 @@ const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") =
     owner: { hostId: "repository-reply-test" }, signals: [] },
     Layer.mergeAll(replyLayers, asking).pipe(Layer.provideMerge(remote), Layer.provideMerge(Action.layerImplementations)))
   return { comments,
+    /** A comment this dispatch published before the host recorded its receipt. */
+    seed: (deliveryKey: string, step: string, body: string) =>
+      published.set(`${deliveryKey}:${step}`, { body, receipt: json({ step, body }) }),
     publish: (payload: ReturnType<typeof fixture>, executionId: string) => Effect.runPromise(Effect.scoped(
       PublishReply.execute(payload, { executionId }).pipe(Effect.provide(engine())))),
     park: (payload: ReturnType<typeof fixture>, executionId: string) => Effect.runPromise(Effect.scoped(Effect.gen(function*() {
@@ -220,6 +223,56 @@ test("an author reply produces a second draft that is confirmed and posted as it
   assert.equal(comments[0]?.delivery_key, comments[1]?.delivery_key)
 })
 
+/**
+ * Two author rounds can reach the same words. They are still two approved
+ * publications, so the step is the round's durable identity and never its text
+ * (CT129: a content key returned the first comment's receipt to the second
+ * approval and called both posted).
+ */
+test("two approvals of the same words publish two comments with their own receipts", { timeout: 60_000 }, async (t) => {
+  const { comments, park, answer } = await host(t)
+  const receipts: Array<Schema.Json> = []
+  for (const round of ["same-words-one", "same-words-two"]) {
+    const payload = fixture()
+    const parked = await park(payload, round)
+    assert.ok(Option.isSome(parked), round)
+    const posted = await answer(parked.value, true, payload, round)
+    assert.equal(posted.reply?.state, "posted", round)
+    assert.equal(posted.publicActions.length, 1, round)
+    receipts.push(posted.publicActions[0]!)
+  }
+  assert.equal(comments.length, 2, "two approved publications are two comments")
+  assert.equal(comments[0]?.body, comments[1]?.body, "the fixture's two rounds say the same thing")
+  assert.notEqual(comments[0]?.step, comments[1]?.step)
+  assert.notDeepEqual(receipts[0], receipts[1], "each approved publication keeps its own receipt")
+})
+
+test("a replayed approval keeps its one comment and its own receipt", { timeout: 60_000 }, async (t) => {
+  const { comments, park, answer, publish } = await host(t)
+  const payload = fixture()
+  const parked = await park(payload, "replayed")
+  assert.ok(Option.isSome(parked))
+  const posted = await answer(parked.value, true, payload, "replayed")
+  const replayed = await publish(payload, "replayed")
+  assert.deepEqual(replayed.publicActions, posted.publicActions, "the round keeps the receipt it recorded")
+  assert.equal(replayed.reply?.state, "posted")
+  assert.equal(comments.length, 1)
+})
+
+test("a round whose step already carries other text fails typed and is never posted", { timeout: 60_000 }, async (t) => {
+  // One round's step is read from a publication the product made, never rebuilt here.
+  const probe = await host(t)
+  await probe.publish(fixture({ replies: "automatic" }), "drifted")
+  const step = probe.comments[0]?.step as string
+  const target = await host(t)
+  const payload = fixture()
+  target.seed(payload.input.event.deliveryKey, step, "Something else was published for this round.")
+  const parked = await target.park(payload, "drifted")
+  assert.ok(Option.isSome(parked))
+  await assert.rejects(target.answer(parked.value, true, payload, "drifted"), /409|verified|dispatch/i)
+  assert.equal(target.comments.length, 0, "a conflicting publication is never counted as this round's")
+})
+
 test("the confirmation is bounded by the job's own budget, and a deadline already passed settles it", { timeout: 60_000 }, async (t) => {
   const { comments, park, confirmRequest, confirm } = await host(t)
   const payload = fixture()
@@ -257,7 +310,7 @@ test("a body clipped at the limit never ends in half a character", { timeout: 60
   assert.equal(comments.length, 0)
 })
 
-test("automatic native replies still post exactly one dispatch-bound comment", { timeout: 60_000 }, async (t) => {
+test("automatic native replies post exactly one comment for each round, and none for a replay", { timeout: 60_000 }, async (t) => {
   const { comments, publish } = await host(t)
   const published = await publish(fixture({ replies: "automatic" }), "automatic-native")
   assert.equal(published.reply?.state, "posted")
@@ -266,4 +319,9 @@ test("automatic native replies still post exactly one dispatch-bound comment", {
   assert.equal(comments[0]?.issue_number, 42)
   assert.equal(comments[0]?.body, published.reply?.body)
   assert.equal(published.publicActions.length, 1)
+  assert.deepEqual((await publish(fixture({ replies: "automatic" }), "automatic-native")).publicActions, published.publicActions)
+  assert.equal(comments.length, 1, "a replayed round publishes nothing new")
+  const second = await publish(fixture({ replies: "automatic" }), "automatic-second-round")
+  assert.equal(second.reply?.state, "posted")
+  assert.equal(comments.length, 2, "a second automatic round is its own publication")
 })
