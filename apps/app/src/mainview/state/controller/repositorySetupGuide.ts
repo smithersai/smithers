@@ -160,8 +160,9 @@ export function setupGuideQuestions(setup: QuestionSetup): ReadonlyArray<SetupGu
   if (setup.job === "chores") {
     const chore = presentSteps(setup, ["chore"])
     const manual: SetupQuestionEdit[] = [{ field: "schedule", value: "" }, ...modeEdits(chore, "manual"),
-      // The chore event trigger is another lane's field; a cron cleared beside a live trigger would be a false answer.
-      ...("choreEvent" in setup.draft ? [{ field: "choreEvent", value: "" }] : [])]
+      // The chore event trigger is another lane's field, whose "no trigger"
+      // value is "none"; a cron cleared beside a live trigger would be a false answer.
+      ...("choreEvent" in setup.draft ? [{ field: "choreEvent", value: "none" }] : [])]
     questions.push({ id: "chores.schedule", text: "When should this chore run?", fields: [...new Set(manual.map(edit => edit.field))], choices: [
       { id: "manual", label: "Only when I ask", edits: manual },
       { id: "weekdays", label: "Every weekday at 09:00 UTC, after I approve the run", edits: [{ field: "schedule", value: "0 9 * * 1-5" }, ...modeEdits(chore, "approved")] },

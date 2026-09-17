@@ -206,6 +206,7 @@ test("the chore question clears every trigger it names, and keeps manual and app
   expect(manual.edits.map(edit => edit.field)).toEqual(["schedule", "step.chore.mode",
     ...("choreEvent" in setup.draft ? ["choreEvent"] : [])])
   expect(manual.edits.find(edit => edit.field === "step.chore.mode")?.value).toBe("manual")
+  expect(manual.edits.find(edit => edit.field === "choreEvent")?.value ?? "none").toBe("none")
   const t = await controllerFor(setup)
   try {
     expect(await t.answer("chores.schedule", "manual")).toEqual({ value: "Draft updated." })
@@ -214,6 +215,31 @@ test("the chore question clears every trigger it names, and keeps manual and app
     expect(await t.answer("chores.schedule", "weekly")).toEqual({ value: "Draft updated." })
     expect(t.current().draft.schedule).toBe("0 9 * * 1")
     expect(t.current().draft.steps[0]?.mode).toBe("approved")
+  } finally { await t.close() }
+})
+
+/*
+ * The chore event trigger arrives with the chore-events candidate f3989046 as
+ * `z.enum(["none","push","labeled"])`, so its "no trigger" value is "none" and
+ * "" would be refused by the real validator the moment that lands. This base
+ * has no such field, so the edit is simply not emitted here; the assertion is
+ * on the value the choice WOULD carry.
+ */
+test("the chore trigger is cleared with the value its schema accepts, through the real validator", async () => {
+  const setup = initialSetup("example/repo", "chores", "maintainer")
+  setup.draft.schedule = "0 9 * * 1-5"
+  const carrying = { ...setup, draft: { ...setup.draft, choreEvent: "labeled" } as typeof setup.draft }
+  const manual = setupGuideQuestions(carrying).find(question => question.id === "chores.schedule")!
+    .choices.find(choice => choice.id === "manual")!
+  expect(manual.edits.find(edit => edit.field === "choreEvent")).toEqual({ field: "choreEvent", value: "none" })
+  const t = await controllerFor(setup)
+  try {
+    // On this base the field does not exist, so no edit for it is emitted and
+    // every edit the choice does emit is accepted by the shared validator.
+    expect(setupGuideQuestions(setup).find(question => question.id === "chores.schedule")!
+      .choices.find(choice => choice.id === "manual")!.edits.some(edit => edit.field === "choreEvent")).toBe(false)
+    expect(await t.answer("chores.schedule", "manual")).toEqual({ value: "Draft updated." })
+    expect(t.current().draft.schedule).toBe("")
   } finally { await t.close() }
 })
 

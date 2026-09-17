@@ -301,6 +301,65 @@ test("an account change while discovery is held cannot render or recreate the pr
   } finally { release(); await t.close() }
 })
 
+test("a refused answer can be asked again, and the fresh question is bound to the current draft", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    await t.call({ action: "execute", name: "setup.configure", args: JSON.stringify({ cardId: id, field: "budgetMinutes", value: 45 }) })
+    await t.controller.commands.run("form.set", `${card.id} choice off`)
+    await t.controller.commands.run("form.submit", card.id)
+    await waitFor(() => t.question()?.status === "error")
+    const stale = t.guidance()!
+    // The refusal tells the user to ask again; asking again must ask again.
+    await t.controller.commands.run("setup.guide", id)
+    await waitFor(() => t.question()?.status === "active")
+    expect(t.guidance()?.id).not.toBe(stale.id)
+    expect(t.question()?.payload.given).toMatchObject({ revision: t.setup().revision, digest: setupCandidate(t.setup()) })
+    expect(t.question()?.payload.error).toBeUndefined()
+    expect([...t.store.collections.cards.values()].filter(row => row.kind === "flow-form")).toHaveLength(1)
+    // And that fresh question answers.
+    await t.controller.commands.run("form.set", `${t.question()!.id} choice off`)
+    await t.controller.commands.run("form.submit", t.question()!.id)
+    await waitFor(() => t.question()?.status === "acted")
+    expect(t.setup().draft.steps.slice(0, 3).map(step => step.mode)).toEqual(["off", "off", "off"])
+    expect(t.setup().draft.budgetMinutes).toBe(45)
+    expect(t.requests).toHaveLength(0)
+  } finally { await t.close() }
+})
+
+test("an answered question can be asked again, and the next question is offered", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    await t.controller.commands.run("form.set", `${card.id} choice approved`)
+    await t.controller.commands.run("form.submit", card.id)
+    await waitFor(() => t.question()?.status === "acted")
+    await t.controller.commands.run("setup.guide", id)
+    await waitFor(() => t.question()?.status === "active")
+    // issues.steps.automatic is no longer offerable, so the next one is.
+    expect(t.question()?.payload.given).toMatchObject({ questionId: "issues.landing", digest: setupCandidate(t.setup()) })
+    expect(t.question()?.title).toBe("Land an issue fix after its checks pass, or ask you first?")
+    expect([...t.store.collections.cards.values()].filter(row => row.kind === "flow-form")).toHaveLength(1)
+    expect(t.requests).toHaveLength(0)
+  } finally { await t.close() }
+})
+
+test("a question card carrying another candidate's digest never suppresses the app's own question", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    // What an agent that guessed the undisclosed flow name could leave behind.
+    expect(await t.call({ action: "execute", name: "setup.ask",
+      args: JSON.stringify({ cardId: id, questionId: "issues.landing", revision: 99, digest: "0".repeat(64) }) })).toContain("rendered a form")
+    expect(t.question()?.payload.given).toMatchObject({ digest: "0".repeat(64) })
+    await t.controller.commands.run("setup.guide", id)
+    await waitFor(() => t.question()?.payload.given["digest"] === setupCandidate(t.setup()))
+    expect(t.question()?.title).toBe(QUESTION)
+    expect(t.question()?.payload.given).toMatchObject({ questionId: "issues.steps.automatic", revision: 1 })
+    expect(t.guidance()?.state).toBe("admitted")
+    expect([...t.store.collections.cards.values()].filter(row => row.kind === "flow-form")).toHaveLength(1)
+  } finally { await t.close() }
+})
+
 test("a controller disposed before the idle window renders no question", async () => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })

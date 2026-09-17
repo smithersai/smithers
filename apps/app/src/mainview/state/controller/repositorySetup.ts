@@ -218,6 +218,19 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     throw Error(outcome.status === "failed" ? outcome.error : "The setup question could not be opened.")
   }
 
+  /*
+   * The question already on screen for THIS candidate. Existence alone is not
+   * enough: a refused or answered card stays, and reading it as "asked" would
+   * make the refusal's own "ask again" render nothing for the rest of the
+   * setup's life. It also has to be bound to the current draft, so an edited
+   * draft asks the current question again rather than refusing forever.
+   */
+  const openQuestion = (card: SetupCard) => {
+    const question = ctx.store.collections.cards.get(setupQuestionCardId(card.id))
+    return question?.kind === "flow-form" && question.status === "active"
+      && question.payload.given["digest"] === setupCandidate(card.payload) ? question : undefined
+  }
+
   const guidanceCurrent = (id: string, requestId: string, login: string, accountEpoch: number) =>
     !ctx.disposed && !shared.disposed && owner() === login && epoch() === accountEpoch
     && get(id)?.payload.owner === login && get(id)?.payload.guidance?.id === requestId
@@ -242,7 +255,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         if (card.kind !== "repository-setup") continue
         const intent = card.payload.guidance, login = card.payload.owner, accountEpoch = epoch()
         if (!intent || intent.state !== "requested" || !login || login !== owner() || shared.guidanceFailures.has(intent.id)) continue
-        const asked = ctx.store.collections.cards.has(setupQuestionCardId(card.id))
+        const asked = openQuestion(card) !== undefined
         if (!asked && (ctx.activeTurn || ctx.store.session().phase !== "idle" || ctx.store.session().draft
           || card.payload.recovery?.state === "requested" || card.payload.inspectedAt === undefined
           || ["requested", "running"].includes(card.payload.request?.state ?? ""))) continue
@@ -290,10 +303,11 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     if (!card || !login || card.payload.owner !== login) return
     const old = card.payload.guidance
     const retry = old !== undefined && (old.state === "failed" || shared.guidanceFailures.has(old.id))
-    // An unanswered question card IS the ask, so a second Configure in Chat
-    // points at the one already on screen instead of resetting its draft.
+    // An unanswered current question IS the ask, so a second Configure in Chat
+    // points at the one already on screen instead of resetting its draft. Once
+    // it is answered, refused or outdated, asking again asks again.
     if ((old?.state === "requested" && !(explicit && retry)) || (!explicit && old)
-      || (old?.state === "admitted" && ctx.store.collections.cards.get(setupQuestionCardId(id))?.status === "active")) return
+      || (old?.state === "admitted" && openQuestion(card) !== undefined)) return
     const intent = { id: retry ? old.id : crypto.randomUUID(), state: "requested" as const }
     shared.guidanceFailures.delete(intent.id)
     await upsert({ ...card, payload: { ...card.payload, guidance: intent } })
