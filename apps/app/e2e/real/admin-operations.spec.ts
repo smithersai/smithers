@@ -115,10 +115,13 @@ authenticatedTest("admin allowlist add and remove are real, observable, and clea
     await command(page, `/admin.allowlist.add ${login}`)
     await expect(page.getByTestId("transcript")).toContainText(login)
     await expect(page.getByTestId("transcript")).toContainText(/allowlist/i)
+    await expect.poll(() => [200, 201, 204].includes(responses.find(response => response.action === "add")?.status ?? 0)).toBe(true)
     await page.reload({ waitUntil: "domcontentloaded" })
+    await bootProductionRepository(page)
     await command(page, `/admin.allowlist.remove ${login}`)
     await expect(page.getByTestId("transcript")).toContainText(login)
     await expect(page.getByTestId("transcript")).toContainText(/allowlist/i)
+    await expect.poll(() => [200, 201, 204].includes(responses.find(response => response.action === "remove")?.status ?? 0)).toBe(true)
     expect(responses).toEqual([{ action: "add", status: expect.any(Number) }, { action: "remove", status: expect.any(Number) }])
     expect(responses.every(response => response.status >= 200 && response.status < 300)).toBe(true)
   } finally {

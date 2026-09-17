@@ -129,12 +129,15 @@ authenticatedTest("the canary GitHub App is installed before an owned workflow f
   }>(page, request, statusPath)
   await attachProductionJson(testInfo, "run-fixture-github-app-readiness", { repo: PRODUCTION_REPO, status })
   await closeComposer(page)
-  const card = page.locator('.smithers-card[data-kind="connector-setup"]').last()
+  const card = page.getByTestId(`card-connector-setup-github-${PRODUCTION_REPO}`)
   await expect(card).toBeVisible()
   await expect(card).toContainText(/GitHub App installed.*configured/)
   expect(status.github_app_installed).toBe(true)
   expect(status.github_app_configured).toBe(true)
-  expect(typeof status.installation_id).toBe("number")
+  const inventory = await readJson<{
+    readonly repos?: ReadonlyArray<{ readonly fullName: string; readonly installationId: number }>
+  }>(page, request, "/api/user/github-app/installations")
+  expect(typeof inventory.repos?.find(repo => repo.fullName === PRODUCTION_REPO)?.installationId).toBe("number")
 })
 
 workflowTest("a completed provider run exposes its real trace, transcript, events, handoff, and durable selection", scenario("runs.inspect-completed-trace-durable", {
