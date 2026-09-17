@@ -517,17 +517,22 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
       : { payload: named }
     const repo = "payload" in parsed && typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
-    const sourcePath = target.metadata.requires?.includes("repo-source") && "payload" in parsed && typeof parsed.payload.path === "string"
-      ? parsed.payload.path : undefined
+    const readsRepository = target.metadata.requires?.includes("repo-source") === true
+    const sourcePath = readsRepository
+      ? "payload" in parsed && typeof parsed.payload.path === "string" ? parsed.payload.path : ""
+      : undefined
     /*
      * The practice repository needs no account (onboarding SCRIPT v4 §4): a
      * flow aimed at the bundled practice key skips its identity gates, and
      * only that key does — every other target keeps them.
      */
     const snapshot = actions.snapshot(repo, sourcePath)
+    // File prerequisites use the resolved payload target; display text cannot
+    // authorize a different repository. Other practice flows carry run/card ids.
+    const practiceBypass = !readsRepository && namesPractice(args)
     const readiness = snapshot.repositoryReadiness
     const pendingPayload = "payload" in parsed ? parsed.payload : !args?.trim() ? {} : undefined
-    if (!namesPractice(args) && target.metadata.requires?.includes("repo-source") && readiness && pendingPayload !== undefined) {
+    if (!snapshot.practiceRepo && readsRepository && readiness && pendingPayload !== undefined) {
       if (invoker !== "user") return { status: "failed", error: readiness.phase !== "pending" ? readiness.error ?? "The repository catalog is unavailable." : "The repository is still loading. Try again when it is ready." }
       const prefix = `/${readiness.repo}`
       const globalPath = repo === undefined && sourcePath !== undefined && (sourcePath.toLowerCase() === prefix.toLowerCase() || sourcePath.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
@@ -539,7 +544,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       trace(invoker, name, args, startedAt, "deferred", "waits on repository catalog")
       return { status: "executed", value: "Requested" }
     }
-    const unmet = namesPractice(args) ? undefined : unmetRequirements(target.metadata, snapshot, flowRequirements)[0]
+    const unmet = practiceBypass ? undefined : unmetRequirements(target.metadata, snapshot, flowRequirements)[0]
     if (unmet !== undefined) {
       if (invoker === "agent") {
         /*

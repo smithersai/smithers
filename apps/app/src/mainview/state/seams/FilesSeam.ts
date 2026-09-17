@@ -18,7 +18,7 @@ import { REPO_FILES_PATH,RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
 import { parseRepoSelection,repoIdFromRemote,repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { isPracticeRepo } from "../practice/PracticeRepository"
+import { isPracticeRepo,practiceFilePaths } from "../practice/PracticeRepository"
 import { resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
 import { errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
@@ -417,20 +417,35 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       const { repo, path: normalized } = target
       const label = normalized === "" ? "/" : normalized
 
-      let response: Response
-      try {
-        response = await ctx.http(contentsUrl(repo, normalized))
-      } catch (error) {
-        return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
+      let body: unknown
+      if (isPracticeRepo(repo)) {
+        const paths = practiceFilePaths()
+        if (paths.includes(normalized)) return `${normalized} in ${repo} is a file — run /files.read ${normalized} instead`
+        const prefix = normalized ? `${normalized}/` : ""
+        const children = new Map<string, { name: string; type: "file" | "dir" }>()
+        for (const path of paths) {
+          if (!path.startsWith(prefix)) continue
+          const parts = path.slice(prefix.length).split("/")
+          const name = parts[0]!
+          children.set(name, { name, type: parts.length > 1 ? "dir" : "file" })
+        }
+        if (normalized && children.size === 0) return `Path not found: ${label} in ${repo}`
+        body = [...children.values()]
+      } else {
+        let response: Response
+        try {
+          response = await ctx.http(contentsUrl(repo, normalized))
+        } catch (error) {
+          return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
+        }
+        if (response.status === 404) {
+          return explain404(response, repo, `Path not found: ${label} in ${repo}`)
+        }
+        if (!response.ok) {
+          return readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`)
+        }
+        body = await response.json().catch(() => null)
       }
-      if (response.status === 404) {
-        return explain404(response, repo, `Path not found: ${label} in ${repo}`)
-      }
-      if (!response.ok) {
-        return readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`)
-      }
-
-      const body: unknown = await response.json().catch(() => null)
       if (!Array.isArray(body)) {
         // The contents route answers a record (content/encoding) for a file path.
         if (isRecord(body) && ("content" in body || "encoding" in body)) {
@@ -451,7 +466,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         status: "active",
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
-        payload: { repo, path: normalized, entries, ...cloudAddressing(ctx.store, repo, normalized) }
+        payload: { repo, path: normalized, entries, ...(isPracticeRepo(repo) ? {} : cloudAddressing(ctx.store, repo, normalized)) }
       }
       return { card, value: listingValue(repo, normalized, entries) }
     },
@@ -547,9 +562,9 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     }
   }
   const plan = (kind: "file" | "files", path: string, repo?: string, anchor?: FileAnchor) => {
-    if (kind === "file" && isPracticeRepo(repo)) return { run: () => practiceReadFile(ctx, path, anchor) }
     const target = resolveFileTarget(ctx.store, path, repo)
     if ("error" in target) return target.error
+    if (kind === "file" && target.kind === "cloud" && isPracticeRepo(target.repo)) return { run: () => practiceReadFile(ctx, target.path, anchor) }
     if (kind === "file" && !target.path) return "files.read needs a file path"
     const repoId = target.kind === "local" ? target.repo.id : target.repo
     const label = target.kind === "local" ? target.repo.name : target.repo

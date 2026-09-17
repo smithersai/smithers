@@ -1,5 +1,5 @@
 import type { AppStore } from "../AppStore"
-import { isPracticeRepo,PRACTICE_CARD,PRACTICE_NAME,PRACTICE_REPO,practiceFile,practiceSnapshot } from "../practice/PracticeRepository"
+import { isPracticeRepo,PRACTICE_CARD,PRACTICE_NAME,PRACTICE_REPO,practiceFile,practiceFilePaths,practiceSnapshot } from "../practice/PracticeRepository"
 import { encodeRepoPath,parseEntry,requestLocalFiles,resolveFileTarget,unsafePath } from "./FilesSeam"
 import type { SeamContext } from "./SeamContext"
 import { readErrorMessage,readResult } from "./SeamContext"
@@ -35,6 +35,9 @@ export const fileOptions = async (
 ): Promise<{ options: Array<{ value: string; label: string }>; error?: string }> => {
   const target = resolveFileTarget(ctx.store, "", repo)
   if ("error" in target) return { options: [], error: target.error }
+  if (target.kind === "cloud" && isPracticeRepo(target.repo)) {
+    return { options: practiceFilePaths().map(path => ({ value: path, label: path })) }
+  }
   const options: Array<{ value: string; label: string }> = []
   const queue = [""]
   const seen = new Set<string>()

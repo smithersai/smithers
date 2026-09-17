@@ -28,7 +28,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "files.list",
     form: { args: (payload) => fileArgs(text(payload, "path") ?? "/", text(payload, "repo")) },
     summary: "List a repository directory",
-    runtimeAny: ["cloud", "local.repositories"],
+    runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[path] [owner/repo]",
     requires: ["repo-source"],
     input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),

@@ -23,14 +23,11 @@ export const requirements: ReadonlyArray<FlowRequirement> = [
   },
   {
     /*
-     * Repository reads have three sources: the GitHub session (Cloud
-     * repositories), a repository opened in this app, or the public catalog
-     * repository a signed-out visitor is exploring (its files are anonymous
-     * reads on the server). Any one satisfies the reads on its own; signed
-     * out with none of them, sign-in is the step.
+     * Repository reads use the resolved local, public, bundled practice or
+     * signed-in source. An unrelated selection cannot authorize the target.
      */
     id: "repo-source",
-    satisfied: (state) => !state.signedOut || state.hasOpenRepos === true || state.publicRepo === true,
+    satisfied: (state) => !state.signedOut || state.hasOpenRepos === true || state.publicRepo === true || state.practiceRepo === true,
     fulfill: "auth.prompt",
     reason: "Sign in with GitHub, or open a local repository first"
   }

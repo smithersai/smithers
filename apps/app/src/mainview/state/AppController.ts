@@ -1807,6 +1807,7 @@ export const createAppController = (
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
+        practiceRepo: fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo),
         publicRepo: !catalogRefused && (requestedRepo === undefined
           ? activeCatalogRepositoryId(store) !== null
           : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())),
