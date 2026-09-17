@@ -19,6 +19,7 @@ import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { cardActions } from "./cards/CardActions"
 import { isPracticeRepo } from "./state/practice/PracticeRepository"
 import { FirstRunActions } from "./cards/FirstRunActions"
+import { SetupChecklist } from "./cards/SetupChecklist"
 import { CardView } from "./ChatCards"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
@@ -557,6 +558,7 @@ function AppContent() {
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
+            <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>
             {!session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
             {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}

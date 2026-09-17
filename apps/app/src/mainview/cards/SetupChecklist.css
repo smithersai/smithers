@@ -1,0 +1,17 @@
+.setup-checklist {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.setup-checklist > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setup-checklist h2 { font-size: 1rem; margin: 0; }
+.setup-checklist-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.setup-checklist progress { width: 100%; height: 6px; accent-color: var(--brand); }
+.setup-checklist ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.setup-checklist li { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.setup-checklist li[data-complete] { color: var(--text-muted); }
+.setup-checklist li > button { flex: 1; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 12px; text-align: left; color: var(--text); font: inherit; overflow-wrap: anywhere; }
+.setup-checklist li > button:hover { background: var(--hover-subtle); }
+.setup-checklist button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

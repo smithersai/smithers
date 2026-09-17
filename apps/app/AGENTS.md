@@ -6,7 +6,7 @@ Users must be able to operate all of Smithers without a mouse. Every action need
 
 ## First-run experience (Will, 2026-09-15)
 
-Open the app directly. New sessions show registry-backed recommended actions, grouped by namespace, until dismissal or dispatch. Signed-out visitors start with the practice repository. First-sight hints use HelpBubble, persist dismissal, and show one at a time in DOM order. Command/Control-K opens Chat; touch hints omit key names. There is no scripted lesson sequence.
+Open the app directly. New sessions show a setup checklist (Connect GitHub → Add a repository → Set up a job) whose steps check off from live state and whose buttons are those steps' flows; it hides itself once every step is complete. Below it, registry-backed recommended actions, grouped by namespace, show until dismissal or dispatch. Signed-out visitors start with the practice repository. First-sight hints use HelpBubble, persist dismissal, and show one at a time in DOM order. Command/Control-K opens Chat; touch hints omit key names. There is no scripted lesson sequence.
 
 ## Current onboarding brief (Will, 2026-09-08)
 
