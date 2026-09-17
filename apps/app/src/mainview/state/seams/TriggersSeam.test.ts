@@ -515,7 +515,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
   })
 
   test("the host's own refusal and Smithers Cloud's own refusal each reach the human as themselves", async () => {
-    const moduleRefusal = 'Scheduled triggers run single-file markdown flows. "nightly-lint" is a module entry (flow.ts).'
+    const moduleRefusal = '"nightly-lint" is a flow.ts. Schedules run flow.mdx.'
     const hosted = await ready(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
