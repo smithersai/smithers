@@ -408,10 +408,12 @@ for (const entry of ["load", "adopt"] as const) {
 }
 
 /*
- * A balance read nobody asked for updates the chip and announces nothing:
- * the reads a session load and a settled turn fire leave the toast stack
- * empty. A failed one still states what failed, a superseded one still
- * writes nothing, and the read a user asks for still names its result.
+ * A balance read nobody asked for says nothing at all: the reads a session
+ * load and a settled turn fire leave the toast stack empty while they run and
+ * once they land, and signed out they do not run. A real failure still states
+ * what failed and a later read clears it, a superseded one still writes
+ * nothing, and the read a user asks for keeps its own notice and its own
+ * result even when an automatic read answers first.
  */
 describe("automatic balance refreshes", () => {
   const TOAST_ID = "toast-billing.balance.refresh"
@@ -422,14 +424,14 @@ describe("automatic balance refreshes", () => {
   }
   const setupBilling = async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    let release: (response: Response) => void = () => {}
+    const pending: Array<(response: Response) => void> = []
     const ctx = createControllerContext(store, repositories, agent, {
       fetchImpl: (input) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
         return new URL(url, "https://app.test").pathname.endsWith("/auth/session")
           ? Promise.resolve(Response.json(signedIn))
           : new Promise<Response>((resolve) => {
-            release = resolve
+            pending.push(resolve)
           })
       },
       toastDebounceMs: 0,
@@ -448,19 +450,47 @@ describe("automatic balance refreshes", () => {
       controller: createAuthBillingController(ctx, () => 0),
       toast,
       balance: () => store.collections.billingAccounts.get("billing"),
-      release: (response: Response) => release(response),
-      // The notice is up before the answer lands, so a silent settlement is
-      // a dismissal this test can see, not a toast that never appeared.
+      // Every request this harness holds open is a balance read; the session
+      // probe answers from the branch above and never reaches the array.
+      reads: () => pending.length,
+      // The read is held open until the test answers it, so "while it runs" is
+      // an observable window and not a race with the answer.
+      inFlight: (count = 1) => until(() => pending.length >= count),
+      answer: (index: number, response: Response) => pending[index]?.(response),
+      release: (response: Response) => pending[pending.length - 1]?.(response),
+      signedOut: () =>
+        store.dispatch({
+          type: "identity.session.loaded",
+          actor: "system",
+          state: "signed-out",
+          login: null,
+          allowlisted: false,
+          admin: false,
+          scopesPlain: null
+        }).isPersisted.promise,
       running: () => until(() => toast()?.status === "running"),
       until
     }
   }
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  // Past the 300ms law's debounce: whatever the toast stack holds now is what
+  // the read chose to say, not what it had not got round to saying yet.
+  const pastDebounce = async () => {
+    await tick()
+    await tick()
+  }
+  // Long enough for a read that was going to be issued to have reached the
+  // seam, so "no request" is a decision and not a measurement taken too early.
+  const settle = async () => {
+    for (let turn = 0; turn < 20; turn += 1) await tick()
+  }
 
   test("a session load's refresh writes the balance and leaves no notice", async () => {
     const h = await setupBilling()
     void h.controller.loadSession()
-    await h.running()
+    await h.inFlight()
+    await pastDebounce()
+    expect(h.toast()).toBeUndefined()
     h.release(Response.json(balanceOk))
     await h.until(() => h.balance()?.state === "ok")
     await tick()
@@ -471,7 +501,9 @@ describe("automatic balance refreshes", () => {
   test("a settled turn's refresh writes the balance and leaves no notice", async () => {
     const h = await setupBilling()
     h.controller.settleTurnBilling()
-    await h.running()
+    await h.inFlight()
+    await pastDebounce()
+    expect(h.toast()).toBeUndefined()
     h.release(Response.json(balanceOk))
     await h.until(() => h.balance()?.state === "ok")
     await tick()
@@ -479,10 +511,29 @@ describe("automatic balance refreshes", () => {
     expect(h.toast()).toBeUndefined()
   })
 
-  test("a failed automatic refresh still states the failure", async () => {
+  /*
+   * Anonymous turns are a supported door on a public catalog repository, and
+   * the server refuses a balance read for a session it never validated
+   * (sign_in_required, 401). That refusal is the expected answer, not news:
+   * the visitor has no balance and asked for nothing, so the read never goes
+   * out. "unavailable" is left reading — a native deployment authenticates
+   * the seam with its own bearer and has no session at all.
+   */
+  test("a settled turn while signed out reads nothing and says nothing", async () => {
+    const h = await setupBilling()
+    await h.signedOut()
+    h.controller.settleTurnBilling()
+    await settle()
+    expect(h.reads()).toBe(0)
+    expect(h.toast()).toBeUndefined()
+  })
+
+  test("a failed automatic refresh states the failure and nothing before it", async () => {
     const h = await setupBilling()
     h.controller.settleTurnBilling()
-    await h.running()
+    await h.inFlight()
+    await pastDebounce()
+    expect(h.toast()).toBeUndefined()
     h.release(new Response("", { status: 500 }))
     await h.until(() => h.toast()?.status === "failed")
     expect(h.toast()).toMatchObject({
@@ -493,15 +544,39 @@ describe("automatic balance refreshes", () => {
     expect(h.balance()?.state).not.toBe("ok")
   })
 
+  /*
+   * A failure nothing can clear is a permanent toast: the next automatic read
+   * succeeds, the balance is fresh, and the sentence on screen is now false.
+   * The read that heals it is still quiet on the way — it paints no notice
+   * over the failure it is about to take down.
+   */
+  test("a later automatic refresh clears the failure an earlier one left", async () => {
+    const h = await setupBilling()
+    h.controller.settleTurnBilling()
+    await h.inFlight()
+    await pastDebounce()
+    h.answer(0, new Response("", { status: 500 }))
+    await h.until(() => h.toast()?.status === "failed")
+    h.controller.settleTurnBilling()
+    await h.inFlight(2)
+    await pastDebounce()
+    expect(h.toast()?.status).toBe("failed")
+    h.answer(1, Response.json(balanceOk))
+    await h.until(() => h.balance()?.state === "ok")
+    await pastDebounce()
+    expect(h.toast()).toBeUndefined()
+  })
+
   test("an automatic refresh the account outlives writes no balance", async () => {
     const h = await setupBilling()
     h.controller.settleTurnBilling()
-    await h.running()
+    await h.inFlight()
+    await pastDebounce()
     h.ctx.accountEpoch += 1
     h.release(Response.json(balanceOk))
-    await h.until(() => h.toast() === undefined)
-    await tick()
+    await pastDebounce()
     expect(h.balance()?.state).not.toBe("ok")
+    expect(h.toast()).toBeUndefined()
   })
 
   test("the balance a user asks for still states its result", async () => {
@@ -509,6 +584,21 @@ describe("automatic balance refreshes", () => {
     const asked = h.controller.showBalance()
     await h.running()
     h.release(Response.json(balanceOk))
+    expect(await asked).toEqual({ value: "balance: $500 left; $0 spent across 0 turn(s)" })
+    expect(h.toast()).toMatchObject({ title: "Balance is up to date", status: "ok" })
+  })
+
+  test("an automatic refresh answering first leaves the asked-for read its notice", async () => {
+    const h = await setupBilling()
+    const asked = h.controller.showBalance()
+    await h.running()
+    h.controller.settleTurnBilling()
+    await h.inFlight(2)
+    h.answer(1, Response.json(balanceOk))
+    await h.until(() => h.balance()?.state === "ok")
+    await pastDebounce()
+    expect(h.toast()).toMatchObject({ title: "Refreshing your balance…", status: "running" })
+    h.answer(0, Response.json(balanceOk))
     expect(await asked).toEqual({ value: "balance: $500 left; $0 spent across 0 turn(s)" })
     expect(h.toast()).toMatchObject({ title: "Balance is up to date", status: "ok" })
   })

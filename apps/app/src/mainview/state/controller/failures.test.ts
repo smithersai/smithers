@@ -30,7 +30,12 @@ afterEach(async () => {
 const fakeContext = async (options?: {
   readonly toastDebounceMs?: number
   readonly toastAutoDismissMs?: number
-}): Promise<{ ctx: ControllerContext; store: Awaited<ReturnType<typeof createAppStore>> }> => {
+}): Promise<{
+  ctx: ControllerContext
+  store: Awaited<ReturnType<typeof createAppStore>>
+  /** The controller's own teardown, without the store's: a disposed controller still has rows to read. */
+  disposeController: () => void
+}> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   let disposed = false
   const cleanups: Array<() => void> = []
@@ -47,12 +52,15 @@ const fakeContext = async (options?: {
     } },
     unref: () => {}
   } as unknown as ControllerContext
-  disposeContexts.add(async () => {
+  const disposeController = (): void => {
     disposed = true
     for (const cleanup of cleanups) cleanup()
+  }
+  disposeContexts.add(async () => {
+    disposeController()
     await store.dispose?.()
   })
-  return { ctx, store }
+  return { ctx, store, disposeController }
 }
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -131,6 +139,139 @@ describe("the toast run counter's terminal cleanup", () => {
     await current
     // The current run's settle is the slot's terminal act.
     expect(ctx.toastRuns.has("flow.race")).toBe(false)
+  })
+})
+
+/*
+ * Work the user never asked for has no result they can see, so it says
+ * nothing until it fails: no running notice, no done title, and no claim on
+ * the key's slot — the run a user did ask for keeps its notice and states
+ * its own result. A failure it does state is temporary like every other one:
+ * the next quiet run that succeeds takes it down.
+ */
+describe("quiet work", () => {
+  const gate = () => {
+    let release!: () => void
+    const promise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return { promise, release }
+  }
+
+  test("a slow quiet run shows nothing while it runs and nothing when it lands", async () => {
+    const { ctx, store } = await fakeContext()
+    const failures = createFailureController(ctx)
+    const work = gate()
+    const pending = failures.withToast("flow.quiet", "Working…", "Done", () => work.promise.then(() => true), true)
+    await settled()
+    expect(store.collections.toasts.size).toBe(0)
+    work.release()
+    expect(await pending).toBe(true)
+    await settled()
+    expect(store.collections.toasts.size).toBe(0)
+    expect(ctx.toastRuns.has("flow.quiet")).toBe(false)
+  })
+
+  test("a slow quiet run that fails states the failure and keeps it up", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const work = gate()
+    const pending = failures.withToast("flow.quiet", "Working…", "Done", () => work.promise.then(() => "it broke"), true)
+    await settled()
+    expect(store.collections.toasts.size).toBe(0)
+    work.release()
+    expect(await pending).toBe("it broke")
+    expect(store.collections.toasts.get("toast-flow.quiet")).toMatchObject({
+      title: "Working…",
+      status: "failed",
+      detail: "it broke"
+    })
+    await settled()
+    expect(store.collections.toasts.get("toast-flow.quiet")?.status).toBe("failed")
+  })
+
+  test("a quiet run that throws states the same unexpected failure an announcing one does", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const outcome = await failures.withToast("flow.quiet", "Working…", "Done", () => Promise.reject(new Error("boom")), true)
+    expect(outcome).toBe("Working didn't finish — the app hit an unexpected error.")
+    expect(store.collections.toasts.get("toast-flow.quiet")).toMatchObject({
+      status: "failed",
+      detail: "Working didn't finish — the app hit an unexpected error."
+    })
+  })
+
+  test("a quiet run that fails after dispose says nothing", async () => {
+    const { ctx, store, disposeController } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const work = gate()
+    const pending = failures.withToast("flow.quiet", "Working…", "Done", () => work.promise.then(() => "it broke"), true)
+    disposeController()
+    work.release()
+    expect(await pending).toBe("it broke")
+    expect(store.collections.toasts.size).toBe(0)
+  })
+
+  test("a quiet run that succeeds takes down the failure an earlier quiet run left", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    expect(await failures.withToast("flow.quiet", "Working…", "Done", async () => "it broke", true)).toBe("it broke")
+    expect(store.collections.toasts.get("toast-flow.quiet")?.status).toBe("failed")
+    expect(await failures.withToast("flow.quiet", "Working…", "Done", async () => true, true)).toBe(true)
+    expect(store.collections.toasts.get("toast-flow.quiet")).toBeUndefined()
+  })
+
+  test("a quiet run that succeeds leaves the announcing run's failure alone", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const failing = gate()
+    const first = failures.withToast("flow.share", "Working…", "Done", () => failing.promise.then(() => "it broke"))
+    await settled()
+    failing.release()
+    await first
+    expect(store.collections.toasts.get("toast-flow.share")?.status).toBe("failed")
+    const asked = gate()
+    const announcing = failures.withToast("flow.share", "Working…", "Done", () => asked.promise.then(() => true))
+    // The asked-for retry owns the key now; the quiet answer is not the
+    // evidence that its failure is over.
+    expect(await failures.withToast("flow.share", "Working…", "Done", async () => true, true)).toBe(true)
+    expect(store.collections.toasts.get("toast-flow.share")?.status).toBe("failed")
+    asked.release()
+    await announcing
+    expect(store.collections.toasts.get("toast-flow.share")).toMatchObject({ title: "Done", status: "ok" })
+  })
+
+  test("a quiet run answering first leaves the announcing run its notice and its result", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const asked = gate()
+    const quiet = gate()
+    const announcing = failures.withToast("flow.share", "Working…", "Done", () => asked.promise.then(() => true))
+    await settled()
+    expect(store.collections.toasts.get("toast-flow.share")?.status).toBe("running")
+    const silent = failures.withToast("flow.share", "Working…", "Done", () => quiet.promise.then(() => true), true)
+    quiet.release()
+    await silent
+    // The quiet run neither dismissed the notice nor took the slot that says
+    // who may resolve it.
+    expect(store.collections.toasts.get("toast-flow.share")?.status).toBe("running")
+    expect(ctx.toastRuns.get("flow.share")).toBe(1)
+    asked.release()
+    await announcing
+    expect(store.collections.toasts.get("toast-flow.share")).toMatchObject({ title: "Done", status: "ok" })
+  })
+
+  test("a quiet run that succeeds leaves the asked-for read's confirmation standing", async () => {
+    const { ctx, store } = await fakeContext({ toastAutoDismissMs: 10_000 })
+    const failures = createFailureController(ctx)
+    const asked = gate()
+    const announcing = failures.withToast("flow.share", "Working…", "Done", () => asked.promise.then(() => true))
+    await settled()
+    asked.release()
+    await announcing
+    expect(store.collections.toasts.get("toast-flow.share")).toMatchObject({ title: "Done", status: "ok" })
+    expect(await failures.withToast("flow.share", "Working…", "Done", async () => true, true)).toBe(true)
+    expect(store.collections.toasts.get("toast-flow.share")).toMatchObject({ title: "Done", status: "ok" })
   })
 })
 

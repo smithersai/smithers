@@ -17,6 +17,7 @@ IDENTITY_REQUEST_ACCESS_PATH
 import { signInReturnTo } from "../../RepoLink"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
+import type { FailureController } from "./failures"
 import { TOAST_SUPERSEDED } from "./failures"
 
 export interface AuthBillingController {
@@ -56,7 +57,9 @@ export const createAuthBillingController = (
   // A hydrated identity row, local capability or cloud PAT is not proof.
   let disposed = false
   ctx.onDispose(() => { disposed = true })
-  const withToast = ctx.withToast
+  // The context declares the announcing arity; the controller behind it is the
+  // one createFailureController returns, quiet mode included.
+  const withToast: FailureController["withToast"] = ctx.withToast
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
   const settleFirstRunTarget = (): void => ctx.settleFirstRunTarget()
@@ -657,23 +660,31 @@ export const createAuthBillingController = (
   }
 
   /*
-   * A read nobody asked for has nothing to announce: a successful automatic
-   * refresh settles like a superseded one, so its running notice leaves
-   * instead of stating "Balance is up to date" for an act the user never
-   * requested. A failure and a superseded reply settle exactly as they do
-   * for the read a user asked for.
+   * A read nobody asked for runs quiet: no notice while it reads and no
+   * result when it lands, because nothing on screen changed that a sentence
+   * could name. A failure still states itself and the next quiet read that
+   * succeeds takes it back down, and the read a user asks for keeps its
+   * notice, its result, and the toast slot both reads share.
    */
   const readBalance = (announce: boolean): Promise<void> =>
-    withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", async () => {
-      const outcome = await refreshBalanceImpl()
-      return announce || outcome !== true ? outcome : TOAST_SUPERSEDED
-    }).then(() => undefined)
+    withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", refreshBalanceImpl, !announce)
+      .then(() => undefined)
 
   /** The balance the user asked for: the read states its result. */
   const refreshBalance = (): Promise<void> => readBalance(true)
 
-  /** A session load, a settled turn: the chip updates, the toast stack stays empty. */
-  const refreshBalanceSilently = (): Promise<void> => readBalance(false)
+  /*
+   * A session load, a settled turn: the next balance card is fresh and the
+   * toast stack stays empty. Signed out there is no balance to read — the
+   * seam refuses a session it never validated with sign_in_required, the
+   * expected answer, and an anonymous turn on a public repository would earn
+   * that refusal after every message. "unavailable" still reads: a native
+   * deployment authenticates billing with its own bearer and has no session.
+   */
+  const refreshBalanceSilently = (): Promise<void> =>
+    store.collections.identitySessions.get("identity")?.state === "signed-out"
+      ? Promise.resolve()
+      : readBalance(false)
 
   /*
    * §22.7: this returned void, so the model's own `billing.balance` call

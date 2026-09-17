@@ -30,11 +30,13 @@ export const humanCommandText = (commands: ControllerContext["commands"], text: 
     })
 
 export interface FailureController {
+  /** `quiet` work states nothing it succeeds at; only its failure is surfaced. */
   readonly withToast: <T>(
     key: string,
     title: string,
     doneTitle: string,
-    work: () => Promise<T | string>
+    work: () => Promise<T | string>,
+    quiet?: boolean
   ) => Promise<T | string>
   /**
    * Resolve the toast on `key`; an ok outcome dismisses itself after
@@ -94,6 +96,44 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })
     }, outcome.autoDismissMs ?? ctx.toastAutoDismissMs)
   }
+  /** A thrown flow is still an honest failure — never a toast stuck "running". */
+  const unexpectedFailure = (title: string): string =>
+    `${title.replace(/…$/, "")} didn't finish — the app hit an unexpected error.`
+  /*
+   * Work the user never asked for has no result they can see, so it says
+   * nothing until it fails: no running notice, no done title, and no claim on
+   * the key's run slot, which leaves the work a user DID ask for owning its
+   * own notice and resolving it. A failure is shown and resolved in one go,
+   * because resolveToast writes nothing onto a key with no toast on screen —
+   * which also means quiet work surfaces a failure at any speed, where the
+   * 300ms law drops the ones that settle inside the debounce.
+   *
+   * Succeeding is how quiet work takes its own failure back down. The
+   * sentence a failed read left says the read did not happen; the next one
+   * that did makes it false, and nothing else on screen would ever clear it.
+   * Only a failure, and only with no announcing run holding the key: a
+   * running notice and a "done" the user asked for are not this run's to move.
+   */
+  const quietly = async <T>(key: string, title: string, work: () => Promise<T | string>): Promise<T | string> => {
+    let outcome: T | string
+    try {
+      outcome = await work()
+    } catch {
+      outcome = unexpectedFailure(title)
+    }
+    if (ctx.disposed) return outcome
+    const id = `toast-${key}`
+    if (typeof outcome !== "string") {
+      if (outcome !== TOAST_SUPERSEDED && !ctx.toastRuns.has(key)
+        && ctx.store.collections.toasts.get(id)?.status === "failed") {
+        ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })
+      }
+      return outcome
+    }
+    ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title })
+    resolveToast(key, { status: "failed", detail: outcome })
+    return outcome
+  }
   /*
    * The 300ms toast law (2026-08-09): background work not settled within
    * 300ms states what is running on the shared toast stack; work under
@@ -120,8 +160,10 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     key: string,
     title: string,
     doneTitle: string,
-    work: () => Promise<T | string>
+    work: () => Promise<T | string>,
+    quiet = false
   ): Promise<T | string> => {
+    if (quiet) return quietly(key, title, work)
     nextRun += 1
     const run = nextRun
     ctx.toastRuns.set(key, run)
@@ -135,8 +177,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     try {
       outcome = await work()
     } catch {
-      // A thrown flow is still an honest failure — never a toast stuck "running".
-      outcome = `${title.replace(/…$/, "")} didn't finish — the app hit an unexpected error.`
+      outcome = unexpectedFailure(title)
     } finally {
       clearTimeout(debounce)
       timers.delete(debounce)
