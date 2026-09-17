@@ -832,7 +832,10 @@ describe("triggers seam: watching the registration run", () => {
     resumed.controller.resumeWorkflowRuns()
     /* No card names a run the workspace never started, so nothing reconnects to one. */
     expect(registrationRun(resumed.store, requestId)).toBeUndefined()
-    expect((await resumed.controller.commands.run("triggers.approve", args)).status).toBe("executed")
+    /* The press the reloaded page offers is the same prepared registration, so a person presses what they see. */
+    const reloaded = lastAction(resumed.store)?.args
+    expect(reloaded).toBe(args)
+    expect((await resumed.controller.commands.run("triggers.approve", reloaded ?? "{}")).status).toBe("executed")
     run.status = "completed"
     run.verdict = "Registered nightly on will/flows."
     await waitFor(() => registrationRun(resumed.store, requestId)?.payload.phase === "completed")
