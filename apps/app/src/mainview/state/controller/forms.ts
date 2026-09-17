@@ -303,6 +303,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      * controller/repositorySetupGuide.ts. The model contributes nothing here.
      * A missing or unknown id resolves to the job's default question — a
      * default belongs to the ASK; answering an unknown id refuses instead.
+     * The title is the question, so the select is named for what it takes.
      */
     if (request.name === "setup.ask") {
       const setup = collections.cards.get(String(given["cardId"] ?? ""))
@@ -312,7 +313,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       given = { ...given, questionId: question.id }
       title = question.text
       fields = fields.filter(field => field.name === "choice").map(field => ({ ...field, kind: "select" as const,
-        label: question.text, options: question.choices.map(choice => ({ value: choice.id, label: choice.label })) }))
+        label: "Answer", options: question.choices.map(choice => ({ value: choice.id, label: choice.label })) }))
     }
     const nested = request.payloadField === undefined ? undefined : given[request.payloadField]
     const draft = draftFrom(fields, request.payloadField === undefined

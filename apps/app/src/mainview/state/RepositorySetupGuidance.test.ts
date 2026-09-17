@@ -123,6 +123,18 @@ test.each(["ready", "recovering", "immediate"])("the app itself asks the first q
   } finally { release(); await t.close() }
 })
 
+test("the question is worded once: the card's title carries it, the select is named for the answer", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    const rendered = [card.title, ...card.payload.fields.flatMap(field =>
+      [field.label, field.placeholder ?? "", ...(field.options ?? []).map(option => option.label)])].join("\n")
+    expect(rendered.split(QUESTION)).toHaveLength(2)
+    expect(card.title).toBe(QUESTION)
+    expect(card.payload.fields.map(field => field.label)).toEqual(["Answer"])
+  } finally { await t.close() }
+})
+
 test("answering through the real form controller edits the draft only", async () => {
   const t = await fixture(pendingHttpAgent)
   try {
