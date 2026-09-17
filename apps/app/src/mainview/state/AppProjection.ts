@@ -290,6 +290,7 @@ export const APP_TRANSITION_TYPES = {
   "repo.unpinned": true,
   "repo.selected": true,
   "repository.entry.changed": true,
+  "repository.command.changed": true,
   "repository-flows.loaded": true,
   "repo-tree.toggled": true,
   "repo-tree.loading": true,
@@ -713,6 +714,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     const branchId = draft.activeBranchId ?? DEFAULT_BRANCH_ID
     draft.draft = ""
     draft.pendingCommand = null
+    delete draft.repositoryCommandEntry
     delete draft.approvalsInboxRequests
     draft.phase = "idle"
     draft.composerOwner = "user"
@@ -1793,6 +1795,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "command.deferred":
           collections.sessions.update(SESSION_ID, (draft) => {
             if (transition.repositoryRetry !== undefined) draft.repositoryEntry = { ...transition.repositoryRetry, phase: "pending" }
+            if (transition.repositoryRequest !== undefined) draft.repositoryCommandEntry = { ...transition.repositoryRequest, phase: "pending" }
             draft.pendingCommand = {
               name: transition.name,
               args: transition.args,
@@ -2413,6 +2416,18 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           const owner = accountOwner(existing)
           if (appTransitionErasesPrivateState(previous, transition)) {
             forgetAccountState(collections, createdAt)
+          }
+          const nextOwner = transition.state === "signed-in" ? transition.login : transition.state === "signed-out" ? null : owner
+          const commandEntry = collections.sessions.get(SESSION_ID)?.repositoryCommandEntry
+          if (commandEntry !== undefined && commandEntry.owner !== nextOwner) {
+            collections.sessions.update(SESSION_ID, draft => {
+              delete draft.repositoryCommandEntry
+              if (draft.pendingCommand?.requirement !== "repository-ready") return
+              try {
+                const payload = JSON.parse(draft.pendingCommand.args ?? "")
+                if (typeof payload?.repo === "string" && payload.repo.toLowerCase() === commandEntry.repo.toLowerCase()) draft.pendingCommand = null
+              } catch { /* Invalid saved commands are handled by the readiness controller. */ }
+            })
           }
           collections.identitySessions.update("identity", (draft) => {
             draft.accountOwnerLogin = transition.state === "signed-in"
@@ -3115,6 +3130,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               draft.activeRepoKey = null
             }
           })
+          break
+        }
+        case "repository.command.changed": {
+          if (collections.sessions.get(SESSION_ID)?.repositoryCommandEntry?.requestId !== transition.entry.requestId) break
+          collections.sessions.update(SESSION_ID, draft => { draft.repositoryCommandEntry = transition.entry })
           break
         }
         case "repository.entry.changed": {

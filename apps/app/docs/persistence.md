@@ -33,7 +33,7 @@ Missing positions, conflicting identities, unsupported versions or broken
 hashes refuse recovery; cached rows cannot replace damaged event authority.
 The two per-launch caches are cleared by a recorded boot projection.
 
-The event format remains version 1; `APP_PROJECTOR_VERSION` is 2. Bump the
+The event format remains version 1; `APP_PROJECTOR_VERSION` is 4. Bump the
 projector version whenever an `APP_PROJECTION_SCHEMAS` row shape or the
 transition set changes. Checkpoint reasons are `created`, `legacy-baseline`,
 `compaction`, `privacy-reset`, and `projector-upgrade`. On an older-projector
@@ -211,6 +211,25 @@ and cancels the reader without awaiting transport cleanup. Oversized bodies
 reject with `seam response exceeds 8 MiB` and cancel the reader. Failed target
 queries settle the pending card with the error. Turn and model relay streams
 use their own streaming paths.
+
+## Deferred public repository commands
+
+`Session.repositoryEntry` belongs to the current URL. A cold explicit command
+target uses the optional `repositoryCommandEntry` instead; opening `/` on reload
+must not erase its admission or replace another URL's repository. One
+`command.deferred` commit records the exact payload and command-target receipt
+with a request ID and account owner. Catalog lookup starts after that commit,
+or reconnects from hydrated state. Repeated requests share the lookup; newer
+arguments retain only the latest command. Command admission never selects a
+repository, opens its tree, or reads its default bookmark.
+
+Catalog absence retains the sign-in gate; an unavailable catalog remains
+retryable. After admission, the original payload re-enters the command registry
+and the shared progress toast follows the actual read. Request ID, account
+owner and account epoch fence late responses. Account replacement removes the
+command receipt; route admission keeps its existing selection fence. Projector
+version 4 uses the existing atomic upgrade checkpoint, preserving prior cards,
+route receipts and deferred commands.
 
 ## Collection contract
 
@@ -886,4 +905,3 @@ does not claim a cross-tab/database lease or exactly-once external effects.
 The native target topic publishes only after the run journal has accepted and fsynced the corresponding frame. `TargetRunHistory.event` returns the exact retained frame, so live and replay readers receive the same redacted output and the same journal-cap marker; a capped frame or failed append returns no publishable frame. Once an append fails, later frames cannot hide the missing suffix, and `flush` rejects. Startup refuses to overwrite an existing journal, and append refuses to recreate a missing prefix. Cancel and shutdown await pending terminal receipts. Output logs remain bounded (including explicit truncation); lifecycle frames remain retained.
 
 New exit events include `at`, making terminal status/time a pure reduction of the initial run metadata and accepted events. The trailing RunRecord is a compatibility cache: deleting or changing it cannot override a timestamped exit. Legacy untimed exits still use their final record. This is a filesystem journal, with each accepted append fsynced; it is not a remote transactional execution guarantee. Execution that happened before a failed append is not fabricated into successful replay history.
-

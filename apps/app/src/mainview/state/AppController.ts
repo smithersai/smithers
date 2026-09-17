@@ -443,7 +443,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * SATISFY a requirement calls resumeDeferredCommand after it settles.
    */
   readonly deferCommand: (name: string, args: string | null, requirement: string) => void
-  readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>, retry?: boolean) => Promise<void>
+  readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>, options?: { refresh?: boolean; scope?: "command" }) => Promise<void>
   readonly resumeDeferredCommand: () => void
   /** Record a visible command run for the slash menu's recency ranking. */
   readonly noteCommandRun: (name: string) => void
@@ -1170,9 +1170,9 @@ export const createAppController = (
    * the session row because sign-in is a
    * full OAuth redirect. One parking spot, latest wins.
    */
-  const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure, (repo, requestId, isCurrent) =>
+  const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure, (repo, requestId, isCurrent, scope) =>
     openRequestedRepo({ store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: (name, args) => runCommand(name, args) },
-      ctx.http, repo, requestId, 0, { activate: false, isCurrent }))
+      ctx.http, repo, requestId, 0, { activate: false, isCurrent, scope }))
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
     // The fulfilling prompt owns the answer. Parking survives OAuth silently.
@@ -1766,15 +1766,24 @@ export const createAppController = (
       const signedIn = identity?.state === "signed-in"
       const fileTarget = path === undefined ? undefined : resolveFileTarget(store, path, repo)
       const requestedRepo = fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" ? fileTarget.repo : repo
-      const entry = store.session().repositoryEntry
+      const routeEntry = store.session().repositoryEntry
       const globalRepo = repo === undefined && requestedRepo !== undefined && path !== undefined && (
         path.toLowerCase() === `/${requestedRepo.toLowerCase()}` || path.toLowerCase().startsWith(`/${requestedRepo.toLowerCase()}/`)
       ) ? requestedRepo : undefined
       const explicitRepo = repo ?? globalRepo
+      const commandEntry = store.session().repositoryCommandEntry
+      const routeMatches = routeEntry != null && (explicitRepo === undefined || explicitRepo.toLowerCase() === routeEntry.repo.toLowerCase())
+      const commandMatches = commandEntry !== undefined && explicitRepo?.toLowerCase() === commandEntry.repo.toLowerCase() &&
+        commandEntry.owner === (identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : signedIn ? identity.login : identity?.state === "signed-out" ? null : undefined)
+      const entry = routeMatches ? routeEntry : commandMatches ? commandEntry : undefined
+      const scope = routeMatches ? undefined : "command" as const
+      const knownPublic = requestedRepo !== undefined && [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())
+      const coldExplicitTarget = identity?.state === "signed-out" && explicitRepo !== undefined && /^[\w.-]+\/[\w.-]+$/.test(explicitRepo) &&
+        !knownPublic && entry === undefined && !(fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "local")
       const needsCatalog = entry?.phase === "pending" || (entry?.phase === "failed" && entry.failureKind !== "not-public")
-      const repositoryReadiness = entry !== undefined && entry !== null && needsCatalog && (
-        explicitRepo === undefined || explicitRepo.toLowerCase() === entry.repo.toLowerCase()
-      ) ? { repo: entry.repo, phase: entry.phase === "pending" ? "pending" as const : "unavailable" as const, error: entry.error } : undefined
+      const repositoryReadiness = entry !== undefined && needsCatalog
+        ? { repo: entry.repo, phase: entry.phase === "pending" ? "pending" as const : "unavailable" as const, error: entry.error, scope }
+        : coldExplicitTarget ? { repo: explicitRepo, phase: "unrequested" as const, scope: "command" as const } : undefined
       const catalogRefused = entry?.phase === "failed" && entry.failureKind === "not-public" && (
         requestedRepo === undefined || requestedRepo.toLowerCase() === entry.repo.toLowerCase()
       )

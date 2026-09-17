@@ -347,8 +347,8 @@ export interface CommandState {
   readonly hasOpenRepos?: boolean
   /** The selected repository came from the public catalog: readable signed out. Optional like hasOpenRepos. */
   readonly publicRepo?: boolean
-  /** The named URL repository still needs a catalog answer before authorization. */
-  readonly repositoryReadiness?: { readonly repo: string; readonly phase: "pending" | "unavailable"; readonly error?: string }
+  /** A named repository still needs a catalog answer before authorization. */
+  readonly repositoryReadiness?: { readonly repo: string; readonly phase: "pending" | "unavailable" | "unrequested"; readonly error?: string; readonly scope?: "command" }
   /**
    * The user's recently run commands, most recent first (session
    * recentCommands). Optional so state fixtures stay minimal; missing = [].

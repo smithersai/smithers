@@ -517,6 +517,7 @@ const localFilesBackend = () => {
       // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this seam's request.
       if (url.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
       requests.push({ url })
+      if (path === "/api/public/repos") return json(200, { repos: [] })
       if (url.includes("/contents")) return json(404, { code: "not_found", message: "repository not found" })
       return json(404, { status: "error", message: `no stub for ${url}` })
     }
@@ -594,7 +595,9 @@ describe("files seam — a repository open in the local app", () => {
     expect(requests.filter((request) => request.url === "/api/repo/files")).toHaveLength(2)
     expect(fileCard(store, "file-repo-smithers-README.md")?.payload.content).toBe("# Local — hi\n")
     await controller.commands.run("files.read", "README.md will/flows")
+    await settled()
     expect(store.session().pendingCommand?.requirement).toBe("repo-source")
+    expect(requests.filter((request) => request.url === "/api/public/repos")).toHaveLength(1)
     expect(requests.some((request) => request.url.includes("/api/repos/will/flows/contents/README.md"))).toBe(false)
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     const cloud = await controller.commands.run("files.read", "README.md will/flows")

@@ -162,14 +162,19 @@ export const openRequestedRepo = async (
   requested: string,
   requestId = beginRepositoryEntry(controller.store, requested)!,
   viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth,
-  options: { readonly activate?: boolean; readonly isCurrent?: () => boolean } = {}
+  options: { readonly activate?: boolean; readonly isCurrent?: () => boolean; readonly scope?: "command" } = {}
 ): Promise<string | void> => {
-  const current = () => controller.store.session().repositoryEntry?.requestId === requestId && (options.isCurrent?.() ?? true)
+  const entry = () => options.scope === "command" ? controller.store.session().repositoryCommandEntry : controller.store.session().repositoryEntry
+  const current = () => entry()?.requestId === requestId && (options.isCurrent?.() ?? true)
   const finish = (error?: string, failureKind: "unavailable" | "not-public" = "unavailable"): string | void => {
     if (!current()) return
-    controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: {
+    const result = {
       requestId, repo: requested, phase: error === undefined ? "ready" : "failed", ...(error === undefined ? {} : { error, failureKind })
-    } })
+    } as const
+    if (options.scope === "command") {
+      const owned = controller.store.session().repositoryCommandEntry
+      if (owned?.requestId === requestId) controller.store.dispatch({ type: "repository.command.changed", actor: "system", entry: { ...result, owner: owned.owner } })
+    } else controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: result })
     return error
   }
   let catalog: unknown
@@ -191,7 +196,7 @@ export const openRequestedRepo = async (
       if (!current()) return
       const own = [...controller.store.collections.repositories.values()].find((repo) => repo.id.toLowerCase() === requested.toLowerCase() && repo.catalog !== true)
       if (failure === undefined && own !== undefined) {
-        if (options.activate === false) return finish()
+        if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         return finish(refusal === undefined ? undefined : refusal)
       }
@@ -214,7 +219,7 @@ export const openRequestedRepo = async (
       repository: { ...existing, ...repository, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
-  if (options.activate === false) return finish()
+  if (options.activate === false || options.scope === "command") return finish()
   const refusal = await controller.selectRepo(selectionForRepo(controller, repository.id))
   if (!current()) return
   if (refusal !== undefined) return finish(refusal)

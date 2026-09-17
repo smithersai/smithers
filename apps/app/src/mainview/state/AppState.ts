@@ -648,6 +648,9 @@ export const RepositoryEntrySchema = z.object({
   error: z.string().optional()
 })
 export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>
+/** A cold command target is independent of the current URL's repository admission. */
+export const RepositoryCommandEntrySchema = RepositoryEntrySchema.extend({ owner: z.string().nullable() })
+export type RepositoryCommandEntry = z.infer<typeof RepositoryCommandEntrySchema>
 
 /**
  * One background `approvals.list` read, persisted before its acknowledgment.
@@ -840,6 +843,7 @@ export const SessionSchema = z.object({
   activeRepoKey: z.string().nullable().optional(),
   /** An explicit entry URL blocks ambient repository fallback until it resolves. */
   repositoryEntry: RepositoryEntrySchema.nullable().optional(),
+  repositoryCommandEntry: RepositoryCommandEntrySchema.optional(),
   /*
    * The sidebar heading's name (docs/workbench-lanes/sidebar-tree.md):
    * `workspace.rename <name>` writes it; the heading renders "Workspace"
@@ -1290,6 +1294,7 @@ export type AppTransition =
     requirement: string
     /** A user retry admits the request and replaces the failed catalog entry atomically. */
     repositoryRetry?: { requestId: string; repo: string }
+    repositoryRequest?: { requestId: string; repo: string; owner: string | null }
   }
   | {
     /* The deferred command resumed (or went stale) — the parking spot clears. */
@@ -1660,6 +1665,7 @@ export type AppTransition =
   | { type: "repo.unpinned"; actor: "user"; id: string }
   | { type: "repo.selected"; actor: Actor; id: string }
   | { type: "repository.entry.changed"; actor: "system"; entry: RepositoryEntry | null }
+  | { type: "repository.command.changed"; actor: "system"; entry: RepositoryCommandEntry }
   /*
    * The sidebar's file tree (docs/workbench-lanes/sidebar-tree.md): a caret
    * toggles a directory row; a first expand (or a retry of a failed one)

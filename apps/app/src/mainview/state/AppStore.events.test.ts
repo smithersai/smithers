@@ -137,6 +137,39 @@ const installProjectorFixture = async (storage: StorageApi, version: number, ret
 }
 
 describe("the live store's authoritative event path", () => {
+  test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
+    const storage = memoryStorage()
+    const store = await open(storage)
+    await store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "saved-url", repo: "alpha/one", phase: "pending" } }).isPersisted.promise
+    await store.dispatch({ type: "command.deferred", actor: "user", name: "files.list", args: JSON.stringify({ path: "docs", repo: "alpha/one" }), requirement: "repository-ready" }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: "kept", kind: "file", title: "kept.ts", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "alpha/one", path: "kept.ts", content: "retained", truncated: false }
+    } }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const pending = structuredClone(store.session().pendingCommand)
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 3 }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.()
+    opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", { ...old.head, projectorVersion: 3 }], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect(restored.session().repositoryEntry).toEqual({ requestId: "saved-url", repo: "alpha/one", phase: "pending" })
+    expect(restored.session().pendingCommand).toEqual(pending)
+    expect(restored.session().repositoryCommandEntry).toBeUndefined()
+    expect(restored.collections.cards.get("kept")?.payload).toEqual({ repo: "alpha/one", path: "kept.ts", content: "retained", truncated: false })
+    expect((await restored.verifyState()).valid).toBe(true)
+    const reopened = await open(storage)
+    expect(reopened.session().pendingCommand).toEqual(pending)
+    expect((await reopened.verifyState()).valid).toBe(true)
+  })
+
   test("version 2 cards retire across reopening while historical frames and conversations survive", async () => {
     const storage = memoryStorage()
     const old = await installProjectorFixture(storage, 2, true)

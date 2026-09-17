@@ -527,14 +527,14 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const readiness = snapshot.repositoryReadiness
     const pendingPayload = "payload" in parsed ? parsed.payload : !args?.trim() ? {} : undefined
     if (!namesPractice(args) && target.metadata.requires?.includes("repo-source") && readiness && pendingPayload !== undefined) {
-      if (invoker !== "user") return { status: "failed", error: readiness.phase === "unavailable" ? readiness.error ?? "The repository catalog is unavailable." : "The repository is still loading. Try again when it is ready." }
+      if (invoker !== "user") return { status: "failed", error: readiness.phase !== "pending" ? readiness.error ?? "The repository catalog is unavailable." : "The repository is still loading. Try again when it is ready." }
       const prefix = `/${readiness.repo}`
       const globalPath = repo === undefined && sourcePath !== undefined && (sourcePath.toLowerCase() === prefix.toLowerCase() || sourcePath.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
       await actions.deferRepositoryCommand(nameOf(target), {
         ...pendingPayload,
         ...(globalPath ? { path: sourcePath!.slice(prefix.length).replace(/^\/+/, "") } : {}),
         repo: repo ?? readiness.repo
-      }, readiness.phase === "unavailable")
+      }, { refresh: readiness.phase !== "pending", scope: readiness.scope })
       trace(invoker, name, args, startedAt, "deferred", "waits on repository catalog")
       return { status: "executed", value: "Requested" }
     }
