@@ -192,6 +192,23 @@ describe("signing out leaves nothing of the account behind", () => {
     expect(store.collections.identitySessions.get("identity")?.state).toBe("unavailable")
   })
 
+  test("a forbidden 403 from the session probe is an outage, never a sign-out", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(
+      store,
+      unavailableRepositories,
+      unavailableAgent,
+      backend({ "/api/auth/session": () => json(403, { message: "forbidden" }) })
+    )
+    signedIn(store)
+    seedAccountState(store)
+
+    await controller.loadSession()
+    await settled()
+    expect(leftovers(store).messages).toBeGreaterThan(0)
+    expect(store.collections.identitySessions.get("identity")?.state).toBe("unavailable")
+  })
+
   test("a sign-out the identity service refuses says so, and signs nothing out", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(

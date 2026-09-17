@@ -226,10 +226,13 @@ export const createAuthBillingController = (
     }
     if (ctx.accountEpoch !== epoch || signal?.aborted) return
     // Signed-out is the expected resolved answer, never an error path: the
-    // identity upstream states it as 401/403, the product Worker's seam
-    // restates it as 200 { status: "signed-out" } so the browser never logs
-    // the expected answer as a console error. Both shapes resolve the same.
-    if (response.status === 401 || response.status === 403) {
+    // identity upstream states it as 401, the product Worker's seam restates
+    // it as 200 { status: "signed-out" } so the browser never logs the
+    // expected answer as a console error. Both shapes resolve the same. A 403
+    // is not one of them: the Worker passes it through on purpose (forbidden
+    // origin, an edge rule), and a signed-out answer for a row that names an
+    // owner erases the account's local state, so it falls to unavailable.
+    if (response.status === 401) {
       await response.body?.cancel()
       await dispatchSignedOut(epoch, signal)
       return
