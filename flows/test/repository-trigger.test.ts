@@ -75,6 +75,7 @@ interface Probe {
   readonly flows: () => Promise<ReadonlyArray<string>>
   readonly runs: () => Promise<ReadonlyArray<Record<string, unknown>>>
   readonly registrations: Array<Record<string, any>>
+  readonly dispatches: Array<Record<string, any>>
   /** The repository's own resolved head, so a fixture can name a real revision. */
   readonly head: any
 }
@@ -87,6 +88,7 @@ interface Fixture {
   readonly base: { repositoryPath: string; adapterPath: string; sourcePublication: "local-only"; exporterPath: string | undefined }
   readonly native: any
   readonly registrations: Array<Record<string, any>>
+  readonly dispatches: Array<Record<string, any>>
   readonly settled: () => void
 }
 
@@ -119,12 +121,12 @@ async function makeRepository(t: TestContext): Promise<Fixture> {
   const base = { repositoryPath: root, adapterPath: adapter, sourcePublication: "local-only" as const, exporterPath: exporter }
   const native = await Effect.runPromise(Effect.flatMap(NativeCoding, coding => coding.read()).pipe(
     Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped))
-  return { root, jj, base, native, registrations: [], settled: () => { passed = true } }
+  return { root, jj, base, native, registrations: [], dispatches: [], settled: () => { passed = true } }
 }
 
 async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) => Promise<void>) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
-  const { root, base, native, registrations } = fixture
+  const { root, base, native, registrations, dispatches } = fixture
   const remote = RepositoryRemote.of({ repo, workspaceId,
     source: Effect.succeed("smithers-cloud"),
     registrations: Effect.suspend(() => Effect.succeed(json(registrations.map((row, index) => ({
@@ -135,6 +137,7 @@ async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) =>
     createTrial: () => Effect.succeed(json({})),
     manual: (job, requestId, raw) => Effect.sync(() => {
       const value = raw as Record<string, any>
+      dispatches.push({ job, requestId, body: value })
       return json({ dispatch_id: 7, registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision,
         digest: value.digest, status: "submitted", delivery_key: `manual:${requestId}`, job })
     }),
@@ -193,7 +196,7 @@ async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) =>
       if (outputs.length === 1) return { output: outputs[0] } as { failure?: string; output?: any }
       return { failure: JSON.stringify(events) } as { failure?: string; output?: any }
     }).pipe(Effect.provideService(Control.Control, control)))
-    yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, head: native.head }))
+    yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, dispatches, head: native.head }))
   }).pipe(Effect.provide(hostLayer), Effect.scoped))
 }
 
@@ -317,6 +320,28 @@ test("the registrar reads the approved plan by id under the app's own request ke
   })
   fixture.settled()
 })
+
+test("two manual fires of one schedule are two dispatches", nativeOptions, t =>
+  proveTrigger(t, async probe => {
+    const input = { label: "nightly" }
+    const planned = await probe.plan("nightly-report", input, "trigger:fire-request:plan")
+    await probe.approve(planned)
+    const registered = await probe.register({ ...REQUEST, requestId: "fire-request", input,
+      approvedPlanId: planned.planId, approvedPlanDigest: planned.digest })
+    assert(registered.output, `expected a registration to fire; got ${String(registered.failure).slice(0, 2000)}`)
+    const fire = { operation: "fire", repo, slug: "nightly", flow: "nightly-report", schedule: SCHEDULE, input }
+    const first = await probe.register(fire)
+    const second = await probe.register(fire)
+    assert(first.output && second.output, `both fires must dispatch; got ${String(first.failure ?? second.failure).slice(0, 2000)}`)
+    assert.notEqual(first.output.requestId, second.output.requestId, "a second run now is a second dispatch, not a replay of the first")
+    assert.equal(probe.dispatches.length, 2, JSON.stringify(probe.dispatches))
+    assert.notEqual(probe.dispatches[0]!.requestId, probe.dispatches[1]!.requestId, "Plue deduplicates on the request id, so it must differ")
+    for (const sent of probe.dispatches) {
+      assert.equal(sent.job, "flow:nightly")
+      assert.equal(sent.body.step_id, "fire")
+      assert.equal(sent.body.revision, 1)
+    }
+  }))
 
 test("the registrar never resolves an approval, installs a grant, or submits one", nativeOptions, t =>
   proveTrigger(t, async () => {

@@ -45,7 +45,7 @@ const Activate = Action.make("repository/activate-trigger", {
 })
 const ActivateTrigger = Flow.make("repository/ActivateTrigger", { payload: Activate.payloadSchema, success: TriggerResult, error: CodingError, body: value => Activate.call(value) })
 const Fire = Action.make("repository/fire-trigger", {
-  payload: { request: TriggerRequest, deadlineAt: Schema.Number }, success: Dispatched, error: CodingError, nondeterministic: true
+  payload: { request: TriggerRequest, dispatchKey: Schema.String, deadlineAt: Schema.Number }, success: Dispatched, error: CodingError, nondeterministic: true
 })
 const FireTrigger = Flow.make("repository/FireTrigger", { payload: Fire.payloadSchema, success: Dispatched, error: CodingError, body: value => Fire.call(value) })
 
@@ -183,7 +183,7 @@ export const triggerLayers = Layer.mergeAll(
       planDigest: plan.planDigest, executionDigest: plan.executionDigest, envelope: plan.envelope,
       sourceRevision: plan.sourceRevision, ...(plan.testRunId === undefined ? {} : { testRunId: plan.testRunId }), registration }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The exact schedule could not be registered")))),
-  Fire.toLayer(({ request, deadlineAt }) => Effect.gen(function*() {
+  Fire.toLayer(({ request, dispatchKey, deadlineAt }) => Effect.gen(function*() {
     const remote = yield* requireRemote
     if (!remote.manual || Date.now() >= deadlineAt) return yield* invalid("The manual request is unavailable or expired")
     if (remote.repo !== request.repo || (request.workspaceId !== undefined && request.workspaceId !== remote.workspaceId)) {
@@ -191,7 +191,10 @@ export const triggerLayers = Layer.mergeAll(
     }
     const current = yield* currentRegistration(request.slug)
     if (current.revision < 1 || !current.digest) return yield* invalid(`No schedule "${request.slug}" is registered on this repository.`)
-    const requestId = request.requestId ?? Digest.digest(Digest.canonical(["repository/trigger/fire", request.repo, request.slug, current.revision]))
+    // One durable fire step, one dispatch. The registration's revision is the
+    // same for every "run now", so an id derived from it made Plue return the
+    // first dispatch again instead of enqueuing a second.
+    const requestId = request.requestId ?? dispatchKey
     const response = yield* remote.manual(`flow:${request.slug}`, requestId, json({ repo: request.repo, workspace_id: remote.workspaceId,
       revision: current.revision, digest: current.digest, step_id: "fire", prompt: `Run ${request.slug} now.` }))
     const row = record(response)
@@ -207,7 +210,7 @@ export const triggerLayers = Layer.mergeAll(
     if (Option.isNone(owning) || owning.value.flowId !== "repository/trigger") return yield* invalid("A schedule registration needs its approved Control entry")
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
     const key = (part: string) => Digest.digest(Digest.canonical(["repository/trigger/v1", instance.executionId, request.slug, part]))
-    if (request.operation === "fire") return yield* runtime.execute(FireTrigger, { executionId: key("fire"), payload: { request, deadlineAt } })
+    if (request.operation === "fire") return yield* runtime.execute(FireTrigger, { executionId: key("fire"), payload: { request, dispatchKey: key("fire"), deadlineAt } })
     const plan = yield* runtime.execute(PrepareTrigger, { executionId: key("prepare"), payload: { request, deadlineAt } })
     return yield* runtime.execute(ActivateTrigger, { executionId: key("activate"), payload: { request, plan, deadlineAt } })
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : new CodingError({ code: "execution", message: "The schedule registration did not complete; inspect the retained run" }))))
