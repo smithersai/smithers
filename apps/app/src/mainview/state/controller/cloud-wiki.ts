@@ -1,5 +1,5 @@
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
-import { parseWikilinks } from "@smthrs/ui/vault"
+import { parseWikilinks, restoreWikilinks } from "@smthrs/ui/vault"
 import { Effect, Fiber, Stream } from "effect"
 import {
   CloudWikiError,
@@ -285,7 +285,7 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
         const document = ctx.store.collections.worldDocuments.get(id)
         if (document === undefined) continue
         for (const editor of handles.values()) {
-          if (editor.getMarkdown() !== document.body) editor.setMarkdown(document.body)
+          if (restoreWikilinks(editor.getMarkdown()) !== document.body) editor.setMarkdown(document.body)
         }
       }
     })
@@ -477,7 +477,7 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
     else {
       handles.set(slot, editor)
       const document = ctx.store.collections.worldDocuments.get(id)
-      if (document !== undefined && editor.getMarkdown() !== document.body) editor.setMarkdown(document.body)
+      if (document !== undefined && restoreWikilinks(editor.getMarkdown()) !== document.body) editor.setMarkdown(document.body)
     }
     if (handles.size === 0) shared.editors.delete(id)
     else shared.editors.set(id, handles)

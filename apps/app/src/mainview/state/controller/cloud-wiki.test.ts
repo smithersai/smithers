@@ -209,6 +209,23 @@ describe("cloud Wiki controller", () => {
     expect(editorText).toBe("# Page\n\nLocal\n\nPeer")
   })
 
+  test("an editor that escapes [[wikilinks]] is never overwritten by its own persisted body", async () => {
+    const f = await fixture()
+    await f.wiki.openCloudWiki(repo, "home")
+    await f.wiki.editCloudWiki(id, "# Page\n\nSee [[Other note]] here.")
+    let pushes = 0
+    f.wiki.attachWorldEditor(id, "card", {
+      getMarkdown: () => "# Page\n\nSee \\[\\[Other note]] here.",
+      setMarkdown: () => {
+        pushes++
+      },
+      scrollToLine: () => true
+    })
+    await f.wiki.editCloudWiki(id, "# Page\n\nSee [[Other note]] here.")
+    expect(f.store.collections.worldDocuments.get(id)?.body).toBe("# Page\n\nSee [[Other note]] here.")
+    expect(pushes).toBe(0)
+  })
+
   test("a lost acknowledgement retains exact UUID and bytes, reload retries those bytes once", async () => {
     const f = await fixture()
     await f.wiki.openCloudWiki(repo, "home")
