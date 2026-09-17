@@ -20,6 +20,27 @@ export const SetupRecordSchema = z.object({ version: z.number().int().nonnegativ
   createdAt: instant(), workspaceSelectedAt: instant(), workspaceReadyAt: instant(), gatewayReadyAt: instant(),
   plannedAt: instant(), approvedAt: instant(), runStartedAt: instant() })
 export type SetupRecord = z.infer<typeof SetupRecordSchema>
+export type SetupInstant = "createdAt" | "workspaceSelectedAt" | "workspaceReadyAt" | "gatewayReadyAt" | "plannedAt" | "approvedAt" | "runStartedAt"
+const PHASE_SEGMENTS: readonly (readonly [string, SetupInstant])[] = [["workspaceSelectedMs", "createdAt"],
+  ["workspaceReadyMs", "workspaceSelectedAt"], ["gatewayReadyMs", "workspaceReadyAt"], ["plannedMs", "gatewayReadyAt"],
+  ["approvedMs", "plannedAt"], ["runStartedMs", "approvedAt"], ["runMs", "runStartedAt"]]
+/**
+ * One bounded, content-free line for the write that actually commits a terminal
+ * record, so the phase clock has a consumer. It carries identifiers and
+ * durations only: no prompt, repository, issue or user text, and no credential.
+ * At-most-once and attempted, never durable; logging never fails the request.
+ */
+const logSetupPhases = (record: SetupRecord, terminalAt: number) => {
+  const durations = Object.fromEntries(PHASE_SEGMENTS.flatMap(([name, from], index) => {
+    const start = record[from], end = index + 1 < PHASE_SEGMENTS.length ? record[PHASE_SEGMENTS[index + 1]![1]] : terminalAt
+    return start === undefined || end === undefined ? [] : [[name, end - start]]
+  }))
+  try {
+    console.log(JSON.stringify({ event: "repository_setup_phases", requestId: record.input.requestId, job: record.input.job,
+      operation: record.input.operation, phase: record.receipt.phase, ...(record.runId ? { runId: record.runId } : {}),
+      ...(record.createdAt === undefined ? {} : { totalMs: terminalAt - record.createdAt }), ...durations }))
+  } catch { /* Observability never decides whether a finished setup request stands. */ }
+}
 const KeySchema = z.string().min(1).max(128).regex(/^[a-zA-Z0-9:_-]+$/)
 const RegistrationMatchSchema = z.object({ registrationId: z.string(), revision: z.number().int().positive(), digest: z.string(), workspaceId: z.string().uuid(), sourceRevision: z.string().min(1) })
 const DiscoverySchema = z.discriminatedUnion("state", [
@@ -97,6 +118,10 @@ export const repositorySetupStorageRequest = (request: Request) => Effect.gen(fu
       if (record.result) delete remaining[id]
       yield* storage.putMany({ [key(id)]: record,
         ...(record.result && Object.hasOwn(queue.requests, id) ? { [SETUP_QUEUE_KEY]: { ...queue, requests: remaining } } : {}) })
+      // Reached only by the update that matched the current version against a
+      // record with no result, under the lock: exactly the write that finishes
+      // the request. A caller cannot infer this from the record it is handed.
+      if (record.result) yield* Effect.sync(() => logSetupPhases(record, Date.now()))
     }
     return Response.json({ record })
   }).pipe(lock.withPermits(1), Effect.catchTag("SetupStoreError", error => Effect.succeed(Response.json({ message: error.message }, { status: error.status ?? 503 }))))

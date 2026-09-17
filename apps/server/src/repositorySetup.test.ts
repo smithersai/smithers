@@ -20,7 +20,7 @@ async function fixture() {
   const background: Promise<unknown>[] = []
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
-    sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed";
+    sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed"; onSnapshot?: () => Promise<void>;
     workspaceRefusal?: { status: number; code: string; message: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
@@ -76,6 +76,7 @@ async function fixture() {
     if (body.tag === "Approval.Submit") return frame({ approved: true })
     if (body.tag === "Run") { launched.add(`${login}:${String(body.payload.idempotencyKey)}`); return frame({ runId: `run-${id}` }) }
     if (body.tag !== "Projection.Snapshot") throw Error("Unexpected RPC")
+    if (options.onSnapshot) await options.onSnapshot()
     if (options.readError) throw Error("Observation disconnected")
     const operation = (calls.find(call => call.login === login && call.tag === "Plan")!.payload.input as { operation: string }).operation
     const receipt = { requestId: options.wrongResult ? "different-request" : input.requestId, runId: `run-${id}`, revision: input.revision, digest: input.digest,
@@ -407,6 +408,58 @@ test("a finished setup logs its phase durations exactly once across replayed adv
     await t.durable.runGatewayAlarms()
     await t.read(); await t.settle()
     expect(log.lines).toHaveLength(1)
+  } finally { log.restore() }
+})
+
+test("two observers that reach the same finished run log its phases exactly once", async () => {
+  const t = await fixture()
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const before = (t.durable.gatewayRows("alice").get(key) as SetupRecord).version
+  t.options.runState = "completed"
+  // Both observers read version `before` and only then race the terminal write.
+  let waiting = 0; const held = gate()
+  t.options.onSnapshot = async () => { if (++waiting === 2) held.release(); await held.wait }
+  const log = capturePhaseLines()
+  try {
+    const observe = () => t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)
+    const responses = await Promise.all([observe(), observe()])
+    await t.settle()
+    expect(responses.map(response => response.status)).toEqual([200, 200])
+    expect(log.lines).toHaveLength(1)
+    const stored = t.durable.gatewayRows("alice").get(key) as SetupRecord
+    expect(stored.version).toBe(before + 1)
+    expect(stored.result).toBeDefined()
+    expect(stored.receipt.phase).toBe("completed")
+  } finally { held.release(); log.restore() }
+})
+
+test("competing terminal updates at one expectedVersion produce one winner and one log line", async () => {
+  const t = await fixture()
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const base = t.durable.gatewayRows("alice").get(key) as SetupRecord
+  const stub = t.durable.GATEWAY_SESSIONS.get(t.durable.GATEWAY_SESSIONS.idFromName("alice"))
+  const terminal = (phase: "completed" | "failed"): SetupRecord => ({ ...base,
+    receipt: { ...base.receipt, phase, updatedAt: Date.now() },
+    result: { requestId: base.input.requestId, revision: base.input.revision, digest: base.input.digest,
+      receipt: { ...base.receipt, phase, updatedAt: Date.now() } } })
+  const update = (record: SetupRecord) => stub.fetch(new Request("https://gateway-sessions.internal/repository-setup", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "update", requestId: base.input.requestId, expectedVersion: base.version, record })
+  }))
+  const log = capturePhaseLines()
+  try {
+    const answers = await Promise.all([update(terminal("completed")), update(terminal("failed"))])
+    const records = await Promise.all(answers.map(async answer => (await answer.json() as { record: SetupRecord }).record))
+    expect(log.lines).toHaveLength(1)
+    const winner = t.durable.gatewayRows("alice").get(key) as SetupRecord
+    expect(winner.version).toBe(base.version + 1)
+    // The loser is answered with the winner's terminal record, not its own.
+    expect(records.map(record => record.version)).toEqual([base.version + 1, base.version + 1])
+    for (const record of records) expect(record.receipt.phase).toBe(winner.receipt.phase)
+    expect(log.lines[0]).toMatchObject({ event: "repository_setup_phases", requestId: t.input.requestId,
+      job: "issues", operation: "evaluate", phase: winner.receipt.phase })
   } finally { log.restore() }
 })
 
