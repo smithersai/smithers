@@ -486,3 +486,100 @@ describe("form focus handoff from the slash door", () => {
     expect(calls).toEqual([["card.dismiss", "form-tab.harness"]])
   })
 })
+
+/*
+ * A field whose options are suggestions, not a closed set: files.read's Path
+ * (CT105, flows/entries/files.ts). The control is the same <input> before and
+ * after the inventory lands, so the visible value, the persisted draft and the
+ * submitted input never diverge. Every commit here goes through the
+ * controller's own decision (state/controller/forms.ts), which accepts a typed
+ * value for a text field and would refuse one for a select.
+ */
+import { decideFormFieldInput } from "../state/controller/forms"
+
+describe("a text field whose options are suggestions", () => {
+  const files = [{ value: "README.md", label: "README.md" }, { value: "src/index.ts", label: "src/index.ts" }]
+
+  const pathForm = () => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+    let card = formCard({ via: "user", fields: [{ name: "path", label: "Path", kind: "text", required: true, optionsFrom: "files" }] })
+    const submitted: Array<string | number | boolean | undefined> = []
+    const refusals: Array<string> = []
+    const paint = (): void => root.render(<FlowFormCardBody card={card} onRunCommand={(name, args) => {
+      if (name === "form.submit") {
+        submitted.push(card.payload.draft["path"])
+        return
+      }
+      if (name !== "form.set") return
+      const parsed = payloadFor(name, args)
+      if (!("payload" in parsed)) throw new Error("field commit did not parse")
+      const decided = decideFormFieldInput(card, card.id, String(parsed.payload.field), String(parsed.payload.value))
+      if ("error" in decided) {
+        refusals.push(decided.error)
+        return
+      }
+      card = decided.card
+      paint()
+    }} />)
+    const arrive = (options: ReadonlyArray<{ value: string; label: string }>): void => {
+      card = { ...card, payload: { ...card.payload, fields: card.payload.fields.map((field) => ({ ...field, options: [...options] })) } }
+      flushSync(paint)
+    }
+    arrive([])
+    return {
+      host,
+      submitted,
+      refusals,
+      arrive,
+      draft: () => card.payload.draft["path"],
+      field: () => host.querySelector<HTMLInputElement>("[data-testid=flow-form-path]")!,
+      suggestions: () => [...host.querySelectorAll("datalist option")].map((option) => option.getAttribute("value")),
+      submit: () => host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!
+    }
+  }
+
+  test("the inventory arrives as suggestions without replacing the control the human is typing in", () => {
+    const form = pathForm()
+    const typed = form.field()
+    typed.focus()
+    input(form.host, "flow-form-path", "REA")
+    form.arrive(files)
+    expect(form.field() === typed).toBe(true)
+    expect(document.activeElement === typed).toBe(true)
+    expect(form.field().value).toBe("REA")
+    expect(form.draft()).toBe("REA")
+    expect(form.suggestions()).toEqual(["README.md", "src/index.ts"])
+    expect(form.submit().disabled).toBe(false)
+  })
+
+  test("clearing the typed path keeps the same control, its focus and its suggestions", () => {
+    const form = pathForm()
+    form.field().focus()
+    input(form.host, "flow-form-path", "REA")
+    form.arrive(files)
+    const typed = form.field()
+    input(form.host, "flow-form-path", "")
+    expect(form.field() === typed).toBe(true)
+    expect(document.activeElement === typed).toBe(true)
+    expect(form.field().value).toBe("")
+    expect(form.draft()).toBeUndefined()
+    expect(form.suggestions()).toEqual(["README.md", "src/index.ts"])
+    expect(form.submit().disabled).toBe(true)
+  })
+
+  test("a suggestion taken from the keyboard commits the whole value, and Submit sends what the control shows", () => {
+    const form = pathForm()
+    form.arrive(files)
+    form.field().focus()
+    input(form.host, "flow-form-path", "README.md")
+    expect(form.field().value).toBe("README.md")
+    expect(form.draft()).toBe("README.md")
+    expect(document.activeElement === form.field()).toBe(true)
+    form.submit().click()
+    expect(form.submitted).toEqual(["README.md"])
+    expect(form.refusals).toEqual([])
+  })
+})

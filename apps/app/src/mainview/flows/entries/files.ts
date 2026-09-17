@@ -38,7 +38,14 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({
     name: "files.read",
     form: {
-      fields: { path: { kind: "select" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },
+      /*
+       * The path is TEXT: an inventory lists part of a tree, so the field takes
+       * any path the human types and offers what was read as suggestions
+       * (controller/forms.ts attaches `optionsFrom: "files"`). A select would
+       * refuse every value that is not already an option, including each
+       * keystroke on the way to one.
+       */
+      fields: { path: { kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" } },
       args: (payload) => fileArgs([text(payload, "path"), text(payload, "line"), text(payload, "column")].filter((part) => part !== undefined).join(":"), text(payload, "repo"))
     },
     summary: "Read a file from a repository",
