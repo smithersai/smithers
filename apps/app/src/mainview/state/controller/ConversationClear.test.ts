@@ -45,6 +45,7 @@ const response = (notes: unknown = [note]) =>
     ].map((frame) => JSON.stringify(frame)).join("\n") + "\n"
   )
 
+/* Summarizing into Wiki notes is the opt-in half of chat.clear (state/KnowledgeFeatures.ts), so the fixture turns it on. */
 const attachWorld = (
   store: AppStore,
   fetchImpl: FetchLike,
@@ -59,7 +60,7 @@ const attachWorld = (
     startTurn: async () => ({ status: "error", message: "unavailable" }),
     cancelTurn,
     subscribe: () => () => {}
-  }, { fetchImpl, frameHistory })
+  }, { fetchImpl, frameHistory, features: { wiki: true } })
   ctx.withToast = createFailureController(ctx).withToast
   ctx.contextMessages = () =>
     [...store.collections.messages.values()].map((message) => ({

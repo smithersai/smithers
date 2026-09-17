@@ -5,6 +5,7 @@ import type { CommandGesture } from "../CommandGesture"
  * the aggregator order.
  */
 import { Schema } from "effect"
+import { knowledgeFlowAvailable } from "../../state/KnowledgeFeatures"
 import { flow, NoPayload } from "./Declare"
 import type { FlowEntry, Namespace, Recommendation } from "../registry"
 import type { CommandActions } from "./Declare"
@@ -58,12 +59,18 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   /*
    * Local archive/start-new is always available. Optional summarization may
    * fail without changing the conversation; it never replaces existing notes.
+   * Wiki is opt-in: with the flag off the option is not declared, so no door
+   * offers it, and world.ts drops an explicit one rather than lose the archive
+   * a persisted card or an older agent catalog still asks for.
    */
+  const summarizes = knowledgeFlowAvailable("wiki", actions.snapshot?.())
   const CLEAR = {
     name: "chat.clear",
-    summary: "Archive this conversation and start fresh; optionally summarize into Wiki notes",
+    summary: summarizes
+      ? "Archive this conversation and start fresh; optionally summarize into Wiki notes"
+      : "Archive this conversation and start fresh",
     confirm: "archive this conversation and start a new one",
-    args: "[--summarize]",
+    ...(summarizes ? { args: "[--summarize]" } : {}),
     input: Schema.Struct({ summarize: Schema.optional(Schema.Boolean) }),
     handler: (options: { readonly summarize?: boolean }) => actions.clearConversation(options)
   }

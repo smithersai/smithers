@@ -4,13 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CardView } from "../ChatCards"
 import { ControllerTestProvider } from "../ControllerContext"
 import { cardActions } from "../cards/CardActions"
+import { agentVisibleCatalog } from "../flows/agentTools"
 import { namespace as searchNamespace } from "../flows/entries/search"
-import { recommendedNames } from "../flows/registry"
+import { parseSubmit, recommendedNames } from "../flows/registry"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
+import { smithersInstructions } from "./Instructions"
 import { knowledgeCardAvailable, knowledgeFlowAvailable, wikiFlagEnabled } from "./KnowledgeFeatures"
 import { parseRecommendation } from "./Recommend"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const hidden = ["wiki", "wiki.create", "wiki.open", "wiki.graph", "world", "world.new-note",
@@ -203,5 +205,82 @@ describe("the Wiki build flag", () => {
       if (prior === undefined) delete process.env.VITE_SMITHERS_WIKI
       else process.env.VITE_SMITHERS_WIKI = prior
     }
+  })
+})
+
+/*
+ * `/chat.clear --summarize` is the one Wiki door that hangs off a flow the
+ * release keeps: the archive is always local, the summary writes Wiki notes.
+ * With the flag off the option must not exist at any door, and an explicit
+ * one (a persisted card, an agent that read an older catalog) must still
+ * archive — the act the human asked for — without a note and without the
+ * model call that would mint one.
+ */
+const SWEEP_NOTE = { title: "Prefers dark mode", body: "The user keeps the app in dark mode.", confidence: 0.9 }
+const sweepStream = () =>
+  new Response(
+    [{ type: "delta", kind: "text", text: JSON.stringify({ notes: [SWEEP_NOTE] }) }, { type: "done", reason: "stop" }]
+      .map((frame) => JSON.stringify(frame)).join("\n") + "\n",
+    { status: 200, headers: { "content-type": "application/x-ndjson" } }
+  )
+
+const readyToArchive = async (features: { readonly wiki?: boolean }) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const sweeps: string[] = []
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    features,
+    fetchImpl: async (input) => {
+      const path = new URL(String(input), "https://app.test").pathname
+      if (path !== "/api/model/stream") return json(404, { status: "error" })
+      sweeps.push(path)
+      return sweepStream()
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will",
+    allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "message.appended", actor: "user", text: "remember that I prefer dark mode" }).isPersisted.promise
+  return { store, controller, sweeps }
+}
+
+const clearEntry = (controller: ReturnType<typeof createAppController>) =>
+  controller.commands.all().find((item) => item.name === "chat.clear")
+
+describe("the optional Wiki summary on chat.clear", () => {
+  test("with the flag off no door offers the option", async () => {
+    const { controller } = await readyToArchive({})
+    expect(clearEntry(controller)?.summary).not.toMatch(/wiki/i)
+    expect(clearEntry(controller)?.args).toBeUndefined()
+    const catalog = agentVisibleCatalog(controller.commands.callable())
+    expect(JSON.stringify(catalog.find((row) => row.name === "chat.clear"))).not.toMatch(/summarize/i)
+    const prompt = smithersInstructions(catalog, {
+      host: "web", github: { connected: false, login: null, repositories: null },
+      localRepositories: [], localRepositoriesAvailable: false
+    }, [], { budgetBytes: 1_000_000 })
+    expect(prompt).toContain("- /chat.clear — Archive this conversation and start fresh\n")
+    expect(prompt).not.toContain("--summarize")
+  })
+
+  test("with the flag off an explicit --summarize archives, writes no note and calls no model", async () => {
+    const { store, controller, sweeps } = await readyToArchive({})
+    // The typed line stays an invocation rather than falling through to the model as prose.
+    expect(parseSubmit("/chat.clear --summarize", controller.commands.all()))
+      .toEqual({ kind: "command", name: "chat.clear", args: "--summarize" })
+    const outcome = await controller.commands.run("chat.clear", "--summarize")
+    expect(outcome.status).toBe("executed")
+    expect(sweeps).toEqual([])
+    expect([...store.collections.worldDocuments.values()].filter((row) => row.sources.includes("chat-sweep"))).toEqual([])
+    expect([...store.collections.transitions.values()].some((row) => row.type === "conversation.cleared")).toBe(true)
+  })
+
+  test("with the flag on the option, its copy and the note it writes are what they are today", async () => {
+    const { store, controller, sweeps } = await readyToArchive({ wiki: true })
+    expect(clearEntry(controller)?.summary).toBe("Archive this conversation and start fresh; optionally summarize into Wiki notes")
+    expect(clearEntry(controller)?.args).toBe("[--summarize]")
+
+    const outcome = await controller.commands.run("chat.clear", "--summarize")
+    expect(outcome.status).toBe("executed")
+    expect(sweeps).toEqual(["/api/model/stream"])
+    expect([...store.collections.worldDocuments.values()].filter((row) => row.sources.includes("chat-sweep")).map((row) => row.title))
+      .toEqual([SWEEP_NOTE.title])
   })
 })
