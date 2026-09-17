@@ -19,7 +19,6 @@ export const PALETTE_ACTIONS_REASON = "opening a menu is the human's gesture; ev
 
 /** The `palette.*` flows registered as one aggregator block. */
 export const paletteFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({ name: "sidebar.toggle", summary: "Show or hide the sidebar", input: Schema.Struct({ open: Schema.optional(Schema.Boolean) }), handler: ({ open }) => actions.toggleSidebar(open) }),
   flow({
     name: "palette.open",
     summary: "Open the search palette (Cmd+K); a prefix opens it in that mode",

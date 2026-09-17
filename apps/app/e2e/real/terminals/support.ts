@@ -74,16 +74,6 @@ export const openTerminalThroughSlash = async (page: Page, cwd?: string): Promis
   return ownCreatedSession(page, response, previousIds)
 }
 
-export const chooseTerminalFromOpenMenu = async (page: Page): Promise<string> => {
-  const previousIds = new Set((await listPtys(page, page.context().request)).map((session) => session.sessionId))
-  const creating = page.waitForResponse(isPtyCreate)
-  const menu = page.getByTestId("tab-add-menu")
-  await expect(menu).toBeVisible()
-  await page.getByTestId("tab-add-terminal").click()
-  const response = await creating
-  const sessionId = await ownCreatedSession(page, response, previousIds)
-  return sessionId
-}
 
 export const typeTerminalLine = async (page: Page, sessionId: string, line: string): Promise<void> => {
   const terminal = page.getByTestId(`terminal-${sessionId}`)

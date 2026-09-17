@@ -327,7 +327,7 @@ export const workspaceRenameFlows = (actions: CommandActions): ReadonlyArray<Flo
   }),
   flow({
     name: "workspace.rename.edit",
-    summary: "Edit the workspace name in the sidebar",
+    summary: "Rename the workspace",
     hidden: true,
     userOnly: true,
     userOnlyReason: "opening the inline editor is the human's gesture; the agent names the workspace with workspace.rename",

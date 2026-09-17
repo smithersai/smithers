@@ -373,7 +373,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly openChat: () => Promise<string | void>
   readonly toggleDictation: () => Promise<string | void>
   readonly cancelDictation: () => void
-  readonly toggleSidebar: (open?: boolean) => Promise<void>
   readonly openPalette: (prefix?: string) => void
   readonly closePalette: (lastQuery?: string) => void
   readonly togglePaletteActions: (ref: string) => void
@@ -1529,7 +1528,6 @@ export const createAppController = (
    * embedded cards and record via:"agent", never user chrome.
    */
   const commandActions: CommandActions = {
-    toggleSidebar: async (open) => { await ctx.store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: open ?? !ctx.store.session().sidebarOpen }).isPersisted.promise },
     promptStorageRecovery,
     exportStorageRecovery,
     resetStorageRecovery,

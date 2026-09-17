@@ -7,7 +7,7 @@ in INSERT, NORMAL, or VISUAL mode. Other modes keep their existing input behavio
 ## Move between panes
 
 Press and release **Ctrl+B**, then the next key. The prefix works while editing,
-in the sidebar, in a terminal, and in the tutorial. Its hint stays visible until
+in a terminal, and in the tutorial. Its hint stays visible until
 you choose a command or cancel it.
 
 | Next key | Action |

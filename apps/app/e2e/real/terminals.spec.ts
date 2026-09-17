@@ -3,7 +3,6 @@ import { command, createOwnedLocalRepo, expect, test } from "./support/test"
 import {
   attachTerminalEvidence,
   bootWorkbench,
-  chooseTerminalFromOpenMenu,
   cleanupOwnedSessions,
   forgetOwnedSession,
   listPtys,
@@ -195,22 +194,4 @@ test("close cancel preserves a live PTY and close confirm reaps its process", sc
     listAfterClose: await listPtys(page, request),
     processAliveAfterClose: pidIsAlive(session.pid)
   })
-})
-
-test("tab.menu projects the button door that opens a real terminal session", scenario("terminal.menu-projection-button-door", {
-  capabilities: ["local.terminal"],
-  description: "Invokes the registered tab.menu action through slash, then uses its projected Terminal item to create a real PTY.",
-  coverage: [
-    "action:tab.menu", "action:tab.terminal", "host:local", "path:success", "path:keyboard", "door:slash", "door:button",
-    "door:user-only", "dimension:keyboard",
-    "dimension:workbench-session-chrome", "evidence:button-created-pty"
-  ]
-}), async ({ page, request }, testInfo) => {
-  await bootWorkbench(page)
-  await command(page, "/tab.menu")
-  await expect(page.getByTestId("tab-add-menu")).toBeVisible()
-  const sessionId = await chooseTerminalFromOpenMenu(page)
-  const session = (await listPtys(page, request)).find((candidate) => candidate.sessionId === sessionId)
-  expect(session).toMatchObject({ sessionId, kind: "terminal", alive: true })
-  await attachTerminalEvidence(testInfo, "terminal-button-door", { session })
 })

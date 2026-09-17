@@ -214,15 +214,15 @@ export const CardView = memo(function CardView({
                 >
                   <GitFork size={13} />
                 </Button>
-                {/* Open in sidebar exists only on the maximized card: a user's explicit act (THE EMBED LAW). */}
+                {/* Open in tab exists only on the maximized card: a user's explicit act (THE EMBED LAW). */}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="card-maximize-btn"
                   data-flow="tab.card"
                   data-testid={`card-open-in-tab-${card.id}`}
-                  aria-label="Open in sidebar"
-                  title="Open in sidebar"
+                  aria-label="Open in tab"
+                  title="Open in tab"
                   onClick={() => onOpenInTab(card.id)}
                 >
                   <PanelTop size={13} />

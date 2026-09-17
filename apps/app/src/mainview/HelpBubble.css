@@ -5,6 +5,28 @@
   align-items: center;
   max-width: 100%;
   min-width: 0;
+  /*
+   * The anchor and the open tip are explanatory chrome floating over real
+   * content: pointer-events pass through to what is beneath (a docked hint
+   * used to eat the transcript's own buttons). The wrapped control and the
+   * tip's own buttons stay hit-testable.
+   */
+  pointer-events: none;
+}
+
+.help-anchor-target {
+  pointer-events: auto;
+}
+
+/* The FirstSightHint wrapper is the same explanatory chrome: click-through. */
+[data-first-sight-hint] {
+  pointer-events: none;
+}
+
+[data-first-sight-hint] .help-anchor-target,
+[data-first-sight-hint] .help-bubble button,
+[data-first-sight-hint] .help-bubble a {
+  pointer-events: auto;
 }
 
 .help-bubble {
@@ -25,6 +47,13 @@
   color: var(--g-ink, #183e2d);
   box-shadow: 0 4px 14px #1e393012;
   text-align: left;
+  /* A hint explains the control beneath it; it never eats that control's clicks. */
+  pointer-events: none;
+}
+
+.help-bubble button,
+.help-bubble a {
+  pointer-events: auto;
 }
 
 .help-bubble::after {

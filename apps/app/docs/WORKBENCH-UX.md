@@ -461,13 +461,13 @@ automation (workspaces spec §5.5).
 
 **Job.** One place code lives; the local checkout is a working copy of it.
 
-**Shipped (lane piper, ADR 0001).** The sidebar's Repos section is the tree
-`org/ → repo → working copies`, fed by the cloud inventory
-(`GET /api/cloud/api/user/repos` + `/user/orgs` + per-repo `/bookmarks` for
-the default bookmark's head, through the `/api/cloud/*` proxy) and the local
-`repos.loaded`. No mirror glyph — the backend has no mirror status yet
-(plue#445). Selecting a repo row names `org/repo`; a copy row names
-`org/repo#copyId`. The origin chip reads `~/smithers · 3 ahead of main` for a
+**Shipped (lane piper, ADR 0001; sidebar removed 2026-09-17).** The composer's
+repository menu is the tree `org/ → repo → working copies`, fed by the cloud
+inventory (`GET /api/cloud/api/user/repos` + `/user/orgs` + per-repo
+`/bookmarks` for the default bookmark's head, through the `/api/cloud/*`
+proxy) and the local `repos.loaded`. No mirror glyph — the backend has no
+mirror status yet (plue#445). Selecting a repository names `org/repo`; a copy
+names `org/repo#copyId`. The origin chip reads `~/smithers · 3 ahead of main` for a
 local copy with a jj probe (the branch when no probe ran) and
 `head @ qupxosqw` at a repository's head. `file` and `file-list` card headers
 carry the global `address` and `readAt`; a `head moved to <id> · refresh`

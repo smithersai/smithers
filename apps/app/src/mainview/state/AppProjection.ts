@@ -200,7 +200,6 @@ export const APP_TRANSITION_TYPES = {
   "surfaces-menu.toggled": true,
   "connect-menu.toggled": true,
   "add-menu.toggled": true,
-  "sidebar.toggled": true,
   "palette.toggled": true,
   "palette.actions.toggled": true,
   "palette.item.opened": true,
@@ -891,7 +890,6 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
         })
       }
     }
-    if (collections.sessions.get(SESSION_ID)?.sidebarOpen === true) collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = false })
     // Wave 14 §1: nothing seeds the transcript. Signed out, the auth message is
     // the whole conversation; signed in, the transcript opens clean and the
     // inventory seam fills the repositories. See AppState's note.
@@ -1762,9 +1760,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.addMenuOpen = transition.open
           })
-          break
-        case "sidebar.toggled":
-          collections.sessions.update(SESSION_ID, draft => { draft.sidebarOpen = transition.open })
           break
 
         case "palette.toggled":

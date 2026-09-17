@@ -109,8 +109,8 @@ flow: start answers the login URL, the callback lands on a loopback listener,
 and the token lives in the macOS keychain (`smithers-cloud`) plus Bun memory;
 the session route answers `{ state, username, expiresAt }` only.
 `SMITHERS_CLOUD_TOKEN` is a dev/CI override read first. A signed-in session
-loads the repository inventory (the sidebar's `org/ → repo → working copies`
-tree) through the proxy; the bootstrap advertises the `cloud` capability when
+loads the repository inventory (the composer's repository menu reads it)
+through the proxy; the bootstrap advertises the `cloud` capability when
 the proxy is enabled.
 
 ## Repository and process authority
@@ -405,8 +405,8 @@ handles is told the DTO's `lsp.languages`.
 
 ## Target presentation
 
-Opening a repository renders nothing in the transcript; the sidebar pin and
-the composer's selector name it. Target discovery is the explicit
+Opening a repository renders nothing in the transcript; the composer's
+selector names it. Target discovery is the explicit
 `/target.list` act (the model has the same flow): it appends the trusted typed
 React card, and a repository with no Smithers workspace answers the reason as
 text.
@@ -603,12 +603,12 @@ reload, and immutable branch forks operate on workspace/branch/frame records in
 the same store as cards. Fullscreen is explicit; the composer remains mounted
 and usable while a card is maximized.
 
-Repositories have one address space (lane piper, ADR 0001): the sidebar's
-Repos section is the tree `org/ → repo → working copies`: cloud repositories
+Repositories have one address space (lane piper, ADR 0001): the composer's
+repository menu is the tree `org/ → repo → working copies`: cloud repositories
 from the signed-in inventory, local checkouts nested under their repository
-when the remote parses into it (standalone rows otherwise), cloud workspaces
-beneath their repo. Selecting a repo row names `org/repo`; selecting a copy
-row names `org/repo#copyId`. The composer's origin chip states where the
+when the remote parses into it (standalone entries otherwise), cloud workspaces
+beneath their repo. Selecting a repository names `org/repo`; selecting a copy
+names `org/repo#copyId`. The composer's origin chip states where the
 selection lives (`~/smithers · 3 ahead of main`, or `head @ qupxosqw` at a
 repository's head). File cards carry the global address
 (`/org/repo/path`) and the position the read was taken at; when the

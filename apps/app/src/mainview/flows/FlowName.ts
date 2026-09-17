@@ -227,7 +227,6 @@ export const FLOW_NAMES = [
   "setup.run",
   "setup.view",
   "setup.work",
-  "sidebar.toggle",
   "smithers.who",
   "storage.recovery",
   "sync.ops.show-more",

@@ -3,34 +3,15 @@
 	display: flex;
 	/*
 	 * A flex item's default min-width is auto, so without this the shell grew
-	 * to its min-content width (sidebar + the widest card) and pushed the page
+	 * to its min-content width (the widest card) and pushed the page
 	 * sideways at narrow viewports instead of shrinking to the viewport.
 	 */
 	min-width: 0;
 	min-height: 0;
 	flex: 1;
-	/* The sidebar on the left, everything else (.app-main) to its right. */
 	flex-direction: row;
 	/* Keep repository controls clear of the conversation, including bubble tails. */
 	column-gap: 16px;
-	/*
-	 * The sidebar's width, owned here because two other things measure from
-	 * it: chrome.css draws the bar, and a maximized card (cards.css) starts
-	 * past it so its left edge is not underneath the sidebar (will, ask 7).
-	 */
-	--chrome-bar-width: 200px;
-}
-
-/*
- * At phone width a 200px sidebar leaves the conversation less than half the
- * screen, so the bar tracks the viewport below 556px (where 36vw crosses
- * 200px). Desktop is unchanged: above that width the min() still resolves to
- * 200px.
- */
-@media (max-width: 555px) {
-	.app-shell {
-		--chrome-bar-width: min(200px, 36vw);
-	}
 }
 
 /*

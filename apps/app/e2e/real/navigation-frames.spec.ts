@@ -207,7 +207,7 @@ test("direct Previous frame button and frame.forward slash command traverse one 
   await expect(path).toHaveValue(marker)
 })
 
-test("open in sidebar shares unfinished wiki state and persists both the session and embedded projection", scenario("navigation.card.open-in-sidebar", {
+test("open in tab shares unfinished wiki state and persists both the session and embedded projection", scenario("navigation.card.open-in-tab", {
   capabilities: [],
   coverage: [
     "action:wiki.open",
@@ -215,7 +215,6 @@ test("open in sidebar shares unfinished wiki state and persists both the session
     "action:card.maximize",
     "action:tab.card",
     "action:tab.select",
-    "action:sidebar.toggle",
     "host:local",
     "host:production",
     "path:success",
@@ -223,45 +222,39 @@ test("open in sidebar shares unfinished wiki state and persists both the session
     "door:slash",
     "door:button",
     "dimension:shared-card-record",
-    "dimension:sidebar-session",
+    "dimension:tab-session",
     "evidence:cross-projection-reload"
   ],
-  description: "Open in sidebar uses the same durable provider-free form record: edits in the tab survive reload and appear in the embedded transcript projection."
+  description: "Open in tab uses the same durable provider-free form record: edits in the tab survive reload and appear in the embedded transcript projection."
 }), async ({ page }) => {
-  const first = "sidebar-shared-before.md"
-  const second = "sidebar-shared-after.md"
+  const first = "tab-shared-before.md"
+  const second = "tab-shared-after.md"
   const { card } = await openWikiForm(page, first, enterCanonicalRepositoryApp)
   const repositoryUrl = page.url()
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
-  const openInSidebar = card.getByRole("button", { name: "Open in sidebar", exact: true })
-  await expect(openInSidebar).toHaveAttribute("data-flow", "tab.card")
-  await openInSidebar.click()
+  const openInTab = card.getByRole("button", { name: "Open in tab", exact: true })
+  await expect(openInTab).toHaveAttribute("data-flow", "tab.card")
+  await openInTab.click()
 
-  const tab = page.getByTestId(`tab-${WIKI_FORM_CARD_ID}`)
+  const body = page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)
   const tabCard = page.locator(".card-tab").getByTestId(WIKI_FORM_CARD_ID)
-  await expect(tab).toHaveAttribute("data-active", "true")
+  await expect(body).toBeVisible()
   await expect(tabCard).toHaveAttribute("data-maximized", "false")
   await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(first)
   await expect(page).toHaveURL(repositoryUrl)
 
   await tabCard.getByTestId("flow-form-path").fill(second)
   await page.reload()
-  // Navigation chrome deliberately starts closed on each launch. Reopen it
-  // through its real button before checking the durable tab and shared form.
-  const sidebarToggle = page.getByRole("button", { name: "Smithers", exact: true })
-  await expect(sidebarToggle).toHaveAttribute("aria-expanded", "false")
-  await sidebarToggle.click()
-  await expect(tab).toHaveAttribute("data-active", "true")
+  // The durable tab restores active; the shared form record keeps the edit.
+  await expect(page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)).toBeVisible()
   await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(second)
 
-  const workspace = page.getByTestId("workspace-name")
-  await expect(workspace).toHaveAttribute("data-flow", "tab.select")
-  await workspace.click()
+  await page.keyboard.press("Meta+1")
   const transcriptCard = page.getByTestId("transcript").getByTestId(WIKI_FORM_CARD_ID)
   await expect(transcriptCard).toBeVisible()
   await expect(transcriptCard.getByTestId("flow-form-path")).toHaveValue(second)
   await expect(transcriptCard).toHaveAttribute("data-maximized", "false")
-  await expect(tab).toHaveCount(1)
+  await expect(page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)).toHaveCount(1)
 })
 
 test("the shipped practice issue card keeps local history, reloads it, and discards forward state after new navigation", scenario("navigation.card.local-history", {

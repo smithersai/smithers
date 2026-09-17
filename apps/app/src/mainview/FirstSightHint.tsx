@@ -46,12 +46,12 @@ export function useFirstSightHint(id: string) {
   return { open: first === id, dismiss }
 }
 
-export function FirstSightHint({ id, content, children }: { id: string; content: ReactNode; children: ReactNode }) {
+export function FirstSightHint({ id, content, children, placement }: { id: string; content: ReactNode; children: ReactNode; placement?: "flow" | "above" }) {
   const { open, dismiss } = useFirstSightHint(id)
   return <div data-first-sight-hint={id} onClickCapture={event => {
     if ((event.target as Element).closest("button, a[href]")) dismiss()
   }}>
-    <HelpBubble id={`hint-${id}`} open={open} dismissOnEscape={false} restoreFocusOnDismiss={false} content={content} onDismiss={dismiss} dismissBinding={{ "data-flow": "app.hint.dismiss", "data-flow-args": id }}>{children}</HelpBubble>
+    <HelpBubble id={`hint-${id}`} open={open} placement={placement} dismissOnEscape={false} restoreFocusOnDismiss={false} content={content} onDismiss={dismiss} dismissBinding={{ "data-flow": "app.hint.dismiss", "data-flow-args": id }}>{children}</HelpBubble>
   </div>
 }
 

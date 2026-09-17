@@ -205,15 +205,14 @@ test("a trusted Run button streams a target run to completion", async ({ page, r
   await expect(targetsCard(page)).toHaveAttribute("data-maximized", "true")
   await page.getByTestId(`card-open-in-tab-${targetsId}`).click()
   // openCardTab coins the tab id as `card-${cardId}` (state/controller/tabs.ts), and the
-  // chrome renders `tab-${tab.id}` / `tab-body-${tab.id}` over it. Compose the id the same
+  // shell renders `tab-body-${tab.id}` over it. Compose the id the same
   // way so the literal pin checks each half against the prefixes the app really builds.
   const cardTabId = `card-${targetsId}`
-  const tab = page.getByTestId(`tab-${cardTabId}`)
-  await expect(tab).toHaveAttribute("data-active", "true")
   const tabBody = page.getByTestId(`tab-body-${cardTabId}`)
   await expect(tabBody).toBeVisible()
   await expect(tabBody.locator('[data-target-row="//.github:dangerCi"]')).toBeVisible()
-  await page.getByTestId("workspace-name").click()
+  await page.keyboard.press("Meta+1")
+  await expect(tabBody).toBeHidden()
 
   const listed = await localApiGet(page, request, "/api/repos")
   expect(listed.status()).toBe(200)

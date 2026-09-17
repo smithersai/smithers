@@ -18,14 +18,12 @@ const slash = async (page: import("@playwright/test").Page, command: string) => 
   await page.getByTestId("composer-input").press("Enter")
 }
 
-test("repository chrome sign-in is keyboard reachable without the sidebar and carries return_to", async ({ page }) => {
+test("repository chrome sign-in is keyboard reachable and carries return_to", async ({ page }) => {
   await signedOutVisitor(page)
   await page.goto("/smithersai/smithers/")
   const door = page.getByTestId("chrome-sign-in")
   await expect(door).toBeVisible()
-  await expect(page.locator(".session-sidebar")).toHaveCount(0)
-  // Reach it from the wordmark in the native tab order, then activate with Enter.
-  await page.getByRole("button", { name: "Smithers", exact: true }).focus()
+  // The header holds the door; it is the first stop of the native tab order, then Enter activates it.
   await page.keyboard.press("Tab")
   await expect(door).toBeFocused()
   const bounds = await door.boundingBox()

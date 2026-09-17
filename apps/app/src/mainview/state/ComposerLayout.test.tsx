@@ -136,12 +136,8 @@ describe("the optional full composer header: the repository selector and where i
     expect(trigger?.dataset.connected).toBe("false")
     expect(trigger?.dataset.flow).toBe("connect")
     expect(byTestId(view.host, "repo-chip")).toBeNull()
-    // The header holds the selector; the chrome bar no longer repeats it.
+    // The composer header holds the selector; there is no second repository chrome.
     expect(byTestId(view.host, "composer-header")?.contains(trigger)).toBe(true)
-    expect(view.host.querySelector(".chrome-bar .repo-chip")).toBeNull()
-    // The minimal app no longer mounts a ChromeBar beside the optional component.
-    const sidebarOpens = [...view.host.querySelectorAll(".chrome-bar [data-flow=\"repo.open\"]")]
-    expect(sidebarOpens.map((el) => el.getAttribute("data-testid"))).toEqual([])
 
     // Its menu offers the IDE's open-folder, through the registered flow.
     await view.act(() => trigger?.click())

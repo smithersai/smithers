@@ -161,8 +161,3 @@ test("manual setup work preserves source identity and multiline instructions acr
   const edit = { cardId: work.cardId, stepId: "fix", field: "prompt", value: work.manual.prompt } as const
   roundTrip("setup.work", edit, JSON.stringify(edit), edit)
 })
-
-test("explicit sidebar close has the same typed grammar and remains a toggle when omitted", () => {
-  roundTrip("sidebar.toggle", { open: false }, '{"open":false}', { open: false })
-  expect(payloadFor("sidebar.toggle", "")).toEqual({ payload: {} })
-})

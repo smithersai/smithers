@@ -530,7 +530,6 @@ test("a fresh command refreshes a failed catalog once without changing selection
     await until(() => h.store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
     expect(reads).toEqual([`/api/repos/${repo}/contents/docs`])
     expect(h.store.session().activeRepoKey).toBe("beta/two")
-    expect(h.store.session().sidebarOpen).not.toBe(true)
   } finally { release(json(200, { repos: [] })); await h.close() }
 })
 

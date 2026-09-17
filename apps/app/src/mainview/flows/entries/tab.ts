@@ -9,7 +9,7 @@ import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
 /** The `tab` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
-export const namespace: Namespace = { id: "tab", label: "Sessions", summary: "Terminals, agents, and cards in the sidebar" }
+export const namespace: Namespace = { id: "tab", label: "Sessions", summary: "Terminals, agents, and card tabs" }
 
 /** The terminal, read and harness tabs, registered after `chat.reload`. */
 export const tabHarnessFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
@@ -56,12 +56,12 @@ export const tabHarnessFlows = (actions: CommandActions): ReadonlyArray<FlowEntr
   })
 ]
 
-/** The sidebar tab flows: card, select, close, menu. */
+/** The session tab flows: card, select, close, menu. */
 export const tabFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
-    /* Pins a card the agent just rendered into the sidebar: an ordinary act. */
+    /* Pins a card the agent just rendered into its own tab: an ordinary act. */
     name: "tab.card",
-    summary: "Open a card in the sidebar",
+    summary: "Open a card in a tab",
     args: "<cardId>",
     input: CardTarget,
     handler: ({ cardId }) => actions.openCardTab(cardId)

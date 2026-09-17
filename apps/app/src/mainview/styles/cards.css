@@ -472,8 +472,6 @@
 .card-maximize-backdrop {
 	position: fixed;
 	inset: 0;
-	/* The workspace sidebar remains available beside the frame. */
-	left: var(--chrome-bar-width, 200px);
 	z-index: 65;
 	/* The palette's own scrim: --shadow-rgb tracks each theme's ink, so the
 	   dim is neutral everywhere — the old rgb(20 17 12 / 45%) was a warm
@@ -484,12 +482,6 @@
 .smithers-card[data-maximized="true"] {
 	position: fixed;
 	inset: 1.5rem 1.5rem 8.5rem;
-	/*
-	 * Ask 7 (will, 2026-09-02): "when I maximize a file I can't see the left
-	 * side of it because the left side is under the left sidebar". The card
-	 * starts one gutter to the RIGHT of the sidebar instead of beneath it.
-	 */
-	left: calc(var(--chrome-bar-width, 200px) + 1.5rem);
 	z-index: 70;
 	overflow: auto;
 	margin: 0;
@@ -567,7 +559,7 @@
  * tutorial's `opacity: 0` mount and painted nothing at all. A hole needs no
  * stacking argument: nothing is dimmed twice and the surface is not dimmed.
  *
- * The z sits above the app's own chrome (session navigation 60, sidebar 55)
+ * The z sits above the app's own chrome (session navigation 60, dock 55)
  * — undimmed chrome was the third band — and below the maximize backdrop
  * (65) and the maximized card (70). A popover the controlled surface opens
  * lands over the surface, which is the hole, so it is not dimmed either.

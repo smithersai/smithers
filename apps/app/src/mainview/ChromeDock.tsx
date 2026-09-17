@@ -1,0 +1,275 @@
+import { useLiveQuery } from "@tanstack/react-db"
+import { BookOpen,Download,History,KeyRound,Moon,Plus,RotateCcw,Sun,Timer,UserRound,Workflow } from "lucide-react"
+import { roleMenuEntries } from "./AgentRoleMenu"
+import { useController } from "./ControllerContext"
+import { FirstSightHint } from "./FirstSightHint"
+import { flowAction } from "./flows/FlowAction"
+
+/*
+ * The dock: the chrome as a vertical icon rail on the left edge, always on
+ * screen — no sidebar, no drawer, no toggle. The order is the factory
+ * design session's (mocks ~/Desktop/smithers-factory/factory-mocks.html):
+ * Wiki, Dispatcher, Flows, Secrets, History, Account; the admin reset and
+ * the theme toggle close the column. Each button is the button door of one
+ * registered flow and renders exactly where that flow registers.
+ */
+export function ChromeDock() {
+  const controller = useController()
+  const { data: sessionRows } = useLiveQuery((q) =>
+    q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({
+      id: session.id,
+      theme: session.theme,
+      tabMenuOpen: session.tabMenuOpen
+    }))
+  )
+  const { data: harnessRows } = useLiveQuery(controller.store.collections.harnesses)
+  const { data: agentRows } = useLiveQuery(controller.store.collections.agents)
+  const dark = sessionRows[0]?.theme === "dark"
+  const menuOpen = sessionRows[0]?.tabMenuOpen === true
+  const available = harnessRows.filter((harness) => harness.status !== "unavailable")
+  const unavailable = harnessRows.filter((harness) => harness.status === "unavailable")
+  const roleEntries = roleMenuEntries(harnessRows, agentRows)
+  const canOpenTerminal = controller.commands.find("tab.terminal") !== undefined
+  const canOpenHarnesses = controller.commands.find("tab.harness") !== undefined
+  const canAddSession = canOpenTerminal || canOpenHarnesses
+  // The web app's door to the native app (docs/web-mode/PLAN.md §3): registered on the cloud host only, and
+  // rendered only while a native release exists to download (AppLinks.ts — null until one carries an asset).
+  const canDownload = controller.commands.find("app.download") !== undefined && controller.downloadUrl !== null
+  // Wiki: the `wiki` surface switch (the Wiki pane beside the chat); registered on every host.
+  const canWiki = controller.features.wiki === true && controller.commands.find("wiki") !== undefined
+  // Dispatcher: triggers.list, the dispatcher card.
+  const canDispatcher = controller.commands.find("triggers.list") !== undefined
+  // Flows: the `flows` surface switch; registered on every host.
+  const canFlows = controller.commands.find("flows") !== undefined
+  // Secrets: secrets.list, registered on the cloud host only.
+  const canSecrets = controller.commands.find("secrets.list") !== undefined
+  // History: history.show, the mythical history card (design session 2026-09-07).
+  const canHistory = controller.features.mythicalHistory === true && controller.commands.find("history.show") !== undefined
+  // Account (factory mock 21): account.show, registered where an identity seam exists.
+  const canAccount = controller.commands.find("account.show") !== undefined
+  // Admin chrome follows the same capability-filtered registry as every act.
+  const isAdmin = controller.commands.find("admin.devtools") !== undefined
+
+  return (
+    <nav className="chrome-dock" aria-label="Chrome" data-testid="chrome-actions">
+      {/* New session: the `+` at the rail's head — a terminal, or an agent in its own tab. The menu opens right. */}
+      {canAddSession ?
+        (
+          <div className="dock-add">
+            <button
+              type="button"
+              className="chrome-icon-action"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="New session"
+              title="New session"
+              data-testid="dock-add"
+              {...flowAction(controller.runCommand, "tab.menu")}
+            >
+              <Plus size={14} aria-hidden="true" />
+            </button>
+            {menuOpen ?
+              (
+                <>
+                  {/* A press anywhere else closes the menu; the backdrop is the outside. */}
+                  <div
+                    className="dock-add-backdrop"
+                    aria-hidden="true"
+                    {...flowAction(controller.runCommand, "tab.menu")}
+                  />
+                  <div className="dock-add-menu" role="menu" aria-label="New session" data-testid="dock-add-menu">
+                    {canOpenTerminal ? <button
+                      type="button"
+                      role="menuitem"
+                      className="dock-add-item"
+                      data-testid="dock-add-terminal"
+                      {...flowAction(controller.runCommand, "tab.terminal")}
+                    >
+                      <span>Terminal</span>
+                    </button> : null}
+                    {/* Agents: each configured harness launches as a subagent of this conversation, in its own session. */}
+                    {canOpenHarnesses && harnessRows.length > 0 ?
+                      <div className="dock-add-group" role="presentation" data-testid="dock-add-agents">Agents</div> :
+                      null}
+                    {/* The named roles first (AgentRoles.ts): one model each, disabled with the reason when their harness cannot run it. */}
+                    {canOpenHarnesses && harnessRows.length > 0 ? roleEntries.map((entry) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        key={entry.role.id}
+                        className="dock-add-item"
+                        disabled={!entry.available}
+                        title={entry.available ? entry.role.purpose : entry.reason}
+                        data-role={entry.role.id}
+                        data-testid={`dock-add-role-${entry.role.id}`}
+                        {...flowAction(controller.runCommand, "agent.role", entry.role.id)}
+                      >
+                        <span>{entry.title}</span>
+                        <span className="dock-add-account">{entry.available ? entry.account : entry.reason}</span>
+                      </button>
+                    )) : null}
+                    {canOpenHarnesses ? available.map((harness) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        key={harness.id}
+                        className="dock-add-item"
+                        data-testid={`dock-add-harness-${harness.id}`}
+                        {...flowAction(controller.runCommand, "tab.harness", harness.id)}
+                      >
+                        <span>{harness.displayName}</span>
+                        <span className="dock-add-account">{harness.account?.email ?? harness.account?.label ?? ""}</span>
+                      </button>
+                    )) : null}
+                    {canOpenHarnesses ? unavailable.map((harness) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        key={harness.id}
+                        className="dock-add-item"
+                        disabled
+                        data-testid={`dock-add-harness-${harness.id}`}
+                        {...flowAction(controller.runCommand, "tab.harness", harness.id)}
+                      >
+                        <span>{harness.displayName}</span>
+                        <span className="dock-add-account">{harness.status}</span>
+                      </button>
+                    )) : null}
+                  </div>
+                </>
+              ) :
+              null}
+          </div>
+        ) :
+        null}
+      {/* The click is the human's gesture window.open needs; the model renders the card (app.download.prompt) instead. */}
+      {canDownload ?
+        (
+          <button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Download the app"
+            title="Download the app"
+            data-testid="chrome-download"
+            {...flowAction(controller.runCommand, "app.download")}
+          >
+            <Download size={14} aria-hidden="true" />
+          </button>
+        ) :
+        null}
+      {/* Wiki: the button door of the `wiki` surface switch; the pane opens beside the chat, signed in or out. */}
+      {canWiki ?
+        (
+          <FirstSightHint placement="above" id="chrome-wiki" content="Read and edit your Wiki."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Wiki"
+            title="Wiki"
+            data-testid="chrome-wiki"
+            {...flowAction(controller.runCommand, "wiki")}
+          >
+            <BookOpen size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* Dispatcher: the button door of triggers.list; readable signed out from the declaration on the public mirror. */}
+      {canDispatcher ?
+        (
+          <FirstSightHint placement="above" id="chrome-dispatcher" content="Manage scheduled and triggered work."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Dispatcher"
+            title="Dispatcher"
+            data-testid="chrome-dispatcher"
+            {...flowAction(controller.runCommand, "triggers.list")}
+          >
+            <Timer size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* Flows: the button door of the `flows` surface switch; signed out the pane states that flows run on your own workspace. */}
+      {canFlows ?
+        (
+          <FirstSightHint placement="above" id="chrome-flows" content="Browse and run flows."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Flows"
+            title="Flows"
+            data-testid="chrome-flows"
+            {...flowAction(controller.runCommand, "flows")}
+          >
+            <Workflow size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* Secrets: the button door of secrets.list; signed out, the run path defers it behind the sign-in step. */}
+      {canSecrets ?
+        (
+          <FirstSightHint placement="above" id="chrome-secrets" content="Manage credentials for your flows."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Secrets"
+            title="Secrets"
+            data-testid="chrome-secrets"
+            {...flowAction(controller.runCommand, "secrets.list")}
+          >
+            <KeyRound size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* History: the button door of history.show; readable signed out through the public mirror. */}
+      {canHistory ?
+        (
+          <FirstSightHint placement="above" id="chrome-history" content="Browse previous work."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="History"
+            title="History"
+            data-testid="chrome-history"
+            {...flowAction(controller.runCommand, "history.show")}
+          >
+            <History size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* Account: the button door of account.show; signed out, the same flow renders the sign-in step. */}
+      {canAccount ?
+        (
+          <FirstSightHint placement="above" id="chrome-account" content="Manage your account."><button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Account"
+            title="Account"
+            data-testid="chrome-account"
+            {...flowAction(controller.runCommand, "account.show")}
+          >
+            <UserRound size={14} aria-hidden="true" />
+          </button></FirstSightHint>
+        ) :
+        null}
+      {/* The bare reset is admin-only dev tooling (§2); users get /clear. */}
+      {isAdmin ?
+        (
+          <button
+            type="button"
+            className="chrome-icon-action"
+            aria-label="Reset conversation"
+            title="Reset conversation"
+            {...flowAction(controller.runCommand, "admin.reset.ask")}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+          </button>
+        ) :
+        null}
+      <button
+        type="button"
+        className="chrome-icon-action"
+        aria-label="Toggle light and dark mode"
+        title="Toggle light and dark mode"
+        {...flowAction(controller.runCommand, "appearance.dark-mode")}
+      >
+        {dark ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
+      </button>
+    </nav>
+  )
+}

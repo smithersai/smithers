@@ -272,7 +272,7 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     if (active !== undefined) return { workspace: active }
     if (running.length === 1) return { workspace: running[0]! }
     if (running.length > 1) {
-      return { refusal: `Several workspaces of ${repo} are running (${running.map((row) => `"${row.name}" ${row.id}`).join(", ")}) — select one in the sidebar first.` }
+      return { refusal: `Several workspaces of ${repo} are running (${running.map((row) => `"${row.name}" ${row.id}`).join(", ")}) — select one first.` }
     }
     const resumable = rows.find((row) => row.status === "suspended" || row.status === "stopped")
     if (resumable !== undefined) {

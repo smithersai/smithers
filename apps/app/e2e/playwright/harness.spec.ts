@@ -8,9 +8,9 @@ import { localApiDelete, localApiGet } from "./localApi"
 /*
  * Lane L4 (docs/LOCAL-APP.md "Harness detection"): `GET /api/harnesses`
  * reports the CLIs installed on this machine with their signed-in accounts,
- * the `+` menu lists Claude Code with the account email, and opening the
- * harness tab runs `claude` under the harness sandbox policy until its
- * banner shows in the emulator.
+ * the composer's `+` menu lists the orchestrator with the account email, and
+ * opening the harness tab runs `claude` under the harness sandbox policy
+ * until its banner shows in the emulator.
  *
  * These tests inspect real credentials and can launch installed harnesses.
  * They require explicit opt-in before even reading account state. Missing
@@ -116,16 +116,17 @@ test("GET /api/harnesses lists every contract id; claude and codex are signed in
   expect(codex?.account?.email).toMatch(/@/)
 })
 
-test("the + menu lists the signed-in Claude account and launches Claude Code", async ({ page, request }) => {
+test("the composer's + menu lists the signed-in Claude account and launches Claude Code", async ({ page, request }) => {
   const email = claudeEmail()
   test.skip(email === undefined, "~/.claude.json has no oauthAccount: Claude Code is not signed in on this machine")
   await page.goto("/")
   const { harnesses } = (await (await localApiGet(page, request, "/api/harnesses")).json()) as { harnesses: Array<HarnessRow> }
   test.skip(harnesses.find((harness) => harness.id === "claude")?.binary === null, "claude is not installed on this machine")
 
-  await page.getByTestId("tab-add").click()
-  const row = page.getByTestId("tab-add-harness-claude")
-  await expect(row).toContainText("Claude Code")
+  await page.getByTestId("dock-add").click()
+  // The orchestrator role rides the claude harness (packages/rpc AgentRoles.ts).
+  const row = page.getByTestId("dock-add-role-orchestrator")
+  await expect(row).toContainText("Orchestrator")
   await expect(row).toContainText(email ?? "")
   await expect(row).toBeEnabled()
 
@@ -135,8 +136,7 @@ test("the + menu lists the signed-in Claude account and launches Claude Code", a
   expect(response.status()).toBe(201)
   const { sessionId } = (await response.json()) as { sessionId: string }
   openedSessionId = sessionId
-  await expect(page.getByTestId(`tab-${sessionId}`)).toHaveAttribute("data-active", "true")
-  await expect(page.getByTestId(`tab-${sessionId}`)).toContainText("Claude Code")
+  await expect(page.getByTestId(`tab-body-${sessionId}`)).toBeVisible()
 
   const listed = (await (await localApiGet(page, request, "/api/pty")).json()) as { sessions: Array<{ sessionId: string; kind: string; harnessId?: string }> }
   expect(listed.sessions.find((session) => session.sessionId === sessionId)).toMatchObject({ kind: "harness", harnessId: "claude" })
@@ -151,11 +151,11 @@ test("the + menu lists the signed-in Claude account and launches Claude Code", a
   await expect.poll(async () => terminal.locator(".xterm-rows").textContent(), { timeout: 30_000 })
     .toMatch(/v\d+\.\d+\.\d+|Quick safety check/)
 
-  await page.getByTestId(`tab-close-${sessionId}`).click()
+  await page.keyboard.press("Meta+w")
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()
   await dialog.getByRole("button", { name: "Close session", exact: true }).click()
-  await expect(page.getByTestId(`tab-${sessionId}`)).toHaveCount(0)
+  await expect(page.getByTestId(`tab-body-${sessionId}`)).toHaveCount(0)
   await expect
     .poll(async () => {
       const { sessions } = (await (await localApiGet(page, request, "/api/pty")).json()) as { sessions: Array<{ sessionId: string }> }

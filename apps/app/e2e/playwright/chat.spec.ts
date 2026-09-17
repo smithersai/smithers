@@ -56,7 +56,6 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       await page.getByRole('button', { name: 'Chat', exact: true }).click()
       await page.keyboard.type(draft)
       await expect(input).toHaveValue(draft)
-      await expect(page.locator('.session-sidebar')).toHaveCount(0)
       await input.fill('')
       await page.keyboard.press('Escape')
       await expect(input).toBeHidden()

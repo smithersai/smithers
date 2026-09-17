@@ -3,8 +3,9 @@ import type { Page, Request, WebSocketRoute } from "@playwright/test"
 import { prepareHealthPage } from "./healthFixture"
 
 /*
- * Lane L2 (docs/LOCAL-APP.md "Tabs", "Cards"): the strip, the `+` menu, the
- * terminal over the PTY topics, card tabs, and the keyboard bindings.
+ * Lane L2 (docs/LOCAL-APP.md "Tabs", "Cards"): sessions over the keyboard
+ * (Cmd+T / Cmd+W / Cmd+1..9), the composer's `+` menu, the terminal over the
+ * PTY topics, card tabs, and the dock — the chrome icons pinned bottom-left.
  *
  * The server is a double: every HTTP seam the chrome touches answers through
  * page.route, and `/ws` through page.routeWebSocket, so the spec proves the
@@ -42,20 +43,6 @@ const HARNESSES = [
   }
 ]
 
-const FORCE_REPO = {
-  id: "force",
-  path: "/Users/williamcory/artsy/force",
-  name: "artsy/force",
-  git: { branch: "main", remote: "git@github.com:artsy/force.git" },
-  warnings: [],
-  smithers: {
-    detected: true,
-    workspaceFile: "WORKSPACE.ts",
-    declarationFiles: ["WORKSPACE.ts"],
-    reason: "ok",
-    workspaces: [{ path: ".", title: "artsy/force" }]
-  }
-}
 
 const SESSION_ID = "pty-1"
 
@@ -123,14 +110,14 @@ const serve = async (page: Page, repos: ReadonlyArray<unknown> = []): Promise<Se
 
 const isPtyCreate = (request: Request): boolean => request.method() === "POST" && /\/api\/pty$/.test(request.url())
 
-/** Open a terminal tab through the `+` menu and wait for its emulator; the tab id is the session id. */
+/** Open a terminal tab through the dock's `+` menu and wait for its emulator; the tab id is the session id. */
 const openTerminal = async (page: Page): Promise<string> => {
   const creating = page.waitForRequest(isPtyCreate)
-  await page.getByTestId("tab-add").click()
-  await page.getByTestId("tab-add-terminal").click()
+  await page.getByTestId("dock-add").click()
+  await page.getByTestId("dock-add-terminal").click()
   await creating
   const tabId = SESSION_ID
-  await expect(page.getByTestId(`tab-${tabId}`)).toHaveAttribute("data-active", "true")
+  await expect(page.getByTestId(`tab-body-${tabId}`)).toBeVisible()
   await expect(page.getByTestId(`terminal-${SESSION_ID}`)).toBeVisible()
   return tabId
 }
@@ -146,140 +133,100 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("the strip boots with the main tab and the + button alone", async ({ page }) => {
+test("the app boots with the main tab and the dock alone — no drawer behind the logo", async ({ page }) => {
   await serve(page)
   await page.goto("/")
-  const strip = page.getByTestId("tab-strip")
-  await expect(strip).toBeVisible()
-  await expect(page.getByTestId("workspace-heading")).toHaveAttribute("data-active", "true")
-  await expect(page.getByTestId("tab-add")).toBeVisible()
-  await expect(strip.locator(".tab")).toHaveCount(0)
-  // The heading is the workspace, not a closable row.
-  await expect(page.getByTestId("tab-close-main")).toHaveCount(0)
+  // The wordmark is a static mark: no button, nothing to expand.
+  await expect(page.getByRole("button", { name: "Smithers", exact: true })).toHaveCount(0)
+  await expect(page.locator(".session-sidebar")).toHaveCount(0)
+  // The dock pins the chrome at the bottom left: new session, the doors, the theme toggle.
+  const dock = page.getByTestId("chrome-actions")
+  await expect(dock).toBeVisible()
+  await expect(page.getByTestId("dock-add")).toBeVisible()
+  await expect(page.locator('[data-flow="appearance.dark-mode"]')).toBeVisible()
   await expect(page.getByTestId("tab-body-main")).toBeVisible()
   await expect(page.getByTestId("transcript")).toBeVisible()
+  // The composer stays summoned-only: hidden at boot, opened by the Chat button.
+  await expect(page.getByTestId("composer-input")).toBeHidden()
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
   await expect(page.getByTestId("composer-input")).toBeVisible()
-  // No repository: no origin chip; the selector reads "Select a repo" and opens the local picker entry.
-  await expect(page.getByTestId("repo-chip")).toHaveCount(0)
-  await expect(page.getByTestId("composer-repo-trigger")).toHaveText("Select a repo")
-  await page.getByTestId("composer-repo-trigger").click()
-  await expect(page.getByTestId("chrome-open-repo")).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
 })
 
-test("the sidebar pins the open repository as the active row and nests a new terminal under it", async ({ page }) => {
-  await serve(page, [FORCE_REPO])
-  await page.goto("/")
-  const section = page.getByTestId("repo-section")
-  await expect(section).toBeVisible()
-  await expect(page.getByTestId("repo-empty")).toHaveCount(0)
-  const row = section.locator(".repo-group[data-active=\"true\"]")
-  await expect(row).toHaveCount(1)
-  await expect(row.locator(".repo-name")).toHaveText("artsy/force")
-  // The workspace heading stays first, above the repositories.
-  const [main, repo] = await Promise.all([page.getByTestId("workspace-heading").boundingBox(), row.boundingBox()])
-  expect((repo?.y ?? 0) > (main?.y ?? 0)).toBe(true)
-  await openTerminal(page)
-  // The terminal nests under its repository, indented to its right.
-  await expect(row.locator(`.repo-tabs [data-testid=tab-${SESSION_ID}]`)).toBeVisible()
-  const tab = await page.getByTestId(`tab-${SESSION_ID}`).boundingBox()
-  expect((tab?.x ?? 0) > (repo?.x ?? 0)).toBe(true)
-  await expect(page.getByTestId("repo-none")).toHaveCount(0)
-})
-
-test("the composer header names the active repository and its local path", async ({ page }) => {
-  await serve(page, [FORCE_REPO])
-  await page.goto("/")
-  await expect(page.getByTestId("composer-repo-trigger")).toHaveText("artsy/force")
-  await expect(page.getByTestId("repo-chip")).toContainText("artsy/force")
-  await expect(page.getByTestId("repo-chip")).toHaveAttribute("title", FORCE_REPO.path)
-  await expect(page.getByTestId("repo-chip")).toHaveAttribute("data-origin", "local")
-})
-
-test("the + menu paints beside the sidebar: Terminal, then the agents with their accounts", async ({ page }) => {
+test("the dock's + menu paints upward: Terminal, then the agents with their accounts", async ({ page }) => {
   await serve(page)
   await page.goto("/")
-  await page.getByTestId("tab-add").click()
-  const menu = page.getByTestId("tab-add-menu")
+  await page.getByTestId("dock-add").click()
+  const menu = page.getByTestId("dock-add-menu")
   await expect(menu).toBeVisible()
   /*
-   * Regression: the menu used to live inside the scrolling strip, whose
-   * overflow clipped it to 28px — `toBeVisible` still passed (a box exists)
-   * and `click()` still landed (Playwright scrolls the clipped strip to the
-   * item, which a human never does). Hit-testing the item's own centre is
-   * what a pointer does, so that is the pin.
+   * Hit-testing the item's own centre is what a pointer does: the menu must
+   * not be clipped by any scrolling ancestor (the old sidebar strip's
+   * overflow cut it to nothing while aria-expanded read true).
    */
-  const painted = await page.getByTestId("tab-add-terminal").evaluate((item) => {
+  const painted = await page.getByTestId("dock-add-terminal").evaluate((item) => {
     const rect = item.getBoundingClientRect()
     return item.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
   })
   expect(painted).toBe(true)
   // One Smithers: no second conversation is offered.
-  await expect(page.getByTestId("tab-add-chat")).toHaveCount(0)
-  await expect(page.getByTestId("tab-add-terminal")).toHaveText("Terminal")
-  await expect(page.getByTestId("tab-add-agents")).toHaveText("Agents")
+  await expect(page.getByTestId("dock-add-chat")).toHaveCount(0)
+  await expect(page.getByTestId("dock-add-terminal")).toHaveText("Terminal")
+  await expect(page.getByTestId("dock-add-agents")).toHaveText("Agents")
   // The named roles lead the section: the orchestrator's harness (Claude Code) is signed in here,
   // the explainer's (OpenCode · Kimi) is absent from this double, so its row is disabled with the reason.
-  const orchestrator = page.getByTestId("tab-add-role-orchestrator")
+  const orchestrator = page.getByTestId("dock-add-role-orchestrator")
   await expect(orchestrator).toContainText("Orchestrator · Fable 5")
   await expect(orchestrator).toBeEnabled()
-  const explainer = page.getByTestId("tab-add-role-explainer")
+  const explainer = page.getByTestId("dock-add-role-explainer")
   await expect(explainer).toBeDisabled()
   await expect(explainer).toContainText("not installed")
-  const claude = page.getByTestId("tab-add-harness-claude")
+  const claude = page.getByTestId("dock-add-harness-claude")
   await expect(claude).toContainText("Claude Code")
   await expect(claude).toContainText("will@codeplane.app")
   await expect(claude).toBeEnabled()
-  const codex = page.getByTestId("tab-add-harness-codex")
+  const codex = page.getByTestId("dock-add-harness-codex")
   await expect(codex).toContainText("Codex")
   await expect(codex).toContainText("OPENAI_API_KEY")
   // Unavailable harnesses are listed last, disabled, with their status.
-  const gemini = page.getByTestId("tab-add-harness-gemini")
+  const gemini = page.getByTestId("dock-add-harness-gemini")
   await expect(gemini).toBeDisabled()
   await expect(gemini).toContainText("unavailable")
   const items = menu.locator("[role=menuitem]")
   await expect(items.first()).toHaveText("Terminal")
-  await expect(items.last()).toHaveText("New agent…")
-  await expect(page.getByTestId("tab-add-new-agent")).toBeEnabled()
+  await expect(items.last()).toContainText("unavailable")
 })
 
-test("the sidebar is vertical and its chrome stays visible inside a terminal tab", async ({ page }) => {
+test("the dock stays visible inside a terminal tab", async ({ page }) => {
   await serve(page)
   await page.goto("/")
-  const strip = page.getByTestId("tab-strip")
-  await expect(strip).toHaveAttribute("aria-orientation", "vertical")
   const theme = page.locator('[data-flow="appearance.dark-mode"]')
   await expect(theme).toBeVisible()
   await openTerminal(page)
-  // Main is hidden, the terminal shows, and the sidebar's theme toggle is still on screen.
+  // Main is hidden, the terminal shows, and the dock's theme toggle is still on screen.
   await expect(page.getByTestId("tab-body-main")).toBeHidden()
+  await expect(page.getByTestId(`tab-body-${SESSION_ID}`)).toBeVisible()
   await expect(theme).toBeVisible()
-  const [main, terminal] = await Promise.all([
-    page.getByTestId("workspace-heading").boundingBox(),
-    page.getByTestId(`tab-${SESSION_ID}`).boundingBox()
-  ])
-  // Stacked: the terminal tab sits BELOW main, nested (indented) under its repository row.
-  expect((terminal?.y ?? 0) > (main?.y ?? 0)).toBe(true)
-  expect((terminal?.x ?? 0) > (main?.x ?? 0)).toBe(true)
 })
 
-test("an agent from + runs in its own tab and is a subagent card in the conversation", async ({ page }) => {
+test("an agent from the dock's + runs in its own tab and is a subagent card in the conversation", async ({ page }) => {
   await serve(page)
   await page.goto("/")
-  await page.getByTestId("tab-add").click()
+  await page.getByTestId("dock-add").click()
   const creating = page.waitForRequest(isPtyCreate)
-  await page.getByTestId("tab-add-harness-claude").click()
+  await page.getByTestId("dock-add-harness-claude").click()
   await creating
-  await expect(page.getByTestId(`tab-${SESSION_ID}`)).toHaveAttribute("data-active", "true")
+  await expect(page.getByTestId(`tab-body-${SESSION_ID}`)).toBeVisible()
   await expect(page.getByTestId(`terminal-${SESSION_ID}`)).toBeVisible()
-  // Back in the conversation, the launch is a card — embedded, with the way back to the tab.
-  await page.getByTestId("workspace-name").click()
+  // Back in the conversation (Cmd+1), the launch is a card — embedded, with the way back to the tab.
+  await page.keyboard.press("Meta+1")
   const card = page.locator(".smithers-card[data-kind=agent]")
   await expect(card).toBeVisible()
   await expect(card).toContainText("Claude Code is running")
   await page.getByTestId(`agent-open-tab-${SESSION_ID}`).click()
-  await expect(page.getByTestId(`tab-${SESSION_ID}`)).toHaveAttribute("data-active", "true")
+  await expect(page.getByTestId(`tab-body-${SESSION_ID}`)).toBeVisible()
+  await expect(page.getByTestId("tab-body-main")).toBeHidden()
 })
 
 test("a terminal tab creates a PTY session, renders its output, and sends keystrokes", async ({ page }) => {
@@ -315,31 +262,28 @@ test("Cmd+W asks before closing a live terminal, then deletes its session; main 
   await expect(dialog).toBeVisible()
   await dialog.getByRole("button", { name: "Close session", exact: true }).click()
 
-  await expect(page.getByTestId(`tab-${tabId}`)).toHaveCount(0)
+  await expect(page.getByTestId(`tab-body-${tabId}`)).toHaveCount(0)
   await expect.poll(() => server.deleted).toEqual([SESSION_ID])
-  await expect(page.getByTestId("workspace-heading")).toHaveAttribute("data-active", "true")
   await expect(page.getByTestId("tab-body-main")).toBeVisible()
 
   // Cmd+W on main: nothing to close, nothing asked.
   await page.keyboard.press("Meta+w")
   await expect(page.getByRole("dialog")).toHaveCount(0)
-  await expect(page.getByTestId("workspace-heading")).toBeVisible()
-  await expect(page.getByTestId("tab-strip").locator(".tab")).toHaveCount(0)
+  await expect(page.getByTestId("tab-body-main")).toBeVisible()
 })
 
-test("Cmd+1 selects the main tab and Cmd+T opens a terminal", async ({ page }) => {
+test("Cmd+1 selects the main tab and Cmd+2 the terminal Cmd+T opened", async ({ page }) => {
   await serve(page)
   await page.goto("/")
   const tabId = await openTerminal(page)
 
   await page.keyboard.press("Meta+1")
-  await expect(page.getByTestId("workspace-heading")).toHaveAttribute("data-active", "true")
   await expect(page.getByTestId("tab-body-main")).toBeVisible()
   await expect(page.getByTestId(`tab-body-${tabId}`)).toBeHidden()
 
   await page.keyboard.press("Meta+2")
-  await expect(page.getByTestId(`tab-${tabId}`)).toHaveAttribute("data-active", "true")
   await expect(page.getByTestId(`tab-body-${tabId}`)).toBeVisible()
+  await expect(page.getByTestId("tab-body-main")).toBeHidden()
 })
 
 test("a maximized card offers Open in tab; closing the tab keeps the card", async ({ page }) => {
@@ -347,14 +291,15 @@ test("a maximized card offers Open in tab; closing the tab keeps the card", asyn
   await page.goto("/")
 
   // /appearance.theme opens the color-theme picker card with no backend at all.
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
   const composer = page.getByTestId("composer-input")
   await composer.click()
   await composer.fill("/appearance.theme")
   await composer.press("Enter")
+  await page.keyboard.press("Escape")
   const transcript = page.getByTestId("transcript")
   const card = transcript.getByTestId("card-theme-picker")
   await expect(card).toBeVisible()
-  await expect(card.getByTestId("card-kind-theme-picker")).toBeVisible()
 
   // Embedded: no tab affordance. Maximized: the affordance appears.
   await expect(page.getByTestId("card-open-in-tab-theme-picker")).toHaveCount(0)
@@ -363,17 +308,15 @@ test("a maximized card offers Open in tab; closing the tab keeps the card", asyn
   await page.getByTestId("card-open-in-tab-theme-picker").click()
 
   const tabId = "card-theme-picker"
-  await expect(page.getByTestId(`tab-${tabId}`)).toHaveAttribute("data-active", "true")
-  await expect(page.getByTestId(`tab-${tabId}`)).toContainText("Color themes")
   const body = page.getByTestId(`tab-body-${tabId}`)
   await expect(body).toBeVisible()
   await expect(body.getByTestId("card-theme-picker")).toBeVisible()
   await expect(body.getByTestId("card-theme-picker")).toHaveAttribute("data-maximized", "false")
 
   // Closing a card tab keeps the card in the transcript.
-  await page.getByTestId(`tab-close-${tabId}`).click()
-  await expect(page.getByTestId(`tab-${tabId}`)).toHaveCount(0)
-  await expect(page.getByTestId("workspace-heading")).toHaveAttribute("data-active", "true")
+  await page.keyboard.press("Meta+w")
+  await expect(page.getByTestId(`tab-body-${tabId}`)).toHaveCount(0)
+  await expect(page.getByTestId("tab-body-main")).toBeVisible()
   await expect(transcript.getByTestId("card-theme-picker")).toBeVisible()
 })
 
@@ -382,10 +325,10 @@ test("health: a launched agent and its terminal share semantic status, expire of
   const now = Date.now()
   await page.clock.install({ time: new Date(now) })
   await page.goto("/")
-  await prepareHealthPage(page, true)
-  await page.getByTestId("tab-add").click()
+  await prepareHealthPage(page)
+  await page.getByTestId("dock-add").click()
   const creating = page.waitForRequest(isPtyCreate)
-  await page.getByTestId("tab-add-harness-claude").click()
+  await page.getByTestId("dock-add-harness-claude").click()
   await creating
   await expect(page.getByTestId(`terminal-${SESSION_ID}`)).toBeVisible()
   await expect.poll(() => server.sockets.length).toBeGreaterThan(0)
@@ -393,22 +336,17 @@ test("health: a launched agent and its terminal share semantic status, expire of
     freshness: "fresh", updatedAt: now, provenance: { checkerId: "fixture.semantic", monitorId: "host", observedAt: now,
       expiresAt: now + 120_000, evidenceSeq: 1, incarnation: "opaque-owner", version: 1 } }
   for (const socket of server.sockets) socket.send(JSON.stringify({ type: "pty.status", sessionId: SESSION_ID, status }))
-  const tab = page.getByTestId(`tab-${SESSION_ID}`)
-  await expect(tab.getByTestId("status-details")).toHaveText("Running · Working")
-  await page.getByTestId("workspace-name").click()
+  // The agent card in the conversation carries the status.
+  await page.keyboard.press("Meta+1")
   const card = page.locator(".smithers-card[data-kind=agent]")
   await expect(card.getByTestId("status-details")).toHaveText("Running · Working")
-  // Existing keyboard flow remains the way to return to the agent.
-  const open = page.getByTestId(`agent-open-tab-${SESSION_ID}`)
-  await open.focus()
-  await page.keyboard.press("Enter")
-  await expect(tab).toHaveAttribute("data-active", "true")
+  // The way back to the agent is the card's own button.
+  await page.getByTestId(`agent-open-tab-${SESSION_ID}`).click()
+  await expect(page.getByTestId(`tab-body-${SESSION_ID}`)).toBeVisible()
+  await page.keyboard.press("Meta+1")
   await page.clock.fastForward(120_001)
-  await expect(tab.getByTestId("status-details")).toHaveText("Running · Stale")
-  await page.getByTestId("workspace-name").click()
   await expect(card.getByTestId("status-details")).toHaveText("Running · Stale")
   for (const socket of server.sockets) socket.send(JSON.stringify({ type: "pty.exit", sessionId: SESSION_ID, code: null }))
-  await expect(tab.getByTestId("status-details")).toHaveText("Exited · Outcome unknown")
   await expect(card.getByTestId("status-details")).toHaveText("Exited · Outcome unknown")
   expect(server.created).toHaveLength(1)
   expect(server.deleted).toHaveLength(0)

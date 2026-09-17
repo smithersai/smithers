@@ -3,7 +3,7 @@ import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "./state/AppState"
 
 /*
- * The agents as the `+` menus list them (sidebar and composer): a role is
+ * The agents as the composer's `+` menu lists them: a role is
  * available exactly when its harness is installed AND carries a credential
  * for the role's model; otherwise the row is disabled with the reason. Pure,
  * so both menus, the Agents card, the roles paragraph, and their tests read

@@ -1,16 +1,10 @@
 import { expect, type Page } from "@playwright/test"
 
-/** Open the app's existing session navigation. */
-export const prepareHealthPage = async (page: Page, sidebar = false): Promise<void> => {
+/** Wait for the app's shell and clear the first-run card. */
+export const prepareHealthPage = async (page: Page): Promise<void> => {
   await expect(page.locator(".app-shell")).toBeVisible()
   const dismiss = page.getByRole("button", { name: "Dismiss recommended actions", exact: true })
   if (await dismiss.isVisible()) await dismiss.click()
-  if (sidebar) {
-    const navigation = page.getByRole("button", { name: "Smithers", exact: true })
-    await navigation.focus()
-    await page.keyboard.press("Enter")
-    await expect(page.getByTestId("tab-add")).toBeVisible()
-  }
 }
 
 export const sendHealthCommand = async (page: Page, command: string): Promise<void> => {

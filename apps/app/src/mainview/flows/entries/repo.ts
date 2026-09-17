@@ -47,7 +47,7 @@ export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     /* Forgets a repository: the agent asks, the human confirms. */
     name: "repo.unpin",
-    summary: "Unpin a repository from the sidebar",
+    summary: "Unpin a repository",
     runtime: ["local.repositories"],
     confirm: "unpin the repository",
     args: "<repoKey>",
@@ -63,7 +63,7 @@ export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "repo.tree",
     form: { args: (payload) => text(payload, "path") === undefined ? text(payload, "copy") ?? "" : `${text(payload, "copy")}#${text(payload, "path")}` },
-    summary: "Expand or collapse a directory of a working copy (a local checkout or a cloud workspace) in the sidebar",
+    summary: "Expand or collapse a directory of a working copy (a local checkout or a cloud workspace)",
     /* A local checkout lists through the local app; a cloud workspace copy lists through Smithers Cloud (RepoTreeSeam). */
     runtimeAny: ["local.repositories", "cloud"],
     args: "<copyId>[#path]",

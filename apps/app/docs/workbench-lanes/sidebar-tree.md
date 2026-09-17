@@ -1,5 +1,13 @@
 # Lane: sidebar as a file tree, sessions not tabs, flows surface, file panels (2026-09-02)
 
+> Superseded 2026-09-17: the sidebar drawer is removed. The wordmark is a
+> static mark; the footer chrome (Wiki, Dispatcher, Flows, Secrets, History,
+> Account, reset, theme) is the always-on icon dock at the bottom left
+> (`src/mainview/ChromeDock.tsx`). Sessions run through Cmd+T / Cmd+W /
+> Cmd+1..9 and the composer's `+` menu; repository selection lives in the
+> composer's repository menu. The tree seam (`repo.tree`) keeps its slash and
+> agent doors. The rest of this document is the historical record.
+
 Source: will, in chat, seven asks in order. Laws as always (apps/app/AGENTS.md,
 apps/DESIGN.md): EMBED LAW (a file opens as a card in the chat; maximize only
 by a user act), NO INVENTION (render only what a seam returned), no React

@@ -19,7 +19,6 @@ import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
-  readonly "sidebar.toggle": { readonly open?: boolean }
   readonly "issues.list": { readonly filter?: "open" | "closed" | "all"; readonly repo?: string }
   readonly "setup.configure": { readonly cardId: string; readonly field: string; readonly value: unknown }
   readonly "setup.view": { readonly cardId: string; readonly view: "flows" | "prompts" | "checks" | "evals" | "test" | "work"; readonly step?: string }
@@ -114,7 +113,6 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
-  "sidebar.toggle": payload => JSON.stringify(payload),
   "issues.list": (payload) => line(token(payload, "filter") ?? "open", token(payload, "repo")),
   "setup.configure": payload => JSON.stringify(payload),
   "setup.view": payload => JSON.stringify(payload),

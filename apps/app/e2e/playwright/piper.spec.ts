@@ -5,10 +5,11 @@ import { installCloudFixture } from "./cloudFixture.ts"
 
 /*
  * Lane piper T1 (docs/workbench-lanes/piper.md "Exit", ADR 0001): the app
- * opens ~/smithers, the sidebar shows it UNDER its repository in the
- * org/ → repo → working copies tree (its remote parses into the cloud
- * inventory), /files.read README.md renders the card, and the card header
- * carries the global address and the position the read was taken at.
+ * opens ~/smithers with its remote parsing into the cloud inventory, and
+ * /files.read README.md renders the card whose header carries the global
+ * address and the position the read was taken at. (The sidebar tree that
+ * once showed the nesting is removed; the one address space lives on in the
+ * card headers and the composer's repository menu.)
  *
  * The server is a double: the shared cloud fixture (cloudFixture.ts) answers
  * the bootstrap, the cloud session and the Smithers Cloud inventory behind
@@ -55,24 +56,13 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("T1: ~/smithers nests under its repo in the tree; /files.read's card header shows the address and readAt", async ({ page }) => {
+test("T1: ~/smithers joins the one address space; /files.read's card header shows the address and readAt", async ({ page }) => {
   await serve(page)
   await page.goto("/")
 
-  // The tree: org header, the repository row, and the local checkout nested
-  // beneath it with its jj ahead count — never a standalone local row.
-  await expect(page.getByTestId("repo-org-smithersai")).toHaveText("smithersai/")
-  await expect(page.getByTestId("repo-smithersai/smithers")).toBeVisible()
-  await expect(page.getByTestId("repo-local:/Users/williamcory/smithers")).toHaveCount(0)
-  const copy = page.getByTestId("copy-local:/Users/williamcory/smithers")
-  await expect(copy).toBeVisible()
-  await expect(copy).toContainText("smithers · 3 ahead")
-
-  // The composer's origin chip reads `~/smithers · 3 ahead of main`.
-  await expect(page.getByTestId("repo-chip")).toContainText("~/smithers · 3 ahead of main")
-
   // /files.read renders the file card; its header carries the global address
   // and the change id the read was taken at.
+  await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill("/files.read README.md")
   await page.getByTestId("composer-send").click()
   // The card is keyed by the local checkout's name; its header carries the global address.

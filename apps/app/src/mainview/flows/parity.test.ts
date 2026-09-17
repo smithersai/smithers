@@ -241,10 +241,11 @@ describe("launch-law parity: every affordance is a command", () => {
       // Toast dismissal is owned by ToastStack; includes dock Close and dictation controls.
       // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
       // The optional capability reel after the last lesson: its launch pill and its Back.
-      // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The sidebar lists Wiki and Mythical history only — no Library entry.
+      // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own. The dock lists Wiki and Mythical history only — no Library entry.
       /*
        * The chrome Sign in button (LOCAL-APP.md: sign-in is an option in the
-       * chrome, never a gate on the chat) is one of ChromeBar's nine below.
+       * chrome, never a gate on the chat) is SessionNavigation's one handler
+       * below.
        *
        * Shell bindings stay here; composer bindings are pinned independently
        * now that the hot path is its own module.
@@ -263,12 +264,12 @@ describe("launch-law parity: every affordance is a command", () => {
       "../WikiDeleteDialog.tsx": 1, // The Wiki confirmation moved to the shared shell; its command remains wiki.delete.confirm.
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
-      "../SessionNavigation.tsx": 2,
+      "../SessionNavigation.tsx": 1, // -1: the wordmark is a static mark; the sidebar it toggled is gone.
       "../cards/FirstRunActions.tsx": 2, // +2: the first-run card's dismiss and shared action button.
+      "../cards/SetupChecklist.tsx": 1, // The one shared step button; each step's flow is data, not a handler.
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/LiveTutorialRunBody.tsx": 6, // -1: removed the tutorial restart/skip action.
       "../cards/RepositoryUpdateCard.tsx": 3,
-      "../tabs/RepoTree.tsx": 1,
       /*
        * The Library (the `plugins` surface and the guided introduction share
        * it): Install and Remove on a row, and the rail button each installed
@@ -441,20 +442,15 @@ describe("launch-law parity: every affordance is a command", () => {
       /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
       "../cards/WikiCards.tsx": 3,
       /*
-       * The sidebar (docs/LOCAL-APP.md "Tabs"): the list's select and close
-       * per tab, the Repos section's empty "Select a repo" row, each repo
-       * row's select, `+`, and unpin, the `+` trigger, its backdrop, the
-       * Terminal row, the available and unavailable harness rows, Sign in,
-       * the admin reset, and the theme toggle (chrome that stays visible on
-       * every tab).
+       * The dock (ChromeDock.tsx): the chrome as a vertical icon rail on the
+       * left edge, always on screen — the `+` (trigger, backdrop,
+       * Terminal, one role map, the available and unavailable harness maps),
+       * Download the app (cloud host, while a native release exists), Wiki,
+       * Dispatcher, Flows, Secrets, History, Account, the admin reset, and
+       * the theme toggle. Each is the button door of one registered flow and
+       * renders exactly where that flow registers.
        */
-      /* 23 = 22 + the chrome-actions footer's Download the app (docs/web-mode/PLAN.md §3; renders only where app.download is registered, the cloud host). */
-      /* 25 = 24 + the footer's Secrets button, the button door of secrets.list (renders only where the flow registers, the cloud host). */
-      /* 26 = 25 + the footer's Dispatcher button, the button door of triggers.list (design session 2026-09-07 chrome; cloud host only). */
-      /* 27 = 26 + the footer's Account button, the button door of account.show (factory mock 21; renders where an identity seam exists). */
-      /* 28 = 27 + the footer's History button, the button door of history.show (design session 2026-09-07 chrome; cloud host only). */
-      /* 30 = 28 + the footer's Wiki and Flows buttons, the button doors of the `wiki` and `flows` surface switches (the chrome is exactly Wiki, Dispatcher, Flows, Secrets, History, Account). */
-      "../tabs/ChromeBar.tsx": 28, // -1: removed the tutorial sound toggle.
+      "../ChromeDock.tsx": 15,
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })
@@ -674,8 +670,8 @@ describe("launch-law parity: every affordance is a command", () => {
    * guards the binding sites and the args hint, not the trigger axis.
    */
   test("the light/dark toggle and the color theme are separate commands the model can call", () => {
-    // The toggle lives in the sidebar's bottom chrome, so it is on screen in every tab.
-    const chrome = files["../tabs/ChromeBar.tsx"] ?? ""
+    // The toggle lives in the dock's bottom-left chrome, so it is on screen in every tab.
+    const chrome = files["../ChromeDock.tsx"] ?? ""
     expect(chrome).toContain("runCommand(\"appearance.dark-mode\")")
     expect(chrome).not.toContain("runCommand(\"appearance.theme\")")
     expect(files["../App.tsx"] ?? "").not.toContain("runCommand(\"appearance.dark-mode\")")

@@ -117,10 +117,10 @@ describe("the summoned composer overlays the content at the top of the page", ()
 
 /*
  * will, 2026-09-02, asks 6, 7 and 8: a file card must open in a panel with a
- * reasonable max height and scroll inside it; a maximized card must start to
- * the RIGHT of the left sidebar (its left edge was under the sidebar and
- * unreadable); and the maximized header — which carries Restore — must stay
- * visible while the body scrolls.
+ * reasonable max height and scroll inside it; a maximized card's left edge
+ * was under the sidebar and unreadable (the sidebar is gone now — the card
+ * takes the full width); and the maximized header — which carries Restore —
+ * must stay visible while the body scrolls.
  */
 describe("a file opens in a panel with a cap it scrolls inside (ask 6)", () => {
   test("the file panel caps at 60vh and scrolls itself", () => {
@@ -140,19 +140,20 @@ describe("a file opens in a panel with a cap it scrolls inside (ask 6)", () => {
   })
 })
 
-describe("a maximized card starts to the right of the sidebar (ask 7)", () => {
-  test("the sidebar's width is a variable the shell owns", () => {
-    expect(chat).toMatch(/\.app-shell\s*\{[^}]*--chrome-bar-width:\s*200px;/)
-    expect(chrome).toMatch(/\.chrome-bar\s*\{[^}]*width:\s*var\(--chrome-bar-width, 200px\);/)
+describe("a maximized card takes the full width (ask 7, sidebar removed)", () => {
+  test("no chrome width variable survives the sidebar's removal", () => {
+    expect(chat).not.toContain("--chrome-bar-width")
+    expect(chrome).not.toContain("--chrome-bar-width")
+    expect(cards).not.toContain("--chrome-bar-width")
   })
 
-  test("the card clears the sidebar while its one backdrop fills the height beside it", () => {
+  test("the card and its one backdrop start at the left edge", () => {
     const card = /\.smithers-card\[data-maximized="true"\]\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(card).toContain("inset: 1.5rem 1.5rem 8.5rem;")
-    expect(card).toContain("left: calc(var(--chrome-bar-width, 200px) + 1.5rem);")
+    expect(card).not.toMatch(/left:/)
     const backdrop = /\.card-maximize-backdrop\s*\{[^}]*\}/.exec(cards)?.[0] ?? ""
     expect(backdrop).toContain("inset: 0;")
-    expect(backdrop).toContain("left: var(--chrome-bar-width, 200px);")
+    expect(backdrop).not.toMatch(/left:/)
   })
 })
 
@@ -168,12 +169,6 @@ describe("the shell shrinks to a phone viewport (no sideways scroll)", () => {
   test("the shell is a flex item that may shrink below its min-content width", () => {
     const shell = /\.app-shell\s*\{[^}]*\}/.exec(chat)?.[0] ?? ""
     expect(shell).toContain("min-width: 0;")
-  })
-
-  test("below 556px the sidebar tracks the viewport instead of pinning 200px", () => {
-    expect(chat).toMatch(
-      /@media \(max-width: 555px\)\s*\{\s*\.app-shell\s*\{[^}]*--chrome-bar-width:\s*min\(200px, 36vw\);/
-    )
   })
 })
 

@@ -82,11 +82,6 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
-    literal: "workspace-rename-",
-    file: "e2e/real/workspace-lifecycle.spec.ts",
-    reason: "A disposable local repository fixture name, not a card id emitted by the workspace rename flow."
-  },
-  {
     literal: "retired-",
     file: "e2e/packaged/FixtureRun.ts",
     reason: "A temporary fixture-directory prefix used for atomic cleanup, not a persisted card id."

@@ -687,38 +687,3 @@ test(
   }
 )
 
-test(
-  "repo.tree projects a keyboard-operable directory tree in the canonical workbench",
-  scenario("repositories.local-visible-tree", {
-    capabilities: ["local.repositories"],
-    description: "Require repo.tree's real directory read to produce the visible keyboard path promised by the repository tree flow on /owner/repo.",
-    coverage: [
-      "action:repo.open", "action:repo.tree", "host:local", "path:success", "path:keyboard",
-      "door:slash", "door:button", "dimension:canonical-workbench", "dimension:keyboard", "evidence:repo-tree-network-and-dom"
-    ]
-  }),
-  async ({ page, request }, testInfo) => {
-    const { first } = await createRepositoryPair()
-    await bootRepositoryWorkbench(page)
-    await enableVerboseEvidence(page)
-    await openOwnedRepository(page, request, first)
-    const key = `local:${first.path}`
-    await selectOwnedRepository(page, first)
-    const loading = page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/repo/files")
-    await command(page, `/repo.tree ${key}`)
-    await expectFlowOutcome(page, "repo.tree", key, "executed")
-    const response = await loading
-    expect(response.status()).toBe(200)
-    await dismissComposer(page)
-
-    const tree = page.getByTestId(`repo-tree-${key}`)
-    await expect(tree).toBeVisible()
-    const docs = tree.getByRole("button", { name: /docs/ })
-    await docs.focus()
-    await expect(docs).toBeFocused()
-    await docs.press("Enter")
-    await expect(tree).toContainText("shared.txt")
-    await attachJson(testInfo, "visible-repository-tree", { key, status: response.status() })
-  }
-)

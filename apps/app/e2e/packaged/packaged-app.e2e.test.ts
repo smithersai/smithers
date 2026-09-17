@@ -63,7 +63,6 @@ const withApp = async (
     app = await launchApp({ executable, artifactsDirectory, stateDirectory })
     await app.ready()
     await app.waitFor<RenderedShell>(renderedShell, (value) => value.composer && value.transcript)
-    await openSidebar(app)
     await run(app, fixture)
   } catch (error) {
     failure = error
@@ -113,18 +112,6 @@ const clickSelector = async (app: PackagedApp, selector: string): Promise<void> 
 
 const clickTestId = (app: PackagedApp, testId: string): Promise<void> => clickSelector(app, selectorForTestId(testId))
 
-const openSidebar = async (app: PackagedApp): Promise<void> => {
-  await app.waitFor<boolean>(`document.querySelector('button[aria-label="Smithers"]') instanceof HTMLButtonElement`)
-  await app.eval<boolean>(`
-    (() => {
-      const navigation = document.querySelector('button[aria-label="Smithers"]')
-      if (!(navigation instanceof HTMLButtonElement)) throw new Error('Missing session navigation')
-      if (navigation.getAttribute('aria-expanded') !== 'true') navigation.click()
-      return true
-    })()
-  `)
-  await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-add"]') !== null`)
-}
 
 const setControlValue = async (app: PackagedApp, testId: string, value: string): Promise<void> => {
   await app.eval<boolean>(`
@@ -202,11 +189,9 @@ const openRepository = async (app: PackagedApp, path: string | null): Promise<vo
   // A successful native pick still has to be consumed and mirrored into the
   // renderer before subsequent commands can resolve the selected repository.
   if (path !== null && (await stat(path).catch(() => undefined))?.isDirectory()) {
-    const selectedPath = await realpath(path)
+    await realpath(path)
     await app.waitFor<boolean>(`
-      Array.from(document.querySelectorAll('[data-testid^="repo-select-"]')).some((node) =>
-        node.getAttribute('data-testid') === ${JSON.stringify(`repo-select-local:${selectedPath}`)} &&
-        node.getAttribute('aria-current') === 'true')
+      document.querySelector('[data-testid="composer-repo-trigger"]')?.getAttribute('data-connected') === 'true'
     `)
   }
 }
@@ -339,11 +324,11 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       await clickTestId(app, "card-open-in-tab-theme-picker")
       expect(
         await app.waitFor<boolean>(
-          `document.querySelector('[data-testid="tab-card-theme-picker"][data-active="true"]') !== null`
+          `document.querySelector('[data-testid="tab-body-card-theme-picker"]')?.checkVisibility() === true`
         )
       ).toBe(true)
-      await clickTestId(app, "tab-close-card-theme-picker")
-      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-card-theme-picker"]') === null`))
+      await sendMessage(app, "/tab.close card-theme-picker")
+      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-body-card-theme-picker"]') === null`))
         .toBe(true)
       expect(await app.eval<boolean>(`document.querySelector('[data-testid="card-theme-picker"]') !== null`)).toBe(true)
 
@@ -458,7 +443,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       )
         .toBe("Prints plugin-hello from the root workspace.")
       expect(
-        await app.eval<string>(`document.querySelector('[data-testid^="repo-select-"][aria-current="true"]')?.textContent ?? ''`)
+        await app.eval<string>(`document.querySelector('[data-testid="composer-repo-trigger"]')?.textContent ?? ''`)
       )
         .toContain("codeplanesmithers/canary-sandbox")
 
@@ -526,7 +511,6 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
 
       const beforeRelaunch = await app.state()
       await app.relaunch()
-      await openSidebar(app)
       expect((await app.state()).app.pid).not.toBe(beforeRelaunch.app.pid)
       // Native startup restores the user's remembered directory grants before
       // serving requests. Reusing the pin must not require another folder pick.
@@ -542,11 +526,11 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(restoredRead.status).toBe(200)
       expect(
         await app.waitFor<boolean>(`
-        Array.from(document.querySelectorAll('.repo-name')).some((node) => node.textContent === 'codeplanesmithers/canary-sandbox')
+        document.querySelector('[data-testid="composer-repo-trigger"]')?.textContent?.includes('codeplanesmithers/canary-sandbox') === true
       `)
       ).toBe(true)
 
-      await clickTestId(app, `repo-select-local:${repository}`)
+      await sendMessage(app, `/repo.select local:${repository}`)
       expect(
         await app.waitFor<number>(
           `
@@ -577,11 +561,9 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       const repository = await fixture.makeDirectory("terminal-repository")
       await runCommand(["jj", "git", "init", "--quiet", "--colocate"], repository)
       await openRepository(app, repository)
-      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid^="repo-select-"][aria-current="true"]') !== null`)).toBe(true)
+      expect(await app.waitFor<boolean>(`document.querySelector('[data-testid="composer-repo-trigger"][data-connected="true"]') !== null`)).toBe(true)
 
-      await clickTestId(app, "tab-add")
-      await app.waitFor<boolean>(`document.querySelector('[data-testid="tab-add-terminal"]') !== null`)
-      await clickTestId(app, "tab-add-terminal")
+      await sendMessage(app, "/tab.terminal")
       const sessionId = await app.waitFor<string>(
         `
         document.querySelector('[data-testid^="terminal-"]')?.getAttribute('data-testid')?.replace(/^terminal-/, '') ?? ''
@@ -630,8 +612,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(resumed.executed(await app.waitFor<string>(terminalRows(sessionId), resumed.executed, 30_000))).toBe(true)
       console.log("[native-persistence] resumed shell executes new terminal input")
 
-      await openSidebar(app)
-      await clickTestId(app, `tab-close-${sessionId}`)
+      await sendMessage(app, `/tab.close ${sessionId}`)
       expect(await app.waitFor<boolean>(`document.querySelector('[role="dialog"]') !== null`)).toBe(true)
       await app.eval<boolean>(`
         (() => {
@@ -644,7 +625,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       `)
       expect(
         await app.waitFor<boolean>(
-          `document.querySelector(${JSON.stringify(selectorForTestId(`tab-${sessionId}`))}) === null`
+          `document.querySelector(${JSON.stringify(selectorForTestId(`tab-body-${sessionId}`))}) === null`
         )
       ).toBe(true)
       expect(

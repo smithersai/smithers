@@ -286,6 +286,32 @@ describe("the live store's authoritative event path", () => {
     expect((await restored.verifyState()).valid).toBe(true)
   })
 
+  test("version 8 upgrade drops the retired sidebar state", async () => {
+    const storage = memoryStorage(), store = await open(storage)
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const snapshot = structuredClone(old.checkpoint.snapshot)
+    Object.assign(snapshot.sessions![0]!, { sidebarOpen: false })
+    const stateHash = appProjectionHash(snapshot as unknown as Parameters<typeof appProjectionHash>[0])
+    const head = { ...old.head, projectorVersion: 8, stateHash }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 8, snapshot, stateHash }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      const sessions = JSON.parse(entries["smithers-mvp.app-sessions"]!)
+      sessions["s:main"].data.sidebarOpen = false
+      entries["smithers-mvp.app-sessions"] = JSON.stringify(sessions)
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session()).not.toHaveProperty("sidebarOpen")
+  })
+
   test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
     const storage = memoryStorage()
     const store = await open(storage)

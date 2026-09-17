@@ -22,49 +22,6 @@ const createNote = async (page: Page): Promise<{ card: Locator; id: string; titl
 }
 
 test(
-  "sidebar opens from the logo and starts closed after a real reload",
-  scenario("real-sidebar-reload-recovery", {
-    capabilities: [],
-    coverage: ["host:local", "host:production", "door:button", "path:persistence", "action:sidebar.toggle", "dimension:reload-recovery", "evidence:sidebar-state"]
-  }),
-  async ({ page }) => {
-    await boot(page)
-    const logo = page.getByRole("button", { name: "Smithers", exact: true })
-    await expect(logo).toHaveAttribute("aria-expanded", "false")
-    await logo.click()
-    await expect(logo).toHaveAttribute("aria-expanded", "true")
-    await expect(page.getByRole("complementary", { name: "Sessions and chrome" })).toBeVisible()
-    await page.reload()
-    const reloadedLogo = page.getByRole("button", { name: "Smithers", exact: true })
-    await expect(reloadedLogo).toHaveAttribute("aria-expanded", "false")
-    await expect(page.getByRole("complementary", { name: "Sessions and chrome" })).toBeHidden()
-    await reloadedLogo.click()
-    await expect(reloadedLogo).toHaveAttribute("aria-expanded", "true")
-  }
-)
-
-test(
-  "W opens navigation while the composer preserves typed W input",
-  scenario("real-sidebar-keyboard-boundary", {
-    capabilities: [],
-    coverage: ["host:local", "host:production", "door:user-only", "path:success", "action:sidebar.toggle", "action:palette.open", "dimension:focus-boundary", "evidence:keyboard-navigation"]
-  }),
-  async ({ page }) => {
-    await boot(page)
-    const logo = page.getByRole("button", { name: "Smithers", exact: true })
-    // Bare W navigates; typing into the composer must not toggle navigation.
-    await page.keyboard.press("w")
-    await expect(logo).toHaveAttribute("aria-expanded", "true")
-    await page.keyboard.press("ControlOrMeta+k")
-    const input = page.getByTestId("composer-input")
-    await expect(input).toBeVisible()
-    await input.fill("w")
-    await expect(logo).toHaveAttribute("aria-expanded", "true")
-    await closeComposer(page)
-  }
-)
-
-test(
   "a card maximize and restore cycle preserves the selected card and focus",
   scenario("real-card-maximize-restore", {
     capabilities: [],
@@ -89,8 +46,8 @@ test(
 )
 
 test(
-  "a maximized card can move to a sidebar session and close cleanly",
-  scenario("real-card-sidebar-session-lifecycle", {
+  "a maximized card can move to a tab session and close cleanly",
+  scenario("real-card-tab-session-lifecycle", {
     capabilities: [],
     coverage: ["host:local", "host:production", "door:button", "path:success", "action:wiki.new-note", "action:card.maximize", "action:tab.card", "action:tab.select", "action:tab.close", "dimension:session-lifecycle", "evidence:tab-state"]
   }),
@@ -98,15 +55,12 @@ test(
     await boot(page)
     const note = await createNote(page)
     await note.card.getByRole("button", { name: "Maximize card", exact: true }).click()
-    await expect(note.card.getByRole("button", { name: "Open in sidebar", exact: true })).toBeVisible()
-    await note.card.getByRole("button", { name: "Open in sidebar", exact: true }).click()
-    const sidebar = page.getByRole("complementary", { name: "Sessions and chrome" })
-    await expect(sidebar).toBeVisible()
-    const tab = sidebar.getByRole("tab", { name: note.title, exact: true })
-    await expect(tab).toBeVisible()
-    await tab.click()
-    await expect(page.getByTestId(`tab-body-card-${note.id}`).getByTestId(`card-${note.id}`)).toBeVisible()
-    await sidebar.getByRole("button", { name: `Close ${note.title}`, exact: true }).click()
-    await expect(sidebar.getByRole("tab", { name: note.title, exact: true })).toHaveCount(0)
+    await expect(note.card.getByRole("button", { name: "Open in tab", exact: true })).toBeVisible()
+    await note.card.getByRole("button", { name: "Open in tab", exact: true }).click()
+    const body = page.getByTestId(`tab-body-card-${note.id}`)
+    await expect(body).toBeVisible()
+    await expect(body.getByTestId(`card-${note.id}`)).toBeVisible()
+    await page.keyboard.press("Meta+w")
+    await expect(page.getByTestId(`tab-body-card-${note.id}`)).toHaveCount(0)
   }
 )

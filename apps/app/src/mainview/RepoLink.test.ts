@@ -450,6 +450,5 @@ test("mobile repository entry selects the requested repo without opening an obst
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
     expect(store.session().repositoryEntry?.phase).toBe("ready")
     expect(ran).toEqual([])
-    expect(store.session().sidebarOpen).not.toBe(true)
   } finally { await store.dispose?.() }
 })

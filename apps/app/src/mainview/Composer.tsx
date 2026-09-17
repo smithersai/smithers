@@ -332,7 +332,7 @@ function ComposerAdd({
         testId: "composer-add-agent",
         disabled: availableHarness === undefined,
         ...(availableHarness === undefined ? {} : { args: availableHarness.id }),
-        /* The raw harness session, named the way the sidebar's `+` names it: the harness, then its account or status. */
+        /* The raw harness session: the harness, then its account or status. */
         content: (
           <>
             <Bot size={14} aria-hidden="true" />
@@ -472,7 +472,7 @@ function ComposerConnect({
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: copyRows } = useLiveQuery(collections.workingCopies)
   const { data: cloudSessionRows } = useLiveQuery(collections.cloudSessions)
-  /* The active repository is session state (activeRepoKey): one rule with the sidebar and the tabs. */
+  /* The active repository is session state (activeRepoKey): one rule with the tabs. */
   const { data: activeRows } = useLiveQuery((q) =>
     q.from({ session: collections.sessions }).select(({ session }) => ({
       id: session.id,
@@ -513,7 +513,7 @@ function ComposerConnect({
   const canAddConnector = controller.nativeRepositoriesAvailable &&
     controller.commands.find("connector.add") !== undefined
   const cloudSignedIn = cloudSessionRows[0]?.state === "signed-in"
-  // One label rule for every copy row (WorkspaceViews.ts): the sidebar and this menu say the same line.
+  // One label rule for every copy row (WorkspaceViews.ts): this menu says the same line.
   const copyLabel = workingCopyLabel
 
   const cloudEntries: ReadonlyArray<MenuEntry> = [...repositoryRows]
@@ -552,7 +552,7 @@ function ComposerConnect({
   const connectionEntries: ReadonlyArray<MenuEntry> = [
     ...repos.map((repo) => ({
       key: `repo:${repo.id}`,
-      // Choosing an open repository makes it the active one: the sidebar row, the origin, and where tabs start.
+      // Choosing an open repository makes it the active one: the origin, and where tabs start.
       flow: "repo.select",
       args: repoKeyOf(repo.path),
       active: repo.id === activeRepo?.id,
@@ -1214,7 +1214,7 @@ export function Composer({
   )
 }
 
-/** The existing repository picker, projected in the workspace sidebar. */
+/** The repository picker, projected standalone. */
 export function SidebarRepositoryPicker() {
   const controller = useController()
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)

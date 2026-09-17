@@ -686,7 +686,6 @@ export const SessionSchema = z.object({
   /** Optional so previously saved sessions still parse. */
   firstRunDismissed: z.boolean().optional(),
   hintsSeen: z.array(z.string()).optional(),
-  sidebarOpen: z.boolean().optional(),
   id: z.literal("main"),
   draft: z.string(),
   phase: z.enum(["idle", "responding"]),
@@ -1192,7 +1191,6 @@ export type AppTransition =
   | { type: "librarian.launches.changed"; actor: Actor; launches: NonNullable<Session["librarianLaunches"]> }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
-  | { type: "sidebar.toggled"; actor: "user" | "smithers"; open: boolean }
   | { type: "palette.changed"; actor: "user"; palette: Palette }
   | {
     /* Maximize/minimize an embedded card — a presentation transition, user-only. */

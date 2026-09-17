@@ -4,11 +4,11 @@ import type { RepoTreeSeam } from "../seams/RepoTreeSeam"
 import type { ControllerContext } from "./context"
 
 /*
- * The sidebar's own acts (docs/workbench-lanes/sidebar-tree.md): the file
- * tree's carets (a local checkout or a cloud workspace copy alike) and the
- * workspace heading's name. Every state change goes through the store's
- * dispatcher with the actor recorded; the server is reached only for a
- * directory listing, through the tree seam.
+ * The repository tree's and workspace name's acts: the file tree's carets
+ * (a local checkout or a cloud workspace copy alike) and the workspace
+ * rename. Every state change goes through the store's dispatcher with the
+ * actor recorded; the server is reached only for a directory listing,
+ * through the tree seam.
  */
 export interface SidebarController {
   /**
@@ -31,12 +31,6 @@ export const createSidebarController = (ctx: ControllerContext, seam: RepoTreeSe
     const path = normalizeTreePath(pathArg ?? "")
     const copy = collections.workingCopies.get(copyId)
     if (copy === undefined) return `There is no working copy with id ${copyId}.`
-    // repo.tree's projection lives in the fullscreen shell's sidebar. A
-    // slash or agent invocation must reveal the surface before changing its
-    // tree row, just as clicking the already-visible caret does.
-    if (store.session().sidebarOpen !== true) {
-      store.dispatch({ type: "sidebar.toggled", actor: ctx.commandActor, open: true })
-    }
     const row = collections.repoTree.get(repoTreeRowId(copyId, path))
     if (row !== undefined && row.expanded) {
       store.dispatch({ type: "repo-tree.toggled", actor: ctx.commandActor, copyId, path, expanded: false })

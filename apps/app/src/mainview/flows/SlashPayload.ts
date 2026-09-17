@@ -255,7 +255,6 @@ const numberedChangeRef = (name: string, field: string, what: string, args: stri
 }
 
 const GRAMMAR: Readonly<Record<string, Grammar>> = {
-  "sidebar.toggle": args => trimmed(args) === "" ? NONE : setupObject(args),
   "issues.setup": args => repoOnly("issues.setup", args),
   "review.setup": args => repoOnly("review.setup", args),
   "ci.setup": args => repoOnly("ci.setup", args),
