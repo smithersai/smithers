@@ -373,7 +373,10 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     installFailure = status === "failed" ? text : undefined
     if (text) {
       await ctx.dispatch({ type: "toast.shown", actor: "system", key: "github.install", title: text }).isPersisted.promise
-      await ctx.dispatch({ type: "toast.resolved", actor: "system", key: "github.install", status, detail: "" }).isPersisted.promise
+      // An ok toast draws no dismiss control, so it leaves only through the
+      // controller's door (failures.ts). A failed one keeps its own X and stands.
+      if (status === "ok" && ctx.resolveToast) ctx.resolveToast("github.install", { status, detail: "" })
+      else await ctx.dispatch({ type: "toast.resolved", actor: "system", key: "github.install", status, detail: "" }).isPersisted.promise
     }
   }
   const adoptInstalled = async (repo: string, repos: ReadonlyArray<{ fullName: string }>): Promise<void> => {

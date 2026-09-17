@@ -94,6 +94,8 @@ const harness = async (
 ) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requests: Array<string> = []
+  /* The controller's door (failures.ts), which is the only one that dismisses an ok toast. */
+  const resolved: Array<{ key: string; status: "ok" | "failed" }> = []
   const ctx: SeamContext = {
     http: async (input, init) => {
       const method = init?.method ?? "GET"
@@ -107,6 +109,10 @@ const harness = async (
     baseUrl: "",
     store,
     dispatch: store.dispatch,
+    resolveToast: (key, outcome) => {
+      resolved.push({ key, status: outcome.status })
+      void store.dispatch({ type: "toast.resolved", actor: "system", key, status: outcome.status, detail: outcome.detail })
+    },
     actor: () => "user",
     nextOrdinal: () => 0
   }
@@ -134,7 +140,7 @@ const harness = async (
     ]
   })
   const { signedIn: _signedIn, ...deps } = options
-  return { store, seam: createGitHubSeam(ctx, deps), requests }
+  return { store, seam: createGitHubSeam(ctx, deps), requests, resolved }
 }
 
 const textOf = (result: unknown): string | undefined =>
@@ -202,7 +208,7 @@ describe("createGitHubSeam", () => {
   })
 
   test("a pending org install request waits on its owner instead of inviting a second one", async () => {
-    const { requests, seam, store } = await harness({})
+    const { requests, resolved, seam, store } = await harness({})
 
     expect(seam.handleInstallReturn("?setup_action=request")).toBe(true)
     await waitUntil(() => store.collections.toasts.get("toast-github.install")?.status !== undefined
@@ -211,7 +217,19 @@ describe("createGitHubSeam", () => {
     expect(store.collections.toasts.get("toast-github.install")?.title).toBe("Waiting for an org owner to approve the install.")
     /* The request is filed and waiting; a failed toast would read as Smithers losing it. */
     expect(store.collections.toasts.get("toast-github.install")?.status).toBe("ok")
+    /* Only the controller's door dismisses an ok toast, and only a failed one draws a close control. */
+    expect(resolved).toEqual([{ key: "github.install", status: "ok" }])
     expect(requests).toEqual([])
+  })
+
+  test("a return with nothing usable keeps the failure toast that owns its dismiss control", async () => {
+    const { resolved, seam, store } = await harness({})
+
+    expect(seam.handleInstallReturn("?setup_action=install")).toBe(true)
+    await waitUntil(() => store.collections.toasts.get("toast-github.install")?.status === "failed", "the unusable-return toast")
+
+    expect(store.collections.toasts.get("toast-github.install")?.title).toBe("Nothing came back from GitHub. Try again?")
+    expect(resolved).toEqual([])
   })
 
   test("github.app files the status row and renders the connected card", async () => {
