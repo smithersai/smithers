@@ -56,13 +56,20 @@ test("an existing installation never bypasses the user's own repository grant", 
 
 test("verification includes later pages so a second installation and every repository reach the chooser", async () => {
   const pages: string[] = []
+  const identityCalls = { validate: 0, cloudToken: 0 }
   const response = await Effect.runPromise(handleGitHubAppInstall(new Request("https://app.test/api/user/github-app/installations", {
     headers: { cookie: "smithers_session=test" }
   })).pipe(Effect.provide(configLayer({ IDENTITY_UPSTREAM_URL: "https://identity.test", IDENTITY_SERVICE_TOKEN: "svc", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" })),
   Effect.provide(transportLayer(async (input) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
-    if (url.pathname === "/api/identity/validate") return Response.json({ login: "ada", allowlisted: true, admin: false, scopes: [] })
-    if (url.pathname === "/api/identity/cloud-token") return Response.json({ found: true, token: "fixture-token" })
+    if (url.pathname === "/api/identity/validate") {
+      identityCalls.validate++
+      return Response.json({ login: "ada", allowlisted: true, admin: false, scopes: [] })
+    }
+    if (url.pathname === "/api/identity/cloud-token") {
+      identityCalls.cloudToken++
+      return Response.json({ found: true, token: "fixture-token" })
+    }
     if (url.pathname === "/api/user/github-repos") {
       pages.push(url.searchParams.get("page")!)
       return Response.json(url.searchParams.get("page") === "1"
@@ -75,4 +82,7 @@ test("verification includes later pages so a second installation and every repos
   expect(pages).toEqual(["1", "2"])
   expect(body.repos).toHaveLength(101)
   expect(body.repos.at(-1)).toMatchObject({ fullName: "acme/api", installationId: 99 })
+  // One session check and one Cloud token per verification, not per repository:
+  // three subrequests per repo tripped the Worker's 1000-subrequest ceiling.
+  expect(identityCalls).toEqual({ validate: 1, cloudToken: 1 })
 })

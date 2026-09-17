@@ -1,6 +1,10 @@
 import * as Effect from "effect/Effect"
-import { handlePlatformProxy } from "./proxies"
-import { json, refuse } from "./Responses"
+import * as Result from "effect/Result"
+import { ServerConfig } from "./Config"
+import { fetchCloudToken } from "./gateway"
+import { fetchWithDeadline } from "./Http"
+import { requireTurnSession } from "./identity"
+import { json, refuse, upstreamUnreachable } from "./Responses"
 
 export const INSTALLATIONS_PATH = "/api/user/github-app/installations"
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
@@ -9,16 +13,27 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
  * The callback id is a filter, never permission to read someone else's install.
  */
 export const handleGitHubAppInstall = (request: Request, installationId?: string) => Effect.gen(function* () {
-  const read = (path: string) => {
-    const url = new URL(path, request.url)
-    return handlePlatformProxy(new Request(url, { headers: request.headers }), url)
-  }
+  // Validate the session and mint the Cloud token ONCE. Routing every read
+  // through handlePlatformProxy cost three subrequests per repository and
+  // tripped the Worker's 1000-subrequest ceiling at a few hundred repos.
+  const config = yield* ServerConfig
+  const gate = yield* requireTurnSession(request)
+  if (gate instanceof Response) return gate
+  if (gate === undefined) return refuse("seam_not_configured", "Repository actions need the identity seam, which this deployment does not have.")
+  const token = yield* fetchCloudToken(gate.login)
+  if (token.status !== "ok") return refuse("cloud_token_unavailable", `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
+  const headers = { authorization: `Bearer ${token.token}`, accept: "application/json" }
+  const read = (path: string) => Effect.gen(function* () {
+    const fetched = yield* Effect.result(fetchWithDeadline("Smithers Cloud", new URL(path, config.cloudApiBaseUrl).toString(), { headers }, config.upstreamTimeoutMs))
+    return Result.isFailure(fetched) ? upstreamUnreachable("Smithers Cloud", fetched.failure) : fetched.success
+  })
   const repos: Array<{ fullName: string; pushedAt: string; installationId: number }> = []
   const seen = new Set<string>()
   const blockers: string[] = []
   for (let page = 1; page <= 10; page++) {
     const inventory = yield* read(`/api/user/github-repos?sort=pushed&direction=desc&per_page=100&page=${page}`)
-    if (!inventory.ok) return inventory
+    // Upstream prose never passes through (the proxy's rule): restate it.
+    if (!inventory.ok) return json(inventory.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." })
     const body: unknown = yield* Effect.promise(() => inventory.json().catch(() => null))
     const rows = Array.isArray(body) ? body : record(body) && Array.isArray(body.repos) ? body.repos : record(body) && Array.isArray(body.items) ? body.items : undefined
     if (rows === undefined) return refuse("upstream_malformed", "Smithers Cloud returned an unreadable repository list.")
