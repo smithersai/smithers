@@ -71,3 +71,56 @@ test("the persisted legacy session loads without replaying lessons", async () =>
   expect(store.collections.cards.size).toBe(0)
   await store.dispose?.()
 })
+
+/*
+ * The park slot is one persisted, latest-wins field. Settling the first-run
+ * target may only resume the park that waits on THAT choice; a sign-in or
+ * repo-read park left by an earlier visit keeps waiting for its own seam.
+ */
+for (const [branch, identity] of [["non-blocking boot", undefined], ["settled identity", "signed-out"]] as const) {
+  for (const requirement of ["signed-in", "repo-read"] as const) {
+    test(`a stale ${requirement} park survives the first-run settle on the ${branch} branch`, async () => {
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+      try {
+        if (identity !== undefined) {
+          await store.dispatch({ type: "identity.session.loaded", actor: "system", state: identity, login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+        }
+        await store.dispatch({ type: "command.deferred", actor: "user", name: "issues.view", args: "3 acme/private", requirement }).isPersisted.promise
+        selectFirstRunRepository(store, controller.resumeDeferredCommand)
+        await new Promise(resolve => setTimeout(resolve, 30))
+        expect(store.session().pendingCommand).toMatchObject({ name: "issues.view", args: "3 acme/private", requirement })
+        expect([...store.collections.toasts.values()]).toEqual([])
+        expect([...store.collections.cards.values()]).toEqual([])
+      } finally { await controller.dispose() }
+    })
+  }
+}
+
+test("a first-run-target park resumes exactly once when the selection settles", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  try {
+    expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
+    expect(store.session().pendingCommand ?? null).toBeNull()
+  } finally { await controller.dispose() }
+})
+
+test("a first-run-target park whose choice settles with no target renders the repo form once", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  try {
+    expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    await until(() => store.collections.cards.get("form-issues.list") !== undefined)
+    expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form")).toHaveLength(1)
+    expect(store.session().activeRepoKey ?? null).toBeNull()
+    expect(store.session().pendingCommand ?? null).toBeNull()
+  } finally { await controller.dispose() }
+})
