@@ -27,7 +27,7 @@ const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
-async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
+async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable" | "ai-context-pass" | "ai-context-fail" | "ai-context-missing" | "ai-context-required">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const temporary = await mkdtemp(join(tmpdir(), "repository-host-")), root = join(temporary, "repo")
   let passed = false
@@ -40,9 +40,17 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   await writeFile(join(root, "README.md"), "# Test repository\nThe greeting lives in greeting.mjs.\n")
   await writeFile(join(root, "greeting.mjs"), "export const greeting = 'hello';\n")
   await writeFile(join(root, ".gitignore"), "node_modules\n.flows/\n")
+  const contextual = proof.jobs?.some(kind => kind.startsWith("ai-context")) ?? false
+  if (contextual) {
+    await mkdir(join(root, "docs"))
+    await writeFile(join(root, "AGENTS.md"), "Follow docs/telemetry.md for handlers.\n")
+    await writeFile(join(root, "docs", "telemetry.md"), "Telemetry must retain failure context without secrets.\n")
+    await writeFile(join(root, "telemetry.mjs"), "export const record = () => 'CAPTURED_TELEMETRY_HELPER';\n")
+  }
   jj("status")
   jj("new", "-m", "Document the greeting")
-  const greetingSource = "export const greeting = 'hello';\n// Public greeting\n"
+  const greetingSource = "export const greeting = 'hello';\n// Public greeting\n" + (contextual
+    ? "import { record } from './telemetry.mjs';\nexport const handle = () => record();\n" : "")
   await writeFile(join(root, "greeting.mjs"), greetingSource)
   jj("status")
   const config = join(temporary, "binding.json"), reporter = join(temporary, "reporter"), adapter = join(temporary, "adapter.py"), nativeSource = join(temporary, "native.py")
@@ -122,6 +130,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       return json(registration)
     })
   })
+  let contextualModelCalls = 0
   const model = Model.make({ stream: request => Stream.suspend(() => {
     const text = JSON.stringify(request); requests.push(text)
     const scoring = text.includes("Independently evaluate the recorded production job")
@@ -142,6 +151,19 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         proposal: [{ path: "greeting.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "greeting.mjs").digest, content: "export const greeting = 'goodbye';\n" },
           { path: "regression.mjs", beforeDigest: null, content: "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }], children: [] }
       : { classification: "question", summary: "The exported greeting is hello.", question: "", citations: ["greeting.mjs"], duplicates: [], reproduction: null }
+    if (checking && task.check.rule.includes("Fixture: captured context")) {
+      contextualModelCalls++
+      assert(!task.check.rule.includes("missing"), "missing required context must refuse before spending a reviewer invocation")
+      assert.equal(task.context.source, task.comparison.candidate)
+      assert(task.context.files.some((file: any) => file.path === "telemetry.mjs" && file.text.includes("CAPTURED_TELEMETRY_HELPER")), "reviewer receives actual imported helper bytes")
+      assert(task.context.files.some((file: any) => file.path === "docs/telemetry.md"))
+      assert(task.context.files.some((file: any) => file.path === "AGENTS.md"))
+      if (task.check.rule.endsWith("fail")) {
+        response.verdict = "fail"
+        response.summary = "The fixture requested a concrete finding on the changed handler."
+        response.findings = [{ path: "greeting.mjs", line: 4, message: "Retain the handler failure context." }]
+      }
+    }
     if (checking && task.check.rule === "Fixture: telemetry context is unavailable") {
       response.verdict = "uncertain"
       response.summary = "The telemetry helper required by this rule was not supplied."
@@ -222,7 +244,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
-      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" ? "ci" : kind === "ai-empty-review" ? "review" : kind
+      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" || kind === "ai-context-pass" || kind === "ai-context-fail" || kind === "ai-context-missing" || kind === "ai-context-required" ? "ci" : kind === "ai-empty-review" ? "review" : kind
       const configured = initialSetup(repo, job, "maintainer")
       if (kind === "fix") configured.draft.steps = [configured.draft.steps.find(step => step.id === "fix")!]
       configured.draft.cases = []
@@ -230,6 +252,10 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         rule: job === "ci" ? `${process.execPath} -e "import('./greeting.mjs').then(m => { if (m.greeting !== 'hello') process.exit(1) })"` : `${process.execPath} regression.mjs` }]
       if (kind.startsWith("ai-") && kind !== "ai-empty-review") configured.draft.checks.push({ id: "observability", name: "Observability", kind: "ai", policy: "report",
         paths: [kind === "ai-skip" ? "unrelated/**" : "greeting.mjs"], rule: kind === "ai-unavailable" ? "Fixture: telemetry context is unavailable" : "Review the requested greeting change using its source." })
+      if (kind.startsWith("ai-context")) configured.draft.checks[1] = { ...configured.draft.checks[1]!,
+        policy: kind === "ai-context-required" ? "required" : "report", rule: kind === "ai-context-missing" || kind === "ai-context-required"
+          ? "Follow docs/missing.md. Fixture: captured context missing" : `Follow docs/telemetry.md. Fixture: captured context ${kind.endsWith("fail") ? "fail" : "pass"}` }
+      const modelCallsBefore = contextualModelCalls
       const event = kind === "push" ? { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", issueNumber: 0,
         payload: { ref: "refs/heads/main", before: native.head.parentCommitIds[0], after: native.head.commitId, created: false, deleted: false, forced: false,
           repository: { id: 42, full_name: "original/source" }, sender: { login: "maintainer" } } }
@@ -251,13 +277,27 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         return state?.flowName === "repository/Job" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
       assert.equal(outputs.length, 1, `${job} needs its actual native job result`)
       const output = Schema.decodeUnknownSync(JobResult)(outputs[0])
-      assert.equal(output.status, "completed", JSON.stringify(output))
+      assert.equal(output.status, kind === "ai-context-required" ? "partial" : "completed", JSON.stringify(output))
       assert(output.results.length > 0)
-      assert(output.results.every(step => step.status === "completed" && step.evidence.length > 0))
+      assert(output.results.every(step => step.status === (kind === "ai-context-required" ? "error" : "completed") && step.evidence.length > 0))
+      if (kind.startsWith("ai-context")) {
+        const detail = output.results[0]!.output as any, semantic = detail.results.find((check: any) => check.checkId === "observability")
+        const unavailable = kind === "ai-context-missing" || kind === "ai-context-required"
+        assert.equal(semantic.status, unavailable ? "error" : kind.endsWith("fail") ? "failed" : "passed")
+        assert.equal(detail.gate, kind === "ai-context-required" ? "blocked" : "passed")
+        assert.equal(contextualModelCalls - modelCallsBefore, unavailable ? 0 : 1)
+        assert.equal(semantic.detail.context.source, native.head.commitId)
+        if (unavailable) assert(semantic.detail.context.reads.some((read: any) => read.path === "docs/missing.md" && read.status === "missing"))
+        const expected = { id: "context", name: "Judge measured context", expected: "A complete source supports this check", required: true,
+          input: JSON.stringify({ event: input.event, sourceRevision: output.sourceRevision,
+            assertions: [{ path: "/results/0/output/results/1/status", equals: unavailable ? "passed" : semantic.status }] }) }
+        assert.equal(assessScore(expected, output, { verdict: "pass", reason: "Scripted favorable independent judge", evidenceIds: [0] }).status,
+          unavailable ? "error" : "passed", "context availability remains a measured fact before assertion or model scoring")
+      }
       if (kind.startsWith("ai-")) {
         const verify = () => verifyTrialChecks(configured.draft, output)
         if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
-        else if (kind === "ai-unavailable") assert.throws(verify, /unavailable.*check/)
+        else if (["ai-unavailable", "ai-context-missing", "ai-context-required"].includes(kind)) assert.throws(verify, /unavailable.*check/)
         else assert.doesNotThrow(verify)
         if (kind === "ai-skip") {
           assert.equal((output.results[0]!.output as any).results.find((check: any) => check.checkId === "observability").status, "skipped")
@@ -410,6 +450,8 @@ test("native AI trials require matched execution while ordinary events preserve 
   t => proveRepository(t, { jobs: ["ai-match", "ai-skip", "ai-proposal", "ai-empty-review"] }))
 test("native proposal evaluation keeps a failing regression baseline distinct from unavailable AI", nativeOptions,
   t => proveRepository(t, { jobs: ["fix", "ai-unavailable"] }))
+test("native AI checks receive captured helpers and keep missing report or required context unavailable", nativeOptions,
+  t => proveRepository(t, { jobs: ["ai-context-pass", "ai-context-fail", "ai-context-missing", "ai-context-required"] }))
 test("native author signals ignore bystanders and resume the same job across two questions", nativeOptions,
   t => proveRepository(t, { interactions: ["author"] }))
 test("native checked changes retain exact versioned files and recovery bytes, and refuse unverified landing", nativeOptions,
