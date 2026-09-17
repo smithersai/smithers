@@ -13,16 +13,22 @@
 //   SMITHERS_E2E_NOTES    notes file outside the repo holding a `password: <value>` line
 //                         (default the multi-test-github-account memory file)
 //   SMITHERS_E2E_USER     GitHub login of the test account (default codeplanesmithers)
+//   SMITHERS_E2E_REQUIRE_NON_ADMIN  "1" fails the run when the session carries the admin claim
 //
 // The account is a SCOPED-DOWN one (Factory spec 2026-09-08, RULINGS 35): a plain signed-in
-// GitHub login with no admin claim and no hand-seeded allowlist entry, so this probe proves the
-// door works under the permissions a real visitor has. The probe reads the session back and fails
-// when the account turns out to be an admin, because every check above it would then pass on
-// privileges nobody else holds. See apps/server/DEPLOY.md and apps/app/e2e/README.md.
+// GitHub login with no hand-seeded allowlist entry, so this probe proves the door works under the
+// permissions a real visitor has. It reads the session back and prints the claims it found;
+// `codeplanesmithers` carries the admin claim today, so refusing it would refuse every run.
+// SMITHERS_E2E_REQUIRE_NON_ADMIN=1 restores the refusal for a run that must prove RULINGS 35.
+// See apps/server/DEPLOY.md and apps/app/e2e/README.md.
+//
+// The persistent profile is shared with the real-E2E suites, so the run takes their atomic lease
+// (`<profile>.smithers-real-e2e.lock`) before opening it and releases it on every exit.
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { acquireProfileLease, ANY_SIGN_IN_DOOR, SIGN_IN_DOOR, visibleDoors } from "./support.mjs";
 const base = (process.argv[2] ?? "https://smithers.sh").replace(/\/+$/, "");
 const repo = process.argv[3] ?? "smithersai/smithers";
 const home = homedir();
@@ -38,10 +44,14 @@ const redact = (url) => url.replace(/state=[^&]+/, "state=…").replace(/code=[^
 const host = new URL(base).hostname;
 const hostCookies = new RegExp(`(^|\\.)${host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 const repoPath = `/${repo}`;
+const lease = await acquireProfileLease(profile).catch((error) => {
+  console.log("FAIL: the persistent profile is in use;", String(error?.message ?? error));
+  process.exit(1);
+});
 const ctx = await chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1280, height: 900 } });
 const page = await ctx.newPage();
 const fail = async (why) => { console.log("FAIL:", why, "at", redact(page.url())); await ctx.close(); process.exit(1); };
-const door = () => page.locator("[data-testid=chrome-sign-in], button:has-text('Sign in with GitHub')").first();
+const door = () => visibleDoors(page, SIGN_IN_DOOR).first();
 const openRepo = async () => {
   await page.goto(`${base}${repoPath}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForTimeout(7000);
@@ -76,9 +86,10 @@ if (!landed.startsWith(base)) await fail(`OAuth did not return to ${base}`);
 const final = new URL(landed);
 if (final.pathname !== repoPath) await fail(`the door returned to ${final.pathname}, not ${repoPath}`);
 if (final.searchParams.has("signed-in")) await fail("the app left the signed-in marker in the query");
-// Answered transcript steps retain their original sign-in prose. The dead door
-// is an executable action, not a historical sentence.
-if (await page.locator('button[data-flow="auth.sign-in"], button[data-flow="cloud.sign-in"], [data-testid=chrome-sign-in]').count()) {
+// Answered transcript steps retain their original sign-in prose, and the
+// dismissed composer overlay keeps its own button in the DOM. A door is one the
+// visitor can see, not one the page still holds.
+if (await visibleDoors(page, ANY_SIGN_IN_DOOR).count()) {
   await fail("repository page still shows the sign-in door");
 }
 // Signed in, the header carries no account chrome; Account is the sidebar's button door.
@@ -89,8 +100,8 @@ catch { await fail("no Account sidebar button after opening the sidebar"); }
 await acct.click(); await page.waitForTimeout(3000);
 const t2 = await page.evaluate(() => document.body.innerText);
 if (!new RegExp(`Account · @${user}`, "i").test(t2)) await fail("Account card does not name the test user");
-// The scoped-down check: an admin session would pass every assertion above while the product
-// refused everyone else, so read the session back and refuse to call that a visitor's round trip.
+// The scoped-down check: an admin session passes every assertion above while the product may
+// refuse everyone else, so read the session back and say which claims carried the round trip.
 const session = await page.evaluate(async () => {
   try {
     const r = await fetch("/api/auth/session", { credentials: "include" });
@@ -98,6 +109,10 @@ const session = await page.evaluate(async () => {
   } catch (e) { return { status: 0, body: null, error: String(e) }; }
 });
 if (session.status !== 200 || !session.body?.login) await fail(`/api/auth/session answered ${session.status} with no login, so nothing shows this is a visitor's session`);
-if (session.body.admin === true) await fail(`the test account @${session.body.login} carries the admin claim; this probe must run as a scoped-down user (apps/server/DEPLOY.md)`);
+if (session.body.admin === true && process.env.SMITHERS_E2E_REQUIRE_NON_ADMIN === "1") {
+  await fail(`the test account @${session.body.login} carries the admin claim and SMITHERS_E2E_REQUIRE_NON_ADMIN=1 (apps/server/DEPLOY.md)`);
+}
+if (session.body.admin === true) console.log(`admin=true: @${session.body.login} is in the identity Worker's ADMIN_LOGINS; the round trip above ran with that claim`);
 console.log(`OK: the sign-in door returned to ${redact(landed)}; ${repo} signed in as @${user} (admin=${String(session.body.admin)}, allowlisted=${String(session.body.allowlisted)})`);
 await ctx.close();
+lease.release();

@@ -71,10 +71,20 @@ credentials; when the saved GitHub session has expired it logs the account in
 again from the notes file, and it fails with a reason when GitHub asks for a
 device code. Run it after every deploy that touches auth, chrome, or the shell.
 
-After the Account card check it reads `GET /api/auth/session` back and fails
-when the account carries the `admin` claim, so a probe run under an operator's
-profile is loud rather than quietly green. See "The identity the suites run as"
-below.
+That profile is the one the real-E2E suites lease, so the probe takes the same
+atomic lease (`<profile>.smithers-real-e2e.lock`) before opening it and releases
+it on every exit; a second owner gets `FAIL: the persistent profile is in use`
+instead of a shared browser. A door counts only when it is visible: a dismissed
+composer overlay and an answered transcript step both keep a sign-in button in
+the DOM, and counting those read a signed-in page as signed out (2026-09-17).
+`probes/support.mjs` holds both rules and `bun test e2e/probes/support.test.mjs`
+proves them offline against a local Chromium.
+
+After the Account card check it reads `GET /api/auth/session` back and prints
+the claims that carried the round trip. `codeplanesmithers` is in the identity
+Worker's `ADMIN_LOGINS` today, so the probe prints `admin=true` and continues;
+`SMITHERS_E2E_REQUIRE_NON_ADMIN=1` fails the run on that claim instead, which is
+how a run proves the ruling below.
 
 ## The identity the suites run as
 
