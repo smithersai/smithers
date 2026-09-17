@@ -11,9 +11,10 @@
  */
 import type { AgentToolSpec } from "@smthrs/rpc/NativeAgent"
 import { agentFaultNote } from "@smthrs/rpc/RefusalCopy"
+import { MAX_TOOL_RESULT_BYTES, utf8Bytes } from "../state/AgentTurnPolicy"
 import { canonicalCommandName } from "./CommandName"
 import type { CommandRegistry } from "./Commands"
-import type { CatalogItem, FlowEntry } from "./registry"
+import type { CatalogItem, CommandState, FlowEntry } from "./registry"
 import { disclosedToAgent, itemOf } from "./registry"
 
 export type { AgentToolSpec }
@@ -115,13 +116,18 @@ export const commandsToolSpec: AgentToolSpec = {
   type: "function",
   name: "commands",
   description: "action \"list\" returns {state, commands}: the live app state (surface, whether work is " +
-    "connected, whether a turn is streaming) and every command callable right now. " +
+    "connected, whether a turn is streaming) and every command callable right now; an optional " +
+    "\"namespace\" narrows it to one namespace with every command's args. " +
     "action \"execute\" runs one command by name through the same code path the UI buttons " +
     "and slash commands use.",
   parameters: {
     type: "object",
     properties: {
       action: { type: "string", enum: ["list", "execute"], description: "list commands or execute one." },
+      namespace: {
+        type: "string",
+        description: "For list: only the commands in this namespace, the part of the name before the first dot (repo, search, target)."
+      },
       name: {
         type: "string",
         description:
@@ -136,6 +142,29 @@ export const commandsToolSpec: AgentToolSpec = {
 
 export const agentToolSpecs: ReadonlyArray<AgentToolSpec> = [commandsToolSpec]
 
+const ARGS_OMITTED_NOTE = "args omitted to fit the tool-result limit; list one namespace ({\"action\":\"list\",\"namespace\":\"repo\"}) to see them"
+const SUMMARIES_OMITTED_NOTE = "summaries and args omitted to fit the tool-result limit; list one namespace to see them"
+
+/*
+ * The list must reach the model whole. Both tool loops cut every result at
+ * MAX_TOOL_RESULT_BYTES; the full registry rendered with args measured 20 to
+ * 23 KiB, so the model got a 16 KiB prefix that did not parse and lost the
+ * tail namespaces (search.*, repo.*, target.*) — its only discovery channel
+ * once the prompt is in stage 3. Render the fullest shape that fits, and when
+ * fields go, the note says how to get them back.
+ */
+const listResult = (state: CommandState, catalog: ReturnType<typeof agentVisibleCatalog>): string => {
+  const full = JSON.stringify({ state, commands: catalog })
+  if (utf8Bytes(full) <= MAX_TOOL_RESULT_BYTES) return full
+  const withoutArgs = JSON.stringify({
+    state,
+    note: ARGS_OMITTED_NOTE,
+    commands: catalog.map(({ name, summary }) => ({ name, summary }))
+  })
+  if (utf8Bytes(withoutArgs) <= MAX_TOOL_RESULT_BYTES) return withoutArgs
+  return JSON.stringify({ state, note: SUMMARIES_OMITTED_NOTE, commands: catalog.map(({ name }) => ({ name })) })
+}
+
 /**
  * Execute one model tool call through the app's command dispatch. Results are
  * honest strings — "executed /name", "unknown-command: name", "failed: <error>"
@@ -147,7 +176,7 @@ export const executeAgentToolCall = async (
   call: AgentToolCall
 ): Promise<string> => {
   if (call.name !== commandsToolSpec.name) return `unknown-tool: ${call.name}`
-  let input: { readonly action?: unknown; readonly name?: unknown; readonly args?: unknown }
+  let input: { readonly action?: unknown; readonly name?: unknown; readonly args?: unknown; readonly namespace?: unknown }
   try {
     input = JSON.parse(call.arguments) as typeof input
   } catch {
@@ -157,14 +186,11 @@ export const executeAgentToolCall = async (
     return "failed: the commands tool arguments must be an object"
   }
   if (input.action === "list") {
-    return JSON.stringify({
-      state: registry.state(),
-      commands: agentVisible(registry.callable()).map((command) => ({
-        name: command.name,
-        summary: command.summary,
-        ...(command.args === undefined ? {} : { acceptsArgs: true, args: command.args })
-      }))
-    })
+    const namespace = typeof input.namespace === "string" ? canonicalCommandName(input.namespace).replace(/\.$/u, "") : ""
+    const catalog = agentVisibleCatalog(registry.callable()).filter(
+      (command) => namespace === "" || command.name === namespace || command.name.startsWith(`${namespace}.`)
+    )
+    return listResult(registry.state(), catalog)
   }
   if (input.action !== "execute") {
     return "failed: the commands tool action must be \"list\" or \"execute\""
