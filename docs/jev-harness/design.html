@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Harness: Design</title>
+<style>
+:root{--bg:#fff;--fg:#111;--muted:#666;--line:#ddd;--code:#f5f5f5;--accent:#0b5fff}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--muted:#aaa;--line:#333;--code:#1b1b1b;--accent:#6aa0ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:32px 16px 96px}
+nav{font-size:13px;color:var(--muted);margin-bottom:24px}nav a{color:var(--accent);text-decoration:none;margin-right:12px}
+h1{font-size:28px;margin:0 0 8px}h2{font-size:20px;margin:40px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:16px;margin:24px 0 6px}
+p{margin:8px 0}ul,ol{margin:6px 0 6px 22px}li{margin:3px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--code)}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre{background:var(--code);padding:12px;border-radius:6px;overflow:auto;font-size:13px;line-height:1.4}pre code{padding:0;background:none}
+.meta{color:var(--muted);font-size:13px}.note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--code);margin:10px 0}
+/* mock of the OpenCode app */
+.mock{display:grid;grid-template-columns:220px 1fr;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;background:#141414;color:#e6e6e6;font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;margin:12px 0}
+.mock .side{background:#0f0f0f;border-right:1px solid #2a2a2a;padding:10px}
+.mock .side h4{margin:0 0 8px;font-size:11px;letter-spacing:.06em;color:#8a8a8a;text-transform:uppercase}
+.mock .sess{padding:6px 8px;border-radius:6px;margin:2px 0;display:flex;gap:8px;align-items:center}
+.mock .sess.active{background:#232323}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
+.g{background:#3fbf5f}.y{background:#e0b13a}.r{background:#e0533a}.gr{background:#777}
+.mock .head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #2a2a2a;background:#171717}
+.mock .head .t{font-weight:600;display:flex;gap:8px;align-items:center}
+.mock .head .m{color:#8a8a8a;font-size:12px}
+.mock .tl{padding:14px;display:flex;flex-direction:column;gap:10px}
+.mock .u{align-self:flex-end;background:#26324a;padding:8px 12px;border-radius:10px;max-width:70%}
+.mock .card{border:1px solid #2c2c2c;border-radius:8px;background:#1b1b1b}
+.mock .card .h{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid #262626;color:#cfcfcf}
+.mock .card .h .n{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9ec1ff}
+.mock .card .h .title{color:#bdbdbd}
+.mock .card .b{padding:8px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap;color:#c8c8c8}
+.mock .diff .del{color:#ff8a80}.mock .diff .add{color:#8ee79a}
+.mock .txt{padding:4px 2px;max-width:80%}
+.mock .comp{margin:8px 14px 14px;border:1px solid #2c2c2c;border-radius:8px;background:#101010}
+.mock .perm{border-bottom:1px solid #2c2c2c;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+.mock .btn{border:1px solid #3a3a3a;border-radius:6px;padding:3px 8px;margin-left:6px;color:#ddd;background:#1c1c1c}
+.mock .comp .in{padding:10px;color:#777}
+.badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:10px;background:#2a2a2a;color:#bbb;margin-left:6px}
+.prob{display:grid;grid-template-columns:110px 1fr 46px;gap:6px;align-items:center;font-size:12px}
+.bar{height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:#5b8def}
+</style>
+</head>
+<body><main>
+<nav><a href="research.html">Research</a><a href="product.html">Product</a><a href="design.html">Design</a><a href="engineering.html">Engineering</a></nav>
+<h1>Jev Harness: Design</h1>
+<p class="meta">Draft 1, 2026-09-17. Specifies every surface the product doc requires (R1 to R12): user flows, the UI as OpenCode renders it, the health color, the <code>Classifier</code> API, the cell-facing <code>classify</code> flows, and the server contract. Requirement ids are cited inline.</p>
+
+<h2>1. User flows</h2>
+<table>
+<tr><th>Flow</th><th>Steps</th><th>Requirements</th></tr>
+<tr><td><strong>F1 Start</strong></td><td><code>cd repo && smithers opencode</code>. Prints <code>Serving /Users/will/repo at http://localhost:4096 → open https://app.opencode.ai</code>. The app connects to its default server URL. If a password is set via <code>OPENCODE_SERVER_PASSWORD</code>, the app's connect dialog asks once.</td><td>R1, R2</td></tr>
+<tr><td><strong>F2 First session</strong></td><td>App lists sessions for the directory (empty at first). New session. Composer shows agent <code>smithers</code> and the seat as the model. Type a task. Enter.</td><td>R2, R3</td></tr>
+<tr><td><strong>F3 Working</strong></td><td>The user message appears. An assistant message opens. Each frame appends a <code>cell</code> card (the JavaScript the model wrote), then one card per <code>ctx.call</code> in order, rendered natively for file and shell calls, and a <code>classify</code> card for Jev calls. Prints show as the <code>cell</code> card's output. Status is busy.</td><td>R3, R4, R7</td></tr>
+<tr><td><strong>F4 Permission</strong></td><td>A guarded call parks the run. The composer shows OpenCode's permission card: <em>bash wants to run <code>pnpm test</code></em>, with Once, Always, Reject. The reply resumes the execution; the call runs once.</td><td>R5</td></tr>
+<tr><td><strong>F5 Health</strong></td><td>After each frame the title's dot updates. On a change a small <code>health</code> card appears in the timeline with a one-line reason. Sidebar dots show every session's state so the user picks where to look.</td><td>R9, R10</td></tr>
+<tr><td><strong>F6 Completion</strong></td><td><code>ctx.done(output)</code> renders as the assistant text. Status idle. Cost and tokens in the header. The dot turns green and stays.</td><td>R3, R12</td></tr>
+<tr><td><strong>F7 Interrupt and resume</strong></td><td>Interrupt aborts the fiber; status idle; the dot goes gray with reason <em>interrupted</em>. Killing the server and restarting: sessions and messages are reloaded from the store; a run that was mid-frame resumes from the journal without repeating settled calls.</td><td>R6, R11</td></tr>
+<tr><td><strong>F8 Follow-up</strong></td><td>A second prompt on an idle session starts a new run whose task carries the conversation tail (prior prompts and final answers) and the same workspace. While a run is busy, a new prompt is queued as steering and drained at the next frame boundary.</td><td>R3</td></tr>
+</table>
+
+<h2>2. The UI, as OpenCode renders it</h2>
+<p>Nothing below is built by us. Every element is an OpenCode component fed by our server. The mock shows the state of F3 with one Jev call, one permission ask, and a yellow health change.</p>
+
+<div class="mock">
+  <div class="side">
+    <h4>Sessions · smithers</h4>
+    <div class="sess active"><span class="dot y"></span> Fix flaky unit test</div>
+    <div class="sess"><span class="dot g"></span> Add rate limit header</div>
+    <div class="sess"><span class="dot r"></span> Migrate config loader</div>
+    <div class="sess"><span class="dot gr"></span> Explain the journal</div>
+  </div>
+  <div>
+    <div class="head">
+      <div class="t"><span class="dot y"></span> Fix flaky unit test <span class="badge">busy</span></div>
+      <div class="m">smithers · claude-opus-5 · $0.31 · 41k in / 6k out</div>
+    </div>
+    <div class="tl">
+      <div class="u">The test <code>tests/test_widen.py::test_keeps_unit</code> is flaky. Find the cause and fix it.</div>
+
+      <div class="card"><div class="h"><span class="n">cell</span><span class="title">frame 3 · 2 calls · read-only</span></div>
+<div class="b">const hits = await ctx.call("grep", { pattern: "test_keeps_unit", root: "tests" })
+const files = await ctx.call("glob", { pattern: "src/units/**/*.py" })
+console.log(hits.matches.length, files.paths.length)</div></div>
+
+      <div class="card"><div class="h"><span class="n">grep</span><span class="title">test_keeps_unit in tests</span></div><div class="b">tests/test_widen.py:41: def test_keeps_unit():</div></div>
+      <div class="card"><div class="h"><span class="n">glob</span><span class="title">src/units/**/*.py</span></div><div class="b">14 files</div></div>
+
+      <div class="card"><div class="h"><span class="n">cell</span><span class="title">frame 4 · 2 calls · read-only</span></div>
+<div class="b">const excerpts = await Promise.all(files.paths.map(p => ctx.call("read", { path: p, limit: 60 })))
+const verdicts = await ctx.call("classify", {
+  states: excerpts.map((e, i) => ({ task, file: files.paths[i], excerpt: e.content })),
+  questions: {
+    relevant: { type: "boolean", instructions: "Does this file need to change to fix the flaky test?" },
+    role: { type: "choice", instructions: "What is this file's role?", criteria: { implementation: "code under test", fixture: "test data or setup", unrelated: "nothing to do with the test" } }
+  }
+})
+const targets = verdicts.results.filter(r => r.ok && r.answers.relevant.probability > 0.7).map(r => r.state.file)
+console.log(targets)</div></div>
+
+      <div class="card"><div class="h"><span class="n">classify</span><span class="title">14 states · 2 questions · 0.4 s · $0.0005</span></div>
+<div class="b"><div class="prob"><span>src/units/widen.py</span><div class="bar"><i style="width:94%"></i></div><span>0.94</span></div><div class="prob"><span>src/units/convert.py</span><div class="bar"><i style="width:31%"></i></div><span>0.31</span></div><div class="prob"><span>12 more</span><div class="bar"><i style="width:4%"></i></div><span>≤ 0.08</span></div></div></div>
+
+      <div class="card"><div class="h"><span class="n">health</span><span class="title"><span class="dot y"></span> exploring · 4 frames, no edit yet · confidence 0.81</span></div><div class="b">progress: exploring (0.62) · stuck: 0.12 · needsHuman: 0.04</div></div>
+
+      <div class="card"><div class="h"><span class="n">cell</span><span class="title">frame 5 · 3 calls · 1 edit</span></div>
+<div class="b">const anchor = hit.text
+const applied = await ctx.call("edit", { path: "src/units/widen.py", oldString: anchor, newString: anchor.replace("return value", "return widen(value)") })
+const before = await ctx.call("bash", { command: "pytest tests/test_widen.py::test_keeps_unit -q" }, { at: ctx.base })
+const after  = await ctx.call("bash", { command: "pytest tests/test_widen.py::test_keeps_unit -q" })</div></div>
+
+      <div class="card diff"><div class="h"><span class="n">edit</span><span class="title">src/units/widen.py</span></div><div class="b"><span class="del">-    return value</span>
+<span class="add">+    return widen(value)</span></div></div>
+    </div>
+    <div class="comp">
+      <div class="perm"><span><strong>bash</strong> wants to run <code>pytest tests/test_widen.py::test_keeps_unit -q</code></span><span><span class="btn">Once</span><span class="btn">Always</span><span class="btn">Reject</span></span></div>
+      <div class="in">Message smithers…</div>
+    </div>
+  </div>
+</div>
+
+<h3>2.1 Rendering rules</h3>
+<table>
+<tr><th>Harness fact</th><th>OpenCode element</th><th>Fields</th></tr>
+<tr><td>Frame's cell source (<code>CellProduced</code>)</td><td>tool item <code>cell</code></td><td>input <code>{source, frame}</code>; title <code>frame N · K calls · read-only | M edits</code>; output = the cell's prints (<code>CellPrinted</code>); error state if the cell threw.</td></tr>
+<tr><td>Each <code>ctx.call</code> (<code>CellCallStarted</code> / <code>CellCallSettled</code>)</td><td>tool item named after the flow</td><td><code>read</code>, <code>edit</code>, <code>write</code>, <code>bash</code>, <code>grep</code>, <code>glob</code>, <code>apply_patch</code> keep their names and get OpenCode's rich cards; <code>ls</code> is emitted as <code>list</code>; any other flow uses the basic card. Input is the call input; output is the result rendered as text; <code>structured</code> carries the raw result. A refused call is an error state with the refusal code and hint.</td></tr>
+<tr><td>Jev call</td><td>tool item <code>classify</code></td><td>title <code>N states · Q questions · time · cost</code>; output = one line per state with the leading answer and probability; <code>structured</code> = full answers.</td></tr>
+<tr><td>Model text outside the cell block</td><td>reasoning content</td><td>streamed with <code>session.reasoning.delta</code>; collapsed by default.</td></tr>
+<tr><td><code>ctx.done(output)</code> (<code>Resolved</code>)</td><td>assistant text</td><td>streamed as one text item; step ended; status idle.</td></tr>
+<tr><td><code>ctx.park</code> waiting-input</td><td>question card</td><td><code>question.v2.asked</code>; the reply is steered into the run.</td></tr>
+<tr><td><code>PermissionRequired</code></td><td>permission card</td><td><code>permission.v2.asked</code> with <code>action</code> = flow name, <code>resources</code> = the patterns, <code>source</code> = the call's tool item.</td></tr>
+<tr><td>Discipline demand (read-only, repeat, unmoved, narrowed, unresolved)</td><td>tool item <code>demand</code></td><td>title is the demand name and streak; output is the demand text the model was shown.</td></tr>
+<tr><td>Health change</td><td>tool item <code>health</code> and <code>session.renamed</code></td><td>see section 3.</td></tr>
+<tr><td>Budget, quota park, model retry</td><td><code>session.retry.scheduled</code></td><td>attempt, message, next wake time.</td></tr>
+</table>
+<p><strong>Copy rule.</strong> Titles carry the fewest words needed to act. No provenance footers. Numbers only where they change what the reader does.</p>
+
+<h2>3. Health color</h2>
+<p>One Jev evaluation per frame, from the server, never from the cell. It reads the run and answers three questions; the color is a pure function of the answers and the frame facts the harness already journals.</p>
+<h3>3.1 State sent to Jev</h3>
+<pre><code>{
+  task: string,                       // the prompt, first 2 KiB
+  frame: number, maxFrames: number,
+  framesSinceEdit: number,            // from MutationObserved
+  demands: string[],                  // discipline demands issued so far, newest last
+  lastCalls: [{ flow, ok, summary }], // last 12 calls, one line each
+  lastPrints: string,                 // last 2 KiB the model printed to itself
+  parked: "none" | "permission" | "question" | "quota",
+  lastTransition: "continue" | "complete" | "park"
+}</code></pre>
+<h3>3.2 Questions</h3>
+<pre><code>progress:   { type: "score",   instructions: "Where is this run?", criteria: ["stuck", "exploring", "progressing", "verifying", "done"] }
+stuck:      { type: "boolean", instructions: "Is the run repeating itself or reading without acting?" }
+needsHuman: { type: "boolean", instructions: "Does the run need a person to answer, approve, or decide before it can continue?" }</code></pre>
+<h3>3.3 Color</h3>
+<table>
+<tr><th>Color</th><th>Rule (first match wins)</th><th>Reason line</th></tr>
+<tr><td><span class="dot r"></span> red</td><td><code>parked !== "none"</code>, or <code>needsHuman.probability ≥ 0.7</code>, or a discipline cap ended the run</td><td><em>waiting for approval</em>, <em>needs you: …</em>, <em>stopped: read-only cap</em></td></tr>
+<tr><td><span class="dot y"></span> yellow</td><td><code>stuck.probability ≥ 0.6</code>, or <code>progress.score ≤ 1</code> with <code>framesSinceEdit ≥ 4</code>, or a demand was issued this frame</td><td><em>exploring · 4 frames, no edit yet</em>, <em>repeating the same check</em></td></tr>
+<tr><td><span class="dot g"></span> green</td><td>otherwise, including <code>done</code></td><td><em>progressing</em>, <em>verifying</em>, <em>done</em></td></tr>
+<tr><td><span class="dot gr"></span> gray</td><td>Jev unreachable, refused, timed out, or <code>confidence &lt; 0.5</code> on every question; also interrupted or idle before the first frame</td><td><em>health unavailable</em>, <em>interrupted</em></td></tr>
+</table>
+<p><strong>Rendering.</strong> The dot is a prefix on the session title (<code>session.renamed</code> with <code>🟢 Fix flaky unit test</code>), which is what the sidebar and header show without any UI change. A <code>health</code> tool item is emitted only on a color change, with the reason line as its title and the three answers as its output. The dot is removed from the title when the session is archived.</p>
+<p><strong>Cost and timing.</strong> One call per frame, about 900 input tokens, under $0.00005 and under 0.5 s, run concurrently with the next model call so it never delays the loop. Deadline 1.5 s. Failure never touches the run (R10).</p>
+
+<h2>4. <code>Classifier</code>, the one new core API</h2>
+<p>Lives in <code>@smthrs/model</code> as <code>Classifier.ts</code> with its transport in <code>Evaluator.ts</code>. Effect Schema declares the state and the questions; the answer type is inferred; the transport is a service so Jev over the Vercel gateway is one layer and a scripted evaluator is another (R8).</p>
+<pre><code>import * as Classifier from "@smthrs/model/Classifier"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Effect, Layer, Schema } from "effect"
+
+export const Relevance = Classifier.make("triage/relevance", {
+  description: "Whether a file must change for the task, and its role.",
+  state: Schema.Struct({ task: Schema.String, file: Schema.String, excerpt: Schema.String }),
+  questions: {
+    relevant: Classifier.boolean({
+      instructions: "Does this file need to change for the task?",
+      criteria: { true: "the fix or its test lives here", false: "unrelated or only imported" }
+    }),
+    role: Classifier.choice({
+      instructions: "What is this file's role?",
+      criteria: { implementation: "code under test", fixture: "test data or setup", unrelated: "nothing to do with the task" }
+    }),
+    risk: Classifier.score({
+      instructions: "How risky is editing this file?",
+      criteria: ["none", "low", "medium", "high"]
+    })
+  }
+})
+
+// Inferred:
+// Relevance.Answer = {
+//   relevant: { value: boolean; probability: number },
+//   role:     { value: "implementation" | "fixture" | "unrelated"; probabilities: Record&lt;..., number&gt;; confidence: number },
+//   risk:     { value: number; label: "none" | "low" | "medium" | "high"; probabilities: Record&lt;string, number&gt;; confidence: number }
+// }
+
+const program = Effect.gen(function*() {
+  const answer = yield* Relevance.evaluate({ task, file, excerpt })          // Effect&lt;Answer, ClassifierError, Evaluator&gt;
+  const many   = yield* Relevance.evaluateAll(states, { concurrency: 8 })    // Effect&lt;ReadonlyArray&lt;Result&lt;Answer, ClassifierError&gt;&gt;, never, Evaluator&gt;
+  return Classifier.confident(answer.role, 0.7)                              // Option&lt;"implementation" | ...&gt;
+})
+
+// Production: Jev through the Vercel AI Gateway. Key from the environment, zero data retention on.
+const live = Evaluator.layerVercelGateway({ apiKey: Config.redacted("AI_GATEWAY_API_KEY"), model: "typesafe-ai/jev", timeoutMs: 1500 })
+// Tests: scripted answers, no network.
+const scripted = Evaluator.layerScripted((request) => ({ relevant: { probability: 0.9 }, role: { choice: "implementation" }, risk: { score: 1 } }))</code></pre>
+<table>
+<tr><th>Surface</th><th>Contract</th></tr>
+<tr><td><code>Classifier.make(id, { description, state, questions })</code></td><td>Returns <code>{ id, description, state, questions, evaluate, evaluateAll, digest }</code>. <code>digest</code> is the canonical hash of the declaration, folded into the durable call key so a changed question never replays an old answer.</td></tr>
+<tr><td><code>Classifier.boolean</code> / <code>choice</code> / <code>score</code></td><td>Question constructors. <code>choice</code> keys become a literal union; <code>score</code> criteria become rung labels; at most 255 choice keys, at least 2 score rungs, enforced at construction.</td></tr>
+<tr><td><code>Classifier.Question</code>, <code>Classifier.Answer</code></td><td>Effect Schemas for the ad-hoc path, so a model-authored question is decoded before it reaches the transport.</td></tr>
+<tr><td><code>Evaluator.Evaluator</code></td><td>Service with one method <code>evaluate({ state, questions }) → Effect&lt;{ answers, usage?, latencyMs }, EvaluatorError&gt;</code>.</td></tr>
+<tr><td><code>Evaluator.layerVercelGateway(options)</code></td><td>The wire protocol from <code>apps/server/src/jev.ts</code> over <code>@smthrs/kernel/HttpClient</code>. Options: <code>apiKey</code>, <code>model</code>, <code>timeoutMs</code>, <code>zeroDataRetention</code> (default true), <code>baseUrl</code>.</td></tr>
+<tr><td><code>Evaluator.layerScripted(fn)</code>, <code>Evaluator.layerUnavailable()</code></td><td>Tests and hosts without a key.</td></tr>
+<tr><td><code>ClassifierError</code></td><td><code>{ code: "unreachable" | "refused" | "empty" | "timeout" | "invalid_answer" | "invalid_question", status?, message }</code>. Typed, never thrown.</td></tr>
+<tr><td><code>Classifier.confident(answer, floor)</code></td><td><code>Option</code> of the value when confidence (or the boolean's distance from 0.5, doubled) is at or above the floor.</td></tr>
+</table>
+
+<h2>5. The cell-facing doors</h2>
+<p>The agent reaches Jev the way it reaches a subagent: through <code>ctx.call</code> (R7). Two flows, both from one <code>FlowBinding.source("std/classify", …)</code> added to <code>StandardFlows</code>.</p>
+<h3>5.1 <code>classify</code>: model-authored questions</h3>
+<pre><code>// Input (one of):
+{ state: Json, questions: Record&lt;string, Question&gt; }
+{ states: Json[], questions: Record&lt;string, Question&gt; }        // batched, evaluated concurrently, ≤ 64 states
+
+// Output:
+{ answers: Record&lt;string, Answer&gt;, confidence: Record&lt;string, number&gt;, latencyMs }
+{ results: Array&lt;{ ok: true, state, answers, confidence } | { ok: false, state, error }&gt; }</code></pre>
+<pre><code>// What the model reads in ctx.flows (kept to two lines, paid for under the concierge cap):
+classify — Ask Jev typed questions about any JSON state: boolean, choice (named options), or score (ordered rubric).
+           Answers carry probabilities and confidence. Batch with `states` to judge many things in one call. No text comes back.</code></pre>
+<h3>5.2 <code>classify/&lt;id&gt;</code>: curated classifiers</h3>
+<p><code>StandardFlows.classify([Relevance, CheckVerdict, …])</code> registers one flow per declared classifier, named <code>classify/triage/relevance</code>, whose input schema is the classifier's <code>state</code> (or <code>{ states }</code>) and whose description is the classifier's. The catalog shows the model exactly what each one judges. Day one ships three: <code>triage/relevance</code>, <code>check/verdict</code> (did this command fail for the right reason), <code>edit/risk</code>.</p>
+<h3>5.3 Durability</h3>
+<p>Every <code>classify</code> call is an ordinary sealed call: content-addressed on the classifier digest, the state, and the questions, so a resumed run replays the answer without paying Jev again, and a changed question is a new key.</p>
+
+<h2>6. Server contract</h2>
+<p>The server speaks OpenCode protocol v2 only. Routes, shapes, and events are the ones in the research doc section 3.3 and 3.4. This section fixes our behavior for each.</p>
+<table>
+<tr><th>Route</th><th>Our behavior</th></tr>
+<tr><td><code>GET /api/health</code></td><td><code>{healthy: true, version: "&lt;smithers version&gt;", pid}</code></td></tr>
+<tr><td><code>GET /api/location</code>, <code>/api/path</code>, <code>/api/project</code>, <code>/api/project/current</code>, <code>/api/vcs</code></td><td>One project: the served directory. <code>projectID</code> = hash of the absolute path. <code>vcs</code> from <code>git rev-parse</code> when present.</td></tr>
+<tr><td><code>GET /api/agent</code></td><td>One agent <code>smithers</code>, mode <code>primary</code>, <code>color</code> from the seat, permissions empty (the harness decides).</td></tr>
+<tr><td><code>GET /api/model</code>, <code>GET /api/provider</code></td><td>Every seat the resolver can serve, as <code>{id, providerID}</code> with the provider from the seat prefix. The session's model is the seat.</td></tr>
+<tr><td><code>GET /api/command</code>, <code>/api/skill</code>, <code>/api/mcp</code>, <code>/api/reference</code>, <code>/api/pty/shells</code></td><td>Empty located lists.</td></tr>
+<tr><td><code>GET /api/session</code>, <code>/api/session/active</code>, <code>GET|DELETE /api/session/:id</code></td><td>From the session store, newest first, cursor = base64 of the anchor. Active = sessions with a running fiber.</td></tr>
+<tr><td><code>POST /api/session</code></td><td>Creates <code>ses_…</code>; title <code>New session</code> until the first prompt, then the first 60 characters of the prompt with the health dot prefix.</td></tr>
+<tr><td><code>POST /api/session/:id/prompt</code></td><td>Appends the user message (<code>session.input.admitted</code>), starts a run if idle, else steers. Returns 200 at once.</td></tr>
+<tr><td><code>POST /api/session/:id/interrupt</code></td><td>Interrupts the run fiber; <code>session.execution.interrupted</code>.</td></tr>
+<tr><td><code>POST /api/session/:id/rename</code> / <code>archive</code></td><td>Updates the store; rename keeps the dot prefix.</td></tr>
+<tr><td><code>GET /api/session/:id/message</code></td><td>From the projected message store; cursor = message id.</td></tr>
+<tr><td><code>POST /api/session/:id/permission/:requestID/reply</code></td><td><code>once</code> grants the call; <code>always</code> installs a grant for the flow and pattern for the session; <code>reject</code> fails the call with <code>permission_denied</code> and the cell continues. Then the parked execution is resumed.</td></tr>
+<tr><td><code>POST /api/session/:id/question/:requestID/reply</code></td><td>Steers the text into the parked run and resumes it.</td></tr>
+<tr><td><code>GET /api/event</code></td><td>SSE; first event <code>server.connected</code>; heartbeat comment every 15 s; events for every session of the directory.</td></tr>
+<tr><td>CORS</td><td>Allow <code>https://*.opencode.ai</code>, <code>http://localhost:*</code>, <code>http://127.0.0.1:*</code>, plus <code>--cors</code>.</td></tr>
+<tr><td>Auth</td><td>Basic auth when <code>OPENCODE_SERVER_PASSWORD</code> is set; <code>/api/health</code> stays open.</td></tr>
+</table>
+
+<h3>6.1 Event mapping</h3>
+<table>
+<tr><th>Harness event</th><th>Emitted OpenCode events</th></tr>
+<tr><td>prompt accepted</td><td><code>session.input.admitted</code>, <code>session.execution.started</code>, <code>session.step.started</code> (new assistant message id)</td></tr>
+<tr><td><code>ModelDelta</code> (text outside the cell block)</td><td><code>session.reasoning.started</code> once, then <code>session.reasoning.delta</code></td></tr>
+<tr><td><code>CellProduced</code></td><td><code>session.tool.called</code> {tool: "cell", input: {source, frame}}</td></tr>
+<tr><td><code>CellCallStarted</code> / <code>CellCallSettled</code></td><td><code>session.tool.called</code> / <code>session.tool.success</code> or <code>session.tool.failed</code> with the flow name</td></tr>
+<tr><td><code>CellPrinted</code>, <code>CellSettled</code></td><td><code>session.tool.success</code> for the <code>cell</code> item (output = prints) or <code>session.tool.failed</code> when the cell threw</td></tr>
+<tr><td><code>*Demanded</code></td><td><code>session.tool.called</code> + <code>session.tool.success</code> for a <code>demand</code> item</td></tr>
+<tr><td><code>PermissionRequired</code></td><td><code>permission.v2.asked</code>; on reply <code>permission.v2.replied</code></td></tr>
+<tr><td><code>Suspended</code> (question)</td><td><code>question.v2.asked</code></td></tr>
+<tr><td><code>Resolved</code></td><td><code>session.text.started</code>, <code>delta</code>, <code>ended</code>; <code>session.step.ended</code>; <code>session.execution.succeeded</code>; <code>session.usage.updated</code></td></tr>
+<tr><td><code>Aborted</code> / failure</td><td><code>session.execution.interrupted</code> / <code>failed</code></td></tr>
+<tr><td><code>ModelRetried</code>, quota park</td><td><code>session.retry.scheduled</code></td></tr>
+<tr><td>health change</td><td><code>session.renamed</code>, plus a <code>health</code> tool item</td></tr>
+<tr><td>every event</td><td>envelope <code>{id: "evt_…", created, type, data, location: {directory}, durable: {aggregateID: sessionID, seq, version: 1}}</code></td></tr>
+</table>
+
+<h2>7. CLI and configuration</h2>
+<pre><code>smithers opencode [directory]
+  --port 4096            # default 4096, the app's default
+  --hostname 127.0.0.1   # loopback only unless --listen
+  --cors https://…       # extra origins
+  --seat anthropic:claude-opus-5
+  --max-frames 100
+
+env: ANTHROPIC_API_KEY / OPENAI_API_KEY (seat), AI_GATEWAY_API_KEY (Jev; optional, classify and health degrade without it), OPENCODE_SERVER_PASSWORD (optional)
+state: &lt;directory&gt;/.smithers/opencode.sqlite (sessions, messages, journal)</code></pre>
+
+<h2>8. Error states</h2>
+<table>
+<tr><th>Condition</th><th>What the user sees</th></tr>
+<tr><td>No seat key</td><td>Prompt is refused with <code>session.execution.failed</code> and the message <em>No model key. Set ANTHROPIC_API_KEY or OPENAI_API_KEY and restart.</em></td></tr>
+<tr><td>No gateway key</td><td><code>classify</code> resolves <code>{ok: false, error: {code: "unreachable"}}</code>; health dot gray with <em>health unavailable</em>. Everything else works.</td></tr>
+<tr><td>Provider quota</td><td><code>session.retry.scheduled</code> with the wake time; the run parks durably.</td></tr>
+<tr><td>Frame budget spent</td><td>Assistant text states the budget; dot red with <em>stopped: frame budget</em>.</td></tr>
+<tr><td>Server restarted mid-run</td><td>Session reloads; status busy; the run resumes from the journal; no duplicate tool cards.</td></tr>
+<tr><td>App cannot reach localhost (mixed content)</td><td>OpenCode's own connect dialog; our start banner tells the user to use Chrome or Firefox, or to run <code>smithers opencode --serve-app</code> when that fallback exists.</td></tr>
+</table>
+</main></body></html>

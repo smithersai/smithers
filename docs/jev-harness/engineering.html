@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Harness: Engineering</title>
+<style>
+:root{--bg:#fff;--fg:#111;--muted:#666;--line:#ddd;--code:#f5f5f5;--accent:#0b5fff}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--muted:#aaa;--line:#333;--code:#1b1b1b;--accent:#6aa0ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:32px 16px 96px}
+nav{font-size:13px;color:var(--muted);margin-bottom:24px}nav a{color:var(--accent);text-decoration:none;margin-right:12px}
+h1{font-size:28px;margin:0 0 8px}h2{font-size:20px;margin:40px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:16px;margin:24px 0 6px}
+p{margin:8px 0}ul,ol{margin:6px 0 6px 22px}li{margin:3px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--code)}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre{background:var(--code);padding:12px;border-radius:6px;overflow:auto;font-size:13px;line-height:1.4}pre code{padding:0;background:none}
+.meta{color:var(--muted);font-size:13px}.note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--code);margin:10px 0}.warn{border-left:3px solid #d33;padding:6px 12px;background:var(--code);margin:10px 0}
+</style>
+</head>
+<body><main>
+<nav><a href="research.html">Research</a><a href="product.html">Product</a><a href="design.html">Design</a><a href="engineering.html">Engineering</a></nav>
+<h1>Jev Harness: Engineering</h1>
+<p class="meta">Draft 1, 2026-09-17. How the design doc gets built: what is new, what is reused, in what order, how it is tested, and what can go wrong. The build breakdown and the monitoring plan are separate steps after this doc is approved.</p>
+
+<p><strong>Summary.</strong> One new package, <code>@smthrs/opencode</code>, serves OpenCode protocol v2 over the existing <code>Agent.run</code> stream on the existing durable engine. One new core module, <code>Classifier</code> in <code>@smthrs/model</code>, wraps Jev behind an Effect service. One new flow source, <code>StandardFlows.classify</code>, gives cells the door. Health is a projection inside the server package. Nothing in <code>apps/</code> changes. The walking skeleton is health, session create, prompt, and a streamed text answer; everything after that is a projection or a binding.</p>
+
+<h2>1. Principles</h2>
+<ul>
+<li><strong>Walking skeleton first.</strong> The hosted app must show a streamed answer from the real cell loop before any tool card, permission, classifier, or dot exists.</li>
+<li><strong>Transcribe, do not import.</strong> OpenCode's protocol is Effect 4 beta 83 with identity-keyed schemas; we are on rc.115. We copy the endpoint and schema shapes we need into our package as our own Effect Schema and check them against OpenCode's OpenAPI and protocol sources in a contract test. No <code>@opencode-ai/*</code> runtime dependency in the server; the typed clients are dev dependencies for tests only.</li>
+<li><strong>One loop.</strong> The server is an adapter over <code>Agent.run</code>, the same as <code>AgentSession</code> and <code>AgentAction</code>. It never reimplements a frame.</li>
+<li><strong>Jev is advisory.</strong> Health never blocks a run; <code>classify</code> answers are data the cell branches on; permissions and completion stay with the harness and the person.</li>
+<li><strong>Least code.</strong> Reuse <code>FlowEngine</code> and the SQLite engine store from <code>NodeControl</code>, the Jev wire client from <code>apps/server/src/jev.ts</code> (copied into the Effect module, then the old sites migrate later), <code>StandardFlows</code> for capabilities, and OpenCode's app and typed clients for UI and tests.</li>
+</ul>
+
+<h2>2. Architecture</h2>
+<pre><code>https://app.opencode.ai  ── fetch / SSE ──▶  @smthrs/opencode server  (Node, Effect HttpRouter, :4096)
+                                              │
+                                              ├─ Api.ts          routes: /api/health /api/session… /api/event  (protocol v2, transcribed)
+                                              ├─ Store.ts        sessions + projected messages     (SQLite, same file as the engine store)
+                                              ├─ Projection.ts   Stream&lt;AgentEvent&gt; → OpenCode events + message store
+                                              ├─ Runs.ts         one Agent.run per prompt: seat, flows, limits, steering, permissions
+                                              ├─ Health.ts       per-frame Classifier("harness/health") → color → session.renamed + health item
+                                              └─ Cors.ts Auth.ts
+                                              │
+                          @smthrs/agent  Agent.run ── FlowEngine (SQLite) ── QuickJS sandbox
+                                              │  flows: StandardFlows.filesystem/shell/tests/clock/approval + StandardFlows.classify
+                                              │
+                          @smthrs/model  Classifier.ts  Evaluator.ts ── Evaluator.layerVercelGateway ──▶ ai-gateway.vercel.sh (typesafe-ai/jev)</code></pre>
+
+<h2>3. Code inventory</h2>
+<table>
+<tr><th>Where</th><th>New or changed</th><th>What</th><th>Size</th></tr>
+<tr><td><code>packages/smithers/agent/model/src/Classifier.ts</code></td><td>new</td><td><code>make</code>, question constructors, answer decoding, <code>confident</code>, declaration digest. Pure; depends on Schema and <code>Evaluator</code>.</td><td>~300 lines</td></tr>
+<tr><td><code>packages/smithers/agent/model/src/Evaluator.ts</code></td><td>new</td><td><code>Evaluator</code> service; <code>layerVercelGateway</code> over <code>@smthrs/kernel/HttpClient</code> with the headers and body from <code>apps/server/src/jev.ts</code>; <code>layerScripted</code>; <code>layerUnavailable</code>; <code>EvaluatorError</code>.</td><td>~200 lines</td></tr>
+<tr><td><code>packages/smithers/agent/model/src/index.ts</code>, docs, PACKAGE.ts</td><td>changed</td><td>export the two modules; <code>pnpm docs:llms</code>, <code>check-docs</code>, <code>check-llms</code> pass.</td><td>small</td></tr>
+<tr><td><code>packages/smithers/agent/src/StandardFlows.ts</code></td><td>changed</td><td><code>classify(services, classifiers)</code>: the ad-hoc <code>classify</code> flow and one <code>classify/&lt;id&gt;</code> flow per classifier; batch with bounded concurrency; refusals as <code>{ok:false}</code>.</td><td>~150 lines</td></tr>
+<tr><td><code>packages/smithers/agent/std/src/Classify.ts</code></td><td>new</td><td>The flow declarations (input and output schemas, description text) so the catalog line is owned beside the other std flows.</td><td>~120 lines</td></tr>
+<tr><td><code>packages/smithers/opencode/</code></td><td>new package <code>@smthrs/opencode</code></td><td>Api, Store, Projection, Runs, Health, Cors, Auth, Events (SSE hub), Ids (<code>ses_</code>, <code>msg_</code>, <code>evt_</code>, <code>per_</code>), Serve (bind), a <code>bin</code> for <code>smithers opencode</code>.</td><td>~1500 lines</td></tr>
+<tr><td><code>packages/smithers/src/commands/OpenCode.ts</code></td><td>new</td><td>The CLI verb: parse flags, build the layer stack, print the banner, run.</td><td>~120 lines</td></tr>
+<tr><td><code>packages/smithers/opencode/test/</code></td><td>new</td><td>contract tests through <code>@opencode-ai/client</code>; projection tests with a scripted seat; replay test; health tests with a scripted evaluator.</td><td>~800 lines</td></tr>
+<tr><td><code>packages/smithers/opencode/e2e/</code></td><td>new</td><td>Playwright: OpenCode's app (pinned commit, built once into a fixture) against the real server.</td><td>~200 lines</td></tr>
+<tr><td><code>docs/jev-harness/</code></td><td>these docs</td><td>updated as facts land.</td><td></td></tr>
+</table>
+
+<h2>4. Component design</h2>
+<h3>4.1 Runs: one <code>Agent.run</code> per prompt</h3>
+<ul>
+<li>A session is a directory plus a lineage id. A prompt on an idle session starts a flow execution whose body is <code>Agent.run</code> with <code>session = sessionID</code>, <code>prompt = conversation tail + new text</code>, the seat from the session's model, <code>flows = [filesystem, shell, tests, clock, approval, classify]</code>, limits from the CLI, <code>readOnlyCap</code> armed, <code>approvalChannel = true</code>.</li>
+<li>A prompt on a busy session goes into the session's <code>Steering.Source</code> (the in-memory queue the harness drains at frame boundaries) and is also stored so a restart re-queues it.</li>
+<li>The execution id is the assistant message id, so the journal and the timeline share one key.</li>
+<li>Permission: the <code>authorize</code> hook registers a pending <code>per_…</code> request and fails with <code>Permission.PermissionRequired</code> before the boundary opens, the same shape <code>AgentSession</code> uses. The reply installs a grant in a per-session grant table, then re-drives the parked execution. <code>always</code> stores a rule for the flow and pattern; <code>reject</code> resolves the call as <code>permission_denied</code>.</li>
+<li>Interrupt is fiber interruption; the stream's <code>Aborted</code> event closes the projection.</li>
+<li>Restart: on boot, every session with a parked or running execution is re-driven from the engine; the projection replays journaled agent events into the message store so nothing renders twice (events carry the execution's ordinal as their idempotency key).</li>
+</ul>
+<h3>4.2 Projection: <code>AgentEvent</code> to OpenCode</h3>
+<ul>
+<li>A pure fold: <code>(state, AgentEvent) → (state, OpenCodeEvent[])</code>, table in the design doc section 6.1. Tested with recorded event fixtures from a real run.</li>
+<li>Ids: <code>msg_</code> per assistant message, one per prompt; tool item ids <code>prt_</code> derived from the call identity (<code>session/frame/cell/ordinal</code>) so a replayed call maps to the same item.</li>
+<li>The message store persists the folded messages so <code>GET /api/session/:id/message</code> is a read, not a replay.</li>
+<li>SSE hub: a broadcast per directory with a bounded replay buffer; a late subscriber gets <code>server.connected</code> and then live events; the app reloads history over HTTP on connect, so the buffer only covers reconnects.</li>
+</ul>
+<h3>4.3 Health</h3>
+<ul>
+<li>Declared as a curated classifier <code>harness/health</code> with the state and questions from the design doc section 3.</li>
+<li>Triggered on <code>CellSettled</code>; runs on its own fiber with a 1.5 s deadline; folds its answer into the session's health state; emits <code>session.renamed</code> and a <code>health</code> item only when the color changes.</li>
+<li>State inputs come from the projection's own fold (frames since edit from <code>MutationObserved</code>, demands, last calls, last prints), so health reads no engine internals.</li>
+</ul>
+<h3>4.4 Classifier and Evaluator</h3>
+<ul>
+<li><code>Evaluator.layerVercelGateway</code> is the Node and Worker safe transport: <code>HttpClient</code> from the kernel, one POST, a deadline, no retries (the caller decides), zero data retention on by default.</li>
+<li><code>Classifier.evaluateAll</code> fans out with <code>Effect.forEach({ concurrency })</code>; each state is its own request because Jev takes one state per call.</li>
+<li>Answer decoding: the transport returns raw answers; <code>Classifier</code> decodes them with the schema derived from the questions and fails typed <code>invalid_answer</code> on a mismatch.</li>
+<li>Later, not now: migrate <code>apps/server/src/jev.ts</code> and <code>JevSessionChecker.ts</code> onto the module.</li>
+</ul>
+
+<h2>5. Phases and exit criteria</h2>
+<p>Order, not dates. Each phase ends with a check a person can run.</p>
+<table>
+<tr><th>Phase</th><th>Builds</th><th>Exit check</th></tr>
+<tr><td><strong>S0 Trace spike</strong></td><td>A 40-line logging proxy in front of the installed <code>opencode serve</code>; drive the hosted app through connect, list, create, prompt, tool call, permission, done; save the request and event log to <code>docs/jev-harness/trace/</code>.</td><td>The route and event tables in the research doc match the log or are corrected.</td></tr>
+<tr><td><strong>S1 Skeleton</strong></td><td><code>@smthrs/opencode</code> with health, location, agent, model, session list and create, prompt, <code>/api/event</code>; <code>Runs</code> over <code>Agent.run</code> with filesystem and shell flows; projection of <code>Resolved</code> as text only; <code>smithers opencode</code> verb.</td><td>Hosted app shows a streamed answer to "say hello" from the real loop.</td></tr>
+<tr><td><strong>S2 Timeline</strong></td><td>Full projection: cell, call, print, demand items; message store; history route; usage.</td><td>A real edit task shows native read, grep, edit, and bash cards with correct inputs and outputs.</td></tr>
+<tr><td><strong>S3 Control</strong></td><td>Permissions (once, always, reject), interrupt, steering follow-ups, restart recovery.</td><td>R5, R6, R11 acceptance checks pass.</td></tr>
+<tr><td><strong>S4 Classifier</strong></td><td><code>Classifier</code>, <code>Evaluator</code>, <code>StandardFlows.classify</code>, the three curated classifiers, catalog text.</td><td>A cell classifies 14 files in one call; the <code>classify</code> card renders; the same run replays without a second gateway call.</td></tr>
+<tr><td><strong>S5 Health</strong></td><td>Per-frame evaluation, color rule, title dot, health item, gray on failure.</td><td>R9, R10 checks pass on a stuck run and a healthy run.</td></tr>
+<tr><td><strong>S6 Harden</strong></td><td>Contract tests against OpenCode's clients; app e2e against the real server; cost summary; docs regenerated; day-one checklist.</td><td>All tests green on main; <code>check-docs</code> and <code>check-llms</code> green.</td></tr>
+</table>
+
+<h2>6. Testing</h2>
+<table>
+<tr><th>Layer</th><th>Test</th><th>Oracle</th></tr>
+<tr><td>Protocol</td><td>Contract tests call every implemented route through <code>@opencode-ai/client</code> (v2) against an in-process server; response bodies decode with the client's own schemas.</td><td>OpenCode main pinned at commit 5a83358; <code>packages/protocol</code> and the saved OpenAPI.</td></tr>
+<tr><td>Projection</td><td>Recorded <code>AgentEvent</code> fixtures from real runs fold to an expected event and message list; replayed fixtures fold to the same ids.</td><td>Golden files under test, re-pinned with evidence.</td></tr>
+<tr><td>Runs</td><td>Scripted seat (the harness test pattern): a scripted model emits cells; assert permissions park and resume, interrupt closes, restart resumes without duplicate calls.</td><td>Engine journal.</td></tr>
+<tr><td>Classifier</td><td>Unit: question construction limits, answer decoding, <code>confident</code>; transport: <code>layerScripted</code> and a recorded gateway response; one live smoke gated on <code>AI_GATEWAY_API_KEY</code>.</td><td>Vercel wire protocol as recorded on 2026-09-17.</td></tr>
+<tr><td>Health</td><td>Color rule is a pure function with a table test; the trigger is tested with a scripted evaluator.</td><td>Design doc section 3.</td></tr>
+<tr><td>UI</td><td>OpenCode's Playwright specs run against the real server (mock removed, server host and port set); plus one spec of ours for the dot and the classify card.</td><td>The pinned app build.</td></tr>
+<tr><td>Manual</td><td>Day-one checklist below, run by Will.</td><td>Product doc section 7.</td></tr>
+</table>
+
+<h2>7. Risks</h2>
+<table>
+<tr><th>Risk</th><th>Likelihood</th><th>Mitigation</th></tr>
+<tr><td>Hosted app changes its protocol or event names</td><td>medium, it tracks main daily</td><td>Pin the contract to a commit; contract tests fail loudly; fallback <code>--serve-app</code> serves a built copy of the app at the pinned commit from <code>/</code>.</td></tr>
+<tr><td>Safari blocks https page to http localhost</td><td>medium</td><td>Banner says Chrome or Firefox; the <code>--serve-app</code> fallback removes the mixed origin.</td></tr>
+<tr><td>Multi-turn continuity: a new run per prompt loses realm state</td><td>certain, by design for day one</td><td>Conversation tail in the prompt; steering while busy; realm persistence across prompts is a listed follow-up.</td></tr>
+<tr><td>Jev answers poorly on health</td><td>medium</td><td>Color rule leans on harness facts first (parks, caps, frames since edit); Jev only adds stuck and needs-human; gray under 0.5 confidence; day-one agreement is measured.</td></tr>
+<tr><td>Cell abuses <code>classify</code> (huge states, hundreds of calls)</td><td>low</td><td>64 states per call, 32 KiB per state, concurrency 8, per-run cap on classify calls with a typed refusal.</td></tr>
+<tr><td>Effect version drift between OpenCode's schemas and ours</td><td>certain</td><td>Transcribe; never import their runtime.</td></tr>
+<tr><td>Engine store and OpenCode ids collide with existing tooling</td><td>low</td><td>Own SQLite file under <code>.smithers/</code>; ids prefixed as OpenCode requires.</td></tr>
+</table>
+
+<h2>8. Delegation</h2>
+<table>
+<tr><th>Work</th><th>Who</th></tr>
+<tr><td>Plans, this doc, contract decisions, reviews of protocol and durability</td><td>Fable</td></tr>
+<tr><td>Implementation of every phase, one lane per component (Classifier, server, projection, health), each landing on main with tests</td><td>Codex Astra</td></tr>
+<tr><td>UI verification, screenshots, the e2e spec for the dot and the classify card</td><td>Kimi K3 via OpenCode</td></tr>
+<tr><td>Review of each landed change</td><td>Fable, Kimi, Codex Astra</td></tr>
+</table>
+
+<h2>9. Monitoring hooks to build in</h2>
+<p>Placeholders the monitoring plan will fill: <code>smithers opencode --trace</code> writes every request, event, and Jev call to <code>.smithers/opencode-trace.ndjson</code>; the run summary lists frames, calls, classify calls, Jev latency, and spend; health decisions are journaled as <code>flows.opencode.health.v1</code> records so agreement can be scored after the day.</p>
+
+<h2>10. Day-one launch checklist</h2>
+<ol>
+<li><code>smithers opencode</code> in three real repositories; the hosted app connects in Chrome.</li>
+<li>One task per repository completed end to end without the terminal.</li>
+<li>One forced restart mid-run resumes cleanly.</li>
+<li>One permission asked and answered from the composer.</li>
+<li>The agent used <code>classify</code> unprompted at least once; the card rendered.</li>
+<li>Every health color change marked agree or disagree; the count recorded in the product doc.</li>
+<li>Cost per task and Jev share recorded.</li>
+<li>Research doc append log updated with anything the day contradicted.</li>
+</ol>
+</main></body></html>

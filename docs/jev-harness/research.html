@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Harness: Research</title>
+<style>
+:root{--bg:#fff;--fg:#111;--muted:#666;--line:#ddd;--code:#f5f5f5;--accent:#0b5fff}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--muted:#aaa;--line:#333;--code:#1b1b1b;--accent:#6aa0ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:960px;margin:0 auto;padding:32px 16px 96px}
+nav{font-size:13px;color:var(--muted);margin-bottom:24px}
+nav a{color:var(--accent);text-decoration:none;margin-right:12px}
+h1{font-size:28px;margin:0 0 8px}h2{font-size:20px;margin:40px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:16px;margin:24px 0 6px}
+p{margin:8px 0}ul,ol{margin:6px 0 6px 22px}li{margin:3px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:14px}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--code)}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre{background:var(--code);padding:12px;border-radius:6px;overflow:auto;font-size:13px;line-height:1.4}pre code{padding:0;background:none}
+.meta{color:var(--muted);font-size:13px}.note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--code);margin:10px 0}
+.warn{border-left:3px solid #d33;padding:6px 12px;background:var(--code);margin:10px 0}
+</style>
+</head>
+<body><main>
+<nav><a href="research.html">Research</a><a href="product.html">Product</a><a href="design.html">Design</a><a href="engineering.html">Engineering</a></nav>
+<h1>Jev Harness: Research</h1>
+<p class="meta">Living document. Started 2026-09-17. Append new findings to the log at the bottom with a date and a source. Every claim here names where it was read.</p>
+
+<p><strong>Summary.</strong> Three bodies of fact drive the design: what Jev is and how we already call it, how the Smithers cell loop works today, and what the OpenCode app needs from a server so it can be our UI. All three are verified against primary sources on 2026-09-17: TypeSafe and Vercel docs, the Smithers source under <code>packages/smithers/agent</code>, and a fresh clone of OpenCode main plus the installed CLI 1.18.31.</p>
+
+<h2>1. Jev</h2>
+<p>Jev is TypeSafe AI's decision-only model. One request carries a <code>state</code> and a map of typed <code>questions</code>; the answer is one typed value per question with a probability distribution and a confidence. It generates no text, so it cannot invent an option the question did not offer, and every question in a request is answered in parallel.</p>
+
+<table>
+<tr><th>Fact</th><th>Value</th><th>Source</th></tr>
+<tr><td>Gateway model id</td><td><code>typesafe-ai/jev</code></td><td>Vercel changelog 2026-09-16</td></tr>
+<tr><td>Question types</td><td><code>boolean</code> (optional true/false criteria), <code>choice</code> (record of option name to description), <code>score</code> (ordered rubric, at least two rungs)</td><td>Vercel evaluation modality doc; AI SDK evaluation doc</td></tr>
+<tr><td>Answer shapes</td><td>boolean: <code>{probability}</code>; choice: <code>{choice, probabilities}</code>; score: <code>{score, probabilities}</code> (score interpolated over rung indexes)</td><td>same</td></tr>
+<tr><td>State</td><td>string, object, or array; one state per call</td><td>AI SDK evaluation doc</td></tr>
+<tr><td>Atomicity</td><td>every question answered or the call fails; no partial success, no streaming, no multilabel</td><td>AI SDK evaluation doc</td></tr>
+<tr><td>Confidence</td><td>a statistic of the probability distribution, 0 to 1, concentrated means high; TypeSafe publishes no calibration guarantee and says to start conservative and test on your own data</td><td>docs.typesafe.ai/confidence</td></tr>
+<tr><td>Suggested thresholds</td><td>0.5 floor to route to a human; 0.9 or higher for high stakes; thresholds scale with risk</td><td>docs.typesafe.ai/confidence</td></tr>
+<tr><td>Choice cardinality</td><td>255 options before a two-stage cascade</td><td>TypeSafe launch post</td></tr>
+<tr><td>Latency</td><td>70 to 500 ms quoted; measured on our prod path 270 to 360 ms end to end, 163 to 235 ms provider time</td><td>TypeSafe launch post; our 2026-09-17 measurement</td></tr>
+<tr><td>Price</td><td>$0.042 per million input tokens, output free; about $0.000035 per recommendation at 828 input tokens</td><td>Vercel model page; our measurement</td></tr>
+<tr><td>Zero data retention</td><td>per-call gateway option <code>providerOptions.gateway.zeroDataRetention</code></td><td>Vercel changelog</td></tr>
+<tr><td>Credits</td><td>needs paid Vercel credits; the $5 card-verification credit returns 403 RestrictedModelsError</td><td>our 2026-09-17 finding</td></tr>
+<tr><td>Vendor accuracy</td><td>TypeSafe dashboard vs GPT-6 Astra and Fable 5.1 reference labels: customer service 76.0 vs 78.3; agent-trace observability 71.6 vs 76.6; security incidents 61.7 vs 66.2; invoice processing 61.8 vs 79.1; no calibration curve or paper published</td><td>independent eval critique</td></tr>
+<tr><td>Recommended patterns</td><td>speculative fan-out (many questions per call), confidence-gated routing, composite scoring, intent routing</td><td>docs.typesafe.ai/patterns</td></tr>
+</table>
+
+<h3>1.1 Wire protocol we use</h3>
+<p>Vercel documents the evaluation modality as "AI SDK only", but the SDK's gateway provider is open source and speaks plain HTTP. Our client copies its protocol and carries no <code>ai</code> dependency and no TypeSafe key. This is landed and live in <code>apps/server/src/jev.ts</code>.</p>
+<pre><code>POST https://ai-gateway.vercel.sh/v4/ai/evaluation-model
+authorization: Bearer $AI_GATEWAY_API_KEY
+ai-gateway-protocol-version: 0.0.1
+ai-gateway-auth-method: api-key
+ai-evaluation-model-specification-version: 4
+ai-model-id: typesafe-ai/jev
+content-type: application/json
+
+{ "state": ..., "questions": { ... }, "providerOptions": { "gateway": { "zeroDataRetention": true } } }
+
+200 → { "answers": { "&lt;questionId&gt;": { "type": "choice", "choice": "...", "probabilities": {...} } , ... } }</code></pre>
+<p>The contract is undocumented, so every call site falls back on any non-200 or unreadable body. Probabilities round to two decimals.</p>
+
+<h3>1.2 Where Smithers already uses Jev</h3>
+<ul>
+<li><strong>Command recommender</strong>, <code>apps/server/src/recommend.ts</code>: one choice question whose options are every runnable command; probabilities order the pills; Cerebras is the fallback. Live on prod since 2026-09-17; the Worker secret <code>AI_GATEWAY_API_KEY</code> is present.</li>
+<li><strong>Session health checker</strong>, <code>packages/smithers/control/src/JevSessionChecker.ts</code>: state is the lifecycle plus the last 4 KiB of terminal output; answers working, idle, or needs-input; confidence floor 0.7; degrades to the lifecycle answer. Bound by the app's bun host for terminal and agent subjects when the key is set.</li>
+</ul>
+
+<h2>2. The Smithers harness today</h2>
+<p>The agent is <code>@smthrs/agent</code> at <code>packages/smithers/agent</code>: one Effect service, <code>Agent.run</code>, that drives the <code>@smthrs/harness</code> cell loop on the durable flow engine and returns a <code>Stream&lt;AgentEvent&gt;</code>.</p>
+<ul>
+<li><strong>Frame</strong> (<code>harness/src/CellTurn.ts</code>): compact the context window, seal a model step (content-keyed, replayed from the journal), extract the fenced <code>cell</code> block, run it in a QuickJS realm that lives for the whole run, resolve each <code>ctx.call</code> through <code>CellCalls</code> as its own durable boundary, witness the workspace before and after, apply discipline caps, then continue, complete, park, or suspend.</li>
+<li><strong>Model surface</strong> (<code>harness/src/internal/cellPrompt.ts</code>): <code>ctx.call</code>, <code>ctx.flows</code>, <code>ctx.done</code>, <code>ctx.park</code>, <code>ctx.justify</code>, <code>ctx.checkpoint</code>, <code>ctx.base</code>. Plain JavaScript over <code>ctx.call</code> by Will's 2026-08-20 ruling. A failed call resolves <code>{ ok: false, error }</code>, it does not throw. Teaching changes are measured one at a time.</li>
+<li><strong>Capabilities are flows</strong>: <code>StandardFlows.filesystem</code> (read, write, edit, apply_patch, ls, glob, grep), <code>StandardFlows.shell</code> (bash), tests, memory, clock, approval; <code>ChildFlows</code> for subagents. Each is a <code>FlowBinding.source(name, [FlowBinding.make({ flow, handler, publicError })])</code>. A new capability for the cell is one more source in <code>Agent.Options.flows</code>.</li>
+<li><strong>Events</strong> (<code>harness/src/AgentEvent.ts</code>): DisciplineArmed, TurnOpened, ModelDelta, ModelRetried, ModelSettled, CellProduced, CellRejectedInFrame, CellCallStarted, CellCallSettled, CellPrinted, CellSettled, TransitionApplied, ReadOnlyDemanded, RepeatDemanded, NarrowedDemanded, UnmovedDemanded, UnresolvedDemanded, SufficiencyObserved, MutationObserved, CheckpointMinted, Suspended, CompactionSettled, SteeringDrained, TurnClosed, PermissionRequired, Aborted, Resolved.</li>
+<li><strong>Adapters</strong>: <code>AgentSession</code> runs the loop as a control-plane run (the production ControlExecutor); <code>AgentAction</code> runs it as one typed step with a declared output schema.</li>
+<li><strong>Policies</strong> at the model boundary: <code>Budget</code> (per run, journal-projected, fails closed) and <code>QuotaPolicy</code> (rate limit becomes a durable park). <code>Agent.layer</code> requires both.</li>
+<li><strong>Seats</strong>: a declared seat string like <code>anthropic:claude-opus-5</code>; <code>SeatResolver</code> resolves it to a live model, route, and context window. <code>packages/smithers/src/NodeControl.ts</code> installs the resolver that reads keys from the environment.</li>
+<li><strong>HTTP host</strong>: <code>@smthrs/gateway</code> serves <code>/rpc</code>, <code>/projections</code>, <code>/sync</code>, <code>/health</code> over Effect <code>HttpRouter</code>; <code>smthrs serve</code> binds it with a strict loopback rule.</li>
+</ul>
+<div class="warn"><strong>Three loops exist.</strong> The harness cell loop serves the CLI control plane. <code>@smthrs/chain</code> is wrapped by the product app but never bound. The product app's chat goes through the server proxy to a managed-inference tool loop. The Jev harness builds on the first, and does not touch the other two.</div>
+
+<h2>3. OpenCode</h2>
+<p>OpenCode is a server plus clients. The server is an Effect <code>HttpApi</code> (Effect 4.0.0-beta.83 via a workspace catalog) defined in <code>packages/protocol</code> with handlers in <code>packages/server</code>; the clients are the TUI, the desktop app, and the web app <code>packages/app</code>. Reference versions: installed CLI 1.18.31; fresh clone of main at 5a83358 (2026-09-17); an older checkout 1.18.7 at <code>~/flows/reference/opencode</code>.</p>
+
+<h3>3.1 The hosted app connects to any local server</h3>
+<ul>
+<li><code>https://app.opencode.ai</code> serves the web app (verified 200). <code>packages/app/src/entry.tsx</code>: when <code>location.hostname</code> includes <code>opencode.ai</code> the default server URL is <code>http://localhost:4096</code>; a stored default server URL overrides it; the app has a server connection dialog.</li>
+<li>CORS on the OpenCode server allows <code>http://localhost:*</code>, <code>http://127.0.0.1:*</code>, <code>https://*.opencode.ai</code>, tauri origins, plus <code>--cors</code> extras (<code>packages/server/src/cors.ts</code>). Our server must allow origin <code>https://app.opencode.ai</code>.</li>
+<li>Basic auth: <code>OPENCODE_SERVER_PASSWORD</code>, username defaults to <code>opencode</code>. The app sends <code>Authorization: Basic</code> when a password is stored.</li>
+<li>TUI: <code>opencode attach http://localhost:4096</code> (installed 1.18.31) speaks the legacy v1 routes.</li>
+<li><code>@opencode-ai/app</code> is not on npm. <code>@opencode-ai/sdk</code> 1.18.31, <code>@opencode-ai/ui</code> 1.18.31, and <code>@opencode-ai/client</code> 0.0.0 are.</li>
+</ul>
+
+<h3>3.2 Two protocols, one app</h3>
+<p>The server exposes 188 routes at 1.18.31 (<code>GET /doc</code> is the OpenAPI 3.1 spec). Two families matter:</p>
+<ul>
+<li><strong>v1 (legacy)</strong>: <code>/session</code>, <code>/session/:id/message</code>, <code>/session/:id/prompt_async</code>, <code>/event</code> SSE with <code>{type, properties}</code> payloads, <code>/provider</code>, <code>/agent</code>, <code>/path</code>, <code>/project</code>, <code>/permission/:id/reply</code>. Consumed through <code>@opencode-ai/sdk/v2/client</code> (frozen generation).</li>
+<li><strong>v2 (HttpApi)</strong>: <code>/api/*</code>, defined in <code>packages/protocol/src/groups/*.ts</code>: health, location, agent, session, message, model, provider, integration, credential, permission, fs, command, skill, event, pty, question, reference, project-copy. Consumed through <code>@opencode-ai/client/promise</code>.</li>
+</ul>
+<p>The app's <code>utils/server-compat.ts</code> builds a compatible API: it probes <code>GET /api/health</code> first (expects <code>{healthy: true}</code>); when that answers, the app uses the v2 client and falls back to legacy shims only for a few calls. The app's own e2e mock server has a <code>protocol: "v2"</code> mode that returns 404 on <code>/global/health</code> and serves only <code>/api/*</code> plus the SSE stream, which proves the app runs on a v2-only server.</p>
+
+<h3>3.3 The v2 routes the app calls</h3>
+<p>Read off <code>packages/app/e2e/utils/mock-server.ts</code> on main and <code>packages/protocol/src/groups/*.ts</code>. This is the minimum surface a foreign server needs for the app to boot, list sessions, prompt, stream, and answer permissions. The route-trace spike in the engineering doc confirms it against the live app.</p>
+<table>
+<tr><th>Route</th><th>Purpose</th><th>Response shape</th></tr>
+<tr><td><code>GET /api/health</code></td><td>probe; picks protocol v2</td><td><code>{healthy: true, version, pid?}</code></td></tr>
+<tr><td><code>GET /api/event</code></td><td>SSE; first event <code>server.connected</code></td><td><code>data: {id, type, data, location?, durable?}</code></td></tr>
+<tr><td><code>GET /api/location</code>, <code>/api/path</code>, <code>/api/project</code>, <code>/api/project/current</code>, <code>/api/vcs</code></td><td>bootstrap</td><td>located objects; <code>Location.Ref = {directory, workspaceID?}</code></td></tr>
+<tr><td><code>GET /api/agent</code></td><td>agent picker</td><td><code>{location, data: [AgentV2.Info]}</code>; Info has <code>id, mode, hidden, permissions, model?, color?</code></td></tr>
+<tr><td><code>GET /api/model</code>, <code>GET /api/provider</code></td><td>model picker</td><td>model list and providers; <code>Model.Ref = {id, providerID, variant?}</code></td></tr>
+<tr><td><code>GET /api/command</code>, <code>/api/skill</code>, <code>/api/mcp</code>, <code>/api/reference</code>, <code>/api/pty/shells</code></td><td>chrome</td><td>empty located lists are accepted</td></tr>
+<tr><td><code>GET /api/permission/request</code>, <code>GET /api/question/request</code></td><td>pending asks on boot</td><td>located arrays</td></tr>
+<tr><td><code>GET /api/session</code></td><td>list; query <code>directory, limit, order, search, cursor</code></td><td><code>{data: [SessionV2.Info], cursor: {next?, previous?}}</code></td></tr>
+<tr><td><code>GET /api/session/active</code></td><td>busy sessions</td><td><code>{data: {[id]: {type: "running"}}}</code></td></tr>
+<tr><td><code>POST /api/session</code></td><td>create; body <code>{id?, agent?, model?, location?}</code></td><td><code>{data: SessionV2.Info}</code></td></tr>
+<tr><td><code>GET</code> / <code>DELETE /api/session/:id</code></td><td>read, delete</td><td><code>{data}</code> / 204</td></tr>
+<tr><td><code>POST /api/session/:id/prompt</code></td><td>send a turn; body <code>{prompt: {text, files?, agents?}, agent?, model?, ...}</code></td><td>admitted; work streams on <code>/api/event</code></td></tr>
+<tr><td><code>POST /api/session/:id/interrupt</code>, <code>/rename</code>, <code>/archive</code>, <code>/shell</code>, <code>/revert/*</code></td><td>actions</td><td>204</td></tr>
+<tr><td><code>GET /api/session/:id/message</code></td><td>history; query <code>limit, cursor</code></td><td><code>{data: [SessionMessage], cursor: {next?}}</code>, newest first</td></tr>
+<tr><td><code>POST /api/session/:id/permission/:requestID/reply</code></td><td>body <code>{reply: "once"|"always"|"reject"}</code></td><td>204</td></tr>
+<tr><td><code>POST /api/session/:id/question/:requestID/reply</code> / <code>reject</code></td><td>questions</td><td>204</td></tr>
+</table>
+<p><strong>SessionV2.Info</strong>: <code>{id ("ses…"), parentID?, projectID, agent?, model?, cost, tokens{input,output,reasoning,cache{read,write}}, time{created,updated,archived?}, title, location{directory,workspaceID?}, subpath?, revert?}</code>.</p>
+<p><strong>SessionMessage</strong>: user <code>{id, type:"user", time, text}</code>; assistant <code>{id, type:"assistant", time, agent, model, cost, tokens, error?, content:[text | reasoning | tool]}</code>; a tool item is <code>{type:"tool", id, name, time, state}</code> with state <code>streaming | running | completed{input, structured, content:[{type:"text", text}]} | error{…, error:{type, message}}</code>.</p>
+
+<h3>3.4 The events the app's timeline folds</h3>
+<p>The app reduces v2 events in <code>packages/app/src/context/server-session-v2-reducer.ts</code> and <code>server-session.ts applyV2</code>. Every event on <code>/api/event</code> is <code>{id: "evt_…", created, type, data, location?, durable?}</code>. Adapted v1-named events (<code>session.created</code>, <code>session.updated</code>, <code>session.deleted</code>, <code>permission.asked</code> from <code>permission.v2.asked</code>) are folded too.</p>
+<table>
+<tr><th>Type</th><th>Data</th><th>Effect in the UI</th></tr>
+<tr><td><code>server.connected</code></td><td><code>{}</code></td><td>connection established</td></tr>
+<tr><td><code>session.created</code> / <code>session.updated</code></td><td><code>{info: SessionV2.Info}</code></td><td>sidebar list, header</td></tr>
+<tr><td><code>session.renamed</code></td><td><code>{sessionID, title}</code></td><td>header title; where the health dot lives</td></tr>
+<tr><td><code>session.execution.started</code> / <code>succeeded</code> / <code>failed</code> / <code>interrupted</code></td><td><code>{sessionID, …}</code></td><td>busy or idle status</td></tr>
+<tr><td><code>session.retry.scheduled</code></td><td><code>{sessionID, attempt, error{message}, at}</code></td><td>retry banner</td></tr>
+<tr><td><code>session.usage.updated</code></td><td><code>{sessionID, cost, tokens}</code></td><td>cost and tokens</td></tr>
+<tr><td><code>session.input.admitted</code></td><td><code>{sessionID, messageID, prompt, …}</code></td><td>user message appears</td></tr>
+<tr><td><code>session.step.started</code> / <code>ended</code> / <code>failed</code></td><td><code>{sessionID, assistantMessageID, agent, model}</code></td><td>assistant message opens and closes</td></tr>
+<tr><td><code>session.text.started</code> / <code>delta</code> / <code>ended</code></td><td><code>{sessionID, assistantMessageID, ordinal | textID, delta}</code></td><td>streamed text</td></tr>
+<tr><td><code>session.reasoning.started</code> / <code>delta</code> / <code>ended</code></td><td>same shape</td><td>collapsible thinking block</td></tr>
+<tr><td><code>session.tool.called</code></td><td><code>{sessionID, assistantMessageID, callID, tool, input}</code></td><td>tool item running</td></tr>
+<tr><td><code>session.tool.input.started</code> / <code>delta</code> / <code>ended</code></td><td>streamed input</td><td>tool item streaming</td></tr>
+<tr><td><code>session.tool.progress</code></td><td>progress</td><td>live output</td></tr>
+<tr><td><code>session.tool.success</code> / <code>failed</code></td><td><code>{callID, structured, content:[{type:"text", text}], result?}</code> / <code>{callID, error}</code></td><td>tool item settled</td></tr>
+<tr><td><code>permission.v2.asked</code> / <code>replied</code></td><td><code>{id, sessionID, action, resources, save?, metadata?, source?{type:"tool", messageID, callID}}</code></td><td>approval card in the composer</td></tr>
+<tr><td><code>todo.updated</code></td><td><code>{sessionID, todos:[{content, status, priority}]}</code></td><td>progress in the header</td></tr>
+</table>
+<div class="note">The installed CLI 1.18.31 still names these <code>session.next.*</code> on the legacy <code>/event</code> stream. The hosted app tracks main, which folds the <code>session.*</code> names above. The contract is pinned to the app commit we verify against, and the route-trace spike re-reads it before build.</div>
+
+<h3>3.5 Tool names with rich rendering</h3>
+<p><code>packages/session-ui/src/components/message-part.tsx</code> renders these tool names specially: <code>bash</code>, <code>read</code>, <code>edit</code>, <code>write</code>, <code>grep</code>, <code>glob</code>, <code>list</code>, <code>apply_patch</code>, <code>patch</code>, <code>todowrite</code>, <code>task</code>, <code>webfetch</code>, <code>websearch</code>, <code>question</code>, <code>skill</code>, <code>shell</code>. Everything else gets the basic tool card (name, input, output). Smithers std flows already use <code>read</code>, <code>edit</code>, <code>bash</code>, <code>write</code>, <code>grep</code>, <code>glob</code>, <code>apply_patch</code>; <code>ls</code> maps to <code>list</code>.</p>
+
+<h3>3.6 What of OpenCode's tests we can reuse</h3>
+<ul>
+<li><strong>Server tests</strong> (<code>packages/opencode/test/server/*.test.ts</code>) build OpenCode's own layers in-process. They are not runnable against a foreign server.</li>
+<li><strong>App e2e</strong> (<code>packages/app/e2e</code>, Playwright) run the real app against a Playwright route mock, not a server. Reusable two ways: the mock is the exact minimum contract, and the specs run unchanged against our real server by removing the mock and setting <code>VITE_OPENCODE_SERVER_HOST/PORT</code>.</li>
+<li><strong>sdk-v1-smoke.test.ts</strong> shows the pattern that transfers: a typed client (<code>@opencode-ai/client</code> for v2, <code>@opencode-ai/sdk</code> for v1) pointed at a base URL. Our contract tests use that shape.</li>
+<li><strong>OpenAPI</strong>: <code>GET /doc</code> from the installed CLI (saved at scratchpad <code>opencode/openapi.json</code>, 472 schemas) is the schema oracle for v1; <code>packages/protocol</code> is the oracle for v2.</li>
+</ul>
+
+<h2>4. Open questions to close before build</h2>
+<ol>
+<li>Exact route and event trace of the hosted app against a logging proxy for: connect, list, create, prompt, tool call, permission, done. Closes the contract table above.</li>
+<li>Whether Safari allows <code>https://app.opencode.ai</code> to fetch <code>http://localhost:4096</code>. Chrome and Firefox treat localhost as potentially trustworthy. OpenCode ships this path, so it works in their supported browsers; we verify ours.</li>
+<li>Whether the app needs <code>/api/model</code> populated to enable the composer, or accepts a session created with a fixed model.</li>
+<li>How the app renders a tool item whose name it does not know (expected: basic card with name, input, output).</li>
+</ol>
+
+<h2>Sources</h2>
+<ul>
+<li><a href="https://docs.typesafe.ai/introduction">TypeSafe docs: introduction</a>, <a href="https://docs.typesafe.ai/confidence">confidence</a>, <a href="https://docs.typesafe.ai/patterns">patterns</a></li>
+<li><a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev">Introducing System One Models and Jev</a></li>
+<li><a href="https://vercel.com/docs/ai-gateway/modalities/evaluation">Vercel AI Gateway: evaluation modality</a>, <a href="https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway">changelog</a>, <a href="https://vercel.com/ai-gateway/models/jev">model page</a></li>
+<li><a href="https://ai-sdk.dev/docs/ai-sdk-core/evaluation">AI SDK evaluation</a></li>
+<li><a href="https://www.infoworld.com/article/4223468/typesafe-ais-new-models-work-with-machines-not-humans.html">InfoWorld analysis</a>, <a href="https://northdenvertribune.com/news-2/typesafe-jev-system-one-model-claims-evals-independent-tests/">eval-score critique</a></li>
+<li><a href="https://opencode.ai/docs/server/">OpenCode server docs</a>, <a href="https://opencode.ai/docs/web/">web</a>, <a href="https://opencode.ai/docs/sdk/">SDK</a>; OpenCode source main 5a83358: <code>packages/protocol</code>, <code>packages/server</code>, <code>packages/app</code>, <code>packages/schema</code>, <code>packages/session-ui</code></li>
+<li>Smithers source: <code>packages/smithers/agent/{src,harness,std}</code>, <code>packages/smithers/gateway</code>, <code>apps/server/src/{jev,recommend}.ts</code>, <code>packages/smithers/control/src/JevSessionChecker.ts</code></li>
+</ul>
+
+<h2>Append log</h2>
+<ul>
+<li><strong>2026-09-17</strong>: document created from this session's research. Verified: Jev facts and wire protocol; three Smithers loops; OpenCode hosted app, CORS, protocol v2 route list, event vocabulary from <code>server-session-v2-reducer.ts</code>, tool renderer names, test reuse.</li>
+</ul>
+</main></body></html>
