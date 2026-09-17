@@ -6,6 +6,9 @@ import { CodingError } from "../coding/schema.ts"
 import { Event, Job, Record, SourceStatus } from "./schema.ts"
 
 export interface RemoteOptions extends RepositoryBinding { readonly gatewayId: string; readonly credential: string }
+/** The five reviewed responsibilities, or one repository's own `flow:<slug>`
+ * schedule. The prefix keeps the two namespaces disjoint. */
+export type JobKey = typeof Job.Type | `flow:${string}`
 const Commit = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
 const SourceCommit = Schema.String.check(Schema.isPattern(/^(?!0{40}$)[0-9a-f]{40}$/))
 /** The host constructs this only from an admitted push or a resolved PR. */
@@ -24,11 +27,11 @@ export class RepositoryRemote extends Context.Service<RepositoryRemote, {
   readonly source?: Effect.Effect<"github" | "smithers-cloud", CodingError>
   readonly registrations: Effect.Effect<Schema.Json, CodingError>
   readonly history: Effect.Effect<{ records: ReadonlyArray<typeof Record.Type>; sources: ReadonlyArray<typeof SourceStatus.Type> }, CodingError>
-  readonly register: (job: typeof Job.Type, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
-  readonly pause: (job: typeof Job.Type) => Effect.Effect<Schema.Json, CodingError>
-  readonly dispatches: (job: typeof Job.Type) => Effect.Effect<Schema.Json, CodingError>
+  readonly register: (job: JobKey, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
+  readonly pause: (job: JobKey) => Effect.Effect<Schema.Json, CodingError>
+  readonly dispatches: (job: JobKey) => Effect.Effect<Schema.Json, CodingError>
   readonly createTrial: (job: typeof Job.Type, requestId: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
-  readonly manual?: (job: typeof Job.Type, requestId: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
+  readonly manual?: (job: JobKey, requestId: string, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
   readonly resolveReview?: (event: typeof Event.Type) => Effect.Effect<{ payload: Schema.Json; sourceRevision: string }, CodingError>
   readonly retainMain?: (commitId: string) => Effect.Effect<typeof RetainedMain.Type, CodingError>
   readonly retainSource?: (input: typeof RetainSourceRequest.Type) => Effect.Effect<typeof RetainedSource.Type, CodingError>

@@ -10,10 +10,11 @@ import { registryError } from "@smthrs/registry/RegistryError"
 import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
-import { JobInput, JobResult, OperationResult, SetupInput } from "./schema.ts"
+import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "./schema.ts"
+import { TriggerOutcome } from "./triggers.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
-const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts",
+const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
   "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {
@@ -33,6 +34,7 @@ export const provisionBuiltins = (stateRoot: string, policy: string) => Effect.g
   const root = path.join(stateRoot, "builtin-flows", policy)
   const entries = [
     { name: "repository/setup", delegate: "repository/RunSetup", description: "Configure, evaluate and activate one repository responsibility." },
+    { name: "repository/trigger", delegate: "repository/RunTrigger", description: "Register one repository flow to run on a reviewed schedule." },
     ...(["issues", "review", "ci", "feature", "chores"] as const).map(job => ({ name: `repository-jobs/${job}`,
       delegate: "repository/RunJob", description: `Run the reviewed ${job} responsibility with recorded evidence.` })),
     { name: "coding", delegate: "coding/RunPlan", description: "Execute a native coding plan with its required checks." },
@@ -74,11 +76,13 @@ export const repositoryCatalog = (options: Executable.Options, load: NonNullable
 
 /** Reserved job declarations always come from the measured host bundle. */
 export const bindRepositoryRegistry = (base: Registry.Registry, builtins: Registry.Registry, policy: string): Registry.Registry => {
-  const reserved = (name: string) => name === "repository/setup" || /^repository-jobs\/(issues|review|ci|feature|chores)$/.test(name)
+  const reserved = (name: string) => name === "repository/setup" || name === "repository/trigger" || /^repository-jobs\/(issues|review|ci|feature|chores)$/.test(name)
+  const reservedSchemas = (name: string) => name === "repository/setup" ? { input: SetupInput, output: OperationResult }
+    : name === "repository/trigger" ? { input: TriggerRequest, output: TriggerOutcome } : { input: JobInput, output: JobResult }
   const derived = (descriptor: Descriptor.FlowDescriptor) => reserved(descriptor.name) ? new Descriptor.FlowDescriptor({ ...descriptor,
     budget: { tokens: deploymentTokens, milliseconds: deploymentMinutes * 60000 },
-    input: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(descriptor.name === "repository/setup" ? SetupInput : JobInput))) }),
-    output: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(descriptor.name === "repository/setup" ? OperationResult : JobResult))) }),
+    input: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(reservedSchemas(descriptor.name).input))) }),
+    output: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(reservedSchemas(descriptor.name).output))) }),
     frontmatter: { ...descriptor.frontmatter, repositoryHostPolicy: policy }
   }) : descriptor
   const owned = (name: string) => reserved(name) ? Effect.succeed(builtins) : base.getOption(name).pipe(Effect.map(found => Option.isSome(found) ? base : builtins))

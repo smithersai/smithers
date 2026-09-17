@@ -1,4 +1,5 @@
 /** Repository jobs use the same editable setup contract as the app and Worker. */
+import * as Digest from "@smthrs/core/Digest"
 import { Effect, Schema } from "effect"
 import { SetupHostInputSchema, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { Revision } from "../coding/schema.ts"
@@ -83,3 +84,34 @@ export const Receipt = Schema.Struct({
 export const OperationResult = Schema.Struct({ requestId: Schema.String, revision: Schema.Int, digest: Schema.String,
   receipt: Schema.optionalKey(Receipt), inspection: Schema.optionalKey(Schema.Struct({ sources: Schema.Array(SourceStatus),
     suggestedDraft: Draft, inspectedAt: Schema.Number })) })
+/** One repository's own name for one schedule. Never the flow id: a repository
+ * may register the same flow under two slugs with different inputs. */
+export const FlowSlug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/))
+export const CronUtc = Schema.String.check(Schema.isMaxLength(200))
+/** What the app sends the registrar. The approval fields carry the plan a
+ * person approved; nothing here names who approved it or when. */
+export const TriggerRequest = Schema.Struct({
+  requestId: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
+  repo: Schema.NonEmptyString, slug: FlowSlug,
+  flow: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,199}$/)),
+  schedule: CronUtc, input: Schema.Json, workspaceId: Schema.optionalKey(Schema.String),
+  approvedPlanId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  approvedPlanDigest: Schema.optionalKey(Schema.String),
+  /** A completed run of that exact plan, when the caller made one first. */
+  testRunId: Schema.optionalKey(Schema.String),
+  operation: Schema.Literals(["register", "fire"])
+})
+export type TriggerRequest = typeof TriggerRequest.Type
+export const TriggerRegistration = Schema.Struct({ registration_id: Schema.String, revision: Schema.Int, digest: Schema.String,
+  source_revision: Schema.String, mode: Schema.Literal("enabled"), enabled: Schema.Boolean,
+  schedule: CronUtc, next_fire_at: Schema.NullOr(Schema.String), timezone: Schema.Literal("UTC") })
+export const TriggerResult = Schema.Struct({
+  requestId: Schema.String, slug: FlowSlug, flow: Schema.String,
+  planId: Schema.String, planDigest: Schema.String, executionDigest: Schema.String,
+  envelope: Schema.Json, sourceRevision: Schema.String, testRunId: Schema.optionalKey(Schema.String),
+  registration: TriggerRegistration
+})
+/** 64-hex over the canonical request; Plue requires ^[a-f0-9]{64}$ for `digest`. */
+export const triggerCandidate = (request: TriggerRequest): string =>
+  Digest.digest(Digest.canonical({ repo: request.repo, slug: request.slug, flow: request.flow,
+    schedule: request.schedule, input: request.input }))

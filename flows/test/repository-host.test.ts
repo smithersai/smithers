@@ -24,13 +24,16 @@ import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
 import { inheritedCheckId, rawCheckId, readCiPolicy } from "../repository/ci-policy.ts"
 import { initialSetup, setupCandidate, SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
-import { JobInput, JobResult } from "../repository/schema.ts"
+import { Job, JobInput, JobResult } from "../repository/schema.ts"
 import { verifyTrialChecks } from "../repository/checks.ts"
 import { assessScore } from "../repository/evaluation.ts"
 import { completedJob } from "../repository/receipts.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE, exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
+/** This fixture serves the five reviewed responsibilities. A `flow:<slug>` key
+ * reaching it is a defect, so it is decoded rather than cast. */
+const builtinJob = (job: string) => Schema.decodeUnknownSync(Job)(job)
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
@@ -137,7 +140,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       assert.equal(value.step_id, "poc")
       const event = { source: "smithers-cloud" as const, type: "manual", action: "manual:poc", manualStep: "poc", deliveryKey: `manual:${requestId}`,
         issueNumber: value.subject.number, payload: { manual: { stepId: "poc", prompt: value.prompt }, issue: { number: value.subject.number, title: "Try another greeting", body: "Inspect greeting.mjs" } } }
-      const input: JobInput = { repo, job, revision: active.revision, digest: active.digest, sourceRevision: active.source_revision, configuration: active.input, event }
+      const input: JobInput = { repo, job: builtinJob(job), revision: active.revision, digest: active.digest, sourceRevision: active.source_revision, configuration: active.input, event }
       const plan = await Effect.runPromise(client.Plan({ flowId: `repository-jobs/${job}`, input: json(input), idempotencyKey: `${requestId}:plan` })) as any
       assert.equal(plan.executionDigest, active.execution_digest)
       assert.deepEqual(plan.envelope, active.envelope)
@@ -158,7 +161,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       const registration = { registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision, digest: value.digest,
         source_revision: value.source_revision, mode: value.mode, enabled: true }
       if (value.mode === "trial") {
-        const input: JobInput = { repo, job, revision: value.revision, digest: value.digest, sourceRevision: value.source_revision, configuration: value.input,
+        const input: JobInput = { repo, job: builtinJob(job), revision: value.revision, digest: value.digest, sourceRevision: value.source_revision, configuration: value.input,
           event: { source: "smithers-cloud", type: "issues", action: "opened", trial: true, deliveryKey: "native-test-outbox", issueNumber: value.trial_issue_number,
             payload: { issue: { number: value.trial_issue_number, title: setup.draft.trialTitle, body: setup.draft.trialBody, user: { login: "reporter" } } } } }
         const plan = await Effect.runPromise(client.Plan({ flowId: `repository-jobs/${job}`, input: json(input), idempotencyKey: "trial-plan" })) as any
