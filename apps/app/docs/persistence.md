@@ -219,7 +219,8 @@ target uses the optional `repositoryCommandEntry` instead; opening `/` on reload
 must not erase its admission or replace another URL's repository. One
 `command.deferred` commit records the exact payload and command-target receipt
 with a request ID and account owner. Catalog lookup starts after that commit,
-or reconnects from hydrated state. Repeated requests share the lookup; newer
+or reconnects from hydrated state after this boot's identity answer. Session
+changes before that answer cannot start a saved catalog or file read. Repeated requests share the lookup; newer
 arguments retain only the latest command. Command admission never selects a
 repository, opens its tree, or reads its default bookmark.
 

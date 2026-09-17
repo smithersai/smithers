@@ -1845,15 +1845,15 @@ export const createAppController = (
     if (card.loading) store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
   }
 
-  repositoryReadiness.resume()
   liveTutorial.resume()
   repositorySetup.resumeRepositorySetups()
   /*
-   * Persisted approval reads reconnect from the identity answer, never from
-   * construction: every boot adopts or probes the session, and a read started
+   * Persisted repository and approval reads reconnect from the identity answer,
+   * never from construction: every boot adopts or probes the session, and a read started
    * before that answer would only be superseded by it.
    */
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
+    repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     runs.resumeApprovalRequests()
   })

@@ -60,7 +60,7 @@ test("a cold explicit public target from home persists and acknowledges before i
   } finally { resolveCatalog(json(503, {})); resolveFile(json(503, {})); await h.close() }
 })
 
-test("root reload reconnects the durable command target without creating a URL admission", async () => {
+for (const phase of ["pending", "ready"] as const) test(`root reload waits for the real boot identity answer before reconnecting its ${phase} command target`, async () => {
   const storage = memoryStorage()
   let release!: (response: Response) => void
   const oldCatalog = new Promise<Response>(resolve => { release = resolve })
@@ -69,23 +69,41 @@ test("root reload reconnects the durable command target without creating a URL a
   await first.controller.commands.run("files.list", `docs ${repo}`)
   const requestId = first.store.session().repositoryCommandEntry!.requestId
   await first.close()
+  if (phase === "ready") {
+    const admitted = await createAppStore({ kind: "localStorage", storage })
+    await admitted.dispatch({ type: "repository.upserted", actor: "system", repository: { id: repo, org: "alpha", name: "one", ownerKind: "user", head: null, catalog: true } }).isPersisted.promise
+    await admitted.dispatch({ type: "repository.command.changed", actor: "system", entry: { ...admitted.session().repositoryCommandEntry!, phase: "ready" } }).isPersisted.promise
+    await admitted.dispose?.()
+  }
   const store = await createAppStore({ kind: "localStorage", storage })
   beginRepositoryEntry(store, null)
   const hits: string[] = []
+  let releaseScopes!: () => void
+  const scopes = new Promise<void>(resolve => { releaseScopes = resolve })
   const controller = createAppController(store, unavailableRepositories, silentAgent, { toastDebounceMs: 10, fetchImpl: async input => {
     const url = String(input); hits.push(url)
+    if (url.endsWith("/api/auth/scopes")) { await scopes; return json(200, { scopes: [] }) }
     return url === "/api/public/repos" ? json(200, { repos: [{ name: repo }] }) : json(200, [])
   } })
   try {
+    controller.changeDraft("Chat is available before identity finishes")
+    await pause(15)
+    const adopting = controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
+    await pause(25)
+    expect(hits.filter(path => path === "/api/public/repos")).toEqual([])
+    expect(hits.filter(path => path.includes("/contents/docs"))).toEqual([])
+    expect(store.session().pendingCommand?.requirement).toBe("repository-ready")
+    releaseScopes()
+    await adopting
     await until(() => store.collections.cards.get(`files-${repo}-docs`)?.status === "active")
     expect(store.session().repositoryEntry).toBeNull()
     expect(store.session().repositoryCommandEntry?.requestId).toBe(requestId)
-    expect(hits.filter(path => path === "/api/public/repos")).toHaveLength(1)
+    expect(hits.filter(path => path === "/api/public/repos")).toHaveLength(phase === "pending" ? 1 : 0)
     expect(hits.filter(path => path.includes("/contents/docs"))).toEqual([`/api/repos/${repo}/contents/docs`])
     release(json(200, { repos: [{ name: "old/stale" }] }))
     await pause(20)
     expect(store.collections.repositories.has("old/stale")).toBe(false)
-  } finally { release(json(503, {})); await controller.dispose(); await store.dispose?.() }
+  } finally { releaseScopes(); release(json(503, {})); await controller.dispose(); await store.dispose?.() }
 })
 
 test("an explicit cold target leaves a different URL admission and selection intact", async () => {
@@ -293,6 +311,7 @@ test("a persisted request reconnects after reload and retains its explicit targe
   const hits: string[] = []
   const second = await setup(storage, async input => { hits.push(String(input)); return json(200, { path: "README.md", type: "file", content: "RESTORED", encoding: "utf-8" }) })
   try {
+    await second.controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
     await second.ready()
     await until(() => second.store.collections.cards.get("file-alpha/one-README.md")?.status === "active")
     expect(hits.filter(path => path.includes("/contents/README.md"))).toEqual([expect.stringContaining("/alpha/one/contents/README.md")])

@@ -32,6 +32,8 @@ export const createRepositoryReadiness = (
   const keyOf = (value: ReturnType<typeof pending>) => value?.requirement === "repository-ready"
     ? JSON.stringify([value, target(value)?.scope, target(value)?.entry.requestId]) : undefined
   let active: string | undefined
+  // Hydrated requests wait for this boot's identity answer; a fresh user admission may start immediately.
+  let activated = false
   const persisting = new Map<string, Promise<unknown>>()
   const resolving = new Map<string, object>()
   const wakeups = new Set<() => void>()
@@ -60,7 +62,7 @@ export const createRepositoryReadiness = (
       })
   }
   const resume = (launch = false): void => {
-    if (ctx.disposed) return
+    if (ctx.disposed || !activated) return
     const request = pending()
     // Only hydrated boot or a completed durable admission may start network work.
     if (launch) launchCommandTarget(request)
@@ -114,8 +116,9 @@ export const createRepositoryReadiness = (
   })
   ctx.onDispose(() => { subscription.unsubscribe(); for (const wake of [...wakeups]) wake(); wakeups.clear() })
   return {
-    resume: () => resume(true),
+    resume: () => { activated = true; resume(true) },
     defer: async (name: string, payload: Record<string, unknown>, options: { refresh?: boolean; scope?: "command" } = {}): Promise<void> => {
+      activated = true
       const args = JSON.stringify(payload)
       const signature = JSON.stringify([name, args])
       const old = pending()
