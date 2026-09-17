@@ -1,6 +1,8 @@
 /** Capture only exact source named by a repository-authorized event. */
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Option, Schema } from "effect"
+import { FlowRuntime } from "@smthrs/flow"
+import { Landing } from "../coding/landing.ts"
 import { runSourceProcess, type ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { NativeCoding, NativeCodingError, requestIdFor, type NativeRevision } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
@@ -65,4 +67,34 @@ export const ensureSource = (options: ImmutableSourceOptions, event: typeof Even
     return new CodingError({ code, message: error.message })
   }
   return new CodingError({ code: "source_unavailable", message: "The selected source could not be imported" })
+}))
+
+
+/** The expected main comes from native bookmark authority, never an event SHA.
+ * Every retained/imported source is rechecked against current main before use. */
+export const ensureMainSource = (options: ImmutableSourceOptions, expectedMain: string) => Effect.gen(function*() {
+  const landing = yield* Landing, native = yield* NativeCoding
+  const checkMain = Effect.gen(function*() {
+    if ((yield* landing.readMain) !== expectedMain) return yield* new CodingError({ code: "source_changed", message: "Main changed before capture; inspect its current revision" })
+  })
+  yield* checkMain
+  const before = yield* native.read()
+  if (yield* hasSourceCommits(options, [expectedMain], before.operationId)) { yield* checkMain; return }
+  const remote = yield* Effect.serviceOption(RepositoryRemote), execution = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+  if (Option.isNone(remote) || !remote.value.retainMain || !native.importSource || Option.isNone(execution)) {
+    return yield* new CodingError({ code: "source_unavailable", message: "Update this repository host to import verified native main" })
+  }
+  const retained = yield* remote.value.retainMain(expectedMain)
+  yield* checkMain
+  const imported = yield* native.importSource({ requestId: requestIdFor(execution.value.executionId, `repository/main/${expectedMain}`), commits: [{ commitId: expectedMain, ref: retained.head_ref }] })
+  if (imported.workspaceId !== landing.binding.workspaceId || imported.workspaceId !== remote.value.workspaceId || imported.repositoryId !== landing.binding.repositoryId || JSON.stringify(stableHead(imported.head)) !== JSON.stringify(stableHead(before.head))) {
+    return yield* new CodingError({ code: "stale_revision", message: "The owning workspace or editing revision changed during main import" })
+  }
+  yield* checkMain
+  if (!(yield* hasSourceCommits(options, [expectedMain], imported.operationId))) return yield* new CodingError({ code: "invalid_receipt", message: "Imported main is unavailable to native immutable capture" })
+  yield* checkMain
+}).pipe(Effect.mapError(error => {
+  if (error instanceof CodingError) return error
+  if (error instanceof NativeCodingError && (error.code === "source_missing" || error.code === "source_changed" || error.code === "source_refused")) return new CodingError({ code: error.code, message: error.message })
+  return new CodingError({ code: "source_unavailable", message: "Verified native main could not be imported" })
 }))

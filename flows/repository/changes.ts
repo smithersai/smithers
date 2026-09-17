@@ -10,6 +10,7 @@ import { normalizePath } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
 import { Landing } from "../coding/landing.ts"
+import { ensureMainSource } from "./retention.ts"
 import { DeliverChange } from "./delivery.ts"
 import { Work, retainedStepError } from "./jobs.ts"
 import { CheckStep, diffPaths, materializeProposal } from "./checks.ts"
@@ -56,6 +57,7 @@ export const selectChangeSource = (options: ImmutableSourceOptions, work: typeof
   const landing = yield* Effect.serviceOption(Landing)
   if (Option.isNone(landing)) return { work, blocked: "Connect native landing before applying this draft" }
   const main = yield* landing.value.readMain
+  yield* ensureMainSource(options, main).pipe(Effect.provideService(Landing, landing.value))
   const evidence = yield* captureRepository(options, { repo: work.repo, prompt: JSON.stringify({ step: work.step, event: work.event }), sourceRevision: main }, "immutable")
   const selected = { ...work, evidence }
   return { work: selected, blocked: yield* changeAdmission(selected) }

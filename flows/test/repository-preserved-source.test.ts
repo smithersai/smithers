@@ -111,9 +111,14 @@ for (const mode of ["land", "old-helper", "changed-main", "changed-before-create
       event: { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "feature", payload: { manual: { prompt: "Update code.txt" } } },
       evidence, checks: [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
       landing: mode === "old-helper" ? "ask" : "checks", replies: "draft", executionMode: "live", deadlineAt: Date.now() + 60000 }
-    let reads = 0
+    let draftedAdmissionReads = 0
     const landing: Landing["Service"] = { binding: { repositoryId: 3, workspaceId: "11111111-1111-4111-a111-111111111111" },
-      readMain: Effect.sync(() => { reads++; return ((mode === "changed-main" && reads >= 3) || (mode === "changed-before-create" && reads >= 4) || (mode === "delivery-main-moved" && reads >= 5)) ? "f".repeat(40) : f.base.commitId }),
+      readMain: Effect.sync(() => {
+        // Model the actual phase, independent of extra source-availability fences.
+        if (calls.includes("draft") && !calls.includes("create")) draftedAdmissionReads++
+        return ((mode === "changed-main" && draftedAdmissionReads >= 1) || (mode === "changed-before-create" && draftedAdmissionReads >= 2) ||
+          (mode === "delivery-main-moved" && calls.includes("create"))) ? "f".repeat(40) : f.base.commitId
+      }),
       prepare: input => Effect.sync(() => { calls.push("prepare"); assert.equal(input.source_commit_id, f.child.commitId); assert.equal(input.source_base_commit_id, f.base.commitId)
         return { ...input, status: "prepared" as const, changes: [{ change_id: f.child.changeId, commit_id: f.child.commitId }] } }),
       create: requestId => Effect.sync(() => { calls.push("landing"); return { requestId, number: 1 } }),
