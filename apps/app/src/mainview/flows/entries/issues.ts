@@ -50,7 +50,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
     runtimeAny: ["cloud", "practice"],
     args: "<number> [owner/repo] [--source github|smithers-cloud]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: Schema.Struct({
       ...NumberedTarget.fields,
       source: Schema.optional(Schema.Literals(["smithers-cloud", "github"]))
@@ -73,7 +73,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "Close an issue",
     runtimeAny: ["cloud", "practice"],
     args: "<number> [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: NumberedTarget,
     handler: ({ number, repo }) => actions.setIssueState(number, "closed", repo)
   }),
@@ -82,7 +82,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "Reopen a closed issue",
     runtimeAny: ["cloud", "practice"],
     args: "<number> [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: NumberedTarget,
     handler: ({ number, repo }) => actions.setIssueState(number, "open", repo)
   }),
@@ -92,7 +92,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "Comment on an issue",
     runtimeAny: ["cloud", "practice"],
     args: "<number> <text> [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: Schema.Struct({
       number: Schema.Number,
       text: Schema.String,

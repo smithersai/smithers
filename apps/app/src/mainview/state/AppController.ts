@@ -32,7 +32,7 @@ import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { PtyClient } from "./PtyClient"
 import { createPtyClient,pageSocketUrl } from "./PtyClient"
 import type { KnownRepositories } from "./RepoContext"
-import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,resolveTargetRepo } from "./RepoContext"
+import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,repositorySource,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import { createTargetRunClient } from "./TargetRunClient"
 import type { AccountController } from "./controller/account"
@@ -1813,7 +1813,9 @@ export const createAppController = (
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
-        practiceRepo: fileTarget !== undefined && "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo),
+        practiceRepo: fileTarget !== undefined
+          ? "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo)
+          : repositorySource(store, repo).practice,
         publicRepo: !catalogRefused && (requestedRepo === undefined
           ? activeCatalogRepositoryId(store) !== null
           : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())),

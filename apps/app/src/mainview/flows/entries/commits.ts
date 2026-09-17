@@ -20,7 +20,7 @@ export const commitsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
     runtimeAny: ["cloud", "practice"],
     args: "[branch] [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: Schema.Struct({ branch: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
     handler: ({ branch, repo }) => actions.listCommits(branch, repo)
   }),
@@ -30,7 +30,7 @@ export const commitsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
     runtimeAny: ["cloud", "practice"],
     args: "<change-id> [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: Schema.Struct({ ref: Schema.String, repo: Schema.optional(Schema.String) }),
     handler: ({ ref, repo }) => actions.readCommit(ref, repo)
   })

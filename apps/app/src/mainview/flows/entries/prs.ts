@@ -41,7 +41,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
     runtimeAny: ["cloud", "practice"],
     args: "<number> [owner/repo]",
-    requires: ["signed-in"],
+    requires: ["repo-read"],
     input: NumberedTarget,
     prepare: ({ number, repo }) => actions.viewLanding.preload?.(number, repo),
     handler: ({ number, repo }) => actions.viewLanding(number, repo)

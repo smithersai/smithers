@@ -349,7 +349,7 @@ export interface CommandState {
   readonly hasOpenRepos?: boolean
   /** The selected repository came from the public catalog: readable signed out. Optional like hasOpenRepos. */
   readonly publicRepo?: boolean
-  /** The resolved file target is the bundled practice repository. */
+  /** The resolved target — the file's repository, else the command's — is the bundled practice repository. */
   readonly practiceRepo?: boolean
   /** A named repository still needs a catalog answer before authorization. */
   readonly repositoryReadiness?: { readonly repo: string; readonly phase: "pending" | "unavailable" | "unrequested"; readonly error?: string; readonly scope?: "command" }

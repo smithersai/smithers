@@ -23,13 +23,14 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
   return { store, controller, redirects, requests }
 }
 
-for (const [name, args] of [["flow.run", "review smithersai/smithers"], ["secrets.list", undefined], ["issues.view", "3"]] as const) {
+// A repository read parks on repo-read, which the bundled practice source alone widens; everything else on signed-in.
+for (const [name, args, requirement] of [["flow.run", "review smithersai/smithers", "signed-in"], ["secrets.list", undefined, "signed-in"], ["issues.view", "3", "repo-read"]] as const) {
   test(`${name} signed out parks silently with exactly one sign-in prompt per click, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()
     controller.runCommand(name, args)
     await settle()
     expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)).toHaveLength(1)
-    expect(store.session().pendingCommand).toMatchObject({ name, args: args ?? null, requirement: "signed-in" })
+    expect(store.session().pendingCommand).toMatchObject({ name, args: args ?? null, requirement })
     expect(requests).toEqual([])
     expect(redirects).toEqual([])
     const toasts = [...store.collections.toasts.values()]

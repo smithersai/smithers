@@ -458,10 +458,10 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     } }
   })
   const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string) => {
-    if (isPracticeRepo(repoArg)) return { run: async () => {} }
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    if (isPracticeRepo(repo)) return { run: async () => {} }
     return { id: `pr-${repo}-${number}`, title: `Pull request #${number} · ${repo}`, pane: repo,
       key: JSON.stringify(["pr", repo, number, stateOverride]), read: () => readLanding(repo, number, stateOverride) }
   })
@@ -479,9 +479,9 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     listLandings: Object.assign((repoArg?: string) => tutorialRepositoryRead(ctx, "prs", repoArg, "all", renderRepositoryForm, repo => listView(repo)), { preload: listView.preload }),
 
     viewLanding: Object.assign(async (number: number, repoArg?: string) => {
-      if (isPracticeRepo(repoArg)) return readRepositoryDetail(ctx, repoArg!, "pr", number, () => practiceViewLanding(ctx, number))
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
+      if (isPracticeRepo(target.repo)) return readRepositoryDetail(ctx, target.repo, "pr", number, () => practiceViewLanding(ctx, number))
       return readRepositoryDetail(ctx, target.repo, "pr", number, () => landingView(number, target.repo))
     }, { preload: landingView.preload }),
 

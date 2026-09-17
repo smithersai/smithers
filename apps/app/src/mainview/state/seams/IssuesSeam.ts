@@ -396,10 +396,10 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     } }
   })
   const issueView = preparedView(ctx, (number: number, repoArg?: string, source?: "smithers-cloud" | "github") => {
-    if (isPracticeRepo(repoArg)) return { run: async () => {} }
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
+    if (isPracticeRepo(repo)) return { run: async () => {} }
     return { id: `issue-${source === "github" ? "github-" : ""}${repo}-${number}`, title: `Issue #${number} · ${repo}`, pane: repo,
       read: () => source === "github" ? readGithubIssue(repo, number) : readIssue(repo, number) }
   })
@@ -420,9 +420,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string) => tutorialRepositoryRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, (repo) => listView(filter, repo)), { preload: listView.preload }),
 
     viewIssue: Object.assign(async (number: number, explicitRepo?: string, source?: "smithers-cloud" | "github") => {
-      if (isPracticeRepo(explicitRepo)) return readRepositoryDetail(ctx, explicitRepo!, "issue", number, () => practiceViewIssue(ctx, number))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
+      if (isPracticeRepo(target.repo)) return readRepositoryDetail(ctx, target.repo, "issue", number, () => practiceViewIssue(ctx, number))
       if (source === "github") return readRepositoryDetail(ctx, target.repo, "issue", number,
         () => issueView(number, target.repo, "github"), "github")
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
@@ -467,10 +467,10 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     },
 
     setIssueState: async (number, state, explicitRepo) => {
-      if (isPracticeRepo(explicitRepo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, state }))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target
+      if (isPracticeRepo(repo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, state }))
       const verb = state === "closed" ? "close" : "reopen"
       let response: Response
       try {
@@ -497,10 +497,10 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
     commentOnIssue: async (number, text, explicitRepo) => {
       if (text.trim() === "") return "Write a comment before posting it."
-      if (isPracticeRepo(explicitRepo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, comments: [...payload.comments, { author: ctx.store.collections.identitySessions.get("identity")?.login ?? "You", commentBody: text.trim(), createdAt: new Date().toISOString() }] }))
       const target = resolveTargetRepo(ctx.store, explicitRepo)
       if ("error" in target) return target.error
       const { repo } = target
+      if (isPracticeRepo(repo)) return mutatePracticeIssue(ctx, number, payload => ({ ...payload, comments: [...payload.comments, { author: ctx.store.collections.identitySessions.get("identity")?.login ?? "You", commentBody: text.trim(), createdAt: new Date().toISOString() }] }))
       let response: Response
       try {
         response = await ctx.http(`${issuesPath(repo)}/${number}/comments`, {

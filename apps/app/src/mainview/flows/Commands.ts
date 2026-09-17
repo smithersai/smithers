@@ -518,6 +518,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       : { payload: named }
     const repo = "payload" in parsed && typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
     const readsRepository = target.metadata.requires?.includes("repo-source") === true
+    const repositoryScoped = readsRepository || target.metadata.requires?.includes("repo-read") === true
     const sourcePath = readsRepository
       ? "payload" in parsed && typeof parsed.payload.path === "string" ? parsed.payload.path : ""
       : undefined
@@ -527,9 +528,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * only that key does — every other target keeps them.
      */
     const snapshot = actions.snapshot(repo, sourcePath)
-    // File prerequisites use the resolved payload target; display text cannot
-    // authorize a different repository. Other practice flows carry run/card ids.
-    const practiceBypass = !readsRepository && namesPractice(args)
+    // Repository prerequisites use the resolved payload target; display text
+    // cannot authorize a different repository. Run-scoped practice flows carry
+    // the run or card id in the line, so they keep reading it.
+    const practiceBypass = !repositoryScoped && namesPractice(args)
     const readiness = snapshot.repositoryReadiness
     const pendingPayload = "payload" in parsed ? parsed.payload : !args?.trim() ? {} : undefined
     if (!snapshot.practiceRepo && readsRepository && readiness && pendingPayload !== undefined) {
@@ -665,7 +667,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const entry = find(name)
     if (!entry) return
     const parsed = payloadFor(nameOf(entry), args, entry.metadata.grammar, actions.knownRepositories())
-    if ("error" in parsed || unmetRequirements(entry.metadata, actions.snapshot()).length) return
+    if ("error" in parsed) return
+    // Speculation resolves the same target the run will: an explicit repository
+    // is never authorized by the selection behind it.
+    const repo = typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
+    if (unmetRequirements(entry.metadata, actions.snapshot(repo)).length) return
     try { await Promise.all([preloadViewModule(nameOf(entry), parsed.payload), entry.prepare?.(parsed.payload)]) } catch { /* Speculation must never interrupt the user. */ }
   }
 

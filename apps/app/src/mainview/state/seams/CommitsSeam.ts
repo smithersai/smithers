@@ -290,15 +290,15 @@ export const createCommitsSeam = (ctx: SeamContext, deps: CommitsSeamDeps = {}):
   return {
     listCommits: async (branchArg, repoArg) => {
       const branchName = branchArg?.trim() === "" ? undefined : branchArg?.trim()
-      if (isPracticeRepo(repoArg)) {
-        const answer = deps.practice?.list(branchName) ?? PRACTICE_COMMITS_REFUSAL
-        if (typeof answer === "string") return answer
-        upsert(listCard(repoArg!, answer.branch, { commits: [...answer.commits] }))
-        return readResult(listValue(repoArg!, answer.branch, answer.commits))
-      }
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
       const repo = target.repo
+      if (isPracticeRepo(repo)) {
+        const answer = deps.practice?.list(branchName) ?? PRACTICE_COMMITS_REFUSAL
+        if (typeof answer === "string") return answer
+        upsert(listCard(repo, answer.branch, { commits: [...answer.commits] }))
+        return readResult(listValue(repo, answer.branch, answer.commits))
+      }
       const bookmarks = await fetchAllBookmarks(ctx, repo)
       if ("error" in bookmarks) return bookmarks.error
       const bookmark = branchName === undefined
@@ -318,15 +318,15 @@ export const createCommitsSeam = (ctx: SeamContext, deps: CommitsSeamDeps = {}):
     readCommit: async (refArg, repoArg) => {
       const ref = refArg.trim()
       if (ref === "") return "commits.read needs a change id or commit id."
-      if (isPracticeRepo(repoArg)) {
+      const target = resolveTargetRepo(ctx.store, repoArg)
+      if ("error" in target) return target.error
+      const repo = target.repo
+      if (isPracticeRepo(repo)) {
         const answer = deps.practice?.read(ref) ?? PRACTICE_COMMITS_REFUSAL
         if (typeof answer === "string") return answer
         upsert(commitCard(answer, ref))
         return readResult(commitValue(answer))
       }
-      const target = resolveTargetRepo(ctx.store, repoArg)
-      if ("error" in target) return target.error
-      const repo = target.repo
       const change = await readChange(repo, ref)
       if ("error" in change) return change.error
       const [diff, statuses, parents] = await Promise.all([

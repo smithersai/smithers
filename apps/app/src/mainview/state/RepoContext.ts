@@ -10,6 +10,7 @@ import type { Repo } from "@smthrs/rpc/LocalApp"
 import { activeRepoOf, parseRepoSelection } from "./AppState"
 import type { CloudRepository } from "./AppState"
 import type { AppStore } from "./AppStore"
+import { isPracticeRepo } from "./practice/PracticeRepository"
 import { cardContainsRun, runScopeFromCard, sameRunScope, type RunScope } from "./RunReference"
 
 /** The `owner/repo` shape; exported for the grammars that take a LEADING repo token (agent.session.new). */
@@ -136,6 +137,20 @@ export const resolveTargetRepo = (
   return {
     error: `Several repositories are loaded (${loaded.map((repo) => repo.id).join(", ")}) — name one as owner/repo`
   }
+}
+
+/**
+ * The resolved repository source a repo-scoped command reads: the explicit
+ * token when the line carries one, else the selection. Admission and the seam
+ * ask the same question here, so raw argument text can never authorize a
+ * target the seam would not resolve. An unresolvable target is no source.
+ */
+export const repositorySource = (
+  store: AppStore,
+  explicit: string | undefined
+): { readonly repo?: string; readonly practice: boolean } => {
+  const target = resolveTargetRepo(store, explicit)
+  return "error" in target ? { practice: false } : { repo: target.repo, practice: isPracticeRepo(target.repo) }
 }
 
 /**
