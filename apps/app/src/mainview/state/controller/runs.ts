@@ -24,7 +24,8 @@ import type { TraceFilter,TraceView } from "../../cards/RunTrace"
 import { traceFromJournal } from "../../cards/RunTrace"
 import type { CommandResult } from "../../flows/Flows"
 import { framePath } from "../../runtime/FrameHistory"
-import type { Card } from "../AppState"
+import { actorSharedState } from "../ActorBindings"
+import type { ApprovalsInboxRequest, Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
 import { liveTutorialTranscript } from "../LiveTutorialTranscript"
 import { gatewayBindingFor,gatewayRunContextFor } from "../RepoContext"
@@ -32,8 +33,9 @@ import { approvalCardIdFor,cardContainsRun,runCardInScope,runScopeFromCard,sameR
 import { isPracticeRepo,practiceTranscript } from "../practice/PracticeRepository"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
+import { TOAST_SUPERSEDED } from "./failures"
 import type { FormsController } from "./forms"
-import type { RunSummaryRow } from "./gateway"
+import type { ApprovalRow, RunSummaryRow } from "./gateway"
 import type { WorkflowController } from "./workflows"
 
 export interface RunsController {
@@ -65,7 +67,14 @@ export interface RunsController {
   readonly traceLive: (runId: string, sourceCard?: string) => CommandResult
   readonly selectCodingChange: (runId: string, changeId: string, sourceCard?: string) => CommandResult
   readonly stopAllRuns: (repo?: string, sourceCard?: string) => Promise<CommandResult>
+  /**
+   * `approvals.list [owner/repo]`: persist the read request for the target
+   * named NOW, acknowledge, and read the workspace inbox in the background
+   * (root AGENTS "Instant chat; slow work runs in the background").
+   */
   readonly listApprovals: (repo?: string) => Promise<CommandResult>
+  /** Reconnect every persisted inbox read the current account still owns; idempotent. */
+  readonly resumeApprovalRequests: () => void
   readonly openApproval: (runId: string, sourceCard?: string) => Promise<CommandResult>
 }
 
@@ -605,21 +614,37 @@ export const createRunsController = (
     }
   }
 
-  const listApprovals = async (repoArg?: string): Promise<CommandResult> => {
-    const guard = workflows.workflowIdentityGuard()
-    if (guard !== undefined) return guard
-    const target = workflows.workflowTargetRepo(repoArg)
-    if ("error" in target) return target.error
-    const repo = target.repo
-    const binding = gatewayBindingFor(store, repo)
-    if ("error" in binding) return binding.error
-    const provisioned = await workflows.provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    const inbox = await gateway.approvalsInbox(repo, binding)
-    if (inbox.status !== "ok") return inbox.message
-    for (const runId of new Set(inbox.value.map((row) => row.runId))) await reconcileRunApprovals(store, { repo, runId, ...binding }, inbox.value.filter(row => row.runId === runId))
-    const pending = inbox.value.filter((row) => row.status === "pending")
-    const cardId = `approvals-inbox-${repo}${binding.workspaceId === undefined ? "" : `-${binding.workspaceId}`}`
+  /*
+   * The workspace approvals inbox is a slow read: the workspace may need
+   * provisioning, and a Projection.Snapshot against a sleeping workspace
+   * waits through the gateway's resume loop (gateway.ts, up to three
+   * minutes). The ask therefore persists its target and owner first, answers
+   * "requested", and the read runs behind the shared toast — through
+   * provision AND the read — publishing the card only from received rows.
+   *
+   * The in-flight map is shared by the user and agent doors (one operation
+   * per target), and every entry names the request id and owner it serves,
+   * so a superseded or account-crossed operation is never shared again.
+   */
+  const inboxCardIdFor = (repo: string, workspaceId: string | undefined): string =>
+    `approvals-inbox-${repo}${workspaceId === undefined ? "" : `-${workspaceId}`}`
+  const approvalReads = actorSharedState(ctx, "approvals-list", () => ({
+    inFlight: new Map<string, { readonly id: string; readonly owner: string; readonly epoch: number; readonly work: Promise<unknown> }>(),
+    persisting: new Map<string, Promise<unknown>>()
+  }))
+  /** The stable owner of retained account data (accountOwnerLogin survives an unavailable probe). */
+  const accountOwner = (): string | null | undefined => {
+    const identity = store.collections.identitySessions.get("identity")
+    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
+      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
+  }
+  const inboxRequestFor = (key: string): ApprovalsInboxRequest | undefined =>
+    (store.session().approvalsInboxRequests ?? []).find((row) => inboxCardIdFor(row.repo, row.workspaceId) === key)
+
+  const resultSaveFailure = "Approvals could not be saved. Try again."
+  const publishInbox = async (repo: string, binding: { readonly workspaceId?: string }, rows: ReadonlyArray<ApprovalRow>): Promise<number> => {
+    const pending = rows.filter((row) => row.status === "pending")
+    const cardId = inboxCardIdFor(repo, binding.workspaceId)
     const existing = store.collections.cards.get(cardId)
     const prior = existing?.kind === "approvals-inbox" ? existing.payload.approvals : []
     const card: Card = {
@@ -649,12 +674,148 @@ export const createRunsController = (
         })
       }
     }
-    store.dispatch({ type: "card.upsert", actor: "system", card })
-    return {
-      value: pending.length === 0
-        ? `No approvals are pending on ${repo}.`
-        : `${pending.length} approval${pending.length === 1 ? "" : "s"} pending on ${repo}.`
+    try {
+      await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    } catch { throw new Error(resultSaveFailure) }
+    return pending.length
+  }
+
+  /** The background read for one persisted request; shared while it runs. Never replays a mutation. */
+  const readInbox = (request: ApprovalsInboxRequest): Promise<unknown> => {
+    const key = inboxCardIdFor(request.repo, request.workspaceId)
+    const epoch = ctx.accountEpoch
+    const running = approvalReads.inFlight.get(key)
+    if (running !== undefined && running.id === request.id && running.owner === request.owner && running.epoch === epoch) return running.work
+    const binding = request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }
+    // The fence at every boundary: the controller is open, the account is
+    // the one that asked, and this request is still the one on record.
+    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === request.owner
+    const current = (): boolean => ownsAccount() && inboxRequestFor(key)?.id === request.id
+    const settle = async (error?: string): Promise<boolean> => {
+      if (!current()) return false
+      try {
+        await store.dispatch({ type: "approvals.inbox.settled", actor: "system", id: request.id, ...(error === undefined ? {} : { error }) }).isPersisted.promise
+      } catch { throw new Error(resultSaveFailure) }
+      return ownsAccount() && (error === undefined ? inboxRequestFor(key) === undefined : inboxRequestFor(key)?.id === request.id)
     }
+    const toastKey = `approvals.list.${key}`
+    const title = `Loading ${request.repo} approvals…`
+    const work = ctx.withToast(toastKey, title, "Approvals loaded", async () => {
+      try {
+        if (!current()) return TOAST_SUPERSEDED
+        const provisioned = await workflows.provisionWorkspace(request.repo, binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (provisioned !== true) return await settle(provisioned) ? provisioned : TOAST_SUPERSEDED
+        const inbox = await gateway.approvalsInbox(request.repo, binding)
+        if (!current()) return TOAST_SUPERSEDED
+        if (inbox.status !== "ok") return await settle(inbox.message) ? inbox.message : TOAST_SUPERSEDED
+        for (const runId of new Set(inbox.value.map((row) => row.runId))) {
+          await reconcileRunApprovals(store, { repo: request.repo, runId, ...binding }, inbox.value.filter((row) => row.runId === runId))
+          if (!current()) return TOAST_SUPERSEDED
+        }
+        const pending = await publishInbox(request.repo, binding, inbox.value)
+        if (!await settle()) return TOAST_SUPERSEDED
+        return { value: pending === 0 ? `No approvals are pending on ${request.repo}.` : `${pending} approval${pending === 1 ? "" : "s"} pending on ${request.repo}.` }
+      } catch (error) {
+        if (!current()) return TOAST_SUPERSEDED
+        const message = error instanceof Error ? error.message : String(error)
+        try {
+          if (!await settle(message)) return TOAST_SUPERSEDED
+        } catch {
+          // A rejected write rolls back; the owed request is retained and no
+          // success is reported even when its failure cannot be saved either.
+          return current() ? resultSaveFailure : TOAST_SUPERSEDED
+        }
+        return message
+      }
+    })
+    const entry = { id: request.id, owner: request.owner, epoch, work }
+    approvalReads.inFlight.set(key, entry)
+    void work.then((outcome) => {
+      // A refusal quicker than the toast debounce never showed a notice; the
+      // failure still has to be visible, so it takes the same failed toast.
+      if (typeof outcome !== "string" || !current() || approvalReads.inFlight.get(key) !== entry || store.collections.toasts.get(`toast-${toastKey}`) !== undefined) return
+      store.dispatch({ type: "toast.shown", actor: "system", key: toastKey, title })
+      ctx.resolveToast(toastKey, { status: "failed", detail: outcome })
+    }).finally(() => { if (approvalReads.inFlight.get(key) === entry) approvalReads.inFlight.delete(key) })
+    return work
+  }
+
+  const listApprovals = async (repoArg?: string): Promise<CommandResult> => {
+    const guard = workflows.workflowIdentityGuard()
+    if (guard !== undefined) return guard
+    // The target is fixed here, before any await: a later selection cannot retarget the read.
+    const target = workflows.workflowTargetRepo(repoArg)
+    if ("error" in target) return target.error
+    const repo = target.repo
+    const binding = gatewayBindingFor(store, repo)
+    if ("error" in binding) return binding.error
+    const owner = accountOwner()
+    if (typeof owner !== "string") return "Sign in with GitHub first: flows run on your own workspace."
+    const epoch = ctx.accountEpoch
+    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === owner
+    const accountChanged = "The account changed before the approvals could be read. Run the command again."
+    const key = inboxCardIdFor(repo, binding.workspaceId)
+    const acknowledgment = { value: "Approvals requested." }
+    // An ask that arrives while an earlier ask for this target is still
+    // committing waits for that commit, then shares whatever it started.
+    for (let saving = approvalReads.persisting.get(key); saving !== undefined; saving = approvalReads.persisting.get(key)) {
+      try { await saving } catch { /* the ask that saved it reports the failure */ }
+      if (!ownsAccount()) return accountChanged
+    }
+    const recorded = inboxRequestFor(key)
+    const running = approvalReads.inFlight.get(key)
+    // Duplicate input shares the operation already reading this target for this account.
+    if (recorded !== undefined && recorded.error === undefined && recorded.owner === owner && running?.id === recorded.id && running.owner === owner && running.epoch === epoch) {
+      return acknowledgment
+    }
+    const workspace = binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }
+    const request = { id: crypto.randomUUID(), repo, ...workspace, owner }
+    const saving = store.dispatch({ type: "approvals.inbox.requested", actor: ctx.commandActor, request }).isPersisted.promise
+    approvalReads.persisting.set(key, saving)
+    try {
+      await saving
+    } catch {
+      return "The approval request could not be saved, so nothing was read."
+    } finally {
+      if (approvalReads.persisting.get(key) === saving) approvalReads.persisting.delete(key)
+    }
+    const persisted = inboxRequestFor(key)
+    if (!ownsAccount() || persisted?.id !== request.id) {
+      return accountChanged
+    }
+    void readInbox(persisted)
+    return acknowledgment
+  }
+
+  const resumeApprovalRequests = (): void => {
+    if (ctx.disposed) return
+    const epoch = ctx.accountEpoch
+    const owner = accountOwner()
+    if (typeof owner !== "string") return
+    const current = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === owner
+    /*
+     * The identity answer that wakes this is an optimistic row until its
+     * write settles, and provisioning compares that row by identity: a read
+     * started inside the change notification would be refused as an account
+     * change the moment the row persists. The notification fires before the
+     * write is even queued, so wait one task for the commit, then for it to
+     * settle, before reading the account that is actually on record.
+     */
+    const timer = setTimeout(() => {
+      if (!current()) return
+      let settled: Promise<void>
+      try { settled = store.settled?.() ?? Promise.resolve() } catch { return }
+      void settled.then(() => {
+        if (!current() || workflows.workflowIdentityGuard() !== undefined) return
+        for (const request of store.session().approvalsInboxRequests ?? []) {
+          // A recorded failure stays visible and manual; another account's request is not this account's to run.
+          if (request.error !== undefined || request.owner !== owner) continue
+          void readInbox(request)
+        }
+      }, () => {})
+    }, 0)
+    ctx.unref(timer)
   }
 
   /**
@@ -731,6 +892,7 @@ export const createRunsController = (
     traceLive,
     stopAllRuns,
     listApprovals,
+    resumeApprovalRequests,
     openApproval
   }
 }

@@ -1839,7 +1839,15 @@ export const createAppController = (
   repositoryReadiness.resume()
   liveTutorial.resume()
   repositorySetup.resumeRepositorySetups()
-  const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => repositorySetup.resumeRepositorySetups())
+  /*
+   * Persisted approval reads reconnect from the identity answer, never from
+   * construction: every boot adopts or probes the session, and a read started
+   * before that answer would only be superseded by it.
+   */
+  const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
+    repositorySetup.resumeRepositorySetups()
+    runs.resumeApprovalRequests()
+  })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.

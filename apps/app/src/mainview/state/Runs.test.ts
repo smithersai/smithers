@@ -22,7 +22,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 import { runCardInScope, approvalCardIdFor } from "./RunReference"
 import { gatewayRunContextFor } from "./RepoContext"
 import { scopedControllers } from "./ControllerTestScope"
-import type { AppServices } from "./AppController"
+import type { AppController, AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
@@ -270,6 +270,22 @@ const inboxCard = (
 ): Extract<Card, { kind: "approvals-inbox" }> | undefined => {
   const card = store.collections.cards.get(`approvals-inbox-${REPO}`)
   return card?.kind === "approvals-inbox" ? card : undefined
+}
+
+/** The persisted approval reads still owed (or last failed) for this session. */
+const inboxRequests = (store: Awaited<ReturnType<typeof webStore>>) => store.session().approvalsInboxRequests ?? []
+
+/**
+ * `approvals.list` persists its request and acknowledges at once; the inbox
+ * card is published only when the background read settles. Callers that need
+ * the rows wait for that receipt.
+ */
+const listInbox = async (controller: AppController, store: Awaited<ReturnType<typeof webStore>>, repo?: string) => {
+  const outcome = await controller.commands.run("approvals.list", repo)
+  expect(said(outcome)).toBe("Approvals requested.")
+  await waitFor(() => inboxRequests(store).length === 0, 10_000)
+  await store.settled?.()
+  return outcome
 }
 
 test("attention combines explicit blockers and pending gates, and refresh removes cleared work", async () => {
@@ -790,8 +806,8 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
-    const listed = await controller.commands.run("approvals.list")
-    expect(said(listed)).toContain("2 approvals pending")
+    const listed = await listInbox(controller, store)
+    expect(said(listed)).toBe("Approvals requested.")
     const card = inboxCard(store)
     expect(card?.payload.approvals.map((row) => row.title)).toEqual(["Run the deploy script?", "Push the branch?"])
     // The inbox selected WITHOUT a run id — the whole workspace's gates.
@@ -806,7 +822,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const double = relay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
 
     // The exact dispatch the card's Approve button makes (approval.approve with the row id).
     const decided = await controller.commands.run("approval.approve", `approvals-inbox-${REPO}:req-1`)
@@ -878,7 +894,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const double = relay({ approvals: [row] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
     const id = inboxCard(store)!.id
     expect(inboxCard(store)?.payload.approvals[0]?.question?.prompt).toBe("Which service owns the retry budget?")
 
@@ -895,7 +911,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
       const double = relay({ approvals: [question], runs: [{ runId: "run-a", flowId: "review-pr", status: "waiting-approval" }] })
       const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
       await signIn(store)
-      await controller.commands.run("approvals.list")
+      await listInbox(controller, store)
       const currentInbox = inboxCard(store)!
       expect(currentInbox.payload.approvals[0]?.question?.prompt).toBe("Which services?")
       let id = approvalActionId(currentInbox.id, question)
@@ -921,7 +937,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     const double = relay({ approvals: [first, second] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
     const id = inboxCard(store)!.id
     // Legacy addresses must fail closed when more than one run owns the name.
     controller.decideApproval(`${id}:deploy:gate`, "approved")
@@ -931,7 +947,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     await settle(4)
     expect(double.state.submitted).toEqual([{ approval: second.payload, decision: "deny" }])
     expect(inboxCard(store)!.payload.approvals.map((row) => row.decision)).toEqual([undefined, "denied"])
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
     expect(inboxCard(store)!.payload.approvals.map((row) => row.decision)).toEqual([undefined, "denied"])
     await controller.commands.run("approval.approve", approvalActionId(id, first))
     await settle(4)
@@ -947,7 +963,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
     await controller.commands.run("approval.deny", `approvals-inbox-${REPO}:req-1`)
     await settle(4)
     const card = inboxCard(store)
@@ -971,6 +987,418 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     await controller.commands.run("approval.approve", "approval-run-a-req-1")
     await settle(4)
     expect(double.state.submitted).toHaveLength(1)
+  })
+
+  /*
+   * The read is slow on purpose here: provisioning and the inbox projection
+   * each wait for the test to release them, the way a sleeping workspace
+   * holds Projection.Snapshot in the gateway's resume loop. The ask must
+   * answer before either finishes, and nothing may claim rows it has not
+   * received.
+   */
+  const heldRelay = (options: Parameters<typeof relay>[0] = {}) => {
+    const double = relay(options)
+    const original = double.services.fetchImpl!
+    const gate = { provision: Promise.resolve(), read: Promise.resolve() }
+    const started = { provision: 0, read: 0 }
+    const hold = (name: "provision" | "read") => {
+      let release!: () => void
+      gate[name] = new Promise<void>((resolve) => { release = resolve })
+      return release
+    }
+    const services: AppServices = { ...double.services, fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) as { procedure?: string; payload?: { selector?: { _tag?: string } } } : undefined
+      if (url.endsWith("/api/workflow/provision")) { started.provision += 1; await gate.provision }
+      if (body?.procedure === "Projection.Snapshot" && body.payload?.selector?._tag === "approvals") { started.read += 1; await gate.read }
+      return original(input, init)
+    } }
+    return { double, services, hold, started }
+  }
+  const inboxToastId = `toast-approvals.list.approvals-inbox-${REPO}`
+  const inboxToasts = (store: Awaited<ReturnType<typeof webStore>>) => [...store.collections.toasts.values()].filter((toast) => toast.key.startsWith("approvals.list."))
+  const mutations = (double: ReturnType<typeof relay>) => double.calls.filter((call) => {
+    const procedure = (call.body as { procedure?: string } | undefined)?.procedure
+    return procedure === "Approval.Submit" || procedure === "Run" || procedure === "Resume"
+  })
+
+  const interceptInboxDispatch = (store: Awaited<ReturnType<typeof webStore>>, dispatch: typeof store.dispatch) =>
+    new Proxy(store, { get: (target, key, receiver) => key === "dispatch" ? dispatch : Reflect.get(target, key, receiver) })
+  const holdInboxReceipt = (transaction: ReturnType<Awaited<ReturnType<typeof webStore>>["dispatch"]>, wait: Promise<void>) => {
+    const receipt = wait.then(() => transaction.isPersisted.promise)
+    return new Proxy(transaction, { get: (target, key, receiver) => key === "isPersisted"
+      ? { ...target.isPersisted, promise: receipt } : Reflect.get(target, key, receiver) })
+  }
+
+  test("approvals.list waits for the inbox result receipt before retiring its request or claiming success", async () => {
+    const store = await webStore()
+    let release!: () => void
+    const saving = new Promise<void>((resolve) => { release = resolve })
+    let held = false
+    const guarded = interceptInboxDispatch(store, (transition) => {
+      const transaction = store.dispatch(transition)
+      if (transition.type === "card.upsert" && transition.card.kind === "approvals-inbox") {
+        held = true
+        return holdInboxReceipt(transaction, saving)
+      }
+      return transaction
+    })
+    const double = relay()
+    const controller = createAppController(guarded, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    try {
+      await controller.commands.run("approvals.list")
+      await waitFor(() => held)
+      await settle(4)
+      expect(inboxRequests(store)).toHaveLength(1)
+      expect(store.collections.toasts.get(inboxToastId)?.status).not.toBe("ok")
+      release()
+      await waitFor(() => inboxRequests(store).length === 0)
+      expect(store.collections.toasts.get(inboxToastId)?.status).toBe("ok")
+      expect(mutations(double)).toEqual([])
+    } finally { release() }
+  })
+
+  for (const failedStep of ["card.upsert", "approvals.inbox.settled"] as const) {
+    test(`approvals.list keeps an honest retryable failure when ${failedStep} cannot persist`, async () => {
+      const storage = memoryStorage()
+      let failNextWrite = false
+      let failedWrites = 0
+      const store = await createAppStore({ kind: "localStorage", storage: { ...storage, setItem: (key, value) => {
+        if (failNextWrite) { failNextWrite = false; failedWrites += 1; throw new Error("approval storage refused") }
+        storage.setItem(key, value)
+      } } })
+      let refuse = true
+      const guarded = interceptInboxDispatch(store, (transition) => {
+        if (refuse && ((failedStep === "card.upsert" && transition.type === "card.upsert" && transition.card.kind === "approvals-inbox") ||
+          (failedStep === "approvals.inbox.settled" && transition.type === "approvals.inbox.settled" && transition.error === undefined))) {
+          refuse = false
+          failNextWrite = true
+        }
+        return store.dispatch(transition)
+      })
+      const double = relay()
+      const controller = createAppController(guarded, unavailableRepositories, silentAgent, double.services)
+      await signIn(store)
+      await controller.commands.run("approvals.list")
+      await waitFor(() => failedWrites === 1)
+      await settle(8)
+      await store.settled?.().catch(() => {})
+      expect(store.collections.toasts.get(inboxToastId)?.status).toBe("failed")
+      expect(inboxRequests(store)).toHaveLength(1)
+      expect(inboxRequests(store)[0]?.error).toContain("could not be saved")
+      if (failedStep === "card.upsert") expect(inboxCard(store)).toBeUndefined()
+      else expect(inboxCard(store)).toBeDefined()
+      await signIn(store)
+      await settle(6)
+      expect(double.calls.filter((call) => (call.body as { procedure?: string } | undefined)?.procedure === "Projection.Snapshot")).toHaveLength(1)
+      expect(mutations(double)).toEqual([])
+    })
+  }
+
+  test("an approvals failure that also cannot persist leaves the original request owed", async () => {
+    const storage = memoryStorage()
+    let failNextWrite = false
+    let failedWrites = 0
+    const store = await createAppStore({ kind: "localStorage", storage: { ...storage, setItem: (key, value) => {
+      if (failNextWrite) { failNextWrite = false; failedWrites += 1; throw new Error("approval storage refused") }
+      storage.setItem(key, value)
+    } } })
+    const guarded = interceptInboxDispatch(store, (transition) => {
+      if ((transition.type === "card.upsert" && transition.card.kind === "approvals-inbox") || transition.type === "approvals.inbox.settled") failNextWrite = true
+      return store.dispatch(transition)
+    })
+    const double = relay()
+    const controller = createAppController(guarded, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("approvals.list")
+    await waitFor(() => failedWrites === 2)
+    await settle(8)
+    await store.settled?.().catch(() => {})
+    expect(inboxRequests(store)).toHaveLength(1)
+    expect(inboxRequests(store)[0]?.error).toBeUndefined()
+    expect(inboxCard(store)).toBeUndefined()
+    expect(store.collections.toasts.get(inboxToastId)).toMatchObject({ status: "failed", detail: "Approvals could not be saved. Try again." })
+    expect(mutations(double)).toEqual([])
+  })
+
+  test("a duplicate approvals ask waiting for persistence cannot write into a replacement account", async () => {
+    const store = await webStore()
+    let release!: () => void
+    const saving = new Promise<void>((resolve) => { release = resolve })
+    let requests = 0
+    const guarded = interceptInboxDispatch(store, (transition) => {
+      const transaction = store.dispatch(transition)
+      if (transition.type === "approvals.inbox.requested" && ++requests === 1) return holdInboxReceipt(transaction, saving)
+      return transaction
+    })
+    const double = relay()
+    const controller = createAppController(guarded, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    try {
+      const first = controller.commands.run("approvals.list")
+      await waitFor(() => requests === 1)
+      const second = controller.commands.runForAgent("approvals.list")
+      await settle(3)
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      release()
+      await Promise.all([first, second])
+      await settle(6)
+      expect(requests).toBe(1)
+      expect(inboxRequests(store)).toEqual([])
+      expect(inboxCard(store)).toBeUndefined()
+      expect(double.calls.filter((call) => call.path.startsWith("/api/workflow/"))).toEqual([])
+      expect(mutations(double)).toEqual([])
+    } finally { release() }
+  })
+
+  test("a duplicate approvals ask waiting for persistence cannot cross a failed sign-out epoch", async () => {
+    const store = await webStore()
+    let release!: () => void
+    const saving = new Promise<void>((resolve) => { release = resolve })
+    let requests = 0
+    const guarded = interceptInboxDispatch(store, (transition) => {
+      if (transition.type === "identity.session.cleared") throw new Error("privacy cleanup refused")
+      const transaction = store.dispatch(transition)
+      if (transition.type === "approvals.inbox.requested" && ++requests === 1) return holdInboxReceipt(transaction, saving)
+      return transaction
+    })
+    const double = relay()
+    const controller = createAppController(guarded, unavailableRepositories, silentAgent, { ...double.services, fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      return url.endsWith("/api/auth/logout") ? json(200, { ok: true }) : double.services.fetchImpl!(input, init)
+    } })
+    await signIn(store)
+    try {
+      const first = controller.commands.run("approvals.list")
+      await waitFor(() => requests === 1)
+      const second = controller.commands.runForAgent("approvals.list")
+      await settle(3)
+      expect(await controller.signOut()).toContain("cleanup is incomplete")
+      release()
+      await Promise.all([first, second])
+      await settle(6)
+      expect(requests).toBe(1)
+      expect(inboxRequests(store)).toHaveLength(1)
+      expect(inboxCard(store)).toBeUndefined()
+      expect(double.calls.filter((call) => call.path.startsWith("/api/workflow/"))).toEqual([])
+      expect(mutations(double)).toEqual([])
+    } finally { release() }
+  })
+
+  test("failed sign-out cleanup still fences an already running approvals read by account epoch", async () => {
+    const store = await webStore()
+    const guarded = interceptInboxDispatch(store, (transition) => {
+      if (transition.type === "identity.session.cleared") throw new Error("privacy cleanup refused")
+      return store.dispatch(transition)
+    })
+    const { double, services, hold, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Private approval")] })
+    const releaseRead = hold("read")
+    const controller = createAppController(guarded, unavailableRepositories, silentAgent, { ...services, fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      return url.endsWith("/api/auth/logout") ? json(200, { ok: true }) : services.fetchImpl!(input, init)
+    } })
+    await signIn(store)
+    try {
+      await controller.commands.run("approvals.list")
+      await waitFor(() => started.read === 1)
+      const request = inboxRequests(store)[0]!
+      expect(await controller.signOut()).toContain("cleanup is incomplete")
+      expect(store.collections.identitySessions.get("identity")?.login).toBe(request.owner)
+      releaseRead()
+      await settle(10)
+      expect(inboxCard(store)).toBeUndefined()
+      expect(inboxRequests(store)).toEqual([request])
+      expect(store.collections.toasts.get(inboxToastId)).toBeUndefined()
+      expect(mutations(double)).toEqual([])
+    } finally { releaseRead() }
+  })
+
+  test("approvals.list persists its request and acknowledges before provision or the read answers; one toast runs through both", async () => {
+    const store = await webStore()
+    const { double, services, hold, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    const releaseProvision = hold("provision")
+    const releaseRead = hold("read")
+    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    await signIn(store)
+
+    const outcome = await controller.commands.run("approvals.list")
+    expect(said(outcome)).toBe("Approvals requested.")
+    // The request is on record before the acknowledgment, with its target and owner fixed.
+    expect(inboxRequests(store)).toMatchObject([{ repo: REPO, owner: "codeplanesmithers" }])
+    expect(inboxRequests(store)[0]?.error).toBeUndefined()
+    expect(inboxCard(store)).toBeUndefined()
+    await waitFor(() => started.provision === 1)
+    expect(started.read).toBe(0)
+    await waitFor(() => store.collections.toasts.get(inboxToastId)?.status === "running")
+
+    // Chat and unrelated acts stay usable while both waits are held.
+    expect((await controller.commands.run("sidebar.toggle")).status).toBe("executed")
+    controller.send("still chatting")
+    await waitFor(() => [...store.collections.messages.values()].some((row) => row.role === "user" && row.text === "still chatting"))
+
+    releaseProvision()
+    await waitFor(() => started.read === 1)
+    await settle(4)
+    // Provisioning settled, the read is still owed: no rows, no receipt, the notice still runs.
+    expect(store.collections.toasts.get(inboxToastId)?.status).toBe("running")
+    expect(inboxCard(store)).toBeUndefined()
+    expect(inboxRequests(store)).toHaveLength(1)
+
+    releaseRead()
+    await waitFor(() => inboxCard(store) !== undefined)
+    expect(inboxCard(store)?.payload.approvals.map((row) => row.title)).toEqual(["Run the deploy script?"])
+    await waitFor(() => inboxRequests(store).length === 0)
+    expect(store.collections.toasts.get(inboxToastId)).toMatchObject({ status: "ok", title: "Approvals loaded" })
+    expect(mutations(double)).toEqual([])
+  })
+
+  test("duplicate asks share one read across the user and agent doors", async () => {
+    const store = await webStore()
+    const { double, services, hold, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    const releaseRead = hold("read")
+    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    await signIn(store)
+
+    const asks = await Promise.all([
+      controller.commands.run("approvals.list"),
+      controller.commands.run("approvals.list", REPO),
+      controller.commands.runForAgent("approvals.list")
+    ])
+    for (const ask of asks) expect(said(ask)).toBe("Approvals requested.")
+    await waitFor(() => started.read === 1)
+    expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
+    await settle(6)
+    expect(started.provision).toBe(1)
+    expect(started.read).toBe(1)
+    expect(inboxRequests(store)).toHaveLength(1)
+    expect(inboxToasts(store)).toHaveLength(1)
+
+    releaseRead()
+    await waitFor(() => inboxRequests(store).length === 0)
+    expect(inboxCard(store)?.payload.approvals).toHaveLength(1)
+    expect(started.read).toBe(1)
+    expect(mutations(double)).toEqual([])
+  })
+
+  test("a refused read stays a visible, retryable failure and publishes no card", async () => {
+    const store = await webStore()
+    const refusals: Record<string, string> = { approvals: "The workspace is still waking up" }
+    const { double, services, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")], projectionRefusals: refusals })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    await signIn(store)
+
+    expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
+    await waitFor(() => inboxRequests(store)[0]?.error !== undefined)
+    const failed = inboxRequests(store)[0]!
+    expect(failed.error).toContain("still waking up")
+    expect(inboxCard(store)).toBeUndefined()
+    await waitFor(() => store.collections.toasts.get(inboxToastId)?.status === "failed")
+    expect(store.collections.toasts.get(inboxToastId)?.detail).toContain("still waking up")
+
+    // A recorded failure never restarts by itself; the identity answer that resumes owed reads skips it.
+    await signIn(store)
+    await settle(6)
+    expect(started.read).toBe(1)
+
+    // An explicit ask again is the retry: a new request replaces the failed one and the rows land.
+    delete refusals.approvals
+    expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
+    expect(inboxRequests(store)[0]?.id).not.toBe(failed.id)
+    expect(inboxRequests(store)[0]?.error).toBeUndefined()
+    await waitFor(() => inboxRequests(store).length === 0)
+    expect(inboxCard(store)?.payload.approvals).toHaveLength(1)
+    expect(store.collections.toasts.get(inboxToastId)?.status).toBe("ok")
+    expect(started.read).toBe(2)
+    expect(mutations(double)).toEqual([])
+  })
+
+  test("a reload reconnects the request to its original target, not the repository selected since", async () => {
+    const workspaceA = "83e75ae5-0920-4000-8000-00000000000a"
+    const workspaceB = "83e75ae5-0920-4000-8000-00000000000b"
+    const selectWorkspace = async (store: Awaited<ReturnType<typeof webStore>>, id: string) => {
+      await store.dispatch({ type: "workspace.updated", actor: "system", workspace: {
+        id, repoId: REPO, name: "Coding", status: "running", targetBookmark: "main", provisioningStage: null, suspendedAt: null, createdAt: null, head: null
+      } }).isPersisted.promise
+      await settle(2)
+      store.dispatch({ type: "repo.selected", actor: "user", id: `${REPO}#workspace:${id}` })
+      expect(store.session().activeRepoKey).toBe(`${REPO}#workspace:${id}`)
+    }
+    const storage = memoryStorage()
+    let store = await createAppStore({ kind: "localStorage", storage })
+    const first = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    first.hold("read")
+    let controller = createAppController(store, unavailableRepositories, silentAgent, first.services)
+    await signIn(store)
+    await selectWorkspace(store, workspaceA)
+    expect(said(await controller.commands.run("approvals.list", REPO))).toBe("Approvals requested.")
+    await waitFor(() => first.started.read === 1)
+    expect(inboxRequests(store)).toMatchObject([{ repo: REPO, workspaceId: workspaceA, owner: "codeplanesmithers" }])
+    // The page closes with the read still held: nothing was published.
+    await controller.dispose()
+    expect(store.collections.cards.get(`approvals-inbox-${REPO}-${workspaceA}`)).toBeUndefined()
+
+    store = await createAppStore({ kind: "localStorage", storage })
+    expect(inboxRequests(store)).toMatchObject([{ repo: REPO, workspaceId: workspaceA }])
+    const second = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    const releaseSecondRead = second.hold("read")
+    controller = createAppController(store, unavailableRepositories, silentAgent, second.services)
+    // A different workspace is selected before the identity answer reconnects the owed read.
+    await selectWorkspace(store, workspaceB)
+    await signIn(store)
+    await waitFor(() => second.started.read === 1, 10_000)
+    const toastId = `toast-approvals.list.approvals-inbox-${REPO}-${workspaceA}`
+    await waitFor(() => store.collections.toasts.get(toastId)?.status === "running")
+    // Reconnected to the recorded target, still owed: no card yet, on either workspace.
+    expect(inboxRequests(store)).toMatchObject([{ workspaceId: workspaceA }])
+    expect(store.collections.cards.get(`approvals-inbox-${REPO}-${workspaceA}`)).toBeUndefined()
+    releaseSecondRead()
+    await waitFor(() => inboxRequests(store).length === 0, 10_000)
+    expect(store.collections.cards.get(`approvals-inbox-${REPO}-${workspaceA}`)).toMatchObject({ payload: { workspaceId: workspaceA } })
+    expect(store.collections.cards.get(`approvals-inbox-${REPO}-${workspaceB}`)).toBeUndefined()
+    for (const call of second.double.calls.filter((call) => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId: workspaceA })
+    expect(second.started.read).toBe(1)
+    expect(store.collections.toasts.get(toastId)).toMatchObject({ status: "ok", title: "Approvals loaded" })
+    expect(mutations(first.double)).toEqual([])
+    expect(mutations(second.double)).toEqual([])
+  }, 20_000)
+
+  test("an account change while the read is held publishes nothing and leaves no request behind", async () => {
+    const store = await webStore()
+    const { double, services, hold, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    const releaseRead = hold("read")
+    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    await signIn(store)
+    expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
+    await waitFor(() => started.read === 1)
+    await waitFor(() => store.collections.toasts.get(inboxToastId)?.status === "running")
+
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(inboxRequests(store)).toEqual([])
+    releaseRead()
+    await settle(10)
+    expect(inboxCard(store)).toBeUndefined()
+    expect(inboxRequests(store)).toEqual([])
+    expect(store.collections.toasts.get(inboxToastId)).toBeUndefined()
+    expect(started.read).toBe(1)
+    expect(mutations(double)).toEqual([])
+  })
+
+  test("disposal while the read is held writes neither rows nor a receipt", async () => {
+    const store = await webStore()
+    const { double, services, hold, started } = heldRelay({ approvals: [approvalRow("run-a", "req-1", "Run the deploy script?")] })
+    const releaseRead = hold("read")
+    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    await signIn(store)
+    expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
+    await waitFor(() => started.read === 1)
+    const request = inboxRequests(store)[0]!
+    await controller.dispose()
+    releaseRead()
+    await settle(10)
+    expect(inboxCard(store)).toBeUndefined()
+    expect(inboxRequests(store)).toEqual([request])
+    expect(mutations(double)).toEqual([])
   })
 })
 
@@ -1115,7 +1543,7 @@ describe("workspace-bound run cards", () => {
     await selectWorkspace(store)
     expect((await controller.commands.run("runs.list", REPO)).status).toBe("executed")
     await selectWorkspace(store)
-    expect((await controller.commands.run("approvals.list", REPO)).status).toBe("executed")
+    await listInbox(controller, store, REPO)
     const listId = `run-list-${REPO}-${workspaceId}`
     const inboxId = `approvals-inbox-${REPO}-${workspaceId}`
     expect(store.collections.cards.get(listId)).toMatchObject({ payload: { workspaceId } })
@@ -1319,10 +1747,10 @@ describe("workspace-bound run cards", () => {
     expect(runCardInScope(store, scopeB)).toMatchObject({ id: cardB.id })
     await selectWorkspace(store)
     await controller.commands.run("runs.list", REPO)
-    await controller.commands.run("approvals.list", REPO)
+    await listInbox(controller, store, REPO)
     await selectWorkspace(store, workspaceB)
     await controller.commands.run("runs.list", REPO)
-    await controller.commands.run("approvals.list", REPO)
+    await listInbox(controller, store, REPO)
     const listA = `run-list-${REPO}-${workspaceId}`
     const listB = `run-list-${REPO}-${workspaceB}`
     const searchRows = controller.searchPalette("run: run-1").groups.flatMap((group) => group.items.map((row) => row.item))
@@ -1485,7 +1913,7 @@ test("a human answer draft is one event-derived value across inbox, card and rel
   const double = relay({ approvals: [question] })
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("approvals.list")
+  await listInbox(controller, store)
   await controller.commands.run("approvals.open", "run-answer")
   const initial = inboxCard(store)!
   const target = approvalActionId(initial.id, question)
@@ -1505,7 +1933,7 @@ test("a human answer draft is one event-derived value across inbox, card and rel
   expect((await reopened.verifyState()).valid).toBe(true)
   const next = createAppController(reopened, unavailableRepositories, silentAgent, double.services)
   question.request.prompt = "Who owns the revised budget?"
-  await next.commands.run("approvals.list")
+  await listInbox(next, reopened)
   expect(inboxCard(reopened)?.payload.approvals[0]?.answerDraft?.text).toBe("")
   expect((await next.commands.run("form.set", args)).status).toBe("failed")
   next.answerApproval(target, words, field.slice("answer:".length))
@@ -1525,7 +1953,7 @@ test("every human answer kind validates against its current question and commits
     const double = relay({ approvals: [question] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    await controller.commands.run("approvals.list")
+    await listInbox(controller, store)
     const target = approvalActionId(inboxCard(store)!.id, question)
     if (example.invalid !== undefined) {
       controller.answerApproval(target, example.invalid)
@@ -1553,7 +1981,7 @@ test("an answer whose input cannot persist submits nothing", async () => {
   const double = relay({ approvals: [question] })
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   await signIn(store)
-  await controller.commands.run("approvals.list")
+  await listInbox(controller, store)
   const id = approvalActionId(inboxCard(store)!.id, question)
   await store.settled?.()
   fail = true

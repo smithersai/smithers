@@ -206,6 +206,8 @@ export const APP_TRANSITION_TYPES = {
   "palette.item.opened": true,
   "command.deferred": true,
   "command.deferral.cleared": true,
+  "approvals.inbox.requested": true,
+  "approvals.inbox.settled": true,
   "command.ran": true,
   "toolcall.recorded": true,
   "chain.lineage.retired": true,
@@ -710,6 +712,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
     const branchId = draft.activeBranchId ?? DEFAULT_BRANCH_ID
     draft.draft = ""
     draft.pendingCommand = null
+    delete draft.approvalsInboxRequests
     draft.phase = "idle"
     draft.composerOwner = "user"
     draft.turnTabId = null
@@ -1801,6 +1804,26 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "command.deferral.cleared":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.pendingCommand = null
+          })
+          break
+
+        case "approvals.inbox.requested":
+          collections.sessions.update(SESSION_ID, (draft) => {
+            // One request per target: a new ask replaces the earlier (or failed) one for the same repo/workspace.
+            const others = (draft.approvalsInboxRequests ?? []).filter((row) =>
+              row.repo !== transition.request.repo || row.workspaceId !== transition.request.workspaceId)
+            draft.approvalsInboxRequests = [...others, { ...transition.request, requestedAt: createdAt }]
+          })
+          break
+
+        case "approvals.inbox.settled":
+          collections.sessions.update(SESSION_ID, (draft) => {
+            // Only the request that was settled changes; a superseding ask keeps its own row.
+            const rows = draft.approvalsInboxRequests ?? []
+            if (!rows.some((row) => row.id === transition.id)) return
+            draft.approvalsInboxRequests = transition.error === undefined
+              ? rows.filter((row) => row.id !== transition.id)
+              : rows.map((row) => row.id === transition.id ? { ...row, error: transition.error } : row)
           })
           break
 

@@ -99,6 +99,8 @@ export const APP_TRANSITION_SCHEMAS = {
   "palette.item.opened": z.object({ "type": z.literal("palette.item.opened"), "actor": z.literal("user"), "ref": z.string(), "kind": z.string(), "at": z.number().finite() }).strict(),
   "command.deferred": z.object({ "type": z.literal("command.deferred"), "actor": z.literal("user"), "name": z.string(), "args": z.union([z.string(), z.null()]), "requirement": z.string(), repositoryRetry: z.object({ requestId: z.string(), repo: z.string() }).strict().optional() }).strict(),
   "command.deferral.cleared": z.object({ "type": z.literal("command.deferral.cleared"), "actor": z.literal("system") }).strict(),
+  "approvals.inbox.requested": z.object({ "type": z.literal("approvals.inbox.requested"), "actor": z.enum(["user", "smithers"]), "request": z.object({ id: z.string().min(1), repo: z.string().min(1), workspaceId: z.string().optional(), owner: z.string().min(1) }).strict() }).strict(),
+  "approvals.inbox.settled": z.object({ "type": z.literal("approvals.inbox.settled"), "actor": z.literal("system"), "id": z.string().min(1), "error": z.string().optional() }).strict(),
   "command.ran": z.object({ "type": z.literal("command.ran"), "actor": z.literal("user"), "name": z.string() }).strict(),
   "toolcall.recorded": z.object({ "type": z.literal("toolcall.recorded"), "actor": z.literal("smithers"), "turnId": z.string(), "name": z.string(), "arguments": z.string(), "result": z.string() }).strict(),
   "chain.lineage.retired": z.object({ "type": z.literal("chain.lineage.retired"), "actor": z.literal("system"), "lineageId": z.string() }).strict(),

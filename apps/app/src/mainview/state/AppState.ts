@@ -640,6 +640,24 @@ export const RepositoryEntrySchema = z.object({
 })
 export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>
 
+/**
+ * One background `approvals.list` read, persisted before its acknowledgment.
+ * The target (repo + gateway workspace) and the account owner are captured
+ * at the ask, so a later repository selection or account change can never
+ * retarget the read; the inbox card is published only from received rows.
+ * A recorded `error` is a visible, retryable failure: it never resumes on
+ * its own, and the next explicit ask replaces it.
+ */
+export const ApprovalsInboxRequestSchema = z.object({
+  id: z.string(),
+  repo: z.string(),
+  workspaceId: z.string().optional(),
+  owner: z.string(),
+  requestedAt: z.number(),
+  error: z.string().optional()
+})
+export type ApprovalsInboxRequest = z.infer<typeof ApprovalsInboxRequestSchema>
+
 export const SessionSchema = z.object({
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
@@ -750,6 +768,12 @@ export const SessionSchema = z.object({
     })
     .nullable()
     .optional(),
+  /*
+   * The workspace approval reads still owed or last failed, one per target
+   * (ApprovalsInboxRequestSchema). Optional (missing = none) so persisted
+   * sessions parse without a schema reset; scrubbed with the account.
+   */
+  approvalsInboxRequests: z.array(ApprovalsInboxRequestSchema).optional(),
   /*
    * The user's recently run visible commands, most recent first (capped in
    * the reducer): the slash menu's recency ranking past its cap. Optional
@@ -1262,6 +1286,23 @@ export type AppTransition =
     /* The deferred command resumed (or went stale) — the parking spot clears. */
     type: "command.deferral.cleared"
     actor: "system"
+  }
+  | {
+    /*
+     * A workspace approval read was asked for: its target and owner are
+     * fixed here, before any slow work, and the ask replaces any earlier
+     * request for the same target.
+     */
+    type: "approvals.inbox.requested"
+    actor: "user" | "smithers"
+    request: { id: string; repo: string; workspaceId?: string; owner: string }
+  }
+  | {
+    /* The read ended: received rows clear the request; a failure stays on it, visible and retryable. */
+    type: "approvals.inbox.settled"
+    actor: "system"
+    id: string
+    error?: string
   }
   | {
     /* A visible command ran for the user — the slash menu's recency signal. */
