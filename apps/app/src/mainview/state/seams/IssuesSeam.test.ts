@@ -178,6 +178,16 @@ const wireComment = (id: number, body: string) => ({
   updated_at: "2026-08-11T10:00:00Z"
 })
 
+/*
+ * The platform's own 404 bodies on the issues routes (plue pkg/errors
+ * NotFound → `{code, fault, message}`, restated by the Worker): issue.go
+ * answers "issue not found" for a number it does not have and "repository not
+ * found" for a namespace it does not have. ONE code for both causes, so no 404
+ * here can prove the repository was never imported.
+ */
+const ISSUE_NOT_FOUND = { status: "error", code: "not_found", message: "issue not found" }
+const REPOSITORY_NOT_FOUND = { status: "error", code: "not_found", message: "repository not found" }
+
 const cardOfKind = <K extends Card["kind"]>(
   store: AppStore,
   id: string,
@@ -603,27 +613,73 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(store.collections.cards.get("issue-will/flows-7")).toMatchObject({ status: "error", loading: false })
   })
 
-  test("mutations on a 404 answer the repos.import error and never write to the source", async () => {
+  /*
+   * Was "mutations on a 404 answer the repos.import error": nothing was
+   * stubbed, so every route answered a code-less 404 and the seam read it as a
+   * missing import. The deployed platform codes both causes `not_found`, so
+   * `/issue.close 999` in a repository the user just listed was told to import
+   * it. Assertion changed deliberately; the two traffic guards are unchanged.
+   */
+  test("mutations on a coded not-found name the resource, never an import, and never write to the source", async () => {
     const calls: string[] = []
-    // Nothing stubbed: every imported-namespace mutation answers the honest 404.
-    const { store, controller } = await issuesController(backend({}, calls))
-    const mutations: ReadonlyArray<readonly [string, string]> = [
-      ["issues.create", "A brand new idea"],
-      ["issues.close", "7"],
-      ["issues.reopen", "7"],
-      ["issues.comment", "7 hello there"]
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues": json(404, REPOSITORY_NOT_FOUND),
+      "PATCH /api/repos/will/flows/issues/7": json(404, ISSUE_NOT_FOUND),
+      "POST /api/repos/will/flows/issues/7/comments": json(404, ISSUE_NOT_FOUND)
+    }, calls))
+    const mutations: ReadonlyArray<readonly [string, string, string]> = [
+      ["issues.create", "A brand new idea", "will/flows was not found"],
+      ["issues.close", "7", "Issue #7 in will/flows was not found"],
+      ["issues.reopen", "7", "Issue #7 in will/flows was not found"],
+      ["issues.comment", "7 hello there", "Issue #7 in will/flows was not found"]
     ]
-    for (const [command, args] of mutations) {
+    for (const [command, args, error] of mutations) {
       const outcome = await controller.commands.run(command, args)
       expect(outcome.status).toBe("failed")
-      if (outcome.status === "failed") {
-        expect(outcome.error).toBe("will/flows isn't imported yet — run /repos.import will/flows first")
-      }
+      if (outcome.status === "failed") expect(outcome.error).toBe(error)
     }
     // Zero fallback traffic: the GET-only source namespace was never touched.
     expect(calls.some((call) => call.includes("/api/user/github-repos/"))).toBe(false)
     await settled()
     expect(store.collections.cards.get("issue-will/flows-7")).toBeUndefined()
+  })
+
+  test("closing an issue number the platform does not have answers that, not the import", async () => {
+    const calls: string[] = []
+    const { controller } = await issuesController(backend({
+      "PATCH /api/repos/will/flows/issues/999": json(404, ISSUE_NOT_FOUND)
+    }, calls))
+    const outcome = await controller.commands.run("issues.close", "999")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("Issue #999 in will/flows was not found")
+    // One request, the PATCH itself: nothing is asked a second time to explain the 404.
+    expect(calls.filter((call) => call.includes("/issues"))).toEqual(["PATCH /api/repos/will/flows/issues/999"])
+  })
+
+  test("a 404 carrying another code keeps the platform's own message", async () => {
+    const { controller } = await issuesController(backend({
+      "PATCH /api/repos/will/flows/issues/7": json(404, { status: "error", code: "route_not_found", message: "Not found." })
+    }))
+    const outcome = await controller.commands.run("issues.close", "7")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("Not found.")
+  })
+
+  /* The one cause local state does name: a checkout the sidebar pins that Cloud has never taken. */
+  test("a pinned checkout Cloud does not have keeps the import guidance", async () => {
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues": json(404, REPOSITORY_NOT_FOUND)
+    }))
+    await store.dispatch({
+      type: "repo.pinned",
+      actor: "user",
+      pin: { id: "pin-flows", name: "will/flows", path: "/Users/will/flows", branch: "main", origin: "local", pinnedAt: 1 }
+    }).isPersisted.promise
+    const outcome = await controller.commands.run("issues.create", "A brand new idea")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("will/flows isn't imported yet — run /repos.import will/flows first")
+    }
   })
 })
 
