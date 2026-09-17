@@ -5,6 +5,7 @@ import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import { CodingError } from "../coding/schema.ts"
+import { CheckOutput } from "./checks.ts"
 import { CaptureRepository, currentExecutionId } from "./inspection.ts"
 import { Investigate } from "./jobs.ts"
 import { EvalCase, EvalResult, Event, JobInput, JobResult, RepositoryEvidence, SetupInput } from "./schema.ts"
@@ -44,6 +45,17 @@ const CaptureCase = Flow.make("repository/CaptureCase", { payload: CaptureReposi
   success: RepositoryEvidence, error: CodingError, body: input => CaptureRepository.call(input) })
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
   current !== null && typeof current === "object" ? (current as Record<string, unknown>)[token.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined, value)
+const executionFailed = (step: JobResult["results"][number]): boolean => {
+  const checked = Schema.decodeUnknownOption(CheckOutput)(step.output)
+  if (Option.isNone(checked)) return step.status === "error"
+  const output = checked.value
+  // A required finding intentionally blocks the job. That is a valid observed
+  // outcome to judge, not a failed model/tool execution. Report-only errors
+  // still invalidate evaluation even though they do not block normal landing.
+  if (output.results.some(check => check.status === "error")) return true
+  const blocked = output.results.some(check => check.policy === "required" && check.status === "failed")
+  return output.gate !== (blocked ? "blocked" : "passed") || step.status !== (blocked ? "error" : "completed")
+}
 export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, score: typeof Score.Type) => {
   const refs = evidenceReferences(observed)
   const evidence = [...new Set(score.evidenceIds.flatMap(id => Number.isSafeInteger(id) && id >= 0 && refs[id] !== undefined ? [refs[id]!] : []))]
@@ -51,7 +63,7 @@ export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, sco
   if (Option.isNone(decoded)) return { status: "review" as const, observed: "Define an executable event, source revision, and deterministic assertions.", evidence }
   const mismatch = decoded.value.assertions.find(assertion => JSON.stringify(pointer(observed, assertion.path)) !== JSON.stringify(assertion.equals))
   if (mismatch) return { status: "failed" as const, observed: `Assertion failed at ${mismatch.path}. ${score.reason}`, evidence }
-  if (!observed.results.length || observed.results.some(result => result.status === "error")) return { status: "error" as const, observed: "The production flow did not complete its evaluated work.", evidence }
+  if (!observed.results.length || observed.results.some(executionFailed)) return { status: "error" as const, observed: "The production flow did not complete its evaluated work.", evidence }
   if (!score.evidenceIds.length || score.evidenceIds.some(id => !Number.isSafeInteger(id) || id < 0 || refs[id] === undefined)) return { status: "review" as const, observed: "The evaluator did not cite the recorded execution evidence.", evidence }
   return { status: score.verdict === "pass" ? "passed" as const : score.verdict === "fail" ? "failed" as const : "review" as const, observed: score.reason, evidence }
 }

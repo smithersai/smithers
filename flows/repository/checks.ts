@@ -25,6 +25,9 @@ export const CheckPlan = Schema.Struct({ work: Work, comparison: Comparison })
 export const CheckResult = Schema.Struct({ checkId: Schema.String, policy: Check.fields.policy,
   status: Schema.Literals(["passed", "failed", "error", "skipped"]), summary: Schema.String,
   evidence: Schema.Array(Schema.String), executionId: Schema.String, detail: Schema.Json })
+/** Code findings can block policy even though the check executed correctly. */
+export const CheckOutput = Schema.Struct({ base: Commit, candidate: Schema.NonEmptyString,
+  gate: Schema.Literals(["blocked", "passed"]), results: Schema.Array(CheckResult).check(Schema.isMinLength(1)) })
 const Finding = Schema.Struct({ path: Schema.NonEmptyString, line: Schema.Int.check(Schema.isGreaterThan(0)), message: Schema.NonEmptyString })
 export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass", "fail", "uncertain"]),
   summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)) })
@@ -223,7 +226,7 @@ export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
     return { stepId: plan.work.step.id, executionId, status: blocking.length ? "error" as const : "completed" as const,
       summary: blocking.length ? `${blocking.length} required checks blocked` : `${results.filter(result => result.status === "passed").length} checks passed`,
       evidence: [...new Set(results.flatMap(result => result.evidence))], output: json({ base: plan.comparison.base, candidate: plan.comparison.candidate,
-        gate: blocking.length ? "blocked" : "passed", results }) }
+        gate: blocking.length ? "blocked" : "passed", results } satisfies typeof CheckOutput.Type) }
   }))
 )
 export const checkModelLayers = SemanticCheck.layer
