@@ -1,8 +1,10 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import { initialSetup, setupCandidate, type SetupHostInput } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, REPOSITORY_JOBS, setupCandidate, type RepositoryJob, type SetupHostInput, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { memoryStorage, storageLayer } from "./DurableStorage"
 import { repositorySetupStorageRequest, setupStorageMutexLayer, setupPointerKey, SETUP_QUEUE_KEY, type SetupRecord } from "./repositorySetupStore"
+import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 const input = (id: string): SetupHostInput => {
   const setup = initialSetup("org/repo", "issues", "alice")
@@ -120,4 +122,96 @@ test("a held atomic admission cannot acknowledge or expose a partial request and
   release(); await Promise.all([first, second])
   expect(storage.data.get(setupPointerKey("org/repo", "issues"))).toEqual({ sequence: 1, requestId: "held" })
   expect([...storage.data.keys()].filter(name => name.startsWith("repository-setup:request:"))).toHaveLength(1)
+})
+
+const originalFetch = globalThis.fetch
+afterEach(() => { globalThis.fetch = originalFetch })
+const workspaceId = "11111111-1111-4111-8111-111111111111"
+const known = (job: RepositoryJob, mode: "enabled" | "trial") => {
+  const source = initialSetup("org/repo", job, "alice")
+  const shared = { repo: source.repo, workspace_id: workspaceId, source_revision: "b".repeat(40), flow_id: `repository-jobs/${job}`,
+    mode, revision: source.revision, digest: setupCandidate(source), schedule: "" }
+  return { ...shared, id: `registration-${job}-${mode}`, user_id: 1, job, enabled: true, next_fire_at: null, configuration: { ...shared, input: source.draft } }
+}
+const unknownRow = (id: string) => ({ id, workspace_id: workspaceId, user_id: 1, job: "flow:nightly", mode: "schedule", revision: 1,
+  digest: "c".repeat(64), source_revision: "b".repeat(40), flow_id: "flow:nightly", enabled: true, schedule: "0 3 * * *",
+  next_fire_at: null, configuration: { trigger: "schedule", flow: "nightly", input: { repositories: ["org/repo"] } } })
+
+const registry = (rows: unknown) => {
+  const settings = { ASSETS: { fetch: async () => new Response("SPA") }, IDENTITY_UPSTREAM_URL: "https://identity.test",
+    IDENTITY_SERVICE_TOKEN: "synthetic-service", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }
+  const durable = memoryDurableObjects({ env: settings, nativeAlarms: true })
+  const env = { ...settings, GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS }
+  globalThis.fetch = (async (target: RequestInfo | URL) => {
+    const url = new URL(target instanceof Request ? target.url : String(target), "https://identity.test")
+    if (url.hostname === "identity.test") return url.pathname === "/api/identity/cloud-token"
+      ? Response.json({ found: true, token: "cloud-alice" }) : Response.json({ login: "alice", allowlisted: true, admin: false })
+    if (url.pathname === "/api/user") return Response.json({ id: 1 })
+    if (url.pathname.endsWith("/repository-jobs")) return new Response(JSON.stringify(rows), { headers: { "content-type": "application/json" } })
+    throw Error("Unexpected upstream")
+  }) as typeof fetch
+  const background: Promise<unknown>[] = []
+  return async (job: RepositoryJob) => {
+    const response = await worker.fetch(new Request(`https://app.test/api/repository-setup/state?repo=org%2Frepo&job=${job}`, {
+      headers: { cookie: "session=alice" }
+    }), env, { waitUntil: promise => { background.push(promise) } })
+    return ((await response.json()) as SetupRecoveryResponse).registration
+  }
+}
+const everyJob = async (rows: unknown) => {
+  const read = registry(rows)
+  return Object.fromEntries(await Promise.all(REPOSITORY_JOBS.map(async job => [job, await read(job)] as const))) as Record<RepositoryJob, SetupRecoveryResponse["registration"]>
+}
+
+test("a registration the Worker does not know never hides the five jobs it does", async () => {
+  const states = await everyJob([...REPOSITORY_JOBS.map(job => known(job, "enabled")), unknownRow("registration-nightly")])
+  for (const job of REPOSITORY_JOBS) {
+    const state = states[job]
+    if (state.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(state)}`)
+    expect(state.active?.digest).toBe(setupCandidate(initialSetup("org/repo", job, "alice")))
+    expect(state.trial).toBeUndefined()
+  }
+})
+
+test("ten known registrations and an eleventh unknown row all report their real state", async () => {
+  const rows = REPOSITORY_JOBS.flatMap(job => [known(job, "enabled"), known(job, "trial")])
+  const states = await everyJob([...rows, unknownRow("registration-nightly")])
+  expect(rows).toHaveLength(10)
+  for (const job of REPOSITORY_JOBS) {
+    const state = states[job]
+    if (state.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(state)}`)
+    expect(state.active?.registrationId).toBe(`registration-${job}-enabled`)
+    expect(state.trial?.registrationId).toBe(`registration-${job}-trial`)
+  }
+})
+
+test("unknown rows are ignored however many arrive, while known rows past the scan bound refuse their own job", async () => {
+  const noise = Array.from({ length: 400 }, (_, index) => unknownRow(`registration-noise-${index}`))
+  const tolerated = await everyJob([known("ci", "enabled"), ...noise])
+  expect(tolerated.ci.state).toBe("known")
+  const flooded = await everyJob(Array.from({ length: 60 }, () => known("ci", "enabled")))
+  expect(flooded.ci).toEqual({ state: "unavailable", error: "Repository registrations exceed the recovery limit" })
+})
+
+test("a malformed known registration refuses its own job and no sibling", async () => {
+  const states = await everyJob(REPOSITORY_JOBS.map(job => job === "ci" ? { ...known(job, "enabled"), digest: "not-a-digest" } : known(job, "enabled")))
+  expect(states.ci).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
+  for (const job of REPOSITORY_JOBS.filter(name => name !== "ci")) {
+    const state = states[job]
+    if (state.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(state)}`)
+    expect(state.active?.registrationId).toBe(`registration-${job}-enabled`)
+  }
+})
+
+test("a duplicate known mode stays an inconsistency for its job alone", async () => {
+  const states = await everyJob([known("issues", "enabled"), known("issues", "enabled"), known("review", "enabled")])
+  expect(states.issues).toEqual({ state: "unavailable", error: "Repository registration identity is inconsistent" })
+  expect(states.review.state).toBe("known")
+})
+
+test("an empty registry is known and unconfigured; a body that is not an array stays unavailable", async () => {
+  const empty = await everyJob([])
+  for (const job of REPOSITORY_JOBS) expect(empty[job]).toEqual({ state: "known" })
+  const wrong = await everyJob({ registrations: [] })
+  for (const job of REPOSITORY_JOBS) expect(wrong[job]).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
 })

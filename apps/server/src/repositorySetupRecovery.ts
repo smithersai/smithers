@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect"
 import { z } from "zod"
-import { SetupDraftSchema, setupCandidate, type RepositoryJob, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { RepositoryJobSchema, SetupDraftSchema, setupCandidate, type RepositoryJob, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { ServerConfig } from "./Config"
 import { fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
@@ -23,6 +23,10 @@ const RegistrationRow = z.object({ id: z.string().min(1), workspace_id: z.string
   })
 })
 
+/** Rows outside this shape belong to registration kinds this Worker does not project. */
+const RegistrationKind = z.object({ job: RepositoryJobSchema, mode: z.enum(["enabled", "trial"]) })
+const KNOWN_REGISTRATION_LIMIT = 50
+
 /** The authenticated Cloud user id, never a browser claim, owns the gateway binding. */
 const registrations = (login: string, repo: string, job: RepositoryJob): Effect.Effect<SetupRecoveryResponse["registration"], never, ServerConfig | import("./Http").Transport> => Effect.gen(function* () {
   const config = yield* ServerConfig
@@ -44,10 +48,15 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
   })
   const [identity, raw] = yield* Effect.all([read("/api/user", 16_000), read(`/api/repos/${repo}/repository-jobs`, 1_500_000)], { concurrency: "unbounded" })
   const user = z.object({ id: z.number().int().positive() }).safeParse(identity)
-  const rows = z.array(RegistrationRow).max(10).safeParse(raw ?? [])
-  if (!user.success || !rows.success) return yield* fail("Repository registration state is invalid")
+  const body = z.array(z.unknown()).safeParse(raw ?? [])
+  if (!user.success || !body.success) return yield* fail("Repository registration state is invalid")
+  const mine = body.data.filter(candidate => RegistrationKind.safeParse(candidate).data?.job === job)
+  if (mine.length > KNOWN_REGISTRATION_LIMIT) return yield* fail("Repository registrations exceed the recovery limit")
   const result: Extract<SetupRecoveryResponse["registration"], { state: "known" }> = { state: "known" }
-  for (const row of rows.data.filter(row => row.job === job)) {
+  for (const candidate of mine) {
+    const parsed = RegistrationRow.safeParse(candidate)
+    if (!parsed.success) return yield* fail("Repository registration state is invalid")
+    const row = parsed.data
     const field = row.mode === "enabled" ? "active" : "trial"
     const value = row.configuration
     if (result[field] || row.flow_id !== `repository-jobs/${job}` || value.repo !== repo || value.workspace_id !== row.workspace_id
