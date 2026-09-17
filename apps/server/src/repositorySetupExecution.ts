@@ -1,13 +1,19 @@
 import { Data, Effect } from "effect"
 import { SetupOperationResponseSchema, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
-import { callGateway, cloudTokenRefusalMessage, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, type GatewaySessions } from "./gateway"
+import { callGateway, cloudTokenRefusalMessage, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, WORKSPACE_GONE_REFUSAL, type GatewaySessions } from "./gateway"
 import { decodeGatewayResponse, encodeGatewayRequest, GATEWAY_PROCEDURE_MOUNTS, NON_REPLAYABLE_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import { discardBody, fetchWithDeadline, readBoundedJson, readBoundedText, type Transport } from "./Http"
 import { ServerConfig } from "./Config"
 import { SetupPlanSchema, SetupRequests, type SetupInstant, type SetupRecord } from "./repositorySetupStore"
 
-class SetupExecutionError extends Data.TaggedError("SetupExecutionError")<{ readonly message: string }> {}
+class SetupExecutionError extends Data.TaggedError("SetupExecutionError")<{ readonly message: string; readonly settles?: boolean }> {}
 const failure = (message: string) => new SetupExecutionError({ message })
+/**
+ * A workspace Cloud no longer has ends the request instead of leaving it
+ * queued on a dead box: the phase is the one fact the person can act on, and
+ * the repeat of the same operation selects a replacement.
+ */
+const workspaceGone = () => new SetupExecutionError({ message: WORKSPACE_GONE_REFUSAL, settles: true })
 const recordOf = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 type Services = SetupRequests | GatewaySessions | Transport | ServerConfig
 type Instant = Exclude<SetupInstant, "createdAt">
@@ -16,9 +22,8 @@ const stamps = (record: SetupRecord, ...names: readonly Instant[]): Partial<Reco
   Object.fromEntries(names.filter(name => record[name] === undefined).map(name => [name, Date.now()]))
 
 /** Cloud deduplicates one compatible automation VM without replacing the user's existing primary. */
-const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(function* () {
+const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string | undefined) => Effect.gen(function* () {
   const config = yield* ServerConfig
-  const workspaceId = record.workspaceId ?? record.input.workspaceId
   const endpoint = new URL(`/api/repos/${record.input.repo}/workspaces${workspaceId ? `/${workspaceId}` : ""}`, config.cloudApiBaseUrl)
   const call = (token: string) => fetchWithDeadline("The repository workspace", endpoint, {
     method: workspaceId ? "GET" : "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -37,12 +42,28 @@ const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(functi
   // A cold primary is only a candidate. Keep selection pending until Cloud
   // proves its capability or chooses a different workspace within quota.
   if (response.status === 409 && body.code === "repository_workspace_pending") return { status: "pending" } as const
+  // A pin Cloud answers with its typed not-found is stale state; only the
+  // English differs between a deleted row and one lost with its VM.
+  if (workspaceId !== undefined && response.status === 404 && body.code === "not_found") return { status: "gone" } as const
   if (!response.ok) return yield* Effect.fail(failure(typeof body.message === "string" ? body.message : `The repository workspace answered HTTP ${response.status}`))
   if (!isGatewayWorkspaceId(body.id) || (workspaceId !== undefined && body.id !== workspaceId)
     || (body.repo_full_name !== undefined && body.repo_full_name !== record.input.repo)) return yield* Effect.fail(failure("Cloud returned a different repository workspace"))
   if (body.status === "failed" || body.status === "deleted") return yield* Effect.fail(failure(typeof body.failure_message === "string" ? body.failure_message : "The repository workspace could not start"))
   if (!["running", "starting", "pending", "stopped", "stopping", "suspended"].includes(String(body.status))) return yield* Effect.fail(failure("Cloud returned an unknown workspace state"))
   return { status: "selected", id: body.id, ready: !["starting", "pending", "stopping"].includes(String(body.status)) } as const
+})
+
+/**
+ * The pinned workspace is a candidate, not a promise. When Cloud no longer has
+ * it, selection repeats on the route a first setup uses, so the request moves
+ * to a fresh workspace instead of waiting on a deleted one.
+ */
+const selectWorkspace = (login: string, record: SetupRecord) => Effect.gen(function* () {
+  const pinned = record.workspaceId ?? record.input.workspaceId
+  const selected = yield* setupWorkspace(login, record, pinned)
+  if (selected.status !== "gone") return selected
+  const replacement = yield* setupWorkspace(login, record, undefined)
+  return replacement.status === "gone" ? yield* Effect.fail(workspaceGone()) : replacement
 })
 
 /** Credentials stay in the existing gateway relay; the fixed caller chooses the procedure. */
@@ -55,6 +76,7 @@ const rpc = (login: string, record: SetupRecord, procedure: string, payload: unk
     // repeats a consequential Run within one attempt after losing its answer.
     replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)
   })
+  if (outcome.status === "workspace_gone") return yield* Effect.fail(workspaceGone())
   if (outcome.status !== "ok") return yield* Effect.fail(failure(outcome.detail))
   const text = yield* readBoundedText(outcome.response, 240_000).pipe(
     Effect.mapError(() => failure("The workspace result could not be read")),
@@ -75,9 +97,17 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
   const requests = yield* SetupRequests
   let record = yield* requests.read(login, requestId)
   if (!record || record.result) return
-  if (observeOnly && (!record.runId || !record.binding?.workspaceId)) return yield* Effect.fail(failure("The previous setup has no recorded run to reconnect. Its execution state is unknown."))
+  if (observeOnly && (!record.runId || !record.binding?.workspaceId)) {
+    // A reconnection has nothing to read. Whether that is unknowable or simply
+    // over is a fact about the workspace, so ask it before saying which.
+    const pinned = record.workspaceId ?? record.input.workspaceId
+    const probed = pinned === undefined ? undefined
+      : yield* setupWorkspace(login, record, pinned).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (probed?.status === "gone") return yield* Effect.fail(workspaceGone())
+    return yield* Effect.fail(failure("The previous setup has no recorded run to reconnect. Its execution state is unknown."))
+  }
   if (!observeOnly && !record.binding) {
-    const workspace = yield* setupWorkspace(login, record)
+    const workspace = yield* selectWorkspace(login, record)
     if (workspace.status === "pending") {
       if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
       return
@@ -93,6 +123,7 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
       if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
       return
     }
+    if (gateway.status === "workspace_gone") return yield* Effect.fail(workspaceGone())
     if (gateway.status !== "ready") return yield* Effect.fail(failure(gateway.detail))
     record = yield* requests.update(login, record, { ...record, ...stamps(record, "gatewayReadyAt"), binding: { gatewayId: gateway.record.gatewayId, workspaceId: gateway.record.workspaceId } })
   }
@@ -164,7 +195,12 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
   // Observation/transport failure cannot change the execution phase.
   const requests = yield* SetupRequests
   const record = yield* requests.read(login, requestId)
-  if (record && !record.result) yield* requests.update(login, record, { ...record, observationError: error.message.slice(0, 1000) })
+  if (!record || record.result) return
+  const message = error.message.slice(0, 1000)
+  if (error._tag !== "SetupExecutionError" || !error.settles) return yield* requests.update(login, record, { ...record, observationError: message })
+  const receipt: SetupReceipt = { ...record.receipt, phase: "failed", updatedAt: Date.now(), error: message }
+  yield* requests.update(login, record, { ...record, observationError: undefined, receipt,
+    result: { requestId, revision: record.input.revision, digest: record.input.digest, receipt } })
 }).pipe(Effect.catch(() => Effect.void))))
 
 /** Normal admission alone may provision, plan, approve and start its durable request. */

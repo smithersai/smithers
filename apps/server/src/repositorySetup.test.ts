@@ -21,6 +21,7 @@ async function fixture() {
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
     sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed"; onSnapshot?: () => Promise<void>;
+    lostWorkspace?: string; lostGateway?: string; newWorkspace?: string;
     workspaceRefusal?: { status: number; code: string; message: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
@@ -44,16 +45,21 @@ async function fixture() {
       const login = request.headers.get("authorization")?.replace("Bearer cloud-", "") as keyof typeof workspaceIds
       expect(workspaceIds[login]).toBeDefined()
       if (url.pathname.endsWith("/gateway")) {
-        const body = await request.json()
+        const body = await request.json() as { workspace_id?: string; required_capability?: string }
         capabilityCalls.push(body)
-        expect(body).toEqual({ workspace_id: workspaceIds[login], required_capability: "repository-jobs/v1" })
+        // Cloud answers a bound workspace it no longer has with its own typed
+        // not-found, exactly as it does on the workspace route.
+        if (options.lostGateway && body.workspace_id === options.lostGateway) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
+        expect(body).toEqual({ workspace_id: options.newWorkspace ?? workspaceIds[login], required_capability: "repository-jobs/v1" })
         if (options.incompatibleHost) return Response.json({ code: "coding_host_upgrade_required", message: "This workspace needs a compatible coding host." }, { status: 409 })
-        return Response.json({ gateway_id: `gateway-${login}`, workspace_id: workspaceIds[login], base_url: `https://gateway.test/${login}`,
+        return Response.json({ gateway_id: `gateway-${login}`, workspace_id: body.workspace_id, base_url: `https://gateway.test/${login}`,
           token: `synthetic-${login}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() })
       }
       workspaceCalls.push({ method: request.method, path: url.pathname, ...(request.method === "POST" ? { body: await request.json() } : {}) })
       if (options.workspaceRefusal) return Response.json(options.workspaceRefusal, { status: options.workspaceRefusal.status })
-      return Response.json({ id: workspaceIds[login], status: options.workspaceState, kind: "vm", repo_full_name: "org/repo" })
+      if (options.lostWorkspace && url.pathname.endsWith(`/${options.lostWorkspace}`)) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
+      return Response.json({ id: request.method === "POST" ? options.newWorkspace ?? workspaceIds[login] : url.pathname.split("/").pop(),
+        status: options.workspaceState, kind: "vm", repo_full_name: "org/repo" })
     }
     if (url.hostname !== "gateway.test") throw Error("Unexpected upstream")
     const login = url.pathname.split("/")[1]!
@@ -66,7 +72,12 @@ async function fixture() {
       options.incompatibleHost = options.rejectResumedHost
       return Response.json({ code: "conflict", message: "bound workspace is not running at the recorded VM" }, { status: 409 })
     }
-    const id = `${login}:${input.requestId}`
+    // One fixture models more than one durable request: every frame names its
+    // own through the idempotency key or the run selector it carries.
+    const selector = body.payload.selector as { runId?: string } | undefined
+    const requestId = typeof body.payload.idempotencyKey === "string" ? body.payload.idempotencyKey.split(":")[1]!
+      : typeof selector?.runId === "string" ? selector.runId.split(":")[1]! : input.requestId
+    const id = `${login}:${requestId}`
     if (body.tag === "Plan") {
       if (options.beforePlan) await options.beforePlan
       if (!plans.has(id)) plans.set(id, { planId: `plan-${id}`, flowId: options.wrongFlow ? "unrelated/flow" : "repository/setup", digest: "d".repeat(64), executionDigest: "e".repeat(64),
@@ -78,8 +89,9 @@ async function fixture() {
     if (body.tag !== "Projection.Snapshot") throw Error("Unexpected RPC")
     if (options.onSnapshot) await options.onSnapshot()
     if (options.readError) throw Error("Observation disconnected")
-    const operation = (calls.find(call => call.login === login && call.tag === "Plan")!.payload.input as { operation: string }).operation
-    const receipt = { requestId: options.wrongResult ? "different-request" : input.requestId, runId: `run-${id}`, revision: input.revision, digest: input.digest,
+    const operation = (calls.find(call => call.login === login && call.tag === "Plan"
+      && (call.payload.input as { requestId: string }).requestId === requestId)!.payload.input as { operation: string }).operation
+    const receipt = { requestId: options.wrongResult ? "different-request" : requestId, runId: `run-${id}`, revision: input.revision, digest: input.digest,
       operation, phase: "completed", updatedAt: Date.now(), results: [], evidence: ["actual-host-artifact"],
       ...(operation === "run" ? { jobRunId: "actual-manual-job" } : {}),
       ...(operation === "apply" ? { registrationId: "registration-1", sourceRevision: "a".repeat(40) } : {}) }
@@ -807,4 +819,94 @@ test("paused active and paused trial registrations remain distinct facts with no
   expect(state.registration.trial?.registrationId).toBe("trial-registration")
   expect(state.setup.state).toBe("none")
   expect(t.calls).toEqual([])
+})
+
+/*
+ * A pinned workspace that Smithers Cloud no longer has. Seen in production on
+ * 2026-09-17: the fixture's workspace was deleted, and `Inspect repository`
+ * answered `503 {"message":"workspace not found"}` with the request wedged at
+ * `phase: "queued"` and no `POST /workspaces` ever attempted.
+ */
+const REPLACEMENT_WORKSPACE = "33333333-3333-4333-8333-333333333333"
+const WORKSPACE_GONE = "workspace_gone — The workspace behind this setup is gone. Not your fault; retry creates a new one."
+
+test.each(["inspect", "evaluate", "trial", "apply"])("%s pinned to a deleted workspace allocates a replacement and keeps running", async operation => {
+  const t = await fixture()
+  t.options.lostWorkspace = t.workspaceIds.alice
+  t.options.newWorkspace = REPLACEMENT_WORKSPACE
+  expect((await t.send("POST", operation, "alice", { ...t.input, workspaceId: t.workspaceIds.alice })).status).toBe(202)
+  await t.settle()
+  expect(t.workspaceCalls).toEqual([
+    { method: "GET", path: `/api/repos/org/repo/workspaces/${t.workspaceIds.alice}` },
+    { method: "POST", path: "/api/repos/org/repo/workspaces", body: { kind: "vm", name: "Repository", required_capability: "repository-jobs/v1" } }
+  ])
+  const stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord
+  expect(stored.workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  expect(stored.binding?.workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  expect(stored.observationError).toBeUndefined()
+  expect(stored.receipt.phase).toBe("running")
+  expect(stored.result).toBeUndefined()
+  expect((t.calls.find(call => call.tag === "Plan")!.payload.input as { workspaceId: string }).workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  expect(t.launched.size).toBe(1)
+  const response = await t.read()
+  expect(response.status).toBe(202)
+  expect((await response.json() as { workspaceId: string }).workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  await t.settle()
+})
+
+test("a deleted workspace on the bound gateway path settles a typed retryable failure whose repeat allocates", async () => {
+  const t = await fixture()
+  t.options.lostGateway = t.workspaceIds.alice
+  expect((await t.send("POST", "evaluate", "alice", { ...t.input, workspaceId: t.workspaceIds.alice })).status).toBe(202)
+  await t.settle()
+  const failed = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord
+  expect(failed.receipt.phase).toBe("failed")
+  expect(failed.receipt.error).toBe(WORKSPACE_GONE)
+  expect(failed.result?.receipt?.error).toBe(WORKSPACE_GONE)
+  expect(failed.observationError).toBeUndefined()
+  expect(failed.binding).toBeUndefined()
+  expect(t.calls).toEqual([])
+  expect(t.launched.size).toBe(0)
+  const settled = await t.read()
+  expect(settled.status).toBe(200)
+  expect((await settled.json() as { receipt: { error: string } }).receipt.error).toBe(WORKSPACE_GONE)
+  // The deletion the gateway route saw first is visible on the workspace route
+  // by the time the person asks again, and the repeat finishes the operation.
+  t.options.lostWorkspace = t.workspaceIds.alice
+  t.options.newWorkspace = REPLACEMENT_WORKSPACE
+  t.options.runState = "completed"
+  const repeat = { ...t.input, requestId: "setup-repeat", workspaceId: t.workspaceIds.alice }
+  expect((await t.send("POST", "evaluate", "alice", repeat)).status).toBe(202)
+  await t.settle()
+  const done = t.durable.gatewayRows("alice").get(`repository-setup:request:${repeat.requestId}`) as SetupRecord
+  expect(done.workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  expect(done.receipt.phase).toBe("completed")
+  expect(t.launched.size).toBe(1)
+})
+
+test("reconnecting a run-less setup states whether its workspace is gone or still answering", async () => {
+  const t = await fixture()
+  const legacy = (requestId: string): SetupRecord => ({ version: 0, observationError: "Expired",
+    input: { ...t.input, requestId, operation: "apply", workspaceId: t.workspaceIds.alice },
+    receipt: { requestId, revision: 1, digest: t.input.digest, operation: "apply", phase: "queued", updatedAt: 1, results: [], evidence: [] } })
+  const rows = t.durable.gatewayRows("alice")
+  rows.set("repository-setup:request:setup-gone", legacy("setup-gone"))
+  rows.set("repository-setup:request:setup-alive", legacy("setup-alive"))
+  t.options.lostWorkspace = t.workspaceIds.alice
+  const gone = await t.send("GET", "observe?repo=org%2Frepo&job=issues&requestId=setup-gone")
+  expect(gone.status).toBe(200)
+  const body = await gone.json() as { receipt: { phase: string; error: string } }
+  expect(body.receipt.phase).toBe("failed")
+  expect(body.receipt.error).toBe(WORKSPACE_GONE)
+  await t.settle()
+  expect(t.workspaceCalls).toEqual([{ method: "GET", path: `/api/repos/org/repo/workspaces/${t.workspaceIds.alice}` }])
+  expect(t.calls).toEqual([])
+  expect(t.launched.size).toBe(0)
+  // The dead end belongs to a request with no run record AND a live workspace.
+  t.options.lostWorkspace = undefined
+  const alive = await t.send("GET", "observe?repo=org%2Frepo&job=issues&requestId=setup-alive")
+  expect(alive.status).toBe(503)
+  expect((await alive.json() as { message: string }).message).toBe("The previous setup has no recorded run to reconnect. Its execution state is unknown.")
+  expect((rows.get("repository-setup:request:setup-alive") as SetupRecord).receipt.phase).toBe("queued")
+  await t.settle()
 })

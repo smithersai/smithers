@@ -610,6 +610,12 @@ export const cloudTokenRefusalMessage = (
   return refusal.code === "account_not_allowlisted" ? `${refusal.code} — ${refusal.message}` : refusal.message
 }
 
+/**
+ * The one sentence for a pinned workspace Smithers Cloud no longer has, in the
+ * same `<code> — <words>` shape the setup receipt's error already carries.
+ */
+export const WORKSPACE_GONE_REFUSAL = `workspace_gone — ${WORKER_REFUSAL_COPY.workspace_gone.lead}`
+
 export type ProvisionOutcome =
   | { readonly status: "ready"; readonly record: GatewayRecord }
   | { readonly status: "provisioning"; readonly detail: string }
@@ -632,6 +638,13 @@ export type ProvisionOutcome =
    * "provisioning answered HTTP 404" the raw seam used to leak.
    */
   | { readonly status: "no_cloud_repo"; readonly detail: string }
+  /*
+   * The pinned workspace is gone from Cloud — deleted, or lost with its VM.
+   * A DIFFERENT fact from `no_cloud_repo`: the repository is there and the box
+   * is not, so an unbound caller may select a replacement instead of being
+   * told its repository was never on Smithers Cloud.
+   */
+  | { readonly status: "workspace_gone"; readonly detail: string }
 
 const NO_CAPACITY_DETAIL = "Smithers Cloud has no free workspace capacity right now — nothing was queued; try again in a bit."
 
@@ -718,7 +731,16 @@ const provisionGateway = (
       } as const
     }
     if (response.status === 404) {
-      yield* readBoundedResponseText(response)
+      /*
+       * The route answers a workspace it no longer has with the same status as
+       * a repository it never had, and states which one it means in the body's
+       * code. A call that pinned a workspace and got plue's typed not-found is
+       * reading a stale pin, not a repository outside Smithers Cloud.
+       */
+      const refusal = yield* readBoundedResponseText(response)
+      if (workspaceId !== undefined && refusalCode(refusal) === "not_found") {
+        return { status: "workspace_gone", detail: WORKSPACE_GONE_REFUSAL } as const
+      }
       return {
         status: "no_cloud_repo",
         detail: `${repo} isn't on Smithers Cloud yet, so there is no workspace to provision for it.`
@@ -905,6 +927,7 @@ export type GatewayCallOutcome =
   | { readonly status: "plan_limit_exceeded"; readonly detail: string; readonly refusal: ReturnType<typeof machineReadableRefusal> }
   | { readonly status: "no_cloud_token"; readonly detail: string }
   | { readonly status: "no_cloud_repo"; readonly detail: string }
+  | { readonly status: "workspace_gone"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }
 
 export interface GatewayCallInit {

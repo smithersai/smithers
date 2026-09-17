@@ -71,7 +71,8 @@ export const WORKER_FAILURE_CODES = [
   "upstream_malformed",
   "upstream_refused",
   "upstream_timeout",
-  "upstream_unreachable"
+  "upstream_unreachable",
+  "workspace_gone"
 ] as const
 
 /**
@@ -185,7 +186,14 @@ export const WORKER_FAILURES = {
   /** An upstream sent no headers before the seam's deadline. */
   "upstream_timeout": { fault: "dependency", status: 504, retryAfter: 0 },
   /** The connection to an upstream failed outright: DNS, TLS, a reset, an abort. */
-  "upstream_unreachable": { fault: "dependency", status: 502, retryAfter: 0 }
+  "upstream_unreachable": { fault: "dependency", status: 502, retryAfter: 0 },
+  /**
+   * A record pins a Smithers Cloud workspace Cloud no longer has: deleted, or
+   * lost with its VM. INFRA, and stale state rather than a dead end — an
+   * unbound request selects a replacement, so asking again gets a new box.
+   * Distinct from `no_cloud_repo`, where the repository itself is absent.
+   */
+  "workspace_gone": { fault: "infra", status: 409, retryAfter: 0 }
 } satisfies Record<WorkerFailureCode, WorkerFailureEntry>
 
 /**

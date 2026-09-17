@@ -604,7 +604,19 @@ export const WORKER_REFUSAL_COPY = {
   },
   upstream_refused: { lead: "Something Smithers depends on refused that. Not your doing.", doors: ["retry"] },
   upstream_timeout: { lead: "Something Smithers depends on didn't answer in time.", doors: ["retry"] },
-  upstream_unreachable: { lead: "Smithers couldn't reach something it depends on.", doors: ["retry"] }
+  upstream_unreachable: { lead: "Smithers couldn't reach something it depends on.", doors: ["retry"] },
+  /*
+   * The other `infra` code that is not a full fleet. Nothing is exhausted and
+   * nothing was misconfigured: the box this work was pinned to is gone, and
+   * asking again gets a new one. So the sentence says what retrying does,
+   * rather than sending the reader to whoever deployed Smithers.
+   */
+  workspace_gone: {
+    lead: "The workspace behind this setup is gone. Not your fault; retry creates a new one.",
+    agent:
+      "fault=infra: the workspace this request was pinned to no longer exists on Smithers Cloud — deleted, or lost with its VM. Not the user's fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra. Repeating the same operation selects a new workspace, so say plainly that it is worth asking again.",
+    doors: ["retry"]
+  }
 } satisfies Record<WorkerFailureCode, WorkerRefusalCopyRow>
 
 /**

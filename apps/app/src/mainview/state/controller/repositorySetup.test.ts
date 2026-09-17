@@ -1077,3 +1077,53 @@ test("a changed server session cannot adopt another account's recovery before th
     expect(t.calls).toEqual([])
   } finally { await t.close() }
 })
+
+/*
+ * The workspace a setup is pinned to can be deleted between two operations.
+ * The host then selects a replacement on the same route a first setup uses,
+ * and the card has to follow it instead of refusing its own new box.
+ */
+const replacement = "33333333-3333-4333-8333-333333333333"
+const WORKSPACE_GONE = "workspace_gone — The workspace behind this setup is gone. Not your fault; retry creates a new one."
+
+const pinned = async (t: Awaited<ReturnType<typeof fixture>>, payload: Partial<RepositorySetup>) => {
+  const card = t.store.collections.cards.get("setup")!
+  await t.store.dispatch({ type: "card.upsert", actor: "system",
+    card: { ...card, kind: "repository-setup", payload: { ...t.state(), workspaceId, ...payload } } }).isPersisted.promise
+}
+
+test("a host that replaced the deleted workspace this request pinned has its new one adopted", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed").json()
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  try {
+    await pinned(t, {})
+    await t.setup.runRepositorySetup("setup", "evaluate"); await Promise.all(t.background)
+    expect(t.calls[0]?.body.workspaceId).toBe(workspaceId)
+    expect(t.state().request?.error).toBeUndefined()
+    expect(t.state().request?.state).toBe("completed")
+    expect(t.state().workspaceId).toBe(replacement)
+  } finally { await t.close() }
+})
+
+test("retrying a setup its workspace outlived reruns the operation instead of reconnecting", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json()
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  try {
+    const digest = setupCandidate(t.state())
+    const receipt = { requestId: "lost", operation: "inspect" as const, revision: t.state().revision, digest,
+      phase: "failed" as const, updatedAt: 1, results: [], evidence: [], error: WORKSPACE_GONE }
+    await pinned(t, { receipt, previousReceipts: [receipt],
+      request: { id: "lost", operation: "inspect", revision: t.state().revision, digest, state: "failed", observeOnly: true, error: WORKSPACE_GONE } })
+    await t.setup.retryRepositorySetup("setup"); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.requestId).not.toBe("lost")
+    expect(t.calls[0]?.body.workspaceId).toBe(workspaceId)
+    expect(t.state().request?.state).toBe("completed")
+    expect(t.state().request?.error).toBeUndefined()
+    expect(t.state().workspaceId).toBe(replacement)
+  } finally { await t.close() }
+})

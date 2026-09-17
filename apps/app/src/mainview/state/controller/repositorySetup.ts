@@ -359,7 +359,11 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
           if (result.requestId !== intent.id || result.revision !== intent.revision || result.digest !== intent.digest) throw Error("The host returned a result for a different setup draft.")
           const latest = get(id)!
-          if (latest.payload.workspaceId && result.workspaceId && result.workspaceId !== latest.payload.workspaceId) throw Error("The host returned a result for a different workspace.")
+          // The host owns workspace selection: a workspace it replaced because
+          // Cloud no longer had the one this request pinned is this setup's new
+          // box. A result that moves a pin the request never carried is not.
+          if (latest.payload.workspaceId && result.workspaceId && result.workspaceId !== latest.payload.workspaceId
+            && workspaceId !== latest.payload.workspaceId) throw Error("The host returned a result for a different workspace.")
           const previous = latest.payload.receipt?.requestId === intent.id ? latest.payload.receipt : undefined
           if ((previous?.runId && result.receipt?.runId && previous.runId !== result.receipt.runId)
             || (previous?.jobRunId && result.receipt?.jobRunId && previous.jobRunId !== result.receipt.jobRunId)) throw Error("The host returned a different run for this setup request.")
@@ -668,7 +672,12 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     retryRepositorySetup: async id => {
       const card = get(id)
       if (card?.payload.recovery?.state === "failed") return requestRecovery(id)
-      if (card?.payload.request?.observeOnly) {
+      // A failure the host already settled has nothing left to reconnect to —
+      // the card offers Retry there, and retrying means asking for the
+      // operation again, which selects a live workspace.
+      const observed = card?.payload.receipt?.requestId === card?.payload.request?.id ? card?.payload.receipt : undefined
+      const settled = card?.payload.request?.state === "failed" && terminal(observed?.phase)
+      if (card?.payload.request?.observeOnly && !settled) {
         return edit(id, async () => {
           const latest = get(id), login = owner(), accountEpoch = epoch()
           if (!latest?.payload.request || latest.payload.owner !== login) return "This setup belongs to a different account."
