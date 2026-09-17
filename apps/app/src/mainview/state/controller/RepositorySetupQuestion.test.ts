@@ -221,9 +221,10 @@ test("the chore question clears every trigger it names, and keeps manual and app
 /*
  * The chore event trigger arrives with the chore-events candidate f3989046 as
  * `z.enum(["none","push","labeled"])`, so its "no trigger" value is "none" and
- * "" would be refused by the real validator the moment that lands. This base
- * has no such field, so the edit is simply not emitted here; the assertion is
- * on the value the choice WOULD carry.
+ * "" would be refused by the real validator the moment that lands. The edit is
+ * emitted exactly when the draft carries the field, so this reads the same
+ * before and after that candidate; the value the choice carries is asserted on
+ * a draft that carries it either way.
  */
 test("the chore trigger is cleared with the value its schema accepts, through the real validator", async () => {
   const setup = initialSetup("example/repo", "chores", "maintainer")
@@ -234,10 +235,10 @@ test("the chore trigger is cleared with the value its schema accepts, through th
   expect(manual.edits.find(edit => edit.field === "choreEvent")).toEqual({ field: "choreEvent", value: "none" })
   const t = await controllerFor(setup)
   try {
-    // On this base the field does not exist, so no edit for it is emitted and
-    // every edit the choice does emit is accepted by the shared validator.
+    // The edit follows the field, and every edit the choice emits is accepted
+    // by the shared validator.
     expect(setupGuideQuestions(setup).find(question => question.id === "chores.schedule")!
-      .choices.find(choice => choice.id === "manual")!.edits.some(edit => edit.field === "choreEvent")).toBe(false)
+      .choices.find(choice => choice.id === "manual")!.edits.some(edit => edit.field === "choreEvent")).toBe("choreEvent" in setup.draft)
     expect(await t.answer("chores.schedule", "manual")).toEqual({ value: "Draft updated." })
     expect(t.current().draft.schedule).toBe("")
   } finally { await t.close() }
