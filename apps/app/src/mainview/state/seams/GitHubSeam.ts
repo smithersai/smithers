@@ -129,6 +129,26 @@ export const INSTALL_VERIFY_PATH = "/api/user/github-app/installations"
 /** Only the github.com https install origin is worth linking (multi githubInstallUrl.ts). */
 export const trustedInstallUrl = (value: string): string | null => trustedHttpsUrl(value, "github.com")
 
+/** What GitHub's setup-URL return carries, once. */
+export type InstallReturn =
+  | { readonly kind: "installed"; readonly installationId: string }
+  | { readonly kind: "requested" }
+  | { readonly kind: "unusable" }
+
+/**
+ * Classify a setup-URL return. `setup_action=request` with no id is GitHub
+ * filing an install REQUEST against an org the person cannot administer: it
+ * is waiting on an owner, and asking again files a second one.
+ */
+export const readInstallReturn = (search: string): InstallReturn | null => {
+  const params = new URLSearchParams(search)
+  const installationId = params.get("installation_id")
+  const setupAction = params.get("setup_action")
+  if (installationId === null && setupAction === null) return null
+  if (installationId !== null && /^\d+$/.test(installationId)) return { kind: "installed", installationId }
+  return setupAction === "request" ? { kind: "requested" } : { kind: "unusable" }
+}
+
 interface StatusAnswer {
   readonly installed: boolean
   readonly configured: boolean
@@ -349,11 +369,11 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
   }
 
   let installFailure: string | undefined
-  const installNotice = async (text: string | undefined): Promise<void> => {
-    installFailure = text
+  const installNotice = async (text: string | undefined, status: "ok" | "failed" = "failed"): Promise<void> => {
+    installFailure = status === "failed" ? text : undefined
     if (text) {
       await ctx.dispatch({ type: "toast.shown", actor: "system", key: "github.install", title: text }).isPersisted.promise
-      await ctx.dispatch({ type: "toast.resolved", actor: "system", key: "github.install", status: "failed", detail: "" }).isPersisted.promise
+      await ctx.dispatch({ type: "toast.resolved", actor: "system", key: "github.install", status, detail: "" }).isPersisted.promise
     }
   }
   const adoptInstalled = async (repo: string, repos: ReadonlyArray<{ fullName: string }>): Promise<void> => {
@@ -432,11 +452,11 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     return installFailure
   }
   const handleInstallReturn: GitHubSeam["handleInstallReturn"] = (search) => {
-    const params = new URLSearchParams(search)
-    const installationId = params.get("installation_id")
-    if (installationId === null && !params.has("setup_action")) return false
-    if (installationId === null || !/^\d+$/.test(installationId)) void installNotice("Nothing came back from GitHub. Try again?")
-    else void verifyInstall(installationId)
+    const answer = readInstallReturn(search)
+    if (answer === null) return false
+    if (answer.kind === "installed") void verifyInstall(answer.installationId)
+    else if (answer.kind === "requested") void installNotice("Waiting for an org owner to approve the install.", "ok")
+    else void installNotice("Nothing came back from GitHub. Try again?")
     return true
   }
   /* The install pill's check, one at a time: a second press joins it instead of paging the inventory again. */

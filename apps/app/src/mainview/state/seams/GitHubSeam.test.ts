@@ -9,6 +9,7 @@ import {
   MIRROR_LOST_STREAM_TRIGGER,
   mirrorSyncPolling,
   parseMirrorRef,
+  readInstallReturn,
   SIGN_OUT_REFUSAL,
   trustedInstallUrl
 } from "./GitHubSeam"
@@ -179,6 +180,17 @@ describe("lowRateLimit", () => {
   })
 })
 
+describe("readInstallReturn", () => {
+  test("a request filed against an org owner is its own answer", () => {
+    expect(readInstallReturn("")).toBeNull()
+    expect(readInstallReturn("?installation_id=5511&setup_action=install")).toEqual({ kind: "installed", installationId: "5511" })
+    /* GitHub files a request instead of an installation when the person cannot administer the org. */
+    expect(readInstallReturn("?setup_action=request")).toEqual({ kind: "requested" })
+    expect(readInstallReturn("?setup_action=install")).toEqual({ kind: "unusable" })
+    expect(readInstallReturn("?installation_id=nope&setup_action=install")).toEqual({ kind: "unusable" })
+  })
+})
+
 describe("createGitHubSeam", () => {
   test("signed out, every act refuses with the sign-in wording", async () => {
     const { seam } = await harness({}, { signedIn: false })
@@ -187,6 +199,19 @@ describe("createGitHubSeam", () => {
     expect(textOf(await seam.openInstall())).toBe(SIGN_OUT_REFUSAL)
     expect(textOf(await seam.reconcile())).toBe(SIGN_OUT_REFUSAL)
     expect(textOf(await seam.mirrorSync())).toBe(SIGN_OUT_REFUSAL)
+  })
+
+  test("a pending org install request waits on its owner instead of inviting a second one", async () => {
+    const { requests, seam, store } = await harness({})
+
+    expect(seam.handleInstallReturn("?setup_action=request")).toBe(true)
+    await waitUntil(() => store.collections.toasts.get("toast-github.install")?.status !== undefined
+      && store.collections.toasts.get("toast-github.install")?.status !== "running", "the pending-request toast to settle")
+
+    expect(store.collections.toasts.get("toast-github.install")?.title).toBe("Waiting for an org owner to approve the install.")
+    /* The request is filed and waiting; a failed toast would read as Smithers losing it. */
+    expect(store.collections.toasts.get("toast-github.install")?.status).toBe("ok")
+    expect(requests).toEqual([])
   })
 
   test("github.app files the status row and renders the connected card", async () => {
