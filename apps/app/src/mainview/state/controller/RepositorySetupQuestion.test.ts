@@ -217,6 +217,30 @@ test("the chore question clears every trigger it names, and keeps manual and app
   } finally { await t.close() }
 })
 
+/*
+ * REQUIRES THE FEATURE-MODE CHANGE ON MAIN (root's 980c7650). Until the
+ * feature branch of flows/repository/activation.ts `normalEvents` lands, the
+ * feature job registers issue events in every mode, so "Only when I ask" and
+ * "Never" would over-promise. The wording below is true only with it.
+ */
+test("the feature question edits the step mode alone and keeps manual and off distinct", async () => {
+  const setup = initialSetup("example/repo", "feature", "maintainer")
+  const question = setupGuideQuestions(setup)[0]!
+  expect(question.id).toBe("feature.steps.mode")
+  expect(question.text).toBe("Start feature work when an issue is opened, edited, reopened or labeled?")
+  expect(question.choices.map(choice => choice.id)).toEqual(["manual", "approved", "automatic", "off"])
+  // Short options: a choice label is a choice, never an explanatory paragraph.
+  for (const choice of question.choices) expect(choice.label.length).toBeLessThanOrEqual(30)
+  expect(question.fields).toEqual(["step.feature.mode"])
+  const t = await controllerFor(setup)
+  try {
+    for (const mode of ["approved", "automatic", "off", "manual"] as const) {
+      expect(await t.answer("feature.steps.mode", mode)).toEqual({ value: "Draft updated." })
+      expect(t.current().draft.steps).toEqual([{ ...setup.draft.steps[0]!, mode }])
+    }
+  } finally { await t.close() }
+})
+
 test("another account's setup and an account switch both refuse the answer", async () => {
   const t = await controllerFor(recordedSetup())
   try {
