@@ -69,31 +69,38 @@ for (const command of ["/flow.run review smithersai/smithers", "/secrets.list", 
   })
 }
 
-test("unknown repository has one sign-in card and the web wiki has no seeded World page", async ({ page }) => {
+// The Wiki ships default-off (PRODUCT.md FLAG-01), so the web host seeds no
+// World page and no door — chrome, slash, or card — reaches one.
+test("unknown repository has one sign-in card and no Wiki door while the flag is off", async ({ page }) => {
   await signedOutVisitor(page)
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
   await page.goto("/nope/nope/")
   await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toContainText("nope/nope")
   await expect(page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })).toHaveCount(1)
-  await slash(page, "/wiki")
-  await expect(page.locator(".world-card-empty")).toContainText("No Wiki yet")
-  await expect(page.locator('.world-card-empty [data-flow="wiki.create"]')).toHaveText("Create Wiki")
+  await expect(page.getByTestId("chrome-wiki")).toHaveCount(0)
+  if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
+  await page.getByTestId("composer-input").fill("/wiki")
+  await expect(page.locator('[role="option"]').first()).toBeVisible()
+  await expect(page.locator('[role="option"][data-flow^="wiki"], [role="option"][data-flow^="world"]')).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  await expect(page.locator(".world-card-empty")).toHaveCount(0)
   await expect(page.locator(".world-document-title")).toHaveCount(0)
 })
 
-test("chrome sign-in uses the shell's green action token", async ({ page }) => {
+test("chrome sign-in paints with the shell's brand action token, not its text color", async ({ page }) => {
   await signedOutVisitor(page)
   await page.goto("/smithersai/smithers/")
   const door = page.getByTestId("chrome-sign-in")
   await expect(door).toBeVisible()
   expect(await door.evaluate(node => {
     const probe = document.createElement("span")
-    probe.style.color = "var(--g-accent)"
     node.append(probe)
-    const same = getComputedStyle(node).color === getComputedStyle(probe).color
+    const read = (value: string) => { probe.style.color = value; return getComputedStyle(probe).color }
+    const painted = getComputedStyle(node).color
+    const same = { brand: painted === read("var(--brand)"), text: painted === read("var(--text)") }
     probe.remove()
     return same
-  })).toBe(true)
+  })).toEqual({ brand: true, text: false })
 })
 
 /*
