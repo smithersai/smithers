@@ -8,8 +8,10 @@ import { REPO_FILE_READ_CAP_BYTES, REPO_LISTING_CAP_ENTRIES } from "@smthrs/rpc/
 import { decodeAgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { LOCAL_SESSION_HEADER, LOCAL_SESSION_META } from "@smthrs/rpc/LocalSession"
+import * as Health from "@smthrs/control/Health"
+import { Effect } from "effect"
 import { createPtyManager } from "./Pty"
-import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer } from "./server"
+import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer, withJevSessionBindings } from "./server"
 import type { LocalServer } from "./server"
 
 let dist = ""
@@ -982,6 +984,46 @@ describe("/ws", () => {
     socket.send(JSON.stringify({ type: "pty.input", sessionId: "nope", data: "x" }))
     expect(await error).toEqual({ type: "error", message: "No live PTY session nope." })
     socket.close()
+  })
+})
+
+describe("withJevSessionBindings", () => {
+  const jev = { checkerId: "jev.session", exposeOutput: true }
+  const key = { AI_GATEWAY_API_KEY: "sk-test" }
+
+  test("a gateway key binds every session subject this host resolves", () => {
+    const health = withJevSessionBindings(undefined, key)
+    const registry = Health.makeRegistry(health, "session")
+    // `terminal`, a harness id and an agent role id are the three shapes of
+    // `session.roleId ?? session.harnessId ?? "terminal"`.
+    for (const subject of ["terminal", "claude", "codex", "orchestrator", "fast-ui"]) {
+      expect(health?.bindings?.[subject]).toEqual(jev)
+      const resolved = registry.resolve(subject)
+      expect(resolved.checker.id).toBe("jev.session")
+      expect(resolved.exposeOutput).toBe(true)
+    }
+  })
+
+  test("no key, or an empty one, leaves the host configuration exactly as it was", () => {
+    const configured = { bindings: { terminal: { checkerId: "fixture.semantic" } } }
+    expect(withJevSessionBindings(configured, {})).toBe(configured)
+    expect(withJevSessionBindings(configured, { AI_GATEWAY_API_KEY: "" })).toBe(configured)
+    expect(withJevSessionBindings(undefined, {})).toBeUndefined()
+    expect(Health.makeRegistry(withJevSessionBindings(undefined, {}), "session").resolve("claude").checker.id)
+      .toBe("lifecycle.session")
+  })
+
+  test("a caller that named its own checker for a subject keeps it", () => {
+    const health = withJevSessionBindings({
+      checkers: [{ id: "fixture.semantic", probe: () => Effect.succeed({ activity: "working" as const }) }],
+      bindings: { terminal: { checkerId: "fixture.semantic" } },
+      limits: { maxSubjects: 4 }
+    }, key)
+    const registry = Health.makeRegistry(health, "session")
+    expect(registry.resolve("terminal").checker.id).toBe("fixture.semantic")
+    expect(registry.resolve("terminal").exposeOutput).toBe(false)
+    expect(registry.resolve("claude").checker.id).toBe("jev.session")
+    expect(health?.limits?.maxSubjects).toBe(4)
   })
 })
 

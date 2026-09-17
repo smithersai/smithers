@@ -55,6 +55,13 @@ const health: Health.HealthConfig = {
 }
 ```
 
+The desktop local server writes that binding itself: with `AI_GATEWAY_API_KEY` set
+in its process it binds `jev.session` with `exposeOutput: true` for every session
+subject it resolves, so a session's output tail is sent to the gateway with zero
+data retention; without the key its configuration is exactly what a caller passed,
+and a subject a caller bound keeps that caller's checker. The native CLI host
+observes runs rather than sessions, so it never binds this checker.
+
 The checker sends the session's `alive`, `exitCode`, and the newest 4 KiB of its
 output to Jev, TypeSafe's decision model, through the Vercel AI Gateway, with zero
 data retention. Jev answers one choice question (`working`, `idle`, `needs-input`)

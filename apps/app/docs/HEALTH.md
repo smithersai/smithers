@@ -82,6 +82,15 @@ understands a particular harness protocol; the host supplies at most 4 KiB of
 plain-text tail. The adapter remains responsible for interpreting that protocol
 correctly. Terminal contents and arbitrary exceptions never enter status DTOs.
 
+With `AI_GATEWAY_API_KEY` set in the daemon's process, the host binds the
+registered `jev.session` checker with `exposeOutput: true` for every session
+subject key it resolves (`terminal`, each harness ID, each agent role ID), so the
+session's 4 KiB output tail is sent to the Vercel AI Gateway with zero data
+retention and Jev answers whether the agent is working, idle, or waiting on a
+person. Without the key nothing is bound and the lifecycle default keeps
+answering unknown activity. A binding supplied in `LocalServerOptions.health`
+wins for its own subject.
+
 The daemon stamps owner incarnation, observation time, expiry, and evidence
 cursor. It discards a report if the process changes lifecycle while its check
 is running. Observations commit to `local-health.sqlite` using the existing

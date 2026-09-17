@@ -29,6 +29,7 @@ import {
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as Health from "@smthrs/control/Health"
 import { createSessionMonitor, type SessionMonitor } from "./SessionMonitor"
+import { AGENT_ROLE_IDS } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
@@ -43,6 +44,7 @@ import {
   CLOUD_WS_NOT_READY_CLOSE_CODE,
   CLOUD_WS_PENDING_CLOSE_CODE,
   CLOUD_WS_ROUTE_PREFIX,
+  HARNESS_IDS,
   withRetryAfter
 } from "@smthrs/rpc/LocalApp"
 import type { CloudWsSessionKind } from "@smthrs/rpc/LocalApp"
@@ -688,9 +690,34 @@ const proxyCloud = async (
   return new Response(response.body, { status: response.status, headers: out })
 }
 
+/** Bind `jev.session` for this host's session subjects when a gateway key is set.
+ *
+ * `jev.session` is registered in every host and bound by none, so a binding is
+ * the whole opt-in (HEALTH.md, "Local session evidence"). `SessionMonitor`
+ * resolves a subject by `roleId ?? harnessId ?? "terminal"`, which is exactly
+ * the agent roles, the harnesses, and a plain terminal, so naming those keys
+ * covers every session this host can observe. `exposeOutput: true` is what
+ * gives the checker the 4 KiB tail it reads; without it the probe answers
+ * unknown. A caller that already bound a subject keeps its own checker, and
+ * without `AI_GATEWAY_API_KEY` the configuration is returned untouched.
+ */
+export const withJevSessionBindings = (
+  health: Health.HealthConfig | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env
+): Health.HealthConfig | undefined => {
+  if ((env.AI_GATEWAY_API_KEY ?? "") === "") return health
+  const jev: Health.HealthBinding = { checkerId: "jev.session", exposeOutput: true }
+  const subjects = ["terminal", ...HARNESS_IDS, ...AGENT_ROLE_IDS]
+  return {
+    ...health,
+    bindings: { ...Object.fromEntries(subjects.map((subject) => [subject, jev])), ...health?.bindings }
+  }
+}
+
 export const startLocalServer = async (options: LocalServerOptions): Promise<LocalServer> => {
+  const health = withJevSessionBindings(options.health)
   // Invalid trusted configuration fails before listeners or child owners exist.
-  Health.makeRegistry(options.health, "session")
+  Health.makeRegistry(health, "session")
   let sessionMonitor: SessionMonitor | undefined
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
@@ -1386,7 +1413,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   }
   const pty = options.pty === undefined ? createPtyManager(ptyDeps) : options.pty(ptyDeps)
   sessionMonitor = await createSessionMonitor({
-    manager: pty, configuration: options.health, stateDir: options.stateDir, publish, log
+    manager: pty, configuration: health, stateDir: options.stateDir, publish, log
   })
   const ptyRoutes = registerPtyRoutes(routeHost, pty, {
     resolveRepo: (repoId) => repoTargets.resolveRepo(repoId, "read-write")
