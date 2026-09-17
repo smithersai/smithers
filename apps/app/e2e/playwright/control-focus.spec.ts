@@ -61,7 +61,7 @@ const openControlledSurface = async (page: Page) => {
   await composer.press("Enter")
   const card = page.locator(".smithers-card[data-kind='browser']").last()
   await expect(card).toBeVisible()
-  const surface = card.locator("iframe.browser-card-frame")
+  const surface = card.locator("iframe[class~='browser-card-frame']")
   await expect(surface).toBeVisible({ timeout: 15_000 })
   /* The composer dock is a fixed layer over the transcript while open; Escape closes it (2026-09-08 brief). */
   await page.keyboard.press("Escape")
@@ -208,12 +208,12 @@ test("the hole is the card's box, not the inner element that took focus", async 
       hole,
       card: rect(card),
       header: rect(card.querySelector(".smithers-card-header")!),
-      surface: rect(card.querySelector("iframe.browser-card-frame")!),
+      surface: rect(card.querySelector("iframe[class~='browser-card-frame']")!),
       outset: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-focus-outset")),
       marked: `${marked.tagName.toLowerCase()}.${(marked.className || "").toString().split(" ")[0] ?? ""}`,
       markedIsTheCard: marked === card,
       markers: document.querySelectorAll("[data-control-focus]").length,
-      surfaceIsMarked: card.querySelector("iframe.browser-card-frame")!.hasAttribute("data-control-focus")
+      surfaceIsMarked: card.querySelector("iframe[class~='browser-card-frame']")!.hasAttribute("data-control-focus")
     }
   })
 
