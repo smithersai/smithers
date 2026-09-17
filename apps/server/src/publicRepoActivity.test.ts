@@ -60,7 +60,7 @@ const mirror = () => {
   }
 }
 
-type Answer = (path: string, url: URL) => Response | undefined
+type Answer = (path: string, url: URL) => Response | undefined | Promise<Response>
 
 /** A clock the test moves by hand; sleeps (deadlines) still run on the real timer. */
 const testClock = (start: number) => {
@@ -251,9 +251,9 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     expect(requests).toHaveLength(0)
   })
 
-  test("a cache hit skips the upstream for five minutes and joins concurrent reads", async () => {
-    const { request, concurrently, requests, advance } = harness()
-    const responses = await concurrently([ACTIVITY_PATH, "/api/public/repos/SmithersAI/Smithers/activity", `${ACTIVITY_PATH}?bust=1`])
+  test("a completed cache hit skips the upstream for five minutes across catalog spellings", async () => {
+    const { request, requests, advance } = harness()
+    const responses = [await request(ACTIVITY_PATH), await request("/api/public/repos/SmithersAI/Smithers/activity"), await request(`${ACTIVITY_PATH}?bust=1`)]
     expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
     const first = requests.length
     expect(first).toBe(5)
@@ -263,6 +263,30 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     advance(1_001)
     await request()
     expect(requests).toHaveLength(first * 2)
+  })
+
+  test("a cold activity miss owns its refresh instead of waiting on another Worker's request", async () => {
+    const pending: Array<(response: Response) => void> = []
+    const { request } = harness(path => path === "/issues" ? new Promise(resolve => pending.push(resolve)) : undefined)
+    const flush = async (count: number) => {
+      for (let attempt = 0; attempt < 100 && pending.length < count; attempt++) await new Promise(resolve => setTimeout(resolve, 2))
+    }
+    const first = request()
+    await flush(1)
+    const second = request()
+    try {
+      await flush(2)
+      expect(pending).toHaveLength(2)
+      pending[1]!(Response.json([{ number: 1, created_at: at(1) }]))
+      expect((await (await second).json() as PublicRepoActivity).counts.issues).toBe(1)
+      pending[0]!(Response.json([]))
+      expect((await (await first).json() as PublicRepoActivity).counts.issues).toBe(0)
+      expect((await (await request()).json() as PublicRepoActivity).counts.issues).toBe(0)
+      expect(pending).toHaveLength(2)
+    } finally {
+      for (const resolve of pending) resolve(Response.json([]))
+      await Promise.all([first, second])
+    }
   })
 
   test("the edge cache is reusable across Worker instances and expires", async () => {

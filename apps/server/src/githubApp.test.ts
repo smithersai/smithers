@@ -305,20 +305,50 @@ describe("the installation token exchange", () => {
     expect(paths()).toHaveLength(4)
   })
 
-  test("joins concurrent callers onto one exchange", async () => {
-    const { tokens, paths } = harness()
-    const bearers = await tokens(3)
+  test("shares a completed token across later callers", async () => {
+    const { token, paths } = harness()
+    const bearers = [await token(), await token(), await token()]
     expect(bearers.map((bearer) => bearer?.value)).toEqual([INSTALLATION_TOKEN, INSTALLATION_TOKEN, INSTALLATION_TOKEN])
     expect(paths()).toHaveLength(2)
   })
 
-  test("a failed exchange is shared too: concurrent callers cost one lookup and one warning", async () => {
-    const { tokens, paths, logs } = harness({
+  test("a completed failed exchange is cached for later callers", async () => {
+    const { token, paths, logs } = harness({
       answer: (request) => new URL(request.url).pathname === "/app/installations" ? Response.json([]) : Response.json({}, { status: 500 })
     })
-    expect(await tokens(4)).toEqual([undefined, undefined, undefined, undefined])
+    expect([await token(), await token(), await token(), await token()]).toEqual([undefined, undefined, undefined, undefined])
     expect(paths()).toEqual(["/app/installations"])
     expect(logs).toEqual(["the GitHub App is not installed on any organization"])
+  })
+
+  test("a cold token miss owns its exchange instead of waiting on another Worker's request", async () => {
+    const pending: Array<(response: Response) => void> = []
+    const { token } = harness({
+      answer: (request, now) => {
+        const path = new URL(request.url).pathname
+        if (path === "/app/installations") return new Promise(resolve => pending.push(resolve))
+        return Response.json({ token: path.includes("/2/") ? "local-second-token" : "local-first-token", expires_at: new Date(now + 3_600_000).toISOString() }, { status: 201 })
+      }
+    })
+    const flush = async (count: number) => {
+      for (let attempt = 0; attempt < 100 && pending.length < count; attempt++) await new Promise(resolve => setTimeout(resolve, 2))
+    }
+    const first = token()
+    await flush(1)
+    const second = token()
+    try {
+      await flush(2)
+      expect(pending).toHaveLength(2)
+      pending[1]!(Response.json(installations([{ id: 2, login: "smithersai" }])))
+      expect(await second).toEqual({ value: "local-second-token", renewable: true })
+      pending[0]!(Response.json(installations([{ id: 1, login: "smithersai" }])))
+      expect(await first).toEqual({ value: "local-first-token", renewable: true })
+      expect((await token())?.value).toBe("local-first-token")
+      expect(pending).toHaveLength(2)
+    } finally {
+      for (const resolve of pending) resolve(Response.json(SMITHERSAI_INSTALLATION))
+      await Promise.all([first, second])
+    }
   })
 })
 

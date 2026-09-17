@@ -5,7 +5,6 @@ import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
-import * as Semaphore from "effect/Semaphore"
 import { ServerConfig } from "./Config"
 import { CryptoFailure } from "./Failures"
 import { fetchWithDeadline, readJson, readText, Transport } from "./Http"
@@ -288,10 +287,9 @@ interface HeldToken {
 }
 
 /**
- * The App credential as one service instance: the held token, the failure
- * memory, and the single-flight gate live for the layer's lifetime (one
- * isolate). Concurrent callers queue on the gate; the first one exchanges
- * and the rest read the token it held, so N callers cost one exchange.
+ * The App credential as one service instance: completed tokens and failure
+ * memory live for the layer's lifetime (one isolate). Each cold caller owns
+ * its exchange; a Worker request cannot wait on another request's fiber.
  */
 export const makeGithubAppAuth = (
   options: GithubAppAuthOptions = {}
@@ -303,7 +301,6 @@ export const makeGithubAppAuth = (
     const log = options.log ?? ((line: string) => console.warn(line))
     const held = yield* Ref.make<HeldToken | undefined>(undefined)
     const failedUntil = yield* Ref.make(0)
-    const gate = yield* Semaphore.make(1)
 
     const githubRequest = (url: string, jwt: string, method: "GET" | "POST") =>
       new Request(url, {
@@ -420,9 +417,9 @@ export const makeGithubAppAuth = (
         return yield* exchange(id, jwt.success)
       })
 
-    /** Under the gate: one exchange at a time, and a caller behind it reads what it held. */
-    const mintOnce = (appId: string, privateKey: string): Effect.Effect<GithubBearer | undefined> =>
-      gate.withPermit(Effect.gen(function*() {
+    /** Reuse completed state, but keep a cache miss's I/O in its own request. */
+    const mintForRequest = (appId: string, privateKey: string): Effect.Effect<GithubBearer | undefined> =>
+      Effect.gen(function*() {
         const now = yield* Clock.currentTimeMillis
         const current = yield* Ref.get(held)
         if (current !== undefined && current.expiresAt > now) return { value: current.value, renewable: true }
@@ -432,7 +429,7 @@ export const makeGithubAppAuth = (
         // hand back a window that is already half spent.
         if (bearer === undefined) yield* Ref.set(failedUntil, (yield* Clock.currentTimeMillis) + FAILURE_TTL_MS)
         return bearer
-      }))
+      })
 
     const token = (): Effect.Effect<GithubBearer | undefined> =>
       Effect.gen(function*() {
@@ -443,7 +440,7 @@ export const makeGithubAppAuth = (
         const current = yield* Ref.get(held)
         if (current !== undefined && current.expiresAt > now) return { value: current.value, renewable: true }
         if (now < (yield* Ref.get(failedUntil))) return undefined
-        return yield* mintOnce(config.githubAppId, Redacted.value(config.githubAppPrivateKey))
+        return yield* mintForRequest(config.githubAppId, Redacted.value(config.githubAppPrivateKey))
       })
 
     const forget = (): Effect.Effect<void> =>

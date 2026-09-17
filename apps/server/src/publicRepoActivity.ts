@@ -1,7 +1,6 @@
 import { publicRepoActivityPath } from "@smthrs/rpc/AgentApiRoutes"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
-import * as PartitionedSemaphore from "effect/PartitionedSemaphore"
 import * as Ref from "effect/Ref"
 import { ServerConfig } from "./Config"
 import { EdgeCache } from "./githubApp"
@@ -250,28 +249,20 @@ export type PublicRepoActivityHandler = (
 ) => Effect.Effect<Response, never, Transport | ServerConfig | EdgeCache>
 
 /**
- * An activity handler with its own per-repository snapshots and in-flight
- * gates: the isolate's copy. `handlePublicRepoActivity` is the deployed one; a
+ * An activity handler with its own completed per-repository snapshots:
+ * the isolate's copy. `handlePublicRepoActivity` is the deployed one; a
  * test builds its own to play two isolates over one edge cache. The Cloud
  * origin the mirror is read from is `ServerConfig.cloudApiBaseUrl`.
  */
 export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
   const snapshots = Ref.makeUnsafe(new Map<string, Snapshot>())
-  const gates = PartitionedSemaphore.makeUnsafe<string>({ permits: 1 })
 
   const snapshotOf = (repo: string) => Effect.map(Ref.get(snapshots), (all) => all.get(repo))
-
-  const stale = (repo: string) =>
-    Effect.gen(function*() {
-      const current = yield* snapshotOf(repo)
-      const now = yield* Clock.currentTimeMillis
-      return current === undefined || current.expiresAt <= now
-    })
 
   const remember = (repo: string, snapshot: Snapshot) =>
     Ref.update(snapshots, (all) => new Map(all).set(repo, snapshot))
 
-  const refresh = (repo: string, cacheKey: string, base: string): Effect.Effect<void, never, Transport | EdgeCache> =>
+  const refresh = (repo: string, cacheKey: string, base: string): Effect.Effect<Snapshot, never, Transport | EdgeCache> =>
     Effect.gen(function*() {
       const edge = yield* EdgeCache
       const cached = yield* edge.match(cacheKey)
@@ -281,8 +272,9 @@ export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
         if (ttl > 0) {
           const body = yield* readText(cached).pipe(Effect.orElseSucceed(() => undefined))
           if (body !== undefined) {
-            yield* remember(repo, { body, expiresAt: now + ttl * 1000 })
-            return
+            const next = { body, expiresAt: now + ttl * 1000 }
+            yield* remember(repo, next)
+            return next
           }
         }
       }
@@ -295,6 +287,7 @@ export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
       yield* edge.put(cacheKey, new Response(snapshot.body, {
         headers: { ...headers, "cache-control": `public, max-age=${ttl}`, "x-activity-expires": String(snapshot.expiresAt) }
       }))
+      return snapshot
     })
 
   return (request) =>
@@ -314,17 +307,15 @@ export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
       }
       // The catalog's spelling is the cache key, so a mixed-case request shares the answer.
       const repo = AVAILABLE_REPOS.find((entry) => entry.name.toLowerCase() === name.toLowerCase())!.name
-      if (yield* stale(repo)) {
+      let current = yield* snapshotOf(repo)
+      if (current === undefined || current.expiresAt <= (yield* Clock.currentTimeMillis)) {
         const config = yield* ServerConfig
         // Query strings and visitor headers never change the public cache key.
         const key = new URL(publicRepoActivityPath(repo), request.url).href
-        // Concurrent readers of one repository queue behind one refresh; a
-        // reader that waited finds the snapshot fresh and never refreshes again.
-        yield* gates.withPermit(repo)(Effect.gen(function*() {
-          if (yield* stale(repo)) yield* refresh(repo, key, config.cloudApiBaseUrl)
-        }))
+        // Only completed snapshots cross requests. Waiting on another request's
+        // pending fiber leaves workerd with no owned event and produces a 500.
+        current = yield* refresh(repo, key, config.cloudApiBaseUrl)
       }
-      const current = (yield* snapshotOf(repo))!
       const now = yield* Clock.currentTimeMillis
       return new Response(request.method === "HEAD" ? null : current.body, {
         headers: { ...headers, "cache-control": `public, max-age=${Math.max(0, Math.ceil((current.expiresAt - now) / 1000))}` }

@@ -10,7 +10,7 @@ import { memoryDurableObjects } from "./memoryDurableObjects"
 
 /*
  * The runtime memo: one `ManagedRuntime` per env object, so the services
- * built from one deployment's bag (the GitHub App single-flight mint, the
+ * built from one deployment's bag (the completed GitHub App token cache, the
  * catalog cache) live across requests, while two bags never share a service
  * or a credential.
  */
@@ -61,11 +61,12 @@ describe("runtimeFor", () => {
     expect(runtimeFor(env)).not.toBe(runtimeFor(appEnv()))
   })
 
-  test("requests under one env share the single-flight mint; two envs never share a token", async () => {
+  test("requests under one env share a completed token; two envs never share a token", async () => {
     const wire = github()
     try {
       const env = appEnv()
-      // Concurrent callers queue behind one exchange.
+      // Complete the first exchange before sharing its token across requests.
+      expect((await bearer(env))?.value).toBe("ghs_round_1")
       const [first, second] = await Promise.all([bearer(env), bearer(env)])
       expect(first?.value).toBe("ghs_round_1")
       expect(second?.value).toBe("ghs_round_1")
