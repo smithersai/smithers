@@ -166,7 +166,16 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
                       resetKey={selected.id}
                       label={`Edit ${selected.title}`}
                       onChange={(body) => controller.changeWorldDocument(selected.id, body)}
-                      onEditor={controller.attachWikiEditor}
+                      /*
+                       * Registered twice on purpose: `attachWikiEditor` serves wiki.heading's
+                       * scroll; `attachWorldEditor` puts the pane in the map that receives an
+                       * accepted remote revision or an agent `remember`, so a keystroke never
+                       * writes stale text over a collaborator's.
+                       */
+                      onEditor={(editor) => {
+                        controller.attachWikiEditor(editor)
+                        controller.attachWorldEditor(selected.id, "pane", editor)
+                      }}
                     />
                   </Suspense>
                 </div>
