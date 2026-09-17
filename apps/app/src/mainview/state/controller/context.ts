@@ -330,7 +330,10 @@ export const createControllerContext = (
               body.set(chunk, offset)
               offset += chunk.byteLength
             }
-            return new Response(body, {
+            // Some transports expose an empty stream for bodyless responses.
+            // Browsers reject even a zero-byte body for 204/205/304.
+            const bodyless = response.status === 204 || response.status === 205 || response.status === 304 || init?.method?.toUpperCase() === "HEAD"
+            return new Response(bodyless ? null : body, {
               status: response.status,
               statusText: response.statusText,
               headers: response.headers

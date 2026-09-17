@@ -198,3 +198,25 @@ test("buffered responses retain JSON, error text, headers, and empty-body semant
     await ctx.dispose()
   }
 })
+
+for (const [status, method] of [[204, "DELETE"], [205, "POST"], [304, "GET"], [200, "HEAD"]] as const) {
+  test(`a streamed ${status} ${method} response retains a null body`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const reply = new Response(null, { status, headers: { "x-receipt": "accepted" } })
+    Object.defineProperty(reply, "body", {
+      value: new ReadableStream<Uint8Array>({ start: controller => controller.close() })
+    })
+    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+      fetchImpl: async () => reply
+    })
+    try {
+      const response = await ctx.boundedFetch("https://app.test/api/test", { method })
+      expect(response.status).toBe(status)
+      expect(response.headers.get("x-receipt")).toBe("accepted")
+      expect(response.body).toBeNull()
+      expect(await response.text()).toBe("")
+    } finally {
+      await ctx.dispose()
+    }
+  })
+}
