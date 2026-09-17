@@ -19,7 +19,7 @@ import { knowledgeFlowAvailable } from "../../state/KnowledgeFeatures"
 export const namespace: Namespace = {
   id: "search",
   label: "Search",
-  summary: "Find files, flows, targets, wiki pages, history, runs, changes, issues, boxes and secret names"
+  summary: "Find files, flows, targets, runs, changes, issues, boxes and secret names"
 }
 
 /** What every `search.*` flow takes: the query (qualifiers inside it), and the bounds a caller may set. */
@@ -56,7 +56,7 @@ const search = (
 export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "search.open",
-    summary: "Search everything by name: files, flows, targets, wiki, history, runs, changes, issues, boxes, secret names",
+    summary: "Search everything by name: files, flows, targets, runs, changes, issues, boxes, secret names",
     args: "[query] [--kinds file,run,…]",
     input: OptionalQuery,
     handler: ({ query, kinds }) =>

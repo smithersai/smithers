@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { CardView } from "../ChatCards"
+import { ControllerTestProvider } from "../ControllerContext"
 import { cardActions } from "../cards/CardActions"
+import { namespace as searchNamespace } from "../flows/entries/search"
 import { recommendedNames } from "../flows/registry"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { knowledgeFlowAvailable } from "./KnowledgeFeatures"
+import { knowledgeCardAvailable, knowledgeFlowAvailable, wikiFlagEnabled } from "./KnowledgeFeatures"
+import { parseRecommendation } from "./Recommend"
 import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
@@ -83,6 +86,122 @@ describe("optional generated knowledge", () => {
     }
     for (const name of ["coding/request", "coding/prototype", "commits.list", "files.read", "history-tools/custom"]) {
       expect(knowledgeFlowAvailable(name)).toBe(true)
+    }
+  })
+})
+
+/*
+ * .smithers/factory.json declares flows whose ids are `wiki` and `checks/wiki`
+ * (both model-invocable), and the repository-flow leaf builder used to register
+ * one slash leaf per row with no flag filter — so the flag being OFF was what
+ * let the name back in past the registry's collision guard.
+ */
+const FACTORY_ROWS = [
+  { id: "wiki", description: "Review each engineering wiki page against its code", summary: null, featured: true, modelInvocable: true },
+  { id: "checks/wiki", description: "Check the wiki pages", summary: null, featured: false, modelInvocable: true },
+  { id: "review", description: "Review a change", summary: null, featured: true, modelInvocable: true }
+]
+
+const repositoryDeclaringWikiFlows = async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "repository.upserted", actor: "system",
+    repository: { id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true }
+  }).isPersisted.promise
+  await store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: "smithersai/smithers", flows: FACTORY_ROWS }).isPersisted.promise
+  return store
+}
+
+const suggestedFlows = (controller: ReturnType<typeof createAppController>, commands: ReadonlyArray<string>) =>
+  parseRecommendation({ id: "reco", commands }, controller.commands.all(), "chat")?.suggestions.map(row => row.flow) ?? []
+
+describe("a repository that declares a knowledge flow", () => {
+  test("gets no slash leaf, no agent tool, no recommendation and no unrelated loss while the Wiki flag is off", async () => {
+    const store = await repositoryDeclaringWikiFlows()
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    // The leaf builder is live: an unrelated row keeps every door.
+    expect(controller.commands.find("review")).toBeDefined()
+    expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).toContain("review")
+    expect(suggestedFlows(controller, ["review"])).toEqual(["review"])
+    for (const name of ["wiki", "checks.wiki"]) {
+      expect(controller.commands.find(name)).toBeUndefined()
+      expect(controller.commands.all().map(item => item.name)).not.toContain(name)
+      expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).not.toContain(name)
+      expect(controller.commands.slashTree("").flatMap(row => row.kind === "flow" ? [row.flow.name] : [])).not.toContain(name)
+      expect((await controller.commands.run(name)).status).toBe("unknown-command")
+      expect((await controller.commands.runForAgent(name)).status).toBe("unknown-command")
+    }
+    expect(suggestedFlows(controller, ["wiki", "checks.wiki"])).toEqual([])
+  })
+
+  test("keeps every door when the Wiki flag is on", async () => {
+    const store = await repositoryDeclaringWikiFlows()
+    const controller = createAppController(store, unavailableRepositories, silentAgent, { features: { wiki: true } })
+    for (const name of ["wiki", "checks.wiki", "review"]) expect(controller.commands.find(name)).toBeDefined()
+    // The declared `wiki` surface flow still takes the name from the leaf: one entry, not two.
+    expect(controller.commands.all().filter(item => item.name === "wiki")).toHaveLength(1)
+    expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).toContain("checks.wiki")
+    expect(suggestedFlows(controller, ["checks.wiki", "review"])).toEqual(["checks.wiki", "review"])
+  })
+})
+
+describe("the Plugin Library flag", () => {
+  const libraryCard = { id: "old-library", kind: "plugin-library" as const, title: "Library", status: "active" as const,
+    createdAt: 1, ordinal: 1, payload: { tutorial: false } }
+
+  test("a restored Library card is reset, refused and dropped from the agent's context like a Wiki card", async () => {
+    expect(knowledgeCardAvailable("plugin-library")).toBe(false)
+    expect(knowledgeCardAvailable("plugin-library", { pluginLibrary: true })).toBe(true)
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch({ type: "card.upsert", actor: "system", card: libraryCard }).isPersisted.promise
+    await store.dispatch({ type: "card.maximized", actor: "user", id: libraryCard.id }).isPersisted.promise
+    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    expect(store.session().maximizedCardId).toBeNull()
+    expect(store.collections.cards.has(libraryCard.id)).toBe(true)
+    expect((await controller.commands.run("card.maximize", libraryCard.id)).status).toBe("failed")
+    expect((await controller.commands.run("tab.card", libraryCard.id)).status).toBe("failed")
+    expect(renderToStaticMarkup(createElement(CardView, { card: libraryCard, maximized: false, worldDocuments: [], ...cardActions(controller) }))).toBe("")
+  })
+
+  test("the Library card opens as it does today when the flag is on", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch({ type: "card.upsert", actor: "system", card: libraryCard }).isPersisted.promise
+    await store.dispatch({ type: "card.maximized", actor: "user", id: libraryCard.id }).isPersisted.promise
+    const controller = createAppController(store, unavailableRepositories, silentAgent, { features: { pluginLibrary: true } })
+    expect(store.session().maximizedCardId).toBe(libraryCard.id)
+    expect((await controller.commands.run("tab.card", libraryCard.id)).status).toBe("executed")
+    expect(renderToStaticMarkup(createElement(ControllerTestProvider, {
+      controller,
+      children: createElement(CardView, { card: libraryCard, maximized: false, worldDocuments: [], ...cardActions(controller) })
+    }))).not.toBe("")
+  })
+})
+
+describe("the copy the slash menu and the prompt carry", () => {
+  test("the search summaries name no flag-off feature", async () => {
+    expect(searchNamespace.summary).not.toMatch(/wiki|history/i)
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    for (const features of [{}, { wiki: true, mythicalHistory: true }]) {
+      const controller = createAppController(store, unavailableRepositories, silentAgent, { features })
+      const open = controller.commands.all().find(item => item.name === "search.open")
+      expect(open?.summary).toBeDefined()
+      expect(open?.summary).not.toMatch(/wiki|history/i)
+    }
+  })
+})
+
+describe("the Wiki build flag", () => {
+  test("is read from the one environment door the controller reads", () => {
+    const prior = process.env.VITE_SMITHERS_WIKI
+    try {
+      delete process.env.VITE_SMITHERS_WIKI
+      expect(wikiFlagEnabled()).toBe(false)
+      process.env.VITE_SMITHERS_WIKI = "false"
+      expect(wikiFlagEnabled()).toBe(false)
+      process.env.VITE_SMITHERS_WIKI = "true"
+      expect(wikiFlagEnabled()).toBe(true)
+    } finally {
+      if (prior === undefined) delete process.env.VITE_SMITHERS_WIKI
+      else process.env.VITE_SMITHERS_WIKI = prior
     }
   })
 })

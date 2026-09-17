@@ -136,8 +136,7 @@ export const CardView = memo(function CardView({
     pendingFocus.current = "maximize"
     onMinimize()
   }
-  if (card.kind === "retired" || (card.kind === "plugin-library" && !pluginLibrary) ||
-      !knowledgeCardAvailable(card.kind, { wiki, mythicalHistory })) return null
+  if (card.kind === "retired" || !knowledgeCardAvailable(card.kind, { wiki, mythicalHistory, pluginLibrary })) return null
   return (
     <>
       {maximized ?

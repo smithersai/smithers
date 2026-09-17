@@ -94,7 +94,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
    * where that flow registers and never invents a door.
    */
   // Wiki: the `wiki` surface switch (the Wiki pane beside the chat); registered on every host.
-  const canWiki = controller.commands.find("wiki") !== undefined
+  const canWiki = controller.features.wiki === true && controller.commands.find("wiki") !== undefined
   // Dispatcher: triggers.list, the dispatcher card; the Flows pane keeps its own door to the same flow.
   const canDispatcher = controller.commands.find("triggers.list") !== undefined
   // Flows: the `flows` surface switch (the Flows pane); registered on every host.
@@ -102,7 +102,7 @@ export function ChromeBar({ identityInHeader = false }: { readonly identityInHea
   // Secrets: secrets.list, registered on the cloud host only.
   const canSecrets = controller.commands.find("secrets.list") !== undefined
   // History: history.show, the mythical history card (design session 2026-09-07).
-  const canHistory = controller.commands.find("history.show") !== undefined
+  const canHistory = controller.features.mythicalHistory === true && controller.commands.find("history.show") !== undefined
   // Account (factory mock 21): account.show, registered where an identity seam exists.
   const canAccount = controller.commands.find("account.show") !== undefined
   const canOpenRepo = controller.commands.find("repo.open") !== undefined

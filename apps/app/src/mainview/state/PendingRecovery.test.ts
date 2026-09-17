@@ -44,6 +44,9 @@ test("an equal revision from another stream cannot clear a newer pending entity"
 
 test("pending card, Wiki and composer inputs retain their inactive branch without changing the current conversation", async () => {
   const recovery = memoryStorage(), storage = memoryStorage(), prior = Object.getOwnPropertyDescriptor(globalThis, "window")
+  // A pending Wiki edit only exists where the Wiki is enabled; the flag-off store keeps it inert (below).
+  const priorFlag = process.env.VITE_SMITHERS_WIKI
+  process.env.VITE_SMITHERS_WIKI = "true"
   Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })
   try {
     const original = await createAppStore({ kind: "localStorage", storage })
@@ -68,7 +71,11 @@ test("pending card, Wiki and composer inputs retain their inactive branch withou
     expect(snapshot.draft).toBe("old branch draft")
     expect((await reopened.verifyState()).valid).toBe(true)
     await reopened.dispose?.()
-  } finally { if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window") }
+  } finally {
+    if (priorFlag === undefined) delete process.env.VITE_SMITHERS_WIKI
+    else process.env.VITE_SMITHERS_WIKI = priorFlag
+    if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window")
+  }
 })
 
 for (const reset of [false, true]) test(`${reset ? "reset" : "account retirement"} erases every pending input slot`, async () => {
@@ -183,4 +190,34 @@ test("an invalid prepared prefix cannot be rebound by a later field edit or hide
     expect(readEntityRecoveries(recovery)).toEqual([])
     await store.dispose?.()
   } finally { if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window") }
+})
+
+/*
+ * The Wiki is a default-off release capability (state/KnowledgeFeatures.ts).
+ * A browser that once ran with the flag on may still hold an unsaved note
+ * edit: with the flag off the store must neither replay it nor drop it, so
+ * the text is still there the day the flag is turned on.
+ */
+for (const enabled of [false, true]) test(`a persisted Wiki edit is ${enabled ? "replayed" : "left inert"} while the Wiki flag is ${enabled ? "on" : "off"}`, async () => {
+  const recovery = memoryStorage(), storage = memoryStorage(), prior = Object.getOwnPropertyDescriptor(globalThis, "window")
+  const priorFlag = process.env.VITE_SMITHERS_WIKI
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })
+  try {
+    const original = await createAppStore({ kind: "localStorage", storage })
+    const { head } = await original.eventHistory(), authority = bind(head, pendingRecoveryScope(original.session()), "wiki")
+    const seeded = original.collections.worldDocuments.get(document.id)?.body
+    await original.dispose?.()
+    writeWikiRecovery(recovery, head.revision + 1, document, authority)
+    if (enabled) process.env.VITE_SMITHERS_WIKI = "true"
+    else delete process.env.VITE_SMITHERS_WIKI
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    expect(reopened.collections.worldDocuments.get(document.id)?.body).toBe(enabled ? document.body : seeded)
+    expect(recovery.getItem(WIKI_RECOVERY_STORAGE_KEY)).toBe(enabled ? null : JSON.stringify({ version: 1, revision: head.revision + 1, document, authority }))
+    expect((await reopened.verifyState()).valid).toBe(true)
+    await reopened.dispose?.()
+  } finally {
+    if (priorFlag === undefined) delete process.env.VITE_SMITHERS_WIKI
+    else process.env.VITE_SMITHERS_WIKI = priorFlag
+    if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window")
+  }
 })

@@ -1106,6 +1106,27 @@ describe("the chrome buttons", () => {
     expect(controller.commands.find("triggers.list")).toBeDefined()
   })
 
+  /*
+   * The default catalog repository declares a factory flow whose id is `wiki`
+   * (.smithers/factory.json). Its slash leaf used to paint the chrome button
+   * precisely because the flag was off, since the declared `wiki` flow was not
+   * there to take the name.
+   */
+  for (const wiki of [false, true]) {
+    test(`a repository that declares a \`wiki\` flow ${wiki ? "keeps" : "paints no"} chrome button with the flag ${wiki ? "on" : "off"}`, async () => {
+      const { store, controller } = await cloudHarness({ features: { wiki, mythicalHistory: false } })
+      await persisted(store, { type: "repository.upserted", actor: "system",
+        repository: { id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true } })
+      await persisted(store, { type: "repository-flows.loaded", actor: "system", repo: "smithersai/smithers", flows: [
+        { id: "wiki", description: "Review each engineering wiki page against its code", summary: null, featured: true, modelInvocable: true },
+        { id: "review", description: "Review a change", summary: null, featured: true, modelInvocable: true }
+      ] })
+      const { host } = mount(controller)
+      expect(controller.commands.find("review")).toBeDefined()
+      expect(host.querySelector('[data-testid="chrome-wiki"]') !== null).toBe(wiki)
+    })
+  }
+
   /** The canonical row: label, the registered flow the button runs, and its test id. */
   const CHROME = [
     { label: "Wiki", flow: "wiki", testid: "chrome-wiki" },

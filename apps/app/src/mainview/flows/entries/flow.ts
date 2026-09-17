@@ -9,6 +9,7 @@ import type { FlowEntry, Namespace } from "../registry"
 import { flowRunParts, payloadFor } from "../SlashPayload"
 import { line, text } from "../FlowForms"
 import type { RepositoryFlow } from "../../state/AppState"
+import { knowledgeFlowAvailable } from "../../state/KnowledgeFeatures"
 import type { CommandActions } from "./Declare"
 
 /** The `flow` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
@@ -179,6 +180,7 @@ export const repositoryFlowLeaves = (
   flows: ReadonlyArray<RepositoryFlow>
 ): ReadonlyArray<FlowEntry> =>
   flows.flatMap((row) => {
+    if (!knowledgeFlowAvailable(row.id, actions.snapshot?.())) return []
     const name = repositoryFlowName(row.id)
     if (!SLASH_NAME.test(name)) return []
     return [

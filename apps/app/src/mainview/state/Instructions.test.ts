@@ -163,3 +163,11 @@ describe("the turn passes the host from the bootstrap", () => {
     expect(instructions).not.toContain("/app.download.prompt")
   })
 })
+
+describe("the prompt's surface examples", () => {
+  test("name no default-off feature, in either flag state", () => {
+    const prompt = smithersInstructions([], honesty("web"))
+    expect(prompt).toContain("When a surface is involved (connect, browser)")
+    expect(prompt).not.toContain("(world, connect, browser)")
+  })
+})
