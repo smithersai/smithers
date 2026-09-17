@@ -5,11 +5,16 @@ import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { ApprovalAuthority, Control, ControlRpcs } from "@smthrs/control"
+import { ControlRuntime } from "@smthrs/control/ControlRuntime"
+import { DurableEngineState } from "@smthrs/engine-store"
+import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
+import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import * as NetAddress from "effect/unstable/net/NetAddress"
+import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
@@ -21,13 +26,14 @@ import { initialSetup, setupCandidate, SetupOperationResponseSchema } from "../.
 import { JobInput, JobResult } from "../repository/schema.ts"
 import { verifyTrialChecks } from "../repository/checks.ts"
 import { assessScore } from "../repository/evaluation.ts"
+import { completedJob } from "../repository/receipts.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE, exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
-async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable" | "ai-context-pass" | "ai-context-fail" | "ai-context-missing" | "ai-context-required">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
+async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable" | "ai-context-pass" | "ai-context-fail" | "ai-context-missing" | "ai-context-required" | "ai-delete" | "ai-delete-unavailable">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const temporary = await mkdtemp(join(tmpdir(), "repository-host-")), root = join(temporary, "repo")
   let passed = false
@@ -40,6 +46,12 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   await writeFile(join(root, "README.md"), "# Test repository\nThe greeting lives in greeting.mjs.\n")
   await writeFile(join(root, "greeting.mjs"), "export const greeting = 'hello';\n")
   await writeFile(join(root, ".gitignore"), "node_modules\n.flows/\n")
+  const deleting = proof.jobs?.some(kind => kind.startsWith("ai-delete")) ?? false
+  const deletionUnavailable = proof.jobs?.includes("ai-delete-unavailable") ?? false
+  if (deleting) {
+    await writeFile(join(root, "obsolete.mjs"), "import { oldBehavior } from './old-helper.mjs';\nexport const obsolete = () => oldBehavior();\n")
+    await writeFile(join(root, "old-helper.mjs"), "export const oldBehavior = () => 'CAPTURED_DELETED_HELPER';\n" + (deletionUnavailable ? "import './missing-deleted.mjs';\n" : ""))
+  }
   const contextual = proof.jobs?.some(kind => kind.startsWith("ai-context")) ?? false
   if (contextual) {
     await mkdir(join(root, "docs"))
@@ -130,7 +142,26 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       return json(registration)
     })
   })
-  let contextualModelCalls = 0
+  // Observe the real native stores at their existing remote-service boundary;
+  // no fabricated receipt rows or second engine are used by this assertion.
+  let ownedJob: ((runId: string, input: JobInput) => Effect.Effect<unknown, unknown>) | undefined
+  const remoteLayer = Layer.effect(RepositoryRemote)(Effect.gen(function*() {
+    if (deleting) {
+      const runs = yield* Effect.serviceOption(RunStore.RunStore), graph = yield* Effect.serviceOption(DurableEngineState.DurableEngineState)
+      const runtime = yield* Effect.serviceOption(ControlRuntime), sql = yield* Effect.serviceOption(SqlClient.SqlClient)
+      assert(Option.isSome(runs) && Option.isSome(graph) && Option.isSome(runtime) && Option.isSome(sql), "The observer must use this actual native host's stores")
+      const catalog = yield* RunCatalogRead.make().pipe(Effect.provideService(SqlClient.SqlClient, sql.value))
+      const services = Layer.mergeAll(Layer.succeed(RunStore.RunStore, runs.value), Layer.succeed(DurableEngineState.DurableEngineState, graph.value),
+        Layer.succeed(ControlRuntime, runtime.value), Layer.succeed(RunCatalogRead.RunCatalogRead, catalog))
+      ownedJob = (runId, input) => {
+        assert(input.event.source !== "schedule", "This native trial fixture uses a real issue or PR")
+        return completedJob(runId, input, { source: input.event.source, issueNumber: input.event.issueNumber ?? 0,
+          deliveryKey: input.event.deliveryKey, trial: true }).pipe(Effect.provide(services))
+      }
+    }
+    return remote
+  }))
+  let contextualModelCalls = 0, deletionModelCalls = 0
   const model = Model.make({ stream: request => Stream.suspend(() => {
     const text = JSON.stringify(request); requests.push(text)
     const scoring = text.includes("Independently evaluate the recorded production job")
@@ -151,6 +182,21 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         proposal: [{ path: "greeting.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "greeting.mjs").digest, content: "export const greeting = 'goodbye';\n" },
           { path: "regression.mjs", beforeDigest: null, content: "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }], children: [] }
       : { classification: "question", summary: "The exported greeting is hello.", question: "", citations: ["greeting.mjs"], duplicates: [], reproduction: null }
+    if (changing && deleting) {
+      response.summary = "Remove the obsolete handler and verify it stays absent."
+      response.proposal = [{ path: "obsolete.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "obsolete.mjs").digest, content: null },
+        { path: "regression.mjs", beforeDigest: null, content: "import { existsSync } from 'node:fs';\nif (existsSync('obsolete.mjs')) throw new Error('obsolete handler remains');\n" }]
+    }
+    if (checking && deleting) {
+      deletionModelCalls++
+      assert.equal(task.check.id, "implementation-review", "The normal built-in required review checks the deletion")
+      assert.equal(task.baseContext.source, task.comparison.base)
+      assert.equal(task.context.source, task.comparison.candidate)
+      assert(task.baseContext.files.some((file: any) => file.path === "obsolete.mjs" && file.text.includes("oldBehavior")))
+      assert(task.baseContext.files.some((file: any) => file.path === "old-helper.mjs" && file.text.includes("CAPTURED_DELETED_HELPER")))
+      assert(!task.context.files.some((file: any) => file.path === "obsolete.mjs"), "Removed code must not masquerade as candidate source")
+      assert(task.context.files.some((file: any) => file.path === "regression.mjs"))
+    }
     if (checking && task.check.rule.includes("Fixture: captured context")) {
       contextualModelCalls++
       assert(!task.check.rule.includes("missing"), "missing required context must refuse before spending a reviewer invocation")
@@ -244,13 +290,13 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
-      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" || kind === "ai-context-pass" || kind === "ai-context-fail" || kind === "ai-context-missing" || kind === "ai-context-required" ? "ci" : kind === "ai-empty-review" ? "review" : kind
+      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" || kind === "ai-delete" || kind === "ai-delete-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" || kind === "ai-context-pass" || kind === "ai-context-fail" || kind === "ai-context-missing" || kind === "ai-context-required" ? "ci" : kind === "ai-empty-review" ? "review" : kind
       const configured = initialSetup(repo, job, "maintainer")
       if (kind === "fix") configured.draft.steps = [configured.draft.steps.find(step => step.id === "fix")!]
       configured.draft.cases = []
       configured.draft.checks = job === "review" || kind === "draft" ? [] : [{ id: "real-command", name: "Run fixture", kind: "command", policy: "required", paths: [],
         rule: job === "ci" ? `${process.execPath} -e "import('./greeting.mjs').then(m => { if (m.greeting !== 'hello') process.exit(1) })"` : `${process.execPath} regression.mjs` }]
-      if (kind.startsWith("ai-") && kind !== "ai-empty-review") configured.draft.checks.push({ id: "observability", name: "Observability", kind: "ai", policy: "report",
+      if (kind.startsWith("ai-") && kind !== "ai-empty-review" && !kind.startsWith("ai-delete")) configured.draft.checks.push({ id: "observability", name: "Observability", kind: "ai", policy: "report",
         paths: [kind === "ai-skip" ? "unrelated/**" : "greeting.mjs"], rule: kind === "ai-unavailable" ? "Fixture: telemetry context is unavailable" : "Review the requested greeting change using its source." })
       if (kind.startsWith("ai-context")) configured.draft.checks[1] = { ...configured.draft.checks[1]!,
         policy: kind === "ai-context-required" ? "required" : "report", rule: kind === "ai-context-missing" || kind === "ai-context-required"
@@ -263,7 +309,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         ...(kind === "fix" ? { type: "manual", action: "manual:fix", manualStep: "fix" } : {}),
         deliveryKey: `job:${kind}`, issueNumber: 30, payload: job === "review" || job === "ci"
           ? { pull_request: { number: 30, head: { sha: native.head.commitId }, base: { sha: kind === "ai-empty-review" ? native.head.commitId : native.head.parentCommitIds[0] } } }
-          : { issue: { number: 30, title: "Use goodbye", body: "Change greeting.mjs to export goodbye" } } }
+          : { issue: { number: 30, title: deleting ? "Remove obsolete handler" : "Use goodbye", body: deleting ? "Delete obsolete.mjs and add a regression proving it stays absent" : "Change greeting.mjs to export goodbye" } } }
       const input = { repo, job, revision: configured.revision, digest: setupCandidate(configured), sourceRevision: source.commitId,
         configuration: configured.draft, event }
       const plan = yield* client.Plan({ flowId: `repository-jobs/${job}`, input: json(input), idempotencyKey: `${kind}:plan` })
@@ -277,9 +323,9 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         return state?.flowName === "repository/Job" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
       assert.equal(outputs.length, 1, `${job} needs its actual native job result`)
       const output = Schema.decodeUnknownSync(JobResult)(outputs[0])
-      assert.equal(output.status, kind === "ai-context-required" ? "partial" : "completed", JSON.stringify(output))
+      assert.equal(output.status, kind === "ai-context-required" || deletionUnavailable ? "partial" : "completed", JSON.stringify(output))
       assert(output.results.length > 0)
-      assert(output.results.every(step => step.status === (kind === "ai-context-required" ? "error" : "completed") && step.evidence.length > 0))
+      assert(output.results.every(step => step.status === (kind === "ai-context-required" || deletionUnavailable ? "error" : "completed") && step.evidence.length > 0))
       if (kind.startsWith("ai-context")) {
         const detail = output.results[0]!.output as any, semantic = detail.results.find((check: any) => check.checkId === "observability")
         const unavailable = kind === "ai-context-missing" || kind === "ai-context-required"
@@ -294,7 +340,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         assert.equal(assessScore(expected, output, { verdict: "pass", reason: "Scripted favorable independent judge", evidenceIds: [0] }).status,
           unavailable ? "error" : "passed", "context availability remains a measured fact before assertion or model scoring")
       }
-      if (kind.startsWith("ai-")) {
+      if (kind.startsWith("ai-") && !deletionUnavailable) {
         const verify = () => verifyTrialChecks(configured.draft, output)
         if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
         else if (["ai-unavailable", "ai-context-missing", "ai-context-required"].includes(kind)) assert.throws(verify, /unavailable.*check/)
@@ -318,10 +364,27 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       }
       if (job === "feature" || job === "chores" || kind === "fix") {
         const change = output.results[0]!.output as any
-        assert.equal(change.status, kind === "draft" ? "proposal" : "checked-proposal")
-        assert(change.proposal.some((file: any) => file.path === "greeting.mjs"))
+        assert.equal(change.status, kind === "draft" || deletionUnavailable ? "proposal" : "checked-proposal")
+        assert(change.proposal.some((file: any) => file.path === (deleting ? "obsolete.mjs" : "greeting.mjs")))
         if (kind === "draft") assert.equal(output.results[0]!.summary, "Reviewed draft")
         else assert(change.checks.at(-1).output.results.some((check: any) => check.detail.exitCode === 0))
+        if (kind.startsWith("ai-delete")) {
+          assert(ownedJob)
+          const refusal = yield* ownedJob(launched.runId!, Schema.decodeUnknownSync(JobInput)(input)).pipe(Effect.match({ onFailure: error => String(error), onSuccess: () => undefined }))
+          if (deletionUnavailable) assert.match(refusal ?? "accepted", /The live job did not complete its selected work/, "Actual completedJob must refuse the partial job before trial activation")
+          else assert.equal(refusal, undefined, "The exact completed deletion has a verified owned native receipt")
+          assert.equal(deletionModelCalls, deletionUnavailable ? 0 : 1)
+          const checked = change.checks.at(-1).output, review = checked.results.find((check: any) => check.checkId === "implementation-review")
+          assert.equal(review.policy, "required")
+          assert.equal(review.status, deletionUnavailable ? "error" : "passed")
+          if (deletionUnavailable) assert(review.detail.baseContext.reads.some((read: any) => read.path === "missing-deleted.mjs" && read.status === "unresolved" && read.required))
+          assert.equal(review.detail.baseContext.source, checked.base)
+          assert.equal(yield* Effect.promise(() => readFile(join(root, "obsolete.mjs"), "utf8")), "import { oldBehavior } from './old-helper.mjs';\nexport const obsolete = () => oldBehavior();\n", "Trial leaves the editing checkout untouched")
+          const expected = { id: "deletion", name: "Judge actual deletion checks", expected: "The obsolete handler is removed and regression passes", required: true,
+            input: JSON.stringify({ event: input.event, sourceRevision: output.sourceRevision,
+              assertions: [{ path: "/results/0/output/status", equals: "checked-proposal" }] }) }
+          assert.equal(assessScore(expected, output, { verdict: "pass", reason: "The actual immutable deletion checks passed", evidenceIds: [0] }).status, deletionUnavailable ? "error" : "passed")
+        }
         if (kind === "fix") assert(change.checks[0].output.results.some((check: any) => check.status === "failed" && check.detail.exitCode !== 0))
         if (kind === "fix" || kind === "ai-unavailable") {
           const index = change.checks.length - 1
@@ -423,7 +486,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       assert(jobs[0].results[0].output.proposal.length, "the useful draft remains reviewable")
     }
   }).pipe(Effect.provide(layer(observedPlatform, { ...base, gatewayId: "11111111-1111-4111-8111-111111111111", credential: "fixture-key",
-    implementationModel: "test:scripted", checkEnvironment: { PATH: process.env.PATH! }, repositoryRemote: Layer.succeed(RepositoryRemote, remote) }, seats)), Effect.scoped))
+    implementationModel: "test:scripted", checkEnvironment: { PATH: process.env.PATH! }, repositoryRemote: remoteLayer }, seats)), Effect.scoped))
   assert.equal(creates, proof.setup ? 1 : 0)
   assert.equal(comments, proof.setup ? 1 : 0)
   if (proof.setup) assert.equal(registrations.at(-1)?.mode, "enabled")
@@ -451,3 +514,9 @@ test("native author signals ignore bystanders and resume the same job across two
   t => proveRepository(t, { interactions: ["author"] }))
 test("native local-only jobs retain useful drafts before any editing mutation or unverified landing", nativeOptions,
   t => proveRepository(t, { mutation: true }))
+
+test("native deletion proposal runs the built-in required review with exact separate base context", nativeOptions,
+  t => proveRepository(t, { jobs: ["ai-delete"] }))
+
+test("native missing deleted-side helper refuses required review before the model and cannot score pass", nativeOptions,
+  t => proveRepository(t, { jobs: ["ai-delete-unavailable"] }))

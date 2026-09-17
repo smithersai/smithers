@@ -92,6 +92,9 @@ export const contextFailure = (context: CheckContext, source: string, checkId: s
 
 export const captureCheckContext = (options: ImmutableSourceOptions, root: string, input: {
   readonly source: string; readonly check: typeof Check.Type; readonly paths: readonly string[]; readonly deadlineAt: number
+  /** Host-selected direct rule paths for this source side. Imports never cross sides. */
+  readonly ruleInputs?: readonly string[]
+  readonly conventionPaths?: readonly string[]
 }) => Effect.gen(function*() {
   const path = yield* Path.Path, fs = options.fs, reader = yield* repositorySourceReader(root, fs)
   type Pending = { path: string; from: string; reason: typeof ContextRead.Type["reason"]; required: boolean; depth: number }
@@ -108,8 +111,9 @@ export const captureCheckContext = (options: ImmutableSourceOptions, root: strin
       directory = path.dirname(directory)
     }
   }
-  for (const name of rulePaths(input.check.rule)) add(name, "rule", "rule")
+  for (const name of input.ruleInputs ?? rulePaths(input.check.rule)) add(name, "rule", "rule")
   for (const name of input.paths) { add(name, "comparison", "source"); conventions(name) }
+  for (const name of input.conventionPaths ?? []) conventions(name)
   const inspect = (name: string) => Effect.gen(function*() {
     if (normalizePath(name) !== name || privatePath(name)) return { status: "refused" as const }
     const target = path.join(root, name)
@@ -166,7 +170,7 @@ export const captureCheckContext = (options: ImmutableSourceOptions, root: strin
     if (item.reason !== "convention") { conventions(item.path); if (found.canonical !== item.path) conventions(found.canonical) }
     // Follow path references from actual repository guidance, not arbitrary
     // strings in source code or model-written event prose.
-    if (item.reason === "rule" || /(?:^|\/)AGENTS\.md$/i.test(item.path)) for (const name of rulePaths(found.text)) add(name, item.path, "rule", true, item.depth + 1)
+    if ((item.reason === "rule" && !script.test(item.path)) || /(?:^|\/)AGENTS\.md$/i.test(item.path)) for (const name of rulePaths(found.text)) add(name, item.path, "rule", true, item.depth + 1)
     for (const specifier of sourceImports(item.path, found.text)) {
       const imported = yield* resolveImport(found.canonical, specifier)
       if (imported.status) {
