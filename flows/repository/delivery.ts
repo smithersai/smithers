@@ -6,11 +6,12 @@ import { Landing } from "../coding/landing.ts"
 import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "../coding/landing-schema.ts"
 import { NativeCoding, SourceCreation, requestIdFor } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
-import { CheckReceipt, RepositoryCheckReceipts, verifiedCheckStep } from "./check-receipt.ts"
+import { CheckReceipt, RepositoryCheckReceipts, pinnedPolicy, verifiedCheckStep } from "./check-receipt.ts"
 import { currentExecutionId } from "./inspection.ts"
 import { Work, retainedStepError } from "./jobs.ts"
 import { StepResult } from "./schema.ts"
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+const unavailable = (message: string) => new CodingError({ code: "unavailable", message })
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const service = Effect.gen(function*() { const value = yield* Effect.serviceOption(Landing)
   return Option.isSome(value) ? value.value : yield* invalid("Connect the native landing adapter to submit this checked change") })
@@ -69,13 +70,16 @@ export const deliveryLayers = Layer.mergeAll(Interpreter.layer(DeliverChange), I
     return { input, source: source.value, preparation }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("Checked source retention or landing preparation failed")))),
   Report.toLayer(prepared => Effect.gen(function*() {
-    const receipts = yield* Effect.serviceOption(RepositoryCheckReceipts)
-    if (Option.isNone(receipts)) return { prepared, receipt: null }
-    const policy = yield* receipts.value.policy(prepared.input.work)
+    const policy = yield* pinnedPolicy(prepared.input.work)
     if (policy.kind === "none") return { prepared, receipt: null }
+    const receipts = yield* Effect.serviceOption(RepositoryCheckReceipts)
+    // A landing request the worker could only ever refuse is a slower refusal.
+    if (Option.isNone(receipts)) return yield* unavailable("Connect the repository CI check receipt publisher before landing under a pinned CI policy")
     const executionId = object(object(prepared.input.result.output).checks).executionId
     if (typeof executionId !== "string" || !executionId) return yield* invalid("The checked step names no durable check execution")
-    const verified = yield* verifiedCheckStep({ executionId, commitId: prepared.source.commitId, ref: policy.ref, rawCheckId: receipts.value.rawCheckId })
+    const verified = yield* verifiedCheckStep({ executionId, commitId: prepared.source.commitId, work: prepared.input.work,
+      baseCommitId: prepared.preparation.source_base_commit_id, source: object(prepared.input.result.output).source,
+      ref: policy.ref, checks: policy.checks })
     const receipt = yield* receipts.value.report(requestIdFor(verified.executionId, "repository-ci-receipt"), {
       repo: prepared.input.work.repo, workspace_id: (yield* service).binding.workspaceId, registration_id: policy.ref.registrationId,
       revision: policy.ref.revision, digest: policy.ref.digest, execution_digest: policy.ref.executionDigest, run_id: verified.runId,

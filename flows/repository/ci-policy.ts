@@ -47,14 +47,24 @@ const checks = (value: unknown): readonly typeof Check.Type[] => {
 }
 /** Only call with a successful response from the provisioned repository GET.
  * Transport errors are not inputs and must never be converted into an empty list. */
+/** A row this build does not model is another job's registration, not this
+ * projection's business: it is skipped, never truncated away and never turned
+ * into absence. Only a malformed or duplicated CI row is an error. */
+const CiRow = Schema.Struct({ job: Schema.Literal("ci") })
 export const readCiPolicy = (repo: string, response: unknown, repositoryId?: number): CiPolicy => {
-  const expected = canonicalRepo(repo), rows = decode(Schema.Array(Registration).check(Schema.isMaxLength(10)), response)
+  const expected = canonicalRepo(repo)
+  if (!Array.isArray(response) || response.length > 200) throw unavailable()
   if (repositoryId !== undefined) decode(Positive, repositoryId)
-  const identities = new Set(rows.map(row => row.repository_id))
-  if (identities.size > 1 || rows.some(row => (repositoryId !== undefined && row.repository_id !== repositoryId) ||
-      typeof row.configuration !== "object" || row.configuration === null || Array.isArray(row.configuration) ||
-      canonicalRepo(String((row.configuration as Record<string, unknown>).repo)) !== expected)) throw unavailable()
-  const active = rows.filter(row => row.job === "ci" && row.mode === "enabled")
+  const active: typeof Registration.Type[] = []
+  for (const value of response) {
+    if (!Schema.is(CiRow)(value)) continue
+    const row = decode(Registration, value)
+    if (row.mode !== "enabled") continue
+    if ((repositoryId !== undefined && row.repository_id !== repositoryId) ||
+        typeof row.configuration !== "object" || row.configuration === null || Array.isArray(row.configuration) ||
+        canonicalRepo(String((row.configuration as Record<string, unknown>).repo)) !== expected) throw unavailable()
+    active.push(row)
+  }
   if (!active.length) return { kind: "none" }
   if (active.length !== 1) throw unavailable()
   const row = active[0]!, configuration = decode(Configuration, row.configuration)

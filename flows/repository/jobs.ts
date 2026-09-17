@@ -45,6 +45,12 @@ export const Work = Schema.Struct({
   policy: Schema.optionalKey(CiPolicy),
   proposal: Schema.optionalKey(Proposal)
 })
+/** The one Work a produced change is finally checked under. The producer
+ * (changes.ts FinishChange) and the CI receipt verifier both call this, so the
+ * payload one writes is the payload the other expects; neither rebuilds it. */
+export const finalCheckWork = (work: typeof Work.Type,
+  produced: { readonly head: typeof Work.Type["evidence"]["source"]; readonly base: string }): typeof Work.Type =>
+  ({ ...work, evidence: { ...work.evidence, source: produced.head }, proposal: [] })
 export const ApproveStep = Flow.make("repository/ApproveStep", { payload: { name: Schema.String, prompt: Schema.String,
   repo: Schema.String, sourceRevision: Schema.String, issueNumber: Schema.optionalKey(Schema.Int), issueTitle: Schema.optionalKey(Schema.String) },
   success: Schema.Boolean, error: HumanTask.HumanTaskFailed,

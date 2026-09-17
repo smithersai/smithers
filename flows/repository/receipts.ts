@@ -14,43 +14,55 @@ import { verifyTrialChecks } from "./checks.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-export const readOwnedResult = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never }>(
-  executionId: string, flow: string, bridge: string, payload: unknown, success: S, error: E
+/** The one definition of an owned native result: the bounded store read, the
+ * ancestry walk, and every identity binding between the proven execution, its
+ * registered bridge dispatch and its approved control root. Callers vary only
+ * in which ancestor statuses they accept and whether the proven execution's own
+ * payload is the dispatched input; a step still inside a running job is not. */
+export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never }>(
+  options: {
+    readonly executionId: string; readonly flow: string; readonly bridge: string; readonly payload: unknown
+    readonly success: S; readonly error: E
+    readonly ancestors: (status: string) => boolean
+    readonly dispatched: boolean
+  }
 ) => Effect.gen(function*() {
   const store = yield* RunStore.RunStore, graph = yield* DurableEngineState.DurableEngineState, control = yield* ControlRuntime
   let bytes = 0
-  const read = (id: string) => Effect.gen(function*() {
+  const read = (id: string, selected: boolean) => Effect.gen(function*() {
     const row = yield* store.get(id)
     bytes += row.stateJson.length
-    if (row.runId !== id || row.status !== "completed" || row.stateJson.length > 8 * 1024 * 1024 || bytes > 24 * 1024 * 1024) return yield* invalid("The completed receipt or its ancestry is unavailable")
+    if (row.runId !== id || !(selected ? row.status === "completed" : options.ancestors(row.status)) ||
+        row.stateJson.length > 8 * 1024 * 1024 || bytes > 24 * 1024 * 1024) return yield* invalid("The completed receipt or its ancestry is unavailable")
     const state = Schema.decodeUnknownOption(Schema.fromJsonString(RunState))(row.stateJson)
     if (Option.isNone(state) || state.value.cancellation !== undefined) return yield* invalid("The receipt has invalid or cancelled native state")
     return { row, state: state.value }
   })
-  const selected = yield* read(executionId)
-  if (selected.state.flowName !== flow || Digest.canonical(selected.state.payload) !== Digest.canonical(payload)) return yield* invalid("The receipt does not match its claimed flow and input")
-  const result = Schema.decodeUnknownOption(Schema.toCodecJson(Flow.Result({ success, error })))(selected.state.result)
+  const selected = yield* read(options.executionId, true)
+  if (selected.state.flowName !== options.flow || Digest.canonical(selected.state.payload) !== Digest.canonical(options.payload)) return yield* invalid("The receipt does not match its claimed flow and input")
+  const result = Schema.decodeUnknownOption(Schema.toCodecJson(Flow.Result({ success: options.success, error: options.error })))(selected.state.result)
   if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) return yield* invalid("The native flow did not complete successfully")
   const visited = new Set<string>()
-  let id = executionId, bridged = false
+  let id = options.executionId, bridged = false, input: unknown = undefined
   while (visited.size < 128) {
     if (visited.has(id)) return yield* invalid("Native receipt ancestry contains a cycle")
     visited.add(id)
-    const entry = id === executionId ? selected : yield* read(id)
-    if (entry.state.flowName === bridge) {
-      if (bridged || Digest.canonical(record(entry.state.payload).input) !== Digest.canonical(payload)) return yield* invalid("The registered bridge does not match the receipt")
+    const entry = id === options.executionId ? selected : yield* read(id, false)
+    if (entry.state.flowName === options.bridge) {
+      if (bridged || (options.dispatched && Digest.canonical(record(entry.state.payload).input) !== Digest.canonical(options.payload))) return yield* invalid("The registered bridge does not match the receipt")
       bridged = true
+      input = record(entry.state.payload).input
     }
     const parents = yield* graph.runParents(id)
     const root = yield* control.getRun(id).pipe(Effect.map(Option.some), Effect.catchTag("/control/RunNotFound", () => Effect.succeedNone))
     if (Option.isSome(root)) {
       const run = root.value
       if (!bridged || parents.length !== 0 || entry.state.parentExecutionId !== undefined || entry.state.flowName !== "agent/run" ||
-          run.status !== "completed" || run.flowId !== bridge || !run.planId || record(entry.state.payload).planId !== run.planId) return yield* invalid("The receipt has no single completed control owner")
+          !options.ancestors(run.status) || run.flowId !== options.bridge || !run.planId || record(entry.state.payload).planId !== run.planId) return yield* invalid("The receipt has no single completed control owner")
       const plan = yield* control.getPlan(run.planId)
-      if (plan.decision !== "approved" || run.planDigest !== plan.card.digest || plan.card.flowId !== bridge ||
-          Digest.canonical(plan.decodedInput) !== Digest.canonical(payload)) return yield* invalid("The receipt differs from its approved input")
-      return { output: result.value.exit.value, run, plan }
+      if (plan.decision !== "approved" || run.planDigest !== plan.card.digest || plan.card.flowId !== options.bridge ||
+          Digest.canonical(plan.decodedInput) !== Digest.canonical(options.dispatched ? options.payload : input)) return yield* invalid("The receipt differs from its approved input")
+      return { output: result.value.exit.value, run, plan, input }
     }
     if (parents.length > 1) return yield* invalid("The receipt has ambiguous native ownership")
     const parent = parents[0]?.parentId ?? entry.row.parentRunId
@@ -59,6 +71,9 @@ export const readOwnedResult = <S extends Schema.Top & { readonly DecodingServic
   }
   return yield* invalid("The receipt ancestry exceeds its bounded lookup")
 })
+export const readOwnedResult = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never }>(
+  executionId: string, flow: string, bridge: string, payload: unknown, success: S, error: E
+) => ownedAncestry({ executionId, flow, bridge, payload, success, error, ancestors: status => status === "completed", dispatched: true })
 
 export const priorSetupReceipt = (input: SetupInput, operation: "evaluate" | "trial") => Effect.gen(function*() {
   const catalog = yield* RunCatalogRead.RunCatalogRead, store = yield* RunStore.RunStore

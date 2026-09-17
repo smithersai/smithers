@@ -38,6 +38,24 @@ test("a successful read distinguishes no reviewed CI from an unavailable one", (
   for (const value of [undefined, null, {}, { items: [] }, "[]", [{ job: "ci" }]]) assert.throws(() => readCiPolicy(repo, value), /could not be verified/)
 })
 
+test("the registrations reader skips rows it does not model without losing the CI row", () => {
+  const row = registration(), policy = readCiPolicy(repo, [row])
+  const others = ["issues", "review", "feature", "chores"].map(job => ({ ...registration(), job }))
+  const generic = { ...registration(), job: "flow:nightly", id: "55555555-5555-4555-8555-555555555555" }
+  assert.deepEqual(readCiPolicy(repo, [...others, generic, row]), policy)
+  assert.deepEqual(readCiPolicy(repo, [...others, ...others, generic, generic, row]), policy, "an eleventh row is legitimate")
+  assert.deepEqual(readCiPolicy(repo, [generic]), { kind: "none" })
+  assert.deepEqual(readCiPolicy(repo, [{ ...row, enabled: false }]), policy, "a paused CI row still pins")
+})
+
+test("a malformed, duplicated or unbounded CI row is an error and never absence", () => {
+  const row = registration()
+  assert.throws(() => readCiPolicy(repo, [{ ...row, mode: "banana" }]), /could not be verified/)
+  assert.throws(() => readCiPolicy(repo, [{ ...row, revision: 0 }]), /could not be verified/)
+  assert.throws(() => readCiPolicy(repo, [row, { ...row, id: "66666666-6666-4666-8666-666666666666" }]), /could not be verified/)
+  assert.throws(() => readCiPolicy(repo, Array.from({ length: 201 }, () => structuredClone(row))), /could not be verified/)
+})
+
 test("reviewed CI pins repository and execution identity while pause preserves the same policy", () => {
   const row = registration(), policy = readCiPolicy(repo, [row], 42)
   assert.equal(policy.kind, "pinned")
