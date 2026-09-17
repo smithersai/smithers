@@ -28,7 +28,7 @@ interface WorkflowStep {
   readonly if?: unknown
   readonly uses?: string
   readonly run?: string
-  readonly with?: { readonly name?: string }
+  readonly with?: { readonly name?: string; readonly args?: string }
   readonly env?: Record<string, unknown>
 }
 
@@ -152,8 +152,12 @@ describe("canary probes are wired into a gate", () => {
   })
 
   it("lints every workflow file in ci.yml's actionlint step", () => {
-    const ci = readWorkflow("ci.yml")
-    const args = ci.split("\n").find((line) => line.trim().startsWith("args:"))
+    // Parsed, not text-matched: GithubCiGen quotes every mapping key
+    // (`"args":`), and the quoting is the generator's business, not this test's.
+    const ci = Bun.YAML.parse(readWorkflow("ci.yml")) as CiWorkflow
+    const args = Object.values(ci.jobs)
+      .flatMap((job) => job.steps ?? [])
+      .find((step) => step.uses?.startsWith("docker://rhysd/actionlint") === true)?.with?.args
     expect(args).toBeDefined()
     const unlinted = workflowNames.filter((name) => !(args as string).includes(`.github/workflows/${name}`))
     expect(unlinted).toEqual([])
