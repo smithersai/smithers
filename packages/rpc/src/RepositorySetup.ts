@@ -152,9 +152,14 @@ export function initialSetup(repo: string, job: RepositoryJob, owner: string | n
   } }
 }
 
-/** A stable candidate identity used to reject stale results. @since 1.0.0 */
+/** A stable candidate identity used to reject stale results. A chore event of
+ * "none" leaves the hashed draft, so a candidate stored, registered or
+ * retained before the field existed keeps its digest. @since 1.0.0 */
 export function setupCandidate(setup: Pick<RepositorySetup, "repo" | "job" | "revision" | "draft">): string {
-  return digestSync(JSON.stringify({ repo: setup.repo, job: setup.job, revision: setup.revision, draft: SetupDraftSchema.parse(setup.draft) }))
+  const parsed = SetupDraftSchema.parse(setup.draft)
+  const { choreEvent, ...chosen } = parsed
+  return digestSync(JSON.stringify({ repo: setup.repo, job: setup.job, revision: setup.revision,
+    draft: choreEvent === "none" ? chosen : parsed }))
 }
 
 /** The request carries editable input only, never claimed evaluation or activation proof. @since 1.0.0 */

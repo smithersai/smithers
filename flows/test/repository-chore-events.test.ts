@@ -16,7 +16,7 @@ import { finalCheckWork as definedInJobs } from "../repository/jobs.ts"
 import { captureChecks } from "../repository/checks.ts"
 import { selectedSteps } from "../repository/execution.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
-import { Draft, type JobInput, type SetupInput } from "../repository/schema.ts"
+import { Draft, JobInput, SetupInput } from "../repository/schema.ts"
 
 const modes = ["automatic", "approved", "manual", "off"] as const
 const choreEvents = ["none", "push", "labeled"] as const
@@ -59,6 +59,22 @@ test("a chore registers exactly the event rule its draft chose", () => {
           : choreEvent === "labeled" ? [{ type: "issues", actions: ["labeled"] }] : [], `${mode} ${choreEvent}`)
     }
   }
+})
+
+// The digest the pre-stack code at 1f7d9b40bcc5 computed for this draft. A job
+// registered or a setup operation stored then carries no choreEvent key at all.
+const storedChoreDigest = "bbf342a61d1c36d83ecd20c7f7372dbc27cf61bf121f36590b874196b6ffdf35"
+
+test("a job and a setup operation registered before the chore event existed still decode here", () => {
+  const setup = initialSetup("example/repo", "chores", "maintainer")
+  const { choreEvent: _absent, ...configuration } = setup.draft
+  const job = Schema.decodeUnknownSync(JobInput)({ repo: setup.repo, job: "chores", revision: setup.revision,
+    digest: storedChoreDigest, sourceRevision: source, configuration,
+    event: { source: "schedule", type: "schedule", action: "", deliveryKey: "schedule:1", payload: {} } })
+  assert.equal(job.configuration.choreEvent, "none")
+  const input = Schema.decodeUnknownSync(SetupInput)({ requestId: "stored-request", repo: setup.repo, job: "chores",
+    operation: "apply", revision: setup.revision, digest: storedChoreDigest, draft: configuration })
+  assert.equal(input.draft.choreEvent, "none")
 })
 
 test("the other four jobs register byte-identical events whatever a chore chose", () => {

@@ -1,5 +1,5 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
-import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupActivationProblems, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { afterEach,describe,expect,test } from "bun:test"
@@ -243,7 +243,17 @@ describe("the live store's authoritative event path", () => {
     const storage = memoryStorage(), store = await open(storage)
     const payload = initialSetup("org/repo", "chores", "alice")
     payload.draft.schedule = "0 9 * * *"
-    payload.active = { revision: 1, digest: setupCandidate(payload), registrationId: "chore", sourceRevision: "immutable-source", enabled: true, owned: true }
+    payload.draft.steps = payload.draft.steps.map(step => ({ ...step, mode: "approved" as const }))
+    payload.draft.cases = [{ id: "retained-chore", name: "Retained chore", input: "A weekly tidy", expected: "A scoped maintenance change", required: true }]
+    // The digest the pre-stack code at 1f7d9b40bcc5 wrote into this card, not one this build recomputes.
+    const digestBeforeChoreEvents = "4ae1937060bb181a4d1e1a910fab2b986e4139b8513c296f4c7279fd532686bd"
+    const evidence = (operation: "evaluate" | "trial") => ({ requestId: `${operation}-request`, runId: `${operation}-run`,
+      revision: 1, operation, phase: "completed" as const, digest: digestBeforeChoreEvents, updatedAt: 1,
+      results: [{ caseId: "retained-chore", status: "passed" as const, observed: "A scoped maintenance change", evidence: ["execution:retained-chore"], executionId: "retained-chore" }],
+      evidence: [`run:${operation}-run`], sourceRevision: "immutable-source" })
+    payload.evaluation = evidence("evaluate")
+    payload.trial = evidence("trial")
+    payload.active = { revision: 1, digest: digestBeforeChoreEvents, registrationId: "chore", sourceRevision: "immutable-source", enabled: true, owned: true }
     await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "chore", kind: "repository-setup", title: "Automate a chore", status: "active", createdAt: 1, ordinal: 1, payload } }).isPersisted.promise
     await store.compactEvents()
     const old = await store.eventHistory()
@@ -269,6 +279,8 @@ describe("the live store's authoritative event path", () => {
     if (card.kind !== "repository-setup") throw Error("Chore was not retained")
     expect(card.payload.draft.choreEvent).toBe("none")
     expect(card.payload).toEqual(payload)
+    expect(setupCandidate(card.payload)).toBe(card.payload.active!.digest)
+    expect(setupActivationProblems(card.payload)).toEqual([])
     expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
     expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
     expect((await restored.verifyState()).valid).toBe(true)

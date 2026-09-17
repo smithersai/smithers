@@ -104,6 +104,36 @@ test("legacy byte limit also refuses selection and matching requires the exact i
   expect(t.storage.data.has(SETUP_QUEUE_KEY)).toBe(false)
 })
 
+// The digest the pre-stack code at 1f7d9b40bcc5 wrote. A record stored or a
+// registration written then carries no choreEvent key at all.
+const digestBeforeChoreEvents = "84dee667d8f6ec0cb4cf4357043a8966fa6aa15f51dbdf1a77863c4a9cfb4e26"
+const withoutChoreEvent = () => {
+  const { choreEvent: _absent, ...draft } = initialSetup("org/repo", "issues", "alice").draft
+  return draft
+}
+
+test("a setup record stored before the chore event existed is still the indexed request", async () => {
+  const t = fixture()
+  const stored = record("pre-stack")
+  t.storage.data.set("repository-setup:request:pre-stack", { ...stored,
+    input: { ...stored.input, digest: digestBeforeChoreEvents, draft: withoutChoreEvent() },
+    receipt: { ...stored.receipt, digest: digestBeforeChoreEvents } })
+  const found = await t.discover() as { state: string; record: SetupRecord }
+  expect(found.state).toBe("found")
+  expect(found.record.input.digest).toBe(digestBeforeChoreEvents)
+  expect(found.record.input.draft.choreEvent).toBe("none")
+})
+
+test("a registration written before the chore event existed keeps a consistent identity", async () => {
+  const row = known("issues", "enabled")
+  const states = await everyJob([{ ...row, digest: digestBeforeChoreEvents,
+    configuration: { ...row.configuration, digest: digestBeforeChoreEvents, input: withoutChoreEvent() } }])
+  const state = states.issues
+  if (state.state !== "known") throw Error(`Expected issues to stay known, got ${JSON.stringify(state)}`)
+  expect(state.active?.digest).toBe(digestBeforeChoreEvents)
+  expect(state.active?.draft.choreEvent).toBe("none")
+})
+
 test("a held atomic admission cannot acknowledge or expose a partial request and duplicate admission shares its pointer", async () => {
   const storage = memoryStorage()
   let release!: () => void, writing = false

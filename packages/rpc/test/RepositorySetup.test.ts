@@ -61,6 +61,24 @@ it("a chore event joins the candidate, defaults to none in a stored draft and ne
   expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, schedule: "0 9 * * *" } })).not.toContain(unattended)
 })
 
+/** Digests the pre-stack code at 1f7d9b40bcc5 computed, which is what stored
+ * setup records, registration rows and retained cards still carry. */
+const STORED_DIGESTS = {
+  issues: "eaa65868ff1b8e731c14d789e16b27f980d92492601fca521d9a4534a9b3194f",
+  chores: "bbf342a61d1c36d83ecd20c7f7372dbc27cf61bf121f36590b874196b6ffdf35"
+} as const
+
+it.each(["issues", "chores"] as const)("a %s candidate stored before the chore event existed keeps its digest, in both skew directions", job => {
+  const setup = initialSetup("example/repo", job, "maintainer")
+  const { choreEvent: _absent, ...stored } = setup.draft
+  expect(SetupHostInputSchema.safeParse({ requestId: "stored-request", repo: setup.repo, job, revision: setup.revision,
+    digest: STORED_DIGESTS[job], draft: stored, operation: "apply" }).success).toBe(true)
+  expect(setupCandidate(setup)).toBe(STORED_DIGESTS[job])
+  for (const choreEvent of ["push", "labeled"] as const) {
+    expect(setupCandidate({ ...setup, draft: { ...setup.draft, choreEvent } })).not.toBe(STORED_DIGESTS[job])
+  }
+})
+
 describe("repository setup receipt history", () => {
   it("archiving a displaced receipt preserves terminal evidence and deduplicates without granting activation", () => {
     const setup = initialSetup("example/repo", "issues", "maintainer")

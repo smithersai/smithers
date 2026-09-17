@@ -1,5 +1,5 @@
 /** Repository jobs use the same editable setup contract as the app and Worker. */
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { SetupHostInputSchema, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { Revision } from "../coding/schema.ts"
 import { Source } from "../coding/planning-sources.ts"
@@ -16,7 +16,8 @@ export const Draft = Schema.Struct({
   steps: Schema.Array(Step).check(Schema.isMaxLength(30)), checks: Schema.Array(Check).check(Schema.isMaxLength(50)),
   cases: Schema.Array(EvalCase).check(Schema.isMaxLength(100)), replies: Schema.Literals(["draft", "automatic"]),
   landing: Schema.Literals(["ask", "checks"]), scope: Schema.Literals(["future", "label"]), label: text(100),
-  schedule: text(200), choreEvent: Schema.Literals(["none", "push", "labeled"]),
+  schedule: text(200),
+  choreEvent: Schema.Literals(["none", "push", "labeled"]).pipe(Schema.withDecodingDefaultKey(Effect.succeed("none" as const))),
   budgetMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })),
   connectIssues: Schema.Boolean, trialTitle: text(240), trialBody: text(16000)
 })
