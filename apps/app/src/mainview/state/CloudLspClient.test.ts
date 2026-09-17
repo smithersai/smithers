@@ -62,6 +62,10 @@ const serve = (options: ServeOptions = {}): Harness => {
   let initializes = 0
   let generation = 0
   const server = Bun.serve<{ generation: number }>({
+    // The client dials 127.0.0.1, so bind there too. A wildcard bind lets a
+    // peer process that already holds this port number on loopback answer the
+    // upgrade instead, and the socket never arrives.
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (request, self) => {
       protocols.push(request.headers.get("sec-websocket-protocol"))
