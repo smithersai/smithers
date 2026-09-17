@@ -20,13 +20,14 @@ import { RepositoryRemote } from "../repository/remote.ts"
 import { initialSetup, setupCandidate, SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
 import { JobInput, JobResult } from "../repository/schema.ts"
 import { verifyTrialChecks } from "../repository/checks.ts"
+import { assessScore } from "../repository/evaluation.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE, exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
-async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
+async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const temporary = await mkdtemp(join(tmpdir(), "repository-host-")), root = join(temporary, "repo")
   let passed = false
@@ -141,6 +142,10 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         proposal: [{ path: "greeting.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "greeting.mjs").digest, content: "export const greeting = 'goodbye';\n" },
           { path: "regression.mjs", beforeDigest: null, content: "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }], children: [] }
       : { classification: "question", summary: "The exported greeting is hello.", question: "", citations: ["greeting.mjs"], duplicates: [], reproduction: null }
+    if (checking && task.check.rule === "Fixture: telemetry context is unavailable") {
+      response.verdict = "uncertain"
+      response.summary = "The telemetry helper required by this rule was not supplied."
+    }
     if (!scoring && !suggesting && !checking && !changing && !reviewingRepro && task.event.payload.issue?.title === "Ask twice") {
       const replies = task.event.payload.authorReplies ?? []
       response.question = replies.length < 2 ? `Provide detail ${replies.length + 1}` : ""
@@ -217,14 +222,14 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
-      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" ? "ci" : kind === "ai-empty-review" ? "review" : kind
+      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" ? "ci" : kind === "ai-empty-review" ? "review" : kind
       const configured = initialSetup(repo, job, "maintainer")
       if (kind === "fix") configured.draft.steps = [configured.draft.steps.find(step => step.id === "fix")!]
       configured.draft.cases = []
       configured.draft.checks = job === "review" || kind === "draft" ? [] : [{ id: "real-command", name: "Run fixture", kind: "command", policy: "required", paths: [],
         rule: job === "ci" ? `${process.execPath} -e "import('./greeting.mjs').then(m => { if (m.greeting !== 'hello') process.exit(1) })"` : `${process.execPath} regression.mjs` }]
       if (kind.startsWith("ai-") && kind !== "ai-empty-review") configured.draft.checks.push({ id: "observability", name: "Observability", kind: "ai", policy: "report",
-        paths: [kind === "ai-skip" ? "unrelated/**" : "greeting.mjs"], rule: "Review the requested greeting change using its source." })
+        paths: [kind === "ai-skip" ? "unrelated/**" : "greeting.mjs"], rule: kind === "ai-unavailable" ? "Fixture: telemetry context is unavailable" : "Review the requested greeting change using its source." })
       const event = kind === "push" ? { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", issueNumber: 0,
         payload: { ref: "refs/heads/main", before: native.head.parentCommitIds[0], after: native.head.commitId, created: false, deleted: false, forced: false,
           repository: { id: 42, full_name: "original/source" }, sender: { login: "maintainer" } } }
@@ -252,6 +257,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       if (kind.startsWith("ai-")) {
         const verify = () => verifyTrialChecks(configured.draft, output)
         if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
+        else if (kind === "ai-unavailable") assert.throws(verify, /unavailable.*check/)
         else assert.doesNotThrow(verify)
         if (kind === "ai-skip") {
           assert.equal((output.results[0]!.output as any).results.find((check: any) => check.checkId === "observability").status, "skipped")
@@ -277,6 +283,15 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         if (kind === "draft") assert.equal(output.results[0]!.summary, "Reviewed draft")
         else assert(change.checks.at(-1).output.results.some((check: any) => check.detail.exitCode === 0))
         if (kind === "fix") assert(change.checks[0].output.results.some((check: any) => check.status === "failed" && check.detail.exitCode !== 0))
+        if (kind === "fix" || kind === "ai-unavailable") {
+          const index = change.checks.length - 1
+          const expected = { id: "recorded-proposal", name: "Judge actual proposal checks", expected: "Use the measured final check results", required: true,
+            input: JSON.stringify({ event: input.event, sourceRevision: output.sourceRevision,
+              assertions: [{ path: `/results/0/output/checks/${index}/output/gate`, equals: "passed" }] }) }
+          assert.equal(assessScore(expected, output, { verdict: "pass", reason: "Scripted favorable judge; execution facts must still hold", evidenceIds: [0] }).status,
+            kind === "fix" ? "passed" : "error", "a real failing regression baseline is valid; an unavailable AI candidate remains an execution error")
+          if (kind === "ai-unavailable") assert(change.checks[index].output.results.some((check: any) => check.checkId === "observability" && check.status === "error"))
+        }
       }
     }
     const waitFor = (runId: string, predicate: (row: any) => boolean) => Effect.gen(function*() {
@@ -393,6 +408,8 @@ test("a real GitHub push envelope runs CI on its immutable after commit and befo
   t => proveRepository(t, { jobs: ["push"] }))
 test("native AI trials require matched execution while ordinary events preserve scoped skips", nativeOptions,
   t => proveRepository(t, { jobs: ["ai-match", "ai-skip", "ai-proposal", "ai-empty-review"] }))
+test("native proposal evaluation keeps a failing regression baseline distinct from unavailable AI", nativeOptions,
+  t => proveRepository(t, { jobs: ["fix", "ai-unavailable"] }))
 test("native author signals ignore bystanders and resume the same job across two questions", nativeOptions,
   t => proveRepository(t, { interactions: ["author"] }))
 test("native checked changes retain exact versioned files and recovery bytes, and refuse unverified landing", nativeOptions,

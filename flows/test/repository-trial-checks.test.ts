@@ -13,6 +13,7 @@ import { CodingError } from "../coding/schema.ts"
 import { RepositoryJob } from "../repository/jobs.ts"
 import { completedJob, priorSetupReceipt } from "../repository/receipts.ts"
 import { Draft, JobResult, OperationResult, type JobInput, type SetupInput } from "../repository/schema.ts"
+import { verifyTrialChecks } from "../repository/checks.ts"
 
 const source = "a".repeat(40), base = "b".repeat(40)
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
@@ -125,6 +126,13 @@ test("the selected built-in PR review must run without requiring other event or 
   const draft = { ...configured.input.configuration, steps: [...configured.input.configuration.steps,
     { id: "disabled-review", name: "Disabled", mode: "off" as const, prompt: "Unused" }] }
   // Disabled steps never create a required check in the proof verifier.
-  const { verifyTrialChecks } = await import("../repository/checks.ts")
   assert.doesNotThrow(() => verifyTrialChecks(draft, configured.result))
+})
+
+test("a successful AI invocation cannot mask another unavailable invocation in the same trial", () => {
+  const passed = fixture(), unavailable = fixture({ status: "error" }), skipped = fixture({ status: "skipped" })
+  assert.throws(() => verifyTrialChecks(passed.input.configuration, { ...passed.result,
+    results: [...passed.result.results, ...unavailable.result.results] }), /AI|check|trial/i)
+  assert.doesNotThrow(() => verifyTrialChecks(passed.input.configuration, { ...passed.result,
+    results: [...passed.result.results, ...skipped.result.results] }), "another unrelated step may legitimately skip once the rule has actually run")
 })

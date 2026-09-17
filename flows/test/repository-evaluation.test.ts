@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import * as Digest from "@smthrs/core/Digest"
 import { assessScore } from "../repository/evaluation.ts"
 import { retainedStepError } from "../repository/jobs.ts"
 import { SuggestedCaseInput } from "../repository/setup.ts"
@@ -29,6 +30,80 @@ const expectedCheck = (observed: JobResult, status: "passed" | "failed" | "error
   expected: status === "failed" ? "Identify the missing request telemetry with a concrete finding" : `Record ${status}`
 })
 const checkScore = { verdict: "pass" as const, reason: "The recorded result matches the expected behavior", evidenceIds: [1] }
+const proposedCheck = (policy: "report" | "required", status: "passed" | "failed" | "error", baseline?: "failed" | "error") => {
+  const observed = observedCheck(policy, status)
+  const proposal = [{ path: "handler.ts", beforeDigest: null, content: "export const handler = () => 1\n" }]
+  const candidate = `${observed.sourceRevision}+${Digest.digest(Digest.canonical(proposal))}`
+  const checked = observed.results[0]!, output = checked.output as Record<string, Schema.Json>
+  output.base = observed.sourceRevision; output.candidate = candidate
+  const checks = [checked]
+  if (baseline) {
+    const measured = observedCheck("required", baseline).results[0]!, detail = measured.output as Record<string, Schema.Json>
+    detail.base = observed.sourceRevision; detail.candidate = `${observed.sourceRevision}+${"d".repeat(64)}`
+    checks.unshift(measured)
+  }
+  const result: JobResult = { ...observed, job: "feature", results: [{ ...checked, stepId: "feature", output: {
+    status: status === "failed" && policy === "required" ? "proposal" : "checked-proposal", proposal, checks: JSON.parse(JSON.stringify(checks)), children: [], question: ""
+  } }] }
+  const expected = { ...expectedCheck(observed, status), input: JSON.stringify({ sourceRevision: observed.sourceRevision,
+    event: { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "case-check", payload: { prompt: "Add handler" } },
+    assertions: [{ path: `/results/0/output/checks/${checks.length - 1}/output/results/0/status`, equals: status }] }) }
+  return { result, expected }
+}
+
+test("nested proposal AI findings can be judged under report and required policies", () => {
+  for (const policy of ["report", "required"] as const) for (const status of ["passed", "failed"] as const) {
+    const { result, expected } = proposedCheck(policy, status, "failed")
+    assert.equal(assessScore(expected, result, checkScore).status, "passed", `${policy} ${status} with a measured regression baseline`)
+    assert.equal(assessScore(expected, result, { ...checkScore, verdict: "fail" }).status, "failed")
+    assert.equal(assessScore(expected, result, { ...checkScore, evidenceIds: [] }).status, "review")
+  }
+})
+
+test("nested baseline or candidate execution errors cannot pass even with favorable independent judgment", () => {
+  for (const policy of ["report", "required"] as const) {
+    const { result, expected } = proposedCheck(policy, "error")
+    assert.equal(assessScore(expected, result, checkScore).status, "error", `${policy} candidate error`)
+  }
+  const { result, expected } = proposedCheck("report", "passed", "error")
+  assert.equal(assessScore(expected, result, checkScore).status, "error", "an unavailable regression test cannot hide behind a later passing candidate")
+})
+
+test("unavailable checks remain execution errors when they also miss the expected verdict", () => {
+  const direct = observedCheck("report", "error")
+  assert.equal(assessScore(expectedCheck(direct, "passed"), direct, checkScore).status, "error")
+  const { result } = proposedCheck("report", "error")
+  const { expected } = proposedCheck("report", "passed")
+  assert.equal(assessScore(expected, result, checkScore).status, "error", "the expected pass cannot relabel unavailability as a code finding")
+})
+
+test("an honest baseline-only refusal remains judgeable while unrelated parent failures stay errors", () => {
+  const { result, expected } = proposedCheck("report", "passed", "failed")
+  const output = result.results[0]!.output as Record<string, any>
+  output.checks.pop(); output.status = "proposal"
+  const refused: JobResult = { ...result, status: "needs-maintainer", results: [{ ...result.results[0]!, status: "needs-maintainer" }] }
+  const test = { ...expected, input: JSON.stringify({ sourceRevision: result.sourceRevision,
+    event: { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "case-check", payload: { prompt: "Add handler" } },
+    assertions: [{ path: "/results/0/status", equals: "needs-maintainer" }] }) }
+  assert.equal(assessScore(test, refused, checkScore).status, "passed")
+  const clean = proposedCheck("report", "passed")
+  const broken: JobResult = { ...clean.result, results: [{ ...clean.result.results[0]!, status: "error" }] }
+  assert.equal(assessScore(clean.expected, broken, checkScore).status, "error", "a passing child cannot erase an unrelated parent failure")
+})
+
+test("a completed proposal needs its exact final check and cannot substitute malformed or baseline-only output", () => {
+  for (const mode of ["malformed", "baseline-only", "wrong-source"] as const) {
+    const { result, expected } = proposedCheck("report", "passed", "failed")
+    const output = result.results[0]!.output as Record<string, any>
+    if (mode === "malformed") output.checks[1].output = { gate: "passed", results: [] }
+    if (mode === "baseline-only") output.checks.pop()
+    if (mode === "wrong-source") output.checks[1].output.candidate = "f".repeat(40)
+    const test = { ...expected, input: JSON.stringify({ sourceRevision: result.sourceRevision,
+      event: { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "case-check", payload: { prompt: "Add handler" } },
+      assertions: [{ path: "/results/0/status", equals: "completed" }] }) }
+    assert.equal(assessScore(test, result, checkScore).status, "error", mode)
+  }
+})
 
 test("AI-check evals accept correct clean and violation verdicts under both report and required policies", () => {
   for (const policy of ["report", "required"] as const) {

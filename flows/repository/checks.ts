@@ -35,6 +35,47 @@ export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass",
 export const reviewCheck = (step: typeof Step.Type): typeof Check.Type => ({
   id: `review-${step.id}`, name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required"
 })
+export interface RecordedCheck {
+  readonly step: typeof StepResult.Type
+  readonly output: typeof CheckOutput.Type
+  readonly phase: "baseline" | "candidate"
+}
+/** Read only the host's direct check or proposal.checks shape, never arbitrary
+ * nested model JSON. Baselines remain measured evidence, not final coverage. */
+export const recordedChecks = (step: typeof StepResult.Type, sourceRevision: string): readonly RecordedCheck[] | undefined => {
+  const raw = object(step.output), direct = Schema.decodeUnknownOption(CheckOutput)(step.output)
+  if (Option.isSome(direct)) {
+    if (direct.value.candidate !== sourceRevision) throw invalid("The recorded check names another source")
+    return [{ step, output: direct.value, phase: "candidate" }]
+  }
+  if (!("checks" in raw)) {
+    if ("gate" in raw || "results" in raw) throw invalid("The recorded check output is malformed")
+    return undefined
+  }
+  const nested = Schema.decodeUnknownOption(Schema.Array(StepResult))(raw.checks)
+  const proposal = Schema.decodeUnknownOption(Proposal)(raw.proposal)
+  if (Option.isNone(nested) || Option.isNone(proposal)) throw invalid("The proposed check results are malformed")
+  if (!nested.value.length) {
+    if (raw.status === "checked-proposal") throw invalid("The completed proposal has no recorded checks")
+    return undefined
+  }
+  const finalCandidate = `${sourceRevision}+${Digest.digest(Digest.canonical(proposal.value))}`
+  return nested.value.map(check => {
+    const output = Schema.decodeUnknownOption(CheckOutput)(check.output)
+    if (Option.isNone(output)) throw invalid("A proposed check result is malformed")
+    const value = output.value
+    if (value.base !== sourceRevision || !value.candidate.startsWith(sourceRevision + "+") ||
+        !/^[0-9a-f]{64}$/.test(value.candidate.slice(sourceRevision.length + 1))) throw invalid("A proposed check names another source")
+    return { step: check, output: value, phase: value.candidate === finalCandidate ? "candidate" as const : "baseline" as const }
+  })
+}
+/** A valid failed required check is a policy finding. It is not an unavailable
+ * execution. Report-only model/tool errors still invalidate eval/trial proof. */
+export const checkExecutionFailed = ({ step, output }: RecordedCheck): boolean => {
+  if (output.results.some(check => check.status === "error")) return true
+  const blocked = output.results.some(check => check.policy === "required" && check.status === "failed")
+  return output.gate !== (blocked ? "blocked" : "passed") || step.status !== (blocked ? "error" : "completed")
+}
 /** Only the owned trial receipt uses this gate. Unrelated live events may skip. */
 export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">, result: JobResult): void => {
   // A review trial selects its core review step. Other event/manual steps and
@@ -45,18 +86,10 @@ export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">
   if (!ai.length) return
   if (checks.some(check => !check.id) || new Set(checks.map(check => check.id)).size !== checks.length) throw invalid("AI trial checks need unique configured IDs")
   const outputs = result.results.flatMap(step => {
-    let checked = step, candidate = result.sourceRevision
-    const nested = Schema.decodeUnknownOption(Schema.Array(StepResult))(object(step.output).checks)
-    if (Option.isSome(nested) && nested.value.length) {
-      // A fix's failing baseline cannot prove that its final proposal was checked.
-      checked = nested.value.at(-1)!
-      const proposal = Schema.decodeUnknownOption(Proposal)(object(step.output).proposal)
-      if (Option.isNone(proposal) || !proposal.value.length) return []
-      candidate += `+${Digest.digest(Digest.canonical(proposal.value))}`
-    }
-    const output = Schema.decodeUnknownOption(CheckOutput)(checked.output)
-    return checked.status === "completed" && Option.isSome(output) && output.value.gate === "passed" && output.value.candidate === candidate
-      ? [output.value] : []
+    const recorded = recordedChecks(step, result.sourceRevision)
+    if (recorded?.some(checkExecutionFailed)) throw invalid("The trial contains an unavailable or inconsistent check execution")
+    const final = recorded?.at(-1)
+    return final?.phase === "candidate" && final.step.status === "completed" && final.output.gate === "passed" ? [final.output] : []
   })
   for (const check of ai) {
     const ran = outputs.some(output => {
