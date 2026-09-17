@@ -9,6 +9,7 @@ import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Effect, Layer, Option, Schema } from "effect"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { CodingError } from "../coding/schema.ts"
 import { PublishReply, replyLayers } from "../repository/replies.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
 import { JobInput, JobResult, type StepResult } from "../repository/schema.ts"
@@ -37,6 +38,10 @@ const host = async (t: TestContext) => {
   const root = await mkdtemp(join(tmpdir(), "repository-reply-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const comments: Array<Record<string, any>> = []
+  // Plue publishes under (dispatch, step): a retry of one step returns its
+  // receipt, and the same step with another body is HTTP 409
+  // (plue internal/services/repository_job_comment.go:88-121).
+  const published = new Map<string, { body: string; receipt: Schema.Json }>()
   const remote = Layer.succeed(RepositoryRemote, RepositoryRemote.of({
     repo: "example/repo", workspaceId: "22222222-2222-4222-8222-222222222222",
     history: Effect.succeed({ records: [], sources: [] }),
@@ -44,12 +49,19 @@ const host = async (t: TestContext) => {
     pause: () => Effect.die("a reply never pauses a job"),
     dispatches: () => Effect.die("a reply never reads dispatches"),
     createTrial: () => Effect.die("a reply never creates a trial issue"),
-    comment: (job, name, raw) => Effect.sync(() => {
-      const value = raw as Record<string, any>
-      comments.push({ job, step: name, ...value })
-      return json({ registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision, digest: value.digest,
+    comment: (job, name, raw) => Effect.suspend(() => {
+      const value = raw as Record<string, any>, key = `${value.delivery_key}:${name}`
+      const already = published.get(key)
+      if (already) {
+        return already.body === value.body ? Effect.succeed(already.receipt)
+          : Effect.fail(new CodingError({ code: "unavailable", message: "Repository operation returned HTTP 409" }))
+      }
+      const receipt = json({ registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision, digest: value.digest,
         delivery_key: value.delivery_key, step: name, source: "smithers-cloud", issue_number: value.issue_number,
-        comment_id: 100 + comments.length, api_path: "/repos/example/repo/issues/42/comments" })
+        comment_id: 100 + published.size, api_path: "/repos/example/repo/issues/42/comments" })
+      published.set(key, { body: value.body, receipt })
+      comments.push({ job, step: name, ...value })
+      return Effect.succeed(receipt)
     })
   }))
   const engine = () => NodeRuntime.layerHost({ filename: join(root, "engine.db"), workspaceRoot: root,
@@ -168,6 +180,34 @@ test("issue and model text asking to post the reply cannot answer the approval",
   assert.ok(Option.isSome(parked), "source text never settles the approval")
   assert.match(question(parked.value), /post this/)
   assert.equal(comments.length, 0)
+})
+
+/**
+ * The `ContinueAuthor` round (`flows/repository/execution.ts:208-222`): one
+ * dispatch, two consolidated drafts, two independent confirmations, two
+ * comments. Plue keys a published comment by (dispatch, step), so a second
+ * body under one step is refused.
+ */
+test("an author reply produces a second draft that is confirmed and posted as its own comment", { timeout: 60_000 }, async (t) => {
+  const { comments, park, answer } = await host(t)
+  const first = fixture()
+  const parked = await park(first, "round-one-reply")
+  assert.ok(Option.isSome(parked))
+  const posted = await answer(parked.value, true, first, "round-one-reply")
+  assert.equal(posted.reply?.state, "posted")
+
+  const second = fixture({ results: [step("research", "completed", "The author named release 1.4; the regression is in greeting.mjs."),
+    step("duplicates", "completed", "No duplicate defect found.")], status: "completed" })
+  const parkedAgain = await park(second, "round-two-reply")
+  assert.ok(Option.isSome(parkedAgain), "the second draft asks its own question")
+  assert.match(question(parkedAgain.value), /release 1\.4/)
+  const postedAgain = await answer(parkedAgain.value, true, second, "round-two-reply")
+  assert.equal(postedAgain.reply?.state, "posted")
+
+  assert.equal(comments.length, 2)
+  assert.notEqual(comments[0]?.body, comments[1]?.body)
+  assert.notEqual(comments[0]?.step, comments[1]?.step, "each consolidated reply owns its publication step")
+  assert.equal(comments[0]?.delivery_key, comments[1]?.delivery_key)
 })
 
 test("automatic native replies still post exactly one dispatch-bound comment", { timeout: 60_000 }, async (t) => {

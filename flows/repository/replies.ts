@@ -1,4 +1,5 @@
 /** Automatic native replies use the dispatch-bound idempotent repository API. */
+import * as Digest from "@smthrs/core/Digest"
 import { Action, Flow, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -25,7 +26,12 @@ export const consolidatedReply = (input: JobInput, result: JobResult): JobResult
 const post = (input: JobInput, result: JobResult, reply: Reply) => Effect.gen(function*() {
   const remote = yield* Effect.serviceOption(RepositoryRemote)
   if (Option.isNone(remote) || !remote.value.comment || remote.value.repo !== input.repo) return yield* invalid("The repository has no idempotent reply adapter")
-  const step = "response", receipt = yield* remote.value.comment(input.job, step, {
+  // One dispatch can consolidate more than once, once per author round, and
+  // the publication step is what plue keys a comment by: naming every round
+  // "response" makes the second body HTTP 409. The body names its own step, so
+  // a retry of one reply still returns its receipt.
+  const step = `response-${Digest.digest(Digest.canonical(reply.body)).slice(0, 16)}`
+  const receipt = yield* remote.value.comment(input.job, step, {
     repo: input.repo, workspace_id: remote.value.workspaceId, revision: input.revision, digest: input.digest,
     delivery_key: input.event.deliveryKey, source: "smithers-cloud", issue_number: reply.issueNumber, body: reply.body
   }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(CommentReceipt)))
