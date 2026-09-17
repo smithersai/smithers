@@ -12,22 +12,98 @@
  * browser); the local server the entrypoint starts is the real one.
  */
 import { afterAll, describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, realpathSync } from "node:fs"
 import { mkdtemp, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { readDaemonDescriptor } from "./LocalDaemonProtocol"
+import { shutdownLocalDaemon } from "./LocalDaemonStop"
 import { PROBE_MARKER } from "../../e2e/native/Probe.ts"
 import type { NativeProbeReport, ProbeScenario } from "../../e2e/native/Probe.ts"
 
 const UI_DIR = fileURLToPath(new URL("../../", import.meta.url))
-const DRIVER = join(UI_DIR, "e2e", "native", "MainProcess.ts")
+const DRIVER = realpathSync(join(UI_DIR, "e2e", "native", "MainProcess.ts"))
 
 interface ProbeOptions {
   readonly env?: Readonly<Record<string, string>>
   readonly scenario?: ProbeScenario
 }
 
+/*
+ * What a scenario leaves running.
+ *
+ * The entrypoint attaches to a local session owner and spawns it when none is
+ * running; by product design that daemon outlives the window, so a probe that
+ * only ends its own process leaks one owner per scenario. Each scenario gets
+ * its own faked home, so its owner is stopped and its state removed here and
+ * nowhere near the user's real session owner.
+ */
+interface ProbeDaemon {
+  readonly home: string
+  readonly stateDir: string
+  /** The owner process, as its own /api/health reported it. */
+  pid: number | null
+}
+
+/** Mirrors NativeState.nativeStateDirectory() under the home the driver fakes. */
+const stateDirectoryOf = (home: string): string => process.platform === "darwin"
+  ? join(home, "Library", "Application Support", "Smithers")
+  : join(home, ".local", "share", "smithers")
+
+const reportedPid = (health: unknown): number | null => {
+  if (typeof health !== "object" || health === null || !("pid" in health)) return null
+  const pid = (health as { readonly pid: unknown }).pid
+  return typeof pid === "number" ? pid : null
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Only a pid whose command is still this checkout's driver may be signalled. */
+const isProbeProcess = (pid: number): boolean =>
+  new TextDecoder().decode(Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)]).stdout).includes(DRIVER)
+
+const exited = async (pid: number): Promise<boolean> => {
+  const deadline = Date.now() + 3_000
+  while (alive(pid) && Date.now() < deadline) await Bun.sleep(50)
+  return !alive(pid)
+}
+
+/*
+ * The belt: the driver stops its own owner, but a probe killed on the deadline
+ * never reaches that line. The descriptor in the scenario's own state directory
+ * is the only owner this may touch, and its pid is signalled only after the
+ * documented shutdown failed to end it.
+ */
+const stopSessionOwner = async (daemon: ProbeDaemon): Promise<void> => {
+  const descriptor = await readDaemonDescriptor(daemon.stateDir).catch(() => undefined)
+  if (descriptor !== undefined && daemon.pid === null) {
+    daemon.pid = reportedPid(await fetch(`${descriptor.origin}/api/health`).then((response) => response.json()).catch(() => null))
+  }
+  await shutdownLocalDaemon(daemon.stateDir).catch(() => {})
+  const pid = daemon.pid
+  if (pid !== null && !(await exited(pid)) && isProbeProcess(pid)) {
+    process.kill(pid, "SIGTERM")
+    await exited(pid)
+  }
+  await rm(daemon.home, { recursive: true, force: true })
+}
+
 const cache = new Map<string, Promise<NativeProbeReport>>()
+const daemons = new Map<string, ProbeDaemon>()
+
+const sessionOwner = (options: ProbeOptions): ProbeDaemon => {
+  const daemon = daemons.get(JSON.stringify(options))
+  if (daemon === undefined) throw new Error("no probe has run for these options")
+  return daemon
+}
 
 /*
  * What one probe may take.
@@ -36,19 +112,22 @@ const cache = new Map<string, Promise<NativeProbeReport>>()
  * on a loaded machine. Under bun's 5s default that lands as a timeout — the
  * runner kills the test, the subprocess it was waiting on keeps its port, and
  * the report says "timed out" instead of what the scenario asserts. Every test
- * below carries this budget instead, and `spawnProbe` kills its own child on
- * the same deadline, so a slow machine costs one named failure and never a
- * stray process.
+ * below carries this budget instead, and `spawnProbe` kills its own child five
+ * seconds inside it, so a slow machine costs one named failure, and the belt
+ * below still stops that scenario's session owner before the runner abandons
+ * the test.
  */
 const PROBE_BUDGET_MS = 60_000
+const PROBE_KILL_MS = PROBE_BUDGET_MS - 5_000
 
-const spawnProbe = async (options: ProbeOptions): Promise<NativeProbeReport> => {
+const spawnProbe = async (options: ProbeOptions, daemon: ProbeDaemon): Promise<NativeProbeReport> => {
   const child = Bun.spawn([process.execPath, DRIVER], {
     cwd: UI_DIR,
     env: {
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       SMITHERS_NATIVE_PROBE: JSON.stringify(options.scenario ?? {}),
+      SMITHERS_NATIVE_PROBE_HOME: daemon.home,
       SMITHERS_LOCAL_PORT: "0",
       SMITHERS_CHAT_STUB: "1",
       SMITHERS_LOCAL_MODE: "offline",
@@ -57,19 +136,25 @@ const spawnProbe = async (options: ProbeOptions): Promise<NativeProbeReport> => 
     stdout: "pipe",
     stderr: "pipe"
   })
-  const overdue = setTimeout(() => child.kill("SIGKILL"), PROBE_BUDGET_MS)
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text()
-  ]).finally(() => clearTimeout(overdue))
-  const line = stdout.split("\n").find((candidate) => candidate.startsWith(PROBE_MARKER))
-  if (line === undefined) {
-    throw new Error(
-      `the native main process printed no report (exit ${exitCode}).\nstdout:\n${stdout}\nstderr:\n${stderr}`
-    )
+  const overdue = setTimeout(() => child.kill("SIGKILL"), PROBE_KILL_MS)
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text()
+    ]).finally(() => clearTimeout(overdue))
+    const line = stdout.split("\n").find((candidate) => candidate.startsWith(PROBE_MARKER))
+    if (line === undefined) {
+      throw new Error(
+        `the native main process printed no report (exit ${exitCode}).\nstdout:\n${stdout}\nstderr:\n${stderr}`
+      )
+    }
+    const report = JSON.parse(line.slice(PROBE_MARKER.length)) as NativeProbeReport
+    daemon.pid = reportedPid(report.health)
+    return report
+  } finally {
+    await stopSessionOwner(daemon)
   }
-  return JSON.parse(line.slice(PROBE_MARKER.length)) as NativeProbeReport
 }
 
 /** Scenarios are pure, so identical ones share one subprocess. */
@@ -77,7 +162,10 @@ const probe = (options: ProbeOptions): Promise<NativeProbeReport> => {
   const key = JSON.stringify(options)
   const existing = cache.get(key)
   if (existing !== undefined) return existing
-  const started = spawnProbe(options)
+  const home = mkdtempSync(join(tmpdir(), "smithers-native-probe-home-"))
+  const daemon: ProbeDaemon = { home, stateDir: stateDirectoryOf(home), pid: null }
+  daemons.set(key, daemon)
+  const started = spawnProbe(options, daemon)
   cache.set(key, started)
   return started
 }
@@ -121,6 +209,9 @@ const makeRepository = async (): Promise<string> => {
 }
 
 afterAll(async () => {
+  for (const daemon of daemons.values()) {
+    await stopSessionOwner(daemon)
+  }
   for (const directory of temporaryDirectories) {
     await rm(directory, { recursive: true, force: true })
   }
@@ -259,5 +350,16 @@ describe("the native RPC surface", () => {
       }
     })
     expect(report.results.denied).toEqual({ opened: false })
+  }, PROBE_BUDGET_MS)
+})
+
+describe("a probe owns the session it starts", () => {
+  test("the session owner a scenario spawned is stopped and its state is gone", async () => {
+    await probe({})
+    const daemon = sessionOwner({})
+    expect(daemon.pid).not.toBeNull()
+    expect(alive(daemon.pid!)).toBe(false)
+    expect(existsSync(daemon.stateDir)).toBe(false)
+    expect(existsSync(daemon.home)).toBe(false)
   }, PROBE_BUDGET_MS)
 })

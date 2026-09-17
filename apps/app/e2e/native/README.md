@@ -12,6 +12,12 @@ subprocess against a recording host fake:
   handlers it registered, probes the origin it started, and prints one JSON
   report. Driven by `src/bun/Main.test.ts`, not run by hand.
 
+The entrypoint attaches to a local session owner, which outlives the window by
+design. So each scenario runs against its own faked home
+(`SMITHERS_NATIVE_PROBE_HOME`, one per scenario), the driver stops the owner it
+started before exiting, and `src/bun/Main.test.ts` stops it from that home when
+a probe is killed on its deadline instead.
+
 The local server the entrypoint starts is the real one; only the host is
 faked.
 

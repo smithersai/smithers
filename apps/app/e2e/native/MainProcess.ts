@@ -96,7 +96,9 @@ mock.module("electrobun/main", () => fakeSdk)
 mock.module("electrobun/bun", () => fakeSdk)
 
 // A probe must never restore or rewrite the signed-in user's real application state.
-const probeHome = await mkdtemp(join(os.tmpdir(), "smithers-native-probe-home-"))
+// The caller may own the home so it can reach the state a scenario leaves behind.
+const givenHome = process.env.SMITHERS_NATIVE_PROBE_HOME
+const probeHome = givenHome ?? await mkdtemp(join(os.tmpdir(), "smithers-native-probe-home-"))
 const hostOs = { ...os, homedir: () => probeHome }
 mock.module("node:os", () => hostOs)
 
@@ -129,5 +131,20 @@ const report: NativeProbeReport = {
   results
 }
 await Bun.write(Bun.stdout, `${PROBE_MARKER}${JSON.stringify(report)}\n`)
-await rm(probeHome, { recursive: true, force: true })
+
+/*
+ * The session owner the entrypoint attached to outlives the window by product
+ * design, so the probe stops the one it caused; a probe that IS that owner has
+ * nothing to stop and must not recreate the state its caller is removing. Both
+ * imports stay dynamic: a static one would read the real home directory before
+ * the mock above lands, and the state directory is checked to be the faked one
+ * before anything is asked to stop.
+ */
+if (process.env.SMITHERS_LOCAL_DAEMON !== "1") {
+  const { nativeStateDirectory } = await import("../../src/bun/NativeState.ts")
+  const { shutdownLocalDaemon } = await import("../../src/bun/LocalDaemonStop.ts")
+  const stateDir = nativeStateDirectory()
+  if (stateDir.startsWith(probeHome)) await shutdownLocalDaemon(stateDir)
+}
+if (givenHome === undefined) await rm(probeHome, { recursive: true, force: true })
 process.exit(0)
