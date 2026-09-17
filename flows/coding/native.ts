@@ -6,7 +6,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
-import { ChangeId, FileRecovery, ImportSource, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
+import { CreateSource, SourceCreation, ChangeId, FileRecovery, ImportSource, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
 export * from "./native-schema.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow
@@ -22,6 +22,7 @@ export class NativeCoding extends Context.Service<NativeCoding, {
   readonly read: (changeIds?: ReadonlyArray<string>, historyLimit?: number) => Effect.Effect<typeof ReadResult.Type, NativeCodingError>
   readonly apply: (operation: Operation) => Effect.Effect<OperationResult, NativeCodingError>
   readonly publishOriginalSource: (request: typeof PublishSource.Type) => Effect.Effect<SourcePublication, NativeCodingError>
+  readonly createSource?: (request: typeof CreateSource.Type) => Effect.Effect<typeof SourceCreation.Type, NativeCodingError>
   readonly importSource?: (request: typeof ImportSource.Type) => Effect.Effect<typeof SourceImport.Type, NativeCodingError>
 }>()("coding/NativeCoding") {}
 
@@ -51,7 +52,7 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const invoke = (request: object) => Effect.gen(function*() {
     const input = JSON.stringify({ ...request, repositoryPath: options.repositoryPath })
-    const bound = "operation" in request && request.operation === "apply_files" ? 2 * 1024 * 1024 : 64 * 1024
+    const bound = "operation" in request && (request.operation === "apply_files" || request.operation === "create_source") ? 2 * 1024 * 1024 : 64 * 1024
     if (new TextEncoder().encode(input).length > bound) return yield* failure("invalid_request", "Native coding request exceeds its bounded payload size")
     const process = yield* spawner.spawn(ChildProcess.make(options.python ?? "python3", [
       options.adapterPath ?? "/usr/local/lib/smithers/workspace-coding.py", "--local"
@@ -86,6 +87,21 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
       Effect.flatMap(Schema.decodeUnknownEffect(ReadResult)),
       Effect.mapError(error => error instanceof NativeCodingError ? error : failure("invalid_receipt", "Native read returned an invalid revision"))
     ),
+    createSource: (request: typeof CreateSource.Type) => Effect.gen(function*() {
+      const input = yield* Schema.decodeUnknownEffect(CreateSource)(request).pipe(
+        Effect.mapError(() => failure("invalid_request", "Native source creation requires an exact base and bounded proposal")))
+      if (input.base.operationId !== input.expectedOperationId) return yield* failure("invalid_request", "The source base must name the admitted operation")
+      const result = yield* invoke({ operation: "create_source", ...input }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(SourceCreation)),
+        Effect.mapError(error => error instanceof NativeCodingError ? error : failure("invalid_receipt", "Native source creation returned an invalid receipt")))
+      if (result.requestId !== input.requestId || result.parentOperationId !== input.expectedOperationId || result.source.operationId !== result.operationId ||
+          result.head.operationId !== result.operationId || result.base.commitId !== input.base.commitId || result.base.treeId !== input.base.treeId ||
+          result.base.changeId !== input.base.changeId || JSON.stringify(result.base.parentCommitIds) !== JSON.stringify(input.base.parentCommitIds) ||
+          result.source.parentCommitIds.length !== 1 || result.source.parentCommitIds[0] !== input.base.commitId) {
+        return yield* failure("invalid_receipt", "Native creation did not acknowledge the exact owned base and immutable child")
+      }
+      return result
+    }),
     importSource: (request: typeof ImportSource.Type) => Effect.gen(function*() {
       const input = yield* Schema.decodeUnknownEffect(ImportSource)(request).pipe(
         Effect.mapError(() => failure("source_refused", "Native source import requires exact immutable source refs")))

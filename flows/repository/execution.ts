@@ -89,8 +89,7 @@ const result = (work: typeof Work.Type, observation: typeof Observation.Type, ex
     return file ? `source:${file.path}@${file.digest}` : reference
   }), output: json(observation), executionId
 })
-export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
-  CaptureJob.toLayer(input => Effect.gen(function*() {
+export const captureJobSource = (options: ImmutableSourceOptions, input: typeof CaptureJob.payloadSchema.Type) => Effect.gen(function*() {
     const normalized = yield* Effect.try({ try: () => sourceEvent(input.event), catch: error => error instanceof CodingError ? error : invalid("Invalid source event") })
     const payload = object(normalized.payload), pr = object(payload.pull_request), head = object(pr.head)
     const available = yield* Effect.serviceOption(RepositoryRemote)
@@ -101,10 +100,12 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
     const sourceRevision = review?.sourceRevision ?? normalized.sourceRevision ?? (typeof head.sha === "string" ? head.sha : undefined)
     if (sourceRevision !== undefined) yield* ensureSource(options, input.event, review?.payload ?? normalized.payload, yield* currentExecutionId)
     const evidence = yield* captureRepository(options, { repo: input.repo, prompt: JSON.stringify(review?.payload ?? input.event.payload),
-      ...(sourceRevision === undefined ? {} : { sourceRevision }) })
+      ...(sourceRevision === undefined ? {} : { sourceRevision }) }, selectedSteps(input).some(step => ["fix", "feature", "chore"].includes(step.id)) ? "immutable" : "snapshot")
     return review ? { ...evidence, subject: review.payload } : normalized.sourceRevision ? { ...evidence, subject: normalized.payload } : evidence
   }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
-    orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))),
+    orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))
+export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
+  CaptureJob.toLayer(input => captureJobSource(options, input)),
   RetainObservation.toLayer(({ work, observation }) => Effect.gen(function*() {
     yield* Effect.try({ try: () => verifyObservation(work, observation), catch: error => error instanceof CodingError ? error : invalid("Invalid step evidence") })
     return result(work, observation, yield* currentExecutionId)

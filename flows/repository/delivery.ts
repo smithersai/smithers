@@ -4,10 +4,10 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Landing } from "../coding/landing.ts"
 import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "../coding/landing-schema.ts"
-import { NativeCoding, requestIdFor } from "../coding/native.ts"
+import { NativeCoding, SourceCreation, requestIdFor } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
 import { currentExecutionId } from "./inspection.ts"
-import { Work } from "./jobs.ts"
+import { Work, retainedStepError } from "./jobs.ts"
 import { StepResult } from "./schema.ts"
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -23,28 +23,45 @@ const Observe = Action.make("repository/observe-landing", { payload: { queued: Q
 const AwaitLanding = Poll.make("repository/AwaitLanding", { input: { queued: QueuedAppend, deadlineAt: Schema.Number }, result: Observed,
   intervalMs: 5000, maxAttempts: 1441, onTimeout: "return-last", check: Node.capture({ action: Observe.name, policy: "repository-delivery/v1" }, input => Observe.call(input)) })
 const Retain = Action.make("repository/retain-landing", { payload: { prepared: Prepared, queued: QueuedAppend, observed: Observed }, success: StepResult, error: CodingError })
+const RetainFailure = Action.make("repository/retain-delivery-failure", { payload: { input: Input, error: Schema.Json }, success: StepResult, error: CodingError })
 export const DeliverChange = Flow.make("repository/DeliverChange", { payload: Input, success: StepResult, error: Schema.Union([CodingError, Poll.Failure]),
-  body: input => Prepare.call(input).pipe(Node.bindPlanned(prepared => Create.call(prepared).pipe(
-    Node.bindPlanned(identity => Queue.call({ prepared, identity })), Node.bindPlanned(queued => AwaitLanding.child({ queued, deadlineAt: input.work.deadlineAt }).pipe(
-      Node.bindPlanned(observed => Retain.call({ prepared, queued, observed }))))))) })
+  body: input => Prepare.call(input).pipe(
+    Node.bindPlanned(prepared => Create.call(prepared).pipe(
+      Node.bindPlanned(identity => Queue.call({ prepared, identity })),
+      Node.bindPlanned(queued => AwaitLanding.child({ queued, deadlineAt: input.work.deadlineAt }).pipe(
+        Node.bindPlanned(observed => Retain.call({ prepared, queued, observed }))
+      ))
+    )),
+    Node.catch({ error: Schema.Union([CodingError, Poll.Failure]), onFailure: error => Node.succeed(error).pipe(
+      Node.map(retainedStepError), Node.bindPlanned(error => RetainFailure.call({ input, error }))
+    ) })
+  ) })
 export const deliveryLayers = Layer.mergeAll(Interpreter.layer(DeliverChange), Interpreter.layer(AwaitLanding), Poll.layer, Sleep.layer,
+  RetainFailure.toLayer(({ input, error }) => Effect.succeed({ ...input.result, status: "needs-maintainer" as const,
+    summary: typeof object(error).message === "string" ? object(error).message as string : "The checked source needs landing inspection",
+    output: JSON.parse(JSON.stringify({ ...object(input.result.output), landed: false, deliveryError: error })) })),
   Prepare.toLayer(input => Effect.gen(function*() {
     const { work, result } = input, source = Schema.decodeUnknownOption(Revision)(object(result.output).source)
     if (work.executionMode !== "live" || work.step.id === "poc" || work.step.id === "split" || result.status !== "completed" ||
         object(result.output).status !== "implemented" || Option.isNone(source) || Date.now() >= work.deadlineAt) return yield* invalid("Landing requires the live implemented change and fresh checks")
     const checked = object(object(result.output).checks), checkDetail = object(checked.output)
     if (checked.status !== "completed" || checkDetail.gate !== "passed" || checkDetail.candidate !== source.value.commitId) return yield* invalid("Landing checks do not name this exact native source")
-    const native = yield* NativeCoding, current = yield* native.read(), landing = yield* service, executionId = yield* currentExecutionId
-    if (current.head.kind !== "resolved" || current.head.commitId !== source.value.commitId || current.head.treeId !== source.value.treeId ||
-        current.head.parentCommitIds.length !== 1 || current.head.parentCommitIds[0] !== work.evidence.source.commitId) return yield* invalid("The checked source changed before landing")
-    // Both content-addressed inputs are acknowledged by the repository host;
-    // pending workspace reporters and local-only tests are not cloud proof.
-    yield* native.publishOriginalSource({ requestId: requestIdFor(executionId, "repository-original-source"), source: { ...work.evidence.source, kind: "resolved" } })
-    yield* native.publishOriginalSource({ requestId: requestIdFor(executionId, "repository-checked-source"), source: current.head })
+    const creation = Schema.decodeUnknownOption(SourceCreation)(object(result.output).creation)
+    if (Option.isNone(creation) || !creation.value.publicationReady || creation.value.source.commitId !== source.value.commitId ||
+        creation.value.source.treeId !== source.value.treeId || creation.value.source.changeId !== source.value.changeId || creation.value.source.operationId !== source.value.operationId ||
+        source.value.parentCommitIds.length !== 1 || source.value.parentCommitIds[0] !== work.evidence.source.commitId ||
+        creation.value.base.commitId !== work.evidence.source.commitId || creation.value.base.treeId !== work.evidence.source.treeId) return yield* invalid("Landing requires the exact owned native creation receipt")
+    const native = yield* NativeCoding, landing = yield* service, executionId = yield* currentExecutionId
+    if (creation.value.workspaceId !== landing.binding.workspaceId || creation.value.repositoryId !== landing.binding.repositoryId) return yield* invalid("The source creation belongs to another landing workspace")
     const main = yield* landing.readMain
+    if (main !== work.evidence.source.commitId) return yield* invalid("Main changed before landing; retain the checked source")
+    // Main is already public. The new source is published only through its
+    // owned native creation receipt; the editor remains on its prior head.
+    yield* native.publishOriginalSource({ requestId: requestIdFor(executionId, "repository-checked-source"), source: creation.value.source,
+      creation: { requestId: creation.value.requestId, requestDigest: creation.value.requestDigest } })
     const preparation = yield* landing.prepare({ target_bookmark: "main", expected_commit_id: main,
-      source_commit_id: current.head.commitId, source_base_commit_id: work.evidence.source.commitId })
-    if (preparation.changes.length !== 1 || preparation.changes[0]!.change_id !== current.head.changeId || preparation.changes[0]!.commit_id !== current.head.commitId) return yield* invalid("Landing includes work outside this checked native change")
+      source_commit_id: source.value.commitId, source_base_commit_id: work.evidence.source.commitId })
+    if (preparation.changes.length !== 1 || preparation.changes[0]!.change_id !== source.value.changeId || preparation.changes[0]!.commit_id !== source.value.commitId) return yield* invalid("Landing includes work outside this checked native change")
     return { input, source: source.value, preparation }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("Checked source retention or landing preparation failed")))),
   Create.toLayer(prepared => Effect.gen(function*() { return yield* (yield* service).create(requestIdFor(yield* currentExecutionId, "repository-landing"),

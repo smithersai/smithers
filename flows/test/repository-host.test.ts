@@ -414,25 +414,20 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect, Effect.timeout("90 seconds"))
       const applied = events.flatMap(event => { const state = (event.payload as any)?.payload?.state
         return state?.flowName === "repository/ApplyChange" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
-      assert.equal(applied.length, 1, "the native file operation must complete and retain its checked source")
-      const output = applied[0].output
-      assert.equal(output.status, "implemented")
-      assert.equal(output.landed, false)
-      assert.equal(output.checks.output.candidate, output.source.commitId)
-      assert(output.checks.output.results.some((check: any) => check.checkId === "implementation-review" && check.status === "passed"))
-      assert(output.recovery.path)
-      assert.equal(yield* Effect.promise(() => readFile(output.recovery.files.find((file: any) => file.path === "greeting.mjs").preimage, "utf8")), greetingSource)
+      assert.equal(applied.length, 0, "a local-only host must retain its draft before native mutation")
       const jobs = events.flatMap(event => { const state = (event.payload as any)?.payload?.state
         return state?.flowName === "repository/Job" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
-      assert.equal(jobs[0]?.status, "partial", "a local-only host cannot pretend it landed a change")
-      assert.match(jobs[0].results[0].summary, /landing|publication|retention/i)
+      assert.equal(jobs[0]?.status, "needs-maintainer", "a local-only host cannot apply or pretend to land a change")
+      assert.match(jobs[0].results[0].summary, /landing|publication|helper/i)
+      assert.equal(jobs[0].results[0].output.status, "proposal")
+      assert(jobs[0].results[0].output.proposal.length, "the useful draft remains reviewable")
     }
   }).pipe(Effect.provide(layer(observedPlatform, { ...base, gatewayId: "11111111-1111-4111-8111-111111111111", credential: "fixture-key",
     implementationModel: "test:scripted", checkEnvironment: { PATH: process.env.PATH! }, repositoryRemote: Layer.succeed(RepositoryRemote, remote) }, seats)), Effect.scoped))
   assert.equal(creates, proof.setup ? 1 : 0)
   assert.equal(comments, proof.setup ? 1 : 0)
   if (proof.setup) assert.equal(registrations.at(-1)?.mode, "enabled")
-  assert.equal(await readFile(join(root, "greeting.mjs"), "utf8"), proof.mutation ? "export const greeting = 'goodbye';\n" : greetingSource)
+  assert.equal(await readFile(join(root, "greeting.mjs"), "utf8"), greetingSource)
   if (proof.setup) assert((await readFile(join(root, ".smithers", "repository-jobs", "issues", digest, "candidate.json"), "utf8")).includes(digest))
   await writeFile(join(temporary, "model-requests.json"), JSON.stringify(requests))
   assert.deepEqual(projectionMismatches, [], "Worker needs the exact typed finalOutput for every setup operation")
@@ -454,5 +449,5 @@ test("native AI checks receive captured helpers and keep missing report or requi
   t => proveRepository(t, { jobs: ["ai-context-pass", "ai-context-fail", "ai-context-missing", "ai-context-required"] }))
 test("native author signals ignore bystanders and resume the same job across two questions", nativeOptions,
   t => proveRepository(t, { interactions: ["author"] }))
-test("native checked changes retain exact versioned files and recovery bytes, and refuse unverified landing", nativeOptions,
+test("native local-only jobs retain useful drafts before any editing mutation or unverified landing", nativeOptions,
   t => proveRepository(t, { mutation: true }))

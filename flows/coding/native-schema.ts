@@ -50,7 +50,17 @@ export const SourcePublication = Schema.Struct({
   ref: Schema.String, source: sourceIdentity
 })
 export type SourcePublication = typeof SourcePublication.Type
-export const PublishSource = Schema.Struct({ requestId: RequestId, source: Resolved })
+export const CreationProof = Schema.Struct({ requestId: RequestId, requestDigest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)) })
+export const PublishSource = Schema.Struct({ requestId: RequestId, source: Resolved, creation: Schema.optionalKey(CreationProof) })
+/** Creates an immutable child without moving or writing any editing workspace. */
+export const CreateSource = Schema.Struct({ requestId: RequestId, expectedOperationId: OperationId, base: Resolved,
+  description: Schema.NonEmptyString.check(Schema.isMaxLength(16384)),
+  files: Schema.Array(Schema.Struct({ path: Schema.NonEmptyString.check(Schema.isMaxLength(1000)),
+    beforeDigest: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))),
+    content: Schema.NullOr(Schema.String.check(Schema.isMaxLength(65536))) })).check(Schema.isMinLength(1), Schema.isMaxLength(30)) })
+export const SourceCreation = Schema.Struct({ status: Schema.Literal("created"), replayed: Schema.Boolean,
+  ...CreationProof.fields, workspaceId: RequestId, repositoryId: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  operationId: OperationId, parentOperationId: OperationId, base: sourceIdentity, head: Resolved, source: Resolved, publicationReady: Schema.Boolean })
 /** Object import is a native store operation, never an edit or source URL. */
 export const ImportSource = Schema.Struct({ requestId: RequestId,
   commits: Schema.Array(Schema.Struct({ commitId: CommitId,

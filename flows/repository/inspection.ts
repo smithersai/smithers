@@ -31,11 +31,11 @@ export const repositorySourceReader = (root: string, fs: FileSystem.FileSystem):
     return yield* source.read(relative)
   }) }
 })
-export const captureRepository = (options: InspectionOptions, input: typeof CaptureRepository.payloadSchema.Type) => Effect.gen(function*() {
+export const captureRepository = (options: InspectionOptions, input: typeof CaptureRepository.payloadSchema.Type, mode: "snapshot" | "immutable" = "snapshot") => Effect.gen(function*() {
   const remote = yield* Effect.serviceOption(RepositoryRemote)
   if (Option.isSome(remote) && remote.value.repo !== input.repo) return yield* unavailable("This host belongs to a different repository")
-  yield* (yield* Jj.Jj).snapshot("repository automation inspection")
-  const native = yield* NativeCoding, before = yield* native.read([], 50)
+  if (mode === "snapshot") yield* (yield* Jj.Jj).snapshot("repository automation inspection")
+  const native = yield* NativeCoding, before = yield* native.read([], mode === "snapshot" ? 50 : undefined)
   if (before.head.kind !== "resolved") return yield* unavailable("Resolve native source conflicts before repository setup")
   const readFiles = (root: string) => Effect.gen(function*() {
   const path = yield* Path.Path, fs = options.fs
@@ -49,14 +49,14 @@ export const captureRepository = (options: InspectionOptions, input: typeof Capt
     ...extractPaths(...first.sources.map(file => file.text))])
   return files
   })
-  const captured = input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId
-    ? yield* withCapturedCommit(options, input.sourceRevision, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
+  const captured = mode === "immutable" || (input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId)
+    ? yield* withCapturedCommit(options, input.sourceRevision ?? before.head.commitId, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
     : { files: yield* readFiles(yield* options.fs.realPath(options.repositoryPath)), source: before.head }
   const files = captured.files
   const history = Option.isSome(remote) ? yield* remote.value.history : {
     records: [], sources: [{ path: "repository:issues-and-prs", status: "failed" as const, summary: "Connect the repository API to inspect issues and PRs." }]
   }
-  const after = yield* native.read([], 50)
+  const after = yield* native.read([], mode === "snapshot" ? 50 : undefined)
   if (before.operationId !== after.operationId || JSON.stringify(before.head) !== JSON.stringify(after.head)) {
     return yield* new CodingError({ code: "stale_revision", message: "Source changed during repository inspection; retry" })
   }
