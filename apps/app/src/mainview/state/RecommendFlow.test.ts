@@ -544,7 +544,10 @@ test("a background repository check regenerates suggestions using hidden observa
   await settle(12)
   const request = worker.recommends().at(-1)?.body
   expect(request).toBeDefined()
+  expect(request!.repo).toBeNull()
+  expect(store.session().activeRepoKey).toBe("practice:smithersai/hello-server")
   const tail = request!.tail as { role: string; text: string }[]
+  expect(tail.some(entry => entry.role === "system" && entry.text.includes('"repo":"practice:smithersai/hello-server"'))).toBe(true)
   expect(tail.some(entry => entry.role === "system" && entry.text.includes('"openIssues":2'))).toBe(true)
   expect(row(store)?.suggestions.some(suggestion => suggestion.flow === "issues.list")).toBe(true)
   expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)

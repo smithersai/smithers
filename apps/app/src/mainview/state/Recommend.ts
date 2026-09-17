@@ -5,6 +5,7 @@ import { recommendedNames, visible } from "../flows/registry"
 import { repoSuggestion } from "../Onboarding"
 import type { RepoStep } from "../Onboarding"
 import type { AppTransition, Card, Message, Suggestion } from "./AppState"
+import { REPO_TOKEN } from "./RepoContext"
 
 /*
  * The next-step pills as a WORKFLOW, not a rule (will, 2026-08-30): after every
@@ -80,7 +81,7 @@ export interface RecommendInput {
   readonly state: CommandState
   readonly catalog: ReadonlyArray<CatalogItem>
   readonly repoStep: RepoStep
-  /** The active repository as `owner/name`, or null when none is selected. */
+  /** The active target, including a practice key, or null when none is selected. */
   readonly repo: string | null
   readonly messages: ReadonlyArray<Pick<Message, "role" | "text" | "act">>
   readonly cards: ReadonlyArray<Pick<Card, "kind" | "title" | "status">>
@@ -161,9 +162,9 @@ export const repositoryRecommendationTail = (input: Pick<RecommendInput, "messag
   return [...tail, { role: "system", text }]
 }
 
-/** The request body: the active repository, the chat tail, and every offerable flow. */
+/** Practice/local identities stay in local state and observation data; the wire repo names only a hosted repository. */
 export const recommendRequest = (input: Pick<RecommendInput, "repo" | "messages" | "catalog" | "repositoryUpdate">): RecommendRequest => ({
-  repo: input.repo,
+  repo: input.repo !== null && REPO_TOKEN.test(input.repo) ? input.repo : null,
   tail: repositoryRecommendationTail(input),
   commands: visible(input.catalog)
     .slice(0, COMMANDS_MAX)

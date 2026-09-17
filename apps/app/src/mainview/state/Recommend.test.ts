@@ -61,6 +61,14 @@ describe("recommend: triggers", () => {
 })
 
 describe("recommend: the request", () => {
+  for (const repo of ["practice:smithersai/hello-server", "local:checkout", null]) {
+    test(`a non-hosted target ${repo} is null at the recommendation wire boundary`, () => {
+      const input = { repo, catalog, messages: [] }
+      expect(recommendRequest(input).repo).toBeNull()
+      expect(input.repo).toBe(repo)
+    })
+  }
+
   test("carries the repo, the tail with wire roles, and every offerable flow with its summary", () => {
     const request = recommendRequest({
       repo: "smithersai/smithers",
