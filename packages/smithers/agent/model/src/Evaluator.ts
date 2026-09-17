@@ -1,0 +1,537 @@
+/**
+ * The transport a classifier asks: one JSON state and a map of typed questions
+ * go out, one typed raw answer per question comes back.
+ *
+ * The service is the seam. `layerVercelGateway` speaks Jev's wire protocol
+ * through the Vercel AI Gateway over the kernel `HttpClient`; `layerScripted`
+ * answers from a function so a test never touches the network; and
+ * `layerUnavailable` fails every request as `unreachable`, which is what a
+ * host without a key installs so a missing transport answers instead of
+ * hanging. `Classifier` decodes the raw answers this module returns into typed
+ * ones; this module never interprets them.
+ *
+ * @since 1.0.0-rc.0
+ */
+import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Clock from "effect/Clock"
+import type * as Config from "effect/Config"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
+import * as HttpBody from "effect/unstable/http/HttpBody"
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+
+/**
+ * The failure vocabulary shared by the transport and the classifier above it.
+ *
+ * `unreachable` is a transport that answered nothing; `refused` is a gateway
+ * status other than 200, carried in `status`; `empty` is a 200 whose body
+ * held no answers; `timeout` is this call's own deadline; `invalid_answer` is
+ * an answer the question's shape does not accept; `invalid_question` is a
+ * question the gateway or the schema rejected.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const EvaluatorErrorCode = Schema.Literals([
+  "unreachable",
+  "refused",
+  "empty",
+  "timeout",
+  "invalid_answer",
+  "invalid_question"
+])
+
+/**
+ * The decoded form of {@link EvaluatorErrorCode}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type EvaluatorErrorCode = typeof EvaluatorErrorCode.Type
+
+/**
+ * A transport failure. Typed, never thrown: every layer in this module fails
+ * with one of these and nothing else.
+ *
+ * @category errors
+ * @since 1.0.0-rc.0
+ */
+export class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/model/EvaluatorError", {
+  code: EvaluatorErrorCode,
+  status: Schema.optional(Schema.Number),
+  message: Schema.String
+}) {}
+
+const criteriaKeyCount = Schema.makeFilter(
+  (criteria: Readonly<Record<string, string>>) => {
+    const count = Object.keys(criteria).length
+    return count >= 2 && count <= 255 ? undefined : "a choice question offers between 2 and 255 options"
+  },
+  { identifier: "choiceCriteria" }
+)
+
+const rungCount = Schema.makeFilter(
+  (rungs: ReadonlyArray<string>) =>
+    rungs.length >= 2 && new Set(rungs).size === rungs.length
+      ? undefined
+      : "a score question orders at least 2 distinct rungs",
+  { identifier: "scoreCriteria" }
+)
+
+/**
+ * A yes/no question, with optional prose for what each side means.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const BooleanQuestion = Schema.Struct({
+  type: Schema.Literal("boolean"),
+  instructions: Schema.String,
+  criteria: Schema.optionalKey(Schema.Struct({ true: Schema.String, false: Schema.String }))
+})
+
+/**
+ * A question answered with one of a named set of options. Between 2 and 255
+ * options, each described.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const ChoiceQuestion = Schema.Struct({
+  type: Schema.Literal("choice"),
+  instructions: Schema.String,
+  criteria: Schema.Record(Schema.String, Schema.String).pipe(Schema.check(criteriaKeyCount))
+})
+
+/**
+ * A question answered along an ordered rubric of at least two distinct rungs.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const ScoreQuestion = Schema.Struct({
+  type: Schema.Literal("score"),
+  instructions: Schema.String,
+  criteria: Schema.Array(Schema.String).pipe(Schema.check(rungCount))
+})
+
+/**
+ * One question as it crosses the wire. A model-authored question is decoded
+ * with this before it reaches a transport, so construction limits hold on the
+ * ad-hoc path exactly as `Classifier.boolean`, `choice` and `score` hold them
+ * on the typed one.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const Question = Schema.Union([BooleanQuestion, ChoiceQuestion, ScoreQuestion])
+
+/**
+ * The decoded form of {@link Question}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Question = typeof Question.Type
+
+/**
+ * Jev's answer to a boolean question: the probability that the answer is yes.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const RawBooleanAnswer = Schema.Struct({
+  type: Schema.Literal("boolean"),
+  probability: Schema.Number
+})
+
+/**
+ * Jev's answer to a choice question: the chosen option, and the distribution
+ * over options when the gateway sends one.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const RawChoiceAnswer = Schema.Struct({
+  type: Schema.Literal("choice"),
+  choice: Schema.String,
+  probabilities: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number))
+})
+
+/**
+ * Jev's answer to a score question: a score interpolated over the rubric's
+ * zero-based rung indexes, and the distribution over rungs when the gateway
+ * sends one.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const RawScoreAnswer = Schema.Struct({
+  type: Schema.Literal("score"),
+  score: Schema.Number,
+  probabilities: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number))
+})
+
+/**
+ * One answer as the transport returns it, before the classifier decodes it
+ * against its question.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const RawAnswer = Schema.Union([RawBooleanAnswer, RawChoiceAnswer, RawScoreAnswer])
+
+/**
+ * The decoded form of {@link RawAnswer}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type RawAnswer = typeof RawAnswer.Type
+
+/**
+ * The body of a successful evaluation: one raw answer per question id.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const RawAnswers = Schema.Record(Schema.String, RawAnswer)
+
+/**
+ * The decoded form of {@link RawAnswers}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type RawAnswers = typeof RawAnswers.Type
+
+/**
+ * One evaluation: the JSON state to read and the questions to answer about it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Request {
+  readonly state: unknown
+  readonly questions: Readonly<Record<string, Question>>
+}
+
+/**
+ * Token counts a transport reports for one evaluation, when it reports any.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Usage {
+  readonly inputTokens: number
+  readonly outputTokens: number
+}
+
+/**
+ * What one evaluation answered: the raw answers keyed by question id, the
+ * usage when the transport reported it, and the wall-clock time the call took.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Response {
+  readonly answers: RawAnswers
+  readonly usage?: Usage
+  readonly latencyMs: number
+}
+
+/**
+ * The transport a classifier evaluates through. One method, one request, one
+ * response, typed failure.
+ *
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export interface Evaluator {
+  readonly evaluate: (request: Request) => Effect.Effect<Response, EvaluatorError>
+}
+
+/**
+ * The {@link Evaluator} service tag.
+ *
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export const Evaluator: Context.Service<Evaluator, Evaluator> = Context.Service("/model/Evaluator")
+
+/**
+ * The gateway's evaluation endpoint: the provider's default base URL plus its
+ * `/evaluation-model` path.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultBaseUrl = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
+
+/**
+ * The model asked when an option names none, as the gateway names it. It
+ * rides in the `ai-model-id` header.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultModel = "typesafe-ai/jev"
+
+/**
+ * The deadline over one whole gateway call, headers and body, when an option
+ * names none.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultTimeoutMs = 1500
+
+/**
+ * The gateway wire protocol this transport speaks, sent as
+ * `ai-gateway-protocol-version`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const protocolVersion = "0.0.1"
+
+/**
+ * The evaluation modality's specification version, sent as
+ * `ai-evaluation-model-specification-version`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const specificationVersion = "4"
+
+/**
+ * Options for {@link layerVercelGateway}.
+ *
+ * `apiKey` is the Vercel AI Gateway key, either in hand or as a `Config` read
+ * when the layer is built. Every other option has a default: `model` is
+ * {@link defaultModel}, `timeoutMs` is {@link defaultTimeoutMs},
+ * `zeroDataRetention` is on, and `baseUrl` is {@link defaultBaseUrl}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface VercelGatewayOptions {
+  readonly apiKey: Redacted.Redacted<string> | Effect.Effect<Redacted.Redacted<string>, Config.ConfigError>
+  readonly model?: string
+  readonly timeoutMs?: number
+  readonly zeroDataRetention?: boolean
+  readonly baseUrl?: string
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const decodeRawAnswers = Schema.decodeUnknownEffect(RawAnswers)
+
+const usageOf = (body: Record<string, unknown>): Usage | undefined => {
+  const usage = body["usage"]
+  if (!isRecord(usage)) return undefined
+  const inputTokens = usage["inputTokens"]
+  const outputTokens = usage["outputTokens"]
+  return typeof inputTokens === "number" && typeof outputTokens === "number" ? { inputTokens, outputTokens } : undefined
+}
+
+/**
+ * The status codes the gateway answers to a question it could not accept.
+ * Everything else that is not 200 is a refusal of the caller or of the
+ * service, carried as `refused` with the status.
+ */
+const invalidQuestionStatuses = new Set([400, 422])
+
+/**
+ * Jev through the Vercel AI Gateway, over the kernel `HttpClient`.
+ *
+ * One POST per evaluation, one deadline over the whole call, no retries: the
+ * caller decides whether a failure is worth a second request. Every request
+ * runs as a `model:call` on the gateway host for the configured model, so a
+ * grant for the gateway is a grant for this model and not for the rest. The
+ * wire protocol is the AI SDK gateway provider's own, as recorded on
+ * 2026-09-17; Vercel may change it without notice, and a changed response
+ * surfaces as `empty` or `invalid_answer`, never as a guessed answer.
+ *
+ * The layer requires the kernel HTTP client. With the key in hand it cannot
+ * fail; with a `Config` it fails at construction when the key cannot be read.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export function layerVercelGateway(
+  options: VercelGatewayOptions & { readonly apiKey: Redacted.Redacted<string> }
+): Layer.Layer<Evaluator, never, KernelHttpClient.HttpClient>
+/**
+ * {@link layerVercelGateway} with the key read from `Config` when the layer is
+ * built, so a missing or malformed key is a `ConfigError` at construction.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export function layerVercelGateway(
+  options: VercelGatewayOptions
+): Layer.Layer<Evaluator, Config.ConfigError, KernelHttpClient.HttpClient>
+/**
+ * The implementation behind both overloads.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export function layerVercelGateway(
+  options: VercelGatewayOptions
+): Layer.Layer<Evaluator, any, KernelHttpClient.HttpClient> {
+  return Layer.effect(
+    Evaluator,
+    Effect.gen(function*() {
+      const http = yield* KernelHttpClient.HttpClient
+      const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : yield* options.apiKey
+      const model = options.model ?? defaultModel
+      const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
+      const zeroDataRetention = options.zeroDataRetention ?? true
+      const baseUrl = options.baseUrl ?? defaultBaseUrl
+
+      const evaluate = (request: Request): Effect.Effect<Response, EvaluatorError> =>
+        Effect.gen(function*() {
+          const started = yield* Clock.currentTimeMillis
+          const wire = HttpClientRequest.post(baseUrl, {
+            headers: {
+              authorization: `Bearer ${Redacted.value(apiKey)}`,
+              "ai-gateway-protocol-version": protocolVersion,
+              "ai-gateway-auth-method": "api-key",
+              "ai-evaluation-model-specification-version": specificationVersion,
+              "ai-model-id": model,
+              "content-type": "application/json"
+            },
+            body: HttpBody.text(
+              JSON.stringify({
+                state: request.state,
+                questions: request.questions,
+                providerOptions: { gateway: { zeroDataRetention } }
+              }),
+              "application/json"
+            )
+          })
+          const response = yield* http.execute(wire).pipe(
+            KernelHttpClient.withModelCall(model),
+            Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message }))
+          )
+          if (response.status !== 200) {
+            return yield* Effect.fail(
+              new EvaluatorError({
+                code: invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
+                status: response.status,
+                message: `The gateway answered ${response.status}`
+              })
+            )
+          }
+          const body = yield* response.json.pipe(
+            Effect.mapError((error) =>
+              new EvaluatorError({ code: "empty", status: 200, message: `Unreadable body: ${error.reason._tag}` })
+            )
+          )
+          if (!isRecord(body) || !isRecord(body["answers"])) {
+            return yield* Effect.fail(
+              new EvaluatorError({ code: "empty", status: 200, message: "The body carried no answers" })
+            )
+          }
+          const answers = yield* decodeRawAnswers(body["answers"]).pipe(
+            Effect.mapError((error) =>
+              new EvaluatorError({ code: "invalid_answer", status: 200, message: error.message })
+            )
+          )
+          const usage = usageOf(body)
+          const latencyMs = (yield* Clock.currentTimeMillis) - started
+          return usage === undefined ? { answers, latencyMs } : { answers, usage, latencyMs }
+        }).pipe(
+          Effect.timeoutOrElse({
+            duration: timeoutMs,
+            orElse: () =>
+              Effect.fail(
+                new EvaluatorError({ code: "timeout", message: `The gateway did not answer within ${timeoutMs} ms` })
+              )
+          })
+        )
+
+      return Evaluator.of({ evaluate: Effect.fn("Evaluator.evaluate")(evaluate) })
+    })
+  )
+}
+
+/**
+ * One scripted answer. The `type` is optional because the script's request
+ * already names it through the question; a bare `{ probability }`,
+ * `{ choice }` or `{ score }` is enough.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ScriptedAnswer =
+  | { readonly type?: "boolean"; readonly probability: number }
+  | { readonly type?: "choice"; readonly choice: string; readonly probabilities?: Readonly<Record<string, number>> }
+  | { readonly type?: "score"; readonly score: number; readonly probabilities?: Readonly<Record<string, number>> }
+
+/**
+ * What a script answers: one {@link ScriptedAnswer} per question id, either
+ * in hand or as an effect that may fail the way a transport fails.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Script = (
+  request: Request
+) =>
+  | Readonly<Record<string, ScriptedAnswer>>
+  | Effect.Effect<Readonly<Record<string, ScriptedAnswer>>, EvaluatorError>
+
+const typed = (question: Question | undefined, answer: ScriptedAnswer): unknown =>
+  answer.type === undefined && question !== undefined ? { ...answer, type: question.type } : answer
+
+/**
+ * An evaluator that answers from a function, so a test runs without a key or
+ * a network. A scripted answer may omit its `type`: the layer fills it from
+ * the question it answers, and then decodes the result exactly as the gateway
+ * layer decodes a body, so a script that answers the wrong shape fails as
+ * `invalid_answer` rather than reaching the classifier.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerScripted = (script: Script): Layer.Layer<Evaluator> =>
+  Layer.succeed(Evaluator)(
+    Evaluator.of({
+      evaluate: Effect.fn("Evaluator.evaluate")((request: Request) =>
+        Effect.gen(function*() {
+          const scripted = script(request)
+          const answers = Effect.isEffect(scripted) ? yield* scripted : scripted
+          const raw = Object.fromEntries(
+            Object.entries(answers).map(([id, answer]) => [id, typed(request.questions[id], answer)])
+          )
+          const decoded = yield* decodeRawAnswers(raw).pipe(
+            Effect.mapError((error) => new EvaluatorError({ code: "invalid_answer", message: error.message }))
+          )
+          return { answers: decoded, latencyMs: 0 }
+        })
+      )
+    })
+  )
+
+/**
+ * An evaluator with no transport behind it: every request fails as
+ * `unreachable`. A host without a gateway key installs this so a classifier
+ * reports the missing transport instead of hanging or inventing an answer.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerUnavailable = (): Layer.Layer<Evaluator> =>
+  Layer.succeed(Evaluator)(
+    Evaluator.of({
+      evaluate: () =>
+        Effect.fail(new EvaluatorError({ code: "unreachable", message: "No evaluator is installed on this host" }))
+    })
+  )

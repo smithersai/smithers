@@ -77,10 +77,14 @@ The root entry point exports these namespaces. Each is also importable from
   `credentialNamePattern`, `isCredentialName`, `Redacted`, `Auth`, `apiKeyHeader`, `bearer`
 - **`CanonicalJson`**: Deterministic JSON encoding for model-step inputs.
   `stringify`, `bytes`, `shortHash`
+- **`Classifier`**: Typed questions about a JSON state, answered by Jev through an `Evaluator`.
+  `ClassifierError`, `Question`, `BooleanQuestion`, `ChoiceQuestion`, `ScoreQuestion`, `Questions`, `boolean`, `choice`, `score`, `BooleanAnswer`, `ChoiceAnswer`, `ScoreAnswer`, `AnswerOf`, `AnswersOf`, `Answer`, `decodeAnswers`, `confidence`, `confident`, `EvaluateAllOptions`, `defaultConcurrency`, `Classifier`, `MakeOptions`, `make`
 - **`DeferredTools`**: Replay-safe policy for native deferred provider tool loading.
   `ProtocolId`, `Resolution`, `supportsDeferred`, `resolve`
 - **`Endpoint`**: The credential-free HTTP target of a model route, and its validation.
   `Endpoint`, `MakeOptions`, `make`, `render`
+- **`Evaluator`**: The transport a classifier asks: one JSON state and a map of typed questions go out, one typed raw answer per question comes back.
+  `EvaluatorErrorCode`, `EvaluatorError`, `BooleanQuestion`, `ChoiceQuestion`, `ScoreQuestion`, `Question`, `RawBooleanAnswer`, `RawChoiceAnswer`, `RawScoreAnswer`, `RawAnswer`, `RawAnswers`, `Request`, `Usage`, `Response`, `Evaluator`, `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `protocolVersion`, `specificationVersion`, `VercelGatewayOptions`, `layerVercelGateway`, `ScriptedAnswer`, `Script`, `layerScripted`, `layerUnavailable`
 - **`Framing`**: Byte-stream framing, chosen independently of the protocol that interprets the frames.
   `Framing`, `sse`, `ndjson`
 - **`Model`**: The one provider seam: a request in, a stream of typed events out.

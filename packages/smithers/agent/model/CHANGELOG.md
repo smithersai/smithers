@@ -4,6 +4,21 @@
 
 ### Added
 
+- Added `Classifier` and `Evaluator`, the typed-question API over Jev described in
+  section 4 of the repository's Jev harness design doc (docs/jev-harness/design.html
+  at the repository root). `Classifier.make` declares an id, a
+  state schema and a map of `boolean`, `choice` and `score` questions, and
+  infers the answer types: a choice's options become a literal union, a score's
+  rungs its labels. `evaluate` sends one state and decodes the raw answers
+  strictly; `evaluateAll` fans out with bounded concurrency and keeps every
+  state's own `Result`; `digest` is the canonical hash of the declaration for
+  durable call keys; `confident` reads a value only above a confidence floor.
+  `Evaluator.layerVercelGateway` speaks the Vercel AI Gateway evaluation
+  protocol over the kernel `HttpClient` with one deadline and no retries;
+  `Evaluator.layerScripted` and `Evaluator.layerUnavailable` serve tests and
+  hosts without a key. `ClassifierError` and `EvaluatorError` are typed and
+  never thrown. The package now depends on `@smthrs/core` for the digest.
+
 - Added `ModelCatalog.contextWindowTokensFor`, the context window in tokens of a
   known model id with a conservative floor for one the catalog has not met. The
   table moved here from `@smthrs/harness`, whose `ContextWindow` is otherwise

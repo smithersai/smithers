@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/model: the Model service, routes, protocols, streaming events, errors, and the executor."
+description: "Every public export of @smthrs/model: the Model service, routes, protocols, streaming events, errors, the executor, and the Jev classifier."
 ---
 
 A model call is one composition: a `Protocol` owns the wire shape of an API
@@ -497,6 +497,99 @@ Use `Chunk.toReadonlyArray(call.fragments)` when an array is needed.
 | `delta(state, callId, fragment)` | operation   | Appends an argument fragment.                                                                                                                                                                                                                                                                                                               |
 | `end(state, callId)`             | operation   | Completes a call. Empty fragments complete as `"{}"`. An unknown id fails with `invalid_provider_output` (`Received completion for unknown tool call <id>`), and reassembled text that is not a JSON object fails the same way (`Invalid JSON input for streamed tool call <name>`), because a live stream must not hand a guess to a tool. |
 | `flushAborted(state)`            | operation   | Settles every open call after a stream halt, preserving partial text verbatim for the journal. This is the non-executing half of the split: built-in lowerings omit aborted turns from continuations, while a live completion still passes the strict validator.                                                                            |
+
+## `Classifier`
+
+Typed questions about a JSON state, answered by Jev through an `Evaluator`.
+A host declares a classifier once and gets typed answers: a choice's option
+names become a literal union, a score's rungs become its labels.
+
+```ts
+import { Classifier, Evaluator } from "@smthrs/model"
+import { Config, Effect, Schema } from "effect"
+
+const Relevance = Classifier.make("triage/relevance", {
+  description: "Whether a file must change for the task, and its role.",
+  state: Schema.Struct({ task: Schema.String, file: Schema.String, excerpt: Schema.String }),
+  questions: {
+    relevant: Classifier.boolean({
+      instructions: "Does this file need to change for the task?",
+      criteria: { true: "the fix or its test lives here", false: "unrelated or only imported" }
+    }),
+    role: Classifier.choice({
+      instructions: "What is this file's role?",
+      criteria: {
+        implementation: "code under test",
+        fixture: "test data or setup",
+        unrelated: "nothing to do with the task"
+      }
+    }),
+    risk: Classifier.score({
+      instructions: "How risky is editing this file?",
+      criteria: ["none", "low", "medium", "high"]
+    })
+  }
+})
+
+const program = Effect.gen(function*() {
+  const answer = yield* Relevance.evaluate({ task, file, excerpt })
+  const many = yield* Relevance.evaluateAll(states, { concurrency: 8 })
+  return Classifier.confident(answer.role, 0.7)
+})
+
+const live = Evaluator.layerVercelGateway({ apiKey: Config.Redacted("AI_GATEWAY_API_KEY") })
+```
+
+| Export                                        | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make(id, { description, state, questions })` | constructor | Returns `{ id, description, state, questions, digest, evaluate, evaluateAll }`. `digest` is the SHA-256 of the canonical JSON of `{ id, questions }`, so a durable call key that folds it in never replays an answer to a question that has since changed.                                                                                 |
+| `boolean({ instructions, criteria? })`        | constructor | A yes/no question. `criteria` says what each side means.                                                                                                                                                                                                                                                                                   |
+| `choice({ instructions, criteria })`          | constructor | One of the named options in `criteria`, 2 to 255 of them. Fewer or more throws a `TypeError` at construction, the same moment a malformed schema would.                                                                                                                                                                                    |
+| `score({ instructions, criteria })`           | constructor | A position along an ordered rubric of at least 2 distinct rungs. Fewer, or a repeated rung, throws a `TypeError` at construction.                                                                                                                                                                                                          |
+| `evaluate(state)`                             | method      | `Effect<AnswersOf<questions>, ClassifierError, Evaluator>`. Encodes the state through its schema, sends one request, decodes the raw answers against the questions.                                                                                                                                                                        |
+| `evaluateAll(states, { concurrency? })`       | method      | `Effect<ReadonlyArray<Result<AnswersOf<questions>, ClassifierError>>, never, Evaluator>`. One request per state, at most `concurrency` in flight (`defaultConcurrency`, 8), results in the states' order, each state's failure its own.                                                                                                    |
+| `BooleanAnswer`                               | interface   | `{ value: boolean; probability: number }`. `value` is `probability >= 0.5`.                                                                                                                                                                                                                                                                |
+| `ChoiceAnswer<Key>`                           | interface   | `{ value: Key; probabilities: Record<Key, number>; confidence: number }`. `confidence` is the largest probability in the distribution.                                                                                                                                                                                                     |
+| `ScoreAnswer<Label>`                          | interface   | `{ value: number; label: Label; probabilities: Record<string, number>; confidence: number }`. `value` is the score as Jev gave it, interpolated over zero-based rung indexes; `label` is the nearest rung; `probabilities` is keyed by rung label whether the wire keyed it by label or by index; `confidence` is the largest probability. |
+| `AnswerOf<Q>`, `AnswersOf<Qs>`                | types       | The answer a question infers, and the answers a question map infers.                                                                                                                                                                                                                                                                       |
+| `confidence(answer)`                          | getter      | 0 to 1: a boolean's distance from even odds doubled, `abs(p - 0.5) * 2`; a choice's or score's `confidence`.                                                                                                                                                                                                                               |
+| `confident(answer, floor)`                    | getter      | `Option` of the answer's value when `confidence(answer) >= floor`.                                                                                                                                                                                                                                                                         |
+| `decodeAnswers(questions, raw)`               | decoding    | `Effect<AnswersOf<questions>, ClassifierError>`. Shared by the typed path and the ad-hoc path.                                                                                                                                                                                                                                             |
+| `Question`, `Answer`                          | schemas     | Effect Schemas for the ad-hoc path: a model-authored question is decoded with `Question` (the same value as `Evaluator.Question`, construction limits included) before it reaches the transport, and a decoded answer in any of the three shapes matches `Answer`.                                                                         |
+| `ClassifierError`                             | error       | `{ code, status?, message }` with `code` from `Evaluator.EvaluatorErrorCode`. Typed, never thrown.                                                                                                                                                                                                                                         |
+
+Decoding is strict. Every question needs an answer of its own type; a
+boolean's probability and every distribution entry lie in `[0, 1]`; a choice
+names one of its options; a score lies within the rubric's index range.
+Anything else fails as `invalid_answer`, naming the question. A state the
+schema does not encode fails as `invalid_question`. A distribution the
+transport did not send is one-hot on the chosen option or nearest rung, so
+`confidence` reads 1; a caller that has to tell the two apart keeps the raw
+`Evaluator.Response`.
+
+## `Evaluator`
+
+The transport a classifier asks: one JSON state and a map of typed questions
+go out, one raw answer per question comes back. Jev writes no text, so it can
+never name an option the question did not offer.
+
+| Export                                                                                          | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Evaluator`                                                                                     | service interface and tag | `evaluate({ state, questions }) => Effect<{ answers, usage?, latencyMs }, EvaluatorError>`. Tag id `/model/Evaluator`.                                                                                                                                                                                                                                                                                         |
+| `layerVercelGateway(options)`                                                                   | layer                     | Jev through the Vercel AI Gateway over the kernel `HttpClient`. One POST per evaluation, one deadline over the whole call, no retries. Options: `apiKey` (a `Redacted` or a `Config` read at construction), `model` (`typesafe-ai/jev`), `timeoutMs` (1500), `zeroDataRetention` (true), `baseUrl` (`https://ai-gateway.vercel.sh/v4/ai/evaluation-model`). Every request runs as a `model:call` on the model. |
+| `layerScripted(script)`                                                                         | layer                     | Answers from `(request) => answers` or `(request) => Effect<answers, EvaluatorError>`. A scripted answer may omit its `type`; the layer fills it from the question and decodes the result like a gateway body, so a script answering the wrong shape fails as `invalid_answer`.                                                                                                                                |
+| `layerUnavailable()`                                                                            | layer                     | Fails every request as `unreachable`, for a host without a key.                                                                                                                                                                                                                                                                                                                                                |
+| `Question`, `RawAnswer`, `RawAnswers`                                                           | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                  |
+| `EvaluatorErrorCode`                                                                            | schema                    | `unreachable` (no response), `refused` (a status other than 200, kept in `status`), `empty` (a 200 without answers), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                                                                            |
+| `EvaluatorError`                                                                                | error                     | `{ code, status?, message }`. Typed, never thrown.                                                                                                                                                                                                                                                                                                                                                             |
+| `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                          |
+
+The wire protocol is the AI SDK gateway provider's own, as recorded on
+2026-09-17. Vercel may change it without notice; a changed response surfaces
+as `empty` or `invalid_answer`, never as a guessed answer. The request body
+is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
+and the gateway key rides in the `authorization` header, which request traces
+redact.
 
 ## `ModelCatalog`
 

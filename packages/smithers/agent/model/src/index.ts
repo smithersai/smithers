@@ -28,6 +28,11 @@ export * as Auth from "./Auth.ts"
 export * as CanonicalJson from "./CanonicalJson.ts"
 
 /**
+ * @since 1.0.0-rc.0
+ */
+export * as Classifier from "./Classifier.ts"
+
+/**
  * @since 0.1.0
  * @slop
  */
@@ -38,6 +43,11 @@ export * as DeferredTools from "./DeferredTools.ts"
  * @slop
  */
 export * as Endpoint from "./Endpoint.ts"
+
+/**
+ * @since 1.0.0-rc.0
+ */
+export * as Evaluator from "./Evaluator.ts"
 
 /**
  * @since 0.1.0
