@@ -56,6 +56,18 @@ const required = (field: string, args: string | undefined, reason: string): Pars
   return value === "" ? no(reason) : ok({ [field]: value })
 }
 
+/** Preserve the existing card-ID door and decode the structured form used by
+ * the conversation agent without treating JSON text as a different card ID. */
+const setupGuideTarget = (args: string | undefined): Parsed => {
+  const value = trimmed(args)
+  if (!value.startsWith("{") && !value.startsWith("[")) return required("cardId", args, "Choose the setup to configure")
+  const parsed = setupObject(value)
+  if ("error" in parsed) return parsed
+  const { cardId } = parsed.payload
+  return Object.keys(parsed.payload).length === 1 && typeof cardId === "string" && cardId.trim() !== ""
+    ? ok({ cardId: cardId.trim() }) : no("Choose the setup to configure")
+}
+
 /** An optional single-value payload: blank text means the field is absent. */
 const optional = (field: string, args: string | undefined): Parsed => {
   const value = trimmed(args)
@@ -224,7 +236,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "feature.setup": args => repoOnly("feature.setup", args),
   "chores.setup": args => repoOnly("chores.setup", args),
   "setup.configure": args => setupObject(args),
-  "setup.guide": args => required("cardId", args, "Choose the setup to configure"),
+  "setup.guide": setupGuideTarget,
   "setup.view": args => setupObject(args),
   "setup.work": args => setupObject(args),
   "setup.run": args => setupObject(args),
