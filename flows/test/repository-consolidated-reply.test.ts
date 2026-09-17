@@ -7,12 +7,13 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, HumanTask } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer, Option, Schema } from "effect"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { CodingError } from "../coding/schema.ts"
-import { PublishReply, replyLayers } from "../repository/replies.ts"
+import { ConfirmReply, consolidatedReply, PublishReply, replyLayers } from "../repository/replies.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
-import { JobInput, JobResult, type StepResult } from "../repository/schema.ts"
+import { JobInput, JobResult, Reply, type StepResult } from "../repository/schema.ts"
 
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const step = (stepId: string, status: typeof StepResult.Type["status"], summary: string, output: Schema.Json = {}) =>
@@ -34,7 +35,7 @@ const fixture = (options: { replies?: "draft" | "automatic"; source?: "github" |
     status: options.status ?? "needs-author", results: json(options.results ?? material), publicActions: [] })
   return { input, result }
 }
-const host = async (t: TestContext) => {
+const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") => {
   const root = await mkdtemp(join(tmpdir(), "repository-reply-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const comments: Array<Record<string, any>> = []
@@ -64,9 +65,12 @@ const host = async (t: TestContext) => {
       return Effect.succeed(receipt)
     })
   }))
+  const asking = unaskable === undefined ? HumanTask.layer
+    : HumanTask.action.toLayer(() => Effect.fail(new HumanTask.HumanTaskFailed({ code: unaskable,
+      task: "repository-reply", attempts: 1, rejections: [], message: "The question could not be asked" })))
   const engine = () => NodeRuntime.layerHost({ filename: join(root, "engine.db"), workspaceRoot: root,
     owner: { hostId: "repository-reply-test" }, signals: [] },
-    Layer.mergeAll(replyLayers, HumanTask.layer).pipe(Layer.provideMerge(remote), Layer.provideMerge(Action.layerImplementations)))
+    Layer.mergeAll(replyLayers, asking).pipe(Layer.provideMerge(remote), Layer.provideMerge(Action.layerImplementations)))
   return { comments,
     publish: (payload: ReturnType<typeof fixture>, executionId: string) => Effect.runPromise(Effect.scoped(
       PublishReply.execute(payload, { executionId }).pipe(Effect.provide(engine())))),
@@ -74,6 +78,12 @@ const host = async (t: TestContext) => {
       yield* PublishReply.execute(payload, { executionId, discard: true })
       return yield* (yield* DurableEngineState.DurableEngineState).waiting(`${executionId}-approval`)
     }).pipe(Effect.provide(engine())))),
+    confirmRequest: (executionId: string) => Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const row = yield* (yield* RunStore.RunStore).get(`${executionId}-approval`)
+      return JSON.parse(row.stateJson).payload as { timeoutMs?: number }
+    }).pipe(Effect.provide(engine())))),
+    confirm: (reply: typeof Reply.Type, timeoutMs: number, executionId: string) => Effect.runPromise(Effect.scoped(
+      ConfirmReply.execute({ reply, timeoutMs }, { executionId }).pipe(Effect.flip, Effect.provide(engine())))),
     answer: (row: DurableEngineState.WaitingRow, value: boolean, payload: ReturnType<typeof fixture>, executionId: string) =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         yield* HumanTask.answer({ token: Schema.decodeUnknownSync(DurableDeferred.Token)(row.token), value })
@@ -208,6 +218,43 @@ test("an author reply produces a second draft that is confirmed and posted as it
   assert.notEqual(comments[0]?.body, comments[1]?.body)
   assert.notEqual(comments[0]?.step, comments[1]?.step, "each consolidated reply owns its publication step")
   assert.equal(comments[0]?.delivery_key, comments[1]?.delivery_key)
+})
+
+test("the confirmation is bounded by the job's own budget, and a deadline already passed settles it", { timeout: 60_000 }, async (t) => {
+  const { comments, park, confirmRequest, confirm } = await host(t)
+  const payload = fixture()
+  assert.ok(Option.isSome(await park(payload, "bounded")))
+  assert.equal((await confirmRequest("bounded")).timeoutMs, payload.input.configuration.budgetMinutes * 60_000)
+  const failed = await confirm({ body: "Nobody is waiting.", issueNumber: 42, state: "drafted" }, 0, "expired")
+  assert.ok(failed instanceof HumanTask.HumanTaskFailed, String(failed))
+  assert.equal(failed.code, "timeout")
+  assert.equal(comments.length, 0)
+})
+
+test("a confirmation nobody answered keeps the draft and is never recorded as a decline", { timeout: 60_000 }, async (t) => {
+  const expired = await host(t, "timeout")
+  const timedOut = await expired.publish(fixture(), "timed-out")
+  assert.equal(timedOut.reply?.state, "drafted", "a deadline nobody met is not a refusal")
+  assert.match(timedOut.reply?.reason ?? "", /time limit/)
+  assert.deepEqual(timedOut.publicActions, [])
+  assert.equal(expired.comments.length, 0)
+
+  const broken = await host(t, "request_invalid")
+  const unasked = await broken.publish(fixture(), "never-asked")
+  assert.equal(unasked.reply?.state, "drafted")
+  assert.match(unasked.reply?.reason ?? "", /could not be asked/)
+  assert.equal(broken.comments.length, 0)
+})
+
+test("a body clipped at the limit never ends in half a character", { timeout: 60_000 }, async (t) => {
+  const { comments, park } = await host(t)
+  // "Research issue\n" is 15 code units, so the astral pair straddles 16000.
+  const straddling = fixture({ results: [step("research", "completed", `${"a".repeat(15984)}${"\u{1D11E}".repeat(20)}`)] })
+  const body = consolidatedReply(straddling.input, straddling.result).reply?.body ?? ""
+  assert.equal(body.length, 15999)
+  assert.equal(body.isWellFormed(), true)
+  assert.ok(Option.isSome(await park(straddling, "clipped")), "a clipped draft is still a question a person can answer")
+  assert.equal(comments.length, 0)
 })
 
 test("automatic native replies still post exactly one dispatch-bound comment", { timeout: 60_000 }, async (t) => {
