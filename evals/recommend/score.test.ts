@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { count, NO_REPO, parseLog, percent, RecommendLogError, renderTable, scoreLog, type RecommendLogRow } from "./score.ts";
+import {
+  count,
+  NO_MODEL,
+  NO_REPO,
+  parseLog,
+  percent,
+  RecommendLogError,
+  renderPerModel,
+  renderTable,
+  scoreLog,
+  type RecommendLogRow,
+} from "./score.ts";
 
 let sequence = 0;
 function row(
@@ -171,6 +182,21 @@ describe("rendering", () => {
     expect(lines[3]).toMatch(/^overall\s+2\s+1\s+50\.0%\s+100\.0%\s+100\.0%$/);
     expect(lines[4]).toMatch(/^a\/b\s+1\s+1\s+100\.0%\s+100\.0%\s+100\.0%$/);
     expect(lines[5]).toMatch(/^\(no repo\)\s+1\s+0\s+0\.0%\s+n\/a\s+n\/a$/);
+    expect(lines.length).toBe(6);
+  });
+
+  test("the model table scores each model apart, so Jev's rows read against Cerebras's", () => {
+    const table = renderPerModel([
+      row("a/b", ["flow.list"], "flow.list", { model: "jev-latest" }),
+      row("a/b", ["flow.list"], "run.start", { model: "jev-latest" }),
+      row("a/b", ["run.start"], "run.start", { model: "gpt-oss-120b" }),
+      row("a/b", ["run.start"], "run.start", { model: "" }),
+    ]);
+    const lines = table.trimEnd().split("\n");
+    expect(lines[0]).toBe("recommend eval by model");
+    expect(lines[3]).toMatch(/^gpt-oss-120b\s+1\s+1\s+100\.0%\s+100\.0%\s+100\.0%$/);
+    expect(lines[4]).toMatch(/^jev-latest\s+2\s+2\s+100\.0%\s+50\.0%\s+50\.0%$/);
+    expect(lines[5]).toContain(NO_MODEL);
     expect(lines.length).toBe(6);
   });
 

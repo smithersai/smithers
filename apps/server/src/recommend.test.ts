@@ -23,6 +23,8 @@ import {
   RECOMMEND_ANSWER_MAX,
   RECOMMEND_COMMAND_NAME_MAX_CHARS,
   RECOMMEND_COMMAND_SUMMARY_MAX_CHARS,
+  RECOMMEND_JEV_COMMANDS_MAX,
+  RECOMMEND_JEV_TIMEOUT_MS,
   RECOMMEND_LOG_LIMIT,
   RECOMMEND_LOG_NAME,
   RECOMMEND_MAX_TOKENS,
@@ -119,16 +121,32 @@ const completion = (content: string, model = "gpt-oss-120b"): Response =>
     headers: { "content-type": "application/json" }
   })
 
-/** Stand in for the network: `cerebras` answers the model call, and every call is recorded. */
-const network = (cerebras: (request: Request) => Promise<Response>) => {
+/** A Jev evaluation whose one choice answer carries `probabilities`. */
+const decision = (probabilities: Record<string, number>, model = "jev-latest"): Response => {
+  const best = Object.entries(probabilities).sort(([, left], [, right]) => right - left)[0]?.[0] ?? ""
+  return new Response(
+    JSON.stringify({
+      model,
+      answers: { command: { type: "choice", choice: best, probabilities, confidence: 0.82 } },
+      usage: { input_tokens: 420, output_tokens: 0 }
+    }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  )
+}
+
+/** Stand in for the network: `cerebras` and `jev` answer the two model calls, and every call is recorded. */
+const network = (cerebras: (request: Request) => Promise<Response>, jev?: (request: Request) => Promise<Response>) => {
   const calls: Array<Request> = []
   return {
     calls,
     layer: transportLayer(async (input, init) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
-      if (new URL(request.url).hostname !== "api.cerebras.ai") throw new Error(`unexpected fetch to ${request.url}`)
+      const host = new URL(request.url).hostname
+      if (host !== "api.cerebras.ai" && host !== "api.typesafe.ai") throw new Error(`unexpected fetch to ${request.url}`)
       calls.push(request)
-      return cerebras(request)
+      if (host !== "api.typesafe.ai") return cerebras(request)
+      if (jev === undefined) throw new Error(`unexpected fetch to ${request.url}`)
+      return jev(request)
     })
   }
 }
@@ -139,6 +157,7 @@ const never = (): Promise<Response> => {
 
 interface Deps {
   readonly cerebras?: (request: Request) => Promise<Response>
+  readonly jev?: (request: Request) => Promise<Response>
   readonly config?: Partial<ServerConfigShape>
   readonly limits?: NativeNamespace
   readonly logs?: NativeNamespace
@@ -146,10 +165,11 @@ interface Deps {
 }
 
 const KEY = { cerebrasApiKey: Redacted.make("csk-test") }
+const JEV_KEY = { typesafeApiKey: Redacted.make("tsk-test") }
 
 /** The route with its dependencies injected: the key is set unless `config` says otherwise. */
 const recommend = (request: Request, deps: Deps = {}): Promise<{ readonly response: Response; readonly calls: Array<Request> }> => {
-  const net = network(deps.cerebras ?? never)
+  const net = network(deps.cerebras ?? never, deps.jev)
   return Effect.runPromise(
     handleRecommend(request, deps.login, HEADERS).pipe(
       Effect.provide(Layer.mergeAll(
@@ -437,6 +457,148 @@ describe("POST /api/recommend", () => {
     })
     expect(response.status).toBe(200)
     expect(((await response.json()) as { id: string }).id).toMatch(/^unlogged-/)
+  })
+})
+
+describe("POST /api/recommend asks Jev first", () => {
+  test("Jev ranks the offered commands, zero-probability names dropped, and the log names Jev's model", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: JEV_KEY,
+      jev: async () => decision({ "repo.open": 0.12, "run.start": 0.71, "help": 0.17, "keys.list": 0 }),
+      logs
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
+    expect(body.commands).toEqual(["run.start", "help", "repo.open"])
+    expect(body.model).toBe("jev-latest")
+
+    // One call, to TypeSafe, carrying the key, the state, and one choice
+    // question whose options are exactly the offered commands.
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.url).toBe("https://api.typesafe.ai/v1/systemone")
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tsk-test")
+    const sent = (await calls[0]!.json()) as {
+      model: string
+      state: { repository: string; conversation: string }
+      questions: Record<string, { type: string; instructions: string; criteria: Record<string, string> }>
+    }
+    expect(sent.model).toBe("jev-latest")
+    expect(sent.state.repository).toBe("smithersai/smithers")
+    expect(sent.state.conversation).toContain("How do I run the tests here?")
+    const question = Object.values(sent.questions)[0]!
+    expect(question.type).toBe("choice")
+    expect(question.instructions).toContain("next command")
+    expect(question.criteria).toEqual(Object.fromEntries(COMMANDS.map((command) => [command.name, command.summary])))
+
+    const rows = await readRows(logs)
+    expect(rows[0]!.model).toBe("jev-latest")
+    expect(rows[0]!.commands).toEqual(["run.start", "help", "repo.open"])
+  })
+
+  test("an empty conversation reads as the prompt's own wording, and the answer is capped at five", async () => {
+    const commands = Array.from({ length: 7 }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
+    const probabilities = Object.fromEntries(commands.map((command, index) => [command.name, (7 - index) / 28]))
+    const { response, calls } = await recommend(post("/api/recommend", { repo: null, tail: [], commands }), {
+      config: JEV_KEY,
+      jev: async () => decision(probabilities)
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { commands: Array<string> }
+    expect(body.commands).toEqual(["c0", "c1", "c2", "c3", "c4"])
+    expect(body.commands.length).toBe(RECOMMEND_ANSWER_MAX)
+    const sent = (await calls[0]!.json()) as { state: { repository: string; conversation: string } }
+    expect(sent.state.conversation).toBe("(no messages yet)")
+    expect(sent.state.repository).toBe("(none selected)")
+  })
+
+  test("a Jev that answers HTTP 529 leaves the Cerebras answer standing", async () => {
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: JEV_KEY,
+      jev: async () => new Response("overloaded", { status: 529 }),
+      cerebras: async () => completion(JSON.stringify({ commands: ["help", "repo.open"] }))
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { commands: Array<string>; model: string }
+    expect(body.commands).toEqual(["help", "repo.open"])
+    expect(body.model).toBe("gpt-oss-120b")
+    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai", "api.cerebras.ai"])
+  })
+
+  test("a Jev that misses its own short deadline leaves Cerebras the rest of the budget", async () => {
+    expect(RECOMMEND_JEV_TIMEOUT_MS).toBe(1500)
+    expect(RECOMMEND_JEV_TIMEOUT_MS).toBeLessThan(RECOMMEND_TIMEOUT_MS)
+    const net = network(
+      async () => completion(JSON.stringify({ commands: ["help"] })),
+      () => new Promise<Response>(() => {})
+    )
+    const response = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(handleRecommend(post("/api/recommend", goodBody), undefined, HEADERS))
+        while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
+        yield* TestClock.adjust(RECOMMEND_JEV_TIMEOUT_MS)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(Layer.mergeAll(
+        net.layer,
+        testConfigLayer({ ...KEY, ...JEV_KEY }),
+        turnLimitsLayer(undefined),
+        recommendLogLayer(undefined),
+        TestClock.layer()
+      )))
+    )
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { commands: Array<string>; model: string }
+    expect(body.commands).toEqual(["help"])
+    expect(body.model).toBe("gpt-oss-120b")
+    expect(net.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai", "api.cerebras.ai"])
+  })
+
+  test("more commands than a choice question holds never reach Jev", async () => {
+    expect(RECOMMEND_JEV_COMMANDS_MAX).toBe(255)
+    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX + 1 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
+    const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, commands }), {
+      config: JEV_KEY,
+      jev: never,
+      cerebras: async () => completion(JSON.stringify({ commands: ["c3"] }))
+    })
+    expect(response.status).toBe(200)
+    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["api.cerebras.ai"])
+    // One fewer command, and the same request is Jev's.
+    const fits = await recommend(post("/api/recommend", { ...goodBody, commands: commands.slice(0, RECOMMEND_JEV_COMMANDS_MAX) }), {
+      config: JEV_KEY,
+      jev: async () => decision({ c3: 1 })
+    })
+    expect(fits.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai"])
+  })
+
+  test("with only the TypeSafe key Jev answers, and a Jev that fails is the route's own 503", async () => {
+    const config = { ...JEV_KEY, cerebrasApiKey: undefined }
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config,
+      jev: async () => decision({ "help": 0.9, "repo.open": 0.1 })
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["help", "repo.open"])
+    expect(calls.length).toBe(1)
+
+    const failed = await recommend(post("/api/recommend", goodBody), { config, jev: async () => new Response("no", { status: 529 }) })
+    expect(failed.response.status).toBe(503)
+    expect(((await failed.response.json()) as { status: string }).status).toBe("error")
+    expect(failed.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai"])
+  })
+
+  test("with neither key the route is the same honest 503, and it names both keys", async () => {
+    const limits = memoryLimits()
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: { cerebrasApiKey: undefined, typesafeApiKey: undefined },
+      limits
+    })
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { message: string }
+    expect(body.message).toContain("CEREBRAS_API_KEY")
+    expect(body.message).toContain("TYPESAFE_API_KEY")
+    expect(limits.keys()).toEqual([])
+    expect(calls.length).toBe(0)
   })
 })
 

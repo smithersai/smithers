@@ -124,6 +124,9 @@
 		//                              (src/recommend.ts); unset = the route answers an honest 503 and the client
 		//                              keeps its rule-based pills. CEREBRAS_MODEL (var, optional) overrides the
 		//                              default gpt-oss-120b.
+		//   TYPESAFE_API_KEY         (secret, optional) the TypeSafe key POST /api/recommend spends on Jev, the
+		//                              decision model it asks BEFORE Cerebras (src/jev.ts). Unset, or a Jev that
+		//                              fails its 1.5 s deadline, and the route asks Cerebras exactly as before.
 		//   SMITHERS_GITHUB_APP_ID   (secret, SET) the numeric id of the GitHub App smitherspreviewrelease
 		//                              (4163546, owned by the smithersai org). With the private key below,
 		//                              GET /api/public/repos authenticates its api.github.com stats reads as

@@ -223,7 +223,8 @@ bun x wrangler secret list                         # names only
 
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
 way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`, `CEREBRAS_MODEL`,
-`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`. `SMITHERS_BUILD_SHA` is
+`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`,
+`TYPESAFE_API_KEY`. `SMITHERS_BUILD_SHA` is
 not a binding: `scripts/deploy.ts` bakes it into the site build as
 `/__build.json`. The frozen vars (`IDENTITY_UPSTREAM_URL`,
 `BILLING_UPSTREAM_URL`, `SMITHERS_CLOUD_API_BASE_URL`, `SMITHERS_CHAT_URL`,
@@ -352,19 +353,26 @@ hostname, and how to deploy it with a receipt.
 
 ### Command suggestions need a Cerebras key
 
-`POST /api/recommend` asks Cerebras (`gpt-oss-120b`, 6 s deadline) which of
-the user's commands to suggest next, and `POST /api/recommend/outcome` records
-what the user ran. Both are open to signed-out visitors under their own daily
-ceilings (300 per address or login, 5000 deployment-wide). The route needs:
+`POST /api/recommend` decides which of the user's commands to suggest next,
+and `POST /api/recommend/outcome` records what the user ran. Both are open to
+signed-out visitors under their own daily ceilings (300 per address or login,
+5000 deployment-wide). The route needs:
 
-- `CEREBRAS_API_KEY` (secret, exported in the deploying shell). Unset, the
-  route answers `503` and the app keeps its rule-based pills; nothing is
-  invented.
+- `TYPESAFE_API_KEY` (secret, optional). Set, the route asks Jev
+  (`jev-latest`, 1.5 s deadline) first: one choice question whose options are
+  the commands the client offered, ordered by the probability Jev gives each.
+  Unset, a Jev that fails, or a request offering more than 255 commands, and
+  the route asks Cerebras instead.
+- `CEREBRAS_API_KEY` (secret, exported in the deploying shell). Cerebras
+  (`gpt-oss-120b`, 6 s deadline) answers whenever Jev does not. With neither
+  key set, the route answers `503` and the app keeps its rule-based pills;
+  nothing is invented.
 - `RECOMMEND_LOG` (Durable Object binding, `WORKER_IDENTITY.durableObjects`,
   Wrangler migration `v4`). One row per recommendation, a ring of the newest
   5000, holding a SHA-256 of the chat tail and never the text. Admins read it
   at `GET /api/admin/recommend/log?limit=N`, newest first, to score hit rate
-  and top-1 rate.
+  and top-1 rate. Each row names the model that answered it, so a live score
+  reads Jev's rows apart from Cerebras's.
 
 `CEREBRAS_MODEL` (knob, optional) overrides the model id.
 

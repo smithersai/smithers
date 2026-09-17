@@ -23,6 +23,9 @@ export const RECOMMENDATION_LIMIT = 5;
 /** The bucket a row with `repo: null` is scored under. */
 export const NO_REPO = "(no repo)";
 
+/** The bucket a row whose `model` is empty is scored under. */
+export const NO_MODEL = "(no model)";
+
 /** What the user ran after a recommendation, as the log records it. */
 export interface RecommendOutcome {
   readonly command: string;
@@ -206,9 +209,33 @@ export function renderTable(score: RecommendScore): string {
   const headline = score.rows === 0
     ? "recommend eval: no rows"
     : `recommend eval: ${count(score.rows, "row")}, ${outcomes}`;
-  const buckets: Array<[string, BucketScore]> = [["overall", score], ...Object.entries(score.perRepo)];
-  const label = Math.max("bucket".length, ...buckets.map(([name]) => name.length));
-  const columns = ["rows", "outcome", "coverage", `hit@${score.k}`, "top-1"];
+  return renderBuckets(headline, score.k, [["overall", score], ...Object.entries(score.perRepo)]);
+}
+
+/**
+ * The same table, one line per model the log names, so a live run reads one
+ * model's hit rate against another's. The score object is untouched: the
+ * baseline gates the scorer, and which models answered a deployment's rows is
+ * not the scorer's behaviour.
+ *
+ * @since 1.0.0
+ */
+export function renderPerModel(rows: ReadonlyArray<RecommendLogRow>): string {
+  const byModel = new Map<string, RecommendLogRow[]>();
+  for (const row of rows) {
+    const key = row.model === "" ? NO_MODEL : row.model;
+    const bucket = byModel.get(key);
+    if (bucket === undefined) byModel.set(key, [row]);
+    else bucket.push(row);
+  }
+  const names = [...byModel.keys()].filter((name) => name !== NO_MODEL).sort((left, right) => left.localeCompare(right));
+  if (byModel.has(NO_MODEL)) names.push(NO_MODEL);
+  return renderBuckets("recommend eval by model", RECOMMENDATION_LIMIT, names.map((name) => [name, scoreBucket(byModel.get(name)!)]));
+}
+
+function renderBuckets(headline: string, k: number, buckets: ReadonlyArray<[string, BucketScore]>): string {
+  const label = Math.max("bucket".length, ...buckets.map(([name]) => name.length), 0);
+  const columns = ["rows", "outcome", "coverage", `hit@${k}`, "top-1"];
   const width = 9;
   const header = ["bucket".padEnd(label), ...columns.map((column) => column.padStart(width))].join("  ");
   const lines = buckets.map(([name, bucket]) =>

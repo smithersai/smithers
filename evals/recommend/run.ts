@@ -17,7 +17,8 @@
  *   baseline is consulted; the numbers are the model's, and they belong in a
  *   report, never in the baseline.
  * - `--live`: pulls the log from a deployment's admin surface, scores it, and
- *   prints the table. `SMITHERS_ORIGIN` names the deployment (default
+ *   prints the table, followed by a second table with one line per model the
+ *   rows name. `SMITHERS_ORIGIN` names the deployment (default
  *   `https://smithers.sh`) and `SMITHERS_ADMIN_TOKEN` is the bearer the admin
  *   routes accept. The token is read from the environment and never printed.
  *
@@ -37,7 +38,15 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseLog, RecommendLogError, renderTable, scoreLog, type RecommendLogRow, type RecommendScore } from "./score.ts";
+import {
+  parseLog,
+  RecommendLogError,
+  renderPerModel,
+  renderTable,
+  scoreLog,
+  type RecommendLogRow,
+  type RecommendScore,
+} from "./score.ts";
 
 const here = import.meta.dirname;
 
@@ -213,6 +222,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), host
     const rows = await pullRows(host);
     if (rows === undefined) return 3;
     report(scoreLog(rows), json, host);
+    if (!json) host.stdout(renderPerModel(rows));
     return 0;
   }
 

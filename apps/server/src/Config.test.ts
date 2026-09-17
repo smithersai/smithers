@@ -23,6 +23,14 @@ describe("ServerConfig from the binding bag", () => {
     expect(config.billingCheckoutEnabled).toBe(true)
   })
 
+  test("TYPESAFE_API_KEY is an optional redacted secret, like the Cerebras key beside it", () => {
+    expect(configFrom({}).typesafeApiKey).toBeUndefined()
+    expect(configFrom({ TYPESAFE_API_KEY: "  " }).typesafeApiKey).toBeUndefined()
+    const config = configFrom({ TYPESAFE_API_KEY: " tsk-live " })
+    expect(JSON.stringify(config)).not.toContain("tsk-live")
+    expect(Redacted.value(config.typesafeApiKey!)).toBe("tsk-live")
+  })
+
   test("secrets are redacted: their value is only reachable on purpose", () => {
     const config = configFrom({ SMITHERS_CHAT_AUTH_TOKEN: " bearer-secret " })
     expect(String(config.chatAuthToken)).not.toContain("bearer-secret")

@@ -116,10 +116,11 @@ export const WORKER_IDENTITY = {
     "GITHUB_TOKEN"
   ] as ReadonlyArray<string>,
   /**
-   * Optional knobs. `SMITHERS_BUILD_SHA` is not a binding at all: it is baked
-   * into the site build as /__build.json. The rest are set like secrets
-   * (`wrangler secret put`) and kept across deploys the same way; a plain var
-   * under one of these names would be replaced by the `vars` above.
+   * Optional knobs, and the optional secrets a working canary does without.
+   * `SMITHERS_BUILD_SHA` is not a binding at all: it is baked into the site
+   * build as /__build.json. The rest are set like secrets (`wrangler secret
+   * put`) and kept across deploys the same way; a plain var under one of
+   * these names would be replaced by the `vars` above.
    */
   optionalVars: [
     "SMITHERS_BUILD_SHA",
@@ -128,7 +129,8 @@ export const WORKER_IDENTITY = {
     "BILLING_CHECKOUT_ENABLED",
     "CEREBRAS_MODEL",
     "CEREBRAS_MODEL_LIBRARIAN",
-    "CEREBRAS_MODEL_FLOWS"
+    "CEREBRAS_MODEL_FLOWS",
+    "TYPESAFE_API_KEY"
   ] as ReadonlyArray<string>
 } as const
 

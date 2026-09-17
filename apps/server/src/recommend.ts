@@ -13,15 +13,18 @@ import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readBoundedJson, readJsonOrUndefined } from "./Http"
 import type { Transport } from "./Http"
+import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
 /**
  * The command recommender: which `/command` should this user run next?
  *
  * The browser posts the tail of the current chat and every command the user
- * can invoke right now, and this route asks a small, fast model (Cerebras)
- * for an ordered list of up to five of those commands. The client renders
- * them as pills under the composer. The route works for a signed-out visitor
- * as well as a login, because the pills are how a visitor learns what the
- * product can do.
+ * can invoke right now, and this route answers an ordered list of up to five
+ * of those commands. Jev, a decision model that picks among named options and
+ * reports a probability for each, is asked first; a Jev that fails, or a
+ * command list too long for one choice question, falls through to a small,
+ * fast chat model (Cerebras). The client renders the answer as pills under
+ * the composer. The route works for a signed-out visitor as well as a login,
+ * because the pills are how a visitor learns what the product can do.
  *
  * Every recommendation is a row in a bounded log (one Durable Object for the
  * deployment), and when the user runs a command next the client posts the
@@ -56,6 +59,13 @@ export const RECOMMEND_ANSWER_MAX = 5
 export const RECOMMEND_LOG_LIMIT = 5000
 /** How long the model gets, in ms. Pills that arrive after the user has moved on are noise. */
 export const RECOMMEND_TIMEOUT_MS = 6000
+/**
+ * How long Jev gets, in ms. Jev answers a decision in well under a second, so
+ * a short deadline leaves Cerebras most of the budget above when Jev is slow.
+ */
+export const RECOMMEND_JEV_TIMEOUT_MS = 1500
+/** The most options a Jev choice question holds; a longer command list goes straight to Cerebras. */
+export const RECOMMEND_JEV_COMMANDS_MAX = 255
 /** The model the deployment asks unless `CEREBRAS_MODEL` says otherwise. */
 export const RECOMMEND_DEFAULT_MODEL = "gpt-oss-120b"
 /** Includes the reasoning tokens needed before the structured command list. */
@@ -494,6 +504,15 @@ export const RECOMMEND_SYSTEM_PROMPT =
   `Answer with up to ${RECOMMEND_ANSWER_MAX} command names, best first, as JSON of the form {"commands": ["name", ...]}. ` +
   "Use only names from the command list, exactly as written. Prefer commands that continue what the user is doing; when the conversation is empty, prefer commands that start something."
 
+/**
+ * What Jev decides, in the same words. A decision model picks among the
+ * options the question offers, so the instructions carry the intent of
+ * `RECOMMEND_SYSTEM_PROMPT` without the answer format a chat model needs.
+ */
+export const RECOMMEND_CHOICE_INSTRUCTIONS =
+  "Choose the next command this user should run in Smithers, a product where a coding agent works on a repository. " +
+  "Prefer commands that continue what the user is doing; when the conversation is empty, prefer commands that start something."
+
 /** The messages the model reads. Exported so the prompt is testable and the client can mirror it. */
 export const recommendMessages = (body: RecommendRequest): ReadonlyArray<{ role: "system" | "user"; content: string }> => {
   const conversation = body.tail.length === 0
@@ -658,13 +677,56 @@ const recommendFailure = (answer: Exclude<CerebrasChatAnswer, { readonly ok: tru
 }
 
 /**
- * One recommendation under the deadline. The strict JSON schema is asked for
- * first; a provider that refuses the format (HTTP 400) is asked once more
- * without it and its prose is parsed defensively. One deadline spans both
- * calls: pills that arrive after the user has moved on are noise.
+ * One recommendation from Jev: the offered commands are the options of one
+ * choice question over the same state the Cerebras prompt carries, and the
+ * answer's probabilities order them. `undefined` means Jev did not decide, so
+ * the caller asks Cerebras instead.
+ */
+const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer | undefined, never, Transport | ServerConfig> =>
+  Effect.gen(function*() {
+    const answer = yield* jevEvaluate({
+      model: JEV_DEFAULT_MODEL,
+      state: {
+        repository: body.repo ?? "(none selected)",
+        conversation: body.tail.length === 0 ? "(no messages yet)" : tailText(body.tail)
+      },
+      questions: {
+        command: {
+          type: "choice",
+          instructions: RECOMMEND_CHOICE_INSTRUCTIONS,
+          criteria: Object.fromEntries(body.commands.map((command) => [command.name, command.summary]))
+        }
+      }
+    }, RECOMMEND_JEV_TIMEOUT_MS)
+    if (!answer.ok) return undefined
+    const decision = answer.answers["command"]
+    if (decision?.type !== "choice" || typeof decision.probabilities !== "object" || decision.probabilities === null) {
+      return undefined
+    }
+    // Best first, and an option Jev gave no weight is not a recommendation.
+    const ranked = Object.entries(decision.probabilities)
+      .filter(([, probability]) => typeof probability === "number" && probability > 0)
+      .sort(([, left], [, right]) => right - left)
+      .map(([name]) => name)
+    return { ok: true, commands: filterAnswer(ranked, body.commands), model: answer.model } as const
+  })
+
+/**
+ * One recommendation under the deadline. Jev decides when the deployment has
+ * a TypeSafe key and the request fits one choice question; anything else, and
+ * any Jev that does not answer, is the Cerebras path below. There the strict
+ * JSON schema is asked for first; a provider that refuses the format (HTTP
+ * 400) is asked once more without it and its prose is parsed defensively. One
+ * deadline spans every call: pills that arrive after the user has moved on
+ * are noise.
  */
 const askModel = (body: RecommendRequest, model: string): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
+    const config = yield* ServerConfig
+    if (config.typesafeApiKey !== undefined && body.commands.length <= RECOMMEND_JEV_COMMANDS_MAX) {
+      const decided = yield* askJev(body)
+      if (decided !== undefined) return decided
+    }
     const ask = (strict: boolean) =>
       cerebrasChat({
         model,
@@ -722,8 +784,12 @@ export const handleRecommend = (
     const parsed = yield* parseRecommendRequest(request)
     if (!parsed.ok) return refusal(parsed.code, parsed.message, headers)
     const config = yield* ServerConfig
-    if (config.cerebrasApiKey === undefined) {
-      return refusal("seam_not_configured", "CEREBRAS_API_KEY is unset. Command suggestions are unavailable on this deployment.", headers)
+    if (config.cerebrasApiKey === undefined && config.typesafeApiKey === undefined) {
+      return refusal(
+        "seam_not_configured",
+        "Neither TYPESAFE_API_KEY nor CEREBRAS_API_KEY is set. Command suggestions are unavailable on this deployment.",
+        headers
+      )
     }
     const limits = yield* TurnLimits
     const salt = config.anonymousTurnSalt === undefined ? undefined : Redacted.value(config.anonymousTurnSalt)

@@ -40,6 +40,7 @@ export interface ServerEnvVars {
   readonly CEREBRAS_MODEL?: string
   readonly CEREBRAS_MODEL_LIBRARIAN?: string
   readonly CEREBRAS_MODEL_FLOWS?: string
+  readonly TYPESAFE_API_KEY?: string
   readonly SMITHERS_GITHUB_APP_ID?: string
   readonly SMITHERS_GITHUB_APP_PRIVATE_KEY?: string
   readonly GITHUB_TOKEN?: string
@@ -75,6 +76,8 @@ export interface ServerConfigShape {
   readonly cerebrasModel: string | undefined
   readonly cerebrasModelLibrarian: string | undefined
   readonly cerebrasModelFlows: string | undefined
+  /** The TypeSafe key the command recommender spends on Jev before it asks Cerebras. */
+  readonly typesafeApiKey: Redacted.Redacted<string> | undefined
   readonly githubAppId: string | undefined
   readonly githubAppPrivateKey: Redacted.Redacted<string> | undefined
   readonly githubToken: Redacted.Redacted<string> | undefined
@@ -131,6 +134,7 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   cerebrasModel: text(env.CEREBRAS_MODEL),
   cerebrasModelLibrarian: text(env.CEREBRAS_MODEL_LIBRARIAN),
   cerebrasModelFlows: text(env.CEREBRAS_MODEL_FLOWS),
+  typesafeApiKey: secret(env.TYPESAFE_API_KEY),
   githubAppId: text(env.SMITHERS_GITHUB_APP_ID),
   githubAppPrivateKey: secret(env.SMITHERS_GITHUB_APP_PRIVATE_KEY),
   githubToken: secret(env.GITHUB_TOKEN)
