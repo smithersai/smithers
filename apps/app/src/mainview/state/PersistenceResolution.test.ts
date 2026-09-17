@@ -142,6 +142,23 @@ describe("the browser's persistence resolver", () => {
     })
   }
 
+  test("an unstamped boot never stamps localStorage over an existing OPFS database that will not open", async () => {
+    const record = memory()
+    let attempts = 0
+    const resolved = await resolvePersistence({
+      bootRecord: () => record,
+      databaseExists: async () => true,
+      openDatabase: async (count) => {
+        attempts = count
+        throw new Error("NoModificationAllowedError: access handles still held")
+      }
+    })
+    expect(attempts).toBe(5)
+    expect(resolved.mode).toBe("memory")
+    expect(resolved.degraded).toBe(true)
+    expect(record.getItem(PERSISTENCE_BACKEND_STORAGE_KEY)).toBeNull()
+  })
+
   test("no browser stores creates an isolated degraded memory session", async () => {
     const resolved = await resolvePersistence({
       bootRecord: () => undefined,

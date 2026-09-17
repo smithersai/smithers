@@ -536,11 +536,18 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
       privacy
     }
   }
+  /*
+   * An unstamped boot may still have data in OPFS: clearing site data removes
+   * the stamp but not the database. A present database is owned data, so it
+   * gets the full retry and a failed open never stamps localStorage over it.
+   */
+  const opfsHoldsData = recorded === "opfs" ||
+    (recorded === null && await host.databaseExists?.().catch(() => false) === true)
   let database: SqliteRowDatabase
   try {
-    database = fenceDatabase(await host.openDatabase(recorded === "opfs" ? OPFS_OPEN_ATTEMPTS : 1), assertOwned)
+    database = fenceDatabase(await host.openDatabase(opfsHoldsData ? OPFS_OPEN_ATTEMPTS : 1), assertOwned)
   } catch (error) {
-    if (recorded === "opfs") {
+    if (opfsHoldsData) {
       if (retirement?.phase === "pending") throw new PrivacyRetirementError()
       console.error(
         "Smithers: this app's data lives in OPFS SQLite and that store could not be opened, so this session starts empty and saves nothing. The conversation is still on disk and comes back once the store opens again.",
