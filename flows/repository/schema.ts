@@ -61,10 +61,13 @@ export const StepResult = Schema.Struct({
   stepId: Schema.String, status: Schema.Literals(["completed", "needs-author", "needs-maintainer", "skipped", "error"]),
   summary: Schema.String, evidence: Schema.Array(Schema.String), output: Schema.Json, executionId: Schema.NonEmptyString
 })
+export const Reply = Schema.Struct({ body: text(16000), issueNumber: Schema.Int,
+  state: Schema.Literals(["drafted", "posted", "declined", "undeliverable"]), reason: Schema.optionalKey(text(400)) })
+export type Reply = typeof Reply.Type
 export const JobResult = Schema.Struct({
   repo: Schema.String, job: Job, revision: Schema.Int, digest: Schema.String, sourceRevision: Schema.String,
   eventKey: Schema.String, status: Schema.Literals(["completed", "partial", "needs-author", "needs-maintainer", "skipped", "error"]),
-  results: Schema.Array(StepResult), publicActions: Schema.Array(Schema.Json)
+  results: Schema.Array(StepResult), publicActions: Schema.Array(Schema.Json), reply: Schema.optionalKey(Reply)
 })
 export type JobResult = typeof JobResult.Type
 export const EvalResult = Schema.Struct({ caseId: Schema.String, status: Schema.Literals(["passed", "failed", "review", "error"]),
