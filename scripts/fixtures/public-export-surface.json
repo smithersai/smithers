@@ -324,6 +324,50 @@
         "require": "./dist/cjs/ReadonlyMap.js"
       },
       "reason": "Existing main export for a copied immutable map facade used by filesystem and plugin views. It preserves read semantics without exposing source-map mutation; record the shared entry in the explicit surface audit."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./Classifier",
+      "development": "./src/Classifier.ts",
+      "published": {
+        "types": "./dist/esm/Classifier.d.ts",
+        "import": "./dist/esm/Classifier.js",
+        "require": "./dist/cjs/Classifier.js"
+      },
+      "reason": "Typed questions over JSON state, answered by Jev through the Evaluator service and decoded into probabilities and confidence; the classifier declaration the classify flows are built from."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./Evaluator",
+      "development": "./src/Evaluator.ts",
+      "published": {
+        "types": "./dist/esm/Evaluator.d.ts",
+        "import": "./dist/esm/Evaluator.js",
+        "require": "./dist/cjs/Evaluator.js"
+      },
+      "reason": "The Jev transport service: the Vercel AI Gateway layer, a scripted layer for tests, and the unavailable layer a host without a key installs."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./Classify",
+      "development": "./src/Classify.ts",
+      "published": {
+        "types": "./dist/esm/Classify.d.ts",
+        "import": "./dist/esm/Classify.js",
+        "require": "./dist/cjs/Classify.js"
+      },
+      "reason": "The classify flow: the cell's door to Jev over any JSON state, single or batched, plus curated(classifier) for one classify/<id> flow per declared classifier."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./Classifiers",
+      "development": "./src/Classifiers.ts",
+      "published": {
+        "types": "./dist/esm/Classifiers.d.ts",
+        "import": "./dist/esm/Classifiers.js",
+        "require": "./dist/cjs/Classifiers.js"
+      },
+      "reason": "The three curated classifiers (triage/relevance, check/verdict, edit/risk) StandardFlows.classify binds by default."
     }
   ],
   "removed": [

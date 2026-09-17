@@ -21,7 +21,8 @@ const expectedTiers = {
   explore: "sealed",
   webfetch: "sealed",
   websearch: "sealed",
-  lsp: "sealed"
+  lsp: "sealed",
+  classify: "sealed"
 } as const
 
 const imperativeVerbs = new Set([
@@ -40,7 +41,8 @@ const imperativeVerbs = new Set([
   "send",
   "investigate",
   "explore",
-  "inspect"
+  "inspect",
+  "ask"
 ])
 
 describe("effect tiers", () => {

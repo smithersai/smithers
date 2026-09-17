@@ -134,6 +134,10 @@ export * as LanguageServer from "./LanguageServer.ts"
 export * as NodeLanguageServer from "./NodeLanguageServer.ts"
 /** @category flows @since 1.0.0 */
 export * as Lsp from "./Lsp.ts"
+/** @category flows @since 1.0.0 */
+export * as Classify from "./Classify.ts"
+/** @category classification @since 1.0.0 */
+export * as Classifiers from "./Classifiers.ts"
 
 /**
  * @category registries

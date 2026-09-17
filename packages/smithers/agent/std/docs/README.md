@@ -3,8 +3,9 @@ title: "@smthrs/std"
 description: "The standard tool library for coding agents: read, edit, grep, bash, test, and twelve more, each a portable declaration paired with a handler your host runs."
 ---
 
-`@smthrs/std` is the tool library a coding agent works with: seventeen tools,
-among them `read`, `write`, `edit`, `grep`, `glob`, `bash`, `test`, and `lsp`.
+`@smthrs/std` is the tool library a coding agent works with: eighteen tools,
+among them `read`, `write`, `edit`, `grep`, `glob`, `bash`, `test`, `lsp`, and
+`classify`.
 Every tool ships as two halves. The **declaration**, called a **flow** here and
 exported as `flow` from every module, is plain data, carrying a name, the one
 line a model sees, input and output schemas, the capabilities the tool needs,
@@ -15,7 +16,7 @@ services it needs, so you decide what `read` reads from and where `bash` runs.
 
 Reach for this package directly when you are building your own host, your own
 tool registry, or a tool surface for a model you drive yourself. If you want the
-agent loop that already offers all seventeen, use
+agent loop that already offers all eighteen, use
 [`@smthrs/agent`](/api/agent), the parent package, instead.
 
 ## Why reach for this
@@ -83,8 +84,9 @@ every line of `page.content` can be pasted back into `edit` as an anchor.
 | Network           | `fetch`, `http-post`, `webfetch`, `websearch` |
 | Code intelligence | `lsp`                                         |
 | Planning          | `update_plan`                                 |
+| Judgment          | `classify`, `classify/<id>`                   |
 
-Sixteen of the seventeen carry a handler. `explore` is a dynamic flow composed
+Seventeen of the eighteen carry a handler. `explore` is a dynamic flow composed
 from the others, so it declares an interface without implementing one.
 `Manifest` is the whole set keyed by name, and `Manifest.readOnly` is the
 projection of it that changes nothing, for offering to a model you want to read
@@ -113,7 +115,10 @@ control plane into something you run in a terminal.
 - [Flows and handlers](./concepts/flows-and-handlers.md) explains the two halves
   and the registries that reach both.
 - [Bind the standard flows into a host](./guides/bind-the-standard-flows.md)
-  composes the layers and offers all seventeen tools at once.
+  composes the layers and offers all eighteen tools at once.
+- [Judge state with classify](./guides/classify-with-jev.md) asks Jev typed
+  questions about the state a cell holds and branches on the answers in the
+  same cell.
 - [Flow reference](./reference/flows.md) lists every input field, output field,
   and failure code.
 - [Troubleshooting](./troubleshooting.md) maps each failure code to what to

@@ -5,6 +5,7 @@
  */
 import * as ApplyPatch from "./ApplyPatch.ts"
 import * as Bash from "./Bash.ts"
+import * as Classify from "./Classify.ts"
 import * as Edit from "./Edit.ts"
 import * as Explore from "./Explore.ts"
 import * as Fetch from "./Fetch.ts"
@@ -44,7 +45,8 @@ export const flows = Object.freeze({
   [Explore.name]: Explore.flow,
   [WebFetch.name]: WebFetch.flow,
   [WebSearch.name]: WebSearch.flow,
-  [Lsp.name]: Lsp.flow
+  [Lsp.name]: Lsp.flow,
+  [Classify.name]: Classify.flow
 })
 
 /**
@@ -71,7 +73,8 @@ export const handlers = Object.freeze({
   [HttpPost.name]: HttpPost.run,
   [WebFetch.name]: WebFetch.run,
   [WebSearch.name]: WebSearch.run,
-  [Lsp.name]: Lsp.run
+  [Lsp.name]: Lsp.run,
+  [Classify.name]: Classify.run
 })
 
 /**
@@ -104,7 +107,8 @@ export const effectsFor = Object.freeze({
   [Explore.name]: Explore.effectsFor,
   [WebFetch.name]: WebFetch.effectsFor,
   [WebSearch.name]: WebSearch.effectsFor,
-  [Lsp.name]: Lsp.effectsFor
+  [Lsp.name]: Lsp.effectsFor,
+  [Classify.name]: Classify.effectsFor
 })
 
 /**
@@ -131,7 +135,8 @@ export const names = Object.freeze(
     Explore.name,
     WebFetch.name,
     WebSearch.name,
-    Lsp.name
+    Lsp.name,
+    Classify.name
   ] as const
 )
 
@@ -142,7 +147,8 @@ export const names = Object.freeze(
  *
  * `websearch` is deliberately absent: its provider contract requires
  * `net:post` authority, which is mutating under the kernel capability
- * taxonomy, so it cannot ride in a read-only seat.
+ * taxonomy, so it cannot ride in a read-only seat. `classify` rides: a
+ * `model:call` observes and changes nothing.
  *
  * @category visibility
  * @since 1.0.0
@@ -156,6 +162,7 @@ export const readOnly = Object.freeze(
     Fetch.name,
     Explore.name,
     WebFetch.name,
-    Lsp.name
+    Lsp.name,
+    Classify.name
   ] as const
 )

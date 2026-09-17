@@ -3110,6 +3110,9 @@ importers:
       '@smthrs/kernel':
         specifier: 1.0.0-rc.0
         version: link:../../flows/kernel
+      '@smthrs/model':
+        specifier: 1.0.0-rc.0
+        version: link:../model
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

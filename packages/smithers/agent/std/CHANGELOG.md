@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added the `classify` flow (`Classify`): typed Jev questions about any JSON state, one state or a batch of up to 64 at 32 KiB each, evaluated eight at a time through the `Evaluator` service of `@smthrs/model`. Answers carry probabilities and a confidence per question; a batch keeps every failure beside its state. `Classify.curated(classifier)` declares a `classify/<id>` flow from any `Classifier.make` declaration, with the classifier's state as input and its digest on the declaration.
+- Added `Classifiers`: the three curated classifiers `triage/relevance`, `check/verdict`, and `edit/risk`, and `Classifiers.all` for a host to bind as a set.
+- `Manifest` registers `classify`; it is part of `Manifest.readOnly` because a `model:call` observes and changes nothing.
 - Every flow module now exports `Input` and `Output` as the decoded TypeScript types beside the schemas. Only `Bash` did, so every other caller wrote `typeof Read.Input.Type`.
 
 ### Changed

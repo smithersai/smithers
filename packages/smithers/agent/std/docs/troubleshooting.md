@@ -233,6 +233,18 @@ because a host that calls the handler directly never decodes.
 **What to change.** Mark one step `in_progress` and leave the rest `pending` or
 `completed`.
 
+## unreachable: No evaluator is installed on this host
+
+**What happened.** `classify` or a `classify/<id>` flow ran with
+`Evaluator.layerUnavailable()` bound, which is what a host without a gateway
+key installs. The cell saw `{ ok: false, error }` with a message beginning
+`unreachable:`; the call never left the host.
+
+**What to change.** Bind `Evaluator.layerVercelGateway({ apiKey })` from
+`@smthrs/model` with a Vercel AI Gateway key, and grant `model:call:*` in the
+run's capability envelope. See
+[Judge state with classify](./guides/classify-with-jev.md).
+
 ## invalid_input: a patch names one file twice
 
 **What happened.** An `apply_patch` input with two sections for the same path.

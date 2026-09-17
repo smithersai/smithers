@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-The package exports 31 modules. Each is reachable from the root entry point as a
+The package exports 33 modules. Each is reachable from the root entry point as a
 namespace and from its own subpath:
 
 ```ts
@@ -26,7 +26,7 @@ surface.
 
 ## The flow modules
 
-Seventeen modules declare a flow. Every one of them exports the same names:
+Eighteen modules declare a flow. Every one of them exports the same names:
 
 | Export         | Type                                     | Meaning                                  |
 | -------------- | ---------------------------------------- | ---------------------------------------- |
@@ -40,21 +40,22 @@ Seventeen modules declare a flow. Every one of them exports the same names:
 | `flow`         | `Flow`                                   | The declaration, built by `Flow.make`.   |
 | `run`          | `(input) => Effect<Output, StdError, R>` | The handler.                             |
 
-The modules are `ApplyPatch`, `Bash`, `Edit`, `Explore`, `Fetch`, `Glob`,
-`Grep`, `HttpPost`, `Ls`, `Lsp`, `Read`, `ShellCommand`, `TestRun`,
+The modules are `ApplyPatch`, `Bash`, `Classify`, `Edit`, `Explore`, `Fetch`,
+`Glob`, `Grep`, `HttpPost`, `Ls`, `Lsp`, `Read`, `ShellCommand`, `TestRun`,
 `UpdatePlan`, `WebFetch`, `WebSearch`, and `Write`.
 
 Some of them export more than the common nine:
 
-| Module         | Additional exports                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                        |
-| `Explore`      | `make(options: { model?: string })`, and no `run`                                           |
-| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                    |
-| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE` |
-| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                    |
-| `UpdatePlan`   | `StepStatus`, `Plan`                                                                        |
-| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                    |
+| Module         | Additional exports                                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                                                                                                     |
+| `Classify`     | `MAX_STATES`, `MAX_STATE_BYTES`, `CONCURRENCY`, `State`, `Questions`, `States`, `Verdict`, `BatchResult`, `ask`, `askAll`, `curated`; `run` fails with `ClassifierError` |
+| `Explore`      | `make(options: { model?: string })`, and no `run`                                                                                                                        |
+| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                                                                                                 |
+| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE`                                                                              |
+| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                                                                                                 |
+| `UpdatePlan`   | `StepStatus`, `Plan`                                                                                                                                                     |
+| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                                                                                                 |
 
 ## Manifest
 
@@ -62,17 +63,17 @@ The whole library keyed by registry name. Every registry is frozen.
 
 | Export       | Type                                 | Meaning                                    |
 | ------------ | ------------------------------------ | ------------------------------------------ |
-| `flows`      | record of name to declaration        | All 17 declarations.                       |
-| `handlers`   | record of name to handler            | The 16 that have one; `explore` is absent. |
-| `effectsFor` | record of name to narrowing function | All 17, including `explore`.               |
-| `names`      | readonly tuple of 17 names           | Registry order.                            |
-| `readOnly`   | readonly tuple of 8 names            | The read-only projection.                  |
+| `flows`      | record of name to declaration        | All 18 declarations.                       |
+| `handlers`   | record of name to handler            | The 17 that have one; `explore` is absent. |
+| `effectsFor` | record of name to narrowing function | All 18, including `explore`.               |
+| `names`      | readonly tuple of 18 names           | Registry order.                            |
+| `readOnly`   | readonly tuple of 9 names            | The read-only projection.                  |
 
 ```ts
 import * as Manifest from "@smthrs/std/Manifest"
 
 Manifest.names // ["read", "write", "edit", "ls", "glob", "grep", "bash", ...]
-Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetch", "lsp"]
+Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetch", "lsp", "classify"]
 ```
 
 ## StdError
@@ -99,6 +100,23 @@ The codes are listed in the [Flow reference](./reference/flows.md#failures).
 Every service key, error tag, and class identifier in this package is
 `@smthrs/std/<Name>`, so `Effect.catchTag("@smthrs/std/StdError", ...)` catches
 every handler failure.
+
+## Classifiers
+
+The curated classifiers `classify/<id>` flows are declared from, each a
+`Classifier.make` declaration from [`@smthrs/model`](/api/model) with a state
+schema and atomic questions.
+
+| Export         | Type                            | Meaning                                                                                                  |
+| -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `relevance`    | `Classifier` `triage/relevance` | `{ task, file, excerpt }`: `relevant` boolean, `role` choice, `risk` score.                              |
+| `checkVerdict` | `Classifier` `check/verdict`    | `{ command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                          |
+| `editRisk`     | `Classifier` `edit/risk`        | `{ path, hunk, task }`: `risk` score, `reversible` boolean.                                              |
+| `all`          | `ReadonlyArray<AnyClassifier>`  | The three above, in catalog order; what `StandardFlows.classify` binds when a host names no classifiers. |
+
+`Classify.curated(classifier)` turns any of them, or a host's own, into a
+`{ name, digest, flow, run }` whose input is the classifier's state or
+`{ states }`. See [Judge state with classify](./guides/classify-with-jev.md).
 
 ## Probe
 
