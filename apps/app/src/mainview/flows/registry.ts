@@ -82,6 +82,8 @@ export interface FlowMetadata {
   readonly summary: string
   /** Not listed in the slash menu (id-scoped button actions); still invocable. */
   readonly hidden?: boolean
+  /** Teach a hidden control to the model without adding it to the human menu. */
+  readonly discloseToAgent?: boolean
   /**
    * The slash argument hint, e.g. `<number> [owner/repo]`. Its presence is
    * what makes `/name <text>` parse as an invocation rather than a prompt;
@@ -604,6 +606,10 @@ const offerable = <C extends CatalogItem>(state: CommandState, commands: Readonl
 export const visible = <C extends CatalogItem>(
   commands: ReadonlyArray<C>
 ): Array<C> => commands.filter((command) => command.hidden !== true)
+
+/** Model discovery is explicit for internal controls; invocation authority is unchanged. */
+export const disclosedToAgent = (metadata: FlowMetadata): boolean =>
+  metadata.hidden !== true || metadata.discloseToAgent === true
 
 /** A needle matches a flow by name or summary, case-insensitively. */
 export const matches = (command: CatalogItem, needle: string): boolean => {

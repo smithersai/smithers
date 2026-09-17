@@ -35,6 +35,7 @@ import {
   flowCapabilityHeld,
   absentDoor,
   confirmLabel,
+  disclosedToAgent,
   flowRequirements,
   itemOf,
   modelInvocable,
@@ -709,11 +710,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * EXECUTE every model-invocable flow (hidden id-scoped actions like
      * world.new-note included — hidden means unlisted to the human, not barred
      * to the agent), while the DISCLOSED set the prompt's catalog block
-     * teaches is the unhidden subset.
+     * teaches follows the declaration's model-disclosure setting.
      */
     disclosed: () =>
       callable()
-        .filter((entry) => entry.metadata.hidden !== true)
+        .filter((entry) => disclosedToAgent(entry.metadata))
         .map((entry) => entry.binding.descriptor),
     toolSpecs: () => agentToolSpecs
   }

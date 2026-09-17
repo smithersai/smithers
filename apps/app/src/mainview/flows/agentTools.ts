@@ -14,7 +14,7 @@ import { agentFaultNote } from "@smthrs/rpc/RefusalCopy"
 import { canonicalCommandName } from "./CommandName"
 import type { CommandRegistry } from "./Commands"
 import type { CatalogItem, FlowEntry } from "./registry"
-import { itemOf, visible } from "./registry"
+import { disclosedToAgent, itemOf } from "./registry"
 
 export type { AgentToolSpec }
 
@@ -28,11 +28,11 @@ export interface AgentToolCall {
  * The flows the agent may see and call.
  *
  * This is the registry itself narrowed to model-invocable entries and then to
- * the unhidden ones — not a second catalog. The trigger axis is the
+ * the declared model disclosure — not a second catalog. The trigger axis is the
  * descriptor's own `modelInvocable` flag, so user-only browser mechanics are
  * absent structurally rather than by a filter that could be forgotten.
  */
-const agentVisible = (entries: ReadonlyArray<FlowEntry>): Array<CatalogItem> => visible(entries.map(itemOf))
+const agentVisible = (entries: ReadonlyArray<FlowEntry>): Array<CatalogItem> => entries.map(itemOf).filter(disclosedToAgent)
 
 /**
  * The agent's live catalog as instruction material (Wave 13 §F): the same set

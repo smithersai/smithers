@@ -25,6 +25,17 @@ export interface InstructionCommand {
   readonly args?: string
 }
 
+/** A current owned setup reference. Full prompts and evidence come from setup.guide. */
+export interface InstructionSetup {
+  readonly cardId: string
+  readonly repo: string
+  readonly job: string
+  readonly revision: number
+  readonly digest: string
+  readonly inspectedAt?: number
+  readonly state: "draft" | "enabled" | "paused"
+}
+
 /** The connector truth the state projection already carries into every turn. */
 export interface InstructionHonesty {
   /**
@@ -50,6 +61,7 @@ export interface InstructionHonesty {
   readonly localRepositories: ReadonlyArray<string>
   /** Whether this client can connect local repositories at all (native bridge). */
   readonly localRepositoriesAvailable: boolean
+  readonly repositorySetups?: ReadonlyArray<InstructionSetup>
 }
 
 /*
@@ -83,7 +95,7 @@ export const SMITHERS_INSTRUCTIONS = [
   "Answer IN the chat. When a surface is involved (world, connect, browser), your invocation renders it as an embedded card in the transcript — never a full-screen view. Maximizing anything is the user's explicit act alone; you cannot and must not do it for them.",
   "When the user asks you to make, list, or run a Smithers flow, invoke flow.create / flow.list / flow.run in the same turn. The run renders as an embedded card that tracks it live, and any approval the run needs arrives as an approval card only the human can decide.",
   "Launching a run is not finishing one. Never say a flow was created, named, or is ready, and never state a run's result, unless a tool result says the run COMPLETED and says what it produced. The run card states the outcome itself, and a run that is still going may still fail.",
-  "Repository setup: use issues.setup, review.setup, ci.setup, feature.setup or chores.setup. Read setup.guide for the setup card's current draft and inspected evidence; ask one short question at a time about the consequential choices, then apply the answer with setup.configure. Keep the card editable. Review its prompts and eval expectations with the user, offer the scoped trial, and enable only when explicitly requested and matching evidence passes. Defaults are draft replies, manual fixes, and human-approved landing. Automatic replies are unavailable in setup. After activation, use setup.work to prepare a step-specific work request and setup.run operation run to execute it against the exact active candidate; issues need an explicit issue source and number, review/CI an explicit PR source and number, feature/chores a work prompt. Dirty drafts must be tested and applied first. Read the actual jobRunId for work and approvals when supplied. Do not launch a nested Chat turn or claim setup is complete from a queued run. Signed-out setup is a preview; use auth.prompt. Practice is not an automation target; use repo.choose for a real repository.",
+  'Repository setup is available in this web app through issues.setup, review.setup, ci.setup, feature.setup and chores.setup. For a setup guide request, first call commands with {"action":"execute","name":"setup.guide","args":"<cardId>"}, replacing <cardId> with the exact supplied setup card ID. This reads its current configuration and inspected repository evidence. Ask one short question at a time about the consequential unresolved choices, informed by that evidence. A guide request authorizes reading and discussing the setup; keep its draft unchanged until the user answers, then use setup.configure. Review prompts and eval expectations together. Offer the scoped trial; run a trial or enable only when explicitly requested and matching evidence passes. Defaults are draft replies, manual fixes and human-approved landing; automatic replies are unavailable. After activation use setup.work and setup.run for explicit work requests: issues need an issue source/number, review and CI a PR source/number, feature and chores a prompt. Dirty drafts need testing and applying first. Use actual jobRunId receipts; a queued run is not completion. Signed-out setup is a preview (auth.prompt); practice requires repo.choose.',
   "After a run-launch tool call the client REPLACES any prose you write about run state with its own deterministic line, so narrating the run is not merely forbidden, it is discarded. Say nothing about the run and let the card speak; if you have something else to add, say only that.",
   "A runtime-context block follows these instructions on every turn. It is freshly derived from the live app and is the complete truth about the app you are running inside, the current surface, and what you can and cannot do — answer questions about the host environment from it, never from a guess.",
   /*
@@ -306,7 +318,7 @@ export const smithersInstructions = (
   const budget = Math.max(0, options.budgetBytes ?? INSTRUCTIONS_BUDGET_BYTES)
   const lastStage = options.lastStage ?? 3
   const codeIntel = catalog.some((command) => command.name === "code.hover")
-  const render = (stage: InstructionStage): string => assembleInstructions(catalogLinesFor(catalog, stage), honesty, roles, codeIntel)
+  const render = (stage: InstructionStage): string => assembleInstructions(catalogLinesFor(catalog, stage), honesty, roles, codeIntel, catalog)
   for (const stage of [0, 1, 2] as const) {
     if (stage >= lastStage) break
     const text = render(stage)
@@ -319,12 +331,16 @@ const assembleInstructions = (
   catalogLines: ReadonlyArray<string>,
   honesty: InstructionHonesty,
   roles: ReadonlyArray<InstructionRole>,
-  codeIntel: boolean
+  codeIntel: boolean,
+  catalog: ReadonlyArray<InstructionCommand>
 ): string => {
   return [
     SMITHERS_INSTRUCTIONS,
     ...(codeIntel ? [CODE_INTEL_LINE] : []),
     ...orchestratorLines(roles),
+    ...repositorySetupLines(honesty.repositorySetups ?? [], catalogLinesFor(
+      // A setup handoff must keep its actual call grammar even when the general catalog compacts.
+      catalog.filter(command => command.name.startsWith("setup.")), 0)),
     "",
     "What you can do is EXACTLY this — the app's live command catalog — plus conversation in this chat:",
     ...catalogLines,
@@ -337,4 +353,19 @@ const assembleInstructions = (
     }. When the user asks for one of those, say plainly that you can't do it yet and name the one honest next step that IS in the catalog above — never offer, imply, or let the user believe you can do it.`,
     ...WORKFLOW_LAUNDERING_RULE
   ].join("\n")
+}
+
+const repositorySetupLines = (setups: ReadonlyArray<InstructionSetup>, controls: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const bounded: InstructionSetup[] = []
+  for (const setup of [...setups].reverse()) {
+    // Never truncate an identity; omit older entries rather than inventing a card ID.
+    if (bytesOf(JSON.stringify([...bounded, setup])) > 1800) continue
+    bounded.push(setup)
+    if (bounded.length === 3) break
+  }
+  return bounded.length === 0 ? [] : [
+    `Current repository setup cards: ${JSON.stringify(bounded)}`,
+    'Setup controls for these cards (use commands execute; JSON arguments are encoded in the "args" string):',
+    ...controls
+  ]
 }

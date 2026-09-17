@@ -1,6 +1,7 @@
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
+import { setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { AgentChatMessage,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
@@ -392,6 +393,9 @@ export const createTurnController = (
   const turnInstructions = (context?: AgentRuntimeContext, lastStage: InstructionStage = 3): string => {
     const identity = store.collections.identitySessions.get("identity")
     const signedIn = identity?.state === "signed-in"
+    const recent = new Set(context?.recentCards?.map(card => card.id))
+    const prompt = contextMessages().filter(message => "role" in message && message.role === "user").at(-1)
+    const mentioned = (id: string) => prompt !== undefined && "content" in prompt && prompt.content.includes(id)
     /*
      * The Bun side composes prompt + rendered context into ONE string the chat
      * seam caps at CHAT_INSTRUCTIONS_CAP_BYTES, so the prompt's budget is what
@@ -417,7 +421,18 @@ export const createTurnController = (
           ...[...store.collections.repos.values()].map((repo) => repo.name)
         ])
       ],
-      localRepositoriesAvailable: repositories.available
+      localRepositoriesAvailable: repositories.available,
+      repositorySetups: !signedIn ? [] : [...store.collections.cards.values()]
+        .filter(card => inConversation(card, conversationTabIdOf(store.session())) && (recent.has(card.id) || mentioned(card.id)))
+        .sort((left, right) => Number(mentioned(left.id)) - Number(mentioned(right.id)) || left.ordinal - right.ordinal)
+        .flatMap(card => {
+          if (card.kind !== "repository-setup" || card.payload.owner !== identity.login) return []
+          const { repo, job, revision, inspectedAt, active } = card.payload
+          const digest = setupCandidate(card.payload)
+          return [{ cardId: card.id, repo, job, revision, digest, inspectedAt,
+            state: active?.enabled && active.revision === revision && active.digest === digest ? "enabled" as const
+              : active?.enabled === false ? "paused" as const : "draft" as const }]
+        })
     }, instructionRoles(), { budgetBytes, lastStage })
   }
 

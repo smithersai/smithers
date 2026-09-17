@@ -3,6 +3,7 @@ import { Authorize, Catalog } from "@smthrs/chain"
 import { Effect, Option } from "effect"
 import type { CommandRegistry } from "../flows/Commands"
 import type { FlowEntry } from "../flows/registry"
+import { disclosedToAgent } from "../flows/registry"
 
 /*
  * The thin adapter that lets the chain runtime call registered flows.
@@ -91,10 +92,10 @@ export const commandEntries = (commands: CommandRegistry, lineage?: string): Rea
 
 /**
  * The subset the prompt's catalog block teaches: callable flows that are not
- * hidden — byte-for-byte the set the list action shows.
+ * hidden or explicitly disclosed to the model — the set the list action shows.
  */
 export const disclosedEntries = (commands: CommandRegistry): ReadonlyArray<Catalog.Entry> =>
   commands
     .callable()
-    .filter((entry) => entry.metadata.hidden !== true)
+    .filter((entry) => disclosedToAgent(entry.metadata))
     .map((entry) => entryFor(commands, entry))
