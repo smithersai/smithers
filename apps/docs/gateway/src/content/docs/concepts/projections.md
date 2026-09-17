@@ -81,6 +81,16 @@ a legacy request in that run. An unknown current identity never consumes another
 gate. Serving historical approval content grants no authority: the control
 decision endpoint still validates the exact target and principal.
 
+## Committed flow results
+
+`RunSummaryRow.finalOutput` prefers the assistant's final text. Otherwise it
+uses the committed successful result of the `agent/run` execution named by
+`control.engine.bound`. A matching `control.engine.event` must carry the
+completed root's versioned run decision. Child results, unbound events, and
+conflicting evidence do not supply output. Strings are preserved; other JSON
+values are serialized. The binding and result survive in the carried diagnosis
+when older events leave the retained window.
+
 ## How a node gets its id
 
 `run-tree` folds agent cell calls, not child runs. A node opens on a call
@@ -160,17 +170,24 @@ subscriber converges to a fresh fold at the same cursor. See
 
 A projection reads one journal per run, so the read is bounded on purpose:
 
-| Bound                            | Value  | What it caps                                         |
-| -------------------------------- | ------ | ---------------------------------------------------- |
-| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds                  |
-| `Projections.maxEventsPerRun`    | 10,000 | events one run projection admits                     |
-| `Projections.maxProjectionBytes` | 4 MiB  | encoded event history, and encoded projected row set |
+| Bound                            | Value  | What it caps                                            |
+| -------------------------------- | ------ | ------------------------------------------------------- |
+| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds                     |
+| `Projections.maxEventsPerRun`    | 10,000 | retained events per run                                 |
+| `Projections.maxEventsPerPage`   | 1,000  | events per `run-events` page                            |
+| `Projections.maxEventBytes`      | 16 KiB | retained event size before clipping                     |
+| `Projections.maxProjectionBytes` | 4 MiB  | retained event window, event page, or projected row set |
 
 `maxWorkspaceRuns` equals `ControlSchema.maxPageSize`, so the control plane can
 satisfy the whole gateway allowance in one page when it can. A workspace with
-more runs is answered as its first 500. Past either byte or event bound, the
-fold fails with `resource_limit` at the first value over the line instead of
-retaining the rest of a hostile or corrupt stream.
+more runs is answered as its first 500. Older retained events are folded into
+a carried digest. A projected row set over the byte budget fails with
+`resource_limit`.
+
+`run-events` pages preserve complete `control.engine.event` payloads, including
+native typed results, without the 16 KiB clipping applied to other large events.
+A page stops at its event or byte budget and returns a cursor. One event whose
+encoded size plus array brackets exceeds 4 MiB fails with `resource_limit`.
 
 The approvals inbox is the one workspace projection that filters before it
 counts: it asks the control plane for runs whose status is `waiting-approval`,

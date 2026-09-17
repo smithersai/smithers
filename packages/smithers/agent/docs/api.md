@@ -334,6 +334,16 @@ settles. Two commands cannot consume the same token. A competing resolver's
 different payload is a conflict, and a write acknowledgment alone is not proof
 of delivery: the matching completion must be readable from engine state.
 
+Delivery rechecks the bound token's deferred name against the signal name.
+Only `WaitFor/<name>` or a positive numbered `WaitFor/<name>#<attempt>` matches;
+a token for another name returns `no-match`, including after restart.
+
+If resume temporarily clears the wait before replay parks on the same token,
+delivery returns `unknown` and keeps the command bound for retry. It returns
+`no-match` when another token replaces it. With `RunStore` available, a missing
+or terminal bound execution also returns `no-match`. A previously stored
+matching completion still proves delivery.
+
 One failed command does not prevent the rest of a reconciliation page from
 being attempted. The failed command stays pending for a later pass. Legacy
 payload-only messages are not replayed because they have no durable application

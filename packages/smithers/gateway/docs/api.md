@@ -147,11 +147,18 @@ The read path, served as bounded snapshots and followed deltas.
 | `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                         | The same under an explicit keepalive cadence.                                                                      |
 | `heartbeatIntervalMillis` | `30_000`                                                                                                       | How often an idle subscription emits a keepalive frame.                                                            |
 | `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
-| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events one run projection admits.                                                                 |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The largest encoded event history, or projected row set, one run admits.                                           |
+| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events retained per run; older events enter the carried digest.                                   |
+| `maxEventsPerPage`        | `1_000`                                                                                                        | The most events one `run-events` page returns.                                                                     |
+| `maxEventBytes`           | `16 * 1024`                                                                                                    | Retained event size before clipping. Native engine events on `run-events` pages are exempt.                        |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for a retained event window, event page, or projected row set.                             |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
+
+`run-events` pages return complete `control.engine.event` payloads so clients
+can decode native result contracts. Other oversized events are clipped. A
+single encoded event plus its array brackets exceeding `maxProjectionBytes`
+fails with `GatewayError` code `resource_limit`; a full page ends at its cursor.
 
 ## `GatewaySchema`
 
@@ -300,26 +307,35 @@ adds what a terminal card needs on top of it, so the served row and
 [`smthrs status`](/cli/status) cannot disagree about a run's counts, refusals,
 or clipping.
 
-| Export      | Signature                                                  | Answers                                                                                                                            |
-| ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `Digest`    | interface                                                  | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
-| `Refusal`   | `{ message: string; count: number }`                       | One refused flow call, aggregated by its message.                                                                                  |
-| `Subject`   | `{ runId: string; flowId?: string }`                       | The identity a diagnosis is rendered for.                                                                                          |
-| `RunStatus` | `ControlSchema.RunStatus`                                  | The run statuses a digest may report.                                                                                              |
-| `digest`    | `(events) => Digest`                                       | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
-| `verdict`   | `(value: Digest) => string`                                | One line: the status plus the reason that most explains it.                                                                        |
-| `duration`  | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string` | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
-| `render`    | `(subject: Subject, value: Digest) => string`              | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
-| `asRecord`  | `(value: unknown) => Record<string, unknown>`              | A wire payload as a record, or an empty record when it is not one.                                                                 |
-| `asString`  | `(value: unknown) => string \| undefined`                  | A payload field as a string, or nothing.                                                                                           |
-| `asNumber`  | `(value: unknown) => number \| undefined`                  | A payload field as a number, or nothing.                                                                                           |
-| `timeOf`    | `(event) => number`                                        | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
-| `firstLine` | `(text: string) => string`                                 | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
-| `clip`      | `(text: string, width: number) => string`                  | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
+| Export           | Signature                                                                           | Answers                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Digest`         | interface                                                                           | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
+| `Refusal`        | `{ message: string; count: number }`                                                | One refused flow call, aggregated by its message.                                                                                  |
+| `Subject`        | `{ runId: string; flowId?: string }`                                                | The identity a diagnosis is rendered for.                                                                                          |
+| `RunStatus`      | `ControlSchema.RunStatus`                                                           | The run statuses a digest may report.                                                                                              |
+| `digest`         | `(events) => Digest`                                                                | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
+| `resolvedOutput` | `(value: Pick<Digest, "finalOutput" \| "nativeResolution">) => string \| undefined` | Assistant output first, otherwise a committed native result matching the host's root binding.                                      |
+| `verdict`        | `(value: Digest) => string`                                                         | One line: the status plus the reason that most explains it.                                                                        |
+| `duration`       | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string`                          | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
+| `render`         | `(subject: Subject, value: Digest) => string`                                       | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
+| `asRecord`       | `(value: unknown) => Record<string, unknown>`                                       | A wire payload as a record, or an empty record when it is not one.                                                                 |
+| `asString`       | `(value: unknown) => string \| undefined`                                           | A payload field as a string, or nothing.                                                                                           |
+| `asNumber`       | `(value: unknown) => number \| undefined`                                           | A payload field as a number, or nothing.                                                                                           |
+| `timeOf`         | `(event) => number`                                                                 | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
+| `firstLine`      | `(text: string) => string`                                                          | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
+| `clip`           | `(text: string, width: number) => string`                                           | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
 
 `RunSummaryRow.verdict` and `RunSummaryRow.diagnosis` are `verdict` and `render`
 already applied, so a client rendering a run card calls neither. See
 [Diagnose what happened to a run](./guides/diagnose-a-run.md).
+
+`Digest.nativeResolution` optionally retains `binding: { runId, executionId }`,
+`result: { runId, executionId, text }`, and `conflict: true` across bounded
+journal windows. `combine` preserves this evidence. `resolvedOutput` accepts
+only an unambiguous committed success for the bound `agent/run` root, ignoring
+child results and telemetry. String results remain strings; other JSON values
+are serialized. `RunSummaryRow.finalOutput`, `verdict`, and `diagnosis` use
+this resolved output.
 
 ## `GatewayError`
 

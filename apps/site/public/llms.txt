@@ -8,7 +8,7 @@
 
 - [Welcome to Smithers](https://smithers.sh/docs/): Smithers instruments and automates a code repository so changes get cheaper, faster, and smarter. Agents plan, run, and review changes through flows declared beside the code.
 - [Quickstart](https://smithers.sh/docs/quickstart/): Open Smithers, explore a repository, find a flow, and make your first contribution through the app.
-- [Pricing](https://smithers.sh/docs/pricing/): The hosted Smithers alpha is free for selected public repositories. Compare hosted access with running the open-source tools yourself.
+- [Pricing](https://smithers.sh/docs/pricing/): Free, Pro, and Max plans with sandbox capacity for your work. Model tokens are bring-your-own-key.
 - [CLI and libraries](https://smithers.sh/docs/developers/): Use Smithers from your terminal, define flows beside your code, and build on the TypeScript libraries.
 - [Installation](https://smithers.sh/docs/installation/): Install the Smithers CLI or library, keep Effect pinned, and verify the install.
 - [CLI quickstart](https://smithers.sh/docs/cli-quickstart/): Install the CLI, scaffold a flow, choose its model, and run it in your project.

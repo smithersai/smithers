@@ -110,7 +110,12 @@ The probe is deliberately unhelpful to anyone trying to fool it. It runs
 `/bin/ps` by absolute path, never a `PATH` lookup, under `LC_ALL=C` and `TZ=UTC`
 in a minimal environment, with a five-second `SIGKILL` deadline. Start times
 are parsed explicitly as UTC, independent of the host runtime's timezone.
-Live cleanup snapshots use the same timezone and parsing. The probe reads the
+Live cleanup on Linux instead reads group membership, start times, and zombie
+state directly from `/proc`, so it works without `procps`. Missing processes
+are skipped; unreadable or malformed data leaves cleanup unverified. Other
+POSIX hosts use `/bin/ps` for live cleanup with the same timezone and parsing.
+The crash-recovery sweep still uses the `ps` probes described here.
+The probe reads the
 `pgid` column as one run of decimal digits and nothing else: `Number.parseInt`
 reads a prefix, so `"12 34"`, `"12abc"`, and `"0x10"` would each become a
 number that is not this host's group, silently pass the own-group comparison,

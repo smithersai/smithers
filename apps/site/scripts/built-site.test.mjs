@@ -280,9 +280,9 @@ test("coming-soon sign-in must start OAuth and return to that repository page", 
 test("registration prose opens the app or starts sign-in instead of the marketing page", () => {
   for (const path of ["docs/pricing.mdx", "docs/app/repositories.mdx"]) {
     const source = readFileSync(new URL(`../src/content/docs/${path}`, import.meta.url), "utf8")
-    const registration = source.split("\n").find(line => /sign in with GitHub on/i.test(line))
+    const registration = source.split("\n").find(line => /sign in (?:with GitHub on|to) \[/i.test(line))
     assert.ok(registration, path)
-    const href = registration.match(/\[smithers.sh\]\(([^)]+)\)/)?.[1]
+    const href = registration.match(/sign in (?:with GitHub on|to) \[[^\]]+\]\(([^)]+)\)/i)?.[1]
     const url = new URL(href, "https://smithers.sh")
     assert.equal(url.origin, "https://smithers.sh")
     assert.ok(["/api/auth/github/start", "/smithersai/smithers"].includes(url.pathname), `${path}: ${href}`)

@@ -154,11 +154,18 @@ The read path, served as bounded snapshots and followed deltas.
 | `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                         | The same under an explicit keepalive cadence.                                                                      |
 | `heartbeatIntervalMillis` | `30_000`                                                                                                       | How often an idle subscription emits a keepalive frame.                                                            |
 | `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
-| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events one run projection admits.                                                                 |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The largest encoded event history, or projected row set, one run admits.                                           |
+| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events retained per run; older events enter the carried digest.                                   |
+| `maxEventsPerPage`        | `1_000`                                                                                                        | The most events one `run-events` page returns.                                                                     |
+| `maxEventBytes`           | `16 * 1024`                                                                                                    | Retained event size before clipping. Native engine events on `run-events` pages are exempt.                        |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for a retained event window, event page, or projected row set.                             |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
+
+`run-events` pages return complete `control.engine.event` payloads so clients
+can decode native result contracts. Other oversized events are clipped. A
+single encoded event plus its array brackets exceeding `maxProjectionBytes`
+fails with `GatewayError` code `resource_limit`; a full page ends at its cursor.
 
 ## `GatewaySchema`
 
@@ -200,13 +207,18 @@ row's type.
 
 `Projection.Snapshot` accepts optional `after: ProjectionCursor` for
 `run-events` only. It returns rows strictly after that sequence and offset,
-with the current journal cursor. An unchanged journal returns no rows.
-The cursor must belong to the same selector and run and cannot be ahead of
-the journal. Other selectors with `after` return `malformed_request`.
-Omit `after` for the full snapshot and when no journal rows are retained:
-the empty cursor `0:0` also names the first sequence-zero event.
-This bounds transferred rows; the gateway still reconciles the full source
-journal before producing the suffix.
+with the cursor the read reached. An unchanged journal returns no rows, and so
+does a cursor at or past the journal's head. The cursor must belong to the same
+selector and run; other selectors with `after` return `malformed_request`.
+Omit `after` for the first page: the empty cursor `0:0` also names the first
+sequence-zero event.
+
+A `run-events` snapshot is a PAGE, not the whole journal. It carries at most
+`maxEventsPerPage` events and `maxProjectionBytes`, whichever binds first, and
+the cursor it answers with names the last event it carried. A reader pages by
+passing that cursor back until a page comes back empty. Every other selector
+answers rows whose size the selector bounds, so it reads the reconciled source
+and needs no paging.
 
 | Export               | Shape                                                                      |
 | -------------------- | -------------------------------------------------------------------------- |
@@ -302,26 +314,35 @@ adds what a terminal card needs on top of it, so the served row and
 [`smthrs status`](/docs/reference/cli/status/) cannot disagree about a run's counts, refusals,
 or clipping.
 
-| Export      | Signature                                                  | Answers                                                                                                                            |
-| ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `Digest`    | interface                                                  | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
-| `Refusal`   | `{ message: string; count: number }`                       | One refused flow call, aggregated by its message.                                                                                  |
-| `Subject`   | `{ runId: string; flowId?: string }`                       | The identity a diagnosis is rendered for.                                                                                          |
-| `RunStatus` | `ControlSchema.RunStatus`                                  | The run statuses a digest may report.                                                                                              |
-| `digest`    | `(events) => Digest`                                       | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
-| `verdict`   | `(value: Digest) => string`                                | One line: the status plus the reason that most explains it.                                                                        |
-| `duration`  | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string` | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
-| `render`    | `(subject: Subject, value: Digest) => string`              | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
-| `asRecord`  | `(value: unknown) => Record<string, unknown>`              | A wire payload as a record, or an empty record when it is not one.                                                                 |
-| `asString`  | `(value: unknown) => string \| undefined`                  | A payload field as a string, or nothing.                                                                                           |
-| `asNumber`  | `(value: unknown) => number \| undefined`                  | A payload field as a number, or nothing.                                                                                           |
-| `timeOf`    | `(event) => number`                                        | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
-| `firstLine` | `(text: string) => string`                                 | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
-| `clip`      | `(text: string, width: number) => string`                  | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
+| Export           | Signature                                                                           | Answers                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Digest`         | interface                                                                           | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
+| `Refusal`        | `{ message: string; count: number }`                                                | One refused flow call, aggregated by its message.                                                                                  |
+| `Subject`        | `{ runId: string; flowId?: string }`                                                | The identity a diagnosis is rendered for.                                                                                          |
+| `RunStatus`      | `ControlSchema.RunStatus`                                                           | The run statuses a digest may report.                                                                                              |
+| `digest`         | `(events) => Digest`                                                                | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
+| `resolvedOutput` | `(value: Pick<Digest, "finalOutput" \| "nativeResolution">) => string \| undefined` | Assistant output first, otherwise a committed native result matching the host's root binding.                                      |
+| `verdict`        | `(value: Digest) => string`                                                         | One line: the status plus the reason that most explains it.                                                                        |
+| `duration`       | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string`                          | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
+| `render`         | `(subject: Subject, value: Digest) => string`                                       | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
+| `asRecord`       | `(value: unknown) => Record<string, unknown>`                                       | A wire payload as a record, or an empty record when it is not one.                                                                 |
+| `asString`       | `(value: unknown) => string \| undefined`                                           | A payload field as a string, or nothing.                                                                                           |
+| `asNumber`       | `(value: unknown) => number \| undefined`                                           | A payload field as a number, or nothing.                                                                                           |
+| `timeOf`         | `(event) => number`                                                                 | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
+| `firstLine`      | `(text: string) => string`                                                          | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
+| `clip`           | `(text: string, width: number) => string`                                           | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
 
 `RunSummaryRow.verdict` and `RunSummaryRow.diagnosis` are `verdict` and `render`
 already applied, so a client rendering a run card calls neither. See
 [Diagnose what happened to a run](https://gateway.smithers.sh/guides/diagnose-a-run/).
+
+`Digest.nativeResolution` optionally retains `binding: { runId, executionId }`,
+`result: { runId, executionId, text }`, and `conflict: true` across bounded
+journal windows. `combine` preserves this evidence. `resolvedOutput` accepts
+only an unambiguous committed success for the bound `agent/run` root, ignoring
+child results and telemetry. String results remain strings; other JSON values
+are serialized. `RunSummaryRow.finalOutput`, `verdict`, and `diagnosis` use
+this resolved output.
 
 ## `GatewayError`
 

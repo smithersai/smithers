@@ -355,6 +355,13 @@ for a path whose ancestors do not exist, exactly as `fs.rm` does.
 
 ## Liveness and reaping
 
+`ProcessReaper.groupSnapshotFor(platform)` selects the live cleanup probe,
+returning `(pgid) => { ownGroup, members } | undefined`. Each member carries
+`pid`, `startedAtMs`, and `zombie`. Linux reads `/proc` directly and needs no
+`ps` binary for live cleanup; other POSIX hosts use `/bin/ps`. Unreadable or
+malformed process data returns `undefined`, so cleanup cannot claim success.
+`ProcessReaper.processLifecycle` uses the probe for the current platform.
+
 `HostLiveness.isAlive({ hostId })` is the probe a durable engine consults before
 it takes a run whose recorded owner it is not: an owner on a different host reads
 as alive, and an owner on this host reads as alive exactly while its pid is

@@ -44,6 +44,23 @@ flow and operator commands use `--root`. Flow control, ordinary run management, 
 History, memory, triggers, credentials,
 integrations, evaluations, and local maintenance reject remote access.
 
+## Pending human waits
+
+`approvals list` includes roots whose execution tree is waiting for human input.
+Each row carries `runId`, `flowId`, and, when available, `question` and `approval`.
+`question` falls back to the prompt declared by a nested `HumanTask` when the
+journal has no question. The optional `waits` array identifies each holding
+execution by `runId`, with optional `flowId`, `name`, `attempt`, and `request`.
+
+Answer a human task by signaling the listed root with the wait's name:
+
+```bash
+smthrs runs signal run-3 '{"name":"coding-clarification","payload":"the scheduler owns it"}'
+```
+
+The control plane routes the answer to the matching nested wait. Use the
+declared request's kind, options, and schema to shape the answer.
+
 ## Operator commands
 
 | Group | Commands and behavior |

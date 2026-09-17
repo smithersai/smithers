@@ -120,6 +120,12 @@ a composition before its flow has been registered.
 
 Configuration for `make` and `layer`.
 
+On native Node and Bun hosts, `filename` may be outside `workspaceRoot`.
+The host creates its parent directory even when the injected filesystem refuses
+that path. Keeping the database outside a served checkout prevents engine
+writes from changing the working-copy tree. `workspaceRoot` still confines
+flow file actions; the database path is trusted host configuration.
+
 | Field           | Type                      | Meaning                                                                                                                                                                                                                                    |
 | --------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `filename`      | `string`                  | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                           |
@@ -217,9 +223,9 @@ beneath registration and above the engine, so every discovered flow is
 registered before the runtime accepts a launch. Omitting it is exactly the
 registry-free behavior.
 
-`make` and `layer` are overloaded on the registry argument rather than defaulting
-it, because a default cannot honor a caller-chosen registry type. Naming a
-registry type without passing its layer does not compile.
+`make`, `layer`, and `layerHost` require the registry argument when its type
+parameters name a service, error, or requirement. Omitting it is valid only
+when all three registry types are `never`.
 
 ### `HostOptions`
 

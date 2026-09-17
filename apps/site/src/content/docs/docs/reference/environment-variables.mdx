@@ -23,11 +23,21 @@ Variables an operator exports to steer the CLI.
 | `SMITHERS_BACKEND` | operator | Database backend; only `sqlite` is supported. Any other value exits 1 with `unsupported_database`. | `--backend` (hidden) |
 | `SMITHERS_BUG_ENDPOINT` | operator | Where `smthrs bug` posts its report. | none |
 | `SMITHERS_JJ_PATH` | operator | Explicit path to the `jj` binary. | none |
+| `SMITHERS_PYTHON3` | operator | Absolute CPython 3 path for the Node and Bun control hosts' filesystem helper. Unset or empty uses `/usr/bin/python3`; a relative path fails startup. The hosts never search `PATH`. | none |
 | `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | operator | How long a detached flow launch waits for the detached run's admission line. A value that is not a positive integer is ignored. | none |
 | `SMITHERS_TEST_COMMAND` | operator | The command the `test` flow runs. | none |
 | `SMITHERS_TEST_CONTAINER` | operator | The container the `test` flow runs in. | none |
 | `SMITHERS_TEST_CWD` | operator | The repository's path inside that container. | none |
 | `SMITHERS_TEST_TIMEOUT_MS` | operator | Wall-clock budget for one `test` invocation. | none |
+
+## HTTP proxies
+
+The native Node control host's model HTTP transport reads `http_proxy`,
+`https_proxy`, and `no_proxy`, falling back to `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY`. Lowercase values take precedence even when empty. `no_proxy`
+selects destinations that bypass the proxy. If both proxy URLs are unset or
+empty, the dispatcher connects directly. Rebuilt connection pools use the
+same policy.
 
 ## Variables the engine sets
 

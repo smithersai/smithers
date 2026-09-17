@@ -39,6 +39,12 @@ climbing into the home directory, and rc.0 reads no global state at all.
 | `.flows/engine.db` | The durable engine: executions, attempts, cache entries, and wake state. |
 | `.flows/logs/<run-id>.log` | One detached run's output. |
 
+Embedded native hosts can set `Application.Config.stateRoot` outside the
+checkout. The control and engine databases then live under
+`<stateRoot>/.flows/`, with their WAL files, while discovery, grants, and run
+workspace access remain rooted in the project. It defaults to `root` and has no
+CLI flag. This keeps database writes from changing a live checkout's tree.
+
 The two databases are separate files with separate connections and separate
 migration ownership. `NodeControl.databasePath` and
 `NodeControl.executionDatabasePath` are the database projections; other state
@@ -115,8 +121,18 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_TEST_COMMAND`, `SMITHERS_TEST_CONTAINER`, `SMITHERS_TEST_CWD`, `SMITHERS_TEST_TIMEOUT_MS` | What the `test` flow runs, where, and for how long. |
 | `SMITHERS_BUG_ENDPOINT` | Where `smthrs bug` posts its report. |
 | `SMITHERS_JJ_PATH` | Explicit path to the `jj` binary. |
+| `SMITHERS_PYTHON3` | Absolute CPython 3 path for the Node and Bun control hosts' filesystem helper. Unset or empty uses `/usr/bin/python3`; relative paths fail startup. `PATH` is never searched. |
 | `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | How long `up -d` waits for its child's admission line. |
 | `SMITHERS_INSIDE_RUN`, `SMITHERS_RUN_ID` | Set on an agent process by the engine. Both keep their 0.x meaning. |
+
+## HTTP proxies
+
+The native Node control host's model HTTP transport reads `http_proxy`,
+`https_proxy`, and `no_proxy`, with `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
+as fallbacks. Lowercase values take precedence, including empty strings.
+`no_proxy` selects destinations that bypass the proxy. With neither proxy URL
+set, the host uses its direct dispatcher. Replacement connection pools apply
+the same environment policy.
 
 An empty value is treated exactly like an unset one, because an
 exported-but-blank variable is how a shell spells "not configured".

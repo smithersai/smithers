@@ -20,6 +20,11 @@ Do not construct an approval from only the run ID or copy a payload from another
 
 ## Approve and resume
 
+For a `HumanTask`, read the prompt and request from `approvals list`'s `waits`
+array, then answer with `runs signal` using the listed root run ID and wait name.
+The control plane finds the nested execution holding it. See
+[Pending human waits](/docs/reference/cli/approvals/#list) for the command shape.
+
 Save the request payload as `approval.json`, review what it authorizes, then submit it:
 
 ```bash

@@ -784,6 +784,11 @@ in its transaction. Existing rows receive baseline revisions; earlier mutation
 order and acknowledgement are unknown. Deleted run IDs remain permanent
 tombstones. See [Execution revisions](./concepts/execution-revisions.md).
 
+Migration 1004 (`0004_waiting_request`) adds nullable `flows_runs.waiting_request`
+as JSON text, enforced by `json_valid`. Existing rows read as having no declared
+request. The durable engine writes and clears it with the other waiting fields;
+human tasks use it to publish the prompt, answer kind, and attempt budget.
+
 ## Heartbeat
 
 `@smthrs/run-store/Heartbeat` is a leaf module holding the four lease durations

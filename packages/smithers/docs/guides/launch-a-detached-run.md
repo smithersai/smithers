@@ -39,6 +39,10 @@ the launch and the run row is durable, the child writes one admission line
 naming that nonce and the run id to its own log. The parent reads that line and
 returns.
 
+The ID must be 1 to 128 characters, start with an ASCII letter or digit, and
+contain only ASCII letters, digits, `.`, `_`, or `-`. Other IDs are ignored as
+missing admission, so a log line cannot redirect the log outside its directory.
+
 Until the line appears, the child's output lands in
 `.flows/logs/pending-<nonce>.log`, which is renamed onto the run id once the
 run is known. The parent waits `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS`

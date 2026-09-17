@@ -155,7 +155,7 @@ start or settlement. Legacy records without IDs retain their name-based FIFO
 fallback, restricted to unidentified starts. A new settlement can close an
 old unidentified start after an upgrade, but it cannot steal another
 identified call. Exact correlation for overlapping legacy calls remains
-unrecoverable; see [Gateway projections](/gateway/concepts/projections).
+unrecoverable; see [Gateway projections](/pkg/gateway/concepts/projections).
 
 The ID fixes correlation once an event is journaled. The trail still uses
 the buffered lossy channel described above; it does not by itself guarantee

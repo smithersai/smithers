@@ -14,6 +14,19 @@ import help from "../../../../../data/help/approvals/approve.txt?raw"
 
 `smthrs approvals list` lists pending in-run requests. It does not list pre-run plans such as a trigger's waiting plan. Obtain those payloads from the plan result or the trigger's `activePlan.plan.approval` field.
 
+The list also includes roots whose nested executions are waiting for a human.
+Rows carry `runId`, `flowId`, and optional `question` and `approval` fields.
+When the journal has no question, `question` uses the declared human-task
+prompt. An optional `waits` array carries each holding execution's `runId` and
+optional `flowId`, `name`, `attempt`, and `request`.
+
+Answer a `HumanTask` with a signal to the listed root, using the wait's name
+and an answer matching its request:
+
+```bash
+smthrs runs signal run-3 '{"name":"coding-clarification","payload":"the scheduler owns it"}'
+```
+
 ## approve
 
 Accepts a serialized payload or `@file`. The default scope is `once`; `run` extends the grant through the run, and `remembered` can apply to matching future requests.

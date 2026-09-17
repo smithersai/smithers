@@ -50,7 +50,9 @@ Detached, the child announces admission by writing one line to its own log the m
 SMITHERS_DETACHED_ADMISSION=run:<nonce> runId=<run-id>
 ```
 
-The launcher waits for exactly that line, renames the log to `.flows/logs/<runId>.log`, and prints the launch document:
+The launcher accepts that nonce's line only when the ID matches
+`[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. Unsafe IDs count as missing admission. Once
+admitted, it renames the log to `.flows/logs/<runId>.log` and prints:
 
 ```json
 {"detached":true,"logFile":"<project>/.flows/logs/<runId>.log","runId":"<runId>"}
