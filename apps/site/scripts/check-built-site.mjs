@@ -92,8 +92,8 @@ export function checkAssetHeaders(root) {
 }
 
 /**
- * The landing page's one action, Start Here, opens the product. The link check
- * above cannot see this: the app page is one this build emits, so a Start Here
+ * The landing page's primary action, Start Here, opens the product. The link
+ * check above cannot see this: the app page is one this build emits, so a Start Here
  * that points into /docs is a working link that sends every first visitor to
  * the documentation instead of the app (it did, before the app moved home).
  *

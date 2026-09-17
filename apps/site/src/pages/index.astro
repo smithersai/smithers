@@ -12,8 +12,7 @@ const description = project.tagline
  * apps/app (AppMount.tsx) directly and the wordmark becomes the
  * app's own. The href is the first catalog repository's app page
  * (src/pages/[owner]/[repo].astro) for a middle-click, a new tab, or a
- * browser without JavaScript. The documentation is not linked from the home
- * page at launch.
+ * browser without JavaScript. Docs is the secondary action, a plain link.
  */
 const appHref = `/${AVAILABLE_REPOS[0].name}/?tutorial`
 const githubHref = "https://github.com/smithersai/smithers"
@@ -35,6 +34,7 @@ const githubHref = "https://github.com/smithersai/smithers"
         <span>Start Here</span>
         <kbd class="start-key" aria-hidden="true">s</kbd>
       </a>
+      <a class="btn ghost" href="/docs/" data-astro-prefetch="hover">Docs</a>
       <div id="start-error" hidden>
         <p role="alert">Smithers couldn't load. Reload to try again.</p>
         <button id="start-reload" class="start ready" type="button">Reload</button>
@@ -451,9 +451,10 @@ const githubHref = "https://github.com/smithersai/smithers"
     .start-key { display: none; }
   }
   @media (max-width: 480px) {
-    .start {
+    .start, .home .btn {
       width: 100%;
       max-width: 22rem;
+      justify-content: center;
     }
   }
 
@@ -480,7 +481,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     to { opacity: 1; clip-path: inset(0 round 999px); transform: none; }
   }
   @media (prefers-reduced-motion: no-preference) {
-    .github { animation: control-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) 40ms backwards; }
+    .github, .home .btn { animation: control-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) 40ms backwards; }
     .start.ready::after,
     .github::after {
       content: "";
@@ -505,7 +506,7 @@ const githubHref = "https://github.com/smithersai/smithers"
   }
   @media (prefers-reduced-motion: reduce) {
     .start.ready { animation: none; }
-    .start, .start-key, .github { transition: none; }
+    .start, .start-key, .github, .home .btn { transition: none; }
     .start:hover, .start:active, .start[data-pressed], .start.pending,
     .start:active .start-key,
     .start[data-pressed] .start-key, .start.pending .start-key { transform: none; }
