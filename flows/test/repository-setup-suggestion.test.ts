@@ -9,7 +9,7 @@ const draft: Draft = {
     { id: "poc", name: "Quick POC", mode: "manual", prompt: "Explore a cheap bounded fix in an isolated workspace." }
   ],
   checks: [{ id: "telemetry", name: "Telemetry", kind: "ai", rule: "Handlers record failures.", paths: ["src/**"], policy: "required" }],
-  cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", budgetMinutes: 10,
+  cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", choreEvent: "none", budgetMinutes: 10,
   connectIssues: false, trialTitle: "[Smithers test] Issues", trialBody: "A scoped setup trial."
 }
 type Suggestion = Parameters<typeof suggestedSetupDraft>[1]
@@ -20,7 +20,7 @@ const suggestedCase = { id: "answers-a-source-question", name: "Answers a source
     assertions: [{ path: "/results/0/status", equals: "completed" }] } } satisfies Suggestion["cases"][number]
 /** Every non-step field here differs from the draft, so the host's discards stay observable. */
 const suggestion = (extra: Partial<Suggestion> = {}): Suggestion => ({ checks: draft.checks, cases: [suggestedCase],
-  replies: "automatic", landing: "checks", scope: "label", label: "model-label", schedule: "0 9 * * *", budgetMinutes: 90,
+  replies: "automatic", landing: "checks", scope: "label", label: "model-label", schedule: "0 9 * * *", choreEvent: "push", budgetMinutes: 90,
   connectIssues: true, trialTitle: "Reproduce the reported crash", trialBody: "A realistic first request.", ...extra })
 
 test("a suggestion without step overrides keeps every step and the user's own decisions", () => {
@@ -28,7 +28,7 @@ test("a suggestion without step overrides keeps every step and the user's own de
   assert.deepEqual(merged.steps, draft.steps)
   assert.equal(merged.steps[0], draft.steps[0], "an unchanged step is the draft's own step")
   assert.equal(merged.steps[1], draft.steps[1])
-  for (const field of ["replies", "landing", "scope", "label", "schedule", "budgetMinutes"] as const) assert.deepEqual(merged[field], draft[field])
+  for (const field of ["replies", "landing", "scope", "label", "schedule", "choreEvent", "budgetMinutes"] as const) assert.deepEqual(merged[field], draft[field])
   assert.equal(merged.trialTitle, "Reproduce the reported crash")
   assert.equal(merged.trialBody, "A realistic first request.")
 })
@@ -74,4 +74,13 @@ test("suggested checks stay report-only and existing user cases survive inspecti
   assert.deepEqual(suggestedSetupDraft(authored, suggestion()).cases, authored.cases)
   assert.deepEqual(suggestedSetupDraft(draft, suggestion()).cases,
     [{ ...suggestedCase, input: JSON.stringify(suggestedCase.input) }], "a model case is stored as validated JSON text")
+})
+
+/** The event a chore runs on is the maintainer's decision, not a suggestion. */
+test("an inspection cannot change the chore event the maintainer chose", () => {
+  assert.equal(suggestedSetupDraft(draft, suggestion({ choreEvent: "push" })).choreEvent, "none")
+  assert.equal(suggestedSetupDraft(draft, suggestion({ choreEvent: "labeled" })).choreEvent, "none")
+  const pushing: Draft = { ...draft, choreEvent: "push" }
+  assert.equal(suggestedSetupDraft(pushing, suggestion({ choreEvent: "none" })).choreEvent, "push")
+  assert.equal(suggestedSetupDraft(pushing, suggestion({ choreEvent: "labeled" })).choreEvent, "push")
 })
