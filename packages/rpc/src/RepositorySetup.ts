@@ -253,12 +253,20 @@ export const SetupRecoveryResponseSchema = z.object({
 /** Independent policy and stored-request results, including partial failure. @since 1.0.0 */
 export type SetupRecoveryResponse = z.infer<typeof SetupRecoveryResponseSchema>
 
-/** A chore that fires on a schedule or event but runs no step reports skipped forever. @since 1.0.0 */
-export function unattendedChoreProblem(setup: { job: RepositoryJob; draft: Pick<SetupDraft, "schedule" | "choreEvent"> &
-  { steps: ReadonlyArray<Pick<SetupDraft["steps"][number], "mode">> } }): string | undefined {
-  if (setup.job !== "chores" || (!setup.draft.schedule.trim() && setup.draft.choreEvent === "none")) return undefined
-  return setup.draft.steps.some(step => step.mode === "automatic" || step.mode === "approved") ? undefined
-    : "Set the chore to run automatically or on approval."
+/** What a registration's own scope refuses: a chore that fires on a schedule or
+ * event but runs no step reports skipped forever, and a label-scoped candidate
+ * with no chosen label matches every labeled issue. @since 1.0.0 */
+export function registrationScopeProblems(setup: { job: RepositoryJob; draft: Pick<SetupDraft, "schedule" | "choreEvent" | "scope" | "label"> &
+  { steps: ReadonlyArray<Pick<SetupDraft["steps"][number], "mode">> } }): string[] {
+  const problems: string[] = []
+  if (setup.job === "chores" && (setup.draft.schedule.trim() || setup.draft.choreEvent !== "none") &&
+    !setup.draft.steps.some(step => step.mode === "automatic" || step.mode === "approved")) {
+    problems.push("Set the chore to run automatically or on approval.")
+  }
+  if ((setup.draft.scope === "label" || (setup.job === "chores" && setup.draft.choreEvent === "labeled")) && !setup.draft.label.trim()) {
+    problems.push("Choose the issue label.")
+  }
+  return problems
 }
 
 /** Whether the candidate has direct, current evidence sufficient to request activation. @since 1.0.0 */
@@ -267,9 +275,7 @@ export function setupActivationProblems(setup: RepositorySetup): string[] {
   const digest = setupCandidate(setup)
   const current = (receipt: SetupReceipt | undefined, operation: SetupReceipt["operation"]) => receipt?.operation === operation && !!receipt.runId && receipt.phase === "completed" && receipt.revision === setup.revision && receipt.digest === digest
   if (!setup.draft.steps.some(item => item.mode !== "off")) problems.push("Choose a flow to enable.")
-  const unattended = unattendedChoreProblem(setup)
-  if (unattended) problems.push(unattended)
-  if ((setup.draft.scope === "label" || (setup.job === "chores" && setup.draft.choreEvent === "labeled")) && !setup.draft.label.trim()) problems.push("Choose the issue label.")
+  problems.push(...registrationScopeProblems(setup))
   if (setup.draft.checks.some(check => !check.rule.trim())) problems.push("Complete the check rules.")
   if (!current(setup.evaluation, "evaluate")) problems.push("Run evals for this draft.")
   else {

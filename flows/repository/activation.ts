@@ -5,7 +5,7 @@ import { Action, Flow, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
-import { unattendedChoreProblem } from "../../packages/rpc/src/RepositorySetup.ts"
+import { registrationScopeProblems } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
@@ -103,10 +103,11 @@ export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandida
   }).pipe(Effect.catch(error => Effect.succeed({ satisfied: true, output: { status: "failed" as const, runId: "", executionId: "", evidence: [],
     error: error instanceof CodingError ? error.message : "The manual dispatch could not be verified" } })))),
   Register.toLayer(({ input, mode, deadlineAt }) => Effect.gen(function*() {
-    // The same configuration invariant the card applies. A schedule or event
-    // whose steps never run registers work that only ever reports skipped.
-    const unattended = mode === "enabled" ? unattendedChoreProblem(input) : undefined
-    if (unattended) return yield* invalid(unattended)
+    // The same configuration invariant the card applies. A trigger whose steps
+    // never run only ever reports skipped, and a label-scoped registration with
+    // no label selects every labeled issue instead of the maintainer's own.
+    const scoped = mode === "enabled" ? registrationScopeProblems(input)[0] : undefined
+    if (scoped) return yield* invalid(scoped)
     if (Date.now() >= deadlineAt) return yield* invalid("Setup reached its configured time limit")
     const remote = yield* requireRemote
     if (remote.repo !== input.repo || (input.workspaceId !== undefined && input.workspaceId !== remote.workspaceId)) return yield* invalid("The candidate belongs to another workspace")

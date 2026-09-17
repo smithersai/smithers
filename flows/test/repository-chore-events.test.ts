@@ -25,7 +25,7 @@ const pullRequest = { type: "pull_request", actions: ["opened", "synchronize", "
 const source = "a".repeat(40), base = "b".repeat(40)
 
 const candidate = (job: JobInput["job"], mode: typeof modes[number],
-  draft: Partial<{ choreEvent: typeof choreEvents[number]; label: string; schedule: string }> = {}) => {
+  draft: Partial<{ choreEvent: typeof choreEvents[number]; label: string; schedule: string; scope: "label" | "future" }> = {}) => {
   const initial = initialSetup("example/repo", job, "maintainer")
   return { ...initial, draft: { ...initial.draft, ...draft, steps: initial.draft.steps.map(step => ({ ...step, mode })) } }
 }
@@ -167,6 +167,31 @@ test("a typed apply of a manual-only chore refuses before any registration side 
   }
   const off = await registerCandidate("enabled", setupInput("chores", "off", { choreEvent: "push" }))
   assert.equal(message(off.outcome), "Set the chore to run automatically or on approval.")
+})
+
+test("a label-scoped candidate refuses a blank label before any registration side effect", async () => {
+  for (const [name, input] of [
+    ["labeled chore", setupInput("chores", "automatic", { choreEvent: "labeled", label: "" })],
+    ["blank labeled chore", setupInput("chores", "automatic", { choreEvent: "labeled", label: "  " })],
+    ["label-scoped issues", setupInput("issues", "automatic", { scope: "label", label: "" })],
+    ["blank label-scoped issues", setupInput("issues", "automatic", { scope: "label", label: " \t" })]
+  ] as const) {
+    const refused = await registerCandidate("enabled", input)
+    assert.equal(message(refused.outcome), "Choose the issue label.", name)
+    assert.deepEqual(refused.calls, [], name)
+  }
+})
+
+test("the chosen label reaches registration exactly as it was typed", async () => {
+  const scoped = await registerCandidate("enabled", setupInput("issues", "automatic", { scope: "label", label: "triage" }))
+  assert.equal(scoped.outcome._tag, "Success")
+  assert.equal((scoped.calls.find(call => call.name === "register")!.body as Record<string, unknown>).label, "triage")
+  const padded = await registerCandidate("enabled", setupInput("chores", "automatic", { choreEvent: "labeled", label: " chore " }))
+  assert.equal(padded.outcome._tag, "Success")
+  assert.equal((padded.calls.find(call => call.name === "register")!.body as Record<string, unknown>).label, " chore ",
+    "a label with surrounding whitespace is registered unchanged, exactly as the card keeps it")
+  const trial = await registerCandidate("trial", setupInput("chores", "automatic", { choreEvent: "labeled", label: "" }, "trial"))
+  assert.equal(trial.outcome._tag, "Success", "a scoped trial registers no label-scoped event")
 })
 
 test("the refusal spares an unscheduled chore, an automatic chore and the scoped trial", async () => {
