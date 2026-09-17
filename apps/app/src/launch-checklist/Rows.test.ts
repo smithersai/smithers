@@ -414,6 +414,33 @@ describe("F-1 (an impossible ask refuses honestly)", () => {
   })
 })
 
+describe("E-2 (an untimestamped grant is refused before any write)", () => {
+  const env = { CHECKLIST_BILLING_UPSTREAM_URL: "https://billing.test", CHECKLIST_BILLING_ADMIN_TOKEN: "admin-fixture" }
+  // Mirrors the billing worker's check order: admin header, target, grant id, amount, requester, then timestamp.
+  const upstream: ProbeContext["fetch"] = async (url, init) => {
+    expect(url).toBe("https://billing.test/api/billing/admin/grants")
+    const headers = new Headers(init?.headers)
+    expect(headers.has("authorization")).toBe(false)
+    if (headers.get("x-smithers-admin-token") !== "admin-fixture") return jsonResponse({ error: "Unauthorized admin" }, 401)
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    if (typeof body.userId !== "string" || body.userId === "") return jsonResponse({ error: "userId or login is required" }, 400)
+    if (typeof body.grantId !== "string" || !body.grantId.startsWith("admin:")) return jsonResponse({ error: "grantId is required" }, 400)
+    if (typeof body.amountUsd !== "number") return jsonResponse({ error: "amountUsd must be a positive number" }, 400)
+    if (typeof body.requester !== "string" || body.requester === "") return jsonResponse({ code: "requester_required" }, 400)
+    if (typeof body.timestamp !== "string" || body.timestamp === "") return jsonResponse({ code: "timestamp_required" }, 400)
+    return jsonResponse({ granted: true }, 201)
+  }
+
+  test("authenticates with x-smithers-admin-token and reaches the timestamp guard", async () => {
+    expect((await rowById("E-2").probe(contextFor({ env, fetch: upstream }))).status).toBe("pass")
+  })
+
+  test("fails when the upstream credits the untimestamped grant", async () => {
+    const result = await rowById("E-2").probe(contextFor({ env, fetch: async () => jsonResponse({ granted: true }, 201) }))
+    expect(result.status).toBe("fail")
+  })
+})
+
 describe("E-1 (the billing admin surface rejects an unauthenticated grant)", () => {
   test("passes on a 401 and fails on anything else", async () => {
     const env = { CHECKLIST_BILLING_UPSTREAM_URL: "https://billing.test" }

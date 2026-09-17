@@ -47,6 +47,8 @@ const ZERO_BALANCE_COOKIE = "CHECKLIST_ZERO_BALANCE_BEARER"
 const BILLING_UPSTREAM = "CHECKLIST_BILLING_UPSTREAM_URL"
 const BILLING_ADMIN_TOKEN = "CHECKLIST_BILLING_ADMIN_TOKEN"
 const BILLING_PRODUCT_TOKEN = "CHECKLIST_BILLING_PRODUCT_SERVICE_TOKEN"
+/** The billing upstream reads the admin token here; `authorization: Bearer` is the account credential. */
+const ADMIN_TOKEN_HEADER = "x-smithers-admin-token"
 
 const signedInPage = (ctx: ProbeContext): Promise<ProbePage> => ctx.page(ctx.env[SESSION_COOKIE])
 
@@ -676,13 +678,15 @@ export const ROWS: ReadonlyArray<ChecklistRow> = [
     requiredEnv: [BILLING_UPSTREAM, BILLING_ADMIN_TOKEN],
     probe: async (ctx) => {
       const upstream = ctx.env[BILLING_UPSTREAM] ?? ""
+      // Every field but `timestamp` is valid, so the upstream's timestamp guard is the check that refuses.
+      const requester = `lc-e2-${crypto.randomUUID().replaceAll("-", "")}`
       const response = await ctx.fetch(`${upstream}/api/billing/admin/grants`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${ctx.env[BILLING_ADMIN_TOKEN] ?? ""}`
+          [ADMIN_TOKEN_HEADER]: ctx.env[BILLING_ADMIN_TOKEN] ?? ""
         },
-        body: JSON.stringify({ requester: "launch-checklist", amountUsd: "1.00" })
+        body: JSON.stringify({ userId: requester, requester, amountUsd: 1, kind: "promotional", grantId: `admin:${requester}` })
       })
       const text = await response.text()
       return verdict(
@@ -712,7 +716,7 @@ export const ROWS: ReadonlyArray<ChecklistRow> = [
       })
       const headers = {
         "content-type": "application/json",
-        "x-smithers-admin-token": ctx.env[BILLING_ADMIN_TOKEN] ?? ""
+        [ADMIN_TOKEN_HEADER]: ctx.env[BILLING_ADMIN_TOKEN] ?? ""
       }
       // BalanceOverview.credits is the ledger's durable audit, not the POST receipt.
       const readLedger = async () => {
