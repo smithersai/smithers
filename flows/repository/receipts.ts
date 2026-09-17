@@ -19,15 +19,22 @@ const record = (value: unknown): Record<string, unknown> => value !== null && ty
  * registered bridge dispatch and its approved control root. Callers vary only
  * in which ancestor statuses they accept and whether the proven execution's own
  * payload is the dispatched input; a step still inside a running job is not. */
-export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never }>(
+export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never },
+  P extends Schema.Top & { readonly EncodingServices: never }>(
   options: {
     readonly executionId: string; readonly flow: string; readonly bridge: string; readonly payload: unknown
+    readonly payloadSchema: P
     readonly success: S; readonly error: E
     readonly ancestors: (status: string) => boolean
     readonly dispatched: boolean
   }
 ) => Effect.gen(function*() {
   const store = yield* RunStore.RunStore, graph = yield* DurableEngineState.DurableEngineState, control = yield* ControlRuntime
+  // The run driver stores every payload through the flow's own JSON codec, so
+  // the expectation is compared in that stored form and never in its decoded
+  // one; a field the schema does not declare is absent from both sides.
+  const expected = Schema.encodeUnknownOption(Schema.toCodecJson(options.payloadSchema))(options.payload)
+  if (Option.isNone(expected)) return yield* invalid("The expected receipt input does not fit its claimed flow")
   let bytes = 0
   const read = (id: string, selected: boolean) => Effect.gen(function*() {
     const row = yield* store.get(id)
@@ -39,7 +46,7 @@ export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices
     return { row, state: state.value }
   })
   const selected = yield* read(options.executionId, true)
-  if (selected.state.flowName !== options.flow || Digest.canonical(selected.state.payload) !== Digest.canonical(options.payload)) return yield* invalid("The receipt does not match its claimed flow and input")
+  if (selected.state.flowName !== options.flow || Digest.canonical(selected.state.payload) !== Digest.canonical(expected.value)) return yield* invalid("The receipt does not match its claimed flow and input")
   const result = Schema.decodeUnknownOption(Schema.toCodecJson(Flow.Result({ success: options.success, error: options.error })))(selected.state.result)
   if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) return yield* invalid("The native flow did not complete successfully")
   const visited = new Set<string>()
@@ -49,7 +56,7 @@ export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices
     visited.add(id)
     const entry = id === options.executionId ? selected : yield* read(id, false)
     if (entry.state.flowName === options.bridge) {
-      if (bridged || (options.dispatched && Digest.canonical(record(entry.state.payload).input) !== Digest.canonical(options.payload))) return yield* invalid("The registered bridge does not match the receipt")
+      if (bridged || (options.dispatched && Digest.canonical(record(entry.state.payload).input) !== Digest.canonical(expected.value))) return yield* invalid("The registered bridge does not match the receipt")
       bridged = true
       input = record(entry.state.payload).input
     }
@@ -61,7 +68,7 @@ export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices
           !options.ancestors(run.status) || run.flowId !== options.bridge || !run.planId || record(entry.state.payload).planId !== run.planId) return yield* invalid("The receipt has no single completed control owner")
       const plan = yield* control.getPlan(run.planId)
       if (plan.decision !== "approved" || run.planDigest !== plan.card.digest || plan.card.flowId !== options.bridge ||
-          Digest.canonical(plan.decodedInput) !== Digest.canonical(options.dispatched ? options.payload : input)) return yield* invalid("The receipt differs from its approved input")
+          Digest.canonical(plan.decodedInput) !== Digest.canonical(options.dispatched ? expected.value : input)) return yield* invalid("The receipt differs from its approved input")
       return { output: result.value.exit.value, run, plan, input }
     }
     if (parents.length > 1) return yield* invalid("The receipt has ambiguous native ownership")
@@ -71,9 +78,10 @@ export const ownedAncestry = <S extends Schema.Top & { readonly DecodingServices
   }
   return yield* invalid("The receipt ancestry exceeds its bounded lookup")
 })
-export const readOwnedResult = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never }>(
-  executionId: string, flow: string, bridge: string, payload: unknown, success: S, error: E
-) => ownedAncestry({ executionId, flow, bridge, payload, success, error, ancestors: status => status === "completed", dispatched: true })
+export const readOwnedResult = <S extends Schema.Top & { readonly DecodingServices: never }, E extends Schema.Top & { readonly DecodingServices: never },
+  P extends Schema.Top & { readonly EncodingServices: never }>(
+  executionId: string, flow: string, bridge: string, payload: unknown, payloadSchema: P, success: S, error: E
+) => ownedAncestry({ executionId, flow, bridge, payload, payloadSchema, success, error, ancestors: status => status === "completed", dispatched: true })
 
 export const priorSetupReceipt = (input: SetupInput, operation: "evaluate" | "trial") => Effect.gen(function*() {
   const catalog = yield* RunCatalogRead.RunCatalogRead, store = yield* RunStore.RunStore
@@ -86,7 +94,7 @@ export const priorSetupReceipt = (input: SetupInput, operation: "evaluate" | "tr
     const payload = Schema.decodeUnknownOption(SetupInput)(state.value.payload)
     if (Option.isNone(payload) || payload.value.repo !== input.repo || payload.value.job !== input.job || payload.value.digest !== input.digest ||
         payload.value.revision !== input.revision || payload.value.operation !== operation) continue
-    const proof = yield* readOwnedResult(candidate.runId, "repository/Setup", "repository/setup", payload.value, OperationResult, CodingError)
+    const proof = yield* readOwnedResult(candidate.runId, "repository/Setup", "repository/setup", payload.value, SetupInput, OperationResult, CodingError)
     const receipt = proof.output.receipt
     if (receipt?.phase === "completed" && receipt.operation === operation && receipt.digest === input.digest && receipt.revision === input.revision && receipt.runId === proof.run.runId) {
       if (operation === "trial") {
@@ -120,7 +128,7 @@ export const completedJob = (runId: string, input: Pick<JobInput, "repo" | "job"
         (input.sourceRevision !== undefined && value.sourceRevision !== input.sourceRevision) || value.event.source !== event.source ||
         (value.event.issueNumber ?? 0) !== event.issueNumber || (event.deliveryKey !== undefined && value.event.deliveryKey !== event.deliveryKey) ||
         value.event.manualStep !== event.manualStep || (event.trial === true && value.event.trial !== true)) continue
-    const proof = yield* readOwnedResult(row.runId, RepositoryJob._tag, `repository-jobs/${input.job}`, value, JobResult, RepositoryJob.errorSchema)
+    const proof = yield* readOwnedResult(row.runId, RepositoryJob._tag, `repository-jobs/${input.job}`, value, JobInput, JobResult, RepositoryJob.errorSchema)
     if (proof.run.runId !== runId) continue
     if (proof.output.repo !== value.repo || proof.output.job !== value.job || proof.output.revision !== value.revision || proof.output.digest !== value.digest ||
         proof.output.eventKey !== value.event.deliveryKey || proof.output.status !== "completed" || proof.output.results.length === 0 ||

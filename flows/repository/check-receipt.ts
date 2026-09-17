@@ -178,7 +178,7 @@ export const verifiedCheckStep = (input: { readonly executionId: string; readonl
   // The producer's own construction, never a second derivation of it.
   const payload = { work: finalCheckWork(input.work, { head: input.source as typeof Work.Type["evidence"]["source"], base: input.baseCommitId }) }
   const proof = yield* ownedAncestry({ executionId: input.executionId, flow: CheckStep._tag, bridge,
-    payload, success: StepResult, error: CodingError, dispatched: false,
+    payload, payloadSchema: CheckStep.payloadSchema, success: StepResult, error: CodingError, dispatched: false,
     ancestors: status => status !== "failed" && status !== "cancelled" }).pipe(
       Effect.provideService(RunStore.RunStore, connected[0].value),
       Effect.provideService(DurableEngineState.DurableEngineState, connected[1].value),

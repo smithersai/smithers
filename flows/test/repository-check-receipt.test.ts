@@ -90,10 +90,13 @@ const result = (candidate = sourceCommit, values = results, gate = "passed") => 
   evidence: [], executionId: "job-run/implement", output: { status: "implemented", source, creation, checks: candidate === "" ? undefined : checks(candidate, values, gate) } })
 
 const resultCodec = Schema.toCodecJson(Flow.Result({ success: StepResult, error: CodingError }))
+/** The run driver stores every payload through the flow's own JSON codec, so
+ * these rows hold what the durable boundary holds, never the decoded value. */
+const checkPayloadCodec = Schema.toCodecJson(CheckStep.payloadSchema)
 /** FinishChange rechecks the retained source under exactly the delivered Work. */
 const stepState = (options: { candidate?: string; values?: typeof results; flowName?: string; work?: unknown; parent?: string | null } = {}) =>
   JSON.stringify({ version: 1, flowName: options.flowName ?? CheckStep._tag,
-    payload: { work: finalCheckWork((options.work ?? work) as never, { head: source as never, base: mainCommit }) },
+    payload: Schema.encodeSync(checkPayloadCodec)({ work: finalCheckWork((options.work ?? work) as never, { head: source as never, base: mainCommit }) }),
     ...(options.parent === undefined || options.parent === null ? {} : { parentExecutionId: options.parent }),
     result: Schema.encodeSync(resultCodec)(new Flow.Complete({ exit: Exit.succeed(Schema.decodeUnknownSync(StepResult)(
       checks(options.candidate ?? sourceCommit, options.values ?? results))) })) })
@@ -147,6 +150,14 @@ test("the verifier accepts a completed CheckStep whose job is still awaiting lan
   if (verified._tag !== "Success") return
   assert.deepEqual(verified.value, { runId: "control-run", executionId: checkExecutionId, candidate: sourceCommit,
     checks: [{ id: "verify", outcome: "passed" }, { id: "review", outcome: "skipped_no_matching_paths" }] })
+})
+
+test("the stored CheckStep payload is the encoded one the run driver writes", async () => {
+  const stored = JSON.parse(stepState()) as { payload: { work: { evidence: { source: Record<string, unknown> } } } }
+  assert.equal("kind" in stored.payload.work.evidence.source, false, "the payload codec drops fields Revision does not declare")
+  assert.equal(stored.payload.work.evidence.source.commitId, sourceCommit)
+  const verified = await verify(request)
+  assert.equal(verified._tag, "Success")
 })
 
 test("completedJob still refuses the running job the verifier accepts", async () => {
