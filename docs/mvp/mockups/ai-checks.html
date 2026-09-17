@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smithers · AI check design</title>
+  <style>
+    :root{color-scheme:light dark;--ac-bg:light-dark(#faf9f6,#141413);--ac-panel:light-dark(#fff,#1d1d1a);--ac-fg:light-dark(#252520,#eeeee7);--ac-muted:light-dark(#66665e,#b4b4a7);--ac-line:light-dark(#dcdcd2,#3d3d34);--ac-soft:light-dark(#f0efe7,#29291f);--ac-focus:light-dark(#746115,#e6d887);--ac-green:light-dark(#246c42,#a1d9b4);--ac-red:light-dark(#ab312d,#ffaba3);--ac-primary:light-dark(#282820,#eeeee4);--ac-on:light-dark(#fff,#20201a)}
+    *{box-sizing:border-box;min-width:0}body{margin:0;padding:24px;background:var(--ac-bg);color:var(--ac-fg);font:14px/1.5 system-ui,sans-serif}button,input,select,textarea{font:inherit;color:inherit}button,select,input,textarea{border:1px solid var(--ac-line);border-radius:5px;background:var(--ac-panel);padding:8px 10px}button{cursor:pointer}button:disabled{cursor:default;opacity:.48}button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--ac-focus);outline-offset:3px}textarea{width:100%;resize:vertical;min-height:130px}input,select{max-width:100%}code,.ac-mono{font:12px/1.55 ui-monospace,monospace;overflow-wrap:anywhere}.ac-primary{background:var(--ac-primary);color:var(--ac-on);border-color:var(--ac-primary)}.ac-muted{color:var(--ac-muted)}.ac-good{color:var(--ac-green)}.ac-bad{color:var(--ac-red)}.ac-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ac-between{justify-content:space-between}.ac-field{display:grid;gap:6px;margin:16px 0}.ac-tools{max-width:1050px;margin:0 auto 16px;font-size:12px;color:var(--ac-muted)}.ac-tools select{font-size:12px}.ac-app{max-width:1050px;margin:auto;border:1px solid var(--ac-line);border-radius:10px;background:var(--ac-panel);overflow:hidden}.ac-bar{padding:17px 22px;border-bottom:1px solid var(--ac-line);gap:22px}.ac-brand{font:500 14px ui-monospace,monospace;letter-spacing:2px}.ac-repo{flex:1;overflow-wrap:anywhere}.ac-layout{display:grid;grid-template-columns:minmax(225px,.8fr) minmax(0,1.45fr)}.ac-chat{padding:25px 22px;border-right:1px solid var(--ac-line)}.ac-settings{padding:24px 26px;background:var(--ac-bg)}h1{font-size:22px;line-height:1.3;font-weight:500;margin:0 0 6px}h2{font-size:15px;font-weight:550;margin:22px 0 10px}p{margin:0 0 14px}.ac-bubble{background:var(--ac-soft);border-radius:7px;padding:14px;margin:18px 0}.ac-chat textarea{min-height:80px}.ac-tabs{display:flex;gap:23px;border-bottom:1px solid var(--ac-line);margin:18px 0}.ac-tabs button{border:0;border-radius:0;background:none;padding:9px 0;color:var(--ac-muted)}.ac-tabs button[aria-current=true]{color:var(--ac-fg);border-bottom:2px solid var(--ac-focus)}.ac-chip{border:1px solid var(--ac-line);padding:3px 8px;border-radius:4px}.ac-pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ac-case{padding:13px 0;border-bottom:1px solid var(--ac-line)}.ac-case summary{cursor:pointer;display:list-item}.ac-case .ac-case-body{margin:12px 0 2px;padding-left:14px;border-left:2px solid var(--ac-line)}.ac-outcome{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}.ac-outcome span{display:block}.ac-foot{border-top:1px solid var(--ac-line);margin-top:22px;padding-top:16px}.ac-toast{margin-top:16px;padding:10px 13px;background:var(--ac-soft);border-radius:5px}.ac-history{margin-top:20px;font-size:12px}.ac-history ul{padding-left:18px}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0;background:var(--ac-soft);padding:12px;border-radius:5px}.ac-result{padding:14px 0}.ac-result strong{font-weight:550}[hidden]{display:none!important}
+    @media(max-width:700px){body{padding:12px}.ac-layout{grid-template-columns:1fr}.ac-chat{border-right:0;border-bottom:1px solid var(--ac-line)}.ac-settings,.ac-chat{padding:20px 16px}.ac-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:14px 16px;gap:8px 12px}.ac-repo{grid-row:2;grid-column:1/-1}.ac-pair{grid-template-columns:1fr}.ac-tools{align-items:flex-start}textarea,input,select,#ac-scope{font-size:16px}}@media(pointer:coarse){button,select{min-height:44px}}
+  </style>
+</head>
+<body>
+  <aside class="ac-tools ac-row ac-between" aria-label="Prototype controls">
+    <span>Design prototype · illustrative data</span>
+    <label>Scenario <select id="ac-scenario" aria-label="Scenario"><option value="normal">Correct rule</option><option value="scope">Scope misses handlers</option><option value="unavailable">Tool unavailable</option></select></label>
+  </aside>
+  <main class="ac-app" id="smithers-ai-checks">
+    <header class="ac-bar ac-row"><span class="ac-brand">SMITHERS</span><span class="ac-repo ac-muted">acme/workbench / CI</span><span id="ac-active">Off</span></header>
+    <div class="ac-layout">
+      <section class="ac-chat" aria-label="Setup conversation">
+        <p class="ac-muted">Smithers</p>
+        <p>Two checks found.</p>
+        <div class="ac-row"><span class="ac-chip">Typecheck</span><span class="ac-chip">Tests</span></div>
+        <div class="ac-bubble"><p>Add an observability check?</p><button type="button" id="ac-suggest">Use suggestion</button></div>
+        <details><summary>Sources</summary><div class="ac-field"><code>AGENTS.md</code><code>src/telemetry.ts</code><code>.github/workflows/ci.yml</code></div></details>
+        <div id="ac-chat-reply" class="ac-result" aria-live="polite"></div>
+        <form id="ac-chat-form"><label class="ac-field" for="ac-message">Message<textarea id="ac-message" aria-label="Message" placeholder="Ask or change a setting"></textarea></label><button type="submit">Send</button></form>
+        <div id="ac-toast" class="ac-toast" role="status" hidden></div>
+      </section>
+      <section class="ac-settings" aria-label="AI check settings">
+        <h1>Observability</h1><span class="ac-muted">AI check</span>
+        <nav class="ac-tabs" aria-label="Check views"><button type="button" data-view="rule" aria-current="true">Rule</button><button type="button" data-view="evals" aria-current="false">Evals</button><button type="button" data-view="trial" aria-current="false">Test</button></nav>
+        <section data-panel="rule">
+          <label class="ac-field" for="ac-rule">Prompt<textarea id="ac-rule" aria-label="Prompt" rows="7">Review changed handlers and workers against AGENTS.md and src/telemetry.ts. Fail unrecorded errors or missing request/job context. Cite each finding's file and line. Inspect the full PR comparison, including committed changes. If source or a tool is unavailable, report that the check could not run.</textarea></label>
+          <label class="ac-field" for="ac-scope">Affected paths<textarea id="ac-scope" aria-label="Affected paths" class="ac-mono" rows="3" style="min-height:88px">src/api/**
+src/jobs/**
+src/telemetry/**</textarea></label>
+          <label class="ac-field" for="ac-policy">When enabled<select id="ac-policy" aria-label="When enabled"><option value="report">Report findings</option><option value="required">Require before landing</option></select></label>
+        </section>
+        <section data-panel="evals" hidden>
+          <div class="ac-row ac-between"><span id="ac-eval-state">3 cases</span><button type="button" id="ac-evaluate">Run evals</button></div>
+          <details class="ac-case" open><summary>New handler misses logging</summary><div class="ac-case-body"><code>src/api/orders.ts:42</code><pre>catch (error) {
+  return Response.json({ error: "failed" });
+}</pre><div class="ac-outcome"><div><span class="ac-muted">Expected</span><span>Fail · missing error log</span></div><div><span class="ac-muted">Observed</span><span data-observed="0">—</span></div></div></div></details>
+          <details class="ac-case"><summary>Committed violation, clean worktree</summary><div class="ac-case-body"><code>base…head · src/jobs/send.ts:19</code><p class="ac-muted">PR changes are already committed.</p><div class="ac-outcome"><div><span class="ac-muted">Expected</span><span>Fail · missing job context</span></div><div><span class="ac-muted">Observed</span><span data-observed="1">—</span></div></div></div></details>
+          <details class="ac-case"><summary>Handler follows repo convention</summary><div class="ac-case-body"><code>src/api/invoices.ts:28</code><pre>logger.error({ error, requestId }, "Invoice failed");</pre><div class="ac-outcome"><div><span class="ac-muted">Expected</span><span>Pass · failure recorded</span></div><div><span class="ac-muted">Observed</span><span data-observed="2">—</span></div></div></div></details>
+        </section>
+        <section data-panel="trial" hidden>
+          <label class="ac-field" for="ac-pr">Test PR<input id="ac-pr" aria-label="Test PR" value="#82 · Record order failures"></label>
+          <div class="ac-row ac-between"><span class="ac-muted">This PR only</span><button type="button" id="ac-trial">Test check</button></div>
+          <div id="ac-trial-result" class="ac-result" aria-live="polite"></div>
+          <details><summary>Comparison</summary><pre>src/api/orders.ts
+− return Response.json({ error: "failed" });
++ logger.error({ error, requestId }, "Order failed");
++ return Response.json({ error: "failed" });</pre><span class="ac-muted">base 73b2c91 → head b81d3aa</span></details>
+        </section>
+        <div class="ac-foot ac-row ac-between"><span id="ac-draft" class="ac-muted">Draft 1</span><button type="button" id="ac-enable" class="ac-primary" disabled>Enable check</button></div>
+        <details id="ac-history" class="ac-history" hidden><summary>Previous results</summary><ul id="ac-history-list"></ul></details>
+      </section>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const root = document.getElementById('smithers-ai-checks');
+      const q = selector => root.querySelector(selector);
+      const all = selector => [...root.querySelectorAll(selector)];
+      const scenario = document.getElementById('ac-scenario');
+      const state = { revision:1, evaluated:0, trial:0, active:0, activePolicy:'report', busy:false, token:0, history:[] };
+      const show = view => { all('[data-panel]').forEach(node => node.hidden = node.dataset.panel !== view); all('[data-view]').forEach(node => node.setAttribute('aria-current', String(node.dataset.view === view))); };
+      const update = () => {
+        q('#ac-draft').textContent = `Draft ${state.revision}${state.active && state.active !== state.revision ? ' · unapplied' : ''}`;
+        q('#ac-active').textContent = state.active ? `On · ${state.activePolicy === 'required' ? 'Required' : 'Report findings'}` : 'Off';
+        q('#ac-enable').textContent = state.active ? 'Apply changes' : 'Enable check';
+        q('#ac-enable').disabled = state.busy || state.evaluated !== state.revision || state.trial !== state.revision || state.active === state.revision;
+        q('#ac-evaluate').disabled = state.busy; q('#ac-trial').disabled = state.busy;
+        q('#ac-history').hidden = state.history.length === 0;
+      };
+      const remember = text => { state.history.push(text); const item = document.createElement('li'); item.textContent = text; q('#ac-history-list').append(item); };
+      const invalidate = () => {
+        if(state.evaluated) remember(`Draft ${state.evaluated} · 3 evals passed`);
+        if(state.trial) remember(`Draft ${state.trial} · PR #82 passed`);
+        state.revision++; state.evaluated = 0; state.trial = 0;
+        q('#ac-eval-state').textContent = 'Draft changed'; q('#ac-eval-state').className = 'ac-muted';
+        all('[data-observed]').forEach(node => { if(node.textContent !== '—' && !node.textContent.endsWith(' · prior draft')) node.textContent += ' · prior draft'; node.className = 'ac-muted'; });
+        q('#ac-trial-result').textContent = ''; update();
+      };
+      for(const id of ['ac-rule','ac-scope','ac-pr']) q('#'+id).addEventListener('input', invalidate);
+      q('#ac-policy').addEventListener('change', invalidate);
+      all('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
+      q('#ac-suggest').addEventListener('click', () => { show('rule'); q('#ac-rule').focus(); q('#ac-chat-reply').textContent = 'Draft ready.'; });
+      q('#ac-chat-form').addEventListener('submit', event => { event.preventDefault(); if(q('#ac-message').value.trim()){ q('#ac-chat-reply').textContent = 'Requested.'; q('#ac-message').value = ''; } });
+      const work = (kind, finish) => {
+        if(state.busy) return;
+        const revision = state.revision, token = ++state.token;
+        state.busy = true; update(); q('#ac-chat-reply').textContent = 'Requested.';
+        const notice = setTimeout(() => { if(token === state.token){ q('#ac-toast').hidden = false; q('#ac-toast').textContent = kind === 'eval' ? 'Evaluating…' : 'Testing PR #82…'; } }, 300);
+        setTimeout(() => {
+          clearTimeout(notice); if(token !== state.token) return; state.busy = false;
+          q('#ac-toast').hidden = false;
+          if(revision !== state.revision){ remember(`Draft ${revision} · result retained`); q('#ac-toast').textContent = 'Draft changed'; update(); return; }
+          finish(revision); update();
+        }, 1000);
+      };
+      q('#ac-evaluate').addEventListener('click', () => work('eval', revision => {
+        const unable = scenario.value === 'unavailable';
+        const misses = scenario.value === 'scope' || !q('#ac-scope').value.includes('src/api/');
+        const values = unable ? ['Could not run','Could not run','Could not run'] : misses ? ['Pass · scope skipped handler','Fail · missing job context','Pass · failure recorded'] : ['Fail · missing error log','Fail · missing job context','Pass · failure recorded'];
+        all('[data-observed]').forEach((node,index) => { node.parentElement.hidden = false; node.textContent = values[index]; node.className = unable || (misses && index === 0) ? 'ac-bad' : 'ac-good'; });
+        q('#ac-eval-state').textContent = unable ? 'Could not run' : misses ? '1 mismatch' : '3 / 3 passed';
+        q('#ac-eval-state').className = unable || misses ? 'ac-bad' : 'ac-good';
+        state.evaluated = unable || misses ? 0 : revision;
+        q('#ac-toast').textContent = unable ? 'Tool unavailable · retry' : misses ? '1 eval mismatch' : 'Evals passed';
+      }));
+      q('#ac-trial').addEventListener('click', () => work('trial', revision => {
+        const unavailable = scenario.value === 'unavailable';
+        const misses = scenario.value === 'scope' || !q('#ac-scope').value.includes('src/api/');
+        state.trial = unavailable || misses ? 0 : revision;
+        q('#ac-trial-result').textContent = unavailable ? 'Could not run · source unavailable' : misses ? 'Scope skipped src/api/orders.ts' : 'Passed · request context and error log found';
+        q('#ac-trial-result').className = 'ac-result ' + (unavailable || misses ? 'ac-bad' : 'ac-good');
+        q('#ac-toast').textContent = unavailable ? 'Check could not run' : misses ? 'Check needs review' : 'Test passed';
+      }));
+      q('#ac-enable').addEventListener('click', () => { if(q('#ac-enable').disabled) return; state.active = state.revision; state.activePolicy = q('#ac-policy').value; q('#ac-toast').textContent = 'Check enabled'; q('#ac-toast').hidden = false; update(); });
+      scenario.addEventListener('change', () => { invalidate(); if(scenario.value === 'scope') q('#ac-scope').value = 'src/telemetry/**'; else q('#ac-scope').value = 'src/api/**\nsrc/jobs/**\nsrc/telemetry/**'; });
+      all('[data-observed]').forEach(node => node.parentElement.hidden = true);
+      update();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+/** Offline illustrative design checks; never opens the real E2E profile. */
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+const require = createRequire(new URL('../../../apps/app/package.json', import.meta.url));
+const { chromium } = require('playwright');
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport:{width:1120,height:1100}, colorScheme:'light' });
+const errors = [], external = [], captures = [];
+page.on('pageerror', error => errors.push(error.message));
+await page.route(/^https?:/, route => { external.push(route.request().url()); return route.abort(); });
+const capture = async name => {
+  const surface = page.locator('#smithers-ai-checks');
+  await surface.screenshot({path:fileURLToPath(new URL(`figures/${name}.png`,import.meta.url))});
+  captures.push({name,prototype:true,productionVerified:false,bounds:await surface.boundingBox()});
+};
+const tab = name => page.getByRole('button',{name,exact:true}).click();
+try {
+  await page.goto(new URL('ai-checks.html',import.meta.url).href);
+  assert.equal(await page.locator('#ac-active').innerText(),'Off');
+  assert(await page.getByRole('button',{name:'Enable check',exact:true}).isDisabled());
+  await capture('21-ai-check-rule');
+  await tab('Evals');
+  await tab('Run evals');
+  await page.getByLabel('Message',{exact:true}).fill('Keep report-only while we try this.');
+  assert.equal(await page.getByLabel('Message',{exact:true}).inputValue(),'Keep report-only while we try this.');
+  await page.locator('#ac-eval-state').filter({hasText:'3 / 3 passed'}).waitFor();
+  assert(await page.getByRole('button',{name:'Enable check',exact:true}).isDisabled());
+  await capture('22-ai-check-evals');
+  await tab('Test'); await tab('Test check');
+  await page.locator('#ac-trial-result').filter({hasText:'Passed'}).waitFor();
+  await tab('Enable check');
+  assert.equal(await page.locator('#ac-active').innerText(),'On · Report findings');
+  await tab('Rule'); await page.getByLabel('Prompt',{exact:true}).fill('Require a job ID on worker failures.');
+  assert(await page.getByRole('button',{name:'Apply changes',exact:true}).isDisabled());
+  assert.equal(await page.locator('#ac-active').innerText(),'On · Report findings');
+  assert.equal(await page.locator('#ac-history-list li').count(),2);
+  await page.getByText('Previous results',{exact:true}).click();
+  await capture('23-ai-check-stale');
+  await page.getByLabel('Scenario',{exact:true}).selectOption('scope');
+  await tab('Evals'); await tab('Run evals');
+  await page.locator('#ac-eval-state').filter({hasText:'1 mismatch'}).waitFor();
+  assert.equal(await page.locator('[data-observed="0"]').innerText(),'Pass · scope skipped handler');
+  assert(await page.getByRole('button',{name:'Apply changes',exact:true}).isDisabled());
+  await capture('24-ai-check-scope-mismatch');
+  await page.getByLabel('Scenario',{exact:true}).selectOption('unavailable');
+  await tab('Test'); await tab('Test check');
+  await page.locator('#ac-trial-result').filter({hasText:'Could not run'}).waitFor();
+  assert(await page.getByRole('button',{name:'Apply changes',exact:true}).isDisabled());
+  await capture('25-ai-check-unavailable');
+  await page.setViewportSize({width:320,height:1100});
+  const width = await page.evaluate(()=>({client:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth}));
+  assert(width.scroll<=width.client,'320px document overflow');
+  await capture('26-ai-check-mobile');
+  await page.getByLabel('Test PR',{exact:true}).focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement?.textContent),'Test check');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement?.textContent),'Comparison');
+  await page.keyboard.press('Enter');
+  assert(await page.locator('[data-panel="trial"] details').evaluate(node=>node.open));
+  assert.deepEqual(errors,[]); assert.deepEqual(external,[]);
+  const receipt={kind:'offline-ai-check-design',productionVerified:false,captures,width,pageErrors:errors,externalRequests:external,
+    verified:['default off','editable prompt','Chat while work runs','eval plus trial before enable','active policy retained after edit','old results retained','outside-telemetry handler mismatch','tool failure blocks activation','320px width','keyboard disclosure']};
+  await writeFile(new URL('ai-check-capture-results.json',import.meta.url),JSON.stringify(receipt,null,2)+'\n');
+  console.log(JSON.stringify({captures:captures.length,width,pageErrors:errors,externalRequests:external.length}));
+} finally { await browser.close(); }

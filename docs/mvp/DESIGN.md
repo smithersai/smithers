@@ -137,7 +137,23 @@ flowchart LR
 
 The rule reviews relevant handlers and workers as well as telemetry code. The PR comparison includes committed changes in a clean working tree. The same check can serve issue fixes, feature work, and PR review.
 
-OpenCode owns the detailed AI-check setup prototype. Its stable export will join this section; the diagram above records the required interaction, not a completed visual implementation.
+The [interactive AI-check prototype](mockups/ai-checks.html) uses illustrative data and runs offline. It covers the suggested observability rule, editable scope, report/required policy, eval expectations, a scoped PR trial and retained prior results. It is design evidence, not a deployed check or a model-quality result. The [capture record](mockups/ai-check-capture-results.json) verifies local interactions, keyboard disclosure, usable Chat during simulated work and 320px fit.
+
+![Default-off observability check with editable rule, affected paths and report policy](mockups/figures/21-ai-check-rule.png)
+
+![Eval cases compare expected findings with the check's observed result](mockups/figures/22-ai-check-evals.png)
+
+An eval passes when the rule correctly catches a known violation. The scope regression below deliberately produces the wrong clean result because the handler lies outside the chosen telemetry path. Activation stays blocked.
+
+![A newly added handler outside the selected scope produces an eval mismatch](mockups/figures/24-ai-check-scope-mismatch.png)
+
+Editing the draft retains the applied policy and its prior evidence. A tool failure is distinct from a clean result and also blocks activation.
+
+![Edited rule retains the active report policy and old eval and trial results](mockups/figures/23-ai-check-stale.png)
+
+![Unavailable source prevents the PR trial from passing](mockups/figures/25-ai-check-unavailable.png)
+
+[View the 320px layout](mockups/figures/26-ai-check-mobile.png). OpenCode's original artifact remains separate; the release owner completed this tracked prototype while that handoff was pending.
 
 ## 9. Turn recurring feature work into a flow
 
@@ -210,7 +226,7 @@ The mockups communicate behavior and hierarchy. Use the existing shell, shared c
 
 | Needs final visual treatment | Required behavior already specified |
 | --- | --- |
-| AI-check rule/scope/eval editor | CI-04–08; OpenCode-owned prototype is pending export. |
+| AI-check rule/scope/eval editor | CI-04–08; offline interactive prototype and six rendered states above. Actual integration and live rubric quality remain separate verification. |
 | Active policy versus replacement draft | ISS-15, EVAL-04; retain active policy, show candidate version and stale evidence, test before Apply changes. |
 | Pause/stop and selected backlog batch | ISS-15; prevent new launches separately from stopping active work; preview scope and bounds. |
 | PR review after contributor updates | PR-03; show current revision and continuing feedback, with stale findings distinguished. |

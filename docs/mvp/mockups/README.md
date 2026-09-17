@@ -8,6 +8,7 @@ The first four sources were copied from the reviewed fragments under .artifacts/
 - [Issue setup and trial scenarios](issues-setup.html)
 - [Issue work, POC, fix, and decomposition](issue-work.html)
 - [Evals and prompt/expectation editing](evals.html)
+- [AI-check rule, scope, evals and PR trial](ai-checks.html)
 
 The exported documents are self-contained and work offline. The export removes optional remote tooltip/icon scripts from the generic renderer; the prototypes use native controls and their own styles. Its small scenario bridge only exchanges local presentation messages between the document and its sandboxed frame.
 
@@ -30,3 +31,5 @@ node docs/mvp/mockups/capture.mjs
 ```
 
 The capture script drives simulated controls and renders figures for DESIGN.md. It also records page errors, external requests, image dimensions, and overflow measurements at 320px in capture-results.json. These checks apply only to these local prototype documents. They do not verify the application, backend, real eval quality, accessibility as a whole, or a deployed release.
+
+The AI-check prototype is a separate self-contained document authored in `ai-checks.html`. Generate its six figures with `node docs/mvp/mockups/capture-ai-checks.mjs`; its local interaction and width results are in `ai-check-capture-results.json`. It preserves active settings after edits, retains prior eval/trial evidence, catches the handler-scope and committed-PR traps, and keeps a tool failure distinct from a passing check. Scenario controls sit outside the depicted product.

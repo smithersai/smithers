@@ -1,0 +1,90 @@
+{
+  "kind": "offline-ai-check-design",
+  "productionVerified": false,
+  "captures": [
+    {
+      "name": "21-ai-check-rule",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 35,
+        "y": 75,
+        "width": 1050,
+        "height": 720.59375
+      }
+    },
+    {
+      "name": "22-ai-check-evals",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 35,
+        "y": 75,
+        "width": 1050,
+        "height": 685.1875
+      }
+    },
+    {
+      "name": "23-ai-check-stale",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 35,
+        "y": 75,
+        "width": 1050,
+        "height": 818.59375
+      }
+    },
+    {
+      "name": "24-ai-check-scope-mismatch",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 35,
+        "y": 75,
+        "width": 1050,
+        "height": 783.1875
+      }
+    },
+    {
+      "name": "25-ai-check-unavailable",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 35,
+        "y": 75,
+        "width": 1050,
+        "height": 650
+      }
+    },
+    {
+      "name": "26-ai-check-mobile",
+      "prototype": true,
+      "productionVerified": false,
+      "bounds": {
+        "x": 12,
+        "y": -1,
+        "width": 296,
+        "height": 1207.59375
+      }
+    }
+  ],
+  "width": {
+    "client": 320,
+    "scroll": 320
+  },
+  "pageErrors": [],
+  "externalRequests": [],
+  "verified": [
+    "default off",
+    "editable prompt",
+    "Chat while work runs",
+    "eval plus trial before enable",
+    "active policy retained after edit",
+    "old results retained",
+    "outside-telemetry handler mismatch",
+    "tool failure blocks activation",
+    "320px width",
+    "keyboard disclosure"
+  ]
+}
