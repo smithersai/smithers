@@ -1,6 +1,8 @@
 /** One repository flow, registered once on the schedule a person approved. */
 import * as Digest from "@smthrs/core/Digest"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -62,34 +64,35 @@ export const RunTrigger = Flow.make("repository/RunTrigger", { payload: Executab
   }
 })
 
-const moduleRefusal = (flow: string, file: string) =>
-  invalid(`Scheduled triggers run single-file markdown flows. "${flow}" is a module entry (${file}).`)
-
 /** The form gate of the supported-flow contract, decided before any plan is
  * made. Every refusal names the flow and what about it cannot be scheduled.
- * Catalog membership, not a `model:` line, is what decides whether this host
- * can run an entry: a markdown flow reaches its model through the delegate it
- * names, and one that names none is already a catalog refusal. */
-export const admittedEntry = (flow: string, catalog: Executable.Catalog) => Effect.gen(function*() {
+ * A schedule runs one single-file markdown flow through the prompt branch
+ * `AgentSession` launches, so the gate asks what that branch asks: a markdown
+ * body, a `model:` line, and a seat this workspace resolves. */
+export const admittedEntry = (flow: string) => Effect.gen(function*() {
   if (reservedFlow(flow)) return yield* invalid(`"${flow}" is a reserved repository job; register it through repository setup.`)
-  const entry = catalog.executables.find(candidate => candidate.descriptor.name === flow)
-  if (!entry) {
-    const refusal = catalog.refused.find(candidate => candidate.flow === flow)
-    const file = refusal?.path?.split("/").at(-1)
-    if (file !== undefined && /\.[cm]?[jt]sx?$/.test(file)) return yield* moduleRefusal(flow, file)
-    if (refusal) return yield* invalid(`"${flow}" is not runnable on this workspace: ${refusal.message}`)
-    const names = catalog.executables.map(candidate => candidate.descriptor.name).filter(name => !reservedFlow(name)).sort()
+  const registry = yield* Registry.Registry
+  const found = yield* registry.getOption(flow)
+  if (Option.isNone(found)) {
+    const names = (yield* registry.list()).filter(candidate => !reservedFlow(candidate.name) &&
+      candidate.body._tag === "Markdown" && Option.isSome(candidate.model)).map(candidate => candidate.name).sort()
     return yield* invalid(`No flow "${flow}" is registered on this workspace. The workspace has: ${names.join(", ") || "no repository flows"}.`)
   }
-  const descriptor = entry.descriptor
+  const descriptor = found.value
   if (descriptor.body._tag !== "Markdown") {
-    return yield* moduleRefusal(flow, descriptor.body.path.split("/").at(-1) ?? descriptor.body.path)
+    return yield* invalid(`"${flow}" is a ${descriptor.body.path.split("/").at(-1) ?? descriptor.body.path}. Schedules run flow.mdx.`)
   }
   if (Object.hasOwn(descriptor.frontmatter, "input") || Object.hasOwn(descriptor.frontmatter, "schema")) {
     return yield* invalid(`"${flow}" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.`)
   }
   if (descriptor.body.contentDigest === undefined) return yield* invalid(`"${flow}" has unmeasured source bytes and has no executable identity.`)
-  return entry
+  if (Option.isNone(descriptor.model)) return yield* invalid(`Add a model to "${flow}" to schedule it.`)
+  const seat = descriptor.model.value
+  // The resolve `AgentSession.launch` makes, moved to registration so a
+  // missing provider is read before the schedule exists instead of at fire.
+  yield* (yield* SeatResolver.SeatResolver).resolve(seat).pipe(
+    Effect.mapError(() => invalid(`Connect ${seat.split(":")[0]} to schedule "${flow}".`)))
+  return descriptor
 })
 
 /** The current row for this slug, so a re-apply raises the revision the upsert
@@ -111,12 +114,14 @@ export const triggerLayers = Layer.mergeAll(
     if (remote.repo !== request.repo || (request.workspaceId !== undefined && request.workspaceId !== remote.workspaceId)) {
       return yield* invalid("The schedule belongs to another workspace")
     }
-    if (request.schedule.trim().split(/\s+/).filter(field => field !== "").length !== 5) return yield* invalid("schedule must have five cron fields in UTC")
+    const fields = request.schedule.trim().split(/\s+/).filter(field => field !== "")
+    if (fields.length !== 5) return yield* invalid("schedule must have five cron fields in UTC")
+    // Plue admits `* * * * *`, which at this registrar's token ceiling is 288
+    // million tokens a day on one schedule. A literal minute is the floor.
+    if (!/^\d{1,2}$/.test(fields[0]!)) return yield* invalid("Schedules run at most once an hour.")
     const approvedPlanId = request.approvedPlanId ?? "", approvedPlanDigest = request.approvedPlanDigest ?? ""
     if (!approvedPlanId || !/^[a-f0-9]{64}$/.test(approvedPlanDigest)) return yield* invalid("a flow trigger must name the plan a person approved")
-    const catalog = yield* Effect.serviceOption(Executable.Catalog)
-    if (Option.isNone(catalog)) return yield* invalid("This workspace has no flow catalog to register from")
-    yield* admittedEntry(request.flow, catalog.value)
+    yield* admittedEntry(request.flow)
     yield* (yield* Jj.Jj).snapshot("repository trigger registration")
     const source = (yield* (yield* NativeCoding).read()).head
     if (source.kind !== "resolved") return yield* invalid("Resolve native source conflicts before registering a schedule")

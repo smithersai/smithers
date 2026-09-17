@@ -4,7 +4,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
+import * as Seat from "@smthrs/agent/Seat"
 import { Control, ControlRpcs } from "@smthrs/control"
+import * as Model from "@smthrs/model/Model"
+import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Schema, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import * as NetAddress from "effect/unstable/net/NetAddress"
@@ -27,25 +30,48 @@ const SCHEDULE = "0 9 * * 1-5"
 
 /** Every fixture entry this host discovers, and why each one is there. */
 const fixtures = (target: string) => ({
-  /** Names one delegate this host registered, so the catalog can run it. */
+  /** The supported form: one model this workspace's resolver answers. */
+  "flows/nightly-report/flow.mdx": ["---", "description: A maintainer's own scheduled report.",
+    "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
+  /** Names one host delegate and no model, so no dispatch can launch it. */
   "flows/nightly-check/flow.mdx": ["---", "description: Run the reviewed command on a schedule.",
     "flows: [coding/CommandCheck]", `capabilities: ["proc:spawn:*", "fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", target, ""].join("\n"),
-  /** The form §1.8.1 calls the supported one: a model and no delegate. */
-  "flows/model-only/flow.mdx": ["---", "description: A maintainer's own scheduled report.",
-    "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
+  /** A model this workspace holds no credential for. */
+  "flows/unbound-seat/flow.mdx": ["---", "description: A report on a provider this workspace has not connected.",
+    "model: openai:gpt-5.6-sol", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
   /** Runnable, but declares an input schema the engine ignores. */
   "flows/declared-input/flow.mdx": ["---", "description: Run the reviewed command on a schedule.",
-    "flows: [coding/CommandCheck]", "input: { label: string }", `capabilities: ["proc:spawn:*"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", target, ""].join("\n"),
-  /** A module entry: refused by the markdown slice, by name and by file. */
+    "model: test:scripted", "input: { label: string }", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
+  /** A module entry: refused by the markdown gate, by name and by file. */
   "flows/module-entry/flow.ts": ['import { Flow } from "@smthrs/core"', 'import { Schema } from "effect"',
     'export default Flow.make({ description: "A module entry.", flows: ["coding/CommandCheck"], capabilities: ["proc:spawn:*"],',
     '  budget: { tokens: 200000, milliseconds: 600000 }, input: Schema.Unknown, output: Schema.Unknown })', ""].join("\n")
 })
 
+/** The one seat this workspace resolves. Every other seat refuses exactly as
+ * the native resolver refuses a provider with no key. */
+const scriptedSeats = () => {
+  const model = Model.make({
+    stream: () => Stream.fromIterable([
+      ModelEvent.TextStart({ type: "text-start", id: "cell" }),
+      ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: '```cell\nctx.done("The repository is quiet.");\n```' }),
+      ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
+      ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+    ])
+  })
+  return { resolve: (id: string) => id === "test:scripted"
+    ? Effect.succeed(Seat.make({ id, modelId: "scripted", model, contextWindowTokens: 100000,
+      route: { prepare: () => Effect.succeed({ routeId: "fixture", protocolId: "fixture", method: "POST" as const,
+        url: "https://fixture.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) } }))
+    : Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `Set a provider key to run the ${id} seat` })) }
+}
+
 interface Probe {
   readonly register: (request: Record<string, unknown>) => Promise<{ failure?: string; output?: any }>
   readonly plan: (flowId: string, input: unknown, key: string) => Promise<any>
   readonly approve: (plan: any) => Promise<unknown>
+  /** Plan, approve and run one flow the way the app's Run door does. */
+  readonly runFlow: (flowId: string, input: unknown, key: string) => Promise<Record<string, unknown> | undefined>
   readonly flows: () => Promise<ReadonlyArray<string>>
   readonly runs: () => Promise<ReadonlyArray<Record<string, unknown>>>
   readonly registrations: Array<Record<string, any>>
@@ -112,7 +138,7 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
   })) }
   const hostLayer = layer(observedPlatform, { ...base, gatewayId: "11111111-1111-4111-8111-111111111111", credential: "fixture-key",
     implementationModel: "test:scripted", checkEnvironment: { PATH: process.env.PATH! },
-    repositoryRemote: Layer.succeed(RepositoryRemote, remote) })
+    repositoryRemote: Layer.succeed(RepositoryRemote, remote) }, scriptedSeats())
   await Effect.runPromise(Effect.gen(function*() {
     const control = yield* Control.Control
     yield* Effect.forkScoped(Serve.host({ host: "127.0.0.1", port: 0, listen: false, credential: "fixture-key" }, root).pipe(
@@ -129,19 +155,28 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
     let attempt = 0
     const runs = (): Promise<ReadonlyArray<Record<string, unknown>>> => Effect.runPromise(Effect.map(client.List({ _tag: "runs" }),
       (listed: any) => (listed.items as ReadonlyArray<any>).map(row => ({ runId: row.runId, flowId: row.flowId, status: row.status, waitingReason: row.waitingReason, pendingWaits: row.pendingWaits }))))
+    const settle = (runId: string) => control.watch({ runId, follow: true }).pipe(
+      Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect,
+      Effect.timeoutOrElse({ duration: "120 seconds", orElse: () => Effect.succeed([] as any) }))
+    const runFlow = (flowId: string, input: unknown, key: string) => Effect.runPromise(Effect.gen(function*() {
+      const planned: any = yield* client.Plan({ flowId, input: json(input), idempotencyKey: `${key}:plan` })
+      yield* client.Approve({ ...planned.approval, scope: "once" })
+      const launched: any = yield* client.Run({ _tag: "Plan", planId: planned.planId, digest: planned.digest, envelope: planned.envelope, idempotencyKey: `${key}:run` })
+      yield* settle(launched.runId)
+      return (yield* Effect.promise(runs)).find(row => row.runId === launched.runId)
+    }).pipe(Effect.provideService(Control.Control, control)))
     const register = (request: Record<string, unknown>) => Effect.runPromise(Effect.gen(function*() {
       const key = `register:${String(request.slug)}:${String(request.operation ?? "register")}:${attempt++}`
       const planned: any = yield* client.Plan({ flowId: "repository/trigger", input: json(request), idempotencyKey: `${key}:plan` })
       yield* client.Approve({ ...planned.approval, scope: "once" })
       const launched: any = yield* client.Run({ _tag: "Plan", planId: planned.planId, digest: planned.digest, envelope: planned.envelope, idempotencyKey: `${key}:run` })
-      const events = yield* control.watch({ runId: launched.runId, follow: true }).pipe(
-        Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect, Effect.timeoutOrElse({ duration: "100 seconds", orElse: () => Effect.succeed([] as any) }))
+      const events = yield* settle(launched.runId)
       const outputs = (events as ReadonlyArray<any>).flatMap((event: any) => { const state = (event.payload as any)?.payload?.state
         return state?.flowName === "repository/Trigger" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
       if (outputs.length === 1) return { output: outputs[0] } as { failure?: string; output?: any }
       return { failure: JSON.stringify(events) } as { failure?: string; output?: any }
     }).pipe(Effect.provideService(Control.Control, control)))
-    yield* Effect.promise(() => use({ register, plan, approve, flows, runs, registrations, head: native.head }))
+    yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, head: native.head }))
   }).pipe(Effect.provide(hostLayer), Effect.scoped))
   passed = true
 }
@@ -150,43 +185,47 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
 const says = (recorded: string, sentence: string) =>
   assert(recorded.includes(JSON.stringify(sentence).slice(1, -1)), `expected the recorded refusal to say ${JSON.stringify(sentence)}; got ${recorded.slice(0, 4000)}`)
 
-/** The input `coding/CommandCheck` decodes: one immutable revision and one
- * declared check. It is the registered input a fire would replay verbatim. */
-const checkInput = (head: any) => ({
-  implementation: { change: "nightly", parent: head, atoms: [head], head, reads: [], writes: [] },
-  check: { id: "nightly", target: "nightly-check", flow: "nightly-check", flowDigest: "b".repeat(64), tier: "fast", required: true }
-})
-const REQUEST = { operation: "register", repo, slug: "nightly", flow: "nightly-check", schedule: SCHEDULE,
+const REQUEST = { operation: "register", repo, slug: "nightly", flow: "nightly-report", schedule: SCHEDULE,
   input: { label: "nightly" }, approvedPlanId: "plan", approvedPlanDigest: "a".repeat(64) }
 
-test("the registrar is a registered flow and this host runs no model-only maintainer markdown flow", nativeOptions, t =>
+test("this host runs a maintainer's model-only markdown flow, and every flow the picker offers gets an answer naming it", nativeOptions, t =>
   proveTrigger(t, async probe => {
     const listed = await probe.flows()
     assert(listed.includes("repository/trigger"), `repository/trigger must be registered; got ${JSON.stringify(listed)}`)
-    assert(listed.includes("nightly-check"), "a markdown flow naming one registered delegate is runnable")
-    // The form the contract calls the supported one is not runnable on this
-    // host at all: it delegates to "agent", which this host never registers.
-    // It is listed, because discovery found it, and it still cannot run: the
-    // listing a maintainer picks from is not the set this host can execute.
-    assert(listed.includes("model-only"), `discovery lists the model-only flow; got ${JSON.stringify(listed)}`)
-    const refused = await probe.register({ ...REQUEST, slug: "modelonly", flow: "model-only" })
-    says(String(refused.failure), `"model-only" is not runnable on this workspace: `)
-    says(String(refused.failure), `flow "model-only" delegates to "agent", which no registered flow provides`)
+    for (const name of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry"]) {
+      assert(listed.includes(name), `discovery lists ${name}; got ${JSON.stringify(listed)}`)
+    }
+    // The form the registrar admits is the form this host executes: plan it,
+    // approve it, run it, and let the run settle on its own.
+    const run = await probe.runFlow("nightly-report", { label: "nightly" }, "falsifier:nightly-report")
+    assert.equal(run?.status, "completed", `a model-only markdown flow must run here; got ${JSON.stringify(run)}`)
+    // The picker and the registrar agree: every offered flow either registers
+    // or is refused by a sentence that names it.
+    for (const flow of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry"]) {
+      const answer = await probe.register({ ...REQUEST, slug: "picked", flow })
+      says(String(answer.failure ?? JSON.stringify(answer.output)), `"${flow}"`)
+    }
   }))
 
-test("the form gate refuses a reserved name, an unknown flow, a module entry and a declared input schema", nativeOptions, t =>
+test("the form gate refuses a reserved name, an unknown flow, a module entry, a declared input schema, a missing model, an unresolvable seat and a sub-hourly schedule", nativeOptions, t =>
   proveTrigger(t, async probe => {
     const reserved = await probe.register({ ...REQUEST, flow: "repository/setup" })
     says(String(reserved.failure), `"repository/setup" is a reserved repository job; register it through repository setup.`)
     const unknown = await probe.register({ ...REQUEST, slug: "weekly", flow: "weekly-sweep" })
     says(String(unknown.failure), `No flow "weekly-sweep" is registered on this workspace. The workspace has: `)
-    says(String(unknown.failure), "nightly-check")
+    says(String(unknown.failure), "nightly-report")
     const module = await probe.register({ ...REQUEST, slug: "modular", flow: "module-entry" })
-    says(String(module.failure), `Scheduled triggers run single-file markdown flows. "module-entry" is a module entry (flow.ts).`)
+    says(String(module.failure), `"module-entry" is a flow.ts. Schedules run flow.mdx.`)
     const declared = await probe.register({ ...REQUEST, slug: "declared", flow: "declared-input" })
     says(String(declared.failure), `"declared-input" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.`)
+    const modelless = await probe.register({ ...REQUEST, slug: "delegated", flow: "nightly-check" })
+    says(String(modelless.failure), `Add a model to "nightly-check" to schedule it.`)
+    const unbound = await probe.register({ ...REQUEST, slug: "unbound", flow: "unbound-seat" })
+    says(String(unbound.failure), `Connect openai to schedule "unbound-seat".`)
     const cron = await probe.register({ ...REQUEST, slug: "hourly", schedule: "0 * * *" })
     says(String(cron.failure), "schedule must have five cron fields in UTC")
+    const frequent = await probe.register({ ...REQUEST, slug: "frequent", schedule: "*/5 * * * *" })
+    says(String(frequent.failure), "Schedules run at most once an hour.")
     const unapproved = await probe.register({ ...REQUEST, slug: "unapproved", approvedPlanId: "", approvedPlanDigest: "" })
     says(String(unapproved.failure), "a flow trigger must name the plan a person approved")
     assert.equal(probe.registrations.length, 0, "no refused request may reach the repository registration")
@@ -194,13 +233,13 @@ test("the form gate refuses a reserved name, an unknown flow, a module entry and
 
 test("the registrar registers only a plan a person approved, with the exact candidate and input", nativeOptions, t =>
   proveTrigger(t, async probe => {
-    const input = checkInput(probe.head)
-    const planned = await probe.plan("nightly-check", input, `trigger:${repo}:nightly:plan`)
-    assert.equal(planned.flowId, "nightly-check")
+    const input = { label: "nightly" }
+    const planned = await probe.plan("nightly-report", input, `trigger:${repo}:nightly:plan`)
+    assert.equal(planned.flowId, "nightly-report")
     // An unapproved plan registers nothing, and this registrar never approves
     // one: it reads its own journal for the decision a person made.
     const pending = await probe.register({ ...REQUEST, input, approvedPlanId: planned.planId, approvedPlanDigest: planned.digest })
-    says(String(pending.failure), `The plan for "nightly-check" is pending; a person approves the preview before it can be scheduled.`)
+    says(String(pending.failure), `The plan for "nightly-report" is pending; a person approves the preview before it can be scheduled.`)
     assert.equal(probe.registrations.length, 0, "an unapproved plan registers nothing")
     // The person approves, out of band, exactly as the app does.
     await probe.approve(planned)
@@ -209,7 +248,7 @@ test("the registrar registers only a plan a person approved, with the exact cand
     assert.equal(probe.registrations.length, 1, JSON.stringify(probe.registrations))
     const sent = probe.registrations[0]!
     assert.equal(sent.job, "flow:nightly")
-    assert.equal(sent.body.flow_id, "nightly-check")
+    assert.equal(sent.body.flow_id, "nightly-report")
     assert.equal(sent.body.mode, "enabled")
     assert.deepEqual(sent.body.events, [])
     assert.equal(sent.body.schedule, SCHEDULE)
@@ -218,7 +257,7 @@ test("the registrar registers only a plan a person approved, with the exact cand
     assert.equal(sent.body.approved_plan_digest, planned.digest)
     assert.equal(sent.body.execution_digest, planned.executionDigest)
     assert.equal(sent.body.revision, 1)
-    assert.equal(sent.body.digest, triggerCandidate({ operation: "register", repo, slug: "nightly", flow: "nightly-check",
+    assert.equal(sent.body.digest, triggerCandidate({ operation: "register", repo, slug: "nightly", flow: "nightly-report",
       schedule: SCHEDULE, input: JSON.parse(JSON.stringify(input)) } as any))
     assert.equal(registered.output.registration.timezone, "UTC")
     assert.equal(registered.output.planDigest, planned.digest)
