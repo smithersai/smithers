@@ -11,6 +11,9 @@ import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { activationLayers, normalEvents, Register } from "../repository/activation.ts"
+import { finalCheckWork } from "../repository/changes.ts"
+import { finalCheckWork as definedInJobs } from "../repository/jobs.ts"
+import { captureChecks } from "../repository/checks.ts"
 import { selectedSteps } from "../repository/execution.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
 import { Draft, type JobInput, type SetupInput } from "../repository/schema.ts"
@@ -176,4 +179,86 @@ test("the refusal spares an unscheduled chore, an automatic chore and the scoped
   const trial = await registerCandidate("trial", setupInput("chores", "manual", { choreEvent: "push" }, "trial"))
   assert.equal(trial.outcome._tag, "Success")
   assert.ok(trial.calls.some(call => call.name === "createTrial"))
+})
+
+// The revision that CAUSED a job and the revision it PRODUCES are different
+// facts; only the produced one is what fresh checks verify.
+// An incomplete tree id stops the real capture at its export boundary, which
+// is proof that the candidate guard and comparison base were both satisfied.
+const produced = "d".repeat(40), tree = ""
+const checkWork = (job: JobInput["job"], event: Partial<JobInput["event"]>, source: { commitId: string; treeId: string }) => ({
+  repo: "example/repo", job, step: { id: job === "chores" ? "chore" : "checks", name: "Step", prompt: "Do the work", mode: "automatic" as const },
+  event: { source: "github" as const, type: "push", action: "", deliveryKey: "delivery-1", payload: {}, ...event },
+  evidence: { repo: "example/repo", source: { changeId: "k".repeat(32), commitId: source.commitId, treeId: source.treeId,
+    operationId: "f".repeat(64), parentCommitIds: [base] }, files: [], missing: [], history: [], records: [], sources: [] },
+  checks: [{ id: "unit", name: "Unit", kind: "command" as const, policy: "required" as const, rule: "true", paths: [] }],
+  landing: "checks" as const, replies: "draft" as const, executionMode: "live" as const, deadlineAt: Date.now() + 60_000, proposal: [] })
+const checkFailure = async (work: ReturnType<typeof checkWork>) => {
+  const outcome = await Effect.runPromise(Effect.result(captureChecks({} as never, work as never)).pipe(
+    Effect.provideService(Jj.Jj, undefined as never), Effect.provide(NodeServices.layer)))
+  return outcome._tag === "Failure" ? String((outcome.failure as { message?: unknown }).message) : "completed"
+}
+const mismatch = "The workspace source is not the event's candidate revision"
+const reachedSource = "Checks require full immutable native commit and tree IDs"
+
+test("a review or CI job is still refused when its workspace source is not the event's candidate", async () => {
+  assert.equal(await checkFailure(checkWork("review", { type: "pull_request", action: "opened",
+    payload: { pull_request: { head: { sha: source }, base: { sha: base } } } }, { commitId: produced, treeId: tree })), mismatch)
+  assert.equal(await checkFailure(checkWork("ci", { payload: { ref: "refs/heads/main", before: base, after: source,
+    candidateCommitId: source, baseCommitId: base } }, { commitId: produced, treeId: tree })), mismatch)
+})
+
+test("a push chore's produced change is checked against its own source while the push stays provenance", async () => {
+  const trigger = { ref: "refs/heads/main", before: base, after: source, candidateCommitId: source, baseCommitId: base }
+  assert.equal(await checkFailure(checkWork("chores", { payload: trigger }, { commitId: produced, treeId: tree })), mismatch)
+  const work = checkWork("chores", { payload: { trigger, candidateCommitId: produced, baseCommitId: source } }, { commitId: produced, treeId: tree })
+  assert.equal(await checkFailure(work), reachedSource)
+  assert.deepEqual((work.event.payload as { trigger: unknown }).trigger, trigger)
+})
+
+test("a labeled-issue chore's produced change is checked against its own source too", async () => {
+  const trigger = { issue: { number: 7, title: "Tidy up", body: "Remove the dead module" } }
+  assert.equal(await checkFailure(checkWork("chores", { type: "issues", action: "labeled", payload: trigger },
+    { commitId: produced, treeId: tree })), reachedSource)
+  assert.equal(await checkFailure(checkWork("chores", { type: "issues", action: "labeled",
+    payload: { trigger, candidateCommitId: produced, baseCommitId: source } }, { commitId: produced, treeId: tree })), reachedSource)
+})
+
+// L25's CI receipt verifier rebuilds the fresh-check payload with this exact
+// function, so the transform lives in one place for both.
+const todaysTransform = (work: ReturnType<typeof checkWork>, head: ReturnType<typeof checkWork>["evidence"]["source"]) =>
+  ({ ...work, evidence: { ...work.evidence, source: head }, proposal: [] })
+const producedSource = (commitId: string): ReturnType<typeof checkWork>["evidence"]["source"] =>
+  ({ changeId: "k".repeat(32), commitId, treeId: tree, operationId: "f".repeat(64), parentCommitIds: [source] })
+const eventKinds = [
+  { type: "issues", action: "opened", payload: { issue: { number: 7, title: "Tidy", body: "Remove it" } } },
+  { type: "issue_comment", action: "created", payload: { issue: { number: 7, title: "Tidy", body: "Remove it" }, comment: { body: "please" } } },
+  { type: "manual", action: "manual:chore", payload: { manual: { prompt: "Update the module" } } },
+  { type: "schedule", action: "", payload: {} },
+  { type: "issues", action: "opened", trial: true, payload: { issue: { number: 7, title: "Tidy", body: "Remove it" } } }
+] as const
+
+test("finalCheckWork is the one transform both the producer and the CI receipt verifier call", () => {
+  assert.equal(finalCheckWork, definedInJobs)
+})
+
+test("finalCheckWork leaves an event that carries no commit exactly as it is today", () => {
+  for (const event of eventKinds) {
+    const work = checkWork("chores", event, { commitId: produced, treeId: tree })
+    const final = finalCheckWork(work as never, { head: producedSource(produced), base: source })
+    assert.deepEqual(final, todaysTransform(work, producedSource(produced)) as never, event.type)
+    assert.deepEqual(work.event.payload, event.payload, "the input work is never mutated")
+  }
+})
+
+test("finalCheckWork replaces a carried candidate with the produced change and keeps the trigger", () => {
+  const push = { ref: "refs/heads/main", before: base, after: source, candidateCommitId: source, baseCommitId: base }
+  const pull = { pull_request: { head: { sha: source }, base: { sha: base } } }
+  for (const [name, trigger] of [["push", push], ["pull_request", pull], ["head_commit_id", { head_commit_id: source }]] as const) {
+    const work = checkWork("chores", { type: name === "pull_request" ? "pull_request" : "push", payload: trigger }, { commitId: produced, treeId: tree })
+    const final = finalCheckWork(work as never, { head: producedSource(produced), base: source })
+    assert.deepEqual(final.event.payload, { trigger, candidateCommitId: produced, baseCommitId: source }, name)
+    assert.deepEqual(final.proposal, [], name)
+    assert.equal(final.evidence.source.commitId, produced, name)
+  }
 })

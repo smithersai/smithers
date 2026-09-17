@@ -18,7 +18,7 @@ import { rawCheckId } from "./ci-policy.ts"
 import { Check, Proposal, StepResult } from "./schema.ts"
 import { admitSourcePath } from "./source.ts"
 
-const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+const invalid =(message: string) => new CodingError({ code: "invalid_receipt", message })
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 export const ChangeDraft = Schema.Struct({ summary: Schema.String, question: Schema.String, baseline: Proposal, proposal: Proposal,
@@ -178,10 +178,10 @@ export const changeLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
     const runtime = yield* FlowRuntime.FlowRuntime, executionId = yield* currentExecutionId
     const checked = yield* runtime.execute(CheckStep, { executionId: `${executionId}-fresh-checks`,
       payload: { work: finalCheckWork(prepared.work, { head, base: prepared.work.evidence.source.commitId }) } })
-    if (checked.status !== "completed") return { ...checked, status: "needs-maintainer" as const, summary: "The retained source did not pass fresh checks", output: json({ status: "created", source: head, creation: result, proposal: prepared.draft.proposal, checks: checked }) }
+    if (checked.status !== "completed") return { ...checked, status: "needs-maintainer" as const, summary: "The retained source did not pass fresh checks", output: json({ status: "created", source: head, creation: result, trigger: prepared.work.event.payload, proposal: prepared.draft.proposal, checks: checked }) }
     return { stepId: prepared.work.step.id, status: "completed" as const, summary: "Implemented and checked", executionId,
       evidence: [`source:${head.commitId}`, `execution:${executionId}`, ...checked.evidence],
-      output: json({ status: "implemented", landed: false, source: head, creation: result, proposal: prepared.draft.proposal, checks: checked }) }
+      output: json({ status: "implemented", landed: false, source: head, creation: result, trigger: prepared.work.event.payload, proposal: prepared.draft.proposal, checks: checked }) }
   }).pipe(Effect.catch(error => Effect.succeed({ ...prepared.result, status: "needs-maintainer" as const,
     summary: error instanceof CodingError ? error.message : "The created source needs inspection before publication",
     output: json({ status: "created", source: result.source, creation: result, proposal: prepared.draft.proposal }) }))))

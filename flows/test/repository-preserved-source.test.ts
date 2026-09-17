@@ -102,13 +102,20 @@ test("initial writable capture and main selection never snapshot dirty editor or
   await f.unchanged()
 })
 
-for (const mode of ["land", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
+for (const mode of ["land", "push-chore", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
   test(`proposal flow preserves editor and binds final native source: ${mode}`, gate, async t => {
     const f = await fixture(t), calls: string[] = [], seenChecks: string[] = []
     const evidence = await Effect.runPromise(captureRepository(f.options, { repo: "example/repo", prompt: "code.txt", sourceRevision: f.head.commitId }, "immutable").pipe(Effect.provide(f.owned)))
     const command = `${JSON.stringify(process.execPath)} -e "const fs=require('node:fs');if(fs.readFileSync('code.txt','utf8')!=='checked implementation\\n')process.exit(7);console.log('measured checked bytes')"`
-    const work: typeof Work.Type = { repo: "example/repo", job: "feature", step: { id: "feature", name: "Feature", mode: "manual", prompt: "Update code.txt" },
-      event: { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "feature", payload: { manual: { prompt: "Update code.txt" } } },
+    // A push to the default branch is the first trigger that both names an
+    // immutable revision and produces a new one.
+    const chore = mode === "push-chore" || mode === "push-chore-main-moved"
+    const trigger = { ref: "refs/heads/main", before: "a".repeat(40), after: f.base.commitId, created: false, deleted: false,
+      repository: { default_branch: "main" }, candidateCommitId: f.base.commitId, baseCommitId: "a".repeat(40) }
+    const work: typeof Work.Type = { repo: "example/repo", job: chore ? "chores" : "feature",
+      step: chore ? { id: "chore", name: "Chore", mode: "automatic", prompt: "Update code.txt" } : { id: "feature", name: "Feature", mode: "manual", prompt: "Update code.txt" },
+      event: chore ? { source: "github", type: "push", action: "", deliveryKey: "github:signed-push", payload: trigger }
+        : { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "feature", payload: { manual: { prompt: "Update code.txt" } } },
       evidence, checks: [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
       landing: mode === "old-helper" ? "ask" : "checks", replies: "draft", executionMode: "live", deadlineAt: Date.now() + 60000 }
     let draftedAdmissionReads = 0
@@ -116,7 +123,7 @@ for (const mode of ["land", "old-helper", "changed-main", "changed-before-create
       readMain: Effect.sync(() => {
         // Model the actual phase, independent of extra source-availability fences.
         if (calls.includes("draft") && !calls.includes("create")) draftedAdmissionReads++
-        return ((mode === "changed-main" && draftedAdmissionReads >= 1) || (mode === "changed-before-create" && draftedAdmissionReads >= 2) ||
+        return (((mode === "changed-main" || mode === "push-chore-main-moved") && draftedAdmissionReads >= 1) || (mode === "changed-before-create" && draftedAdmissionReads >= 2) ||
           (mode === "delivery-main-moved" && calls.includes("create"))) ? "f".repeat(40) : f.base.commitId
       }),
       prepare: input => Effect.sync(() => { calls.push("prepare"); assert.equal(input.source_commit_id, f.child.commitId); assert.equal(input.source_base_commit_id, f.base.commitId)
@@ -154,8 +161,18 @@ for (const mode of ["land", "old-helper", "changed-main", "changed-before-create
     ).pipe(Layer.provide(Layer.mergeAll(f.platform, Layer.succeed(NativeCoding, native), Layer.succeed(Landing, landing))),
       Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer)))
     t.after(() => runtime.dispose())
-    const output = await runtime.runPromise(ProposalStep.execute({ work }, { executionId: "preserved-feature" }))
-    if (mode === "land") {
+    const output = await runtime.runPromise(ProposalStep.execute({ work }, { executionId: chore ? "preserved-chore" : "preserved-feature" }))
+    if (mode === "push-chore") {
+      const retained = output.output as Record<string, Schema.Json>
+      assert.equal(output.status, "completed")
+      assert.ok(seenChecks.includes(f.child.commitId), "fresh checks verify the produced child, not the triggering push")
+      assert.deepEqual(retained.trigger, trigger, "the triggering push stays on the result as provenance")
+      assert.ok(calls.includes("create") && calls.includes("publish"))
+    } else if (mode === "push-chore-main-moved") {
+      assert.equal(output.status, "needs-maintainer")
+      assert.deepEqual(calls, ["draft"], "main advancing between capture and selection blocks before any creation")
+      assert.ok(!seenChecks.includes(f.child.commitId))
+    } else if (mode === "land") {
       assert.deepEqual(calls, ["draft", "create", "publish", "prepare", "landing", "queue"])
       assert.equal((output.output as Record<string, Schema.Json>).landed, true)
       assert.ok(seenChecks.some(candidate => candidate.startsWith(f.base.commitId + "+")))

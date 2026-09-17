@@ -47,10 +47,20 @@ export const Work = Schema.Struct({
 })
 /** The one Work a produced change is finally checked under. The producer
  * (changes.ts FinishChange) and the CI receipt verifier both call this, so the
- * payload one writes is the payload the other expects; neither rebuilds it. */
+ * payload one writes is the payload the other expects; neither rebuilds it.
+ * The revision that caused a job and the revision it produced are different
+ * facts: the checks read the produced change's own candidate and base, and a
+ * triggering push or PR stays beside them as provenance, never as their
+ * authority. An event that carries no commit of its own is passed through. */
 export const finalCheckWork = (work: typeof Work.Type,
-  produced: { readonly head: typeof Work.Type["evidence"]["source"]; readonly base: string }): typeof Work.Type =>
-  ({ ...work, evidence: { ...work.evidence, source: produced.head }, proposal: [] })
+  produced: { readonly head: typeof Work.Type["evidence"]["source"]; readonly base: string }): typeof Work.Type => {
+  const trigger = work.event.payload
+  const fields = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const carried = fields(fields(fields(trigger).pull_request).head).sha ?? fields(trigger).head_commit_id ?? fields(trigger).candidateCommitId
+  return { ...work, evidence: { ...work.evidence, source: produced.head }, proposal: [],
+    ...(typeof carried === "string" ? { event: { ...work.event, payload: JSON.parse(JSON.stringify(
+      { trigger, candidateCommitId: produced.head.commitId, baseCommitId: produced.base })) as Schema.Json } } : {}) }
+}
 export const ApproveStep = Flow.make("repository/ApproveStep", { payload: { name: Schema.String, prompt: Schema.String,
   repo: Schema.String, sourceRevision: Schema.String, issueNumber: Schema.optionalKey(Schema.Int), issueTitle: Schema.optionalKey(Schema.String) },
   success: Schema.Boolean, error: HumanTask.HumanTaskFailed,
