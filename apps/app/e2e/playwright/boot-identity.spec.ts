@@ -165,3 +165,22 @@ test("CONTROL: a repository entry is a target, so the same command never parks o
   await expect(page.getByTestId("card-practice-issues")).toHaveCount(0)
   await expect(page.getByText("Continuing:")).toHaveCount(0)
 })
+
+/*
+ * The same first run with NO artificial delay: the identity answer is released
+ * in the same tick the line is sent, so the signed-out row lands before the
+ * practice selection does. The command must still wait for the target — this
+ * is the narrow version of the held-latch race, and the one every fast network
+ * actually produces.
+ */
+test("a bare issues.list still reaches the practice list when identity answers immediately", async ({ page }) => {
+  await signedOutVisitor(page)
+  const release = await heldIdentity(page)
+  await page.goto("/")
+  await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
+  await slash(page, "/issues.list")
+  release()
+  await expect(page.getByTestId("card-practice-issues")).toBeVisible()
+  await expect(page.locator('.smithers-card[data-kind="flow-form"]')).toHaveCount(0)
+  await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)
+})

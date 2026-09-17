@@ -8,18 +8,17 @@ import { PRACTICE_REPO } from "./practice/PracticeRepository"
  * never against the identity row that arrives before it.
  */
 export function selectFirstRunRepository(store: AppStore, settled?: () => void): void {
+  const identity = store.collections.identitySessions.get("identity")?.state
   /*
-   * The park slot is single and persisted, so only the park that waits on THIS
-   * choice may be resumed here: a sign-in or repo-read park from an earlier
-   * visit keeps waiting for the seam that satisfies it.
+   * No identity answer yet, so there is no choice to make and none to settle:
+   * boot calls this again from the identity `.then()`. Settling here would
+   * declare the first-run target decided while it is still being fetched.
    */
-  const resume = settled === undefined
-    ? undefined
-    : () => { if (store.session().pendingCommand?.requirement === "first-run-target") settled() }
-  if (store.collections.identitySessions.get("identity")?.state === "signed-out" && !store.session().activeRepoKey) {
+  if (identity === undefined || identity === "unknown") return
+  if (identity === "signed-out" && !store.session().activeRepoKey) {
     const selected = store.dispatch({ type: "repo.selected", actor: "system", id: PRACTICE_REPO })
-    if (resume !== undefined) void selected.isPersisted.promise.then(resume, resume)
+    if (settled !== undefined) void selected.isPersisted.promise.then(settled, settled)
     return
   }
-  resume?.()
+  settled?.()
 }

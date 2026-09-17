@@ -445,6 +445,12 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly deferCommand: (name: string, args: string | null, requirement: string) => void
   readonly deferRepositoryCommand: (name: string, payload: Record<string, unknown>, options?: { refresh?: boolean; scope?: "command" }) => Promise<void>
   readonly resumeDeferredCommand: () => void
+  /**
+   * First run has finished choosing its starting repository — selected one, or
+   * decided there is none. Until this runs, a bare repository command waits
+   * (`first-run-target`); after it, a park on that id resumes exactly once.
+   */
+  readonly settleFirstRunTarget: () => void
   /** Record a visible command run for the slash menu's recency ranking. */
   readonly noteCommandRun: (name: string) => void
   /** The /verbose switch: trace every flow and background transition in the transcript. */
@@ -1428,6 +1434,19 @@ export const createAppController = (
   }
   ctx.resumeDeferredCommand = resumeDeferredCommand
 
+  /*
+   * Whether boot has made its first-run choice yet. A per-boot fact, never a
+   * persisted row: a reload must make the choice again, and a stored "settled"
+   * would suppress the very park the reload has to recreate.
+   */
+  let firstRunTargetSettled = false
+  const settleFirstRunTarget = (): void => {
+    firstRunTargetSettled = true
+    // Only the park that waits on this choice; a sign-in or repo-read park
+    // keeps waiting for the seam that satisfies it.
+    if (store.session().pendingCommand?.requirement === "first-run-target") resumeDeferredCommand()
+  }
+
   const {
     connectLocalRepository,
     makeConnectorReadOnly,
@@ -1644,6 +1663,7 @@ export const createAppController = (
     handleInstallReturn: gitHubSeam.handleInstallReturn,
     deferCommand,
     resumeDeferredCommand,
+    settleFirstRunTarget,
     deferRepositoryCommand: repositoryReadiness.defer,
     noteCommandRun,
     toggleVerbose,
@@ -1812,11 +1832,17 @@ export const createAppController = (
         admin: (signedIn && identity.admin) ||
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
-        // First run has no identity answer, no selection and no entry yet: the
-        // app is still choosing the target, so a bare command waits for it.
-        // "unknown" is the seeded no-answer row; "unavailable" is an answer.
-        firstRunTargetPending: (identity === undefined || identity.state === "unknown") && repo === undefined &&
-          store.session().activeRepoKey == null && routeEntry == null,
+        /*
+         * First run has not finished choosing its target: a bare command waits
+         * for it. The whole decision counts, not just the identity read — the
+         * signed-out row persists first and the selection lands after it, and a
+         * command typed in that gap would otherwise be asked to name a
+         * repository. "unavailable" and "signed-in" are answers that lead to no
+         * first-run selection, so they never wait.
+         */
+        firstRunTargetPending: !firstRunTargetSettled && repo === undefined &&
+          store.session().activeRepoKey == null && routeEntry == null &&
+          (identity === undefined || identity.state === "unknown" || identity.state === "signed-out"),
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
         practiceRepo: fileTarget !== undefined
           ? "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo)

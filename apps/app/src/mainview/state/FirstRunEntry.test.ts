@@ -23,7 +23,7 @@ test("a bare repository command during first-run selection parks instead of aski
     expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
 
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
-    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    selectFirstRunRepository(store, controller.settleFirstRunTarget)
     await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
     expect(forms()).toEqual([])
     expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
@@ -87,7 +87,7 @@ for (const [branch, identity] of [["non-blocking boot", undefined], ["settled id
           await store.dispatch({ type: "identity.session.loaded", actor: "system", state: identity, login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
         }
         await store.dispatch({ type: "command.deferred", actor: "user", name: "issues.view", args: "3 acme/private", requirement }).isPersisted.promise
-        selectFirstRunRepository(store, controller.resumeDeferredCommand)
+        selectFirstRunRepository(store, controller.settleFirstRunTarget)
         await new Promise(resolve => setTimeout(resolve, 30))
         expect(store.session().pendingCommand).toMatchObject({ name: "issues.view", args: "3 acme/private", requirement })
         expect([...store.collections.toasts.values()]).toEqual([])
@@ -103,8 +103,8 @@ test("a first-run-target park resumes exactly once when the selection settles", 
   try {
     expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
-    selectFirstRunRepository(store, controller.resumeDeferredCommand)
-    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    selectFirstRunRepository(store, controller.settleFirstRunTarget)
+    selectFirstRunRepository(store, controller.settleFirstRunTarget)
     await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
     expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
     expect(store.session().pendingCommand ?? null).toBeNull()
@@ -117,10 +117,45 @@ test("a first-run-target park whose choice settles with no target renders the re
   try {
     expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    selectFirstRunRepository(store, controller.settleFirstRunTarget)
     await until(() => store.collections.cards.get("form-issues.list") !== undefined)
     expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form")).toHaveLength(1)
     expect(store.session().activeRepoKey ?? null).toBeNull()
+    expect(store.session().pendingCommand ?? null).toBeNull()
+  } finally { await controller.dispose() }
+})
+
+/*
+ * The real first-run order: the identity row persists inside dispatchSignedOut,
+ * and the practice selection only lands after it. A command typed in that gap
+ * must still wait for the target, not be told to name one.
+ */
+test("a command issued after signed-out but before the selection settles parks and resumes once", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(store.session().activeRepoKey ?? null).toBeNull()
+    expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    expect(forms()).toEqual([])
+    expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
+
+    selectFirstRunRepository(store, controller.settleFirstRunTarget)
+    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    expect(forms()).toEqual([])
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
+    expect(store.session().pendingCommand ?? null).toBeNull()
+  } finally { await controller.dispose() }
+})
+
+test("a signed-in entry with no persisted target keeps today's behaviour: it asks for a repository at once", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.commands.run("issues.list")
+    await until(() => store.collections.cards.get("form-issues.list") !== undefined)
     expect(store.session().pendingCommand ?? null).toBeNull()
   } finally { await controller.dispose() }
 })
