@@ -246,7 +246,7 @@ packages/
 
 Nesting is directories and nothing else. Every npm name, version, dist-tag,
 and the published set are what they were when the tree was flat; the roster is
-the 49 names `publishedPackages` restates in `scripts/pack-release.mjs`, and
+the 50 names `publishedPackages` restates in `scripts/pack-release.mjs`, and
 only target labels move, from `//packages/canonical:test` to
 `//packages/smithers/flows/canonical:test`.
 

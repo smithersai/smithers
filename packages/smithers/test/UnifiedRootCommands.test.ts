@@ -20,6 +20,7 @@ const ports = vi.hoisted(() => ({
   migrate: vi.fn(),
   update: vi.fn(),
   bug: vi.fn(),
+  opencode: vi.fn(),
   initialize: vi.fn(),
   suggest: vi.fn(),
   isDirectory: vi.fn()
@@ -44,6 +45,10 @@ vi.mock("../src/commands/Migrate.ts", async (load) => ({
 }))
 vi.mock("../src/commands/Update.ts", () => ({ check: ports.update }))
 vi.mock("../src/commands/Bug.ts", () => ({ submit: ports.bug }))
+vi.mock("../src/commands/OpenCode.ts", async (load) => ({
+  ...await load<typeof import("../src/commands/OpenCode.ts")>(),
+  host: ports.opencode
+}))
 vi.mock("../src/cli/Generate.ts", async (load) => ({
   ...await load<typeof import("../src/cli/Generate.ts")>(),
   initialize: ports.initialize
@@ -127,7 +132,7 @@ const invoke = async (args: Array<string>, overrides: RuntimeConfig = {}) => {
 
 describe("unified root command dispatch", () => {
   it("keeps help/schema inert across every root command", async () => {
-    for (const command of ["init", "doctor", "serve", "gc", "suggest", "migrate", "update", "bug"]) {
+    for (const command of ["init", "doctor", "serve", "opencode", "gc", "suggest", "migrate", "update", "bug"]) {
       const result = await invoke([command, "--help"])
       expect(result.codes).not.toContain(1)
       expect(result.stdout).toContain(command)
@@ -231,6 +236,79 @@ describe("unified root command dispatch", () => {
     await invoke(["serve", "--json"], { environment: { SMITHERS_API_KEY: "environment-fixture" } })
     expect(ports.host.mock.calls[0]![0]).toMatchObject({ credential: "environment-fixture", listen: false })
     expect(ports.host.mock.calls[0]![0].port).toBeGreaterThan(0)
+  })
+
+  it("routes opencode flags to the server host with the directory argument", async () => {
+    const result = await invoke([
+      "opencode",
+      "/tmp/served",
+      "--port",
+      "4097",
+      "--hostname",
+      "127.0.0.1",
+      "--cors",
+      "https://one.test",
+      "--cors",
+      "https://two.test",
+      "--seat",
+      "cerebras:gpt-oss-120b",
+      "--max-frames",
+      "7",
+      "--scripted",
+      "--json"
+    ], { environment: { OPENCODE_SERVER_PASSWORD: "pw" } })
+    expect(ports.opencode).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        directory: "/tmp/served",
+        port: 4097,
+        hostname: "127.0.0.1",
+        listen: false,
+        cors: ["https://one.test", "https://two.test"],
+        seat: "cerebras:gpt-oss-120b",
+        maxFrames: 7,
+        scripted: true
+      }),
+      { credential: undefined, environment: { OPENCODE_SERVER_PASSWORD: "pw" } },
+      expect.objectContaining({ port: 4097, scripted: true }),
+      result.config
+    )
+    expect(result.codes).not.toContain(1)
+  })
+
+  it("keeps opencode's defaults and refuses --remote before hosting", async () => {
+    await invoke(["opencode", "--json"])
+    expect(ports.opencode.mock.calls[0]![0]).toMatchObject({
+      directory: undefined,
+      port: 4096,
+      hostname: "127.0.0.1",
+      listen: false,
+      cors: [],
+      maxFrames: 100,
+      scripted: false
+    })
+    ports.opencode.mockRestore()
+    const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
+    await expect(
+      host(
+        { port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 100, scripted: true },
+        { credential: undefined, environment: {} },
+        { remote: "https://control.example", quiet: true }
+      )
+    ).rejects.toMatchObject({ message: expect.stringContaining("--remote") })
+    await expect(
+      host(
+        { port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 100, scripted: false },
+        { credential: undefined, environment: {} },
+        { quiet: true }
+      )
+    ).rejects.toMatchObject({ message: expect.stringContaining("--scripted") })
+    await expect(
+      host(
+        { port: 4096, hostname: "0.0.0.0", listen: false, cors: [], maxFrames: 100, scripted: true },
+        { credential: undefined, environment: {} },
+        { quiet: true }
+      )
+    ).rejects.toMatchObject({ message: expect.stringContaining("--listen") })
   })
 
   it.each(["-1", "65536", "1.5"])("rejects invalid port %s before acquiring a host", async (port) => {

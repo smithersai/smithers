@@ -736,6 +736,7 @@
     "@smthrs/migrate": "1.0.0-rc.0",
     "@smthrs/model": "1.0.0-rc.0",
     "@smthrs/notifications": "1.0.0-rc.0",
+    "@smthrs/opencode": "1.0.0-rc.0",
     "@smthrs/platform-node": "1.0.0-rc.0",
     "@smthrs/registry": "1.0.0-rc.0",
     "@smthrs/run-store": "1.0.0-rc.0",

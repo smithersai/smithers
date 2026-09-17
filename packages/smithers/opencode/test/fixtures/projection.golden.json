@@ -1,0 +1,1706 @@
+[
+  {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010010000000000000a",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "user",
+        "time": {
+          "created": 1001
+        },
+        "agent": "smithers",
+        "model": {
+          "providerID": "scripted",
+          "modelID": "demo"
+        }
+      }
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "id": "prt_00000000100100000000000000",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010010000000000000a",
+        "type": "text",
+        "text": "Read package.json and tell me the name field."
+      },
+      "time": 1001
+    }
+  },
+  {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1001
+        }
+      }
+    }
+  },
+  {
+    "type": "session.status",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "status": {
+        "type": "busy"
+      }
+    }
+  },
+  {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000000000000",
+        "type": "step-start"
+      },
+      "time": 1002
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000100000000",
+        "type": "reasoning",
+        "text": "",
+        "time": {
+          "start": 1003
+        }
+      },
+      "time": 1003
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "I'll "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "read "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "package.json "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "and "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "list "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "the "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "directory "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "first.\n"
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "\n"
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000100000000",
+        "type": "reasoning",
+        "text": "I'll read package.json and list the directory first.",
+        "time": {
+          "start": 1003,
+          "end": 1004
+        }
+      },
+      "time": 1005
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000200000000",
+        "type": "tool",
+        "callID": "cell_0_91a577d8",
+        "tool": "cell",
+        "state": {
+          "status": "running",
+          "input": {
+            "frame": 1,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+          },
+          "title": "frame 1",
+          "time": {
+            "start": 1006
+          }
+        }
+      },
+      "time": 1006
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000000000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_0",
+        "tool": "read",
+        "state": {
+          "status": "running",
+          "input": {
+            "filePath": "/repo/package.json"
+          },
+          "title": "package.json",
+          "time": {
+            "start": 1007
+          }
+        }
+      },
+      "time": 1008
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000000000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_0",
+        "tool": "read",
+        "state": {
+          "status": "completed",
+          "input": {
+            "filePath": "/repo/package.json"
+          },
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n",
+          "title": "package.json",
+          "metadata": {
+            "result": {
+              "content": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            }
+          },
+          "time": {
+            "start": 1007,
+            "end": 1009
+          }
+        }
+      },
+      "time": 1009
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000010000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_1",
+        "tool": "list",
+        "state": {
+          "status": "running",
+          "input": {
+            "path": "/repo"
+          },
+          "title": "/repo",
+          "time": {
+            "start": 1010
+          }
+        }
+      },
+      "time": 1011
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000010000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_1",
+        "tool": "list",
+        "state": {
+          "status": "completed",
+          "input": {
+            "path": "/repo"
+          },
+          "output": "README.md\npackage.json\nsrc/",
+          "title": "/repo",
+          "metadata": {
+            "result": {
+              "entries": [
+                {
+                  "name": "README.md",
+                  "kind": "file"
+                },
+                {
+                  "name": "package.json",
+                  "kind": "file"
+                },
+                {
+                  "name": "src/",
+                  "kind": "directory"
+                }
+              ],
+              "total": 3,
+              "truncated": false
+            }
+          },
+          "time": {
+            "start": 1010,
+            "end": 1012
+          }
+        }
+      },
+      "time": 1012
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000200000000",
+        "type": "tool",
+        "callID": "cell_0_91a577d8",
+        "tool": "cell",
+        "state": {
+          "status": "completed",
+          "input": {
+            "frame": 1,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+          },
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n",
+          "title": "frame 1 · 2 calls · read-only",
+          "metadata": {
+            "transition": "continue",
+            "calls": 2,
+            "edits": 0
+          },
+          "time": {
+            "start": 1006,
+            "end": 1013
+          }
+        }
+      },
+      "time": 1013
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001e000000000",
+        "type": "tool",
+        "callID": "demand_1_0",
+        "tool": "demand",
+        "state": {
+          "status": "completed",
+          "input": {},
+          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
+          "title": "read-only · 1/1",
+          "metadata": {},
+          "time": {
+            "start": 1014,
+            "end": 1014
+          }
+        }
+      },
+      "time": 1014
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020000ff00000000",
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "input": 812,
+          "output": 96,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      },
+      "time": 1015
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010000000000",
+        "type": "step-start"
+      },
+      "time": 1016
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010100000000",
+        "type": "reasoning",
+        "text": "",
+        "time": {
+          "start": 1017
+        }
+      },
+      "time": 1017
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "The "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "read-only "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "cap "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "asks "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "for "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "an "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "action, "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "so "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "I'll "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "run "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "the "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "command "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "and "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "answer.\n"
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "\n"
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010100000000",
+        "type": "reasoning",
+        "text": "The read-only cap asks for an action, so I'll run the command and answer.",
+        "time": {
+          "start": 1017,
+          "end": 1018
+        }
+      },
+      "time": 1019
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010200000000",
+        "type": "tool",
+        "callID": "cell_1_4b3d3727",
+        "tool": "cell",
+        "state": {
+          "status": "running",
+          "input": {
+            "frame": 2,
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+          },
+          "title": "frame 2",
+          "time": {
+            "start": 1020
+          }
+        }
+      },
+      "time": 1020
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001e000000000",
+        "type": "tool",
+        "callID": "demand_1_0",
+        "tool": "demand",
+        "state": {
+          "status": "completed",
+          "input": {},
+          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
+          "title": "read-only · 1/1 · justification",
+          "metadata": {},
+          "time": {
+            "start": 1021,
+            "end": 1021
+          }
+        }
+      },
+      "time": 1021
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200011000000000",
+        "type": "tool",
+        "callID": "call_1_4b3d3727_0",
+        "tool": "bash",
+        "state": {
+          "status": "running",
+          "input": {
+            "command": "ls -la"
+          },
+          "title": "ls -la",
+          "time": {
+            "start": 1022
+          }
+        }
+      },
+      "time": 1022
+    }
+  },
+  {
+    "type": "permission.asked",
+    "properties": {
+      "id": "per_ses_ffffffffeffe00000000000000_1_4b3d3727_0",
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "permission": "bash",
+      "patterns": [
+        "ls -la"
+      ],
+      "metadata": {
+        "command": "ls -la",
+        "tier": "irreversible",
+        "capability": {
+          "action": "proc:spawn",
+          "resource": "bash"
+        }
+      },
+      "always": [
+        "ls *"
+      ],
+      "tool": {
+        "messageID": "msg_0000000010020000000000000b",
+        "callID": "call_1_4b3d3727_0"
+      }
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000000000000",
+        "type": "step-start"
+      },
+      "time": 1023
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000100000000",
+        "type": "reasoning",
+        "text": "",
+        "time": {
+          "start": 1024
+        }
+      },
+      "time": 1024
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "I'll "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "read "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "package.json "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "and "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "list "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "the "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "directory "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "first.\n"
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200000100000000",
+      "field": "text",
+      "delta": "\n"
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000100000000",
+        "type": "reasoning",
+        "text": "I'll read package.json and list the directory first.",
+        "time": {
+          "start": 1024,
+          "end": 1025
+        }
+      },
+      "time": 1026
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000200000000",
+        "type": "tool",
+        "callID": "cell_0_91a577d8",
+        "tool": "cell",
+        "state": {
+          "status": "running",
+          "input": {
+            "frame": 1,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+          },
+          "title": "frame 1",
+          "time": {
+            "start": 1027
+          }
+        }
+      },
+      "time": 1027
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000000000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_0",
+        "tool": "read",
+        "state": {
+          "status": "running",
+          "input": {
+            "filePath": "/repo/package.json"
+          },
+          "title": "package.json",
+          "time": {
+            "start": 1028
+          }
+        }
+      },
+      "time": 1029
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000000000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_0",
+        "tool": "read",
+        "state": {
+          "status": "completed",
+          "input": {
+            "filePath": "/repo/package.json"
+          },
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n",
+          "title": "package.json",
+          "metadata": {
+            "result": {
+              "content": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            }
+          },
+          "time": {
+            "start": 1028,
+            "end": 1030
+          }
+        }
+      },
+      "time": 1030
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000010000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_1",
+        "tool": "list",
+        "state": {
+          "status": "running",
+          "input": {
+            "path": "/repo"
+          },
+          "title": "/repo",
+          "time": {
+            "start": 1031
+          }
+        }
+      },
+      "time": 1032
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000010000",
+        "type": "tool",
+        "callID": "call_0_91a577d8_1",
+        "tool": "list",
+        "state": {
+          "status": "completed",
+          "input": {
+            "path": "/repo"
+          },
+          "output": "README.md\npackage.json\nsrc/",
+          "title": "/repo",
+          "metadata": {
+            "result": {
+              "entries": [
+                {
+                  "name": "README.md",
+                  "kind": "file"
+                },
+                {
+                  "name": "package.json",
+                  "kind": "file"
+                },
+                {
+                  "name": "src/",
+                  "kind": "directory"
+                }
+              ],
+              "total": 3,
+              "truncated": false
+            }
+          },
+          "time": {
+            "start": 1031,
+            "end": 1033
+          }
+        }
+      },
+      "time": 1033
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200000200000000",
+        "type": "tool",
+        "callID": "cell_0_91a577d8",
+        "tool": "cell",
+        "state": {
+          "status": "completed",
+          "input": {
+            "frame": 1,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+          },
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n",
+          "title": "frame 1 · 2 calls · read-only",
+          "metadata": {
+            "transition": "continue",
+            "calls": 2,
+            "edits": 0
+          },
+          "time": {
+            "start": 1027,
+            "end": 1034
+          }
+        }
+      },
+      "time": 1034
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001e000000000",
+        "type": "tool",
+        "callID": "demand_1_0",
+        "tool": "demand",
+        "state": {
+          "status": "completed",
+          "input": {},
+          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
+          "title": "read-only · 1/1",
+          "metadata": {},
+          "time": {
+            "start": 1035,
+            "end": 1035
+          }
+        }
+      },
+      "time": 1035
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020000ff00000000",
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "input": 812,
+          "output": 96,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      },
+      "time": 1036
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010000000000",
+        "type": "step-start"
+      },
+      "time": 1037
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010100000000",
+        "type": "reasoning",
+        "text": "",
+        "time": {
+          "start": 1038
+        }
+      },
+      "time": 1038
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "The "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "read-only "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "cap "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "asks "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "for "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "an "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "action, "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "so "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "I'll "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "run "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "the "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "command "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "and "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "answer.\n"
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_00000000100200010100000000",
+      "field": "text",
+      "delta": "\n"
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010100000000",
+        "type": "reasoning",
+        "text": "The read-only cap asks for an action, so I'll run the command and answer.",
+        "time": {
+          "start": 1038,
+          "end": 1039
+        }
+      },
+      "time": 1040
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010200000000",
+        "type": "tool",
+        "callID": "cell_1_4b3d3727",
+        "tool": "cell",
+        "state": {
+          "status": "running",
+          "input": {
+            "frame": 2,
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+          },
+          "title": "frame 2",
+          "time": {
+            "start": 1041
+          }
+        }
+      },
+      "time": 1041
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001e000000000",
+        "type": "tool",
+        "callID": "demand_1_0",
+        "tool": "demand",
+        "state": {
+          "status": "completed",
+          "input": {},
+          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
+          "title": "read-only · 1/1 · justification",
+          "metadata": {},
+          "time": {
+            "start": 1042,
+            "end": 1042
+          }
+        }
+      },
+      "time": 1042
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200011000000000",
+        "type": "tool",
+        "callID": "call_1_4b3d3727_0",
+        "tool": "bash",
+        "state": {
+          "status": "running",
+          "input": {
+            "command": "ls -la"
+          },
+          "title": "ls -la",
+          "time": {
+            "start": 1022
+          }
+        }
+      },
+      "time": 1043
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200011000000000",
+        "type": "tool",
+        "callID": "call_1_4b3d3727_0",
+        "tool": "bash",
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "ls -la"
+          },
+          "output": "total 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n",
+          "title": "ls -la",
+          "metadata": {
+            "output": "total 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n",
+            "exit": 0,
+            "truncated": false,
+            "result": {
+              "exitCode": 0,
+              "stdout": "total 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n",
+              "stderr": "",
+              "stdoutTruncated": false,
+              "stderrTruncated": false,
+              "stdoutDroppedBytes": 0,
+              "stderrDroppedBytes": 0
+            }
+          },
+          "time": {
+            "start": 1022,
+            "end": 1044
+          }
+        }
+      },
+      "time": 1044
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200010200000000",
+        "type": "tool",
+        "callID": "cell_1_4b3d3727",
+        "tool": "cell",
+        "state": {
+          "status": "completed",
+          "input": {
+            "frame": 2,
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+          },
+          "output": "total 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n\n",
+          "title": "frame 2 · 1 call · read-only",
+          "metadata": {
+            "transition": "complete",
+            "calls": 1,
+            "edits": 0
+          },
+          "time": {
+            "start": 1041,
+            "end": 1045
+          }
+        }
+      },
+      "time": 1045
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_000000001002ffff0000000000",
+        "type": "text",
+        "text": "",
+        "time": {
+          "start": 1046
+        }
+      },
+      "time": 1046
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_000000001002ffff0000000000",
+      "field": "text",
+      "delta": "The package is "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_000000001002ffff0000000000",
+      "field": "text",
+      "delta": "demo-repo 0.1.0; the "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_000000001002ffff0000000000",
+      "field": "text",
+      "delta": "directory holds "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_000000001002ffff0000000000",
+      "field": "text",
+      "delta": "README.md, package.json "
+    }
+  },
+  {
+    "type": "message.part.delta",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "messageID": "msg_0000000010020000000000000b",
+      "partID": "prt_000000001002ffff0000000000",
+      "field": "text",
+      "delta": "and src/."
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_000000001002ffff0000000000",
+        "type": "text",
+        "text": "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.",
+        "time": {
+          "start": 1046,
+          "end": 1047
+        }
+      },
+      "time": 1048
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001ff00000000",
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "input": 1240,
+          "output": 88,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      },
+      "time": 1051
+    }
+  },
+  {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001,
+          "completed": 1049
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 4104,
+          "output": 368,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "finish": "stop"
+      }
+    }
+  },
+  {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 4104,
+          "output": 368,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1050
+        }
+      }
+    }
+  },
+  {
+    "type": "session.status",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "status": {
+        "type": "idle"
+      }
+    }
+  },
+  {
+    "type": "session.idle",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000"
+    }
+  }
+]

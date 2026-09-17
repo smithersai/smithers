@@ -1,0 +1,53 @@
+# @smthrs/opencode
+
+This package declares `effect`, `@effect/platform-node`, and `@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Keep the application on that version so all Smithers packages share one Effect runtime.
+
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
+An OpenCode protocol v1 server over the Smithers agent loop. It serves one directory on one socket, and the hosted OpenCode app at `https://app.opencode.ai` connects to it the way it connects to `opencode serve`: sessions, prompts, the timeline of tool cards, permission cards, history after a reload, and the event stream. The turn behind each prompt is a Smithers cell loop turn, and the server folds the loop's harness events into the OpenCode events the app renders.
+
+`smithers opencode`, from [`@smthrs/cli`](https://cli.smithers.sh), is the host over this package: it resolves the directory, picks the driver, and binds the socket. Install the CLI when you want the server without writing code; install this package when you are embedding the surface or writing a driver.
+
+## Install
+
+```sh
+pnpm add @smthrs/opencode@1.0.0-rc.0 effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+```
+
+Node 22.19.0 or later is required.
+
+## Modules
+
+| Module           | What it holds                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Serve`          | The bind and its admission rule, the banner, `app` (the whole application as a router layer) and `layer` (the same on a Node socket with its own SQLite store).    |
+| `Routes`         | Every v1 route the hosted app calls, with the 1.18.31 response shapes, plus the three v2 routes it calls in v1 mode.                                               |
+| `Events`         | The server-sent event hub: `server.connected`, live events in the `{directory, project, payload}` envelope, heartbeats, and a bounded replay for reconnects.       |
+| `Store`          | Sessions, message headers, parts, and pending permissions in `<directory>/.smithers/opencode.sqlite`, so history is a read.                                        |
+| `Projection`     | The pure fold from harness `AgentEvent`s to OpenCode v1 events and parts, with part ids derived from the message and a sort key so a replayed frame updates cards. |
+| `Turns`          | One turn per prompt: opens the projection, forks the driver, stores then publishes every event, answers permissions, aborts.                                       |
+| `Driver`         | The seam a turn runner implements: `start`, `interrupt`, `permission`, `steer`, `resumeOnBoot`.                                                                    |
+| `ScriptedDriver` | A driver that replays a recorded turn, with permission parks and their continuations.                                                                              |
+| `DemoScript`     | The recorded turn the scripted driver ships with: a read, a list, a read-only demand, a shell call behind a permission, and a final answer.                        |
+| `Ids`            | OpenCode identifiers: prefixes, the time-ordered head, and derived part ids.                                                                                       |
+| `Cors`           | The allowed origins and the preflight answer.                                                                                                                      |
+| `Auth`           | Basic authentication from `OPENCODE_SERVER_PASSWORD`, with the health probes left open.                                                                            |
+| `Protocol`       | The wire types, transcribed from the OpenAPI document.                                                                                                             |
+
+## Hosting the server
+
+```ts
+import * as DemoScript from "@smthrs/opencode/DemoScript"
+import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
+import * as Serve from "@smthrs/opencode/Serve"
+import { Effect } from "effect"
+
+const program = Serve.host({
+  directory: process.cwd(),
+  bind: Serve.defaultBind,
+  version: "1.0.0-rc.0",
+  seat: "cerebras:gpt-oss-120b"
+}).pipe(Effect.provide(ScriptedDriver.layer({ script: DemoScript.script })))
+```
+
+The contract this server answers is recorded in `docs/jev-harness/trace/summary.md` in the repository: the routes per step, the events per step, and the envelope, traced from the hosted app against OpenCode 1.18.31.

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `smithers opencode [directory]`: serves OpenCode protocol v1 over the agent
+  loop for the hosted OpenCode app, through `@smthrs/opencode`. Flags: `--port`,
+  `--hostname`, `--listen`, `--cors`, `--seat`, `--max-frames`, and `--scripted`
+  (the recorded turn, until the engine driver lands).
+
 ### Changed
 
 - Breaking: default MCP discovery and dispatch exclude approval/denial and

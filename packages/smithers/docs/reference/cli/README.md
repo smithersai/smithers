@@ -28,7 +28,7 @@ starts durable workflows.
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `clean [pattern]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
 | `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
-| `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or submit a report. |
+| `serve`, `opencode`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, serve the OpenCode app, diagnose, discover uses, migrate source, check versions, or submit a report. |
 
 Target patterns include `//...`, `//package/...`, and `//package:target`.
 Execution supports `--plan`, `--jobs`, and `--no-cache`. `affected` compares
@@ -210,6 +210,7 @@ Start at [the CLI reference index](/cli), or go straight to a verb:
 [`signal`](/cli/signal), [`steer`](/cli/steer), [`ls`](/cli/ls),
 [`ps`](/cli/ps), [`status`](/cli/status), [`logs`](/cli/logs),
 [`output`](/cli/output), [`down`](/cli/down), [`serve`](/cli/serve),
+[`opencode`](/cli/opencode),
 [`init`](/cli/init), [`suggest`](/cli/suggest), [`doctor`](/cli/doctor),
 [`migrate`](/cli/migrate), [`gc`](/cli/gc), [`memory`](/cli/memory),
 [`claude`](/cli/claude), [`mcp`](/cli/mcp), [`update`](/cli/update), and

@@ -2992,6 +2992,99 @@
       }
     },
     {
+      "name": "opencode",
+      "description": "Serve the OpenCode protocol over the agent loop for the hosted OpenCode app",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "description": "Directory to serve; defaults to the current one",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "credential": {
+              "description": "Remote credential; defaults to SMITHERS_API_KEY",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "default": false,
+              "description": "Suppress progress messages",
+              "type": "boolean"
+            },
+            "port": {
+              "default": 4096,
+              "description": "Port to listen on",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "hostname": {
+              "default": "127.0.0.1",
+              "description": "Address to bind; loopback unless --listen",
+              "type": "string"
+            },
+            "listen": {
+              "default": false,
+              "description": "Allow a non-loopback bind; needs OPENCODE_SERVER_PASSWORD",
+              "type": "boolean"
+            },
+            "cors": {
+              "default": [],
+              "description": "Extra browser origins to allow",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "seat": {
+              "description": "Model seat as provider:model",
+              "type": "string"
+            },
+            "maxFrames": {
+              "default": 100,
+              "description": "Frame budget per turn",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "scripted": {
+              "default": false,
+              "description": "Replay the recorded turn instead of running a model",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "quiet",
+            "port",
+            "hostname",
+            "listen",
+            "cors",
+            "maxFrames",
+            "scripted"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "owners",
       "description": "Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches",
       "schema": {

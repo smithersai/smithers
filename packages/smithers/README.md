@@ -60,6 +60,7 @@ When a run parks, `approvals list` returns its exact approval payload; submit it
 | `memory`, `credentials`, `triggers`, `integrations`, `eval`            | Administer persistent agent state and configured integrations.            |
 | `init`, `generate app/flow/package/ci`, `install`, `git-hooks`         | Set up a workspace and run its declared generators.                       |
 | `cache status/prune/clear`, `clean`, `info`, `doctor`, `gc`            | Inspect configuration and maintain explicitly selected state.             |
+| `serve`, `opencode`                                                    | Host the control gateway, or serve the hosted OpenCode app over the agent loop. |
 
 Use `--help` on a command for its arguments, and `--schema` for the machine contract. Canonical commands use Incur formatting (`--json`, `--format jsonl`, and other formats); hidden flat aliases such as `up`, `ps`, and `status` retain their prior output. The Claude mirror protocol is available as `internal claude` and omitted from normal help. See the [command reference](./docs/reference/cli/README.md) for storage, compatibility, and operator details.
 

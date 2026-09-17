@@ -1,0 +1,147 @@
+---
+title: "API reference"
+description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the routes, the event hub, the store, the projection, the turn composition, the driver seam and its scripted implementation, identifiers, CORS, and basic authentication."
+---
+
+The package declares `effect`, `@effect/platform-node` and
+`@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Use the same Effect
+version in the host.
+
+The root entry point exports one namespace per module, and every module is
+also importable from `@smthrs/opencode/<Module>`.
+
+## `Serve`
+
+| Export          | Signature                                                                   | Meaning                                                                                |
+| --------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Bind`          | `{ hostname, port, listen, cors, credentials }`                             | What the verb was asked to bind.                                                       |
+| `defaultBind`   | `Bind`                                                                      | Loopback on 4096, the port the hosted app expects.                                     |
+| `loopbackHosts` | `ReadonlyArray<string>`                                                     | The addresses that need no opt-in.                                                     |
+| `refusal`       | `(bind: Bind) => string \| undefined`                                       | Why a bind is refused: a non-loopback host needs `listen` and credentials.             |
+| `url`           | `(bind: Bind) => string`                                                    | The URL the app connects to.                                                           |
+| `banner`        | `(bind: Bind, directory: string) => string`                                 | The line printed once the server listens.                                              |
+| `databasePath`  | `(directory: string) => string`                                             | `<directory>/.smithers/opencode.sqlite`.                                               |
+| `Options`       | `{ directory, bind, version, seat, agent?, heartbeat? }`                    | How the server is assembled.                                                           |
+| `app`           | `(options) => Layer<never, never, HttpRouter \| Driver \| Store>`           | The routes behind CORS and auth over the hub and the turns, for an in-process handler. |
+| `layer`         | `(options) => Layer<HttpServer, ServeError \| StoreError \| Error, Driver>` | The application on a Node socket with its own SQLite store. Fails on a refused bind.   |
+| `host`          | `(options) => Effect<never, ServeError \| StoreError \| Error, Driver>`     | Hosts the server until interrupted.                                                    |
+
+## `Routes`
+
+| Export      | Signature                                                                  | Meaning                                                |
+| ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `Options`   | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                    |
+| `layer`     | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                    |
+| `projectID` | `(directory: string) => string`                                            | A stable hash of the absolute path.                    |
+| `modelOf`   | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`. |
+| `slugOf`    | `(id: string) => string`                                                   | Two words from a session id.                           |
+| `provider`  | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads. |
+| `agent`     | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                   |
+| `gitBranch` | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                           |
+| `listFiles` | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.           |
+
+Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
+`/path`, `/project`, `/project/current`, `/provider`, `/agent`, `/command`,
+`/lsp`, `/mcp`, `/experimental/resource`, `/question`, `/permission`, `/vcs`,
+`/vcs/diff`, `/vcs/status`, `/find/file`, `/file`, `/api/reference`,
+`/session/status`, `/api/session`, `GET|POST /session`,
+`GET|PATCH|DELETE /session/:id`, `/session/:id/message`, `/session/:id/todo`,
+`/session/:id/children`, `/session/:id/diff`, `POST /session/:id/prompt_async`,
+`POST /session/:id/abort`, `POST /session/:id/permissions/:permissionID`,
+`/global/event` and `/event`.
+
+## `Events`
+
+| Export             | Signature                                                     | Meaning                                                             |
+| ------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                     |
+| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                               |
+| `Service`          | `{ publish, replay, stream }`                                 | Stamp and broadcast an event; read the replay buffer; one SSE body. |
+| `Events`           | `Context.Service`                                             | The hub service.                                                    |
+| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                       |
+| `frame`            | `(envelope: Envelope) => string`                              | One `data:` frame.                                                  |
+| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                      |
+| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                    |
+| `defaultReplay`    | `number`                                                      | 256 events.                                                         |
+
+## `Store`
+
+| Export                | Signature                                        | Meaning                                                              |
+| --------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+| `StoreError`          | `TaggedError`                                    | The database refused a statement.                                    |
+| `Service`             | sessions, messages, parts, permissions, `apply`  | What the store does; `apply` persists what an emitted event implies. |
+| `Store`               | `Context.Service`                                | The store service.                                                   |
+| `migrations`          | `Migrations.MigrationSet`                        | The `opencode` namespace under the shared `flows_migrations` ledger. |
+| `make`                | `Effect<Service, StoreError, SqlClient>`         | Builds the store over an ambient `SqlClient`.                        |
+| `layer`               | `Layer<Store, StoreError, SqlClient>`            | The store over an ambient client.                                    |
+| `layerSqlite`         | `(filename: string) => Layer<Store, StoreError>` | The store over its own file.                                         |
+| `defaultMessageLimit` | `number`                                         | 20.                                                                  |
+
+## `Projection`
+
+| Export                                             | Meaning                                                                                              |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Context`, `Opened`, `State`, `Step`, `Closing`    | What the fold needs, what opens a turn, its state, its answer, and how a turn ends without an event. |
+| `open`                                             | `(ctx, opened) => Step`: the user message, the session title, the assistant header, the busy status. |
+| `fold`                                             | `(ctx, state, event: AgentEvent) => Step`: total; an unknown event changes nothing.                  |
+| `close`                                            | `(ctx, state, closing) => Step`: ends a turn the stream did not end.                                 |
+| `toolName`, `toolInput`, `toolTitle`, `toolOutput` | How a flow call becomes the card OpenCode renders.                                                   |
+| `toolMetadata`, `permissionPatterns`               | The structured metadata beside a card, and the patterns of a permission card.                        |
+| `prose`, `answerText`, `chunks`                    | The model's prose outside code fences, the final answer, and its streamed deltas.                    |
+| `slots`, `finalFrame`, `demandOrdinals`            | The sort keys parts are derived from.                                                                |
+
+## `Turns`
+
+| Export          | Signature                                                                  | Meaning                               |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------------- |
+| `PromptInput`   | `{ sessionID, messageID?, agent?, model?, parts }`                         | What the app sends on `prompt_async`. |
+| `TurnsError`    | `TaggedError` with `unknown_session`, `unknown_permission`, `empty_prompt` | The failures a turn request reports.  |
+| `Options`       | `{ directory, agent, model }`                                              | Defaults a prompt inherits.           |
+| `Service`       | `{ prompt, abort, permission, status }`                                    | The composition.                      |
+| `Turns`         | `Context.Service`                                                          | The service.                          |
+| `promptText`    | `(parts) => string`                                                        | The text of a prompt's parts.         |
+| `make`, `layer` | constructors over `Driver`, `Store` and `Events`                           |                                       |
+
+## `Driver`
+
+| Export            | Signature                                                                           | Meaning                                              |
+| ----------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `StartInput`      | `{ sessionID, messageID, prompt, agent?, model? }`                                  | What starts a turn; `messageID` is the execution id. |
+| `Outcome`         | `completed \| interrupted \| suspended \| failed`                                   | How the body ended.                                  |
+| `Sink`            | `{ event, closed }`                                                                 | Where a running turn reports.                        |
+| `PermissionInput` | `{ sessionID, permissionID, response }`                                             | A permission answer.                                 |
+| `DriverError`     | `TaggedError` with `busy`, `unknown_session`, `unknown_permission`, `engine_failed` | The failures a driver reports.                       |
+| `Service`         | `{ start, interrupt, permission, steer, resumeOnBoot }`                             | What a driver does.                                  |
+| `Driver`          | `Context.Service`                                                                   | The seam.                                            |
+
+## `ScriptedDriver` and `DemoScript`
+
+| Export                         | Meaning                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| `ScriptedDriver.Segment`       | A run of events, or a permission park with its `allowed` and `rejected` continuations. |
+| `ScriptedDriver.Script`        | `{ segments }`.                                                                        |
+| `ScriptedDriver.Options`       | `{ script, delay? }`: the turn to replay and the pause between events.                 |
+| `ScriptedDriver.make`, `layer` | Constructors.                                                                          |
+| `DemoScript.script`            | `(input: StartInput) => Script`: the recorded turn keyed by the session id.            |
+
+## `Ids`
+
+| Export     | Signature                                                                          | Meaning                                                             |
+| ---------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `prefixes` | `{ session: "ses", message: "msg", part: "prt", permission: "per", event: "evt" }` | OpenCode's prefixes.                                                |
+| `make`     | `(kind, timestamp?) => string`                                                     | A fresh id; sessions sort newest first, the rest in creation order. |
+| `part`     | `(messageID, { frame, slot, ordinal }) => string`                                  | A part id derived from its message and a sort key.                  |
+| `head`     | `(timestamp, descending, sequence) => string`                                      | The twelve-character time head.                                     |
+| `isKind`   | `(kind, id) => boolean`                                                            | Whether an id carries a kind's prefix.                              |
+
+## `Cors` and `Auth`
+
+| Export                 | Meaning                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                           |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers.                         |
+| `Auth.Credentials`     | `{ username, password }`.                                                                      |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                               |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                            |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights. |
