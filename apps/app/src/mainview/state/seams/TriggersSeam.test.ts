@@ -2,12 +2,15 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
-import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
+import { scopedControllers } from "../ControllerTestScope"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
 import { NO_RULES_SENTENCE, registerUnavailableSentence } from "./TriggersSeam"
+
+const createAppController = scopedControllers()
 
 // The first controller in a file pays the module warm-up; under machine load that alone passes 5 s.
 setDefaultTimeout(30_000)
@@ -104,8 +107,8 @@ const reposChosen = async (store: AppStore): Promise<void> => {
 }
 
 /** A controller watching exactly will/flows over the given backend, signed out unless asked. */
-const ready = async (services: AppServices, options: { signedIn?: boolean } = {}) => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+const ready = async (services: AppServices, options: { signedIn?: boolean; store?: AppStore } = {}) => {
+  const store = options.store ?? await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
   if (options.signedIn === true) await signedIn(store)
   else await signedOut(store)
@@ -347,17 +350,60 @@ async (request) => {
 const okFrame = (payload: unknown) => ({ ok: true, payload })
 const refusedFrame = (message: string, detail?: unknown) => ({ ok: false, error: { message, ...(detail === undefined ? {} : { detail }) } })
 
-/** The workspace that holds one markdown flow and plans it deterministically. */
-const workspaceAnswers = (overrides: Record<string, (payload: Record<string, unknown>) => unknown> = {}) => ({
+/** The registrar run the workspace started; the registration's outcome is this run's outcome. */
+const REGISTRAR_RUN = "run-1"
+
+/** How the registrar run stands, as the workspace's own run-summary projection answers for it. */
+interface HostRun {
+  status: "running" | "completed" | "failed"
+  verdict: string
+}
+
+const runSummarySnapshot = (run: HostRun, tag: string): unknown => {
+  /* A settled run is newer lifecycle evidence than the running one it replaces. */
+  const at = run.status === "running" ? 2 : 3
+  return {
+    cursor: { selector: { _tag: tag, runId: REGISTRAR_RUN }, projection: tag, runId: REGISTRAR_RUN, value: at, offset: 0 },
+    rows: tag !== "run-summary" ? [] : [{
+      runId: REGISTRAR_RUN, flowId: "repository/trigger", status: run.status, createdAt: 1, updatedAt: at,
+      turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
+      verdict: run.verdict, diagnosis: run.verdict
+    }]
+  }
+}
+
+/** The workspace that holds one markdown flow, plans it deterministically, and reports its own runs. */
+const workspaceAnswers = (
+  overrides: Record<string, (payload: Record<string, unknown>) => unknown> = {},
+  run: HostRun = { status: "running", verdict: "" }
+) => ({
   List: () => okFrame({ _tag: "flows", items: FLOW_ITEMS }),
   Plan: (payload: Record<string, unknown>) =>
     payload.flowId === "nightly-lint"
       ? okFrame(PLAN)
       : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) }),
   "Approval.Submit": () => okFrame({ decision: { _tag: "Accepted" } }),
-  Run: () => okFrame({ runId: "run-1" }),
+  Run: () => okFrame({ runId: REGISTRAR_RUN }),
+  "Projection.Snapshot": (payload: Record<string, unknown>) =>
+    okFrame(runSummarySnapshot(run, (payload.selector as { _tag?: string } | undefined)?._tag ?? "run-summary")),
   ...overrides
 })
+
+/** The watch this app already runs for a launched flow run: a fast pump, no toast debounce. */
+const watched = (services: AppServices): AppServices => ({
+  ...services, workflowPollMs: 1, toastDebounceMs: 0, toastAutoDismissMs: 10_000
+})
+
+const registrationToast = (store: AppStore, slug = "nightly") =>
+  store.collections.toasts.get(`toast-trigger.register.will/flows.${slug}`)
+
+const registrationRun = (store: AppStore, requestId: string) => {
+  const card = store.collections.cards.get(`trigger-register-${requestId}`)
+  return card?.kind === "run-trace" ? card : undefined
+}
+
+const preparedId = (store: AppStore): string =>
+  String((JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>).requestId)
 
 const lastAction = (store: AppStore) =>
   [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal).find((message) => message.action !== undefined)?.action
@@ -471,14 +517,14 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const calls: Array<RelayCall> = []
     const receipts: Array<unknown> = []
     const { store, controller } = await ready(
-      backend({
+      watched(backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [RPC]: relayRoute(calls, workspaceAnswers()),
         [APPROVAL]: async (request) => {
           receipts.push(await request.json())
           return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
         }
-      }),
+      })),
       { signedIn: true }
     )
     await controller.registerTrigger(REQUEST)
@@ -486,11 +532,13 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const requestId = String((JSON.parse(args) as Record<string, unknown>).requestId)
     const approved = await controller.commands.run("triggers.approve", args)
     expect(approved.status).toBe("executed")
+    /* The approval answers at once and the registration runs behind it (AGENTS.md, instant chat). */
+    await waitFor(() => calls.filter((call) => call.procedure === "Run").length === 1)
     /* Plue's RecordApproval refuses an approval whose flow_id does not match the registered flow. */
     expect(receipts).toEqual([{
       repo: "will/flows", slug: "nightly", flowId: "nightly-lint", planId: "plan-1", planDigest: PLAN_DIGEST, envelope: PLAN.envelope
     }])
-    expect(calls.map((call) => call.procedure)).toEqual([
+    expect(calls.map((call) => call.procedure).filter((name) => name !== "Projection.Snapshot")).toEqual([
       "List", "Plan", "List", "Plan", "Approval.Submit", "Plan", "Approval.Submit", "Run"
     ])
     /* The target's plan is approved by its own digest; the registrar's plan carries the approved pair. */
@@ -506,63 +554,169 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     })
     expect(calls[7]?.payload).toMatchObject({ _tag: "Plan", idempotencyKey: `trigger:${requestId}:register-run` })
 
-    /* A retry after a lost answer repeats the same keys and adds no second receipt shape. */
+    /* Was: a second press repeated the whole attempt. It now reconnects to the run this attempt already started. */
     const again = await controller.commands.run("triggers.approve", args)
     expect(again.status).toBe("executed")
-    expect(receipts).toHaveLength(2)
-    expect(receipts[0]).toEqual(receipts[1])
-    expect(calls.filter((call) => call.payload.idempotencyKey === `trigger:${requestId}:register-run`)).toHaveLength(2)
+    expect(receipts).toHaveLength(1)
+    expect(calls.filter((call) => call.payload.idempotencyKey === `trigger:${requestId}:register-run`)).toHaveLength(1)
   })
 
+  /*
+   * Was: each refusal was the approve command's own failure. The approval now
+   * answers at once and the registration runs behind it, so a refusal on the
+   * way to the run reaches the human on the notice that named the work.
+   */
   test("the host's own refusal and Smithers Cloud's own refusal each reach the human as themselves", async () => {
     const moduleRefusal = '"nightly-lint" is a flow.ts. Schedules run flow.mdx.'
     const hosted = await ready(
-      backend({
+      watched(backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [RPC]: relayRoute([], workspaceAnswers({
           Plan: (payload) => payload.flowId === "repository/trigger" ? refusedFrame(moduleRefusal) : okFrame(PLAN)
         })),
         [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
-      }),
+      })),
       { signedIn: true }
     )
     await hosted.controller.registerTrigger(REQUEST)
     const hostArgs = lastAction(hosted.store)?.args ?? "{}"
-    const hostRefused = await hosted.controller.commands.run("triggers.approve", hostArgs)
-    expect(hostRefused).toEqual({ status: "failed", error: moduleRefusal })
+    const hostId = preparedId(hosted.store)
+    expect((await hosted.controller.commands.run("triggers.approve", hostArgs)).status).toBe("executed")
+    await waitFor(() => registrationRun(hosted.store, hostId)?.payload.phase === "failed")
+    expect(registrationRun(hosted.store, hostId)?.payload.error).toBe(moduleRefusal)
 
     const cloudRefusal = "register only the plan a person approved; approve the preview, then apply"
     const clouded = await ready(
-      backend({
+      watched(backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [RPC]: relayRoute([], workspaceAnswers()),
         [APPROVAL]: json(409, { status: "error", code: "trigger_approval_missing", message: cloudRefusal })
-      }),
+      })),
       { signedIn: true }
     )
     await clouded.controller.registerTrigger(REQUEST)
     const cloudArgs = lastAction(clouded.store)?.args ?? "{}"
-    const cloudRefused = await clouded.controller.commands.run("triggers.approve", cloudArgs)
-    expect(cloudRefused.status).toBe("failed")
-    if (cloudRefused.status === "failed") {
-      expect(cloudRefused.error).toContain("trigger_approval_missing")
-      expect(cloudRefused.error).toContain(cloudRefusal)
-    }
+    const cloudId = preparedId(clouded.store)
+    expect((await clouded.controller.commands.run("triggers.approve", cloudArgs)).status).toBe("executed")
+    await waitFor(() => registrationRun(clouded.store, cloudId)?.payload.phase === "failed")
+    expect(registrationRun(clouded.store, cloudId)?.payload.error).toContain("trigger_approval_missing")
+    expect(registrationRun(clouded.store, cloudId)?.payload.error).toContain(cloudRefusal)
   })
 
   test("a plan that no longer reproduces refuses rather than registering something else", async () => {
+    const calls: Array<RelayCall> = []
     const { store, controller } = await ready(
-      backend({
+      watched(backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
-        [RPC]: relayRoute([], workspaceAnswers())
-      }),
+        [RPC]: relayRoute(calls, workspaceAnswers())
+      })),
       { signedIn: true }
     )
     await controller.registerTrigger(REQUEST)
     const args = JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>
-    const moved = await controller.commands.run("triggers.approve", JSON.stringify({ ...args, planDigest: "a".repeat(64) }))
-    expect(moved.status).toBe("failed")
-    if (moved.status === "failed") expect(moved.error).toContain("changed")
+    const requestId = preparedId(store)
+    await controller.commands.run("triggers.approve", JSON.stringify({ ...args, planDigest: "a".repeat(64) }))
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
+    expect(registrationRun(store, requestId)?.payload.error).toContain("changed")
+    expect(calls.filter((call) => call.procedure === "Run")).toEqual([])
+  })
+})
+
+/*
+ * The registration is slow work: the approve door answers at once, the shared
+ * toast runs through the launch AND the registrar run, and the run the app
+ * already knows how to watch carries the outcome (AGENTS.md, instant chat).
+ */
+describe("triggers seam: watching the registration run", () => {
+  const ROUTES = (calls: Array<RelayCall>, run: HostRun, extra: Record<string, Route> = {}) => watched(backend({
+    [PROJECTION]: projectionDocument(DAY_ONE),
+    [RPC]: relayRoute(calls, workspaceAnswers({}, run)),
+    [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 }),
+    ...extra
+  }))
+
+  const approved = async (store: AppStore, controller: Awaited<ReturnType<typeof ready>>["controller"]) => {
+    await controller.registerTrigger(REQUEST)
+    const args = lastAction(store)?.args ?? "{}"
+    const outcome = await controller.commands.run("triggers.approve", args)
+    expect(outcome.status).toBe("executed")
+    if (outcome.status === "executed") expect(outcome.value).toBe("Registering nightly on will/flows.")
+    return String((JSON.parse(args) as Record<string, unknown>).requestId)
+  }
+
+  test("a run that settles failed shows the host's own sentence as this run's typed failure", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await ready(ROUTES(calls, run), { signedIn: true })
+    const requestId = await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    run.status = "failed"
+    run.verdict = 'Add a model to "nightly-lint" to schedule it.'
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
+    expect(registrationRun(store, requestId)?.payload.error).toBe(run.verdict)
+    await waitFor(() => registrationToast(store)?.status === "failed")
+    expect(registrationToast(store)?.detail).toBe(run.verdict)
+  })
+
+  test("a run that settles completed shows the registration the schedule now holds", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await ready(
+      ROUTES(calls, run, {
+        [REGISTRATIONS]: json(200, {
+          status: "ok", repo: "will/flows",
+          rows: [{
+            slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+            digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+            registrationId: "registration-nightly"
+          }]
+        })
+      }),
+      { signedIn: true }
+    )
+    const requestId = await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    run.status = "completed"
+    run.verdict = "Registered nightly on will/flows."
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
+    await waitFor(() => registrationToast(store)?.status === "ok")
+    await waitFor(() => triggerCard(store).payload.triggers.length === 1)
+    expect(triggerCard(store).payload.triggers).toEqual([{
+      id: "registration-nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
+      enabled: true, nextFireAt: Date.parse("2026-09-18T09:00:00Z")
+    }])
+  })
+
+  test("a run that never settles keeps the notice running, the card running, and chat usable", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(ROUTES(calls, { status: "running", verdict: "" }), { signedIn: true })
+    const requestId = await approved(store, controller)
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "running")
+    /* Chat and every unrelated door stay usable while the registration runs. */
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    expect(registrationToast(store)?.status).toBe("running")
+    expect(registrationRun(store, requestId)?.payload.phase).toBe("running")
+  })
+
+  test("reload reconnects to the running registration instead of starting a second one", async () => {
+    const calls: Array<RelayCall> = []
+    const storage = memoryStorage()
+    const run: HostRun = { status: "running", verdict: "" }
+    const first = await ready(ROUTES(calls, run), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    const requestId = await approved(first.store, first.controller)
+    await waitFor(() => registrationRun(first.store, requestId)?.payload.phase === "running")
+    await first.controller.dispose()
+
+    run.status = "completed"
+    run.verdict = "Registered nightly on will/flows."
+    const resumed = await ready(ROUTES(calls, run), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    resumed.controller.resumeWorkflowRuns()
+    await waitFor(() => registrationRun(resumed.store, requestId)?.payload.phase === "completed")
+    expect(calls.filter((call) => call.procedure === "Run")).toHaveLength(1)
   })
 })
 

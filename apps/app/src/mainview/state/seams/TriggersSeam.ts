@@ -25,6 +25,7 @@ import { Schema, SchemaRepresentation } from "effect"
 import type { JsonSchema } from "effect"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
+import { runtimeRunKey } from "../RuntimeProjection"
 import { errorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
@@ -50,6 +51,15 @@ const TRIGGER_APPROVAL_PATH = "/api/workflow/trigger-approval"
 
 /** The workspace built-in that registers a repository flow on a schedule. */
 const REGISTRAR_FLOW = "repository/trigger"
+
+/** One registration attempt's run card; the same attempt never registers twice. */
+const registrationCardId = (requestId: string): string => `trigger-register-${requestId}`
+
+/** A run this client has seen settle: nothing is left to watch or to reconnect to. */
+const SETTLED_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "stopped"])
+
+type RunCardPayload = Extract<Card, { kind: "run-trace" }>["payload"]
+type RunCardPatch = Pick<RunCardPayload, "runId" | "phase"> & Partial<RunCardPayload>
 
 /** A schedule's own name inside one repository (L36 §1.1). */
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -88,6 +98,22 @@ export interface TriggersSeam {
   readonly listTriggers: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** The trigger write door: register, approve, pause (triggers.register / .approve / .pause). */
   readonly registerTrigger: (request: TriggerWrite) => Promise<string | void | { readonly value: string }>
+}
+
+/**
+ * The two pieces of the controller a registration needs, handed in rather
+ * than rebuilt: the app's one run-watch and the app's one toast stack
+ * (state/controller/workflow-pump.ts, state/controller/failures.ts).
+ *
+ * Registering is slow work — six relayed calls and then a run on the
+ * workspace — so the approve door answers at once and both of these carry it
+ * afterwards, which is what the instant-chat rule asks of every background act.
+ */
+export interface TriggersRuntime {
+  /** Watch one run card; it settles when that run does. */
+  readonly watchRun: (cardId: string) => Promise<void>
+  /** Background work on the shared stack, under its 300 ms debounce; a string outcome is the failure line. */
+  readonly withToast: <T>(key: string, title: string, doneTitle: string, work: () => Promise<T | string>) => Promise<T | string>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -369,7 +395,7 @@ const summarize = (repo: string, declared: ReadonlyArray<FactoryRule>, live: Liv
   return parts.length === 0 ? `${NO_RULES_SENTENCE} on ${repo}.` : `Dispatcher on ${repo}: ${parts.join(". ")}.`
 }
 
-export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
+export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): TriggersSeam => {
   const listTriggers = async (repoArg?: string): Promise<string | void | { readonly value: string }> => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
@@ -485,15 +511,139 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
   }
 
   /**
+   * The durable card of one registration attempt. It is the registrar run's
+   * own card, so the watch, the reconnect after a reload and the trace are
+   * the ones every launched flow run already gets.
+   */
+  const runCardOf = (requestId: string, repo: string, slug: string, patch: RunCardPatch): Card => {
+    const existing = ctx.store.collections.cards.get(registrationCardId(requestId))
+    return {
+      id: registrationCardId(requestId),
+      kind: "run-trace",
+      title: `Register ${slug} · ${repo}`,
+      status: patch.phase === "failed" ? "error" : "active",
+      createdAt: existing?.createdAt ?? Date.now(),
+      ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+      payload: { repo, gatewayBindingVersion: 1, workflow: REGISTRAR_FLOW, steps: [], result: null, lastSeq: 0, ...patch }
+    }
+  }
+
+  const putRunCard = (requestId: string, repo: string, slug: string, patch: RunCardPatch): Promise<unknown> =>
+    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: runCardOf(requestId, repo, slug, patch) }).isPersisted.promise
+
+  /**
+   * Everything the approval sets off: the six relayed calls, then the
+   * registrar run itself.
+   *
+   * Every refusal on the way is the refusing party's own sentence, and it
+   * lands on this attempt's card as well as on the notice, so a person who
+   * looked away still finds what happened.
+   */
+  const runRegistration = async (
+    request: TriggerWrite,
+    repo: string,
+    slug: string,
+    requestId: string,
+    planId: string,
+    planDigest: string,
+    input: unknown
+  ): Promise<string | { readonly value: string }> => {
+    const refuse = async (message: string): Promise<string> => {
+      await putRunCard(requestId, repo, slug, { runId: `pending-${requestId}`, phase: "failed", error: message })
+      return message
+    }
+    const items = await registrarFlows(repo)
+    if ("error" in items) return refuse(items.error)
+    const planned = await relay(ctx, repo, "Plan", {
+      flowId: request.flow,
+      input,
+      idempotencyKey: `trigger:${requestId}:plan`
+    })
+    if (!planned.ok) return refuse(planned.message)
+    if (planned.value.planId !== planId || planned.value.digest !== planDigest) {
+      return refuse("The plan changed since you saw it. Prepare the registration again.")
+    }
+    const envelope = planned.value.envelope
+    const approved = await relay(ctx, repo, "Approval.Submit", {
+      target: { _tag: "Plan", planId, digest: planDigest, envelope },
+      scope: "run",
+      idempotencyKey: `approve:${planId}`,
+      decision: "approve"
+    })
+    if (!approved.ok) return refuse(approved.message)
+    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, { repo, slug, flowId: request.flow, planId, planDigest, envelope })
+    if (!receipt.ok) return refuse(receipt.message)
+    const registrar = await relay(ctx, repo, "Plan", {
+      flowId: REGISTRAR_FLOW,
+      input: {
+        requestId,
+        operation: "register",
+        repo,
+        slug,
+        flow: request.flow,
+        schedule: request.schedule,
+        input,
+        approvedPlanId: planId,
+        approvedPlanDigest: planDigest
+      },
+      idempotencyKey: `trigger:${requestId}:register-plan`
+    })
+    if (!registrar.ok) return refuse(registrar.message)
+    const registrarPlan = typeof registrar.value.planId === "string" ? registrar.value.planId : undefined
+    const registrarDigest = typeof registrar.value.digest === "string" ? registrar.value.digest : undefined
+    if (registrarPlan === undefined || registrarDigest === undefined) {
+      return refuse("The workspace planned the registration but didn't name the plan.")
+    }
+    const granted = await relay(ctx, repo, "Approval.Submit", {
+      target: { _tag: "Plan", planId: registrarPlan, digest: registrarDigest, envelope: registrar.value.envelope },
+      scope: "run",
+      idempotencyKey: `approve:${registrarPlan}`,
+      decision: "approve"
+    })
+    if (!granted.ok) return refuse(granted.message)
+    const started = await relay(ctx, repo, "Run", {
+      _tag: "Plan",
+      planId: registrarPlan,
+      digest: registrarDigest,
+      envelope: registrar.value.envelope,
+      idempotencyKey: `trigger:${requestId}:register-run`
+    })
+    if (!started.ok) return refuse(started.message)
+    const runId = typeof started.value.runId === "string" ? started.value.runId : undefined
+    if (runId === undefined) return refuse("The registration started but the workspace didn't name the run.")
+    await putRunCard(requestId, repo, slug, { runId, phase: "running" })
+    return watchRegistration(requestId, repo, slug, runId)
+  }
+
+  /**
+   * The registrar run's own verdict, read from the evidence the run watch
+   * committed. A refusal is the host's sentence, unrewritten; a completed
+   * registration is re-read from Smithers Cloud so the dispatcher states the
+   * schedule that now exists.
+   */
+  const watchRegistration = async (
+    requestId: string,
+    repo: string,
+    slug: string,
+    runId: string
+  ): Promise<string | { readonly value: string }> => {
+    await runtime.watchRun(registrationCardId(requestId))
+    const summary = ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.summary
+    if (summary?.status === "completed") {
+      await listTriggers(repo)
+      return { value: `${slug} runs on ${repo}.` }
+    }
+    if (summary?.status === "failed" || summary?.status === "cancelled") return summary.verdict
+    return `The registration of ${slug} on ${repo} is no longer being watched.`
+  }
+
+  /**
    * The human's approval, and only theirs (triggers.approve is userOnly).
    *
-   * The workspace is asked for its registrar first, so a button prepared
-   * against a workspace that has since lost it refuses before the plan and
-   * before the approval rather than after them. The plan is then re-made under
-   * this request's own idempotency key and must reproduce the pair the preview
-   * showed, so approving cannot drift to another plan. Then the plan is
-   * approved, Smithers Cloud stamps who approved it, and the workspace's
-   * registrar writes the registration.
+   * The approval is persisted as this attempt's run card and answered at
+   * once; the workspace calls and the registrar run happen behind one notice
+   * that settles from the run rather than from its launch. A second press
+   * reconnects to the attempt already running instead of registering twice.
    */
   const approveTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
     const slug = request.slug ?? ""
@@ -512,63 +662,17 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
         return "Input is not valid JSON."
       }
     }
-    const items = await registrarFlows(repo)
-    if ("error" in items) return items.error
-    const planned = await relay(ctx, repo, "Plan", {
-      flowId: request.flow,
-      input,
-      idempotencyKey: `trigger:${requestId}:plan`
-    })
-    if (!planned.ok) return planned.message
-    if (planned.value.planId !== planId || planned.value.digest !== planDigest) {
-      return "The plan changed since you saw it. Prepare the registration again."
-    }
-    const envelope = planned.value.envelope
-    const approved = await relay(ctx, repo, "Approval.Submit", {
-      target: { _tag: "Plan", planId, digest: planDigest, envelope },
-      scope: "run",
-      idempotencyKey: `approve:${planId}`,
-      decision: "approve"
-    })
-    if (!approved.ok) return approved.message
-    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, { repo, slug, flowId: request.flow, planId, planDigest, envelope })
-    if (!receipt.ok) return receipt.message
-    const registrar = await relay(ctx, repo, "Plan", {
-      flowId: REGISTRAR_FLOW,
-      input: {
-        requestId,
-        operation: "register",
-        repo,
-        slug,
-        flow: request.flow,
-        schedule: request.schedule,
-        input,
-        approvedPlanId: planId,
-        approvedPlanDigest: planDigest
-      },
-      idempotencyKey: `trigger:${requestId}:register-plan`
-    })
-    if (!registrar.ok) return registrar.message
-    const registrarPlan = typeof registrar.value.planId === "string" ? registrar.value.planId : undefined
-    const registrarDigest = typeof registrar.value.digest === "string" ? registrar.value.digest : undefined
-    if (registrarPlan === undefined || registrarDigest === undefined) {
-      return "The workspace planned the registration but didn't name the plan."
-    }
-    const granted = await relay(ctx, repo, "Approval.Submit", {
-      target: { _tag: "Plan", planId: registrarPlan, digest: registrarDigest, envelope: registrar.value.envelope },
-      scope: "run",
-      idempotencyKey: `approve:${registrarPlan}`,
-      decision: "approve"
-    })
-    if (!granted.ok) return granted.message
-    const started = await relay(ctx, repo, "Run", {
-      _tag: "Plan",
-      planId: registrarPlan,
-      digest: registrarDigest,
-      envelope: registrar.value.envelope,
-      idempotencyKey: `trigger:${requestId}:register-run`
-    })
-    if (!started.ok) return started.message
+    const held = ctx.store.collections.cards.get(registrationCardId(requestId))
+    const running = held?.kind === "run-trace" && !SETTLED_PHASES.has(held.payload.phase) ? held.payload.runId : undefined
+    if (running === undefined) await putRunCard(requestId, repo, slug, { runId: `pending-${requestId}`, phase: "launching" })
+    void runtime.withToast(
+      `trigger.register.${repo}.${slug}`,
+      `Registering ${slug} on ${repo}…`,
+      `${slug} registered`,
+      running === undefined
+        ? () => runRegistration(request, repo, slug, requestId, planId, planDigest, input)
+        : () => watchRegistration(requestId, repo, slug, running)
+    )
     return { value: `Registering ${slug} on ${repo}.` }
   }
 

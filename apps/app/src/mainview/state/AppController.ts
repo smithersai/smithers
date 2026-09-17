@@ -835,7 +835,11 @@ export const createAppController = (
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
   }))
-  const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context))
+  /* A registration is a launched flow run: it rides the app's own run watch and the shared toast stack. */
+  const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context, {
+    watchRun: (cardId) => pumpWorkflowRun(cardId),
+    withToast
+  }))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
   /* The practice repository answers the commits views from its bundle (state/practice). */
