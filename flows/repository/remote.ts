@@ -22,6 +22,7 @@ export class RepositoryRemote extends Context.Service<RepositoryRemote, {
   readonly repo: string
   readonly workspaceId: string
   readonly source?: Effect.Effect<"github" | "smithers-cloud", CodingError>
+  readonly registrations: Effect.Effect<Schema.Json, CodingError>
   readonly history: Effect.Effect<{ records: ReadonlyArray<typeof Record.Type>; sources: ReadonlyArray<typeof SourceStatus.Type> }, CodingError>
   readonly register: (job: typeof Job.Type, input: Schema.Json) => Effect.Effect<Schema.Json, CodingError>
   readonly pause: (job: typeof Job.Type) => Effect.Effect<Schema.Json, CodingError>
@@ -170,7 +171,8 @@ export const makeRemote = (options: RemoteOptions) => Effect.gen(function*() {
     register: (job, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true),
     pause: job => send(HttpClientRequest.post(`${base}/repository-jobs/${job}/pause`)),
     dispatches: job => send(HttpClientRequest.get(`${base}/repository-jobs/${job}/dispatches`)),
-    createTrial: (job, requestId, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}/trials/${encodeURIComponent(requestId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true)
+    createTrial: (job, requestId, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}/trials/${encodeURIComponent(requestId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true),
+    registrations: send(HttpClientRequest.get(`${base}/repository-jobs`))
   })
 })
 export const remoteLayer = (options: RemoteOptions) => Layer.effect(RepositoryRemote)(makeRemote(options))

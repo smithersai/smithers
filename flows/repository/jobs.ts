@@ -4,6 +4,7 @@ import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, HumanTask, In
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import { PublishReply } from "./replies.ts"
+import { CiPolicy } from "./ci-policy.ts"
 import { CodingError } from "../coding/schema.ts"
 import { AssertBudget, currentExecutionId, StartBudget } from "./inspection.ts"
 import { Check, Event, JobInput, JobResult, Proposal, RepositoryEvidence, Step, StepResult } from "./schema.ts"
@@ -41,6 +42,7 @@ export const Work = Schema.Struct({
   repo: Schema.String, job: JobInput.fields.job, event: Event, step: Step, evidence: RepositoryEvidence, deadlineAt: Schema.Number,
   checks: Schema.Array(Check), landing: Schema.Literals(["ask", "checks"]), replies: Schema.Literals(["draft", "automatic"]),
   executionMode: Schema.Literals(["live", "trial", "evaluation"]),
+  policy: Schema.optionalKey(CiPolicy),
   proposal: Schema.optionalKey(Proposal)
 })
 export const ApproveStep = Flow.make("repository/ApproveStep", { payload: { name: Schema.String, prompt: Schema.String,

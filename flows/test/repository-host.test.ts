@@ -90,6 +90,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   const issues = new Map<string, any>()
   const remote = RepositoryRemote.of({ repo, workspaceId,
     source: Effect.succeed("smithers-cloud"),
+    registrations: Effect.succeed(json([])),
     history: Effect.succeed({ records: [], sources: [{ path: "repository:issues", status: "read", summary: "0 issues" }] }),
     pause: () => Effect.succeed(json({ enabled: false })), dispatches: () => Effect.succeed(json(dispatches)),
     comment: (job, step, raw) => Effect.sync(() => {

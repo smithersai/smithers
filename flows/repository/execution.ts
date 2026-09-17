@@ -6,6 +6,7 @@ import { Effect, Layer, Option, Path, Schema } from "effect"
 import { contained, runSourceProcess, withImmutableSource, type ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { normalizePath } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
+import { captureCiPolicy, composeCiChecks, inheritsCiPolicy, revalidateCiPolicy } from "./ci-policy.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
 import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
 import { Event, StepResult, type JobInput } from "./schema.ts"
@@ -150,14 +151,22 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
   RetainReproductionReview.toLayer(({ work, observation, result, review }) => currentExecutionId.pipe(Effect.flatMap(id => Effect.try({
     try: () => assessReproduction(work, observation, result, review, id), catch: error => error instanceof CodingError ? error : invalid("The reproduction review could not be verified")
   })))),
-  RunSteps.toLayer(({ input, evidence, deadlineAt, evaluation }) => Effect.gen(function*() {
+  RunSteps.toLayer(({ input: job, evidence, deadlineAt, evaluation }) => Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
-    const ids = input.configuration.steps.map(step => step.id)
+    const ids = job.configuration.steps.map(step => step.id)
     if (new Set(ids).size !== ids.length || ids.some(id => !/^[a-zA-Z0-9_-]+$/.test(id))) return yield* invalid("Configured steps need unique safe IDs")
-    const selected = yield* Effect.try({ try: () => selectedSteps(input), catch: error => error instanceof CodingError ? error : invalid("Invalid step selection") })
+    const selected = yield* Effect.try({ try: () => selectedSteps(job), catch: error => error instanceof CodingError ? error : invalid("Invalid step selection") })
+    // The reviewed CI policy is read once for this job, pinned into every Work
+    // it produces, and composed under reserved ids a local check cannot take.
+    const inherits = inheritsCiPolicy(job, selected, evaluation === true)
+    const policy = inherits ? yield* captureCiPolicy(job.repo) : { kind: "none" as const }
+    const composed = yield* Effect.try({ try: () => composeCiChecks(job.configuration.checks, policy),
+      catch: error => error instanceof CodingError ? error : invalid("The reviewed CI checks could not be composed") })
+    const recheck = inherits ? revalidateCiPolicy(job.repo, policy) : Effect.void
+    const input = { ...job, configuration: { ...job.configuration, checks: composed } }
     const execute = (step: typeof input.configuration.steps[number]) => Effect.gen(function*() {
       const executionId = Digest.digest(Digest.canonical(["repository/step/v1", instance.executionId, input.digest, input.event.deliveryKey, step.id]))
-      const work = { repo: input.repo, job: input.job, event: { ...input.event, payload: evidence.subject ?? input.event.payload }, step, evidence, deadlineAt,
+      const work = { repo: input.repo, job: input.job, event: { ...input.event, payload: evidence.subject ?? input.event.payload }, step, evidence, deadlineAt, policy,
         checks: input.configuration.checks, landing: input.configuration.landing, replies: input.configuration.replies,
         executionMode: evaluation ? "evaluation" as const : input.event.trial ? "trial" as const : "live" as const }
       const subject = object(object(work.event.payload).issue)
@@ -179,7 +188,7 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
     })
     const mutates = (step: typeof input.configuration.steps[number]) => ["fix", "feature", "chore"].includes(step.id)
     const parallel = yield* runIndependentSteps(selected.filter(step => !mutates(step)), execute)
-    const serial = yield* Effect.forEach(selected.filter(mutates), execute, { concurrency: 1 })
+    const serial = yield* Effect.forEach(selected.filter(mutates), step => recheck.pipe(Effect.andThen(execute(step))), { concurrency: 1 })
     const values = new Map([...parallel, ...serial].map(value => [value.stepId, value]))
     return Object.fromEntries(selected.map(step => [step.id, values.get(step.id)!]))
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The configured step graph could not complete")))),
