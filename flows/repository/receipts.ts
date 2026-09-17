@@ -10,6 +10,7 @@ import { Effect, Exit, Option, Schema } from "effect"
 import { CodingError } from "../coding/schema.ts"
 import { JobInput, JobResult, OperationResult, SetupInput } from "./schema.ts"
 import { RepositoryJob } from "./jobs.ts"
+import { verifyTrialChecks } from "./checks.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -72,7 +73,15 @@ export const priorSetupReceipt = (input: SetupInput, operation: "evaluate" | "tr
         payload.value.revision !== input.revision || payload.value.operation !== operation) continue
     const proof = yield* readOwnedResult(candidate.runId, "repository/Setup", "repository/setup", payload.value, OperationResult, CodingError)
     const receipt = proof.output.receipt
-    if (receipt?.phase === "completed" && receipt.operation === operation && receipt.digest === input.digest && receipt.revision === input.revision && receipt.runId === proof.run.runId) return receipt
+    if (receipt?.phase === "completed" && receipt.operation === operation && receipt.digest === input.digest && receipt.revision === input.revision && receipt.runId === proof.run.runId) {
+      if (operation === "trial") {
+        const runs = receipt.evidence.filter(ref => ref.startsWith("run:")).map(ref => ref.slice(4))
+        if (runs.length !== 1 || !runs[0] || !receipt.trialIssue || !receipt.sourceRevision) return yield* invalid("The trial has no single retained live job")
+        const job = yield* completedJob(runs[0], { ...input, sourceRevision: receipt.sourceRevision }, { source: receipt.trialIssue.source, issueNumber: receipt.trialIssue.number, trial: true })
+        if (!job || !receipt.evidence.includes(`execution:${job.executionId}`)) return yield* invalid("The trial's actual job result is unavailable")
+      }
+      return receipt
+    }
   }
   return yield* invalid(`Run ${operation === "evaluate" ? "evals" : "the live trial"} for this exact candidate before continuing`)
 })
@@ -104,6 +113,8 @@ export const completedJob = (runId: string, input: Pick<JobInput, "repo" | "job"
           (proof.output.results.length !== 1 || proof.output.results[0]!.stepId !== event.manualStep))) {
       return yield* invalid("The live job did not complete its selected work; inspect the actual results")
     }
+    if (event.trial === true) yield* Effect.try({ try: () => verifyTrialChecks(value.configuration, proof.output),
+      catch: error => error instanceof CodingError ? error : invalid("The AI trial results could not be verified") })
     return { ...proof, executionId: row.runId }
   }
   return yield* invalid("The completed live run has no matching native repository job receipt")

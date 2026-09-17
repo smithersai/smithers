@@ -9,7 +9,7 @@ import { CodingError } from "../coding/schema.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
 import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
 import { Event, StepResult, type JobInput } from "./schema.ts"
-import { CheckStep } from "./checks.ts"
+import { CheckStep, reviewCheck } from "./checks.ts"
 import { ProposalStep } from "./changes.ts"
 import { RepositoryRemote } from "./remote.ts"
 import { admitSourcePath } from "./source.ts"
@@ -162,7 +162,7 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
         }
         if (step.id === "checks") return yield* runtime.execute(CheckStep, { executionId, payload: { work } })
         if (input.job === "review") return yield* runtime.execute(CheckStep, { executionId, payload: { work: { ...work,
-          checks: [{ id: `review-${step.id}`, name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required" }, ...work.checks] } } })
+          checks: [reviewCheck(step), ...work.checks] } } })
         if (["poc", "fix", "split", "feature", "chore"].includes(step.id)) return yield* runtime.execute(ProposalStep, { executionId, payload: { work } })
         if (!["research", "duplicates", "reproduce", "review", "followup"].includes(step.id)) return yield* invalid("This configured step has no repository execution adapter")
         return yield* runtime.execute(InvestigateStep, { executionId, payload: { work } })

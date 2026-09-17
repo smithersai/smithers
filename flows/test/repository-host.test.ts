@@ -19,13 +19,14 @@ import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
 import { initialSetup, setupCandidate, SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
 import { JobInput, JobResult } from "../repository/schema.ts"
+import { verifyTrialChecks } from "../repository/checks.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE, exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
-async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
+async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const temporary = await mkdtemp(join(tmpdir(), "repository-host-")), root = join(temporary, "repo")
   let passed = false
@@ -216,19 +217,21 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
-      const job = kind === "fix" ? "issues" : kind === "draft" ? "feature" : kind === "push" ? "ci" : kind
+      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" ? "ci" : kind === "ai-empty-review" ? "review" : kind
       const configured = initialSetup(repo, job, "maintainer")
       if (kind === "fix") configured.draft.steps = [configured.draft.steps.find(step => step.id === "fix")!]
       configured.draft.cases = []
       configured.draft.checks = job === "review" || kind === "draft" ? [] : [{ id: "real-command", name: "Run fixture", kind: "command", policy: "required", paths: [],
         rule: job === "ci" ? `${process.execPath} -e "import('./greeting.mjs').then(m => { if (m.greeting !== 'hello') process.exit(1) })"` : `${process.execPath} regression.mjs` }]
+      if (kind.startsWith("ai-") && kind !== "ai-empty-review") configured.draft.checks.push({ id: "observability", name: "Observability", kind: "ai", policy: "report",
+        paths: [kind === "ai-skip" ? "unrelated/**" : "greeting.mjs"], rule: "Review the requested greeting change using its source." })
       const event = kind === "push" ? { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", issueNumber: 0,
         payload: { ref: "refs/heads/main", before: native.head.parentCommitIds[0], after: native.head.commitId, created: false, deleted: false, forced: false,
           repository: { id: 42, full_name: "original/source" }, sender: { login: "maintainer" } } }
         : { source: "smithers-cloud" as const, type: job === "review" || job === "ci" ? "pull_request" : "issues", action: "opened", trial: true,
         ...(kind === "fix" ? { type: "manual", action: "manual:fix", manualStep: "fix" } : {}),
         deliveryKey: `job:${kind}`, issueNumber: 30, payload: job === "review" || job === "ci"
-          ? { pull_request: { number: 30, head: { sha: native.head.commitId }, base: { sha: native.head.parentCommitIds[0] } } }
+          ? { pull_request: { number: 30, head: { sha: native.head.commitId }, base: { sha: kind === "ai-empty-review" ? native.head.commitId : native.head.parentCommitIds[0] } } }
           : { issue: { number: 30, title: "Use goodbye", body: "Change greeting.mjs to export goodbye" } } }
       const input = { repo, job, revision: configured.revision, digest: setupCandidate(configured), sourceRevision: source.commitId,
         configuration: configured.draft, event }
@@ -246,7 +249,22 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       assert.equal(output.status, "completed", JSON.stringify(output))
       assert(output.results.length > 0)
       assert(output.results.every(step => step.status === "completed" && step.evidence.length > 0))
-      if (job === "review") assert((output.results[0]!.output as any).results.some((check: any) => check.status === "passed" && check.detail.examinedPaths.includes("greeting.mjs")))
+      if (kind.startsWith("ai-")) {
+        const verify = () => verifyTrialChecks(configured.draft, output)
+        if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
+        else assert.doesNotThrow(verify)
+        if (kind === "ai-skip") {
+          assert.equal((output.results[0]!.output as any).results.find((check: any) => check.checkId === "observability").status, "skipped")
+          assert.equal(output.status, "completed", "unrelated ordinary work retains legitimate skips")
+        }
+      }
+      if (job === "review") {
+        if (kind === "ai-empty-review") assert((output.results[0]!.output as any).results.every((check: any) => check.status === "skipped"))
+        else {
+          assert((output.results[0]!.output as any).results.some((check: any) => check.status === "passed" && check.detail.examinedPaths.includes("greeting.mjs")))
+          assert.doesNotThrow(() => verifyTrialChecks(configured.draft, output))
+        }
+      }
       if (job === "ci") {
         assert.equal((output.results[0]!.output as any).results[0].detail.exitCode, 0)
         assert.equal((output.results[0]!.output as any).candidate, native.head.commitId)
@@ -373,6 +391,8 @@ test("an executed unconditional throw cannot become a reproduced repository bug"
   t => proveRepository(t, { interactions: ["false-reproduction"] }))
 test("a real GitHub push envelope runs CI on its immutable after commit and before comparison", nativeOptions,
   t => proveRepository(t, { jobs: ["push"] }))
+test("native AI trials require matched execution while ordinary events preserve scoped skips", nativeOptions,
+  t => proveRepository(t, { jobs: ["ai-match", "ai-skip", "ai-proposal", "ai-empty-review"] }))
 test("native author signals ignore bystanders and resume the same job across two questions", nativeOptions,
   t => proveRepository(t, { interactions: ["author"] }))
 test("native checked changes retain exact versioned files and recovery bytes, and refuse unverified landing", nativeOptions,

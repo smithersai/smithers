@@ -3,7 +3,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Digest from "@smthrs/core/Digest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Path, Schema } from "effect"
+import { Effect, Layer, Option, Path, Schema } from "effect"
 import { matchesGlob } from "node:path"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { contained, runSourceProcess, withImmutableSource, type ImmutableSourceOptions } from "../coding/immutable-source.ts"
@@ -11,7 +11,7 @@ import { normalizePath, Source } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { currentExecutionId } from "./inspection.ts"
 import { Work } from "./jobs.ts"
-import { Check, Proposal, StepResult } from "./schema.ts"
+import { Check, Proposal, StepResult, type Draft, type JobResult, type Step } from "./schema.ts"
 import { admitSourcePath } from "./source.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -31,6 +31,48 @@ export const CheckOutput = Schema.Struct({ base: Commit, candidate: Schema.NonEm
 const Finding = Schema.Struct({ path: Schema.NonEmptyString, line: Schema.Int.check(Schema.isGreaterThan(0)), message: Schema.NonEmptyString })
 export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass", "fail", "uncertain"]),
   summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)) })
+/** Shared by review execution and its trial verifier. */
+export const reviewCheck = (step: typeof Step.Type): typeof Check.Type => ({
+  id: `review-${step.id}`, name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required"
+})
+/** Only the owned trial receipt uses this gate. Unrelated live events may skip. */
+export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">, result: JobResult): void => {
+  // A review trial selects its core review step. Other event/manual steps and
+  // disabled steps do not become extra requirements for this particular trial.
+  const checks = [...configuration.checks, ...(result.job === "review" ? configuration.steps.filter(step => step.mode !== "off" &&
+    step.id !== "checks" && result.results.some(value => value.stepId === step.id)).map(reviewCheck) : [])]
+  const ai = checks.filter(check => check.kind === "ai")
+  if (!ai.length) return
+  if (checks.some(check => !check.id) || new Set(checks.map(check => check.id)).size !== checks.length) throw invalid("AI trial checks need unique configured IDs")
+  const outputs = result.results.flatMap(step => {
+    let checked = step, candidate = result.sourceRevision
+    const nested = Schema.decodeUnknownOption(Schema.Array(StepResult))(object(step.output).checks)
+    if (Option.isSome(nested) && nested.value.length) {
+      // A fix's failing baseline cannot prove that its final proposal was checked.
+      checked = nested.value.at(-1)!
+      const proposal = Schema.decodeUnknownOption(Proposal)(object(step.output).proposal)
+      if (Option.isNone(proposal) || !proposal.value.length) return []
+      candidate += `+${Digest.digest(Digest.canonical(proposal.value))}`
+    }
+    const output = Schema.decodeUnknownOption(CheckOutput)(checked.output)
+    return checked.status === "completed" && Option.isSome(output) && output.value.gate === "passed" && output.value.candidate === candidate
+      ? [output.value] : []
+  })
+  for (const check of ai) {
+    const ran = outputs.some(output => {
+      const matches = output.results.filter(value => value.checkId === check.id)
+      if (matches.length !== 1) return false
+      const value = matches[0]!, verdict = Schema.decodeUnknownOption(SemanticVerdict)(value.detail)
+      if (value.policy !== check.policy || (value.status !== "passed" && (check.policy !== "report" || value.status !== "failed")) ||
+          !value.executionId || !value.evidence.includes(`execution:${value.executionId}`) ||
+          !value.evidence.includes(`source:${output.candidate}`) || !value.evidence.includes(`base:${output.base}`) || Option.isNone(verdict)) return false
+      const observed = verdict.value
+      return observed.examinedPaths.length > 0 && observed.examinedPaths.every(path => !check.paths.length || check.paths.some(pattern => matchesGlob(path, pattern))) &&
+        (value.status === "passed" ? observed.verdict === "pass" && !observed.findings.length : observed.verdict === "fail" && observed.findings.length > 0)
+    })
+    if (!ran) throw invalid(`AI check ${check.name || check.id} has no completed in-scope trial result; test a change that exercises it`)
+  }
+}
 export const SemanticCheck = AgentAction.make("repository/semantic-check", {
   payload: { repo: Schema.String, check: Check, comparison: Comparison, context: Schema.Array(Source), deadlineAt: Schema.Number },
   output: SemanticVerdict, seat: "repository/checker", prompt: input => JSON.stringify(input),

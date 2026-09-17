@@ -41,6 +41,13 @@ export const SuggestedCaseInput = Schema.Struct({ ...CaseInput.fields,
   ]) }) })
 const SuggestedDraft = Schema.Struct({ ...Draft.fields,
   cases: Schema.Array(Schema.Struct({ ...EvalCase.fields, input: SuggestedCaseInput })).check(Schema.isMinLength(1), Schema.isMaxLength(100)) })
+/** A model suggestion cannot promote its own rule into a required policy. */
+export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["checks"]): Draft["checks"] => suggested.map(check => {
+  if (check.kind !== "ai") return check
+  const prior = existing.filter(value => value.id === check.id && value.kind === "ai" && value.rule === check.rule &&
+    Digest.canonical(value.paths) === Digest.canonical(check.paths))
+  return { ...check, policy: prior.length === 1 ? prior[0]!.policy : "report" }
+})
 export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   payload: { input: SetupInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number }, output: SuggestedDraft,
   seat: "repository/research", prompt: value => JSON.stringify({ ...value, outputSchemas: {
@@ -49,6 +56,7 @@ export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   system: [
     "Propose a configuration for this one repository responsibility using the actual supplied source, issue, PR and CI evidence.",
     "Keep the user's chosen permissions, scope and budget. Suggest concrete reusable patterns when history supports them. Missing API/history evidence is not proof of no issues or no CI.",
+    "New or rewritten AI checks start report-only. A required check is a separate maintainer decision after evals and a live trial; preserve unchanged user-authored rules and policies.",
     "Each new case.input is a typed OBJECT {event,sourceRevision,assertions}, not a JSON string. Follow its schema exactly. event.source is github, smithers-cloud or schedule; it is never the repository name. sourceRevision is the captured immutable commit ID. Assertions are {path: JSON pointer into JobResult, equals: expected JSON}.",
     "Each event.payload contains the actual task for the worker: {issue:{title,body}} for issues, {pull_request:{title,body,base:{sha},head:{sha}}} for captured PRs, or {prompt} for a feature/chore. Put the complete concrete request there. The worker never sees the case name, expected answer, or assertions. An empty payload cannot test issue handling.",
     "For the issues job, begin with a normal opened issue: event.type issues, event.action opened, payload.issue.title is a complete question or bug report and payload.issue.body supplies its context. The proposed trialTitle and trialBody are a useful source of a realistic request. On a fresh native repository use source smithers-cloud. Do not replace an issue with a generic inspect prompt or invent a manual inspect step.",
@@ -154,7 +162,7 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
       const evidence = yield* runtime.execute(Capture, { executionId: key("capture"), payload: { repo: input.repo, prompt: input.draft.steps.map(step => step.prompt).join("\n") } })
       if (input.operation === "inspect") {
         const suggested = yield* runtime.execute(Suggest, { executionId: key("suggest"), payload: { input, evidence, deadlineAt } })
-        const suggestedDraft = { ...suggested, cases: input.draft.cases.length ? input.draft.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })), replies: input.draft.replies, landing: input.draft.landing,
+        const suggestedDraft = { ...suggested, checks: suggestedChecks(input.draft.checks, suggested.checks), cases: input.draft.cases.length ? input.draft.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })), replies: input.draft.replies, landing: input.draft.landing,
           scope: input.draft.scope, label: input.draft.label, schedule: input.draft.schedule, budgetMinutes: input.draft.budgetMinutes }
         return yield* respond({ ...identity, inspection: { sources: evidence.sources, suggestedDraft, inspectedAt: Date.now() },
           receipt: receipt({ sourceRevision: evidence.source.commitId, evidence: evidence.sources.filter(source => source.status === "read").map(source => source.path) }) })
