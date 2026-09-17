@@ -72,21 +72,21 @@ const workFor = (policy: CiPolicy) => ({ repo, job: "feature" as const, step, ev
   checks: composeCiChecks([localCheck], policy), landing: "checks" as const, replies: "draft" as const, executionMode: "live" as const, policy })
 const work = workFor(pinned)
 /** The dispatched job input the registered bridge and approved plan both carry. */
-const jobInputFor = (options: { repo?: string; steps?: unknown[] } = {}) => {
-  const setup = initialSetup(options.repo ?? repo, "feature", "maintainer")
+const jobInputFor = (options: { repo?: string; steps?: unknown[]; job?: "feature" | "chores"; event?: unknown } = {}) => {
+  const setup = initialSetup(options.repo ?? repo, options.job ?? "feature", "maintainer")
   setup.revision = 4
   setup.draft.steps = (options.steps ?? [step]) as typeof setup.draft.steps
   setup.draft.checks = structuredClone([localCheck]) as typeof setup.draft.checks
   setup.draft.landing = "checks"
   setup.draft.replies = "draft"
-  return { repo: options.repo ?? repo, job: "feature", revision: setup.revision, digest: setupCandidate(setup),
-    sourceRevision, configuration: setup.draft, event }
+  return { repo: options.repo ?? repo, job: options.job ?? "feature", revision: setup.revision, digest: setupCandidate(setup),
+    sourceRevision, configuration: setup.draft, event: options.event ?? event }
 }
 const jobInput = jobInputFor()
 const checkOutput = (candidate = sourceCommit, values = results, gate = "passed") => ({ base: mainCommit, candidate, gate, results: values })
 const checks = (candidate = sourceCommit, values = results, gate = "passed") => ({ stepId: "checks", status: "completed", summary: "1 checks passed",
   evidence: [], executionId: checkExecutionId, output: checkOutput(candidate, values, gate) })
-const result = (candidate = sourceCommit, values = results, gate = "passed") => ({ stepId: "feature", status: "completed", summary: "Implemented",
+const result = (candidate = sourceCommit, values = results, gate = "passed", stepId = "feature") => ({ stepId, status: "completed", summary: "Implemented",
   evidence: [], executionId: "job-run/implement", output: { status: "implemented", source, creation, checks: candidate === "" ? undefined : checks(candidate, values, gate) } })
 
 const resultCodec = Schema.toCodecJson(Flow.Result({ success: StepResult, error: CodingError }))
@@ -104,27 +104,27 @@ const row = (id: string, stateJson: string, status: RunStore.RunRow["status"] = 
   runId: id, status, createdAtMs: 1, startedAtMs: 1, finishedAtMs: 2, owner: null, heartbeatAtMs: null, claim: null,
   claimedAtMs: null, parentRunId, cancelRequestedAtMs: null, stateJson })
 const jobState = JSON.stringify({ version: 1, flowName: "repository/RepositoryJob", payload: {} })
-const bridgeState = (input: unknown = jobInput) => JSON.stringify({ version: 1, flowName: "repository-jobs/feature", payload: { input } })
+const bridgeState = (input: unknown = jobInput, flow = "repository-jobs/feature") => JSON.stringify({ version: 1, flowName: flow, payload: { input } })
 const rootState = (planId = "plan-1") => JSON.stringify({ version: 1, flowName: "agent/run", payload: { planId } })
-const runSummary = (status: string, planId = "plan-1", runId = "control-run") => ({ runId, flowId: "repository-jobs/feature", status, planId,
+const runSummary = (status: string, planId = "plan-1", runId = "control-run", flow = "repository-jobs/feature") => ({ runId, flowId: flow, status, planId,
   planDigest: "digest-1", createdAt: 1, updatedAt: 2 })
-const storedPlan = (decision = "approved", decodedInput: unknown = jobInput) => ({ decision, decodedInput,
-  card: { planId: "plan-1", flowId: "repository-jobs/feature", digest: "digest-1", inputSummary: "", envelope: { capabilities: [], flows: [], budget: {} },
+const storedPlan = (decision = "approved", decodedInput: unknown = jobInput, flow = "repository-jobs/feature") => ({ decision, decodedInput,
+  card: { planId: "plan-1", flowId: flow, digest: "digest-1", inputSummary: "", envelope: { capabilities: [], flows: [], budget: {} },
     deployClass: false, executionDigest: ref.executionDigest, nodes: [], approval: {} } })
 
 /** The durable stores the verifier reads: a completed CheckStep under a job run
  * that is still delivering, under its registered bridge and approved root. */
 const stores = (options: { rows?: Record<string, RunStore.RunRow>; runStatus?: string; decision?: string; planId?: string
-  planInput?: unknown; bridge?: unknown; rootId?: string; parents?: Record<string, readonly string[]> } = {}) => {
-  const rootId = options.rootId ?? "control-run"
+  planInput?: unknown; bridge?: unknown; rootId?: string; flow?: string; parents?: Record<string, readonly string[]> } = {}) => {
+  const rootId = options.rootId ?? "control-run", flow = options.flow ?? "repository-jobs/feature"
   const rows = options.rows ?? { [checkExecutionId]: row(checkExecutionId, stepState(), "completed", "job-run"),
     "job-run": row("job-run", jobState, "running", "bridge-run"),
-    "bridge-run": row("bridge-run", bridgeState(options.bridge), "running", rootId),
+    "bridge-run": row("bridge-run", bridgeState(options.bridge, flow), "running", rootId),
     [rootId]: row(rootId, rootState(), "running", null) }
   const reads: string[] = []
   const control = { getRun: (runId: string) => runId === rootId
-      ? Effect.succeed(runSummary(options.runStatus ?? "running", options.planId, rootId)) : Effect.fail(new RunNotFound({ code: "run_not_found", runId })),
-    getPlan: () => Effect.succeed(storedPlan(options.decision, options.planInput ?? jobInput)) }
+      ? Effect.succeed(runSummary(options.runStatus ?? "running", options.planId, rootId, flow)) : Effect.fail(new RunNotFound({ code: "run_not_found", runId })),
+    getPlan: () => Effect.succeed(storedPlan(options.decision, options.planInput ?? jobInput, flow)) }
   return { reads, rows, layer: Layer.mergeAll(
     RunStore.layerNoop({ get: id => Effect.suspend(() => { reads.push(id)
       const found = rows[id]
@@ -140,8 +140,9 @@ const stores = (options: { rows?: Record<string, RunStore.RunRow>; runStatus?: s
 /** The private control identity ModuleAuthority restores at each native handler. */
 const current = Layer.succeed(ModuleOwner, { rootId: "control-run", flowId: "repository-jobs/feature" })
 const verify = (input: Parameters<typeof verifiedCheckStep>[0],
-  layers: Layer.Layer<RunStore.RunStore | DurableEngineState.DurableEngineState | ControlRuntime> = stores().layer) =>
-  Effect.runPromise(Effect.exit(verifiedCheckStep(input).pipe(Effect.provide(Layer.merge(layers, current)))))
+  layers: Layer.Layer<RunStore.RunStore | DurableEngineState.DurableEngineState | ControlRuntime> = stores().layer,
+  owner: Layer.Layer<ModuleOwner> = current) =>
+  Effect.runPromise(Effect.exit(verifiedCheckStep(input).pipe(Effect.provide(Layer.merge(layers, owner)))))
 const request = { executionId: checkExecutionId, commitId: sourceCommit, baseCommitId: mainCommit, work, source, ref, checks: pinned.checks }
 
 test("the verifier accepts a completed CheckStep whose job is still awaiting landing", async () => {
@@ -329,18 +330,19 @@ const native = { sourcePublication: "cloud" as const, read: () => Effect.die("no
     source: { changeId, commitId: sourceCommit, treeId: sourceTree, parentCommitIds: [mainCommit] } }) }
 
 const deliver = async (t: TestContext, options: { port?: number; work?: unknown; publisher?: boolean
-  store?: ReturnType<typeof stores>; retryMs?: number; values?: typeof results; gate?: string }) => {
+  store?: ReturnType<typeof stores>; retryMs?: number; values?: typeof results; gate?: string
+  owner?: Layer.Layer<ModuleOwner>; stepId?: string }) => {
   const calls: string[] = []
   const f = options.store ?? stores()
   const receipts = Layer.effect(RepositoryCheckReceipts)(make({ apiBaseUrl: `http://127.0.0.1:${options.port}/api`, gatewayId,
     credential: "gateway-credential", repositorySlug: repo, workspaceId, unverifiedRunRetryMs: options.retryMs ?? 1 }))
     .pipe(Layer.provide(NodeHttpClient.layerUndici))
-  const services = Layer.mergeAll(Layer.succeed(NativeCoding, native as unknown as NativeCoding["Service"]), Layer.succeed(Landing, landing(calls)), f.layer, current)
+  const services = Layer.mergeAll(Layer.succeed(NativeCoding, native as unknown as NativeCoding["Service"]), Layer.succeed(Landing, landing(calls)), f.layer, options.owner ?? current)
   const runtime = ManagedRuntime.make(Delivery.deliveryLayers.pipe(
     Layer.provide(options.publisher === false ? services : Layer.merge(services, receipts.pipe(Layer.orDie))),
     Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)))
   t.after(() => runtime.dispose())
-  const payload = { work: options.work ?? work, result: result(sourceCommit, options.values ?? results, options.gate) }
+  const payload = { work: options.work ?? work, result: result(sourceCommit, options.values ?? results, options.gate, options.stepId) }
   const run = (executionId = "delivery") => runtime.runPromise(Delivery.DeliverChange.execute(payload as never, { executionId }))
   return { calls, run, reads: f.reads }
 }
@@ -566,4 +568,65 @@ test("a required local check that failed blocks delivery before any receipt", as
 
 test("the receipt action is not model invocable", () => {
   assert.deepEqual(Object.keys(Delivery).sort(), ["DeliverChange", "deliveryLayers"])
+})
+
+// The one case neither host lane could run alone: a push-triggered chore on the
+// default branch delivering under a pinned required CI rule. FinishChange
+// rewrote the event payload to the produced change's own candidate and base;
+// the verifier rebuilds exactly that payload through the same finalCheckWork,
+// so the triggering push stays provenance and never becomes the checked source.
+const chorePush = { ref: "refs/heads/main", before: "c1".repeat(20), after: mainCommit, created: false, deleted: false,
+  repository: { default_branch: "main" }, candidateCommitId: mainCommit, baseCommitId: "c1".repeat(20) }
+const choreStep = { id: "chore", name: "Chore", mode: "automatic" as const, prompt: "Update code.txt" }
+const choreEvent = { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", payload: chorePush }
+const choreWork = { ...workFor(pinned), job: "chores" as const, step: choreStep, event: choreEvent }
+const choreJobInput = jobInputFor({ job: "chores", steps: [choreStep], event: choreEvent })
+const choreOwner = Layer.succeed(ModuleOwner, { rootId: "control-run", flowId: "repository-jobs/chores" })
+const choreStores = (options: { rows?: Record<string, RunStore.RunRow> } = {}) => stores({ flow: "repository-jobs/chores",
+  bridge: choreJobInput, planInput: choreJobInput,
+  rows: options.rows ?? { [checkExecutionId]: row(checkExecutionId, stepState({ work: choreWork }), "completed", "job-run"),
+    "job-run": row("job-run", jobState, "running", "bridge-run"),
+    "bridge-run": row("bridge-run", bridgeState(choreJobInput, "repository-jobs/chores"), "running", "control-run"),
+    "control-run": row("control-run", rootState(), "running", null) } })
+const choreRequest = { executionId: checkExecutionId, commitId: sourceCommit, baseCommitId: mainCommit,
+  work: choreWork, source, ref, checks: pinned.checks }
+
+test("a push chore under a pinned CI policy reports the receipt and lands the produced change", async t => {
+  const store = await plue(t, plueRule())
+  const f = await deliver(t, { port: store.port, work: choreWork, store: choreStores(), owner: choreOwner, stepId: "chore" })
+  const output = await f.run("chore-delivery")
+  assert.equal(output.status, "completed", output.summary)
+  assert.equal(store.seen.length, 1)
+  assert.deepEqual(store.seen[0]!.body, { repo, workspace_id: workspaceId, registration_id: registrationId, revision: ref.revision,
+    digest: ref.digest, execution_digest: ref.executionDigest, run_id: "control-run", execution_id: checkExecutionId,
+    commit_id: sourceCommit, change_id: changeId, base_commit_id: mainCommit, gate: "passed",
+    checks: [{ id: "verify", outcome: "passed" }, { id: "review", outcome: "skipped_no_matching_paths" }] })
+  assert.deepEqual(f.calls, ["readMain", "prepare", "create", "queue", "observe"], "the landing request follows the accepted receipt")
+  const stored = JSON.parse(choreStores().rows[checkExecutionId]!.stateJson) as { payload: { work: { event: { payload: Record<string, unknown> } } } }
+  assert.deepEqual(stored.payload.work.event.payload,
+    { trigger: chorePush, candidateCommitId: sourceCommit, baseCommitId: mainCommit },
+    "the checked payload names the produced change, with the push retained as provenance")
+})
+
+test("the same push chore refuses when the verifier is handed the trigger's after commit", async () => {
+  const triggerSource = { ...source, commitId: chorePush.after, parentCommitIds: [chorePush.before] }
+  const refused = await verify({ ...choreRequest, source: triggerSource }, choreStores().layer, choreOwner)
+  assert.equal(refused._tag, "Failure")
+  assert.match(String(refused._tag === "Failure" ? refused.cause : ""), /does not match its claimed flow and input/)
+  const accepted = await verify(choreRequest, choreStores().layer, choreOwner)
+  assert.equal(accepted._tag, "Success", "the produced change's own payload still verifies")
+})
+
+test("a failing required inherited check blocks the push chore before any receipt", async t => {
+  const store = await plue(t, plueRule())
+  const failing = results.map(value => value.checkId === inherited("verify") ? { ...value, status: "failed", summary: "Exit 7" } : value)
+  const f = await deliver(t, { port: store.port, work: choreWork, owner: choreOwner, stepId: "chore", values: failing as typeof results,
+    store: choreStores({ rows: { [checkExecutionId]: row(checkExecutionId, stepState({ work: choreWork, values: failing as typeof results }), "completed", "job-run"),
+      "job-run": row("job-run", jobState, "running", "bridge-run"),
+      "bridge-run": row("bridge-run", bridgeState(choreJobInput, "repository-jobs/chores"), "running", "control-run"),
+      "control-run": row("control-run", rootState(), "running", null) } }) })
+  const output = await f.run("chore-blocked")
+  assert.equal(output.status, "needs-maintainer")
+  assert.equal(store.seen.length, 0, "a required inherited rule that failed never reaches Plue")
+  assert.deepEqual(f.calls, ["readMain", "prepare"], "no landing request is opened")
 })

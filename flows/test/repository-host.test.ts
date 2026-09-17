@@ -22,6 +22,7 @@ import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
 import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
+import { inheritedCheckId, rawCheckId, readCiPolicy } from "../repository/ci-policy.ts"
 import { initialSetup, setupCandidate, SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
 import { JobInput, JobResult } from "../repository/schema.ts"
 import { verifyTrialChecks } from "../repository/checks.ts"
@@ -33,7 +34,7 @@ const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
 const nativeOptions = {
   skip: source === undefined || exporter === undefined ? "Set the Plue native adapter and exporter paths" : false, timeout: 180000
 }
-async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable" | "ai-context-pass" | "ai-context-fail" | "ai-context-missing" | "ai-context-required" | "ai-delete" | "ai-delete-unavailable">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
+async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: ReadonlyArray<"review" | "ci" | "push" | "feature" | "chores" | "fix" | "draft" | "ai-match" | "ai-skip" | "ai-proposal" | "ai-empty-review" | "ai-unavailable" | "ai-context-pass" | "ai-context-fail" | "ai-context-missing" | "ai-context-required" | "ai-delete" | "ai-delete-unavailable" | "ci-inherited" | "ci-blocked">; interactions?: ReadonlyArray<"author" | "reproduction" | "false-reproduction">; mutation?: boolean }) {
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const temporary = await mkdtemp(join(tmpdir(), "repository-host-")), root = join(temporary, "repo")
   let passed = false
@@ -84,13 +85,32 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   setup.draft.trialBody = "Inspect greeting.mjs"
   const projectionMismatches: string[] = []
   const digest = setupCandidate(setup), requests: string[] = [], registrations: Array<Record<string, any>> = [], dispatches: any[] = []
+  // The provisioned registration read, serving the maintainer's own reviewed CI
+  // row so dependent jobs inherit real rules instead of an empty policy.
+  const ciRegistrationId = "55555555-5555-4555-8555-555555555555"
+  const inheritedRule = `${process.execPath} -e "import('./greeting.mjs').then(m => { if (m.greeting !== ${proof.jobs?.includes("ci-blocked") ? "'never'" : "'hello'"}) process.exit(3) })"`
+  const ciRegistration = (revision: number) => {
+    const reviewed = initialSetup(repo, "ci", "maintainer")
+    reviewed.revision = revision
+    reviewed.draft.checks = [{ id: "reviewed-ci", name: "Reviewed CI", kind: "command", policy: "required", paths: [], rule: inheritedRule }]
+    const reviewedDigest = setupCandidate(reviewed)
+    return { id: ciRegistrationId, repository_id: 3, workspace_id: workspaceId, user_id: 7, job: "ci", mode: "enabled",
+      revision, digest: reviewedDigest, source_revision: "a".repeat(40), flow_id: "repository-jobs/ci", enabled: true,
+      configuration: { repo, workspace_id: workspaceId, flow_id: "repository-jobs/ci", revision, digest: reviewedDigest,
+        source_revision: "a".repeat(40), execution_digest: "f".repeat(64), mode: "enabled", input: reviewed.draft } }
+  }
+  const inheriting = proof.jobs?.some(kind => kind.startsWith("ci-")) ?? false
+  let policyReads = 0
+  const ciRows = () => { if (!inheriting) return []
+    policyReads++
+    return [ciRegistration(1)] }
   const connect = () => RpcClient.make(ControlRpcs.ControlRpcs)
   let client!: Effect.Success<ReturnType<typeof connect>>
   let issueNumber = 10, creates = 0, comments = 0
   const issues = new Map<string, any>()
   const remote = RepositoryRemote.of({ repo, workspaceId,
     source: Effect.succeed("smithers-cloud"),
-    registrations: Effect.succeed(json([])),
+    registrations: Effect.suspend(() => Effect.succeed(json(ciRows()))),
     history: Effect.succeed({ records: [], sources: [{ path: "repository:issues", status: "read", summary: "0 issues" }] }),
     pause: () => Effect.succeed(json({ enabled: false })), dispatches: () => Effect.succeed(json(dispatches)),
     comment: (job, step, raw) => Effect.sync(() => {
@@ -291,7 +311,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
-      const job = kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" || kind === "ai-delete" || kind === "ai-delete-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" || kind === "ai-context-pass" || kind === "ai-context-fail" || kind === "ai-context-missing" || kind === "ai-context-required" ? "ci" : kind === "ai-empty-review" ? "review" : kind
+      const job = kind === "ci-inherited" || kind === "ci-blocked" ? "review" : kind === "fix" ? "issues" : kind === "draft" || kind === "ai-proposal" || kind === "ai-unavailable" || kind === "ai-delete" || kind === "ai-delete-unavailable" ? "feature" : kind === "push" || kind === "ai-match" || kind === "ai-skip" || kind === "ai-context-pass" || kind === "ai-context-fail" || kind === "ai-context-missing" || kind === "ai-context-required" ? "ci" : kind === "ai-empty-review" ? "review" : kind
       const configured = initialSetup(repo, job, "maintainer")
       if (kind === "fix") configured.draft.steps = [configured.draft.steps.find(step => step.id === "fix")!]
       configured.draft.cases = []
@@ -303,7 +323,12 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         policy: kind === "ai-context-required" ? "required" : "report", rule: kind === "ai-context-missing" || kind === "ai-context-required"
           ? "Follow docs/missing.md. Fixture: captured context missing" : `Follow docs/telemetry.md. Fixture: captured context ${kind.endsWith("fail") ? "fail" : "pass"}` }
       const modelCallsBefore = contextualModelCalls
-      const event = kind === "push" ? { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", issueNumber: 0,
+      // An inheriting job is ordinary live work: a trial or an evaluation keeps
+      // its own checks, so the policy read would never run under those.
+      const event = kind.startsWith("ci-") ? { source: "smithers-cloud" as const, type: "pull_request", action: "opened",
+        deliveryKey: `job:${kind}`, issueNumber: 30,
+        payload: { pull_request: { number: 30, head: { sha: native.head.commitId }, base: { sha: native.head.parentCommitIds[0] } } } }
+        : kind === "push" ? { source: "github" as const, type: "push", action: "", deliveryKey: "github:signed-push", issueNumber: 0,
         payload: { ref: "refs/heads/main", before: native.head.parentCommitIds[0], after: native.head.commitId, created: false, deleted: false, forced: false,
           repository: { id: 42, full_name: "original/source" }, sender: { login: "maintainer" } } }
         : { source: "smithers-cloud" as const, type: job === "review" || job === "ci" ? "pull_request" : "issues", action: "opened", trial: true,
@@ -324,6 +349,32 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         return state?.flowName === "repository/Job" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
       assert.equal(outputs.length, 1, `${job} needs its actual native job result`)
       const output = Schema.decodeUnknownSync(JobResult)(outputs[0])
+      if (kind.startsWith("ci-")) {
+        const policy = readCiPolicy(repo, [ciRegistration(1)])
+        assert.equal(policy.kind, "pinned")
+        if (policy.kind !== "pinned") throw new Error("expected a pinned policy")
+        const reserved = inheritedCheckId(policy.ref, "reviewed-ci")
+        assert.equal(rawCheckId(policy.ref, policy.checks, reserved), "reviewed-ci", "the wire carries the raw configured id")
+        assert(policyReads > 0, "the job read the provisioned registration row")
+        const checked = output.results[0]!.output as any
+        const inherited = checked.results.find((check: any) => check.checkId === reserved)
+        assert(inherited, `the inherited rule ran under its reserved id: ${JSON.stringify(checked.results.map((check: any) => check.checkId))}`)
+        assert.equal(inherited.policy, "required")
+        assert.equal(inherited.detail.command, inheritedRule, "the reviewed rule reached the runner unchanged")
+        assert.equal(checked.candidate, native.head.commitId)
+        if (kind === "ci-inherited") {
+          assert.equal(output.status, "completed", JSON.stringify(output))
+          assert.equal(inherited.status, "passed")
+          assert.equal(inherited.detail.exitCode, 0, "a real command measured the candidate source")
+          assert.equal(checked.gate, "passed")
+        } else {
+          assert.equal(inherited.status, "failed")
+          assert.equal(inherited.detail.exitCode, 3)
+          assert.equal(checked.gate, "blocked", "a failed required inherited rule blocks before any delivery")
+          assert.deepEqual(dispatches, [], "a blocked gate opens no landing or dispatch")
+        }
+        continue
+      }
       assert.equal(output.status, kind === "ai-context-required" || deletionUnavailable ? "partial" : "completed", JSON.stringify(output))
       assert(output.results.length > 0)
       assert(output.results.every(step => step.status === (kind === "ai-context-required" || deletionUnavailable ? "error" : "completed") && step.evidence.length > 0))
@@ -521,3 +572,9 @@ test("native deletion proposal runs the built-in required review with exact sepa
 
 test("native missing deleted-side helper refuses required review before the model and cannot score pass", nativeOptions,
   t => proveRepository(t, { jobs: ["ai-delete-unavailable"] }))
+
+test("a reviewed CI registration is pinned into a dependent job and its required rule runs under its reserved id", nativeOptions,
+  t => proveRepository(t, { jobs: ["ci-inherited"] }))
+
+test("a required inherited CI rule that fails blocks the native gate before any delivery", nativeOptions,
+  t => proveRepository(t, { jobs: ["ci-blocked"] }))

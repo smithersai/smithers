@@ -12,6 +12,7 @@ import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
 import * as Snapshots from "../coding/snapshots.ts"
 import { JobInput } from "../repository/schema.ts"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { composeCiChecks, inheritedCheckId, rawCheckId, readCiPolicy } from "../repository/ci-policy.ts"
 import { Landing } from "../coding/landing.ts"
 import { NativeCoding, NativeCodingError, SourceCreation, type CreateSource, type NativeRevision } from "../coding/native.ts"
 import { changeAdmission, changeLayers, DraftChange, ProposalStep, selectChangeSource } from "../repository/changes.ts"
@@ -102,21 +103,38 @@ test("initial writable capture and main selection never snapshot dirty editor or
   await f.unchanged()
 })
 
-for (const mode of ["land", "push-chore", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
+/** The reviewed CI policy exactly as the production reader emits it, so the
+ * native run composes and runs inherited rules under their reserved ids. */
+const registrationId = "33333333-3333-4333-a333-333333333333"
+const pinned = (rule: string) => {
+  const setup = initialSetup("example/repo", "ci", "maintainer")
+  setup.draft.checks = [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule, paths: [] }]
+  const digest = setupCandidate(setup)
+  const policy = readCiPolicy("example/repo", [{ id: registrationId, repository_id: 3, workspace_id: "11111111-1111-4111-a111-111111111111",
+    user_id: 7, job: "ci", mode: "enabled", revision: setup.revision, digest, source_revision: "a".repeat(40),
+    flow_id: "repository-jobs/ci", enabled: true,
+    configuration: { repo: "example/repo", workspace_id: "11111111-1111-4111-a111-111111111111", flow_id: "repository-jobs/ci",
+      revision: setup.revision, digest, source_revision: "a".repeat(40), execution_digest: "f".repeat(64), mode: "enabled", input: setup.draft } }])
+  if (policy.kind !== "pinned") throw new Error("expected a pinned policy")
+  return policy
+}
+
+for (const mode of ["land", "push-chore", "push-chore-ci", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
   test(`proposal flow preserves editor and binds final native source: ${mode}`, gate, async t => {
     const f = await fixture(t), calls: string[] = [], seenChecks: string[] = []
     const evidence = await Effect.runPromise(captureRepository(f.options, { repo: "example/repo", prompt: "code.txt", sourceRevision: f.head.commitId }, "immutable").pipe(Effect.provide(f.owned)))
     const command = `${JSON.stringify(process.execPath)} -e "const fs=require('node:fs');if(fs.readFileSync('code.txt','utf8')!=='checked implementation\\n')process.exit(7);console.log('measured checked bytes')"`
     // A push to the default branch is the first trigger that both names an
     // immutable revision and produces a new one.
-    const chore = mode === "push-chore" || mode === "push-chore-main-moved"
+    const chore = mode === "push-chore" || mode === "push-chore-ci" || mode === "push-chore-main-moved"
     const trigger = { ref: "refs/heads/main", before: "a".repeat(40), after: f.base.commitId, created: false, deleted: false,
       repository: { default_branch: "main" }, candidateCommitId: f.base.commitId, baseCommitId: "a".repeat(40) }
     const work: typeof Work.Type = { repo: "example/repo", job: chore ? "chores" : "feature",
       step: chore ? { id: "chore", name: "Chore", mode: "automatic", prompt: "Update code.txt" } : { id: "feature", name: "Feature", mode: "manual", prompt: "Update code.txt" },
       event: chore ? { source: "github", type: "push", action: "", deliveryKey: "github:signed-push", payload: trigger }
         : { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "feature", payload: { manual: { prompt: "Update code.txt" } } },
-      evidence, checks: [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
+      evidence, checks: mode === "push-chore-ci" ? composeCiChecks([], pinned(command)) : [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
+      ...(mode === "push-chore-ci" ? { policy: pinned(command) } : {}),
       landing: mode === "old-helper" ? "ask" : "checks", replies: "draft", executionMode: "live", deadlineAt: Date.now() + 60000 }
     let draftedAdmissionReads = 0
     const landing: Landing["Service"] = { binding: { repositoryId: 3, workspaceId: "11111111-1111-4111-a111-111111111111" },
@@ -172,6 +190,19 @@ for (const mode of ["land", "push-chore", "push-chore-main-moved", "old-helper",
       assert.equal(output.status, "needs-maintainer")
       assert.deepEqual(calls, ["draft"], "main advancing between capture and selection blocks before any creation")
       assert.ok(!seenChecks.includes(f.child.commitId))
+    } else if (mode === "push-chore-ci") {
+      const policy = pinned(command), reserved = inheritedCheckId(policy.ref, "verify")
+      const retained = output.output as Record<string, Schema.Json>
+      const checked = (retained.checks as Record<string, Schema.Json>).output as Record<string, Schema.Json>
+      assert.equal(checked.candidate, f.child.commitId, "the inherited rule runs on the produced change, not the push's after commit")
+      assert.equal(checked.base, f.base.commitId)
+      const inheritedResult = (checked.results as Array<Record<string, Schema.Json>>).find(value => value.checkId === reserved)
+      assert.equal(inheritedResult?.status, "passed", "the inherited required rule ran under its reserved id")
+      assert.equal((inheritedResult?.detail as Record<string, Schema.Json>).exitCode, 0, "a real command measured the produced bytes")
+      assert.equal(rawCheckId(policy.ref, policy.checks, reserved), "verify", "the wire keeps the raw configured id")
+      assert.equal(output.status, "needs-maintainer")
+      assert.match(output.summary, /receipt publisher/i)
+      assert.deepEqual(calls, ["draft", "create", "publish", "prepare"], "a pinned policy with no receipt publisher opens no landing request")
     } else if (mode === "land") {
       assert.deepEqual(calls, ["draft", "create", "publish", "prepare", "landing", "queue"])
       assert.equal((output.output as Record<string, Schema.Json>).landed, true)
