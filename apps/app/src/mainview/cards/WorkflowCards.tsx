@@ -19,7 +19,7 @@ import type { CardFamily, RunCommand } from "./CardFamily"
 import { defaultPill, settledPill } from "./CardFamily"
 import { RunTraceBody, TERMINAL_RUN_PHASES } from "./RunTraceCard"
 import { flowArgs } from "../flows/FlowArgs"
-import { runFailure } from "../state/RunFailure"
+import { runFailureOf } from "../state/RunFailure"
 
 /*
  * Wave 11 — the embedded run card. RunTraceBody carries the run's outcome,
@@ -47,7 +47,7 @@ export const WorkflowRunCardBody = ({
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
   const { phase, error, observationError, runId, kind } = card.payload
-  const failure = runFailure(error)
+  const failure = runFailureOf(card.payload)
   const facet = card.payload.facet ?? "steps"
   /* A tutorial plan card is the plan alone: no facets, no lifecycle acts, no steer. */
   const planOnly = kind === "change-plan"

@@ -4,6 +4,8 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { Card } from "../state/AppState"
+import { createAppStore } from "../state/AppStore"
+import { memoryStorage } from "../state/TestFixtures"
 import { PROTOTYPE_BANNER, RunTraceBody } from "./RunTraceCard"
 import { WorkflowRunCardBody } from "./WorkflowCards"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
@@ -112,6 +114,16 @@ const renderTrace = (overrides: Partial<Extract<Card, { kind: "run-trace" }>["pa
   return { host, dispatched }
 }
 
+/* One of the sentences flows/repository/triggers.ts refuses a registration with, and the verdict line that clips it. */
+const REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
+const VERDICT = `failed — invalid_receipt: ${REFUSAL.slice(0, 20)}`
+const failedJournal = (cause: string) =>
+  [{ sequence: 1, kind: "control.run.failed", runId: "run-1", occurredAt: 1, payload: { runId: "run-1", status: "failed", cause } }]
+const refusal = (host: HTMLElement): Element => host.querySelector("[data-refusal-fault]")!
+const technical = (host: HTMLElement): string | undefined =>
+  [...host.querySelectorAll("details")].find(node => node.querySelector("summary")?.textContent === "Technical details")
+    ?.querySelector("pre")?.textContent ?? undefined
+
 const chips = (host: HTMLElement): Array<string | null> =>
   [...host.querySelectorAll("[data-filter]")].map((chip) => chip.getAttribute("data-filter"))
 
@@ -132,6 +144,47 @@ describe("the run card as a trace", () => {
     const detail = [...host.querySelectorAll("details")].find(node => node.querySelector("summary")?.textContent === "Technical details")!
     expect(detail.open).toBe(false)
     expect(detail.querySelector("pre")?.textContent).toBe(raw)
+  })
+  test("the registrar's refusal leads with its own sentence; another flow's invalid_receipt keeps the infra headline", () => {
+    const cause = `invalid_receipt: ${REFUSAL}\n    at repository/trigger (flows/repository/triggers.ts:20)`
+    const refused = renderRun({ workflow: "repository/trigger", phase: "failed", error: VERDICT, events: failedJournal(cause) })
+    expect(refusal(refused.host).textContent).toBe(REFUSAL)
+    expect(refusal(refused.host).textContent).not.toContain("Not your fault")
+    expect(refusal(refused.host).getAttribute("data-refusal-fault")).toBe("user")
+    expect(technical(refused.host)).toBe(`invalid_receipt: ${REFUSAL}`)
+
+    const engine = renderRun({ workflow: "coding/request", phase: "failed", error: VERDICT,
+      events: failedJournal("invalid_receipt: Native source creation returned an invalid receipt") })
+    expect(refusal(engine.host).textContent).toContain("Not your fault")
+    expect(refusal(engine.host).getAttribute("data-refusal-fault")).toBe("infra")
+    expect(technical(engine.host)).toBe(VERDICT)
+  })
+  test("a refusal written to the stream before this change replays, and the reopened card still leads with it", async () => {
+    const card = runCard({ workflow: "repository/trigger" })
+    const scope = { repo: card.payload.repo, runId: card.payload.runId }
+    const observation = { scope,
+      summary: { runId: scope.runId, flowId: "repository/trigger", status: "failed" as const, createdAt: 1, updatedAt: 10,
+        turns: 1, calls: 1, callsFailed: 1, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
+        verdict: VERDICT, diagnosis: VERDICT },
+      journal: { mode: "full" as const, events: failedJournal(`invalid_receipt: ${REFUSAL}\n    at repository/trigger`) } }
+    const storage = memoryStorage()
+    const written = await createAppStore({ kind: "localStorage", storage })
+    await written.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    await written.dispatch({ type: "gateway.run.observed", actor: "system", observation }).isPersisted.promise
+    /* A maximized frame hashes the projected cards, so the projected error must stay the verdict byte for byte. */
+    await written.dispatch({ type: "card.maximized", actor: "user", id: card.id }).isPersisted.promise
+    expect((written.collections.cards.get(card.id) as typeof card).payload.error).toBe(VERDICT)
+    await written.verifyState()
+    await written.dispose?.()
+
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    await reopened.verifyState()
+    const restored = reopened.collections.cards.get(card.id) as typeof card
+    expect(restored.payload.error).toBe(VERDICT)
+    const { host } = renderRun(restored.payload)
+    expect(refusal(host).getAttribute("data-refusal-fault")).toBe("user")
+    expect(refusal(host).textContent).toBe(REFUSAL)
+    await reopened.dispose?.()
   })
   test("a repository job's result reads in the same fold a setup run uses, and prose still renders as prose", () => {
     const fold = (host: HTMLElement) =>
