@@ -27,6 +27,21 @@ const RegistrationRow = z.object({ id: z.string().min(1), workspace_id: z.string
 const RegistrationKind = z.object({ job: RepositoryJobSchema })
 const KNOWN_REGISTRATION_LIMIT = 50
 
+/**
+ * Smithers Cloud strips every eval case to `{id, name, required}` for a reader without repository write and changes
+ * nothing else in the row. Such a copy carries no candidate the user may edit, activate or be judged against, so it is
+ * read here for its registration state alone: the withheld answers are never guessed and the digest is never reconciled.
+ */
+const readerCopy = (candidate: unknown) => {
+  const cases = (candidate as { configuration?: { input?: { cases?: unknown } } })?.configuration?.input?.cases
+  return Array.isArray(cases) && cases.length > 0 && cases.every(item => typeof item === "object" && item !== null && !Array.isArray(item)
+    && Object.keys(item as object).every(name => name === "id" || name === "name" || name === "required"))
+}
+const withoutCases = (candidate: unknown) => {
+  const row = candidate as { configuration: { input: object } }
+  return { ...row, configuration: { ...row.configuration, input: { ...row.configuration.input, cases: [] } } }
+}
+
 /** The authenticated Cloud user id, never a browser claim, owns the gateway binding. */
 const registrations = (login: string, repo: string, job: RepositoryJob): Effect.Effect<SetupRecoveryResponse["registration"], never, ServerConfig | import("./Http").Transport> => Effect.gen(function* () {
   const config = yield* ServerConfig
@@ -54,16 +69,18 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
   if (mine.length > KNOWN_REGISTRATION_LIMIT) return yield* fail("Repository registrations exceed the recovery limit")
   const result: Extract<SetupRecoveryResponse["registration"], { state: "known" }> = { state: "known" }
   for (const candidate of mine) {
-    const parsed = RegistrationRow.safeParse(candidate)
+    const redacted = readerCopy(candidate)
+    const parsed = RegistrationRow.safeParse(redacted ? withoutCases(candidate) : candidate)
     if (!parsed.success) return yield* fail("Repository registration state is invalid")
     const row = parsed.data
     const field = row.mode === "enabled" ? "active" : "trial"
     const value = row.configuration
     if (result[field] || row.flow_id !== `repository-jobs/${job}` || value.repo !== repo || value.workspace_id !== row.workspace_id
-      || value.source_revision !== row.source_revision || value.flow_id !== row.flow_id || value.mode !== row.mode || value.revision !== row.revision || value.digest !== row.digest || setupCandidate({ repo, job, revision: row.revision, draft: value.input }) !== row.digest) return yield* fail("Repository registration identity is inconsistent")
+      || value.source_revision !== row.source_revision || value.flow_id !== row.flow_id || value.mode !== row.mode || value.revision !== row.revision || value.digest !== row.digest
+      || (!redacted && setupCandidate({ repo, job, revision: row.revision, draft: value.input }) !== row.digest)) return yield* fail("Repository registration identity is inconsistent")
     if (row.schedule !== value.schedule || (row.mode === "enabled" && job === "chores" && row.schedule !== value.input.schedule)) return yield* fail("Repository schedule does not match its registration")
     result[field] = { registrationId: row.id, workspaceId: row.workspace_id, revision: row.revision, digest: row.digest,
-      sourceRevision: row.source_revision, enabled: row.enabled, owned: row.user_id === user.data.id, draft: value.input,
+      sourceRevision: row.source_revision, enabled: row.enabled, owned: !redacted && row.user_id === user.data.id, draft: value.input,
       ...(job === "chores" && row.mode === "enabled" && row.enabled && row.schedule && row.next_fire_at
         ? { schedule: { expression: row.schedule, nextFireAt: new Date(row.next_fire_at).toISOString() } } : {}) }
   }

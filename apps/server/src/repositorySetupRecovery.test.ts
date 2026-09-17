@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import { initialSetup, REPOSITORY_JOBS, setupCandidate, type RepositoryJob, type SetupHostInput, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, REPOSITORY_JOBS, setupCandidate, type RepositoryJob, type SetupDraft, type SetupHostInput, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { memoryStorage, storageLayer } from "./DurableStorage"
 import { repositorySetupStorageRequest, setupStorageMutexLayer, setupPointerKey, SETUP_QUEUE_KEY, type SetupRecord } from "./repositorySetupStore"
 import worker from "./index"
@@ -127,8 +127,9 @@ test("a held atomic admission cannot acknowledge or expose a partial request and
 const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
 const workspaceId = "11111111-1111-4111-8111-111111111111"
-const known = (job: RepositoryJob, mode: "enabled" | "trial") => {
+const known = (job: RepositoryJob, mode: "enabled" | "trial", cases: SetupDraft["cases"] = []) => {
   const source = initialSetup("org/repo", job, "alice")
+  source.draft.cases = cases
   const shared = { repo: source.repo, workspace_id: workspaceId, source_revision: "b".repeat(40), flow_id: `repository-jobs/${job}`,
     mode, revision: source.revision, digest: setupCandidate(source), schedule: "" }
   return { ...shared, id: `registration-${job}-${mode}`, user_id: 1, job, enabled: true, next_fire_at: null, configuration: { ...shared, input: source.draft } }
@@ -227,4 +228,48 @@ test("a known job in a mode the Worker cannot interpret is unavailable, never un
     if (state.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(state)}`)
     expect(state.active?.registrationId).toBe(`registration-${job}-enabled`)
   }
+})
+
+const heldOut: SetupDraft["cases"] = [{ id: "case-1", name: "Reported bug", input: "a bug report", expected: "HELD_OUT_ANSWER", required: true }]
+const readerCopy = (row: ReturnType<typeof known>) => ({ ...row, configuration: { ...row.configuration,
+  input: { ...row.configuration.input, cases: row.configuration.input.cases.map(item => ({ id: item.id, name: item.name, required: item.required })) } } })
+
+test("a redacted reader copy is a read-only registration, not corruption", async () => {
+  const writer = known("issues", "enabled", heldOut)
+  const states = await everyJob(REPOSITORY_JOBS.map(job => job === "issues" ? readerCopy(writer) : known(job, "enabled")))
+  const state = states.issues
+  if (state.state !== "known") throw Error(`Expected issues to stay known, got ${JSON.stringify(state)}`)
+  expect(state.active).toEqual({ registrationId: "registration-issues-enabled", workspaceId, revision: 1, digest: writer.digest,
+    sourceRevision: "b".repeat(40), enabled: true, owned: false, draft: { ...writer.configuration.input, cases: [] } })
+  expect(state.active?.draft.steps).toEqual(writer.configuration.input.steps)
+  for (const job of REPOSITORY_JOBS.filter(name => name !== "issues")) {
+    const sibling = states[job]
+    if (sibling.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(sibling)}`)
+    expect(sibling.active?.owned).toBe(true)
+  }
+})
+
+test("a writer row keeps its cases, its ownership and its recomputed digest", async () => {
+  const writer = known("issues", "enabled", heldOut)
+  const whole = await everyJob([writer])
+  if (whole.issues.state !== "known") throw Error(`Expected issues to stay known, got ${JSON.stringify(whole.issues)}`)
+  expect(whole.issues.active?.owned).toBe(true)
+  expect(whole.issues.active?.draft.cases).toEqual(heldOut)
+  const tampered = { ...writer, configuration: { ...writer.configuration, input: { ...writer.configuration.input,
+    cases: [{ ...heldOut[0]!, expected: "A DIFFERENT ANSWER" }] } } }
+  const forged = await everyJob([tampered])
+  expect(forged.issues).toEqual({ state: "unavailable", error: "Repository registration identity is inconsistent" })
+})
+
+test("a redacted row that is also malformed stays the typed error it is today", async () => {
+  const writer = known("issues", "enabled", heldOut)
+  const broken = await everyJob([{ ...readerCopy(writer), digest: "not-a-digest" }])
+  expect(broken.issues).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
+  const foreign = readerCopy(writer)
+  const mismatched = await everyJob([{ ...foreign, configuration: { ...foreign.configuration, repo: "org/other" } }])
+  expect(mismatched.issues).toEqual({ state: "unavailable", error: "Repository registration identity is inconsistent" })
+  const half = { ...writer, configuration: { ...writer.configuration, input: { ...writer.configuration.input,
+    cases: [{ id: "case-1", name: "Reported bug", required: true }, heldOut[0]!] } } }
+  const partial = await everyJob([half])
+  expect(partial.issues).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
 })
