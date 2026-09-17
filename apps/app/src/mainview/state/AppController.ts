@@ -25,6 +25,7 @@ import type { AppStore } from "./AppStore"
 import { createCloudLspClient,pageCloudLspSocketUrl } from "./CloudLspClient"
 import type { CloudTerminalClient } from "./CloudTerminalClient"
 import { createCloudTerminalClient,pageCloudSocketUrl } from "./CloudTerminalClient"
+import { selectFirstRunRepository } from "./FirstRunRepository"
 import type { InputMode } from "./InputMode"
 import { knowledgeCardAvailable } from "./KnowledgeFeatures"
 import { createLspClient } from "./LspClient"
@@ -680,6 +681,11 @@ export interface AppServices {
   /** How long a settled-ok toast states its result before dismissing itself. */
   readonly toastAutoDismissMs?: number
   /**
+   * How long a command parked on `first-run-target` waits for the identity
+   * seam before the choice settles on its own; tests shorten it.
+   */
+  readonly firstRunSettleMs?: number
+  /**
    * Wave 11 — the run card's event-pump cadence (the floor under the relay's
    * SSE pokes) and the provision poll gap. Injectable so tests drive a whole
    * run journey without waiting out real seconds.
@@ -1188,6 +1194,7 @@ export const createAppController = (
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
     // The fulfilling prompt owns the answer. Parking survives OAuth silently.
+    if (requirement === "first-run-target") armFirstRunDeadline()
   }
 
   const noteCommandRun = (name: string): void => {
@@ -1446,6 +1453,33 @@ export const createAppController = (
     // keeps waiting for the seam that satisfies it.
     if (store.session().pendingCommand?.requirement === "first-run-target") resumeDeferredCommand()
   }
+  /*
+   * What the identity seam announces (controller/auth-billing.ts, the
+   * registry.ts convention: the seam that can SATISFY a requirement settles
+   * it). The read that writes the row makes the choice, so a boot read raced
+   * by a focus re-read cannot lose it. A page entered at /owner/name has its
+   * target from the URL and makes no first-run choice.
+   */
+  ctx.settleFirstRunTarget = (): void => {
+    if (firstRunTargetSettled) return
+    if (services.repositoryApp !== undefined) {
+      settleFirstRunTarget()
+      return
+    }
+    selectFirstRunRepository(store, settleFirstRunTarget)
+  }
+  /*
+   * An identity seam that never answers must not hold a command forever: the
+   * choice settles on its own once a park has waited this long, so the
+   * command asks for a repository instead of waiting with nothing on screen.
+   */
+  let firstRunDeadline: ReturnType<typeof setTimeout> | undefined
+  const armFirstRunDeadline = (): void => {
+    if (firstRunTargetSettled || firstRunDeadline !== undefined) return
+    firstRunDeadline = setTimeout(settleFirstRunTarget, services.firstRunSettleMs ?? 8_000)
+    ctx.unref(firstRunDeadline)
+  }
+  ctx.onDispose(() => { clearTimeout(firstRunDeadline) })
 
   const {
     connectLocalRepository,

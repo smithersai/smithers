@@ -101,7 +101,12 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        * real controls need not wait on identity. Retained content/account
        * ownership keep the cloud identity barrier.
        */
-      yield* Effect.sync(() => void controller.loadSession().then(() => { if (requested === null) selectFirstRunRepository(store, controller.settleFirstRunTarget) }))
+      yield* Effect.sync(() => {
+        // A failed read is an answer too (FirstRunRepository.ts): both sides
+        // settle, or a rejected identity promise parks a command forever.
+        const settle = () => { if (requested === null) selectFirstRunRepository(store, controller.settleFirstRunTarget) }
+        void controller.loadSession().then(settle, settle)
+      })
     } else {
       /*
        * The cloud host gates the transcript on the signed-out answer, so the

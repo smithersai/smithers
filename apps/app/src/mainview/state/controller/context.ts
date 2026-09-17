@@ -91,6 +91,12 @@ export interface ControllerContext {
   finishTutorialChange: (cardId: string) => Promise<void>
   resumeWorkflowRuns: () => void
   resumeDeferredCommand: () => void
+  /**
+   * Late-bound by AppController: make the first-run target choice for the
+   * identity answer this read just wrote (state/FirstRunRepository.ts), and
+   * settle it. Only the read that writes the row announces it.
+   */
+  settleFirstRunTarget: () => void
   stopWorkflowPumps: () => void
   contextMessages: () => ReadonlyArray<AgentChatMessage>
   /** Open a repository through a native grant or explicit headless path. */
@@ -182,6 +188,7 @@ export const createControllerContext = (
     finishTutorialChange: async () => {},
     resumeWorkflowRuns: () => {},
     resumeDeferredCommand: () => {},
+    settleFirstRunTarget: () => {},
     stopWorkflowPumps: () => {},
     contextMessages: () => [],
     openRepo: async () => "Opening a repository is not wired.",

@@ -114,8 +114,8 @@ const heldIdentity = async (page: import("@playwright/test").Page) => {
 
 /*
  * The identity answer is SLOW, which is the scenario: the user types while it
- * is outstanding. Hold it for a beat after the line is sent so the park is
- * durable before the answer lands, the way a real round trip behaves.
+ * is outstanding. The CONTROL waits out this window to show nothing lands in
+ * it; the first-run scenario waits on the park's own trace line instead.
  */
 const HELD_WINDOW_MS = 1_500
 
@@ -129,8 +129,12 @@ test("a bare issues.list during first-run identity resumes into the practice lis
 
   await page.goto("/")
   await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
+  // /verbose states every flow outcome, so the deferral's own trace line is the
+  // event that says the command has parked — no wall clock to wait out.
+  await slash(page, "/debug.verbose")
+  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
   await slash(page, "/issues.list")
-  await page.waitForTimeout(HELD_WINDOW_MS)
+  await expect(page.getByText(/You ran \/issues\.list → deferred \(waits on first-run-target\)/)).toBeVisible()
   // The command parks: nothing is published, and it never asks for a repository.
   await expect(page.locator(".smithers-card")).toHaveCount(0)
   await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)

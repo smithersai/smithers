@@ -59,6 +59,7 @@ export const createAuthBillingController = (
   const withToast = ctx.withToast
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
+  const settleFirstRunTarget = (): void => ctx.settleFirstRunTarget()
   // A definitive owner change revokes the old turn before any asynchronous
   // follow-up can deliver frames or restart a pending leg. Availability alone
   // does not revoke ownership: the persisted owner survives an outage.
@@ -137,6 +138,10 @@ export const createAuthBillingController = (
       admin: false,
       scopesPlain
     }).isPersisted.promise
+    // The read that WRITES the row makes the first run's target choice: a read
+    // that returned at its epoch guard has none to make, so a boot read raced
+    // by a focus re-read (watchIdentityAcrossTabs) leaves no command parked.
+    settleFirstRunTarget()
     await refreshCloudSession?.()
   }
 
@@ -151,6 +156,7 @@ export const createAuthBillingController = (
       admin: false,
       scopesPlain: null
     })
+    settleFirstRunTarget()
   }
 
   const finishSignedInSession = async (
