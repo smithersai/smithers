@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { editSetup, initialSetup, reconcileSetupHistory, RepositorySetupSchema, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
+import { archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, RepositorySetupSchema, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
 
 const caseFixture = { id: "unrelated", name: "Unrelated change", input: "synthetic case fixture", expected: "Take no unrelated actions", required: true }
 
@@ -42,6 +42,40 @@ it("a scheduler observation is retained independently of a draft and never suppl
 })
 
 describe("repository setup receipt history", () => {
+  it("archiving a displaced receipt preserves terminal evidence and deduplicates without granting activation", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    const pause = receipt(setup, "pause"), apply = receipt(setup, "apply")
+    setup.receipt = { ...pause, phase: "running", updatedAt: 200 }
+    setup.previousReceipts = [pause]
+    const archived = archiveReplacedSetupReceipt(setup, apply)
+    expect(archived.previousReceipts).toEqual([pause])
+    expect(archiveReplacedSetupReceipt(archived, apply).previousReceipts).toEqual([pause])
+    expect(archived.receipt).toBe(setup.receipt)
+    expect(archived.evaluation).toBeUndefined()
+    expect(archived.trial).toBeUndefined()
+    expect(setupActivationProblems(archived)).toHaveLength(2)
+  })
+
+  it("bounds receipt history while retaining the newly displaced current request", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    setup.receipt = receipt(setup, "pause")
+    setup.previousReceipts = Array.from({ length: 50 }, (_, index) => ({ ...receipt(setup, "inspect"), requestId: `older-${index}` }))
+    const archived = archiveReplacedSetupReceipt(setup, receipt(setup, "apply"))
+    expect(archived.previousReceipts).toHaveLength(50)
+    expect(archived.previousReceipts[0]?.requestId).toBe("older-1")
+    expect(archived.previousReceipts.at(-1)).toEqual(setup.receipt)
+    expect(setup.previousReceipts[0]?.requestId).toBe("older-0")
+  })
+
+  it("a current receipt is not duplicated, while different candidate identities remain distinct", () => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    setup.receipt = receipt(setup, "pause")
+    expect(archiveReplacedSetupReceipt(setup, { ...setup.receipt, updatedAt: 200 })).toBe(setup)
+    const previous = { ...setup.receipt, revision: 2, digest: "other-candidate" }
+    setup.previousReceipts = [previous]
+    expect(archiveReplacedSetupReceipt(setup, receipt(setup, "apply")).previousReceipts).toEqual([previous, setup.receipt])
+  })
+
   it("uses actual eval and trial receipts without inventing a missing outcome", () => {
     const setup = proven()
     const unknown = { ...setup.evaluation!, requestId: "unobserved", phase: "running" as const }

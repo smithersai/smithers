@@ -1,6 +1,6 @@
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
-  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
+  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
 import type { Card } from "../AppState"
@@ -62,6 +62,7 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
       || (result.inspection && (input.operation !== "inspect" || receipt.phase !== "completed"))) throw Error("The recovered receipt does not match its setup request.")
     if (unchanged) next = { ...next, draft: input.draft, revision: input.revision }
     if (current.workspaceId && result.workspaceId && current.workspaceId !== result.workspaceId) throw Error("The recovered setup belongs to another workspace.")
+    next = archiveReplacedSetupReceipt(next, receipt)
     next = { ...next, ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}), receipt }
     if (result.inspection) {
       if (unchanged) next = editSetup(next, result.inspection.suggestedDraft)

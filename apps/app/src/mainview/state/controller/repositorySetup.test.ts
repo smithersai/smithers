@@ -839,6 +839,46 @@ test("actual observed apply completion cannot replace newer paused policy or bec
   } finally { await t.close() }
 })
 
+test("discovery archives a completed local pause before an older apply replaces it, including repeated reopen", async () => {
+  const t = await fixture(async () => { throw Error("Discovery cannot run work") })
+  const applied = { ...initialSetup("example/repo", "issues", "maintainer"), revision: 4 }
+  const digest = setupCandidate(applied)
+  const pause = { requestId: "local-pause", operation: "pause" as const, revision: 4, digest, runId: "pause-run", phase: "completed" as const, updatedAt: 20, results: [], evidence: ["paused:registration"] }
+  const history = ["inspect", "evaluate", "trial"].map(operation => ({ ...pause, requestId: `earlier-${operation}`, operation: operation as "inspect" | "evaluate" | "trial", runId: `${operation}-run`, updatedAt: 10 }))
+  const active = { registrationId: "paused-registration", workspaceId, owned: true, enabled: false, revision: 4, digest, sourceRevision: "immutable-source", draft: applied.draft }
+  const recovered: SetupRecoveryResponse = { owner: "maintainer", repo: applied.repo, job: applied.job, registration: { state: "known", active }, setup: {
+    state: "found", input: { requestId: "old-apply", operation: "apply", repo: applied.repo, job: applied.job, draft: applied.draft, revision: 4, digest },
+    result: { requestId: "old-apply", revision: 4, digest, workspaceId, receipt: { ...pause, requestId: "old-apply", operation: "apply", runId: "apply-run", updatedAt: 15 } }
+  } }
+  const id = "setup:maintainer:example%2Frepo:issues"
+  await t.store.dispatch({ type: "card.upsert", actor: "system", card: { id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
+    payload: { ...applied, revision: 5, inspectedAt: 10, workspaceId, receipt: pause, previousReceipts: history, active,
+      request: { id: pause.requestId, operation: "pause", revision: 4, digest, state: "completed" } }
+  } }).isPersisted.promise
+  t.recovery.answer = async () => Response.json(recovered)
+  try {
+    await t.setup.openRepositorySetup("issues", applied.repo); await Promise.all(t.background)
+    const state = setupCard(t).payload
+    expect(state.receipt?.requestId).toBe("old-apply")
+    expect(state.previousReceipts).toEqual([...history, pause])
+    expect(state.active?.enabled).toBe(false)
+    expect(state.revision).toBe(5)
+    expect(state.evaluation).toBeUndefined()
+    expect(state.trial).toBeUndefined()
+    expect(t.calls).toEqual([])
+    await t.close()
+    const reopened = await fixture(async () => { throw Error("Discovery cannot run work") }, t.storage)
+    reopened.recovery.answer = async () => Response.json(recovered)
+    try {
+      await reopened.setup.openRepositorySetup("issues", applied.repo); await Promise.all(reopened.background)
+      expect(setupCard(reopened).payload.previousReceipts).toEqual([...history, pause])
+      expect(setupCard(reopened).payload.active?.enabled).toBe(false)
+      expect(reopened.calls).toEqual([])
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+    } finally { await reopened.close() }
+  } finally { await t.close() }
+})
+
 test("partial recovery failure never launches a fresh inspection or infers missing eval and trial proof", async () => {
   const t = await fixture(async () => { throw Error("No launch") })
   const base = initialSetup("example/repo", "issues", "maintainer")

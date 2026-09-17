@@ -208,6 +208,13 @@ export function reconcileSetupHistory(setup: RepositorySetup): RepositorySetup {
     ? { ...setup, previousReceipts } : setup
 }
 
+/** Preserve a displaced receipt without making it current execution evidence. @since 1.0.0 */
+export function archiveReplacedSetupReceipt(setup: RepositorySetup, replacement: SetupReceipt): RepositorySetup {
+  if (!setup.receipt || receiptIdentity(setup.receipt) === receiptIdentity(replacement)) return setup
+  const current = reconcileSetupHistory(setup)
+  return { ...current, previousReceipts: rememberReceipts([...current.previousReceipts, current.receipt!]) }
+}
+
 /** Change the candidate without changing the previously activated version. @since 1.0.0 */
 export function editSetup(setup: RepositorySetup, draft: SetupDraft): RepositorySetup {
   const parsed = SetupDraftSchema.parse(draft)
