@@ -59,12 +59,12 @@ test.each(["issues", "feature"] as const)("%s links optional CI setup to the sam
 })
 
 test.each([
-  ["issues", "Create test issue", "Enable issue handling"],
-  ["review", "Review test PR", "Enable PR reviews"],
-  ["ci", "Test CI checks", "Enable CI checks"],
-  ["feature", "Try feature flow", "Enable feature flow"],
-  ["chores", "Run test chore", "Enable chore"]
-] as const)("%s trial and activation actions describe the actual job", (job, trial, enable) => {
+  ["issues", "Create test issue", "Enable issue handling", "Test issue title", "Test issue body"],
+  ["review", "Review test PR", "Enable PR reviews", "Test PR", null],
+  ["ci", "Test CI checks", "Enable CI checks", "CI trial", null],
+  ["feature", "Try feature flow", "Enable feature flow", "Test feature", "Feature request"],
+  ["chores", "Run test chore", "Enable chore", "Test chore", "Maintenance task"]
+] as const)("%s trial and activation actions describe the actual job", (job, trial, enable, titleLabel, bodyLabel) => {
   const card = makeCard(job)
   card.payload.view = "test"
   if (job === "review" || job === "ci") card.payload.draft.trialBody = "https://github.com/example/repo/pull/42"
@@ -73,6 +73,16 @@ test.each([
     expect(t.button(enable)?.disabled).toBe(true)
     t.button(trial)!.click()
     expect(t.calls).toEqual([["setup.run", flowArgs("setup.run", { cardId: card.id, operation: "trial" })]])
+    const title = t.host.querySelector<HTMLInputElement>(`input[aria-label="${titleLabel}"]`)!
+    title.value = "A specific trial"
+    title.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(t.calls.at(-1)).toEqual(["setup.configure", flowArgs("setup.configure", { cardId: card.id, field: "trialTitle", value: "A specific trial" })])
+    if (bodyLabel) {
+      const body = t.host.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${bodyLabel}"]`)!
+      body.value = "Find the documented installation command."
+      body.dispatchEvent(new Event("input", { bubbles: true }))
+      expect(t.calls.at(-1)).toEqual(["setup.configure", flowArgs("setup.configure", { cardId: card.id, field: "trialBody", value: body.value })])
+    }
     if (job === "issues" || job === "review") {
       expect(t.host.textContent).toContain("Replies drafted")
       card.payload.draft.replies = "automatic"
@@ -90,10 +100,10 @@ test.each(["review", "ci"] as const)("%s trial requires an explicit PR and expos
   try {
     const action = job === "review" ? "Review test PR" : "Test CI checks"
     expect(t.button(action)?.disabled).toBe(true)
-    const source = t.host.querySelector<HTMLSelectElement>("select")!
+    const source = t.host.querySelector<HTMLSelectElement>('select[aria-label="Source"]')!
     source.value = "smithers-cloud"
     source.dispatchEvent(new Event("change", { bubbles: true }))
-    const number = t.host.querySelector<HTMLInputElement>('input[type="number"]')!
+    const number = t.host.querySelector<HTMLInputElement>('input[aria-label="PR number"]')!
     number.value = "42"
     number.dispatchEvent(new Event("input", { bubbles: true }))
     expect(t.calls).toEqual([
@@ -105,7 +115,7 @@ test.each(["review", "ci"] as const)("%s trial requires an explicit PR and expos
   } finally { t.close() }
 })
 
-test("only a real scoped run enables run and approval doors; observation failure keeps reconnect", () => {
+test("only a real scoped run enables Run; waiting alone never claims an approval", () => {
   const card = makeCard()
   const digest = setupCandidate(card.payload)
   const receipt: SetupReceipt = { requestId: "request", operation: "evaluate", revision: 1, digest, phase: "queued", updatedAt: 1, results: [], evidence: [] }
@@ -119,10 +129,10 @@ test("only a real scoped run enables run and approval doors; observation failure
     const next = { ...card, payload: { ...card.payload, receipt: { ...receipt, runId: "actual-run", phase: "waiting" as const },
       request: { ...card.payload.request, state: "failed" as const, error: "Connection lost" } } }
     t.render(next)
-    t.button("Run")!.click(); t.button("Approvals")!.click(); t.button("Reconnect")!.click()
+    expect(t.button("Approvals")).toBeUndefined()
+    t.button("Run")!.click(); t.button("Reconnect")!.click()
     expect(t.calls).toEqual([
       ["runs.open", flowArgs("runs.open", { sourceCard: card.id, runId: "actual-run", repo: "example/repo" })],
-      ["approvals.open", flowArgs("approvals.open", { sourceCard: card.id, runId: "actual-run" })],
       ["setup.retry", card.id]
     ])
     expect(t.host.textContent).toContain("Connection lost")
@@ -143,16 +153,38 @@ test("old eval evidence remains readable after a candidate edit", () => {
   } finally { t.close() }
 })
 
-test("a native trial receipt opens the real issue without inventing a URL", () => {
+test("a native trial shows one pending phase, real Issue/Run access and closed technical evidence", () => {
   const card = makeCard()
   card.payload.view = "test"
-  card.payload.trial = { requestId: "trial", runId: "trial-run", operation: "trial", revision: 1, digest: setupCandidate(card.payload), phase: "completed", updatedAt: 1,
-    results: [], evidence: ["issue:42"], trialIssue: { source: "smithers-cloud", number: 42 } }
+  card.payload.workspaceId = "de29f26b-e593-4ec2-99fc-583d4711f20a"
+  card.payload.request = { id: "trial", operation: "trial", revision: 1, digest: setupCandidate(card.payload), state: "running" }
+  card.payload.receipt = card.payload.trial = { requestId: "trial", runId: "trial-run", jobRunId: "trial-job", operation: "trial", revision: 1, digest: setupCandidate(card.payload), phase: "waiting", updatedAt: 1,
+    results: [], evidence: ["issue:42", "candidate:.smithers/setup/candidate.json", "execution:trial-job", "source:immutable-commit"], trialIssue: { source: "smithers-cloud", number: 42 } }
   const t = mount(card)
+  const phases = (phase: string) => [...t.host.querySelectorAll("span,p")].filter(node => node.textContent?.toLowerCase() === phase)
   try {
     expect(t.host.querySelector("a")).toBeNull()
+    expect(phases("waiting")).toHaveLength(1)
+    expect(t.button("Approvals")).toBeUndefined()
+    const details = [...t.host.querySelectorAll("details")].find(detail => detail.querySelector("summary")?.textContent === "Technical details")!
+    expect(details.open).toBe(false)
+    expect([...details.querySelectorAll("code")].map(item => item.textContent)).toEqual(card.payload.trial.evidence)
     t.button("Issue #42")!.click()
-    expect(t.calls).toEqual([["issues.view", flowArgs("issues.view", { number: 42, repo: "example/repo", source: "smithers-cloud" })]])
+    t.button("Job run")!.click()
+    expect(t.calls).toEqual([
+      ["issues.view", flowArgs("issues.view", { number: 42, repo: "example/repo", source: "smithers-cloud" })],
+      ["runs.open", flowArgs("runs.open", { runId: "trial-job", repo: "example/repo", sourceCard: card.id })]
+    ])
+    const preview = mount(card, true)
+    try {
+      expect([...preview.host.querySelectorAll("span,p")].filter(node => node.textContent?.toLowerCase() === "waiting")).toHaveLength(1)
+      expect(preview.button("Sign in")).toBeDefined()
+    } finally { preview.close() }
+    card.payload.request.state = "completed"
+    card.payload.receipt = card.payload.trial = { ...card.payload.trial, phase: "completed" }
+    t.render(card)
+    expect(phases("completed")).toHaveLength(1)
+    expect(phases("waiting")).toHaveLength(0)
   } finally { t.close() }
 })
 
@@ -170,7 +202,7 @@ test("reply settings expose draft behavior and require explicit correction of an
   } finally { t.close() }
 })
 
-test("a per-step work form dispatches the exact subject and opens the actual job approval gate", () => {
+test("a per-step work form edits labeled fields and opens the actual dispatched job", () => {
   const card = makeCard()
   card.payload.workspaceId = "de29f26b-e593-4ec2-99fc-583d4711f20a"
   card.payload.active = { enabled: true, revision: 1, digest: setupCandidate(card.payload), registrationId: "registered", sourceRevision: "source" }
@@ -178,16 +210,31 @@ test("a per-step work form dispatches the exact subject and opens the actual job
   card.payload.manualDraft = { stepId: "fix", source: "smithers-cloud", number: 4, prompt: "Preserve compatibility" }
   const t = mount(card)
   try {
+    const source = t.host.querySelector<HTMLSelectElement>('select[aria-label="Source"]')!
+    source.value = "github"
+    source.dispatchEvent(new Event("change", { bubbles: true }))
+    const number = t.host.querySelector<HTMLInputElement>('input[aria-label="Issue number"]')!
+    number.value = "8"
+    number.dispatchEvent(new Event("input", { bubbles: true }))
+    const instructions = t.host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Instructions (optional)"]')!
+    instructions.value = "Keep the existing behavior."
+    instructions.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(t.calls).toEqual([
+      ["setup.work", flowArgs("setup.work", { cardId: card.id, stepId: "fix", field: "source", value: "github" })],
+      ["setup.work", flowArgs("setup.work", { cardId: card.id, stepId: "fix", field: "number", value: 8 })],
+      ["setup.work", flowArgs("setup.work", { cardId: card.id, stepId: "fix", field: "prompt", value: instructions.value })]
+    ])
+    t.calls.length = 0
     t.button("Fix for real")!.click()
     expect(payloadFor("setup.run", t.calls[0]![1]!)).toEqual({ payload: { cardId: "setup", operation: "run" } })
     card.payload.request = { id: "work", operation: "run", revision: 1, digest: setupCandidate(card.payload), state: "running" }
     card.payload.receipt = { requestId: "work", operation: "run", revision: 1, digest: setupCandidate(card.payload), phase: "waiting", updatedAt: 1,
       runId: "wrapper", jobRunId: "actual-job", results: [], evidence: [] }
     t.render(card)
-    t.button("Job run")!.click(); t.button("Approvals")!.click()
+    expect(t.button("Approvals")).toBeUndefined()
+    t.button("Job run")!.click()
     expect(t.calls.slice(1)).toEqual([
-      ["runs.open", flowArgs("runs.open", { runId: "actual-job", repo: "example/repo", sourceCard: "setup" })],
-      ["approvals.open", flowArgs("approvals.open", { runId: "actual-job", sourceCard: "setup" })]
+      ["runs.open", flowArgs("runs.open", { runId: "actual-job", repo: "example/repo", sourceCard: "setup" })]
     ])
     card.payload.revision = 2
     card.payload.request = undefined

@@ -52,7 +52,6 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const runAccess = (observed: SetupReceipt) => observed.runId && state.workspaceId && <div className="setup-actions">
     <button type="button" onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { runId: observed.runId!, repo: state.repo, sourceCard: card.id }))}>{observed.jobRunId ? "Setup run" : "Run"}</button>
     {observed.jobRunId && <button type="button" onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { runId: observed.jobRunId!, repo: state.repo, sourceCard: card.id }))}>Job run</button>}
-    {observed.phase === "waiting" && <button type="button" onClick={() => onRunCommand("approvals.open", flowArgs("approvals.open", { runId: (observed.jobRunId ?? observed.runId)!, sourceCard: card.id }))}>Approvals</button>}
   </div>
   return <div className="repository-setup" data-testid={`setup-${state.job}`}>
     <div className="setup-heading"><span>{state.repo}</span><span>{state.active?.enabled ? state.active.revision === state.revision ? "Enabled" : "Enabled · draft changes" : "Off"}</span></div>
@@ -82,10 +81,10 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
     {state.view === "work" && manual && workStep && <>
       <label className="setup-field">Flow<select value={manual.stepId} onChange={event => onRunCommand("setup.work", flowArgs("setup.work", { cardId: card.id, stepId: event.target.value }))}>{draft.steps.filter(step => step.mode !== "off").map(step => <option key={step.id} value={step.id}>{step.name}</option>)}</select></label>
       {needsSubject && <div className="setup-fields">
-        <label>Source<select value={manual.source} onChange={event => work("source", event.target.value)}><option value="github">GitHub</option><option value="smithers-cloud">Smithers</option></select></label>
-        <label>{workKind === "issue" ? "Issue number" : "PR number"}<input type="number" min={1} {...editor(manual.number ?? "")} onInput={event => work("number", event.currentTarget.value ? Number(event.currentTarget.value) : null)} /></label>
+        <label>Source<select aria-label="Source" value={manual.source} onChange={event => work("source", event.target.value)}><option value="github">GitHub</option><option value="smithers-cloud">Smithers</option></select></label>
+        <label>{workKind === "issue" ? "Issue number" : "PR number"}<input aria-label={workKind === "issue" ? "Issue number" : "PR number"} type="number" min={1} {...editor(manual.number ?? "")} onInput={event => work("number", event.currentTarget.value ? Number(event.currentTarget.value) : null)} /></label>
       </div>}
-      <label className="setup-field">{needsSubject ? "Instructions (optional)" : "Work request"}<textarea rows={4} {...editor(manual.prompt)} onInput={event => work("prompt", event.currentTarget.value)} /></label>
+      <label className="setup-field">{needsSubject ? "Instructions (optional)" : "Work request"}<textarea aria-label={needsSubject ? "Instructions (optional)" : "Work request"} rows={4} {...editor(manual.prompt)} onInput={event => work("prompt", event.currentTarget.value)} /></label>
       {canRun && <button type="button" disabled={pending || !activeMatches || workStep.mode === "off" || (needsSubject ? !manual.number : !manual.prompt.trim())}
         onClick={() => onRunCommand("setup.run", flowArgs("setup.run", { cardId: card.id, operation: "run" }))}>{workStep.name}</button>}
       {!activeMatches && <span className="setup-gate">Test and apply this draft first.</span>}
@@ -123,16 +122,18 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
       </details>)}</details>}
     </>}
     {state.view === "test" && <>
-      <label className="setup-field">{labels.title}<input {...editor(draft.trialTitle)} onInput={event => set("trialTitle", event.currentTarget.value)} /></label>
+      <label className="setup-field">{labels.title}<input aria-label={labels.title} {...editor(draft.trialTitle)} onInput={event => set("trialTitle", event.currentTarget.value)} /></label>
       {needsTrialPr ? <div className="setup-fields">
-        <label>Source<select value={trialPr.source} onChange={event => set("trial.source", event.target.value)}><option value="github">GitHub</option><option value="smithers-cloud">Smithers</option></select></label>
-        <label>PR number<input type="number" min={1} {...editor(trialPr.number ?? "")} onInput={event => set("trial.number", event.currentTarget.value ? Number(event.currentTarget.value) : null)} /></label>
-      </div> : <label className="setup-field">{labels.body}<textarea rows={4} {...editor(draft.trialBody)} onInput={event => set("trialBody", event.currentTarget.value)} /></label>}
+        <label>Source<select aria-label="Source" value={trialPr.source} onChange={event => set("trial.source", event.target.value)}><option value="github">GitHub</option><option value="smithers-cloud">Smithers</option></select></label>
+        <label>PR number<input aria-label="PR number" type="number" min={1} {...editor(trialPr.number ?? "")} onInput={event => set("trial.number", event.currentTarget.value ? Number(event.currentTarget.value) : null)} /></label>
+      </div> : <label className="setup-field">{labels.body}<textarea aria-label={labels.body} rows={4} {...editor(draft.trialBody)} onInput={event => set("trialBody", event.currentTarget.value)} /></label>}
       <div className="setup-heading"><span>{labels.scope}</span>{(state.job === "issues" || state.job === "review") && <span>Replies drafted</span>}</div>
       {canRun && <button type="button" disabled={pending || (needsTrialPr && !trialPr.number)} onClick={() => run("trial")}>{labels.trial}</button>}
-      {state.trial && <div aria-live="polite"><p>{state.trial.phase}</p>{state.trial.trialIssue && (state.trial.trialIssue.url
+      {state.trial && <div aria-live="polite">{(!canRun || !pending || state.trial.requestId !== state.request?.id) && <p>{state.trial.phase}</p>}{state.trial.trialIssue && (state.trial.trialIssue.url
         ? <a href={state.trial.trialIssue.url} target="_blank" rel="noreferrer">{state.trial.trialIssue.url.includes("/pull/") ? "PR" : "Issue"} #{state.trial.trialIssue.number}</a>
-        : <button type="button" onClick={() => onRunCommand("issues.view", flowArgs("issues.view", { number: state.trial!.trialIssue!.number, repo: state.repo, source: state.trial!.trialIssue!.source }))}>Issue #{state.trial.trialIssue.number}</button>)}<ul>{state.trial.evidence.map((evidence, index) => <li key={index}>{evidence}</li>)}</ul></div>}
+        : <button type="button" onClick={() => onRunCommand("issues.view", flowArgs("issues.view", { number: state.trial!.trialIssue!.number, repo: state.repo, source: state.trial!.trialIssue!.source }))}>Issue #{state.trial.trialIssue.number}</button>)}
+        {state.trial.evidence.length > 0 && <details><summary>Technical details</summary><ul>{state.trial.evidence.map((evidence, index) => <li key={index}><code>{evidence}</code></li>)}</ul></details>}
+      </div>}
     </>}
     {receipt && runAccess(receipt)}
     {state.request?.state === "failed" && <div role="alert" className="setup-error"><p>{state.request.error}</p>{canRun && <button type="button" onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
