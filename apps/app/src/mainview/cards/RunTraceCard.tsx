@@ -159,7 +159,8 @@ export const RunTraceBody = ({
   const { runId, phase, kind, steps, result } = card.payload
   /* A tutorial plan card is a plan, not a run: it has no outcome, no progress and no journal to show. */
   const planOnly = kind === "change-plan"
-  const repositorySetup = card.payload.workflow === "repository/setup"
+  /* A repository setup or job run answers with structured data, not prose, and does its work in child executions. */
+  const repositoryRun = card.payload.workflow === "repository/setup" || card.payload.workflow.startsWith("repository-jobs/")
   const model = traceOf(card)
   const view = card.payload.traceView ?? "turns"
   const filters = traceFiltersFor(kind)
@@ -218,7 +219,7 @@ export const RunTraceBody = ({
           {facts.length > 0 ? <span className="run-outcome-facts">{facts.join(" · ")}</span> : null}
         </header>
       )}
-      {!planOnly && result !== null ? repositorySetup ? (
+      {!planOnly && result !== null ? repositoryRun ? (
         <details className="run-progress-fold">
           <summary>Technical details</summary>
           <pre className="run-trace-code" tabIndex={0} aria-label="Run output">{result}</pre>
@@ -321,7 +322,7 @@ export const RunTraceBody = ({
               })}
             </ol>
           ) : null}
-          {model.counts.spans === 0 && !inspecting && !repositorySetup ? (
+          {model.counts.spans === 0 && !inspecting && !repositoryRun ? (
             <p className="run-trace-empty" data-testid={`run-trace-empty-${runId}`}>
               {settled ? "No turns were recorded." : "No turns yet."}
             </p>

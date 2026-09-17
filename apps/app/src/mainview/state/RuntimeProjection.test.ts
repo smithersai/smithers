@@ -170,6 +170,14 @@ describe("normalized runtime observations", () => {
     expect(trace.payload.phase).toBe("running")
   })
 
+  test("a completed run shows the output it produced, not the clipped verdict line", () => {
+    const output = JSON.stringify({ repo: "owner/repo", job: "issues", reply: { body: "Research issue\nThe greeting is hello.", issueNumber: 42, state: "drafted" } })
+    const produced = observeRuntimeRun(undefined, { scope, summary: { ...summary("completed"), verdict: `completed — ${output.slice(0, 100)}`, finalOutput: output } }, 11, 1)
+    expect(projectRuntimeCard(trace, [produced], []).payload).toMatchObject({ result: output })
+    const silent = observeRuntimeRun(undefined, { scope, summary: summary("completed") }, 11, 1)
+    expect(projectRuntimeCard(trace, [silent], []).payload).toMatchObject({ result: "completed" })
+  })
+
   test("a conflicting batch cannot partially update summary, gates, or app revision", () => {
     const seeded = seedAppProjection(emptyAppProjection(), { createdAt: 1, theme: "dark", seedWiki: false })
     const state = projectAppEvent(seeded, { transition: { type: "gateway.approvals.observed", actor: "system", scope, rows: [gate("approved")] }, revision: 1, createdAt: 10, persistenceMode: "memory" })

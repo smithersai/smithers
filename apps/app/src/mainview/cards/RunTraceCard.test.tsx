@@ -133,6 +133,19 @@ describe("the run card as a trace", () => {
     expect(detail.open).toBe(false)
     expect(detail.querySelector("pre")?.textContent).toBe(raw)
   })
+  test("a repository job's result reads in the same fold a setup run uses, and prose still renders as prose", () => {
+    const fold = (host: HTMLElement) =>
+      [...host.querySelectorAll("details")].find(node => node.querySelector("summary")?.textContent === "Technical details")
+    const output = JSON.stringify({ job: "issues", reply: { body: "Research issue\nThe greeting is hello.", issueNumber: 42, state: "drafted" } })
+    const job = renderRun({ phase: "completed", workflow: "repository-jobs/issues", result: output })
+    expect(fold(job.host)?.querySelector("pre")?.textContent).toBe(output)
+    expect(job.host.querySelector(".run-result")).toBeNull()
+    const setup = renderRun({ phase: "completed", workflow: "repository/setup", result: "Applied revision 2." })
+    expect(fold(setup.host)?.querySelector("pre")?.textContent).toBe("Applied revision 2.")
+    const coding = renderRun({ phase: "completed", workflow: "coding", result: "Finished the implementation." })
+    expect(coding.host.querySelector(".run-result")?.textContent).toContain("Finished the implementation.")
+  })
+
   test("an observation refusal keeps the completed verdict and offers the existing keyboard-reachable retry", () => {
     const retried: Array<string> = []
     const host = render(<WorkflowRunCardBody
