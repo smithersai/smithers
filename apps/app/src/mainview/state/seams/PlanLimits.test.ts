@@ -11,7 +11,7 @@ test("plan-limit fields survive the proxy, CloudClient, and persisted card", asy
   const forwarded = machineReadableRefusal(JSON.stringify(body))
   const failure = await cloudFailure(Response.json({ ...forwarded, message: "Suspend one or upgrade." }, { status: 402 }), "fallback")
   const refusal = refusalFromStored(SessionRefusalSchema.parse(storedRefusal(failure.refusal)))
-  expect(refusal).toMatchObject({ ...body, rawCode: body.code, fault: "user" , code: null })
+  expect(refusal).toMatchObject({ ...body, rawCode: body.code, fault: "user", code: body.code })
   expect(refusalLead(refusal)).toBe("Your plan is at its sandbox limit.")
   expect(refusalDoors(refusal)).toEqual(["upgrade"])
 })

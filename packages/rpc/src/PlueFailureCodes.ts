@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:18a8d4e7ea8c70fd0b5ffe03bbb28b9d8fcc207e2f87ce95a255ada78b0ec6ae"
+export const PLUE_FAILURE_DIGEST = "sha256:f60aeac764dcfa49fc7916133cbdd167a278e1ae7675bbc1ea8978ecce14eefd"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -71,17 +71,27 @@ export const PLUE_FAILURE_CODES = [
   "NOT_ON_WAITLIST",
   "access_denied",
   "access_not_granted",
+  "append_not_requested",
+  "append_prepare_invalid",
+  "append_prepare_unavailable",
+  "append_receipt_invalid",
+  "append_receipt_unavailable",
+  "append_task_missing",
   "authentication_not_configured",
   "bad_gateway",
   "bad_request",
   "branch_lock_held",
   "build_cache_busy",
+  "coding_file_conflict",
+  "coding_file_recovery_required",
   "coding_gateway_not_configured",
   "coding_guest_failure",
   "coding_host_unavailable",
+  "coding_host_upgrade_required",
   "coding_invalid_request",
   "coding_outcome_unknown",
   "coding_provenance_pending",
+  "coding_provider_refresh_required",
   "coding_reporter_upgrade_required",
   "coding_unsupported_jj",
   "coding_workspace_busy",
@@ -98,6 +108,7 @@ export const PLUE_FAILURE_CODES = [
   "feature_not_enabled",
   "focus_terminal",
   "forbidden",
+  "fork_not_needed",
   "frame_changed",
   "gateway_timeout",
   "generation_required",
@@ -123,6 +134,8 @@ export const PLUE_FAILURE_CODES = [
   "invalid_resource_link",
   "invalid_worker",
   "landing_blocked",
+  "landing_create_unavailable",
+  "landing_request_conflict",
   "language_server_missing",
   "listing_secret_detected",
   "no_capacity",
@@ -130,14 +143,18 @@ export const PLUE_FAILURE_CODES = [
   "not_found",
   "not_implemented",
   "operation_in_progress",
+  "org_membership_required",
   "peer_identity_denied",
+  "plan_limit_exceeded",
   "preview_unavailable",
   "provisioning_failed",
   "quiesce_failed",
   "quota_exceeded",
   "rate_limit_exceeded",
   "rate_limiter_unavailable",
+  "repository_ci_run_unverified",
   "repository_provisioning_rollout",
+  "repository_workspace_pending",
   "request_entity_too_large",
   "request_too_large",
   "retained_runtime_not_found",
@@ -170,7 +187,8 @@ export const PLUE_FAILURE_CODES = [
   "workspace_session_pending",
   "workspace_source_invalid_ack",
   "workspace_source_missing",
-  "workspace_source_unavailable"
+  "workspace_source_unavailable",
+  "workspace_vm_missing"
 ] as const
 
 /**
@@ -208,8 +226,20 @@ export const PLUE_FAILURES = {
   "NOT_ON_WAITLIST": { fault: "user", status: 403, retryAfter: 0 },
   /** The access grant presented to the controller does not cover this sandbox. */
   "access_denied": { fault: "user", status: 403, retryAfter: 0 },
-  /** The OAuth2 authorization was not granted to this client. */
+  /** The account has not been granted this access: the OAuth2 authorization was not granted to this client, or the account is not on the closed-alpha whitelist. */
   "access_not_granted": { fault: "user", status: 403, retryAfter: 0 },
+  /** The landing's existing task is not a native append request. */
+  "append_not_requested": { fault: "user", status: 409, retryAfter: 0 },
+  /** Native append preparation did not return the requested exact source identities. */
+  "append_prepare_invalid": { fault: "infra", status: 503, retryAfter: 0 },
+  /** Native append preparation or its transactional revision projection is unavailable. */
+  "append_prepare_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The durable append request or task state has no valid matching native receipt. */
+  "append_receipt_invalid": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The exact native append receipt cannot currently be verified. */
+  "append_receipt_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** No append task has been queued for this landing. */
+  "append_task_missing": { fault: "user", status: 404, retryAfter: 0 },
   /** The controller has no authentication material configured, so it refuses every authenticated call. */
   "authentication_not_configured": { fault: "infra", status: 503, retryAfter: 0 },
   /** An upstream service plue depends on answered in a way plue could not use. */
@@ -220,18 +250,26 @@ export const PLUE_FAILURES = {
   "branch_lock_held": { fault: "user", status: 409, retryAfter: 0 },
   /** The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees. */
   "build_cache_busy": { fault: "wait", status: 429, retryAfter: 1 },
+  /** A file preimage, installed file or native snapshot changed during application. Displaced bytes remain in the private recovery directory; no rollback overwrites newer content. */
+  "coding_file_conflict": { fault: "user", status: 409, retryAfter: 0 },
+  /** File installation was interrupted or could not safely finish. Inspect the retained preimages and proposed files before replanning; details contain the recovery receipt. */
+  "coding_file_recovery_required": { fault: "user", status: 409, retryAfter: 0 },
   /** This deployment has no workspace-gateway health probe configured, so it cannot verify a box's coding gateway and refuses every bound gateway until an operator configures one. */
   "coding_gateway_not_configured": { fault: "infra", status: 503, retryAfter: 0 },
   /** The guest's coding helper failed. The guest's own sentence is logged server-side, never returned. */
   "coding_guest_failure": { fault: "bug", status: 503, retryAfter: 0 },
   /** The box's staged coding host or native adapter is older than the operation requires, or never registered the coding capability. plue stages both, so it is plue's rollout lag rather than anything the caller did. */
   "coding_host_unavailable": { fault: "infra", status: 409, retryAfter: 0 },
+  /** The existing live host lacks the requested capability. Existing runs and streams are preserved; initial setup may select a dedicated compatible workspace, while established bindings remain explicit. */
+  "coding_host_upgrade_required": { fault: "infra", status: 409, retryAfter: 0 },
   /** The guest refused the coding request as malformed. */
   "coding_invalid_request": { fault: "user", status: 400, retryAfter: 0 },
   /** The transport to the box was interrupted before its receipt came back; the identical request recovers it. */
   "coding_outcome_unknown": { fault: "wait", status: 503, retryAfter: 1 },
   /** The mutation is saved in the box but its provenance projection has not landed; the identical request finishes it. */
   "coding_provenance_pending": { fault: "wait", status: 503, retryAfter: 1 },
+  /** The box has no usable configured coding model. Connect a provider and resume an idle box or use a fresh box to apply credentials. Existing live work is preserved. */
+  "coding_provider_refresh_required": { fault: "infra", status: 409, retryAfter: 0 },
   /** The box's reporter is older than the operation requires; it upgrades on the next boot. */
   "coding_reporter_upgrade_required": { fault: "infra", status: 503, retryAfter: 0 },
   /** The box's jj is too old for the requested operation. */
@@ -264,6 +302,8 @@ export const PLUE_FAILURES = {
   "focus_terminal": { fault: "user", status: 409, retryAfter: 0 },
   /** The credential is valid but is not allowed to perform this operation. */
   "forbidden": { fault: "user", status: 403, retryAfter: 0 },
+  /** The caller already has write access to this repository, so there is nothing to fork: edit it in place. */
+  "fork_not_needed": { fault: "user", status: 403, retryAfter: 0 },
   /** The framebuffer geometry moved between the observation the plan was aimed at and the injection. Nothing was injected. */
   "frame_changed": { fault: "user", status: 409, retryAfter: 0 },
   /** plue gave up waiting for an upstream call it made on the caller's behalf. */
@@ -314,6 +354,10 @@ export const PLUE_FAILURES = {
   "invalid_worker": { fault: "user", status: 400, retryAfter: 0 },
   /** The landing request cannot proceed as asked; details name what is blocking it. */
   "landing_blocked": { fault: "user", status: 422, retryAfter: 0 },
+  /** Idempotent landing creation requires the existing transactional store. */
+  "landing_create_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The landing request identity was already used with different input or agent authority. */
+  "landing_request_conflict": { fault: "user", status: 409, retryAfter: 0 },
   /** The box has no binary for the session's language. The message is the install line, verbatim. */
   "language_server_missing": { fault: "user", status: 409, retryAfter: 0 },
   /** The share listing contains something that scans as a credential; it was not published. */
@@ -328,8 +372,12 @@ export const PLUE_FAILURES = {
   "not_implemented": { fault: "bug", status: 501, retryAfter: 0 },
   /** Another operation on this sandbox is still running; the same request works once it settles. */
   "operation_in_progress": { fault: "wait", status: 409, retryAfter: 1 },
+  /** The requested owner is an organization on this deployment and the caller does not belong to it. Join the organization, or fork the repository into your own namespace. */
+  "org_membership_required": { fault: "user", status: 403, retryAfter: 0 },
   /** The calling peer's mTLS identity is not one this worker accepts. */
   "peer_identity_denied": { fault: "user", status: 403, retryAfter: 0 },
+  /** The user has exhausted a sandbox limit included in their plan. */
+  "plan_limit_exceeded": { fault: "user", status: 402, retryAfter: 0 },
   /** The preview gateway could not reach the port the box is serving. */
   "preview_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
   /** Provisioning a box failed for a reason plue has no specific code for. Persisted on the workspace row as failure_code. */
@@ -342,8 +390,12 @@ export const PLUE_FAILURES = {
   "rate_limit_exceeded": { fault: "user", status: 429, retryAfter: 0 },
   /** plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced. */
   "rate_limiter_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
+  /** The CI check receipt names a run this repository and workspace retain no usable dispatch for. */
+  "repository_ci_run_unverified": { fault: "user", status: 403, retryAfter: 0 },
   /** Repository provisioning is mid-rollout on this deployment and is not accepting new work. */
   "repository_provisioning_rollout": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The repository workspace or gateway is still starting. Poll the same request; an unverified primary is not an authoritative workspace selection. */
+  "repository_workspace_pending": { fault: "wait", status: 409, retryAfter: 2 },
   /** The request body is larger than the endpoint accepts. */
   "request_entity_too_large": { fault: "user", status: 413, retryAfter: 0 },
   /** The sandbox request body exceeds the controller's limit. */
@@ -409,5 +461,7 @@ export const PLUE_FAILURES = {
   /** The original source is not retained in this box. */
   "workspace_source_missing": { fault: "user", status: 404, retryAfter: 0 },
   /** plue could not verify the box's native source. */
-  "workspace_source_unavailable": { fault: "infra", status: 503, retryAfter: 0 }
+  "workspace_source_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The recorded workspace VM no longer exists. An unbound setup may select another compatible workspace within quota; established bindings remain explicit. */
+  "workspace_vm_missing": { fault: "infra", status: 409, retryAfter: 0 }
 } satisfies Record<PlueFailureCode, PlueFailureEntry>

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:18a8d4e7ea8c70fd0b5ffe03bbb28b9d8fcc207e2f87ce95a255ada78b0ec6ae",
+  "digest": "sha256:f60aeac764dcfa49fc7916133cbdd167a278e1ae7675bbc1ea8978ecce14eefd",
   "faults": [
     "user",
     "wait",
@@ -35,7 +35,49 @@
       "fault": "user",
       "status": 403,
       "retry_after": 0,
-      "doc": "The OAuth2 authorization was not granted to this client."
+      "doc": "The account has not been granted this access: the OAuth2 authorization was not granted to this client, or the account is not on the closed-alpha whitelist."
+    },
+    {
+      "code": "append_not_requested",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The landing's existing task is not a native append request."
+    },
+    {
+      "code": "append_prepare_invalid",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "Native append preparation did not return the requested exact source identities."
+    },
+    {
+      "code": "append_prepare_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "Native append preparation or its transactional revision projection is unavailable."
+    },
+    {
+      "code": "append_receipt_invalid",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The durable append request or task state has no valid matching native receipt."
+    },
+    {
+      "code": "append_receipt_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "The exact native append receipt cannot currently be verified."
+    },
+    {
+      "code": "append_task_missing",
+      "fault": "user",
+      "status": 404,
+      "retry_after": 0,
+      "doc": "No append task has been queued for this landing."
     },
     {
       "code": "authentication_not_configured",
@@ -73,6 +115,20 @@
       "doc": "The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees."
     },
     {
+      "code": "coding_file_conflict",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "A file preimage, installed file or native snapshot changed during application. Displaced bytes remain in the private recovery directory; no rollback overwrites newer content."
+    },
+    {
+      "code": "coding_file_recovery_required",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "File installation was interrupted or could not safely finish. Inspect the retained preimages and proposed files before replanning; details contain the recovery receipt."
+    },
+    {
       "code": "coding_gateway_not_configured",
       "fault": "infra",
       "status": 503,
@@ -94,6 +150,13 @@
       "doc": "The box's staged coding host or native adapter is older than the operation requires, or never registered the coding capability. plue stages both, so it is plue's rollout lag rather than anything the caller did."
     },
     {
+      "code": "coding_host_upgrade_required",
+      "fault": "infra",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The existing live host lacks the requested capability. Existing runs and streams are preserved; initial setup may select a dedicated compatible workspace, while established bindings remain explicit."
+    },
+    {
       "code": "coding_invalid_request",
       "fault": "user",
       "status": 400,
@@ -113,6 +176,13 @@
       "status": 503,
       "retry_after": 1,
       "doc": "The mutation is saved in the box but its provenance projection has not landed; the identical request finishes it."
+    },
+    {
+      "code": "coding_provider_refresh_required",
+      "fault": "infra",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The box has no usable configured coding model. Connect a provider and resume an idle box or use a fresh box to apply credentials. Existing live work is preserved."
     },
     {
       "code": "coding_reporter_upgrade_required",
@@ -225,6 +295,13 @@
       "status": 403,
       "retry_after": 0,
       "doc": "The credential is valid but is not allowed to perform this operation."
+    },
+    {
+      "code": "fork_not_needed",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The caller already has write access to this repository, so there is nothing to fork: edit it in place."
     },
     {
       "code": "frame_changed",
@@ -402,6 +479,20 @@
       "doc": "The landing request cannot proceed as asked; details name what is blocking it."
     },
     {
+      "code": "landing_create_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "Idempotent landing creation requires the existing transactional store."
+    },
+    {
+      "code": "landing_request_conflict",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The landing request identity was already used with different input or agent authority."
+    },
+    {
       "code": "language_server_missing",
       "fault": "user",
       "status": 409,
@@ -451,11 +542,25 @@
       "doc": "Another operation on this sandbox is still running; the same request works once it settles."
     },
     {
+      "code": "org_membership_required",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The requested owner is an organization on this deployment and the caller does not belong to it. Join the organization, or fork the repository into your own namespace."
+    },
+    {
       "code": "peer_identity_denied",
       "fault": "user",
       "status": 403,
       "retry_after": 0,
       "doc": "The calling peer's mTLS identity is not one this worker accepts."
+    },
+    {
+      "code": "plan_limit_exceeded",
+      "fault": "user",
+      "status": 402,
+      "retry_after": 0,
+      "doc": "The user has exhausted a sandbox limit included in their plan."
     },
     {
       "code": "preview_unavailable",
@@ -500,11 +605,25 @@
       "doc": "plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced."
     },
     {
+      "code": "repository_ci_run_unverified",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The CI check receipt names a run this repository and workspace retain no usable dispatch for."
+    },
+    {
       "code": "repository_provisioning_rollout",
       "fault": "infra",
       "status": 503,
       "retry_after": 0,
       "doc": "Repository provisioning is mid-rollout on this deployment and is not accepting new work."
+    },
+    {
+      "code": "repository_workspace_pending",
+      "fault": "wait",
+      "status": 409,
+      "retry_after": 2,
+      "doc": "The repository workspace or gateway is still starting. Poll the same request; an unverified primary is not an authoritative workspace selection."
     },
     {
       "code": "request_entity_too_large",
@@ -736,6 +855,13 @@
       "status": 503,
       "retry_after": 0,
       "doc": "plue could not verify the box's native source."
+    },
+    {
+      "code": "workspace_vm_missing",
+      "fault": "infra",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The recorded workspace VM no longer exists. An unbound setup may select another compatible workspace within quota; established bindings remain explicit."
     }
   ]
 }

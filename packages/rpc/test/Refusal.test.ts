@@ -79,6 +79,21 @@ describe("the vendored plue failure registry", () => {
     expect(PLUE_FAILURES.no_capacity).toEqual({ fault: "infra", status: 503, retryAfter: 30 })
     expect(PLUE_FAILURES.quota_exceeded).toEqual({ fault: "user", status: 429, retryAfter: 0 })
   })
+
+  test("every code this repository already reads off the wire by name has a row", () => {
+    // These are the codes Smithers itself branches on — workflows.ts and
+    // gateway.ts in apps/server, repositorySetupExecution.ts, WorkspaceSeam.ts
+    // in apps/app. Vendoring that lags plue leaves them as `rawCode` strings
+    // with the verdict guessed from the status, which is the exact thing this
+    // table exists to stop; a row here is what makes them codes.
+    expect(PLUE_FAILURES.plan_limit_exceeded).toEqual({ fault: "user", status: 402, retryAfter: 0 })
+    expect(PLUE_FAILURES.coding_host_upgrade_required).toEqual({ fault: "infra", status: 409, retryAfter: 0 })
+    expect(PLUE_FAILURES.repository_workspace_pending).toEqual({ fault: "wait", status: 409, retryAfter: 2 })
+    expect(PLUE_FAILURES.repository_ci_run_unverified).toEqual({ fault: "user", status: 403, retryAfter: 0 })
+    // The eligibility refusal gateway.ts pairs with NOT_ON_WAITLIST: still the
+    // caller's to clear, so a refresh may not turn the closed alpha into infra.
+    expect(PLUE_FAILURES.access_not_granted).toEqual({ fault: "user", status: 403, retryAfter: 0 })
+  })
 })
 
 describe("classifying a refusal", () => {
