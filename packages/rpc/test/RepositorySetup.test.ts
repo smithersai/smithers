@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { editSetup, initialSetup, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
+import { editSetup, initialSetup, reconcileSetupHistory, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
 
 const caseFixture = { id: "unrelated", name: "Unrelated change", input: "synthetic case fixture", expected: "Take no unrelated actions", required: true }
 
@@ -14,6 +14,41 @@ const proven = (): RepositorySetup => {
   setup.draft.cases = [{ ...caseFixture }]
   return { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
 }
+
+describe("repository setup receipt history", () => {
+  it("uses actual eval and trial receipts without inventing a missing outcome", () => {
+    const setup = proven()
+    const unknown = { ...setup.evaluation!, requestId: "unobserved", phase: "running" as const }
+    setup.previousReceipts = [
+      { ...setup.evaluation!, phase: "running" }, { ...setup.trial!, phase: "waiting" }, unknown
+    ]
+    expect(reconcileSetupHistory(setup).previousReceipts).toEqual([setup.evaluation, setup.trial, unknown])
+    expect(setup.previousReceipts[0]?.phase).toBe("running")
+  })
+
+  it.each([
+    { requestId: "another" }, { revision: 2 }, { digest: "another" }, { operation: "trial" as const },
+    { runId: "another" }, { jobRunId: "another" }
+  ])("does not heal a different receipt identity: %j", changed => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    const previous = { ...receipt(setup, "inspect"), phase: "running" as const, jobRunId: "job-run" }
+    setup.previousReceipts = [previous]
+    setup.receipt = { ...previous, phase: "completed", ...changed }
+    expect(reconcileSetupHistory(setup)).toBe(setup)
+  })
+
+  it.each(["completed", "failed", "stopped"] as const)("preserves a %s receipt against later progress or a conflicting terminal result", phase => {
+    const setup = initialSetup("example/repo", "issues", "maintainer")
+    const previous = { ...receipt(setup, "inspect"), phase }
+    setup.previousReceipts = [previous]
+    setup.receipt = { ...previous, phase: "running", updatedAt: 200 }
+    expect(reconcileSetupHistory(setup)).toBe(setup)
+    const edited = editSetup(setup, { ...setup.draft, trialTitle: "Changed candidate" })
+    expect(edited.previousReceipts).toEqual([previous])
+    setup.receipt = { ...previous, phase: phase === "completed" ? "failed" : "completed", updatedAt: 300 }
+    expect(reconcileSetupHistory(setup)).toBe(setup)
+  })
+})
 
 describe("repository setup activation evidence", () => {
   it("manual work selects an enabled step and an explicit subject, without accepting signed event data", () => {

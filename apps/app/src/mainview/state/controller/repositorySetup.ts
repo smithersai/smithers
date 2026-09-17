@@ -1,6 +1,6 @@
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
-  SetupHostInputSchema, SetupOperationResponseSchema, editSetup, initialSetup, setupActivationProblems, setupCandidate,
+  SetupHostInputSchema, SetupOperationResponseSchema, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupManualRequest
 } from "@smthrs/rpc/RepositorySetup"
 import type { Card } from "../AppState"
@@ -59,7 +59,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   }
   const owner = () => ctx.store.collections.identitySessions.get("identity")?.login ?? null
   const upsert = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor) =>
-    ctx.store.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+    ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise
   const edit = (id: string, apply: () => Result): Result => {
     const next = (shared.edits.get(id) ?? Promise.resolve()).then(apply)
     shared.edits.set(id, next)
@@ -130,7 +130,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
           if (result.receipt && (result.receipt.requestId !== intent.id || result.receipt.revision !== intent.revision || result.receipt.digest !== intent.digest || result.receipt.operation !== intent.operation)) throw Error("The host receipt does not match this setup request.")
           if (result.inspection) {
             if (intent.operation !== "inspect" || result.receipt?.phase !== "completed" || !result.receipt.runId) throw Error("The host did not confirm completed repository inspection.")
-            const next = editSetup(latest.payload, result.inspection.suggestedDraft)
+            const next = editSetup({ ...latest.payload, ...scope }, result.inspection.suggestedDraft)
             const updated: SetupCard = { ...latest, status: "active", payload: { ...next, ...scope, sources: result.inspection.sources,
               inspectedAt: result.inspection.inspectedAt, request: { ...intent, state: "completed" } } }
             await upsert(updated, "system")

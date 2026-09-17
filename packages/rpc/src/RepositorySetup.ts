@@ -160,13 +160,45 @@ export const SetupHostInputSchema = SetupStartSchema.safeExtend({ operation: Set
 /** Input shared by the app, Worker, and installed repository/setup flow. @since 1.0.0 */
 export type SetupHostInput = z.infer<typeof SetupHostInputSchema>
 
+const receiptIdentity = (receipt: SetupReceipt) => JSON.stringify([receipt.requestId, receipt.operation, receipt.revision, receipt.digest])
+const terminalReceipt = (receipt: SetupReceipt) => ["completed", "failed", "stopped"].includes(receipt.phase)
+const preferReceipt = (previous: SetupReceipt, observed: SetupReceipt): SetupReceipt => {
+  if (receiptIdentity(previous) !== receiptIdentity(observed) ||
+    (previous.runId && observed.runId && previous.runId !== observed.runId) ||
+    (previous.jobRunId && observed.jobRunId && previous.jobRunId !== observed.jobRunId)) return previous
+  // A late progress response cannot reopen a terminal request. Conflicting
+  // terminal outcomes also need new host evidence, not a client-side choice.
+  if (terminalReceipt(previous) && previous.phase !== observed.phase) return previous
+  if (terminalReceipt(observed) && !terminalReceipt(previous)) return observed
+  return observed.updatedAt >= previous.updatedAt ? observed : previous
+}
+const availableReceipts = (setup: RepositorySetup) => [setup.evaluation, setup.trial, setup.receipt]
+  .filter((receipt): receipt is SetupReceipt => receipt !== undefined)
+const rememberReceipts = (receipts: ReadonlyArray<SetupReceipt>): SetupReceipt[] => {
+  const history = new Map<string, SetupReceipt>()
+  for (const receipt of receipts) {
+    const key = receiptIdentity(receipt), previous = history.get(key)
+    history.set(key, previous === undefined ? receipt : preferReceipt(previous, receipt))
+  }
+  return [...history.values()].slice(-50)
+}
+
+/** Repair historical progress only from an available receipt for the same request. @since 1.0.0 */
+export function reconcileSetupHistory(setup: RepositorySetup): RepositorySetup {
+  const observed = availableReceipts(setup)
+  const previousReceipts = setup.previousReceipts.map(previous => observed.reduce(preferReceipt, previous))
+  return previousReceipts.some((receipt, index) => receipt !== setup.previousReceipts[index])
+    ? { ...setup, previousReceipts } : setup
+}
+
 /** Change the candidate without changing the previously activated version. @since 1.0.0 */
 export function editSetup(setup: RepositorySetup, draft: SetupDraft): RepositorySetup {
   const parsed = SetupDraftSchema.parse(draft)
-  if (JSON.stringify(parsed) === JSON.stringify(setup.draft)) return setup
-  const { request: _request, evaluation: _evaluation, trial: _trial, receipt: _receipt, ...preserved } = setup
-  return { ...preserved, revision: setup.revision + 1, draft: parsed,
-    previousReceipts: [...new Map([...setup.previousReceipts, ...[setup.evaluation, setup.trial, setup.receipt].filter((receipt): receipt is SetupReceipt => receipt !== undefined)].map(receipt => [receipt.requestId, receipt])).values()].slice(-50) }
+  const current = reconcileSetupHistory(setup)
+  if (JSON.stringify(parsed) === JSON.stringify(current.draft)) return current
+  const { request: _request, evaluation: _evaluation, trial: _trial, receipt: _receipt, ...preserved } = current
+  return { ...preserved, revision: current.revision + 1, draft: parsed,
+    previousReceipts: rememberReceipts([...current.previousReceipts, ...availableReceipts(current)]) }
 }
 
 /** The host acknowledges an inspection or a durable execution request. @since 1.0.0 */

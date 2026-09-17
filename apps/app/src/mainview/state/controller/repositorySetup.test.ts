@@ -268,6 +268,62 @@ test("human setup starts Chat only after repository inspection and preserves a t
   } finally { inspection.release(); await t.close() }
 })
 
+test("inspection receipt history stays completed through the suggested revision and restart", async () => {
+  const inspection = deferred()
+  const t = await fixture(async (body, method) => {
+    if (method === "POST") return response(body, "running", "inspect")
+    await inspection.promise
+    return Response.json({ ...await response(body, "completed", "inspect").json(), inspection: {
+      sources: [{ path: "README.md", status: "read", summary: "Repository usage" }], inspectedAt: 2,
+      suggestedDraft: { ...body.draft, cases: [
+        { id: "usage", name: "Usage question", input: "How does this repository work?", expected: "Cite README.md", required: true },
+        { id: "unknown", name: "Missing detail", input: "An unspecified problem", expected: "Ask for the missing detail", required: true }
+      ] }
+    } })
+  })
+  let requestId = ""
+  try {
+    await t.setup.runRepositorySetup("setup", "inspect")
+    await until(() => t.state().receipt?.phase === "running")
+    requestId = t.state().request!.id
+    inspection.release(); await Promise.all(t.background)
+    expect(t.state()).toMatchObject({ revision: 2, request: { id: requestId, state: "completed" }, draft: { cases: [{ id: "usage" }, { id: "unknown" }] } })
+    expect(t.state().previousReceipts).toEqual([t.state().receipt!])
+    expect(t.state().previousReceipts[0]?.phase).toBe("completed")
+  } finally { inspection.release(); await t.close() }
+  const restored = await fixture(async body => response(body), t.storage)
+  try {
+    await restored.setup.runRepositorySetup("setup", "evaluate")
+    await Promise.all(restored.background)
+    expect(restored.calls.filter(call => call.method === "POST")).toHaveLength(1)
+    expect(restored.state().request?.id).not.toBe(requestId)
+    expect(restored.state().previousReceipts.find(item => item.requestId === requestId)).toMatchObject({ operation: "inspect", phase: "completed", revision: 1 })
+  } finally { await restored.close() }
+})
+
+test("inspection receipt history heals from an available receipt before a later operation replaces it", async () => {
+  const evaluation = deferred()
+  const t = await fixture(async (body, method) => {
+    if (method === "POST") return response(body, "running")
+    await evaluation.promise
+    return response(body)
+  })
+  try {
+    const card = t.store.collections.cards.get("setup")!
+    const completed = (await response({ requestId: "old-inspection", repo: t.state().repo, job: "issues", revision: 1, digest: "old-digest", draft: t.state().draft }, "completed", "inspect").json()).receipt
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, kind: "repository-setup", payload: {
+      ...t.state(), revision: 2, receipt: completed,
+      previousReceipts: [{ ...completed, phase: "running" }, { ...completed, requestId: "unobserved-request", phase: "running" }]
+    } } }).isPersisted.promise
+    await t.setup.runRepositorySetup("setup", "evaluate")
+    await until(() => t.state().receipt?.operation === "evaluate")
+    expect(t.state().receipt?.phase).toBe("running")
+    expect(t.state().previousReceipts.find(item => item.requestId === "old-inspection")).toEqual(completed)
+    expect(t.state().previousReceipts.find(item => item.requestId === "unobserved-request")?.phase).toBe("running")
+    evaluation.release(); await Promise.all(t.background)
+  } finally { evaluation.release(); await t.close() }
+})
+
 test("the agent guidance door reads current prompts and evidence without launching a nested turn", async () => {
   const messages: string[] = []
   const t = await fixture(async body => response(body), memoryStorage(), doors({ send: text => { messages.push(text) } }))
