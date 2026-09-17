@@ -15,13 +15,14 @@ import { preparedView,type ViewAction,type ViewResult } from "../PreparedView"
  */
 import type { Repo,RepoFilesResponse } from "@smthrs/rpc/LocalApp"
 import { REPO_FILES_PATH,RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
+import { refusalOf } from "@smthrs/rpc/Refusal"
 import type { Card } from "../AppState"
 import { parseRepoSelection,repoIdFromRemote,repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
 import { isPracticeRepo,practiceFilePaths } from "../practice/PracticeRepository"
 import { resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
+import { errorMessage,errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
 import { practiceReadFile } from "./tutorial2-file_open"
 
 /*
@@ -330,12 +331,16 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
 
 
   /*
-   * The 404 split: the platform answers a missing PATH inside an imported
-   * repo with "Path not found: {path}" (multi filesClient.test.ts :93); a
-   * repository the platform has never imported 404s the whole namespace
-   * (code "not_found", "repository not found" — or no useful body at all).
-   * A 404 whose message names the path is the honest path answer; any other
-   * 404 means the repo itself is unknown, and the fix is the import.
+   * The 404 split, from the typed refusal and from local state — never from
+   * the platform's prose. A missing path and a repository the platform never
+   * imported both answer `code: "not_found"` (PlueFailureCodes.ts, fault
+   * "user"), so the response cannot name the cause: reading its sentence for
+   * one told a reader of an imported repository to import it (C088, b416,
+   * where the same session read another path from that repository). Local
+   * state can still name a cause — a checkout the sidebar pins that this
+   * launch has not opened, which the Cloud route cannot serve. Otherwise this
+   * is the not-found it is, at the address this app asked for, which the
+   * generic code's own message ("content not found") does not name.
    */
   const explain404 = async (response: Response, repo: string, fallback: string): Promise<string> => {
     /*
@@ -346,9 +351,9 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
      */
     const pinned = [...ctx.store.collections.pinnedRepos.values()].find((pin) => pin.name === repo)
     if (pinned !== undefined) return `${repo} is pinned but not open on this machine — open it with /repo.open, then retry.`
-    const message = await readErrorMessage(response, fallback)
-    if (/path not found/i.test(message)) return message
-    return `${repo} isn't imported yet — run /repos.import ${repo} first`
+    const body: unknown = await response.json().catch(() => null)
+    const refusal = refusalOf({ body, status: response.status, message: errorMessage(body, fallback) })
+    return refusal.code === "not_found" ? fallback : refusal.message
   }
 
   const localRequest = (repo: Repo, path: string, label: string, verb: "list" | "read") =>

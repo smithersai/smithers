@@ -18,7 +18,8 @@ import { resolveFileTarget } from "./FilesSeam"
  * "file-list" card (entries sorted dirs-first, then by name); /files.read reads
  * the same route for a file path and surfaces the "file" card (base64 decoded,
  * capped at 16 KB, binary refused). Failures are honest strings, never throws;
- * a namespace 404 answers the /repos.import hint. The wire shapes mirror multi
+ * a 404 is reported as the not-found it is, because the platform codes a
+ * missing path and an unknown repository alike. The wire shapes mirror multi
  * src/files/filesClient.ts: a directory answers a JSON array of {name, path,
  * type} entries, a file answers one {path, content, encoding, size} record.
  */
@@ -67,6 +68,15 @@ interface SeenRequest {
   readonly method: string
   readonly url: string
 }
+
+/*
+ * The deployed platform's own 404 body for a path an IMPORTED repository does
+ * not have (C088: /files.read docs/mvp-unlisted-probe.txt on b416, real
+ * account, while GET /api/repos/{owner}/{name} answered 200). It carries the
+ * same `not_found` code as a repository the platform has never seen, which is
+ * why no message and no code can name the cause here.
+ */
+const CONTENT_NOT_FOUND = { status: "error", code: "not_found", message: "content not found" }
 
 /*
  * The platform double: one imported repository (will/flows) answered in the
@@ -138,6 +148,9 @@ const filesBackend = () => {
       () => json(200, { path, content, encoding: "utf-8", size: Buffer.byteLength(content) })
     ])),
     "/api/repos/will/flows/contents/missing.txt": () => json(404, { message: "Path not found: missing.txt" }),
+    /* What the deployed platform answers for a path it does not have (C088, b416, real account). */
+    "/api/repos/will/flows/contents/docs/mvp-unlisted-probe.txt": () => json(404, CONTENT_NOT_FOUND),
+    "/api/repos/will/flows/contents/docs/ghost": () => json(404, CONTENT_NOT_FOUND),
     "/api/repos/will/flows/contents/boom.txt": () => json(500, { message: "the platform fell over" })
   }
   const services: AppServices = {
@@ -274,13 +287,25 @@ describe("files seam — files.list", () => {
     expect(listCard(store, "files-will/flows-src/lib")?.payload.entries).toEqual([])
   })
 
-  test("an un-imported repository's namespace 404 answers the /repos.import hint", async () => {
+  test("a directory the platform does not have is reported as not found, never as a missing import", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    const outcome = await controller.commands.run("files.list", "docs/ghost")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("Path not found: docs/ghost in will/flows")
+    }
+    expect(listCard(store, "files-will/flows-docs/ghost")).toBeUndefined()
+  })
+
+  /* Was "answers the /repos.import hint": the same code answers both causes, so it named the wrong one (C088). */
+  test("an unknown repository's namespace 404 is reported as not found too", async () => {
     const { store, controller } = await freshController()
     await ready(store)
     const outcome = await controller.commands.run("files.list", "src acme/ghost")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
-      expect(outcome.error).toBe("acme/ghost isn't imported yet — run /repos.import acme/ghost first")
+      expect(outcome.error).toBe("Path not found: src in acme/ghost")
     }
     expect(listCard(store, "files-acme/ghost-src")).toBeUndefined()
   })
@@ -391,13 +416,40 @@ describe("files seam — files.read", () => {
     if (outcome.status === "failed") expect(outcome.error).toBe("Path not found: missing.txt")
   })
 
-  test("an un-imported repository's namespace 404 answers the /repos.import hint", async () => {
+  test("a path the platform does not have is reported as not found, never as a missing import", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    const outcome = await controller.commands.run("files.read", "docs/mvp-unlisted-probe.txt")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("Path not found: docs/mvp-unlisted-probe.txt in will/flows")
+    }
+  })
+
+  /* Was "answers the /repos.import hint": the same code answers both causes, so it named the wrong one (C088). */
+  test("an unknown repository's namespace 404 is reported as not found too", async () => {
     const { store, controller } = await freshController()
     await ready(store)
     const outcome = await controller.commands.run("files.read", "README.md acme/ghost")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") {
-      expect(outcome.error).toBe("acme/ghost isn't imported yet — run /repos.import acme/ghost first")
+      expect(outcome.error).toBe("Path not found: README.md in acme/ghost")
+    }
+  })
+
+  /* The one cause local state does name, and the only one left: a pin this launch never opened. */
+  test("a pinned checkout this launch has not opened keeps its own answer", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    await store.dispatch({
+      type: "repo.pinned",
+      actor: "user",
+      pin: { id: "pin-ghost", name: "acme/ghost", path: "/Users/will/ghost", branch: "main", origin: "local", pinnedAt: 1 }
+    }).isPersisted.promise
+    const outcome = await controller.commands.run("files.read", "README.md acme/ghost")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("acme/ghost is pinned but not open on this machine — open it with /repo.open, then retry.")
     }
   })
 })
