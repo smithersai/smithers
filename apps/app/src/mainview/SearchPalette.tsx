@@ -21,7 +21,6 @@ import type { SlashRow } from "./flows/registry"
 import { actionForKey, prefixRow } from "./flows/SearchQuery"
 import type { PrefixRow } from "./flows/SearchQuery"
 import type { PaletteAnswer } from "./state/seams/SearchSeam"
-import { useCoarsePointer } from "./runtime/PointerMode"
 
 /** One selectable row of the overlay. */
 export type PaletteRow =
@@ -180,7 +179,6 @@ const roleWord = (role: SearchAction["role"]): string => (role === "open" ? "Ent
 
 
 export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onHighlight, onChoose }: PaletteOverlayProps) {
-  const touch = useCoarsePointer()
   const revealHighlighted = useCallback((node: HTMLDivElement | null) => {
     if (!node) return
     const row = node.querySelector<HTMLElement>('[aria-selected="true"]')
@@ -266,7 +264,6 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
               <button {...common} key="ask" data-ask="" className="slash-menu-item palette-ask-row" onClick={() => onChoose(row)}>
                 <span className="palette-ask-icon" aria-hidden="true"><Sparkles size={13} /></span>
                 <span className="palette-ask-title">Ask Smithers</span>
-                <span className="slash-menu-description">{touch ? "Type a question or a task, then tap to send" : "Type a question or a task, then press Enter"}</span>
               </button>
             )
           }

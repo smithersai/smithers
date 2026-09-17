@@ -1,6 +1,5 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
-import { FirstSightHint } from "../FirstSightHint"
 import { flowAction } from "../flows/FlowAction"
 import { runtimeFlowName } from "../flows/FlowName"
 import { unmetRequirements,visible,type CatalogItem,type CommandState } from "../flows/registry"
@@ -55,7 +54,7 @@ export function FirstRunActions({ commands }: { commands?: readonly CatalogItem[
   const session = sessions[0]
   if (session?.dismissed ?? controller.store.session().firstRunDismissed) return null
   const identity = identities[0]
-  return <FirstSightHint id="first-run" content="Choose an action to begin."><FirstRunActionsCard commands={commands ?? controller.commands.all()}
+  return <FirstRunActionsCard commands={commands ?? controller.commands.all()}
     repo={session?.repositoryEntry?.repo ?? activeRepositoryId(controller.store) ?? undefined} state={{
     surface: session?.surface ?? "chat", typing: session?.phase === "responding", plugins: session?.plugins,
     signedOut: identity?.state === "signed-out", admin: identity?.admin === true,
@@ -63,5 +62,5 @@ export function FirstRunActions({ commands }: { commands?: readonly CatalogItem[
     publicRepo: activeCatalogRepositoryId(controller.store) !== null,
   }} onRunCommand={controller.runCommand} onDismiss={() => {
     controller.dismissFirstRun()
-  }} /></FirstSightHint>
+  }} />
 }

@@ -96,7 +96,8 @@ test("tutorial query opens the plain app and hint dismissal survives reload", as
   } }))
   await page.goto("/?tutorial")
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
-  const hint = page.locator('[data-first-sight-hint="first-run"] .help-bubble')
+  await expect(page.locator(".help-bubble")).toHaveCount(1)
+  const hint = page.locator('[data-first-sight-hint="chat"] .help-bubble')
   await expect(hint).toBeVisible()
   await hint.getByRole("button", { name: "Dismiss help" }).click()
   await expect(hint).toHaveCount(0)
@@ -104,7 +105,7 @@ test("tutorial query opens the plain app and hint dismissal survives reload", as
   await page.getByRole("link", { name: "Start Here", exact: true }).click()
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await expect(hint).toHaveCount(0)
-  await expect(page.locator(".help-bubble")).toHaveCount(1)
+  await expect(page.locator(".help-bubble")).toHaveCount(0)
 })
 
 test("a signed-out first run opens practice issues from the recommended actions", async ({ page }) => {

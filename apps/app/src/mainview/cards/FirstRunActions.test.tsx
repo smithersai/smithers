@@ -73,6 +73,27 @@ test("flow buttons dispatch once and dismissal survives the next render and relo
   await store.dispose?.()
 })
 
+test("the live card names the actions and adds no sentence about choosing one", async () => {
+  const data = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) },
+  } })
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(<ControllerContext value={{ store, dismissFirstRun: () => {}, dismissHint: () => {}, commands: { all: () => commands }, runCommand: () => {} } as unknown as AppController}><FirstRunActions /></ControllerContext>))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(host.textContent).not.toContain("Choose an action to begin")
+    expect(host.querySelector('[data-testid="first-run-actions"]')?.getAttribute("aria-label")).toBe("Recommended actions")
+    expect([...host.querySelectorAll<HTMLButtonElement>('section[aria-label="Repository jobs"] > button')].map(button => button.textContent)).toEqual(jobTitles)
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+    await store.dispose?.()
+  }
+})
+
 test("the live catalog keeps unavailable runtime and admin plugin flows out", async () => {
   const data = new Map<string, string>()
   const store = await createAppStore({ kind: "localStorage", storage: {
