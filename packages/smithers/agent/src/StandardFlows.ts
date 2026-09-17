@@ -43,8 +43,12 @@ import type * as Path from "@smthrs/kernel/Path"
 import * as MemoryFlows from "@smthrs/memory/Flows"
 import type * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
+import type * as Classifier from "@smthrs/model/Classifier"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
 import * as Bash from "@smthrs/std/Bash"
+import * as Classifiers from "@smthrs/std/Classifiers"
+import * as Classify from "@smthrs/std/Classify"
 import * as Container from "@smthrs/std/Container"
 import * as Edit from "@smthrs/std/Edit"
 import * as Glob from "@smthrs/std/Glob"
@@ -80,6 +84,9 @@ const publicSearchError = (error: StdError): string | undefined => {
   }
   return publicExecutionError(error)
 }
+
+/** A classifier failure names the evaluator's code first, so a cell can read `unreachable` off the message. */
+const publicClassifierError = (error: Classifier.ClassifierError): string => `${error.code}: ${error.message}`
 
 /**
  * The default longest wait a cell may request, in seconds.
@@ -187,6 +194,63 @@ export const tests = (
       FlowBinding.make({ flow: TestRun.flow, handler: TestRun.run, publicError: publicExecutionError }),
       services
     )
+  ])
+
+/**
+ * Options for {@link classify}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ClassifyOptions {
+  /**
+   * The curated classifiers to bind beside the ad-hoc flow, each as
+   * `classify/<id>`. Defaults to the three `@smthrs/std` ships; pass `[]` to
+   * offer the ad-hoc door alone.
+   */
+  readonly classifiers?: ReadonlyArray<Classify.AnyClassifier> | undefined
+}
+
+/**
+ * The cell's doors to Jev, as ordinary flows.
+ *
+ * `classify` takes any JSON state and model-authored questions; each curated
+ * classifier is its own `classify/<id>` flow whose input is the classifier's
+ * state schema and whose description is the classifier's, so the catalog says
+ * what each one judges. Every call is a sealed model call: the curated flows
+ * fold the classifier's digest into their declaration, so a changed question
+ * is a new call identity and a resumed run never replays an answer to a
+ * question that has since changed.
+ *
+ * The one service is the `Evaluator`. A host without a gateway key binds
+ * `Evaluator.layerUnavailable()`, and every call then resolves in the cell as
+ * `{ ok: false, error }` whose message begins `unreachable:`; nothing hangs
+ * and nothing is invented.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const classify = (
+  services: Context.Context<Evaluator.Evaluator>,
+  options: ClassifyOptions = {}
+): FlowBinding.Source =>
+  FlowBinding.source("std/classify", [
+    FlowBinding.provide(
+      FlowBinding.make({ flow: Classify.flow, handler: Classify.run, publicError: publicClassifierError }),
+      services
+    ),
+    ...(options.classifiers ?? Classifiers.all).map((classifier) => {
+      const curated = Classify.curated(classifier)
+      return FlowBinding.provide(
+        FlowBinding.make({
+          flow: curated.flow,
+          handler: curated.run,
+          bodyDigest: curated.digest,
+          publicError: publicClassifierError
+        }),
+        services
+      )
+    })
   ])
 
 /**

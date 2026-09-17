@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `StandardFlows.classify(services, options?)`: the cell's doors to Jev as the source `std/classify`, binding the ad-hoc `classify` flow and one `classify/<id>` flow per curated classifier (the three from `@smthrs/std` by default) over the `Evaluator` service. A host without a gateway key binds `Evaluator.layerUnavailable()` and every call resolves `{ ok: false }` with a message beginning `unreachable:`.
+
 ### Changed
 
 - `SeatResolver.contextWindowTokensFor` now re-exports

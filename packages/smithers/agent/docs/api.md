@@ -1214,6 +1214,36 @@ const AskOutput = Schema.Struct({
 })
 ```
 
+### StandardFlows.classify, StandardFlows.ClassifyOptions
+
+```ts
+interface ClassifyOptions {
+  readonly classifiers?: ReadonlyArray<Classify.AnyClassifier> | undefined
+}
+
+const classify: (
+  services: Context.Context<Evaluator.Evaluator>,
+  options?: ClassifyOptions
+) => FlowBinding.Source
+```
+
+The cell's doors to Jev, as the source `std/classify`: the ad-hoc `classify`
+flow from [`@smthrs/std`](/api/std), and one `classify/<id>` flow per curated
+classifier, whose input is the classifier's state schema (or `{ states }`) and
+whose description is the classifier's. `classifiers` defaults to the three
+`@smthrs/std` ships (`triage/relevance`, `check/verdict`, `edit/risk`); pass
+`[]` to bind the ad-hoc door alone. Every call is a sealed `model:call:*`, so
+the run's capability envelope must grant it. A curated flow folds the
+classifier's digest into its declaration, so a changed question is a new call
+identity and a resumed run never replays an answer to a question that has
+since changed.
+
+The one service is the `Evaluator` from [`@smthrs/model`](/api/model). A host
+without a gateway key binds `Evaluator.layerUnavailable()`, and every call then
+resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
+with a message beginning `unreachable:`; the batch shape reports the same code
+per state. Nothing hangs and nothing is invented.
+
 ### StandardFlows.ApprovalUnavailable
 
 ```ts
