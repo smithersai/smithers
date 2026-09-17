@@ -112,6 +112,18 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
   const run = rows.map(recordOf).find(row => row.runId === record!.runId)
   if (!run || run.flowId !== "repository/setup") return yield* Effect.fail(failure("The workspace returned another run's projection"))
   if (run.status === "completed") {
+    // Lifecycle completion can reach the projection before its typed output.
+    // Keep observing the same run for a bounded, restart-safe interval; an
+    // absent result is neither successful setup nor proof of failed execution.
+    if (run.finalOutput === undefined) {
+      const now = Date.now(), since = record.resultPendingSince ?? now
+      if (now - since < 60_000) {
+        yield* requests.update(login, record, { ...record, resultPendingSince: since, observationError: undefined,
+          receipt: { ...record.receipt, phase: "running", updatedAt: now } })
+        return
+      }
+      return yield* Effect.fail(failure("The setup run completed without a valid result receipt"))
+    }
     let output: unknown
     try { output = typeof run.finalOutput === "string" ? JSON.parse(run.finalOutput) : undefined } catch { /* The typed refusal below keeps the run receipt intact. */ }
     const decoded = SetupOperationResponseSchema.safeParse(output)

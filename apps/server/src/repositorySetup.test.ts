@@ -19,7 +19,7 @@ async function fixture() {
   const background: Promise<unknown>[] = []
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
-    sleepBefore?: string; rejectResumedHost?: boolean;
+    sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed";
     workspaceRefusal?: { status: number; code: string; message: string } } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
@@ -75,7 +75,7 @@ async function fixture() {
       operation, phase: "completed", updatedAt: Date.now(), results: [], evidence: ["actual-host-artifact"],
       ...(operation === "run" ? { jobRunId: "actual-manual-job" } : {}) }
     return frame({ selector: body.payload.selector, rows: [{ runId: `run-${id}`, flowId: "repository/setup", status: options.runState, updatedAt: Date.now(), verdict: "Run failed",
-      ...(options.runState === "completed" ? { finalOutput: JSON.stringify({ requestId: receipt.requestId, revision: input.revision, digest: input.digest, receipt }) } : {}) }] })
+      ...(options.runState === "completed" && options.resultPayload !== "missing" ? { finalOutput: options.resultPayload === "malformed" ? "not JSON" : JSON.stringify({ requestId: receipt.requestId, revision: input.revision, digest: input.digest, receipt }) } : {}) }] })
   }) as typeof fetch
   const send = (method: string, suffix: string, login = "alice", body?: unknown) => worker.fetch(new Request(`https://app.test/api/repository-setup/${suffix}`, {
     method, headers: { "content-type": "application/json", ...(login ? { cookie: `session=${login}` } : {}), "x-user-login": "forged" },
@@ -234,6 +234,65 @@ test("a closed browser and a restarted Durable Object still launch and finish th
   await t.durable.runGatewayAlarms()
   expect(t.durable.pendingGatewayAlarms()).toEqual([])
   expect(t.launched.size).toBe(1)
+})
+
+test("completed setup waits for its typed output across restart without replaying work", async () => {
+  const t = await fixture()
+  t.options.runState = "completed"; t.options.resultPayload = "missing"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const waiting = await t.read()
+  expect(waiting.status).toBe(202)
+  expect((await waiting.json() as { receipt: { phase: string } }).receipt.phase).toBe("running")
+  await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const pending = t.durable.gatewayRows("alice").get(key) as { resultPendingSince?: number; result?: unknown; observationError?: string }
+  expect(pending.resultPendingSince).toBeGreaterThan(0)
+  expect(pending.result).toBeUndefined()
+  expect(pending.observationError).toBeUndefined()
+  t.durable.restart()
+  t.options.resultPayload = undefined
+  await t.durable.runGatewayAlarms()
+  const completed = await t.read()
+  expect(completed.status).toBe(200)
+  expect((await completed.json() as { receipt: { phase: string } }).receipt.phase).toBe("completed")
+  expect(t.calls.filter(call => call.tag === "Plan")).toHaveLength(1)
+  expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
+  expect(t.launched.size).toBe(1)
+})
+
+test("a missing completed output has a persisted observation deadline and can reconnect to its eventual receipt", async () => {
+  const t = await fixture()
+  t.options.runState = "completed"; t.options.resultPayload = "missing"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const rows = t.durable.gatewayRows("alice")
+  const pending = rows.get(key) as Record<string, unknown>
+  rows.set(key, { ...pending, resultPendingSince: Date.now() - 61_000 })
+  t.durable.restart()
+  await t.durable.runGatewayAlarms()
+  const expired = await t.read()
+  expect(expired.status).toBe(503)
+  const stored = rows.get(key) as { result?: unknown; receipt: { phase: string }; observationError?: string }
+  expect(stored.result).toBeUndefined()
+  expect(stored.receipt.phase).toBe("running")
+  expect(stored.observationError).toContain("without a valid result receipt")
+  await t.settle()
+  t.options.resultPayload = undefined
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  expect((await t.read()).status).toBe(200)
+  expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
+})
+
+test("malformed completed output is refused without receiving the absent-output grace period", async () => {
+  const t = await fixture()
+  t.options.runState = "completed"; t.options.resultPayload = "malformed"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  expect((await t.read()).status).toBe(503)
+  const stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as { result?: unknown; resultPendingSince?: number }
+  expect(stored.result).toBeUndefined()
+  expect(stored.resultPendingSince).toBeUndefined()
+  await t.settle()
+  expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
 })
 
 test("retry can echo the server-pinned workspace but cannot move an admitted request", async () => {

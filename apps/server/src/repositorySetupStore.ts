@@ -12,7 +12,8 @@ export const SetupRecordSchema = z.object({ version: z.number().int().nonnegativ
   workspaceId: z.string().uuid().optional(),
   binding: z.object({ gatewayId: z.string().min(1), workspaceId: z.string().uuid().optional() }).optional(),
   plan: SetupPlanSchema.optional(), runId: z.string().min(1).optional(), receipt: SetupReceiptSchema,
-  result: SetupOperationResponseSchema.optional(), observationError: z.string().max(1000).optional() })
+  result: SetupOperationResponseSchema.optional(), observationError: z.string().max(1000).optional(),
+  resultPendingSince: z.number().int().nonnegative().optional() })
 export type SetupRecord = z.infer<typeof SetupRecordSchema>
 const KeySchema = z.string().min(1).max(128).regex(/^[a-zA-Z0-9:_-]+$/)
 const CommandSchema = z.discriminatedUnion("action", [
