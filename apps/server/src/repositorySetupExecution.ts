@@ -22,7 +22,7 @@ const stamps = (record: SetupRecord, ...names: readonly Instant[]): Partial<Reco
   Object.fromEntries(names.filter(name => record[name] === undefined).map(name => [name, Date.now()]))
 
 /** Cloud deduplicates one compatible automation VM without replacing the user's existing primary. */
-const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string | undefined) => Effect.gen(function* () {
+const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string | undefined, replacing = false) => Effect.gen(function* () {
   const config = yield* ServerConfig
   const endpoint = new URL(`/api/repos/${record.input.repo}/workspaces${workspaceId ? `/${workspaceId}` : ""}`, config.cloudApiBaseUrl)
   const call = (token: string) => fetchWithDeadline("The repository workspace", endpoint, {
@@ -45,6 +45,10 @@ const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string 
   // A pin Cloud answers with its typed not-found is stale state; only the
   // English differs between a deleted row and one lost with its VM.
   if (workspaceId !== undefined && response.status === 404 && body.code === "not_found") return { status: "gone" } as const
+  // Cloud refusing to replace a workspace it has just disowned is the same
+  // fact the pin already proved: its side still holds the dead binding. Say
+  // the one thing that is true and leave the queue, instead of asking again.
+  if (replacing && response.status === 409 && body.code === "conflict") return { status: "gone" } as const
   if (!response.ok) return yield* Effect.fail(failure(typeof body.message === "string" ? body.message : `The repository workspace answered HTTP ${response.status}`))
   if (!isGatewayWorkspaceId(body.id) || (workspaceId !== undefined && body.id !== workspaceId)
     || (body.repo_full_name !== undefined && body.repo_full_name !== record.input.repo)) return yield* Effect.fail(failure("Cloud returned a different repository workspace"))
@@ -62,7 +66,7 @@ const selectWorkspace = (login: string, record: SetupRecord) => Effect.gen(funct
   const pinned = record.workspaceId ?? record.input.workspaceId
   const selected = yield* setupWorkspace(login, record, pinned)
   if (selected.status !== "gone") return selected
-  const replacement = yield* setupWorkspace(login, record, undefined)
+  const replacement = yield* setupWorkspace(login, record, undefined, true)
   return replacement.status === "gone" ? yield* Effect.fail(workspaceGone()) : replacement
 })
 

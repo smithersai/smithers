@@ -62,9 +62,15 @@ const key = (id: string) => `${REQUEST_PREFIX}${id}`
 export const setupPointerKey = (repo: string, job: RepositoryJob) => `repository-setup:current:${encodeURIComponent(repo)}:${job}`
 export const SETUP_QUEUE_KEY = "repository-setup:pending"
 export interface SetupQueue { readonly login: string; readonly requests: Record<string, number> }
+/**
+ * The pin is the request's candidate, never its identity: the workspace this
+ * request resolved to is as much its own as the one it asked for, so a retry
+ * that carries the pin a poll reported back is the same operation. Any other
+ * workspace still names a different one.
+ */
 const sameInput = (a: SetupHostInput, b: SetupHostInput, resolvedWorkspace?: string) => a.repo === b.repo && a.job === b.job && a.operation === b.operation
   && a.digest === b.digest && a.revision === b.revision && JSON.stringify(a.manual) === JSON.stringify(b.manual) && (a.workspaceId === b.workspaceId ||
-    (a.workspaceId === undefined && resolvedWorkspace !== undefined && b.workspaceId === resolvedWorkspace))
+    (resolvedWorkspace !== undefined && b.workspaceId === resolvedWorkspace))
 
 /** One lock per existing GatewaySessionRegistry object, never per HTTP request. */
 export class SetupStorageMutex extends Context.Service<SetupStorageMutex, Semaphore.Semaphore>()("smithers-server/SetupStorageMutex") {}

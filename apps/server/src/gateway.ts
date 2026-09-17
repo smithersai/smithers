@@ -904,6 +904,15 @@ const isSleepingGateway = (response: Response): Effect.Effect<boolean> =>
       (body.message === "repo gateway is not running" || body.message === "bound workspace is not running at the recorded VM"))
   )
 
+// The same API rejects a call bound to a workspace it no longer has before the
+// workspace's own host sees the frame. Only Cloud says `not_found`; a host
+// behind the relay calls its own missing address `route_not_found`, so the
+// code alone tells a dead binding from an answer the engine gave.
+const isWorkspaceGone = (response: Response, workspaceId: string | undefined): Effect.Effect<boolean> =>
+  response.status !== 404 || workspaceId === undefined ? Effect.succeed(false) : readJsonOrUndefined(response.clone()).pipe(
+    Effect.map((body) => typeof body === "object" && body !== null && "code" in body && body.code === "not_found")
+  )
+
 /**
  * How long a freshly minted record is trusted before another tunnel failure may
  * force a second re-provision. Without it an EventSource that reconnects every
@@ -1021,6 +1030,10 @@ export const callGateway = (
       const attempted = yield* relayAttempt(record, path, init)
       if (Result.isFailure(attempted)) return unreachable(attempted.failure)
       const response = attempted.success
+      if (yield* isWorkspaceGone(response, init.workspaceId)) {
+        yield* discardBody(response)
+        return { status: "workspace_gone", detail: WORKSPACE_GONE_REFUSAL } as const
+      }
       if (response.status === 401 || isTunnelFailure(response.status) || (yield* isSleepingGateway(response))) {
         // Stale record: the next provisioning call refreshes it. A read does not.
         yield* discardBody(response)
@@ -1031,6 +1044,12 @@ export const callGateway = (
     const gateway = yield* ensureGateway(login, repo, false, init.workspaceId, init.requiredCapability)
     if (gateway.status !== "ready") return gateway
     const first = yield* relayAttempt(gateway.record, path, init)
+    // A binding Cloud has disowned is not stale caching: re-POSTing the
+    // provision route cannot conjure the workspace back, so the call ends here.
+    if (Result.isSuccess(first) && (yield* isWorkspaceGone(first.success, init.workspaceId))) {
+      yield* discardBody(first.success)
+      return { status: "workspace_gone", detail: WORKSPACE_GONE_REFUSAL } as const
+    }
     /*
      * Three things force exactly ONE re-provision, all from §5: a 401 (the VM
      * was reprovisioned under a live token), an unreachable base_url, and a

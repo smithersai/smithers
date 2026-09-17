@@ -21,7 +21,7 @@ async function fixture() {
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
     sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed"; onSnapshot?: () => Promise<void>;
-    lostWorkspace?: string; lostGateway?: string; newWorkspace?: string;
+    lostWorkspace?: string; lostGateway?: string; newWorkspace?: string; boundReplacement?: boolean; lostRelay?: boolean;
     workspaceRefusal?: { status: number; code: string; message: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
@@ -58,6 +58,9 @@ async function fixture() {
       workspaceCalls.push({ method: request.method, path: url.pathname, ...(request.method === "POST" ? { body: await request.json() } : {}) })
       if (options.workspaceRefusal) return Response.json(options.workspaceRefusal, { status: options.workspaceRefusal.status })
       if (options.lostWorkspace && url.pathname.endsWith(`/${options.lostWorkspace}`)) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
+      // Cloud keeps the deleted workspace's capability binding, so the
+      // allocation that would replace it is refused as a conflict.
+      if (options.boundReplacement && request.method === "POST") return Response.json({ code: "conflict", fault: "user", message: "the selected repository workspace is unavailable; its existing binding is preserved" }, { status: 409 })
       return Response.json({ id: request.method === "POST" ? options.newWorkspace ?? workspaceIds[login] : url.pathname.split("/").pop(),
         status: options.workspaceState, kind: "vm", repo_full_name: "org/repo" })
     }
@@ -66,6 +69,9 @@ async function fixture() {
     expect(request.headers.get("authorization")).toBe(`Bearer synthetic-${login}`)
     const body = JSON.parse(await request.text()) as { tag: string; payload: Record<string, unknown> }
     calls.push({ login, ...body })
+    // Cloud's relay authorizer refuses a call bound to a workspace it no
+    // longer has before the workspace's own host ever sees the frame.
+    if (options.lostRelay) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
     if (body.tag === "Projection.Snapshot" && options.relayStatus) return Response.json({ message: "Unavailable" }, { status: options.relayStatus })
     if (options.sleepBefore === body.tag) {
       options.sleepBefore = undefined
@@ -854,6 +860,23 @@ test.each(["inspect", "evaluate", "trial", "apply"])("%s pinned to a deleted wor
   await t.settle()
 })
 
+test("a retry carrying the adopted replacement pin is admitted; an unrelated pin is still refused", async () => {
+  const t = await fixture()
+  t.options.lostWorkspace = t.workspaceIds.alice
+  t.options.newWorkspace = REPLACEMENT_WORKSPACE
+  expect((await t.send("POST", "inspect", "alice", { ...t.input, workspaceId: t.workspaceIds.alice })).status).toBe(202)
+  await t.settle()
+  expect((t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord).workspaceId).toBe(REPLACEMENT_WORKSPACE)
+  // The browser adopts the replacement on the poll that reports it, so every
+  // later retry of the same request carries the replacement, not the dead pin.
+  expect((await t.send("POST", "inspect", "alice", { ...t.input, workspaceId: REPLACEMENT_WORKSPACE })).status).toBe(202)
+  expect((await t.send("POST", "inspect", "alice", { ...t.input, workspaceId: t.workspaceIds.alice })).status).toBe(202)
+  const other = await t.send("POST", "inspect", "alice", { ...t.input, workspaceId: t.workspaceIds.bob })
+  expect(other.status).toBe(409)
+  expect((await other.json() as { message: string }).message).toBe("This request id already names another setup operation")
+  await t.settle()
+})
+
 test("a deleted workspace on the bound gateway path settles a typed retryable failure whose repeat allocates", async () => {
   const t = await fixture()
   t.options.lostGateway = t.workspaceIds.alice
@@ -881,6 +904,58 @@ test("a deleted workspace on the bound gateway path settles a typed retryable fa
   const done = t.durable.gatewayRows("alice").get(`repository-setup:request:${repeat.requestId}`) as SetupRecord
   expect(done.workspaceId).toBe(REPLACEMENT_WORKSPACE)
   expect(done.receipt.phase).toBe("completed")
+  expect(t.launched.size).toBe(1)
+})
+
+test("a replacement Cloud refuses because the dead workspace still holds the binding settles typed", async () => {
+  const t = await fixture()
+  t.options.lostWorkspace = t.workspaceIds.alice
+  t.options.boundReplacement = true
+  expect((await t.send("POST", "evaluate", "alice", { ...t.input, workspaceId: t.workspaceIds.alice })).status).toBe(202)
+  await t.settle()
+  const failed = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord
+  expect(failed.receipt.phase).toBe("failed")
+  expect(failed.receipt.error).toBe(WORKSPACE_GONE)
+  expect(failed.result?.receipt?.error).toBe(WORKSPACE_GONE)
+  expect(failed.observationError).toBeUndefined()
+  expect(t.calls).toEqual([])
+  const settled = await t.read()
+  expect(settled.status).toBe(200)
+  // A settled request leaves the observation queue instead of re-issuing the
+  // refused GET and POST on every alarm tick.
+  await t.durable.runGatewayAlarms()
+  await t.settle()
+  expect(t.workspaceCalls).toEqual([
+    { method: "GET", path: `/api/repos/org/repo/workspaces/${t.workspaceIds.alice}` },
+    { method: "POST", path: "/api/repos/org/repo/workspaces", body: { kind: "vm", name: "Repository", required_capability: "repository-jobs/v1" } }
+  ])
+})
+
+test("a relay that refuses a bound call with Cloud's typed not-found settles instead of reprovisioning", async () => {
+  const t = await fixture()
+  const rows = t.durable.gatewayRows("alice")
+  expect((await t.send("POST", "apply", "alice", t.input)).status).toBe(202)
+  await t.settle()
+  expect((rows.get(`repository-setup:request:${t.input.requestId}`) as SetupRecord).receipt.phase).toBe("running")
+  const provisions = t.capabilityCalls.length
+  t.options.lostRelay = true
+  const observed = await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)
+  expect(observed.status).toBe(200)
+  expect((await observed.json() as { receipt: { error: string } }).receipt.error).toBe(WORKSPACE_GONE)
+  await t.settle()
+  const failed = rows.get(`repository-setup:request:${t.input.requestId}`) as SetupRecord
+  expect(failed.receipt.phase).toBe("failed")
+  expect(failed.receipt.error).toBe(WORKSPACE_GONE)
+  expect(failed.observationError).toBeUndefined()
+  // The provisioning leg reads the same refusal and settles on it rather than
+  // re-POSTing the gateway route until the record's half-life passes.
+  const repeat = { ...t.input, requestId: "setup-relay" }
+  expect((await t.send("POST", "evaluate", "alice", repeat)).status).toBe(202)
+  await t.settle()
+  const second = rows.get(`repository-setup:request:${repeat.requestId}`) as SetupRecord
+  expect(second.receipt.phase).toBe("failed")
+  expect(second.receipt.error).toBe(WORKSPACE_GONE)
+  expect(t.capabilityCalls).toHaveLength(provisions)
   expect(t.launched.size).toBe(1)
 })
 
