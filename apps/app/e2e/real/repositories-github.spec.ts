@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises"
 import { scenario } from "./coverage/types"
 import { fixtureRepositoryName } from "./support/values"
 import { command, expect, realApi, test } from "./support/test"
@@ -98,9 +99,9 @@ authenticatedTest(
   "the existing GitHub App installation verifies the canary and survives a status re-check",
   scenario("repositories.github-app-status-recheck", {
     capabilities: ["identity", "cloud"],
-    description: "Resolve the exact App installation from Smithers' status or linked door, independently verify its canary inventory, reconcile the wiring, then require a re-check to preserve installed state.",
+    description: "Resolve the exact App installation from Smithers' status or linked door, independently verify its canary inventory, then require a re-check to preserve installed state.",
     coverage: [
-      "action:github.app", "action:github.reconcile", "host:production", "path:success", "door:slash", "door:button",
+      "action:github.app", "host:production", "path:success", "door:slash", "door:button",
       "dimension:github-app-installed", "dimension:installation-inventory", "dimension:status-recheck",
       "evidence:session-card-status-and-installation-readback"
     ]
@@ -156,19 +157,6 @@ authenticatedTest(
     })
     expect(selected).toBe(true)
 
-    const reconcilePath = cloudRepoPath(PRODUCTION_REPO, "/github/reconcile")
-    const reconciling = page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === reconcilePath)
-    await command(page, `/github.reconcile ${PRODUCTION_REPO}`)
-    const reconcileResponse = await reconciling
-    await attachProductionJson(testInfo, "github-app-reconcile-response", {
-      method: reconcileResponse.request().method(),
-      path: new URL(reconcileResponse.url()).pathname,
-      status: reconcileResponse.status()
-    })
-    expect(reconcileResponse.status()).toBe(202)
-    await expectFlowOutcome(page, "github.reconcile", PRODUCTION_REPO, "executed")
-    await dismissComposer(page)
     await expect(card).toContainText(/GitHub App installed.*configured/)
 
     const rechecked = page.waitForResponse((response) =>
@@ -379,15 +367,15 @@ authenticatedTest(
   "a repository created in GitHub imports into Smithers Cloud and is deleted from both services",
   scenario("repositories.github-create-import-cleanup", {
     capabilities: ["identity", "cloud"],
-    description: "Create a uniquely named private GitHub repository through GitHub's real UI, import it through Smithers, verify the mirrored branch, then delete the owned fixture from Smithers Cloud and GitHub.",
+    description: "Create a private GitHub repository, import it through Smithers, verify its branch and completed reconciliation, then delete the owned fixture from both services.",
     coverage: [
-      "action:repos.import", "host:production", "path:success", "door:slash",
-      "dimension:github-repository-create", "dimension:cloud-import", "dimension:two-service-cleanup",
-      "evidence:github-ui-import-card-cloud-api-and-deletion-readback"
+      "action:repos.import", "action:github.reconcile", "host:production", "path:success", "door:slash",
+      "dimension:github-repository-create", "dimension:cloud-import", "dimension:mirror-terminal-run", "dimension:two-service-cleanup",
+      "evidence:github-ui-import-card-mirror-run-and-deletion-readback"
     ]
   }),
   async ({ page, request, context }, testInfo) => {
-    testInfo.setTimeout(420_000)
+    testInfo.setTimeout(900_000)
     await bootProductionRepository(page)
     await enableProductionVerbose(page)
     const appStatusPath = cloudRepoPath(PRODUCTION_REPO, "/github-app-status")
@@ -404,7 +392,11 @@ authenticatedTest(
     await attachProductionJson(testInfo, "github-import-preflight", { appStatus })
     expect(appStatus.github_app_installed).toBe(true)
     expect(appStatus.github_app_configured).toBe(true)
-    expect(typeof appStatus.installation_id).toBe("number")
+    // Public status may omit the ID; the caller's inventory is authoritative.
+    const installations = await readJson<{
+      readonly repos?: ReadonlyArray<{ readonly fullName: string; readonly installationId: number }>
+    }>(page, request, "/api/user/github-app/installations")
+    expect(typeof installations.repos?.find(repo => repo.fullName === PRODUCTION_REPO)?.installationId).toBe("number")
 
     const name = fixtureRepositoryName(`smithers-e2e-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     let owned: OwnedGitHubRepository | undefined
@@ -452,6 +444,29 @@ authenticatedTest(
       expect(defaultBranch).toBeDefined()
       expect(typeof defaultBranch?.target_commit_id).toBe("string")
       await attachProductionJson(testInfo, "github-import", { owned: owned.fullName, terminal, repository, bookmarks })
+
+      // Reconcile only this disposable repository. The shared canary can have
+      // active changes from other tests, and reconciliation may prune refs.
+      const reconcilePath = cloudRepoPath(owned.fullName, "/github/reconcile")
+      const reconciling = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === reconcilePath)
+      await command(page, `/github.reconcile ${owned.fullName}`)
+      const reconcileResponse = await reconciling
+      expect(reconcileResponse.status()).toBe(202)
+      const reconcile = await reconcileResponse.json() as { run_id?: unknown }
+      expect(typeof reconcile.run_id).toBe("number")
+      await expectFlowOutcome(page, "github.reconcile", owned.fullName, "executed")
+      let mirrorRun: { state: string; failed_refs: number; refs: unknown[] } | undefined
+      await expect.poll(async () => {
+        mirrorRun = await readJson(page, request, cloudRepoPath(owned!.fullName, `/mirror-sync/${reconcile.run_id}`))
+        return mirrorRun?.state
+      }, { timeout: 620_000, intervals: [1_000, 2_000, 5_000] }).toMatch(/^(succeeded|failed)$/)
+      const mirrorReceipt = { repository: owned.fullName, runId: reconcile.run_id, run: mirrorRun }
+      const mirrorReceiptPath = testInfo.outputPath("owned-github-reconciliation.json")
+      await writeFile(mirrorReceiptPath, JSON.stringify(mirrorReceipt, null, 2))
+      await testInfo.attach("owned-github-reconciliation", { path: mirrorReceiptPath, contentType: "application/json" })
+      expect(mirrorRun?.state, JSON.stringify(mirrorReceipt)).toBe("succeeded")
+      expect(mirrorRun?.failed_refs).toBe(0)
     } catch (error) {
       scenarioError = error
     }

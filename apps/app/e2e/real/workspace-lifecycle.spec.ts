@@ -217,7 +217,11 @@ workflowTest(
       response.request().method() === "DELETE" && new URL(response.url()).pathname === path)
     await deleteButton.press("Enter")
     expect((await deletion).status()).toBe(204)
+    await expectFlowOutcome(page, "workspace.delete", `${workspaceId} ${name}`, "executed")
     await expect.poll(async () => (await realApi(page, request, "GET", path)).status(), { timeout: 60_000 }).toBe(404)
+    await expect(card).toHaveCount(0)
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
     await expect(card).toHaveCount(0)
     await attachProductionJson(testInfo, "workspace-lifecycle", {
       repo: workflowRepo.repo, workspaceId, name, before, suspended, resumed,

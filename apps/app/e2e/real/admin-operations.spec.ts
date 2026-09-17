@@ -1,11 +1,8 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { command, expect, openApp, closeComposer } from "./support"
+import { command, expect, closeComposer } from "./support"
 
-const openChat = async (page: Parameters<typeof openApp>[0]): Promise<void> => {
-  await page.getByRole("button", { name: "Chat", exact: true }).click()
-  await expect(page.getByTestId("composer-input")).toBeVisible()
-}
+import { bootProductionRepository } from "./repositories-github/production"
 
 authenticatedTest("admin reset asks for confirmation and cancel preserves the live transcript", scenario("admin.reset-confirm-cancel", {
   capabilities: ["identity"],
@@ -16,20 +13,15 @@ authenticatedTest("admin reset asks for confirmation and cancel preserves the li
   ],
   description: "An authenticated admin reaches the real destructive reset dialog, verifies its exact warning, cancels by keyboard, and proves the current transcript and session remain present."
 }), async ({ page }) => {
-  await openApp(page)
-  await openChat(page)
-  await command(page, "/admin.devtools")
+  await bootProductionRepository(page)
+  if (!await page.locator(".devtools-panel").isVisible()) await command(page, "/admin.devtools")
   await closeComposer(page)
   await expect(page.locator(".devtools-panel")).toBeVisible()
   await command(page, "/admin.health")
   await closeComposer(page)
   const health = page.locator('.smithers-card[data-kind="admin-health"]').last()
   await expect(health).toBeVisible({ timeout: 30_000 })
-  const reset = page.locator(".corner-reset-btn")
-  await expect(reset).toBeVisible()
-  await reset.focus()
-  await expect(reset).toBeFocused()
-  await reset.press("Enter")
+  await command(page, "/admin.reset.ask")
   const dialog = page.getByRole("dialog", { name: "Start a fresh conversation?" })
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText("everything on screen will be discarded")
@@ -52,7 +44,7 @@ authenticatedTest("admin grant cancellation never posts a billing mutation", sce
   ],
   description: "The real admin grant flow creates a confirmation card but canceling it removes the card without sending a billing grant request."
 }), async ({ page }) => {
-  await openApp(page)
+  await bootProductionRepository(page)
   const requests: Array<{ method: string; path: string }> = []
   page.on("request", request => {
     const url = new URL(request.url())
@@ -60,44 +52,45 @@ authenticatedTest("admin grant cancellation never posts a billing mutation", sce
       requests.push({ method: request.method(), path: url.pathname })
     }
   })
-  await command(page, "/admin.grant 0 smithers-e2e-invalid")
+  await command(page, "/admin.grant 1 smithers-e2e-invalid")
   await closeComposer(page)
   const card = page.locator('.smithers-card[data-kind="grant-confirm"]').last()
   await expect(card).toBeVisible()
-  await expect(card).toContainText("Grant $0")
+  await expect(card).toContainText("Grant $1")
   await expect(card).toContainText("smithers-e2e-invalid")
   await card.getByRole("button", { name: "Cancel", exact: true }).press("Enter")
   await expect(card).toBeHidden()
   expect(requests).toEqual([])
 })
 
-authenticatedTest("admin grant rejects invalid amount after explicit confirmation", scenario("admin.grant-invalid-amount-refusal", {
+authenticatedTest("admin grant rejects zero amount before any billing mutation", scenario("admin.grant-invalid-amount-refusal", {
   capabilities: ["identity"],
   coverage: [
-    "action:admin.grant", "action:admin.grant.confirm", "host:production", "path:error", "path:keyboard",
+    "action:admin.grant", "host:production", "path:error", "path:keyboard",
     "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:grant-validation", "dimension:no-credit",
-    "evidence:grant-request-response-and-failed-card"
+    "evidence:validation-form-and-no-billing-request"
   ],
-  description: "The operator must explicitly confirm a malformed zero-dollar grant; the live admin endpoint refuses it and the card records an error rather than claiming credit."
+  description: "A zero-dollar grant remains in the validation form; submitting it still produces no billing request or grant confirmation."
 }), async ({ page }) => {
-  await openApp(page)
-  const responses: Array<{ method: string; path: string; status: number }> = []
-  page.on("response", response => {
-    const url = new URL(response.url())
-    if (url.pathname === "/api/admin/grant" || url.pathname === "/api/billing/admin/grants") {
-      responses.push({ method: response.request().method(), path: url.pathname, status: response.status() })
-    }
+  await bootProductionRepository(page)
+  const requests: string[] = []
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === "POST" && (path === "/api/admin/grant" || path === "/api/billing/admin/grants")) requests.push(path)
   })
   await command(page, "/admin.grant 0 smithers-e2e-invalid")
   await closeComposer(page)
-  const card = page.locator('.smithers-card[data-kind="grant-confirm"]').last()
-  await expect(card).toBeVisible()
-  await card.getByRole("button", { name: "Post the grant", exact: true }).press("Enter")
-  await expect(card.getByRole("alert")).toBeVisible({ timeout: 30_000 })
-  await expect(card).toContainText(/grant|amount|zero|positive/i)
-  expect(responses.some(response => response.method === "POST" && response.status >= 400)).toBe(true)
-  await card.getByRole("button", { name: "Cancel", exact: true }).press("Enter")
-  await expect(card).toBeHidden()
+  const form = page.getByRole("region", { name: "Grant balance to a login (asks for confirmation first)", exact: true }).last()
+  await expect(form).toBeVisible()
+  await expect(form.getByRole("spinbutton", { name: "Amount usd" })).toHaveValue("0")
+  await expect(form.getByRole("alert")).toContainText(/amount in dollars/)
+  await form.getByRole("button", { name: "Submit", exact: true }).press("Enter")
+  await expect(form).toHaveAttribute("data-status", "error")
+  await expect(form.getByRole("alert")).toBeVisible()
+  await expect(page.locator('.smithers-card[data-kind="grant-confirm"]')).toHaveCount(0)
+  expect(requests).toEqual([])
+  await form.getByRole("button", { name: "Cancel", exact: true }).press("Enter")
+  await expect(form).toBeHidden()
 })
 
 authenticatedTest("admin allowlist add and remove are real, observable, and cleaned up", scenario("admin.allowlist-add-remove-cleanup", {
@@ -108,7 +101,7 @@ authenticatedTest("admin allowlist add and remove are real, observable, and clea
   ],
   description: "A unique disposable login is added and removed through the live admin allowlist route; both responses are observed and cleanup runs even when an assertion fails."
 }), async ({ page }) => {
-  await openApp(page)
+  await bootProductionRepository(page)
   const login = `smithers-e2e-${Date.now()}`
   const responses: Array<{ action: string; status: number }> = []
   page.on("response", async response => {
