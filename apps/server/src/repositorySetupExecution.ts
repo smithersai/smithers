@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect"
 import { SetupOperationResponseSchema, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
-import { callGateway, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, type GatewaySessions } from "./gateway"
+import { callGateway, cloudTokenRefusalMessage, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, type GatewaySessions } from "./gateway"
 import { decodeGatewayResponse, encodeGatewayRequest, GATEWAY_PROCEDURE_MOUNTS, NON_REPLAYABLE_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import { discardBody, fetchWithDeadline, readBoundedJson, readBoundedText, type Transport } from "./Http"
 import { ServerConfig } from "./Config"
@@ -25,12 +25,12 @@ const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(functi
     ...(workspaceId ? {} : { body: JSON.stringify({ kind: "vm", name: "Repository", required_capability: "repository-jobs/v1" }) })
   }, config.upstreamTimeoutMs)
   let token = yield* fetchCloudToken(login)
-  if (token.status !== "ok") return yield* Effect.fail(failure(token.detail))
+  if (token.status !== "ok") return yield* Effect.fail(failure(cloudTokenRefusalMessage(token, token.detail)))
   let response = yield* call(token.token)
   if (response.status === 401) {
     yield* discardBody(response)
     token = yield* fetchCloudToken(login)
-    if (token.status !== "ok") return yield* Effect.fail(failure(token.detail))
+    if (token.status !== "ok") return yield* Effect.fail(failure(cloudTokenRefusalMessage(token, token.detail)))
     response = yield* call(token.token)
   }
   const body = recordOf(yield* readBoundedJson(response, 16_000))

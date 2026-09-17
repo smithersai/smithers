@@ -13,7 +13,7 @@ import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
 import { CLIENT_ERROR_UNKNOWN_SOURCE, ClientErrors } from "./clientErrorLog"
 import { ServerConfig } from "./Config"
 import { BrowserEgress } from "./Environment"
-import { fetchCloudToken } from "./gateway"
+import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
 import { requireTurnSession } from "./identity"
@@ -154,11 +154,9 @@ export const handlePlatformProxy = (
       )
     }
     const token = yield* fetchCloudToken(gate.login)
-    if (token.status === "not_eligible") {
-      return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
-    }
     if (token.status !== "ok") {
-      return refuse("cloud_token_unavailable", `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
+      const refusal = cloudTokenRefusal(token, `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
+      return refuse(refusal.code, refusal.message)
     }
     let body: Uint8Array<ArrayBuffer> | undefined
     if (request.method !== "GET" && request.method !== "HEAD") {

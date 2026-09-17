@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
-import { fetchCloudToken } from "./gateway"
+import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline } from "./Http"
 import { validateSession } from "./identity"
 import { ISOLATION_HEADERS, methodNotAllowed, notFound, refuse } from "./Responses"
@@ -128,8 +128,10 @@ export const handleTerminalRelay = (request: Request, url: URL) => Effect.gen(fu
   if (identity.status === "unavailable") return identity.response
   if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return refuse("request_invalid", "Expected a WebSocket upgrade.")
   const token = yield* fetchCloudToken(identity.identity.login)
-  if (token.status === "not_eligible") return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
-  if (token.status !== "ok") return refuse("cloud_token_unavailable", "Smithers Cloud isn't reachable for your account right now.")
+  if (token.status !== "ok") {
+    const refusal = cloudTokenRefusal(token, "Smithers Cloud isn't reachable for your account right now.")
+    return refuse(refusal.code, refusal.message)
+  }
   const config = yield* ServerConfig
   // Worker fetch performs a WebSocket handshake over HTTP(S). Only these
   // headers leave the Worker: no page cookie, Origin, token protocol or query.

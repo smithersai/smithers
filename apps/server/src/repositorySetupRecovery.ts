@@ -2,7 +2,7 @@ import { Data, Effect } from "effect"
 import { z } from "zod"
 import { RepositoryJobSchema, SetupDraftSchema, setupCandidate, type RepositoryJob, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { ServerConfig } from "./Config"
-import { fetchCloudToken } from "./gateway"
+import { cloudTokenRefusalMessage, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import { SetupRequests, type SetupRecord } from "./repositorySetupStore"
 
@@ -32,7 +32,7 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
   const config = yield* ServerConfig
   const read = (path: string, limit: number) => Effect.gen(function* () {
     let token = yield* fetchCloudToken(login)
-    if (token.status !== "ok") return yield* fail("Repository registration authentication is unavailable")
+    if (token.status !== "ok") return yield* fail(cloudTokenRefusalMessage(token, "Repository registration authentication is unavailable"))
     const call = (value: string) => fetchWithDeadline("Repository registrations", new URL(path, config.cloudApiBaseUrl), {
       headers: { authorization: `Bearer ${value}` }
     }, config.upstreamTimeoutMs)
@@ -40,7 +40,7 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
     if (response.status === 401) {
       yield* discardBody(response)
       token = yield* fetchCloudToken(login)
-      if (token.status !== "ok") return yield* fail("Repository registration authentication is unavailable")
+      if (token.status !== "ok") return yield* fail(cloudTokenRefusalMessage(token, "Repository registration authentication is unavailable"))
       response = yield* call(token.token)
     }
     if (!response.ok) { yield* discardBody(response); return yield* fail(`Repository registrations answered HTTP ${response.status}`) }

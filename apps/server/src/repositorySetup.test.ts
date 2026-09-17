@@ -774,6 +774,28 @@ test.each(["source_revision", "flow_id", "mode", "digest", "workspace_id"])("reg
   expect(t.workspaceCalls).toEqual([])
 })
 
+test("a closed-alpha refusal at the Cloud token door reaches setup execution and recovery as the allowlist refusal", async () => {
+  const t = await fixture()
+  // The fixture's stub stays underneath: an unstubbed host still throws.
+  const stubbed = globalThis.fetch
+  globalThis.fetch = (async (target: RequestInfo | URL, init?: RequestInit) => {
+    const request = target instanceof Request ? target : new Request(String(target), init)
+    return new URL(request.url).pathname === "/api/identity/cloud-token"
+      ? Response.json({ found: false, cloud: { status: "NOT_ON_WAITLIST" } })
+      : stubbed(request)
+  }) as typeof fetch
+  const refused = "account_not_allowlisted — This account isn't off the closed-alpha waitlist yet."
+  expect((await t.send("POST", "evaluate", "alice", t.input)).status).toBe(202)
+  await t.settle()
+  const stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord
+  expect(stored.observationError).toBe(refused)
+  expect(stored.result).toBeUndefined()
+  expect(t.workspaceCalls).toEqual([])
+  const state = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  if (state.registration.state !== "unavailable") throw Error("Expected an unavailable registration")
+  expect(state.registration.error).toBe(refused)
+})
+
 test("paused active and paused trial registrations remain distinct facts with no fabricated receipts", async () => {
   const t = await fixture(), active = policyRow(initialSetup("org/repo", "issues", "alice"), false)
   const trial = { ...active, id: "trial-registration", mode: "trial", configuration: { ...active.configuration, mode: "trial" } }

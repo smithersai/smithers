@@ -2,7 +2,7 @@ import type { CloudSession } from "@smthrs/rpc/LocalApp"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
-import { fetchCloudToken } from "./gateway"
+import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readText } from "./Http"
 import { validateSession } from "./identity"
 import { json, refuse } from "./Responses"
@@ -23,8 +23,10 @@ export const probeCloudSession = (request: Request) => Effect.gen(function* () {
   if (identity.status === "invalid") return answer({ state: "signed-out", username: null, expiresAt: null })
   if (identity.status === "unavailable") return identity.response
   const token = yield* fetchCloudToken(identity.identity.login)
-  if (token.status === "not_eligible") return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
-  if (token.status !== "ok") return refuse("cloud_token_unavailable", "Smithers Cloud isn't reachable for your account right now.")
+  if (token.status !== "ok") {
+    const refusal = cloudTokenRefusal(token, "Smithers Cloud isn't reachable for your account right now.")
+    return refuse(refusal.code, refusal.message)
+  }
   const config = yield* ServerConfig
   const probe = yield* Effect.result(fetchWithDeadline(
     "The Cloud session scope check",

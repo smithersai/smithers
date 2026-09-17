@@ -1,4 +1,6 @@
+import { WORKER_REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
 import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
@@ -576,6 +578,37 @@ export const fetchCloudToken = (login: string): Effect.Effect<CloudTokenOutcome,
       }).`
     } as const
   })
+
+/**
+ * The one reading of a Cloud token outcome that is not a token. Eligibility is
+ * a fact about the ACCOUNT and takes the allowlist code with its written copy;
+ * everything else is the bridge, and the caller words that as it always has.
+ *
+ * It lives beside `fetchCloudToken` because a consumer that reclassifies the
+ * same fact for itself is how a closed-alpha refusal came to read as a setup
+ * failure on two of these routes and as an outage on a third.
+ */
+export const cloudTokenRefusal = (
+  outcome: Exclude<CloudTokenOutcome, { readonly status: "ok" }>,
+  unavailable: string
+): { readonly code: WorkerFailureCode; readonly message: string } =>
+  outcome.status === "not_eligible"
+    ? { code: "account_not_allowlisted", message: WORKER_REFUSAL_COPY.account_not_allowlisted.lead }
+    : { code: "cloud_token_unavailable", message: unavailable }
+
+/**
+ * The same refusal for a failure channel that carries only a sentence — a
+ * setup receipt's error, which the card renders and `agentFaultNote` reads the
+ * leading code from. The bridge's own words keep the wording their route gave
+ * them.
+ */
+export const cloudTokenRefusalMessage = (
+  outcome: Exclude<CloudTokenOutcome, { readonly status: "ok" }>,
+  unavailable: string
+): string => {
+  const refusal = cloudTokenRefusal(outcome, unavailable)
+  return refusal.code === "account_not_allowlisted" ? `${refusal.code} — ${refusal.message}` : refusal.message
+}
 
 export type ProvisionOutcome =
   | { readonly status: "ready"; readonly record: GatewayRecord }
