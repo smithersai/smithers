@@ -111,6 +111,7 @@ export const RepositorySetupSchema = z.object({
   draft: SetupDraftSchema,
   view: z.enum(["flows", "prompts", "checks", "evals", "test", "work"]), selectedStep: z.string(),
   manualDraft: z.object({ stepId: z.string(), prompt: z.string().max(16000), source: z.enum(["github", "smithers-cloud"]), number: z.number().int().positive().optional() }).optional(),
+  guidance: z.object({ id: z.string().uuid(), state: z.enum(["requested", "admitted", "failed"]), error: z.string().optional() }).optional(),
   sources: z.array(SetupSourceSchema), inspectedAt: z.number().optional(),
   request: SetupRequestSchema.optional(), evaluation: SetupReceiptSchema.optional(), trial: SetupReceiptSchema.optional(),
   receipt: SetupReceiptSchema.optional(),

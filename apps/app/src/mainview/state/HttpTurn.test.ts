@@ -6,6 +6,7 @@ import type { AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAge
 import { afterEach,expect,test } from "bun:test"
 import { createAgentSeat } from "../chain/ChainRuntime"
 import { createWebAgent } from "../native/WebAgent"
+import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
 import type { AppController } from "./AppController"
 import { appProjectionHash } from "./AppEventStream"
@@ -123,10 +124,13 @@ test("the active AppController persists capability and prompt before POST, then 
       ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) } : Reflect.get(target, key, receiver) })
   } }
   const controller = controllerFor(gated, remote.agent)
-  controller.send("Hello")
+  let admitted = false
+  const admission = Promise.resolve(controller.send("Hello")).then(value => { admitted = value === true })
   await store.settled?.()
+  expect(admitted).toBe(false)
   expect(remote.starts).toHaveLength(0)
-  release(); await until(() => remote.starts.length === 1)
+  release(); await admission; await until(() => remote.starts.length === 1)
+  expect(admitted).toBe(true)
   const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
   expect(store.collections.httpTurnLegs.get(cursor.legId)?.journal).toEqual(request.journal)
   await remote.emit({ type: "accepted", cursor })
@@ -142,6 +146,43 @@ test("the active AppController persists capability and prompt before POST, then 
   expect(resumed.reads).toHaveLength(1)
   expect(restored.collections.messages.get(`message-${request.runId}-smithers`)?.text).toBe("Part one. Part two.")
   expect((await restored.verifyState()).valid).toBe(true)
+})
+
+test("a failed admission clears only its own mirror while a newer ordinary HTTP turn remains usable", async () => {
+  const disk = memoryStorage()
+  let fail = false
+  const storage = { ...disk, setItem: (key: string, value: string) => {
+    if (fail && key === ENVELOPE_STORAGE_KEY && Object.keys(JSON.parse(parseStorageEnvelope(value)!.entries["smithers-mvp.app-http-turns"] ?? "{}")).length) {
+      fail = false; throw Error("Admission disk failure")
+    }
+    disk.setItem(key, value)
+  } }
+  const store = await open(storage), remote = journalAgent()
+  let release!: () => void, rolledBack = false
+  const held = new Promise<void>(resolve => { release = resolve })
+  const gated: AppStore = { ...store, dispatch: transition => {
+    const transaction = store.dispatch(transition)
+    if (transition.type !== "http.turn.started" || transition.text !== "First") return transaction
+    const promise = transaction.isPersisted.promise.catch(async error => { rolledBack = true; await held; throw error })
+    return new Proxy(transaction, { get: (target, key, receiver) => key === "isPersisted"
+      ? { ...target.isPersisted, promise } : Reflect.get(target, key, receiver) })
+  } }
+  const controller = controllerFor(gated, remote.agent)
+  fail = true
+  const first = Promise.resolve(controller.send("First"))
+  await until(() => rolledBack && store.session().phase === "idle")
+  expect(remote.starts).toHaveLength(0)
+  expect(store.collections.httpTurns.size).toBe(0)
+  expect(await controller.send("Second")).toBe(true)
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  release(); await expect(first).rejects.toThrow("Admission disk failure")
+  await remote.emit({ type: "accepted", cursor })
+  const done = batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "Second completed" }, { type: "done", runId: request.runId, reason: "stop" }])
+  await remote.emit({ type: "batch", batch: done, cursor: cursorOf(done) })
+  expect(store.session().phase).toBe("idle")
+  expect(store.collections.messages.get(`message-${request.runId}-smithers`)?.text).toBe("Second completed")
+  expect((await store.verifyState()).valid).toBe(true)
 })
 
 test("an accepted tool with no durable result is ambiguous after reload and never starts a model or tool again", async () => {

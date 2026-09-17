@@ -175,6 +175,7 @@ describe("THE FORM LAW — every flow's form round-trips through its own grammar
         else if (field.kind === "select") sample[field.name] = field.options?.[0]?.value ?? "x1"
         // A repository target is only ever read in its owner/repo shape (RepoContext.splitTrailingRepo).
         else if (field.name === "repo") sample[field.name] = "o/r"
+        else if (name === "setup.run" && field.name === "manual") sample[field.name] = { stepId: "fix", prompt: "Keep  spaces" }
         else if (name === "flow.run" && field.name === "input") sample[field.name] = { message: "Keep  spaces" }
         else sample[field.name] = "x1"
       }
@@ -214,7 +215,8 @@ const propertyShapes = (input: Schema.Top): ReadonlyMap<string, { readonly tag: 
 }
 
 /** A distinct value per field, so a value that shifts onto another field is visible in the comparison. */
-const sampleFor = (tag: string | undefined, field: FormField, index: number): unknown => {
+const sampleFor = (tag: string | undefined, field: FormField, index: number, name: string): unknown => {
+  if (name === "setup.run" && field.name === "manual") return { stepId: "fix", prompt: `Keep  spaces ${index}` }
   if (field.kind === "number") return index + 1
   if (field.kind === "boolean") return true
   if (field.kind === "select") return field.options?.[0]?.value ?? `${field.name}-${index}`
@@ -248,7 +250,7 @@ describe("THE FORM LAW — every flow's form submits its own named payload", () 
       const shapes = propertyShapes(entry.input)
       const given: Record<string, unknown> = {}
       fields.forEach((field, index) => {
-        given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index)
+        given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index, name)
       })
       const payload = submissionOf(entry, given)
       const decoded = typeof payload === "string" ? Option.none() : decodeInput(entry.input)(payload)
@@ -280,7 +282,7 @@ describe("THE FORM LAW — every flow's form submits its own named payload", () 
       const shapes = propertyShapes(entry.input)
       const given: Record<string, unknown> = {}
       fields.forEach((field, index) => {
-        if (field.required || field.name === last.name) given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index)
+        if (field.required || field.name === last.name) given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index, name)
       })
       const payload = submissionOf(entry, given)
       const decoded = typeof payload === "string" ? Option.none() : decodeInput(entry.input)(payload)

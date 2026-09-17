@@ -138,6 +138,34 @@ const installProjectorFixture = async (storage: StorageApi, version: number, ret
 }
 
 describe("the live store's authoritative event path", () => {
+  test("version 6 upgrade retains setup policy and a later pending guide survives reopen", async () => {
+    const storage = memoryStorage(), store = await open(storage)
+    const payload = initialSetup("org/repo", "issues", "alice")
+    payload.active = { revision: 1, digest: setupCandidate(payload), registrationId: "issues", sourceRevision: "source", enabled: false, owned: true }
+    await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1, payload } }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 6 }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", { ...old.head, projectorVersion: 6 }], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const upgraded = await open(storage), card = upgraded.collections.cards.get("setup")!
+    if (card.kind !== "repository-setup") throw Error("Missing setup")
+    expect(card.payload).toEqual(payload)
+    expect((await upgraded.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    const guidance = { id: "6405cbb6-c18f-452e-99db-adb1283ee18a", state: "requested" as const }
+    await upgraded.dispatch({ type: "card.upsert", actor: "user", card: { ...card, payload: { ...card.payload, guidance } } }).isPersisted.promise
+    await upgraded.dispose?.(); opened.splice(opened.indexOf(upgraded), 1)
+    const reopened = await open(storage)
+    expect(reopened.collections.cards.get("setup")).toMatchObject({ payload: { guidance, active: payload.active } })
+    expect((await reopened.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await reopened.verifyState()).valid).toBe(true)
+  })
+
   test("version 5 upgrade preserves a chore policy; its observed next execution survives reopen without granting evidence", async () => {
     const storage = memoryStorage(), store = await open(storage)
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise

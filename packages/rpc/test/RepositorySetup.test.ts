@@ -15,6 +15,16 @@ const proven = (): RepositorySetup => {
   return { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
 }
 
+it("a durable guide request survives edits without becoming setup evidence", () => {
+  const setup = initialSetup("example/repo", "issues", "maintainer")
+  setup.guidance = { id: "6405cbb6-c18f-452e-99db-adb1283ee18a", state: "requested" }
+  const parsed = RepositorySetupSchema.parse(setup)
+  const changed = editSetup(parsed, { ...parsed.draft, trialTitle: "A concrete issue" })
+  expect(changed.guidance).toEqual(setup.guidance)
+  expect(setupActivationProblems(changed)).toContain("Run evals for this draft.")
+  expect(RepositorySetupSchema.safeParse({ ...setup, guidance: { ...setup.guidance, state: "completed" } }).success).toBe(false)
+})
+
 it("a scheduler observation is retained independently of a draft and never supplies activation proof", () => {
   const setup = initialSetup("example/repo", "chores", "maintainer")
   setup.draft.schedule = "0 9 * * *"

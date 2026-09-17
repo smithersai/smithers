@@ -110,7 +110,7 @@ import { CommandIntentSchema } from "./CommandIntent"
 import { DRAFT_RECOVERY_STORAGE_KEY,clearDraftRecovery,readDraftRecovery,writeDraftRecovery } from "./DraftRecovery"
 import { ENTITY_RECOVERY_STORAGE_KEY,clearEntityRecovery,readEntityRecoveries,writeEntityRecovery,type EntityRecoveryRecord } from "./EntityRecovery"
 import { canonicalStoredJsonValue } from "./EventValue"
-import { HttpTurnLegSchema,HttpTurnSchema } from "./HttpTurn"
+import { HttpTurnLegSchema,HttpTurnSchema, type HttpTurn } from "./HttpTurn"
 import { freezeProjectionValue } from "./ImmutableProjection"
 import { admitsPendingRecovery,pendingRecoveryScope,sameRecoveryScope,type PendingRecoveryAuthority,type PendingRecoveryBoundary } from "./PendingRecovery"
 import { RepositoryContextSchema } from "./RepositoryContext"
@@ -733,6 +733,7 @@ export interface AppStore {
   /** Committed immutable evidence, excluding optimistic rows; used for observation cursors and deduplication. */
   readonly committedRuntimeRun: (id: string) => RuntimeRun | undefined
   readonly committedRuntimeApproval: (id: string) => RuntimeApproval | undefined
+  readonly committedHttpTurn: (turnId: string, owner: string | null) => HttpTurn | undefined
   readonly persistenceMode: PersistenceMode
   /**
    * What the bounded load admitted this launch. Application collections require
@@ -1831,6 +1832,7 @@ const initializeAppStore = async (
     approvalRequest,
     committedRuntimeRun: id => { assertReadable(); return committed.snapshot.runtimeRuns.find(row => row.id === id) },
     committedRuntimeApproval: id => { assertReadable(); return committed.snapshot.runtimeApprovals.find(row => row.id === id) },
+    committedHttpTurn: (turnId, owner) => { assertReadable(); return committed.snapshot.httpTurns.find(row => row.turnId === turnId && row.owner === owner) },
     persistenceMode: resolved.mode,
     persistedLoad: loadReport,
     persistenceDegraded: resolved.degraded,

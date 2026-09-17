@@ -245,14 +245,21 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
       void drive(saved.id)
     }
   }
-  const start = (turnId: string, text: string, retry: boolean, actor: "user" | "smithers"): void => {
-    if (!journal || ctx.disposed || store.session().phase !== "idle") return
+  const start = (turnId: string, text: string, retry: boolean, actor: "user" | "smithers"): Promise<boolean> => {
+    if (!journal || ctx.disposed || store.session().phase !== "idle") return Promise.resolve(false)
     const attemptId = crypto.randomUUID(), access = capability()
     const receipt = store.dispatch({ type: "http.turn.started", actor, turnId, attemptId, text, retry, journal: access })
     const turn = store.collections.httpTurns.get(attemptId)
-    if (turn === undefined) return
-    ctx.activeTurn = mirror(turn)
-    void receipt.isPersisted.promise.then(() => { if (active(attemptId)) return launch(attemptId) }).catch(() => {})
+    if (turn === undefined) return Promise.resolve(false)
+    const pendingTurn = mirror(turn)
+    ctx.activeTurn = pendingTurn
+    const admitted = receipt.isPersisted.promise.then(() => true, error => {
+      // A rollback must not strand Chat, or clear a newer attempt/account.
+      if (ctx.activeTurn === pendingTurn) ctx.activeTurn = undefined
+      throw error
+    })
+    void admitted.then(() => { if (active(attemptId)) return launch(attemptId) }).catch(() => {})
+    return admitted
   }
   const stop = (): boolean => {
     const attemptId = ctx.activeTurn?.httpAttemptId

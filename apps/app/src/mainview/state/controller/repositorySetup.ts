@@ -30,7 +30,8 @@ export interface RepositorySetupDependencies {
   readonly promptSignIn: () => void
   readonly chooseRepository: () => Promise<unknown>
   readonly openRun: (runId: string, repo: string, sourceCard: string) => Promise<unknown>
-  readonly send: (text: string) => void
+  readonly send: (text: string, admission: { readonly turnId: string; readonly owner: string }) => Promise<boolean> | void
+  readonly guidanceFailed: (error: string, admitted: boolean) => void
 }
 
 /** A fresh read for the conversational door, never a second settings authority. */
@@ -101,7 +102,8 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
 export function createRepositorySetupController(ctx: ControllerContext, dependencies?: RepositorySetupDependencies): RepositorySetupController {
   const shared = actorSharedState(ctx, "repository-setup", () => ({
     pending: new Map<string, Promise<unknown>>(), sleepers: new Map<ReturnType<typeof setTimeout>, () => void>(),
-    recovering: new Map<string, Promise<unknown>>(), resumed: new Set<string>(), openingRuns: new Set<string>(), guidance: new Map<string, string>(), edits: new Map<string, Promise<unknown>>(),
+    recovering: new Map<string, Promise<unknown>>(), resumed: new Set<string>(), openingRuns: new Set<string>(), edits: new Map<string, Promise<unknown>>(),
+    guidanceQueued: false, guiding: false, guidanceFailures: new Set<string>(),
     scheduleTimers: new Map<string, { timer: ReturnType<typeof setTimeout>; at: number; login: string | null; accountEpoch: number; registrationId: string }>(),
     expiredSchedules: new Map<string, { login: string | null; accountEpoch: number }>(), disposed: false
   }))
@@ -109,7 +111,6 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     shared.disposed = true
     for (const [timer, wake] of shared.sleepers) { clearTimeout(timer); wake() }
     shared.sleepers.clear()
-    shared.guidance.clear()
     for (const { timer } of shared.scheduleTimers.values()) clearTimeout(timer)
     shared.scheduleTimers.clear(); shared.expiredSchedules.clear()
   })
@@ -168,17 +169,77 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   const current = (id: string, requestId: string, login: string | null, accountEpoch: number) =>
     !ctx.disposed && !shared.disposed && owner() === login && epoch() === accountEpoch && get(id)?.payload.owner === login && get(id)?.payload.request?.id === requestId
 
+  const guidanceCurrent = (id: string, requestId: string, login: string, accountEpoch: number) =>
+    !ctx.disposed && !shared.disposed && owner() === login && epoch() === accountEpoch
+    && get(id)?.payload.owner === login && get(id)?.payload.guidance?.id === requestId
   const offerGuidance = () => {
-    if (!dependencies || ctx.disposed || shared.disposed || ctx.activeTurn || ctx.store.session().phase !== "idle" || ctx.store.session().draft) return
-    for (const [id, login] of shared.guidance) {
-      const card = get(id)
-      if (!card || owner() !== login || card.payload.owner !== login) { shared.guidance.delete(id); continue }
-      if (card.payload.recovery?.state === "requested" || card.payload.inspectedAt === undefined || card.payload.request?.state === "running" || card.payload.request?.state === "requested") continue
-      shared.guidance.delete(id)
-      dependencies.send(`Help me set up “${REPOSITORY_JOB_TITLES[card.payload.job]}” for ${card.payload.repo}. Read setup.guide for card ${card.id}, then ask the first question.`)
-      break
-    }
+    if (!dependencies || ctx.disposed || shared.disposed || shared.guidanceQueued || shared.guiding) return
+    shared.guidanceQueued = true
+    // Notifications may run inside an optimistic dispatch. Never recursively
+    // submit a turn there; the returned admission receipt is the authority.
+    void Promise.resolve().then(async () => {
+      await ctx.store.settled?.()
+      shared.guidanceQueued = false
+      if (ctx.disposed || shared.disposed || shared.guiding) return
+      for (const card of ctx.store.collections.cards.values()) {
+        if (card.kind !== "repository-setup") continue
+        const intent = card.payload.guidance, login = card.payload.owner, accountEpoch = epoch()
+        if (!intent || intent.state !== "requested" || !login || login !== owner() || shared.guidanceFailures.has(intent.id)) continue
+        const admitted = ctx.store.committedHttpTurn(intent.id, login)
+        if (!admitted && (ctx.activeTurn || ctx.store.session().phase !== "idle" || ctx.store.session().draft
+          || card.payload.recovery?.state === "requested" || card.payload.inspectedAt === undefined
+          || ["requested", "running"].includes(card.payload.request?.state ?? ""))) continue
+        shared.guiding = true
+        let accepted = admitted !== undefined, settled = false
+        try {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) break
+            try {
+              const saved = accepted || await dependencies.send(`Help me set up “${REPOSITORY_JOB_TITLES[card.payload.job]}” for ${card.payload.repo}. Read setup.guide for card ${card.id}, then ask the first question.`, { turnId: intent.id, owner: login })
+              if (!saved || !guidanceCurrent(card.id, intent.id, login, accountEpoch)) break
+              accepted = true
+              await edit(card.id, async () => {
+                if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) return
+                const latest = get(card.id)!
+                await upsert({ ...latest, payload: { ...latest.payload, guidance: { id: intent.id, state: "admitted" } } }, "system")
+              })
+              settled = true
+              break
+            } catch (error) {
+              // A stale optimistic write can roll back after another queued
+              // command. Retry once from settled state, with the same turn ID.
+              await ctx.store.settled?.()
+              if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) break
+              if (attempt === 0) continue
+              const message = error instanceof Error ? error.message : String(error)
+              shared.guidanceFailures.add(intent.id)
+              await edit(card.id, async () => {
+                if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) return
+                const latest = get(card.id)!
+                await upsert({ ...latest, payload: { ...latest.payload, guidance: { id: intent.id, state: accepted ? "admitted" : "failed", error: message } } }, "system")
+              }).catch(() => {})
+              settled = true
+              if (guidanceCurrent(card.id, intent.id, login, accountEpoch)) dependencies.guidanceFailed(accepted
+                ? "The command's outcome could not be saved. Check its result before trying again." : message, accepted)
+            }
+          }
+        } finally { shared.guiding = false; if (settled) offerGuidance() }
+        break
+      }
+    }).catch(() => { shared.guidanceQueued = false })
   }
+  const requestGuidance = (id: string, explicit: boolean): Result => edit(id, async () => {
+    const card = get(id), login = owner(), accountEpoch = epoch()
+    if (!card || !login || card.payload.owner !== login) return
+    const old = card.payload.guidance
+    const retry = old !== undefined && (old.state === "failed" || shared.guidanceFailures.has(old.id))
+    if ((old?.state === "requested" && !(explicit && retry)) || (!explicit && old) || (old?.state === "admitted"
+      && (ctx.activeTurn?.id === old.id || ctx.store.committedHttpTurn(old.id, login)?.status === "active"))) return
+    const intent = { id: retry ? old.id : crypto.randomUUID(), state: "requested" as const }
+    shared.guidanceFailures.delete(intent.id)
+    await upsert({ ...card, payload: { ...card.payload, guidance: intent } })
+    if (guidanceCurrent(id, intent.id, login, accountEpoch)) offerGuidance()
+  })
   if (dependencies) {
     const subscription = ctx.store.collections.sessions.subscribeChanges(offerGuidance)
     ctx.onDispose(() => subscription.unsubscribe())
@@ -466,7 +527,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         await dependencies?.chooseRepository()
         return { value: "Choose a repository for this setup." }
       }
-      if (card.payload.inspectedAt === undefined && ctx.commandActor === "user") shared.guidance.set(id, owner()!)
+      if (card.payload.inspectedAt === undefined && ctx.commandActor === "user") await requestGuidance(id, false)
       return requestRecovery(id)
     },
     configureRepositorySetup: (id, field, value) => edit(id, async () => {
@@ -547,7 +608,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (ctx.commandActor === "smithers") return { value: setupGuidance(card) }
       if (owner() === null) { dependencies?.promptSignIn(); return { value: "Sign in to configure your repository." } }
       if (isPracticeRepo(card.payload.repo)) { await dependencies?.chooseRepository(); return { value: "Choose a repository for this setup." } }
-      shared.guidance.set(id, owner()!)
+      await requestGuidance(id, true)
       if (card.payload.inspectedAt === undefined && (!card.payload.recovery || card.payload.recovery.state !== "completed")) return requestRecovery(id)
       if (card.payload.inspectedAt === undefined && !["requested", "running"].includes(card.payload.request?.state ?? "")) return runRepositorySetup(id, "inspect")
       offerGuidance()

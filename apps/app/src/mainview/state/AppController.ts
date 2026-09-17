@@ -79,7 +79,7 @@ import type { TargetGraphController } from "./controller/targetGraph"
 import { createTargetGraphController } from "./controller/targetGraph"
 import type { TargetsController } from "./controller/targets"
 import { createTargetsController } from "./controller/targets"
-import { createTurnController } from "./controller/turns"
+import { createTurnController, type TurnController } from "./controller/turns"
 import { createTutorialChangeController,type TutorialChangeController } from "./controller/tutorialChange"
 import { createTutorialRepositoryController,type TutorialRepositoryActions } from "./controller/tutorialRepository"
 import { createWorkflowPumpController } from "./controller/workflow-pump"
@@ -180,7 +180,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly reset: () => void
   readonly debugReset: () => Promise<string | void>
   readonly stop: () => void
-  readonly send: (text: string) => void
+  readonly send: TurnController["send"]
   readonly showChat: () => void
   readonly showWorld: () => void
   readonly showConnectors: () => void
@@ -1055,7 +1055,13 @@ export const createAppController = (
     promptSignIn: () => promptSignIn(),
     chooseRepository: () => select(tutorialRepository).chooseTutorialRepository(),
     openRun: (runId, repo, sourceCard) => select(runs).openRun(runId, repo, sourceCard),
-    send: (text) => send(text)
+    send: (text, admission) => send(text, admission),
+    guidanceFailed: (error, admitted) => {
+      if (!admitted) { surfaceCommandFailure("setup.guide", { status: "failed", error }); return }
+      const key = "command.failed.setup.guide"
+      store.dispatch({ type: "toast.shown", actor: "system", key, title: "Configure in Chat" })
+      resolveToast(key, { status: "failed", detail: error, autoDismissMs: ctx.toastAutoDismissMs })
+    }
   }))
   const tutorialChange = actors.pair(ctx, (context, select) => {
     const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))

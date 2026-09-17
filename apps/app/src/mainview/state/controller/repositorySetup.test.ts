@@ -69,7 +69,7 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
 }
 
 const doors = (overrides: Partial<RepositorySetupDependencies> = {}): RepositorySetupDependencies => ({
-  promptSignIn: () => {}, chooseRepository: async () => {}, openRun: async () => {}, send: () => {}, ...overrides
+  promptSignIn: () => {}, chooseRepository: async () => {}, openRun: async () => {}, send: async () => true, guidanceFailed: () => {}, ...overrides
 })
 
 test("setup acknowledges persisted intent before launch, deduplicates it, and keeps Chat usable", async () => {
@@ -260,7 +260,7 @@ test("human setup starts Chat only after repository inspection and preserves a t
       sources: [{ path: ".github/workflows/ci.yml", status: "read", summary: "Tests already run for every pull request.", revision: "source-1" }],
       suggestedDraft: initialSetup(body.repo, "ci", "maintainer").draft, inspectedAt: 2
     } })
-  }, memoryStorage(), doors({ send: text => { messages.push(text) } }))
+  }, memoryStorage(), doors({ send: async text => { messages.push(text); return true } }))
   try {
     t.store.dispatch({ type: "composer.changed", actor: "user", draft: "Keep my unfinished question" })
     await t.setup.openRepositorySetup("ci", "example/another")
@@ -336,9 +336,9 @@ test("inspection receipt history heals from an available receipt before a later 
 
 test("the agent guidance door reads current prompts and evidence without launching a nested turn", async () => {
   const messages: string[] = []
-  const t = await fixture(async body => response(body), memoryStorage(), doors({ send: text => { messages.push(text) } }))
+  const t = await fixture(async body => response(body), memoryStorage(), doors({ send: async text => { messages.push(text); return true } }))
   try {
-    const guide = createRepositorySetupController({ ...t.ctx, commandActor: "smithers" }, doors({ send: text => { messages.push(text) } }))
+    const guide = createRepositorySetupController({ ...t.ctx, commandActor: "smithers" }, doors({ send: async text => { messages.push(text); return true } }))
     await t.setup.configureRepositorySetup("setup", "step.research.prompt", "Read the repository's request handlers first.")
     const result = await guide.guideRepositorySetup("setup")
     expect(typeof result === "object" && result.value).toContain("Read the repository's request handlers first.")
@@ -346,6 +346,28 @@ test("the agent guidance door reads current prompts and evidence without launchi
     expect(messages).toEqual([])
     expect(t.calls).toEqual([])
   } finally { await t.close() }
+})
+
+test("a second explicit guide remains queued while the first durable admission is held", async () => {
+  const held = deferred(), messages: string[] = []
+  const t = await fixture(async body => response(body), memoryStorage(), doors({ send: async text => {
+    messages.push(text)
+    if (messages.length === 1) await held.promise
+    return true
+  } }))
+  try {
+    await t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "other-setup", kind: "repository-setup", title: "Review pull requests", status: "active", createdAt: 2, ordinal: t.store.nextOrdinal(),
+      payload: { ...initialSetup("example/repo", "review", "maintainer"), inspectedAt: 1 }
+    } }).isPersisted.promise
+    await t.setup.guideRepositorySetup("setup")
+    await until(() => messages.length === 1)
+    await t.setup.guideRepositorySetup("other-setup")
+    expect(messages).toHaveLength(1)
+    held.release()
+    await until(() => messages.length === 2)
+    expect(messages[0]).toContain("card setup")
+    expect(messages[1]).toContain("card other-setup")
+  } finally { held.release(); await t.close() }
 })
 
 test("new setup ignores an ambient older workspace and keeps the server's compatible binding", async () => {

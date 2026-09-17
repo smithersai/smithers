@@ -72,7 +72,7 @@ export interface TurnControllerDependencies {
 
 export interface TurnController {
   readonly subscribeToAgent: () => void
-  readonly send: (text: string) => void
+  readonly send: (text: string, admission?: { readonly turnId: string; readonly owner: string }) => Promise<boolean> | void
   readonly reset: () => void
   readonly stop: () => void
   readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
@@ -925,9 +925,12 @@ export const createTurnController = (
       ? { status: "failed", error: outcome.reason }
       : outcome
 
-  const send = (text: string): void => {
+  const send: TurnController["send"] = (text, admission) => {
     if (ctx.disposed) return
     const generation = ownershipGeneration
+    if (admission && accountOwner() !== admission.owner) return
+    // This lookup excludes optimistic rows, including a prior failed attempt.
+    if (admission && store.committedHttpTurn(admission.turnId, admission.owner)) return Promise.resolve(true)
     const parsed = parseSubmit(text, ctx.commands.all())
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown-command") {
@@ -962,6 +965,7 @@ export const createTurnController = (
     }
     const prompt = parsed.text
     if (store.session().phase !== "idle") {
+      if (admission) return
       /*
        * Mid-turn input steers a steerable turn (DESIGN.md §14): the words
        * render as the user's own bubble now, and the running chain drains
@@ -994,10 +998,9 @@ export const createTurnController = (
       offerChatSignIn(text)
       return
     }
-    const turnId = crypto.randomUUID()
+    const turnId = admission?.turnId ?? crypto.randomUUID()
     if (agent.journal !== undefined) {
-      httpTurns.start(turnId, prompt, false, ctx.commandActor)
-      return
+      return httpTurns.start(turnId, prompt, false, ctx.commandActor)
     }
     ctx.activeTurn = ownTurn({
       id: turnId,
@@ -1011,8 +1014,18 @@ export const createTurnController = (
       askClass: impossibleAskOf(prompt),
       claimBuffer: ""
     })
-    store.dispatch({ type: "message.submitted", actor: ctx.commandActor, turnId, text: prompt })
-    launchLeg(turnId, contextMessages())
+    const pendingTurn = ctx.activeTurn
+    const receipt = store.dispatch({ type: "message.submitted", actor: ctx.commandActor, turnId, text: prompt })
+    if (!admission) launchLeg(turnId, contextMessages())
+    const admitted = receipt.isPersisted.promise.then(() => {
+      if (admission && isCurrentTurn(pendingTurn)) launchLeg(turnId, contextMessages())
+      return true
+    }, error => {
+      if (ctx.activeTurn === pendingTurn) ctx.activeTurn = undefined
+      throw error
+    })
+    void admitted.catch(() => {})
+    return admitted
   }
 
   const reset = (): void => {
