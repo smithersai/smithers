@@ -1,17 +1,13 @@
 import { expect, test } from "bun:test"
-import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { digest } from "@smthrs/core/Digest"
-import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { agentVisibleCatalog } from "../flows/agentTools"
 import { disclosedEntries } from "../chain/FlowCatalog"
-import { createAgentSeat } from "../chain/ChainRuntime"
-import { createWebAgent } from "../native/WebAgent"
 import type { StorageApi } from "@tanstack/db"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
+import { setupQuestionCardId } from "./controller/repositorySetup"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf } from "./Instructions"
@@ -19,6 +15,8 @@ import { memoryStorage, recordingAgent, unavailableRepositories, waitFor } from 
 
 const id = "setup:maintainer:example%2Frepo:issues"
 const setupNames = ["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.retry"]
+const QUESTION = "Keep issue research, duplicate lookup and bug reproduction automatic?"
+const CHOICES = ["Keep them automatic", "Ask me before each one runs", "Turn them off"]
 
 const pendingHttpAgent = (requests: StartAgentTurnRequest[]): AgentPort => ({
   available: true, startTurn: async request => { requests.push(request); return { status: "started" } },
@@ -50,7 +48,16 @@ async function fixture(agent?: (requests: StartAgentTurnRequest[]) => AgentPort,
   const call = (input: unknown) => controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify(input) })
   const close = async () => { await controller.dispose(); await store.dispose?.() }
   const guidance = () => { const card = store.collections.cards.get(id); return card?.kind === "repository-setup" ? card.payload.guidance : undefined }
-  return { store, storage, payload, controller, requests, fetches, call, close, guidance }
+  const setup = () => { const card = store.collections.cards.get(id)!; return card.kind === "repository-setup" ? card.payload : undefined! }
+  const question = () => { const card = store.collections.cards.get(setupQuestionCardId(id)); return card?.kind === "flow-form" ? card : undefined }
+  const untouched = () => !fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")
+  return { store, storage, payload, controller, requests, fetches, call, close, guidance, setup, question, untouched }
+}
+
+const askAndWait = async (t: Awaited<ReturnType<typeof fixture>>) => {
+  await t.controller.commands.run("setup.guide", id)
+  await waitFor(() => t.question() !== undefined && t.guidance()?.state === "admitted")
+  return t.question()!
 }
 
 test("cloud setup controls are discoverable to the model and stay out of the human menu", async () => {
@@ -65,127 +72,155 @@ test("cloud setup controls are discoverable to the model and stay out of the hum
     expect(t.controller.commands.disclosed().filter(command => command.name.startsWith("setup.")).map(command => command.name)).toEqual(setupNames)
     expect(disclosedEntries(t.controller.commands).filter(command => command.name.startsWith("setup.")).map(command => command.name)).toEqual(setupNames)
     expect(t.controller.commands.slashItems("setup.").some(item => setupNames.includes(item.flow.name))).toBe(false)
-    expect(t.controller.commands.callable().some(command => command.declaredName === "target.list")).toBe(false)
+    // The question flow is the app's own act: invocable so the controller can
+    // render the form, never offered to the model or to the slash menu.
+    expect(t.controller.commands.callable().some(command => command.binding.descriptor.name === "setup.ask")).toBe(true)
+    expect(t.controller.commands.slashItems("setup.ask")).toHaveLength(0)
+    expect(JSON.stringify(listed)).not.toContain("setup.ask")
     const read = JSON.parse(await t.call({ action: "execute", name: "setup.guide", args: id }))
     expect(read).toMatchObject({ cardId: id, repo: "example/repo", job: "issues", revision: 1, inspectedAt: 1234, draft: t.payload.draft })
     expect(read.controls).toContainEqual(expect.objectContaining({ kind: "issue-filter", scopeField: "scope", labelField: "label", labelMeaning: "match-existing-label" }))
+    expect(read.instruction).toContain("The app asks this setup's first question itself")
+    // A model reading the guide never mints an unsolicited first-question intent.
+    expect(t.guidance()).toBeUndefined()
+    expect(t.question()).toBeUndefined()
     expect(t.requests).toHaveLength(0)
-    expect(t.fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")).toBe(false)
+    expect(t.untouched()).toBe(true)
   } finally { await t.close() }
 })
 
-test.each(["ready", "recovering", "immediate"])("the production HTTP seat retains explicit guidance while %s and reads the committed exact guide", async phase => {
+test.each(["ready", "recovering", "immediate"])("the app itself asks the first question while %s, with no provider turn", async phase => {
   let release!: () => void
   const beforeRecovery = new Promise<void>(resolve => { release = resolve })
-  const t = await fixture(requests => createAgentSeat(createWebAgent({ fetchImpl: async (url, init) => {
-    expect(String(url)).toBe(TURN_PATH)
-    const request = JSON.parse(String(init?.body)) as StartAgentTurnRequest
-    requests.push(request)
-    const journal = request.journal!
-    const cursor = { version: 1 as const, runId: request.runId, legId: journal.legId, batch: 0, position: 0, hash: "0".repeat(64) }
-    const output = request.messages.find(item => "type" in item && item.type === "function_call_output")
-    const frames: AgentTurnFrame[] = output === undefined ? [
-      { type: "tool_call", runId: request.runId, name: "commands", call_id: "read-current-setup", arguments: JSON.stringify({ action: "execute", name: "setup.guide", args: id }) },
-      { type: "done", runId: request.runId, reason: "tool_call" }
-    ] : [
-      { type: "delta", runId: request.runId, kind: "text", text: "Should research run automatically on new issues?" },
-      { type: "done", runId: request.runId, reason: "stop" }
-    ]
-    if (output && "output" in output) {
-      const guide = JSON.parse(output.output)
-      expect(guide).toMatchObject({ cardId: id, repo: "example/repo", revision: 1, inspectedAt: 1234 })
-      expect(guide.controls).toContainEqual(expect.objectContaining({ kind: "step", stepId: "research", modeField: "step.research.mode", promptField: "step.research.prompt" }))
-      expect(guide.controls).toContainEqual(expect.objectContaining({ kind: "issue-filter", labelMeaning: "match-existing-label" }))
-    }
-    expect(request.instructions).toContain("Current repository setup cards:")
-    const body = { version: 1 as const, runId: request.runId, legId: journal.legId, batch: 1, from: 1, previousHash: cursor.hash, frames }
-    const batch = { ...body, hash: digest(agentTurnJournalDigestInput("batch", body)) }
-    return new Response([JSON.stringify({ type: "accepted", cursor }), JSON.stringify({ type: "batch", batch,
-      cursor: { ...cursor, batch: 1, position: frames.length, hash: batch.hash } })].join("\n"), {
-      headers: { "x-smithers-turn-journal": "1", "content-type": "application/x-ndjson" }
-    })
-  } })), phase === "recovering" ? beforeRecovery : undefined, phase === "ready")
+  const t = await fixture(pendingHttpAgent, phase === "recovering" ? beforeRecovery : undefined, phase === "ready")
   try {
     if (phase === "recovering") await waitFor(() => t.fetches.some(({ url }) => url.includes("/repository-setup/state?")))
     const outcome = await t.controller.commands.run("setup.guide", id)
+    expect(outcome.status).not.toBe("failed")
     if (phase === "recovering") {
-      expect(t.requests).toHaveLength(0)
-      const request = t.guidance()
+      expect(t.question()).toBeUndefined()
+      const requested = t.guidance()
       await t.controller.commands.run("setup.guide", id)
-      expect(t.guidance()).toEqual(request)
+      expect(t.guidance()).toEqual(requested)
     }
     release()
-    expect(outcome.status).not.toBe("failed")
-    await waitFor(() => t.requests.length === 2 && t.store.session().phase === "idle")
-    expect([...t.store.collections.toolCalls.values()].map(call => JSON.parse(call.arguments).name)).toEqual(["setup.guide"])
-    expect([...t.store.collections.httpTurns.values()][0]?.status).toBe("complete")
-    expect(t.store.collections.cards.get(id)).toMatchObject({ kind: "repository-setup", payload: t.payload })
-    expect(t.fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")).toBe(false)
+    await waitFor(() => t.question() !== undefined && t.guidance()?.state === "admitted")
+    const card = t.question()!
+    expect(card.title).toBe(QUESTION)
+    expect(card.payload.flow).toBe("setup.ask")
+    expect(card.payload.via).toBe("agent")
+    expect(card.payload.fields.map(field => field.name)).toEqual(["choice"])
+    expect(card.payload.fields[0]?.kind).toBe("select")
+    expect(card.payload.fields[0]?.options?.map(option => option.label)).toEqual(CHOICES)
+    // The answer is bound to the exact candidate it was asked about.
+    expect(card.payload.given).toMatchObject({ cardId: id, questionId: "issues.steps.automatic", revision: 1, digest: setupCandidate(t.setup()) })
+    expect(t.requests).toHaveLength(0)
+    expect(t.store.collections.messages.size).toBe(0)
+    expect([...t.store.collections.httpTurns.values()]).toHaveLength(0)
+    expect(t.setup().draft).toEqual(t.payload.draft)
+    expect(t.untouched()).toBe(true)
     expect((await t.store.verifyState()).valid).toBe(true)
   } finally { release(); await t.close() }
 })
 
-test("the normal guide kickoff carries fresh owned setup identity and a callable read under the instruction cap", async () => {
-  const t = await fixture()
+test("answering through the real form controller edits the draft only", async () => {
+  const t = await fixture(pendingHttpAgent)
   try {
-    await t.controller.commands.run("setup.guide", id)
-    await waitFor(() => t.requests.length > 0)
-    const request = t.requests[0]!
-    expect(JSON.stringify(request.messages)).toContain(`Read setup.guide for card ${id}`)
-    expect(request.instructions).toContain("Current repository setup cards:")
-    expect(request.instructions).toContain(JSON.stringify({ cardId: id, repo: "example/repo", job: "issues", revision: 1, digest: setupCandidate(t.payload), inspectedAt: 1234, state: "draft" }))
-    expect(request.instructions).toContain('"name":"setup.guide","args":"<cardId>"')
-    for (const control of setupNames) {
-      const command = agentVisibleCatalog(t.controller.commands.callable()).find(command => command.name === control)!
-      expect(request.instructions).toContain(`- /${control} ${command.args} — ${command.summary}`)
-    }
-    expect(request.instructions).toContain("one short question at a time")
-    expect(new TextEncoder().encode(composeAgentInstructions(request.instructions, request.context)).length).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
-    console.info(`setup guide instructions: stage ${instructionStageOf(request.instructions)}, ${new TextEncoder().encode(composeAgentInstructions(request.instructions, request.context)).length} composed bytes`)
-    expect(t.store.collections.cards.get(id)).toMatchObject({ kind: "repository-setup", payload: t.payload })
-    expect(t.fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")).toBe(false)
+    const card = await askAndWait(t)
+    expect(await t.controller.commands.run("form.set", `${card.id} choice approved`)).toMatchObject({ status: "executed" })
+    expect(t.question()?.payload.draft).toEqual({ choice: "approved" })
+    expect(await t.controller.commands.run("form.submit", card.id)).toMatchObject({ status: "executed" })
+    await waitFor(() => t.question()?.status === "acted")
+    const draft = t.setup().draft
+    expect(draft.steps.map(step => step.mode)).toEqual(["approved", "approved", "approved", "manual", "manual", "manual"])
+    expect(draft.label).toBe("")
+    expect(draft.scope).toBe("future")
+    expect(t.setup().request).toBeUndefined()
+    expect(t.setup().evaluation).toBeUndefined()
+    expect(t.setup().trial).toBeUndefined()
+    expect(t.setup().active).toBeUndefined()
+    expect(t.requests).toHaveLength(0)
+    expect(t.untouched()).toBe(true)
+    // A submitted question is closed: no second answer, and no re-ask.
+    expect(await t.controller.commands.run("form.submit", card.id)).toMatchObject({ status: "failed", error: expect.stringContaining("already submitted") })
+    expect(await t.controller.commands.run("form.set", `${card.id} choice off`)).toMatchObject({ status: "failed" })
+    expect(t.question()?.status).toBe("acted")
+    expect(t.setup().draft).toEqual(draft)
+    expect((await t.store.verifyState()).valid).toBe(true)
   } finally { await t.close() }
 })
 
-test.each([1, 2])("guidance retains its durable request through %s failed HTTP admission writes", async failures => {
-  const disk = memoryStorage()
-  let remaining = 0, rejected = 0
-  const storage: StorageApi = { ...disk, setItem: (key, value) => {
-    if (key === ENVELOPE_STORAGE_KEY && remaining > 0) {
-      const entries = parseStorageEnvelope(value)!.entries
-      if (Object.keys(JSON.parse(entries["smithers-mvp.app-http-turns"] ?? "{}")).length > 0) {
-        remaining--; rejected++; throw Error("Guide admission disk failure")
-      }
-    }
-    disk.setItem(key, value)
-  } }
-  const t = await fixture(pendingHttpAgent, undefined, true, storage)
+test("a stale candidate refuses visibly in the card and edits nothing", async () => {
+  const t = await fixture(pendingHttpAgent)
   try {
-    remaining = failures
-    await t.controller.commands.run("setup.guide", id)
-    await waitFor(() => t.guidance()?.state === (failures === 1 ? "admitted" : "failed"))
-    const intent = t.guidance()!
-    expect(rejected).toBe(failures)
-    expect(t.requests).toHaveLength(failures === 1 ? 1 : 0)
-    if (failures === 2) {
-      expect(intent.error).toContain("Guide admission disk failure")
-      await waitFor(() => [...t.store.collections.toasts.values()].some(toast => toast.key === "command.failed.setup.guide"))
-      await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat remains editable" }).isPersisted.promise
-      expect(t.store.session().draft).toBe("Chat remains editable")
-      await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "" }).isPersisted.promise
-      await t.store.settled?.()
-      expect(rejected).toBe(2)
-      expect(t.requests).toHaveLength(0)
-      await t.controller.commands.run("setup.guide", id)
-      await waitFor(() => t.guidance()?.state === "admitted")
-      expect(t.guidance()?.id).toBe(intent.id)
-    }
-    expect(t.requests).toHaveLength(1)
-    expect(t.requests[0]?.runId).toBe(intent.id)
-    expect(t.store.committedHttpTurn(intent.id, "maintainer")).toBeDefined()
-    expect(t.store.committedHttpTurn(intent.id, "other")).toBeUndefined()
-    expect((await t.store.verifyState()).valid).toBe(true)
+    const card = await askAndWait(t)
+    await t.call({ action: "execute", name: "setup.configure", args: JSON.stringify({ cardId: id, field: "budgetMinutes", value: 45 }) })
+    const before = structuredClone(t.setup().draft)
+    await t.controller.commands.run("form.set", `${card.id} choice off`)
+    await t.controller.commands.run("form.submit", card.id)
+    await waitFor(() => t.question()?.payload.error !== undefined)
+    expect(t.question()?.payload.error).toContain("changed after the question was asked")
+    expect(t.question()?.status).toBe("error")
+    expect(t.setup().draft).toEqual(before)
   } finally { await t.close() }
+})
+
+test("a second Configure in Chat points at the open question instead of resetting it", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    const intent = t.guidance()!
+    await t.controller.commands.run("form.set", `${card.id} choice off`)
+    await t.controller.commands.run("setup.guide", id)
+    await t.store.settled?.()
+    expect(t.guidance()).toEqual(intent)
+    expect(t.question()?.payload.draft).toEqual({ choice: "off" })
+    expect([...t.store.collections.cards.values()].filter(row => row.kind === "flow-form")).toHaveLength(1)
+    expect(t.requests).toHaveLength(0)
+  } finally { await t.close() }
+})
+
+test("a reload during admission re-admits the same question without re-rendering it", async () => {
+  const storage = memoryStorage()
+  const first = await fixture(pendingHttpAgent, undefined, true, storage)
+  const card = await askAndWait(first)
+  await first.controller.commands.run("form.set", `${card.id} choice off`)
+  const intent = first.guidance()!
+  // Reopen from the same disk with guidance still unacknowledged.
+  const stored = first.store.collections.cards.get(id)!
+  if (stored.kind !== "repository-setup") throw Error("setup card missing")
+  await first.store.dispatch({ type: "card.upsert", actor: "system",
+    card: { ...stored, payload: { ...stored.payload, guidance: { id: intent.id, state: "requested" } } } }).isPersisted.promise
+  await first.close()
+  const resumed = await fixture(pendingHttpAgent, undefined, true, storage)
+  try {
+    await waitFor(() => resumed.guidance()?.state === "admitted")
+    expect(resumed.guidance()?.id).toBe(intent.id)
+    expect(resumed.question()?.payload.draft).toEqual({ choice: "off" })
+    expect(resumed.question()?.title).toBe(QUESTION)
+    expect(resumed.requests).toHaveLength(0)
+    expect((await resumed.store.verifyState()).valid).toBe(true)
+  } finally { await resumed.close() }
+})
+
+test("a reload after the answer never re-asks and keeps the edit", async () => {
+  const storage = memoryStorage()
+  const first = await fixture(pendingHttpAgent, undefined, true, storage)
+  const card = await askAndWait(first)
+  await first.controller.commands.run("form.set", `${card.id} choice approved`)
+  await first.controller.commands.run("form.submit", card.id)
+  await waitFor(() => first.question()?.status === "acted")
+  await first.close()
+  const resumed = await fixture(pendingHttpAgent, undefined, true, storage)
+  try {
+    await resumed.store.settled?.()
+    await resumed.store.dispatch({ type: "composer.changed", actor: "user", draft: "still usable" }).isPersisted.promise
+    expect(resumed.guidance()?.state).toBe("admitted")
+    expect(resumed.question()?.status).toBe("acted")
+    expect(resumed.setup().draft.steps.slice(0, 3).map(step => step.mode)).toEqual(["approved", "approved", "approved"])
+    expect(resumed.requests).toHaveLength(0)
+    expect(resumed.store.session().draft).toBe("still usable")
+  } finally { await resumed.close() }
 })
 
 test("a saved guide request survives a held recovery and full store/controller reopen", async () => {
@@ -197,26 +232,25 @@ test("a saved guide request survives a held recovery and full store/controller r
   await first.controller.commands.run("setup.guide", id)
   const requested = first.guidance()!
   expect(requested.state).toBe("requested")
-  expect(first.requests).toHaveLength(0)
+  expect(first.question()).toBeUndefined()
   await first.close(); release()
   const resumed = await fixture(pendingHttpAgent, undefined, true, storage)
   try {
     await waitFor(() => resumed.guidance()?.state === "admitted")
-    expect(resumed.requests).toHaveLength(1)
-    expect(resumed.requests[0]?.runId).toBe(requested.id)
+    expect(resumed.guidance()?.id).toBe(requested.id)
+    expect(resumed.question()?.title).toBe(QUESTION)
+    expect(resumed.requests).toHaveLength(0)
     expect((await resumed.store.verifyState()).valid).toBe(true)
   } finally { await resumed.close() }
 })
 
-test.each([1, 2, 3])("a real HTTP admission is never reposted or called failed after %s card acknowledgment failures", async failures => {
+test.each([1, 2])("the question is never asked twice after %s failed card writes", async failures => {
   const disk = memoryStorage()
   let remaining = 0, rejected = 0
   const storage: StorageApi = { ...disk, setItem: (key, value) => {
     if (key === ENVELOPE_STORAGE_KEY && remaining > 0) {
       const rows = JSON.parse(parseStorageEnvelope(value)!.entries["smithers-mvp.app-cards"] ?? "{}")
-      if (rows[`s:${id}`]?.data.payload.guidance?.state === "admitted") {
-        remaining--; rejected++; throw Error("Card acknowledgment disk failure")
-      }
+      if (rows[`s:${setupQuestionCardId(id)}`] !== undefined) { remaining--; rejected++; throw Error("Question card disk failure") }
     }
     disk.setItem(key, value)
   } }
@@ -224,51 +258,31 @@ test.each([1, 2, 3])("a real HTTP admission is never reposted or called failed a
   try {
     remaining = failures
     await t.controller.commands.run("setup.guide", id)
-    await waitFor(() => remaining === 0 && (failures < 3 ? t.guidance()?.state === "admitted" : t.store.collections.toasts.has("toast-command.failed.setup.guide")))
+    await waitFor(() => failures === 1
+      ? t.question() !== undefined && t.guidance()?.state === "admitted"
+      : t.guidance()?.state === "failed")
+    await t.store.settled?.()
     expect(rejected).toBe(failures)
-    expect(t.requests).toHaveLength(1)
-    expect(t.store.committedHttpTurn(t.guidance()!.id, "maintainer")).toBeDefined()
-    if (failures >= 2) {
-      await waitFor(() => t.store.collections.toasts.has("toast-command.failed.setup.guide"))
-      const toast = t.store.collections.toasts.get("toast-command.failed.setup.guide")!
-      expect(toast.title).toBe("Configure in Chat")
-      expect(toast.detail).toContain("outcome could not be saved")
-      expect(toast.title).not.toContain("didn't run")
+    // The chat never wedges on a failed question write.
+    await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat remains editable" }).isPersisted.promise
+    expect(t.store.session().draft).toBe("Chat remains editable")
+    expect([...t.store.collections.cards.values()].filter(card => card.kind === "flow-form")).toHaveLength(failures === 1 ? 1 : 0)
+    expect(t.requests).toHaveLength(0)
+    if (failures === 2) {
+      expect(t.guidance()?.error).toContain("could not be saved")
+      await waitFor(() => [...t.store.collections.toasts.values()].some(toast => toast.key === "command.failed.setup.guide"))
+      await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "" }).isPersisted.promise
+      const retried = await t.controller.commands.run("setup.guide", id)
+      expect(retried.status).not.toBe("failed")
+      await waitFor(() => t.question() !== undefined)
     }
-    if (failures === 3) {
-      const requestId = t.guidance()!.id
-      expect(t.guidance()?.state).toBe("requested")
-      await t.controller.commands.run("setup.guide", id)
-      await waitFor(() => t.guidance()?.state === "admitted")
-      expect(t.guidance()?.id).toBe(requestId)
-      expect(t.requests).toHaveLength(1)
-    }
+    expect(t.question()?.title).toBe(QUESTION)
+    expect([...t.store.collections.cards.values()].filter(card => card.kind === "flow-form")).toHaveLength(1)
     expect((await t.store.verifyState()).valid).toBe(true)
   } finally { await t.close() }
 })
 
-test("restart recognizes the exact owned committed turn before the card's acknowledgment without posting again", async () => {
-  const storage = memoryStorage(), seeded = await createAppStore({ kind: "localStorage", storage })
-  const turnId = crypto.randomUUID()
-  await seeded.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maintainer", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-  await seeded.dispatch({ type: "card.upsert", actor: "user", card: { id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1,
-    payload: { ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1234, guidance: { id: turnId, state: "requested" } }
-  } }).isPersisted.promise
-  // A real durable admission, followed by closing before guidance acknowledges it.
-  await seeded.dispatch({ type: "http.turn.started", actor: "user", turnId, attemptId: "accepted-guide", text: "Configure this setup", retry: false,
-    journal: { version: 1, legId: "accepted-leg", token: "a".repeat(64) } }).isPersisted.promise
-  await seeded.dispose?.()
-  const resumed = await fixture(pendingHttpAgent, undefined, true, storage)
-  try {
-    await waitFor(() => resumed.guidance()?.state === "admitted")
-    expect(resumed.guidance()?.id).toBe(turnId)
-    expect(resumed.requests).toHaveLength(0)
-    expect([...resumed.store.collections.httpTurns.values()].filter(turn => turn.turnId === turnId)).toHaveLength(1)
-    expect((await resumed.store.verifyState()).valid).toBe(true)
-  } finally { await resumed.close() }
-})
-
-test("an account change while discovery is held cannot send or recreate the prior account's guide", async () => {
+test("an account change while discovery is held cannot render or recreate the prior account's question", async () => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
   const t = await fixture(pendingHttpAgent, held, false)
@@ -279,14 +293,86 @@ test("an account change while discovery is held cannot send or recreate the prio
     await t.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     release(); await t.store.settled?.()
     await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "Other account question" }).isPersisted.promise
-    expect(t.requests).toHaveLength(0)
     expect(requested?.state).toBe("requested")
     expect(t.guidance()).toBeUndefined() // The identity boundary retires private cards.
+    expect(t.question()).toBeUndefined()
+    expect(t.requests).toHaveLength(0)
     expect(t.store.session().draft).toBe("Other account question")
   } finally { release(); await t.close() }
 })
 
-test("an explicitly guided older card survives recent-card compaction without injecting full prompts or eval answers", async () => {
+test("a controller disposed before the idle window renders no question", async () => {
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const t = await fixture(pendingHttpAgent, held, false)
+  await waitFor(() => t.fetches.some(({ url }) => url.includes("/repository-setup/state?")))
+  await t.controller.commands.run("setup.guide", id)
+  expect(t.guidance()?.state).toBe("requested")
+  await t.controller.dispose()
+  release()
+  await t.store.settled?.()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(t.question()).toBeUndefined()
+  expect(t.requests).toHaveLength(0)
+  await t.store.dispose?.()
+})
+
+test("a specific change asked in chat stays usable beside the question, and pruned tool history changes nothing", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    // The model's own door still works while the app's question is open.
+    expect(await t.call({ action: "execute", name: "setup.configure", args: JSON.stringify({ cardId: id, field: "landing", value: "checks" }) })).toContain("Draft updated")
+    expect(t.setup().draft.landing).toBe("checks")
+    expect(t.question()?.status).toBe("active")
+    /*
+     * Whether the question was asked is the durable card and the guidance
+     * receipt, never a tool-call row: pruned or absent tool history (there is
+     * none here at all) changes nothing.
+     */
+    expect(t.store.collections.toolCalls.size).toBe(0)
+    await t.store.settled?.()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect([...t.store.collections.cards.values()].filter(row => row.kind === "flow-form")).toHaveLength(1)
+    expect(t.question()?.id).toBe(card.id)
+    expect(t.requests).toHaveLength(0)
+    // The user can close the question without answering it; nothing re-opens it.
+    expect(await t.controller.commands.run("card.dismiss", card.id)).toMatchObject({ status: "executed" })
+    await t.store.settled?.()
+    expect(t.question()).toBeUndefined()
+    expect(t.guidance()?.state).toBe("admitted")
+  } finally { await t.close() }
+})
+
+test("the chat prompt keeps the setup handoff, states that the app asks, and stays under the cap", async () => {
+  const t = await fixture()
+  try {
+    await t.controller.send("what is set up for this repo?")
+    await waitFor(() => t.requests.length > 0)
+    const request = t.requests[0]!
+    expect(request.instructions).toContain("Current repository setup cards:")
+    expect(request.instructions).toContain(JSON.stringify({ cardId: id, repo: "example/repo", job: "issues", revision: 1, digest: setupCandidate(t.payload), inspectedAt: 1234, state: "draft" }))
+    expect(request.instructions).toContain('"name":"setup.guide","args":"<cardId>"')
+    for (const control of setupNames) {
+      const command = agentVisibleCatalog(t.controller.commands.callable()).find(command => command.name === control)!
+      expect(request.instructions).toContain(`- /${control} ${command.args} — ${command.summary}`)
+    }
+    expect(request.instructions).toContain("The app asks this setup's first question itself")
+    expect(request.instructions).not.toContain("one short question at a time")
+    expect(request.instructions).not.toContain("setup.ask")
+    const composed = new TextEncoder().encode(composeAgentInstructions(request.instructions, request.context)).length
+    expect(composed).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    console.info(`setup guide instructions: stage ${instructionStageOf(request.instructions)}, ${composed} composed bytes`)
+  } finally { await t.close() }
+})
+
+/*
+ * The kickoff turn that used to name this card id in the user's own message is
+ * gone, so a setup compacted out of the recent window is no longer carried into
+ * the prompt by a mention. What must still hold is that nothing injects the
+ * draft's full prompts or its held-out eval answers, at any window position.
+ */
+test("a compacted setup card injects no full prompts or eval answers, and a named one still carries its identity", async () => {
   const t = await fixture()
   try {
     const marker = "DO-NOT-INJECT-FULL-DRAFT-OR-HELDOUT-ANSWER"
@@ -296,14 +382,19 @@ test("an explicitly guided older card survives recent-card compaction without in
         payload: { repo: "example/repo", path: `file-${index}.md`, content: "Source", truncated: false }
       } }).isPersisted.promise
     }
-    await t.controller.commands.run("setup.guide", id)
+    await t.controller.send("summarize the setup")
     await waitFor(() => t.requests.length > 0)
-    const request = t.requests[0]!
-    expect(request.context?.recentCards?.some(card => card.id === id)).toBe(false)
-    expect(request.instructions).toContain(`"cardId":"${id}"`)
-    expect(request.instructions).toContain('"revision":2')
-    expect(request.instructions).not.toContain(marker)
-    expect(new TextEncoder().encode(composeAgentInstructions(request.instructions, request.context)).length).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    const compacted = t.requests[0]!
+    expect(compacted.context?.recentCards?.some(card => card.id === id)).toBe(false)
+    expect(compacted.instructions).not.toContain(marker)
+    expect(new TextEncoder().encode(composeAgentInstructions(compacted.instructions, compacted.context)).length).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    await waitFor(() => t.store.session().phase === "idle")
+    await t.controller.send(`what is set up in ${id}?`)
+    await waitFor(() => t.requests.length > 1)
+    const named = t.requests[1]!
+    expect(named.instructions).toContain(`"cardId":"${id}"`)
+    expect(named.instructions).toContain('"revision":2')
+    expect(named.instructions).not.toContain(marker)
   } finally { await t.close() }
 })
 
@@ -317,12 +408,12 @@ test("setup authority refreshes after an edit and never includes another account
     const read = JSON.parse(await t.call({ action: "execute", name: "setup.guide", args: id }))
     expect(read.revision).toBe(2)
     expect(read.draft.steps.find((step: { id: string }) => step.id === "research").mode).toBe("manual")
-    await t.controller.commands.run("setup.guide", id)
+    await t.controller.send("what changed?")
     await waitFor(() => t.requests.length > 0)
     const line = t.requests[0]!.instructions.split("\n").find(line => line.startsWith("Current repository setup cards:"))!
     const cards = JSON.parse(line.slice("Current repository setup cards: ".length))
     expect(cards).toHaveLength(1)
-    expect(cards[0]).toMatchObject({ cardId: id, revision: 2, digest: setupCandidate(t.store.collections.cards.get(id)!.payload as typeof t.payload) })
+    expect(cards[0]).toMatchObject({ cardId: id, revision: 2, digest: setupCandidate(t.setup()) })
     expect(line).not.toContain("other/private")
     expect(await t.call({ action: "execute", name: "setup.guide", args: "foreign-setup" })).toContain("different account")
   } finally { await t.close() }

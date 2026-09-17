@@ -235,6 +235,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "ci.setup": args => repoOnly("ci.setup", args),
   "feature.setup": args => repoOnly("feature.setup", args),
   "chores.setup": args => repoOnly("chores.setup", args),
+  "setup.ask": args => setupObject(args),
   "setup.configure": args => setupObject(args),
   "setup.guide": setupGuideTarget,
   "setup.view": args => setupObject(args),

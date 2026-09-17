@@ -37,6 +37,14 @@ export const setupFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
         subject: Schema.optional(Schema.Struct({ source: Schema.Literals(["github", "smithers-cloud"]), kind: Schema.Literals(["issue", "pr"]), number: Schema.Number })) })) }),
     confirm: "run this repository setup operation",
     handler: ({ cardId, operation, manual }) => actions.runRepositorySetup(cardId, operation, manual) }),
+  /*
+   * The app's own first setup question. Hidden and NOT disclosed: the wording
+   * and the choices are the application's, so no model picks one — the setup
+   * controller renders this form and the human's answer submits it.
+   */
+  flow({ name: "setup.ask", summary: "Answer the setup guide's question", hidden: true, form: jsonForm,
+    input: Schema.Struct({ cardId: Schema.String, questionId: Schema.String, revision: Schema.Number, digest: Schema.String, choice: Schema.String }),
+    handler: ({ cardId, questionId, revision, digest, choice }) => actions.answerRepositorySetupQuestion(cardId, questionId, revision, digest, choice) }),
   flow({ name: "setup.retry", summary: "Retry the setup request", hidden: true, discloseToAgent: true, args: "<cardId>", input: CardTarget,
     confirm: "retry this repository setup operation",
     handler: ({ cardId }) => actions.retryRepositorySetup(cardId) }),

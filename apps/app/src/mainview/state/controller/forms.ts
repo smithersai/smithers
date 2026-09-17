@@ -16,6 +16,8 @@ import type { Card } from "../AppState"
 import { knownRepositories } from "../RepoContext"
 import { fileOptions,fileTargetKey } from "../seams/tutorial2-file_open"
 import type { ControllerContext } from "./context"
+import { setupQuestionCardId } from "./repositorySetup"
+import { setupGuideQuestions } from "./repositorySetupGuide"
 
 /*
  * THE FORM LAW (apps/app/AGENTS.md; docs/workbench-lanes/flow-forms.md), the
@@ -294,6 +296,24 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       const missing = missingFields(fields, draftFrom(fields, given))
       fields = fields.filter(field => missing.includes(field.name))
     }
+    let title = request.title
+    /*
+     * The app's own setup question: its wording is the card's title and its
+     * answers are the select's options, both authored in
+     * controller/repositorySetupGuide.ts. The model contributes nothing here.
+     * A missing or unknown id resolves to the job's default question — a
+     * default belongs to the ASK; answering an unknown id refuses instead.
+     */
+    if (request.name === "setup.ask") {
+      const setup = collections.cards.get(String(given["cardId"] ?? ""))
+      const questions = setup?.kind === "repository-setup" ? setupGuideQuestions(setup.payload) : []
+      const question = questions.find(candidate => candidate.id === given["questionId"]) ?? questions[0]
+      if (question === undefined) return undefined
+      given = { ...given, questionId: question.id }
+      title = question.text
+      fields = fields.filter(field => field.name === "choice").map(field => ({ ...field, kind: "select" as const,
+        label: question.text, options: question.choices.map(choice => ({ value: choice.id, label: choice.label })) }))
+    }
     const nested = request.payloadField === undefined ? undefined : given[request.payloadField]
     const draft = draftFrom(fields, request.payloadField === undefined
       ? given
@@ -303,7 +323,9 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     }
     const resolved = withOptions(fields, draft)
     const parseError = "error" in parsed && missingFields(resolved, draft).length === 0 ? { error: parsed.error } : {}
-    const cardId = request.cardId ?? formCardId(request.name)
+    // Two open setups must not overwrite each other's question.
+    const cardId = request.cardId ?? (request.name === "setup.ask"
+      ? setupQuestionCardId(String(given["cardId"] ?? "")) : formCardId(request.name))
     // A human's menu action now continues in the form. Release the menu's
     // backdrop through the same transitions used by its close gestures.
     // Agent-created forms do not dismiss chrome the human is using.
@@ -332,7 +354,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       card: {
         id: cardId,
         kind: "flow-form",
-        title: request.title ?? (request.name === "issue.add-flow" && typeof given.number === "number"
+        title: title ?? (request.name === "issue.add-flow" && typeof given.number === "number"
           ? `Add a flow to issue #${given.number}`
           : (entry ?? ctx.commands.find(request.name))?.metadata.summary ?? request.name),
         status: "active",

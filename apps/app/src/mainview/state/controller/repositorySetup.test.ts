@@ -36,8 +36,17 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
   const recovery = { calls: [] as string[], answer: async (repo: string, job: string): Promise<Response> => Response.json({ owner: "maintainer", repo, job, registration: { state: "known" }, setup: { state: "none" } }) }
   const disposers: Array<() => void> = []
   const background: Promise<unknown>[] = []
+  // The one seam the controller uses to render its own question: the real
+  // registry lives in AppController, so here it is recorded, not executed.
+  const asked: Array<{ name: string; args: string }> = []
+  let holdAsk: Promise<void> | undefined
   let previous: Body
   const ctx = { store, commandActor: "user", baseUrl: "", workflowPollMs: 5, toastRuns: new Map(),
+    commands: { runAsAgent: async (name: string, args: string) => {
+      asked.push({ name, args })
+      if (holdAsk) await holdAsk
+      return { status: "form" as const, flow: name, cardId: `form-${name}`, fields: ["choice"] }
+    } },
     toastDebounceMs: 5, toastAutoDismissMs: 10000, accountEpoch: 0, disposed: false, unref: () => {},
     onDispose: (close: () => void) => { disposers.push(close) },
     errorMessageOf: async () => "The host refused the request.",
@@ -65,7 +74,8 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
   const setup = createRepositorySetupController(ctx, dependencies)
   const state = () => (store.collections.cards.get("setup") as { payload: RepositorySetup }).payload
   const close = async () => { disposers.forEach(dispose => dispose()); await store.settled?.(); await store.dispose?.() }
-  return { store, storage, calls, recovery, background, setup, state, close, ctx }
+  return { store, storage, calls, recovery, background, setup, state, close, ctx, asked,
+    holdAsk: (promise: Promise<void>) => { holdAsk = promise } }
 }
 
 const doors = (overrides: Partial<RepositorySetupDependencies> = {}): RepositorySetupDependencies => ({
@@ -251,30 +261,32 @@ test("signed-in practice setup offers the real repository chooser without provis
   } finally { await t.close() }
 })
 
-test("human setup starts Chat only after repository inspection and preserves a typed draft", async () => {
+test("the app asks its own first question only after repository inspection, and preserves a typed draft", async () => {
   const inspection = deferred()
-  const messages: string[] = []
   const t = await fixture(async body => {
     await inspection.promise
     return Response.json({ ...await response(body, "completed", "inspect").json(), inspection: {
       sources: [{ path: ".github/workflows/ci.yml", status: "read", summary: "Tests already run for every pull request.", revision: "source-1" }],
       suggestedDraft: initialSetup(body.repo, "ci", "maintainer").draft, inspectedAt: 2
     } })
-  }, memoryStorage(), doors({ send: async text => { messages.push(text); return true } }))
+  }, memoryStorage(), doors())
   try {
     t.store.dispatch({ type: "composer.changed", actor: "user", draft: "Keep my unfinished question" })
     await t.setup.openRepositorySetup("ci", "example/another")
-    expect(messages).toEqual([])
+    expect(t.asked).toEqual([])
     inspection.release(); await Promise.all(t.background)
-    expect(messages).toEqual([])
+    expect(t.asked).toEqual([])
     expect(t.store.session().draft).toBe("Keep my unfinished question")
     t.store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
-    await until(() => messages.length === 1)
+    await until(() => t.asked.length === 1)
     const card = [...t.store.collections.cards.values()].find(card => card.kind === "repository-setup" && card.payload.repo === "example/another")!
-    expect(messages[0]).toContain(`setup.guide for card ${card.id}`)
+    expect(t.asked[0]?.name).toBe("setup.ask")
+    const asked = card.kind === "repository-setup" ? card.payload : undefined!
+    expect(JSON.parse(t.asked[0]!.args)).toEqual({ cardId: card.id, questionId: "ci.steps.automatic",
+      revision: asked.revision, digest: setupCandidate(asked) })
     expect(card.kind === "repository-setup" && card.payload.sources[0]?.revision).toBe("source-1")
     await t.setup.openRepositorySetup("ci", "example/another")
-    expect(messages).toHaveLength(1)
+    expect(t.asked).toHaveLength(1)
   } finally { inspection.release(); await t.close() }
 })
 
@@ -335,38 +347,36 @@ test("inspection receipt history heals from an available receipt before a later 
 })
 
 test("the agent guidance door reads current prompts and evidence without launching a nested turn", async () => {
-  const messages: string[] = []
-  const t = await fixture(async body => response(body), memoryStorage(), doors({ send: async text => { messages.push(text); return true } }))
+  const t = await fixture(async body => response(body), memoryStorage(), doors())
   try {
-    const guide = createRepositorySetupController({ ...t.ctx, commandActor: "smithers" }, doors({ send: async text => { messages.push(text); return true } }))
+    const guide = createRepositorySetupController({ ...t.ctx, commandActor: "smithers" }, doors())
     await t.setup.configureRepositorySetup("setup", "step.research.prompt", "Read the repository's request handlers first.")
     const result = await guide.guideRepositorySetup("setup")
     expect(typeof result === "object" && result.value).toContain("Read the repository's request handlers first.")
-    expect(typeof result === "object" && result.value).toContain("one short repository-informed question")
-    expect(messages).toEqual([])
+    expect(typeof result === "object" && result.value).toContain("The app asks this setup's first question itself")
+    // Reading the guide as the model mints no unsolicited first-question intent.
+    expect(t.state().guidance).toBeUndefined()
+    expect(t.asked).toEqual([])
     expect(t.calls).toEqual([])
   } finally { await t.close() }
 })
 
-test("a second explicit guide remains queued while the first durable admission is held", async () => {
-  const held = deferred(), messages: string[] = []
-  const t = await fixture(async body => response(body), memoryStorage(), doors({ send: async text => {
-    messages.push(text)
-    if (messages.length === 1) await held.promise
-    return true
-  } }))
+test("a second explicit guide remains queued while the first question render is held", async () => {
+  const held = deferred()
+  const t = await fixture(async body => response(body), memoryStorage(), doors())
+  t.holdAsk(held.promise)
   try {
     await t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "other-setup", kind: "repository-setup", title: "Review pull requests", status: "active", createdAt: 2, ordinal: t.store.nextOrdinal(),
       payload: { ...initialSetup("example/repo", "review", "maintainer"), inspectedAt: 1 }
     } }).isPersisted.promise
     await t.setup.guideRepositorySetup("setup")
-    await until(() => messages.length === 1)
+    await until(() => t.asked.length === 1)
     await t.setup.guideRepositorySetup("other-setup")
-    expect(messages).toHaveLength(1)
+    expect(t.asked).toHaveLength(1)
     held.release()
-    await until(() => messages.length === 2)
-    expect(messages[0]).toContain("card setup")
-    expect(messages[1]).toContain("card other-setup")
+    await until(() => t.asked.length === 2)
+    expect(JSON.parse(t.asked[0]!.args).cardId).toBe("setup")
+    expect(JSON.parse(t.asked[1]!.args).cardId).toBe("other-setup")
   } finally { held.release(); await t.close() }
 })
 
@@ -618,7 +628,7 @@ test.each(["completed", "failed"])("a due chore keeps a busy setup admission and
   } finally { held.release(); await t.close(); timers.mockRestore(); clock.mockRestore() }
 })
 
-test("the composed app wires setup guidance to its existing conversation agent", async () => {
+test("the composed app renders its own setup question and starts no conversation turn", async () => {
   const { createAppController } = await import("../AppController")
   const requests: StartAgentTurnRequest[] = []
   const t = await fixture(async body => response(body))
@@ -628,10 +638,11 @@ test("the composed app wires setup guidance to its existing conversation agent",
   try {
     const result = await controller.commands.run("setup.guide", "setup")
     expect(result.status).toBe("executed")
-    await until(() => requests.some(request => request.purpose !== "recommend"))
-    const conversation = requests.find(request => request.purpose !== "recommend")!
-    expect(JSON.stringify(conversation.messages)).toContain("Read setup.guide for card setup")
-    expect(conversation.instructions).toContain("one short question at a time")
+    await until(() => t.store.collections.cards.has("form-setup.ask:setup"))
+    const question = t.store.collections.cards.get("form-setup.ask:setup")!
+    expect(question.kind).toBe("flow-form")
+    expect(question.title).toBe("Keep issue research, duplicate lookup and bug reproduction automatic?")
+    expect(requests.some(request => request.purpose !== "recommend")).toBe(false)
     expect(t.store.collections.cards.get("setup")?.kind).toBe("repository-setup")
   } finally { await controller.dispose(); await t.close() }
 })

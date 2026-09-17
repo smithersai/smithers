@@ -1,7 +1,7 @@
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
   SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
-  type RepositoryJob, type RepositorySetup, type SetupManualRequest, type SetupRecoveryResponse
+  type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
@@ -10,7 +10,7 @@ import { resolveTargetRepo } from "../RepoContext"
 import { setupTrialPr } from "../RepositorySetupTrial"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
-import { repositorySetupGuide } from "./repositorySetupGuide"
+import { defaultSetupQuestion, repositorySetupGuide, setupGuideQuestions } from "./repositorySetupGuide"
 
 type SetupCard = Extract<Card, { kind: "repository-setup" }>
 type Operation = NonNullable<RepositorySetup["request"]>["operation"]
@@ -19,6 +19,8 @@ type Result = Promise<string | { value: string } | void>
 export interface RepositorySetupController {
   readonly openRepositorySetup: (job: RepositoryJob, repo?: string) => Result
   readonly configureRepositorySetup: (cardId: string, field: string, value: unknown) => Result
+  /** Answer the app's own setup question, bound to the candidate it was asked about. */
+  readonly answerRepositorySetupQuestion: (cardId: string, questionId: string, revision: number, digest: string, choice: string) => Result
   readonly viewRepositorySetup: (cardId: string, view: RepositorySetup["view"], step?: string) => Result
   readonly prepareRepositoryWork: (cardId: string, stepId: string, field?: "prompt" | "source" | "number", value?: unknown) => Result
   readonly runRepositorySetup: (cardId: string, operation: Operation, manual?: SetupManualRequest) => Result
@@ -44,6 +46,41 @@ export const setupGuidance = (card: SetupCard): string => JSON.stringify({
 })
 
 const terminal = (phase: string | undefined) => phase !== undefined && ["completed", "failed", "stopped"].includes(phase)
+
+/** The card the app's own setup question lives in, one per setup. */
+export const setupQuestionCardId = (cardId: string): string => `form-setup.ask:${cardId}`
+
+/**
+ * One setup.configure edit against a draft: the new draft, or the honest
+ * refusal. The configure door and the question's answer share this validator,
+ * so an answer can never edit anything the user could not edit themselves.
+ */
+export const applySetupEdit = (
+  draft: SetupDraft, job: RepositoryJob, field: string, value: unknown
+): { readonly draft: SetupDraft } | { readonly error: string } => {
+  const pieces = field.split(".")
+  if (field === "replies" && value === "automatic") return { error: "Automatic replies are not available in this setup." }
+  let next = { ...draft }
+  if (field === "trial.source" || field === "trial.number") {
+    if (job !== "review" && job !== "ci") return { error: "This trial does not select a PR." }
+    const subject = setupTrialPr(next.trialBody)
+    if (field === "trial.source") {
+      if (value !== "github" && value !== "smithers-cloud") return { error: "Choose the PR source." }
+      subject.source = value
+    } else if (value === null || value === "") delete subject.number
+    else if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) subject.number = value
+    else return { error: "Choose a valid PR number." }
+    next = { ...next, trialBody: JSON.stringify(subject) }
+  } else if (pieces[0] === "step" && pieces.length === 3 && ["mode", "prompt"].includes(pieces[2]!)) {
+    if (!next.steps.some(step => step.id === pieces[1])) return { error: "That flow is not in this setup." }
+    next = { ...next, steps: next.steps.map(step => step.id === pieces[1] ? { ...step, [pieces[2]!]: value } : step) }
+  } else if (pieces.length === 1 && Object.prototype.hasOwnProperty.call(next, field)) {
+    next = { ...next, [field]: value }
+  } else return { error: "That setting cannot be edited." }
+  const parsed = SetupDraftSchema.safeParse(next)
+  if (!parsed.success) return { error: "The setting does not match the expected value." }
+  return { draft: parsed.data }
+}
 
 /** Recover input and evidence independently of current backend policy. */
 export function projectRecoveredSetup(current: RepositorySetup, recovered: SetupRecoveryResponse): RepositorySetup {
@@ -171,14 +208,32 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   const current = (id: string, requestId: string, login: string | null, accountEpoch: number) =>
     !ctx.disposed && !shared.disposed && owner() === login && epoch() === accountEpoch && get(id)?.payload.owner === login && get(id)?.payload.request?.id === requestId
 
+  /** Render the app's question through the shared form path, bound to this exact candidate. */
+  const askSetupQuestion = async (id: string): Promise<boolean> => {
+    const card = get(id)
+    if (!card) return false
+    const outcome = await ctx.commands.runAsAgent("setup.ask", JSON.stringify({ cardId: id,
+      questionId: defaultSetupQuestion(card.payload).id, revision: card.payload.revision, digest: setupCandidate(card.payload) }))
+    if (outcome.status === "form") return true
+    throw Error(outcome.status === "failed" ? outcome.error : "The setup question could not be opened.")
+  }
+
   const guidanceCurrent = (id: string, requestId: string, login: string, accountEpoch: number) =>
     !ctx.disposed && !shared.disposed && owner() === login && epoch() === accountEpoch
     && get(id)?.payload.owner === login && get(id)?.payload.guidance?.id === requestId
+  /*
+   * The first setup question is the APPLICATION's, rendered here through the
+   * one shared form card (THE FORM LAW) at the same durable intent that used
+   * to hand the ask to the model: a successful inspection, an idle chat, and
+   * this account's own card. Nothing about the question reaches a provider, so
+   * there is no model sentence to police — the wording, the choices and the
+   * edits they make are all in repositorySetupGuide.ts.
+   */
   const offerGuidance = () => {
     if (!dependencies || ctx.disposed || shared.disposed || shared.guidanceQueued || shared.guiding) return
     shared.guidanceQueued = true
     // Notifications may run inside an optimistic dispatch. Never recursively
-    // submit a turn there; the returned admission receipt is the authority.
+    // render a card there; the persisted question card is the authority.
     void Promise.resolve().then(async () => {
       await ctx.store.settled?.()
       shared.guidanceQueued = false
@@ -187,17 +242,17 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         if (card.kind !== "repository-setup") continue
         const intent = card.payload.guidance, login = card.payload.owner, accountEpoch = epoch()
         if (!intent || intent.state !== "requested" || !login || login !== owner() || shared.guidanceFailures.has(intent.id)) continue
-        const admitted = ctx.store.committedHttpTurn(intent.id, login)
-        if (!admitted && (ctx.activeTurn || ctx.store.session().phase !== "idle" || ctx.store.session().draft
+        const asked = ctx.store.collections.cards.has(setupQuestionCardId(card.id))
+        if (!asked && (ctx.activeTurn || ctx.store.session().phase !== "idle" || ctx.store.session().draft
           || card.payload.recovery?.state === "requested" || card.payload.inspectedAt === undefined
           || ["requested", "running"].includes(card.payload.request?.state ?? ""))) continue
         shared.guiding = true
-        let accepted = admitted !== undefined, settled = false
+        let accepted = asked, settled = false
         try {
           for (let attempt = 0; attempt < 2; attempt++) {
             if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) break
             try {
-              const saved = accepted || await dependencies.send(`Help me set up “${REPOSITORY_JOB_TITLES[card.payload.job]}” for ${card.payload.repo}. Read setup.guide for card ${card.id}, then ask the first question.`, { turnId: intent.id, owner: login })
+              const saved = accepted || await askSetupQuestion(card.id)
               if (!saved || !guidanceCurrent(card.id, intent.id, login, accountEpoch)) break
               accepted = true
               await edit(card.id, async () => {
@@ -235,8 +290,10 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     if (!card || !login || card.payload.owner !== login) return
     const old = card.payload.guidance
     const retry = old !== undefined && (old.state === "failed" || shared.guidanceFailures.has(old.id))
-    if ((old?.state === "requested" && !(explicit && retry)) || (!explicit && old) || (old?.state === "admitted"
-      && (ctx.activeTurn?.id === old.id || ctx.store.committedHttpTurn(old.id, login)?.status === "active"))) return
+    // An unanswered question card IS the ask, so a second Configure in Chat
+    // points at the one already on screen instead of resetting its draft.
+    if ((old?.state === "requested" && !(explicit && retry)) || (!explicit && old)
+      || (old?.state === "admitted" && ctx.store.collections.cards.get(setupQuestionCardId(id))?.status === "active")) return
     const intent = { id: retry ? old.id : crypto.randomUUID(), state: "requested" as const }
     shared.guidanceFailures.delete(intent.id)
     await upsert({ ...card, payload: { ...card.payload, guidance: intent } })
@@ -536,28 +593,34 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       const card = get(id)
       if (!card) return "Open the setup first."
       if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
-      const pieces = field.split(".")
-      if (field === "replies" && value === "automatic") return "Automatic replies are not available in this setup."
-      let draft = { ...card.payload.draft }
-      if (field === "trial.source" || field === "trial.number") {
-        if (card.payload.job !== "review" && card.payload.job !== "ci") return "This trial does not select a PR."
-        const subject = setupTrialPr(draft.trialBody)
-        if (field === "trial.source") {
-          if (value !== "github" && value !== "smithers-cloud") return "Choose the PR source."
-          subject.source = value
-        } else if (value === null || value === "") delete subject.number
-        else if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) subject.number = value
-        else return "Choose a valid PR number."
-        draft = { ...draft, trialBody: JSON.stringify(subject) }
-      } else if (pieces[0] === "step" && pieces.length === 3 && ["mode", "prompt"].includes(pieces[2]!)) {
-        if (!draft.steps.some(step => step.id === pieces[1])) return "That flow is not in this setup."
-        draft = { ...draft, steps: draft.steps.map(step => step.id === pieces[1] ? { ...step, [pieces[2]!]: value } : step) }
-      } else if (pieces.length === 1 && Object.prototype.hasOwnProperty.call(draft, field)) {
-        draft = { ...draft, [field]: value }
-      } else return "That setting cannot be edited."
-      const parsed = SetupDraftSchema.safeParse(draft)
-      if (!parsed.success) return "The setting does not match the expected value."
-      await upsert({ ...card, status: "active", payload: editSetup(card.payload, parsed.data) })
+      const applied = applySetupEdit(card.payload.draft, card.payload.job, field, value)
+      if ("error" in applied) return applied.error
+      await upsert({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
+      return { value: "Draft updated." }
+    }),
+    /*
+     * The answer is bound to the candidate the question was asked about: a
+     * draft that moved on refuses visibly rather than applying a choice
+     * derived from a check or a mode that is no longer there. An unknown id
+     * or an unoffered choice refuses too — a default belongs to the ASK.
+     */
+    answerRepositorySetupQuestion: (id, questionId, revision, digest, choice) => edit(id, async () => {
+      const card = get(id)
+      if (!card) return "Open the setup first."
+      if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
+      if (card.payload.revision !== revision || setupCandidate(card.payload) !== digest) return "This setup changed after the question was asked. Ask for setup guidance again to see the current question."
+      const question = setupGuideQuestions(card.payload).find(candidate => candidate.id === questionId)
+      if (!question) return "That question is not part of this setup."
+      const pick = question.choices.find(candidate => candidate.id === choice)
+      if (!pick) return "Choose one of the offered answers."
+      if (pick.edits.length === 0) return { value: "Keeping the current setup." }
+      let draft = card.payload.draft
+      for (const { field, value } of pick.edits) {
+        const applied = applySetupEdit(draft, card.payload.job, field, value)
+        if ("error" in applied) return applied.error
+        draft = applied.draft
+      }
+      await upsert({ ...card, status: "active", payload: editSetup(card.payload, draft) })
       return { value: "Draft updated." }
     }),
     viewRepositorySetup: (id, view, selectedStep) => edit(id, async () => {

@@ -220,6 +220,7 @@ export const FLOW_NAMES = [
   "runs.trace.view",
   "search.open",
   "secrets.list",
+  "setup.ask",
   "setup.configure",
   "setup.guide",
   "setup.retry",
