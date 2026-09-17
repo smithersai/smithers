@@ -127,18 +127,25 @@ const verifyEvaluation = (input: SetupInput, receipt: typeof Receipt.Type) => {
     return results.length !== 1 || results[0]!.status !== "passed" || !results[0]!.evidence.length
   })) throw invalid("Required evaluation cases have not passed with evidence")
 }
+/** The repository keeps the test definition; its expected answer stays with the setup authority. */
+export const publicCase = (test: typeof EvalCase.Type) => ({ id: test.id, name: test.name, input: test.input, required: test.required })
+export const candidateFiles = (input: SetupInput): Record<string, string> => {
+  const cases = input.draft.cases.map(publicCase)
+  const files: Record<string, string> = { "candidate.json": JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft: { ...input.draft, cases } }, null, 2) + "\n",
+    "evals.json": JSON.stringify(cases, null, 2) + "\n" }
+  for (const step of input.draft.steps) {
+    if (!/^[A-Za-z0-9_-]+$/.test(step.id)) throw invalid("Step IDs must be safe repository filenames")
+    files[`prompt-${step.id}.md`] = step.prompt + "\n"
+  }
+  return files
+}
 const writeCandidate = (options: InspectionOptions, input: SetupInput) => Effect.gen(function*() {
   const fs = options.fs, path = yield* Path.Path
   const root = yield* admitSourcePath(options, options.repositoryPath, `.smithers/repository-jobs/${input.job}/${input.digest}`)
   yield* fs.makeDirectory(root, { recursive: true })
   const canonical = yield* fs.realPath(root), workspace = yield* fs.realPath(options.repositoryPath)
   if (!canonical.startsWith(workspace + path.sep)) return yield* invalid("Repository configuration path leaves the workspace")
-  const files: Record<string, string> = { "candidate.json": JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft: input.draft }, null, 2) + "\n",
-    "evals.json": JSON.stringify(input.draft.cases, null, 2) + "\n" }
-  for (const step of input.draft.steps) {
-    if (!/^[A-Za-z0-9_-]+$/.test(step.id)) return yield* invalid("Step IDs must be safe repository filenames")
-    files[`prompt-${step.id}.md`] = step.prompt + "\n"
-  }
+  const files = yield* Effect.try({ try: () => candidateFiles(input), catch: error => error instanceof CodingError ? error : invalid("The candidate could not be materialised") })
   for (const [name, contents] of Object.entries(files)) {
     const target = yield* admitSourcePath(options, root, name), existing = yield* fs.readFileString(target).pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
     if (existing !== undefined && existing !== contents) return yield* invalid("A retained candidate was edited; create a new revision")

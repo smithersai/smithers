@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
@@ -193,6 +193,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     const taskText = request.system.find(part => part.type === "text" && part.text.startsWith("The task for this run:\n\n"))
     const task = taskText?.type === "text" ? JSON.parse(taskText.text.slice("The task for this run:\n\n".length).split("\n")[0]!) : undefined
     if (!scoring && !suggesting) assert(!text.includes("HELD_OUT_EXPECTATION"), "production worker must not receive expected eval answers")
+    if (scoring) assert(text.includes("HELD_OUT_EXPECTATION"), "the independent judge keeps the maintainer's expectation")
     const response: any = suggesting ? { ...setup.draft, cases: setup.draft.cases.map(test => ({ ...test, input: JSON.parse(test.input) })) } : scoring
       ? { verdict: "pass", reason: "The recorded result classifies a question and cites the source greeting.", evidenceIds: [0] }
       : checking ? { verdict: "pass", summary: "Every supplied changed file matches the fixture's requested behavior.", examinedPaths: task.comparison.paths, findings: [] }
@@ -300,6 +301,8 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       assert.equal(result.receipt?.phase, "completed", JSON.stringify(result))
       assert.equal(result.receipt?.runId, launched.runId)
       if (operation === "evaluate") assert.equal(result.receipt?.results[0]?.status, "passed", JSON.stringify(result))
+      // Inspect returns the maintainer's own editable draft; every other result is read by the repository.
+      if (operation !== "inspect") assert(!JSON.stringify(result).includes("HELD_OUT_EXPECTATION"), `${operation} result must not return the held-out answer`)
       if (operation === "trial") {
         assert(result.receipt?.evidence.some(item => item.startsWith("execution:")))
         assert.equal(comments, 0)
@@ -543,7 +546,17 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   assert.equal(comments, proof.setup ? 1 : 0)
   if (proof.setup) assert.equal(registrations.at(-1)?.mode, "enabled")
   assert.equal(await readFile(join(root, "greeting.mjs"), "utf8"), greetingSource)
-  if (proof.setup) assert((await readFile(join(root, ".smithers", "repository-jobs", "issues", digest, "candidate.json"), "utf8")).includes(digest))
+  if (proof.setup) {
+    const candidateRoot = join(root, ".smithers", "repository-jobs", "issues", digest)
+    assert((await readFile(join(candidateRoot, "candidate.json"), "utf8")).includes(digest))
+    for (const directory of [candidateRoot, join(root, ".smithers", "flows", "repository-jobs", "issues", digest)]) {
+      for (const name of await readdir(directory)) {
+        assert(!(await readFile(join(directory, name), "utf8")).includes("HELD_OUT_EXPECTATION"), `${name} must not retain the held-out answer`)
+      }
+    }
+    assert.deepEqual(JSON.parse(await readFile(join(candidateRoot, "evals.json"), "utf8")),
+      setup.draft.cases.map(test => ({ id: test.id, name: test.name, input: test.input, required: test.required })), "the repository keeps the public test definition")
+  }
   await writeFile(join(temporary, "model-requests.json"), JSON.stringify(requests))
   assert.deepEqual(projectionMismatches, [], "Worker needs the exact typed finalOutput for every setup operation")
   passed = true

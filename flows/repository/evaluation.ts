@@ -4,6 +4,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
+import { setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { CodingError } from "../coding/schema.ts"
 import { checkExecutionFailed, recordedChecks } from "./checks.ts"
 import { CaptureRepository, currentExecutionId } from "./inspection.ts"
@@ -41,6 +42,13 @@ export const Evaluate = Action.make("repository/evaluate-candidate", {
   payload: { setup: SetupInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number }, success: Schema.Array(EvalResult), error: CodingError,
   nondeterministic: true
 })
+/** An evaluated job carries the reviewed configuration without its held-out cases, so its
+ * digest covers exactly the configuration it receives while the candidate identity is unchanged. */
+export const evaluatedCandidate = (setup: SetupInput): Pick<JobInput, "repo" | "job" | "revision" | "digest" | "configuration"> => {
+  const configuration = { ...setup.draft, cases: [] }
+  return { repo: setup.repo, job: setup.job, revision: setup.revision, configuration,
+    digest: setupCandidate({ repo: setup.repo, job: setup.job, revision: setup.revision, draft: JSON.parse(JSON.stringify(configuration)) }) }
+}
 const CaptureCase = Flow.make("repository/CaptureCase", { payload: CaptureRepository.payloadSchema,
   success: RepositoryEvidence, error: CodingError, body: input => CaptureRepository.call(input) })
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
@@ -97,8 +105,8 @@ export const evaluationLayers = Layer.mergeAll(Interpreter.layer(ScoreExecution)
       const caseEvidence = capturedResult.success
       // Only event payload, production prompts and captured facts reach worker children.
       // Withholding assertions and expected text prevents answer leakage.
-      const input: JobInput = { repo: setup.repo, job: setup.job, revision: setup.revision, digest: setup.digest,
-        configuration: setup.draft, sourceRevision: caseEvidence.source.commitId, event: { ...decoded.value.event, deliveryKey: key } }
+      const input: JobInput = { ...evaluatedCandidate(setup), sourceRevision: caseEvidence.source.commitId,
+        event: { ...decoded.value.event, deliveryKey: key } }
       const observed = yield* runtime.execute(Investigate, { executionId: key,
         payload: { input, evidence: { ...caseEvidence, records: caseEvidence.records.filter(record => record.number !== input.event.issueNumber || record.source !== input.event.source) }, deadlineAt, evaluation: true } }).pipe(Effect.result)
       if (observed._tag === "Failure") {
