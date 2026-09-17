@@ -189,5 +189,12 @@ export * as Migrations from "./Migrations.ts"
  */
 export * as Health from "./Health.ts"
 
+/**
+ * The Jev-decided session checker a host binds as `jev.session`.
+ * @category health
+ * @since 1.0.0
+ */
+export * as JevSessionChecker from "./JevSessionChecker.ts"
+
 /** Versioned control lifecycle producer and projection contract. */
 export * as ControlFacts from "./ControlFacts.ts"

@@ -50,6 +50,7 @@ signature, is on the [API reference](https://control.smithers.sh/reference/api/)
 | `Lineage`, `Cancellation`, `Steering`               | Pure projections: how a run came to exist, who cancelled it, and when a steer was delivered.           |
 | `Monitor`                                           | Run health as a pure classification, and the beat loop that acts on it.                                |
 | `Health`                                            | Configurable Effect checks, bounded observation policies, provenance, and the shared status rollup.    |
+| `JevSessionChecker`                                 | The registered `jev.session` checker: does this session's own output show it waiting on a person?      |
 | `Channels`, `WebhookChannel`                        | Verified ingress: an external request becomes a control mutation, once.                                |
 | `Credential`, `CredentialStore`, `CredentialCipher` | The credential boundary and its two ports.                                                             |
 | `SqlCredentialStore`, `WebCryptoCipher`             | Their durable and AES-256-GCM adapters.                                                                |

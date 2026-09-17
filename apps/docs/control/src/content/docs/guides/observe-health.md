@@ -45,6 +45,40 @@ any of these semantics. The lifecycle defaults return unknown activity. Explicit
 `no-progress` or `unreachable` reasons may mark health unhealthy. Known engine
 timer, event, quota, and approval waits retain their authoritative meaning.
 
+## Detect a session waiting on a person
+
+`jev.session` is registered in every host, so a binding is the whole opt-in. It is
+registration, not a binding: a host that never names it keeps the lifecycle
+default it had.
+
+```ts
+import * as Health from "@smthrs/control/Health"
+
+const health: Health.HealthConfig = {
+  bindings: { terminal: { checkerId: "jev.session", exposeOutput: true } }
+}
+```
+
+The checker sends the session's `alive`, `exitCode`, and the newest 4 KiB of its
+output to Jev, TypeSafe's decision model, through the Vercel AI Gateway, with zero
+data retention. Jev answers one choice question (`working`, `idle`, `needs-input`)
+and one boolean question about whether the output ends waiting for a person, both
+in one request that returns in about 300 ms. `exposeOutput: true` is required:
+without it the host sends no tail and the probe answers unknown.
+
+An answer becomes a report only at confidence 0.7 or above. TypeSafe claims 76%
+agreement with a human rater, so a Jev that is merely leaning is a coin flip
+dressed as a reading: a false `needs-input` pages a person who is not needed, and
+a false `idle` retires an agent that is still working. `needs-input` carries the
+reason `prompt-detected`, which the rollup turns into `attention: "needs-input"`.
+
+The key is `AI_GATEWAY_API_KEY`, read from the host process by
+`Health.registeredCheckers`' instance, or passed explicitly to
+`JevSessionChecker.makeJevSessionChecker({ env, fetch })`. A host without the key
+never opens a connection. A bad key, a plan refusal, a rate limit, a dead socket,
+and the call's own 1.5 s deadline are all the same fact to a monitor, so each one
+returns the lifecycle report rather than inventing activity.
+
 The native host admits at most 128 subjects and eight simultaneous probes by
 default. It scans every five seconds, checks each subject every five seconds,
 times out a probe after two seconds, expires observations after twenty seconds,

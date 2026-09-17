@@ -4,6 +4,7 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Cause, Effect, Metric, Schema } from "effect"
 import type { ControlEvent, RunSummary } from "./ControlSchema.ts"
+import { jevSessionChecker } from "./JevSessionChecker.ts"
 
 /** Authoritative subject lifecycle.
  * @category schemas
@@ -315,6 +316,16 @@ export const lifecycleSessionChecker: HealthChecker = {
   id: "lifecycle.session",
   probe: () => Effect.succeed({ activity: "unknown", reason: "ok" })
 }
+/** Checkers every host may bind by id, beyond the lifecycle default it always has.
+ *
+ * Registration is not a binding. A host opts in by naming one of these as a
+ * `HealthBinding.checkerId`; a host that names none keeps the lifecycle
+ * default, and no entry here is ever consulted for an unbound subject.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const registeredCheckers: ReadonlyArray<HealthChecker<any>> = [jevSessionChecker]
 const bounded = (value: number, min: number, max: number) => Number.isSafeInteger(value) && value >= min && value <= max
 const invalid = (reason: HealthConfigurationError["reason"]): never => {
   throw new HealthConfigurationError({ reason })
@@ -325,7 +336,10 @@ const invalid = (reason: HealthConfigurationError["reason"]): never => {
  */
 export const makeRegistry = (config: HealthConfig = {}, kind: "run" | "session" = "run"): Registry => {
   const fallback = kind === "run" ? lifecycleRunChecker : lifecycleSessionChecker
-  const checkers = new Map<string, ResolvedCheck["checker"]>([[fallback.id, fallback]])
+  const checkers = new Map<string, ResolvedCheck["checker"]>([
+    [fallback.id, fallback],
+    ...registeredCheckers.map((checker) => [checker.id, checker] as const)
+  ])
   for (const checker of config.checkers ?? []) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(checker.id) || checkers.has(checker.id)) invalid("invalid-checker")
     checkers.set(checker.id, checker)
