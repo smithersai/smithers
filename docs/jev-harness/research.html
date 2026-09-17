@@ -181,6 +181,7 @@ content-type: application/json
 
 <h2>Append log</h2>
 <ul>
+<li><strong>2026-09-17, phase 1</strong>: live trace of app.opencode.ai against OpenCode 1.18.31 and main (<a href="trace/summary.md">trace/summary.md</a>): the app runs protocol v1 against every shipping server; v2 needs shims and was never observed completing a turn. Section 3.2's "probes /api/health first" is wrong: it probes /global/health first and needs a numeric pid on /api/health to pick v2. Composition spike (<a href="composition-brief.md">composition-brief.md</a>) and package scaffold (<a href="scaffold-brief.md">scaffold-brief.md</a>) written and proven. Classifier and Evaluator landed in @smthrs/model (963b6f55).</li>
 <li><strong>2026-09-17</strong>: document created from this session's research. Verified: Jev facts and wire protocol; three Smithers loops; OpenCode hosted app, CORS, protocol v2 route list, event vocabulary from <code>server-session-v2-reducer.ts</code>, tool renderer names, test reuse.</li>
 </ul>
 </main></body></html>

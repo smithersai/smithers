@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/big-pickle",
+  "permission": {
+    "bash": "ask"
+  },
+  "mcp": {
+    "smithers": {
+      "type": "local",
+      "command": ["bunx", "smithers-orchestrator", "--mcp"],
+      "enabled": false
+    }
+  }
+}
