@@ -311,3 +311,27 @@ test("a per-step work form edits labeled fields and opens the actual dispatched 
     expect(t.button("Fix for real")?.disabled).toBe(true)
   } finally { t.close() }
 })
+
+test("a chore picks an event beside its schedule and cannot enable automation no step would run", () => {
+  const unattended = "Set the chore to run automatically or on approval."
+  const card = makeCard("chores"), t = mount(card)
+  try {
+    const select = t.host.querySelector<HTMLSelectElement>('select[aria-label="Also run on"]')!
+    expect(select.value).toBe("none")
+    expect(t.host.textContent).not.toContain(unattended)
+    expect(t.host.textContent).not.toContain("Issue label")
+    select.value = "labeled"
+    select.dispatchEvent(new Event("change", { bubbles: true }))
+    expect(t.calls).toEqual([["setup.configure", flowArgs("setup.configure", { cardId: card.id, field: "choreEvent", value: "labeled" })]])
+    card.payload.draft.choreEvent = "labeled"
+    card.payload.draft.label = "chore"
+    t.render(card)
+    expect(t.host.textContent).toContain("Issue label")
+    expect(t.host.textContent).toContain(unattended)
+    expect(t.button("Enable chore")?.disabled).toBe(true)
+    card.payload.draft.steps = card.payload.draft.steps.map(step => ({ ...step, mode: "approved" as const }))
+    t.render(card)
+    expect(t.host.textContent).not.toContain(unattended)
+    expect(t.calls).toHaveLength(1)
+  } finally { t.close() }
+})

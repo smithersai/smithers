@@ -41,6 +41,26 @@ it("a scheduler observation is retained independently of a draft and never suppl
   expect(RepositorySetupSchema.safeParse({ ...setup, active: { ...setup.active, schedule: { expression: "0 9 * * *", nextFireAt: "tomorrow" } } }).success).toBe(false)
 })
 
+it("a chore event joins the candidate, defaults to none in a stored draft and needs a step that actually runs", () => {
+  const unattended = "Set the chore to run automatically or on approval."
+  const setup = initialSetup("example/repo", "chores", "maintainer")
+  expect(setup.draft.choreEvent).toBe("none")
+  const { choreEvent: _absent, ...stored } = setup.draft
+  expect(SetupDraftSchema.parse(stored).choreEvent).toBe("none")
+  expect(setupActivationProblems(setup)).not.toContain(unattended)
+  const running = (draft: RepositorySetup["draft"]) => ({ ...draft, steps: draft.steps.map(step => ({ ...step, mode: "approved" as const })) })
+  for (const draft of [{ ...setup.draft, choreEvent: "push" as const }, { ...setup.draft, choreEvent: "labeled" as const, label: "chore" },
+    { ...setup.draft, schedule: "0 9 * * *" }]) {
+    expect(setupCandidate({ ...setup, draft })).not.toBe(setupCandidate(setup))
+    expect(setupActivationProblems({ ...setup, draft })).toContain(unattended)
+    expect(setupActivationProblems({ ...setup, draft: running(draft) })).not.toContain(unattended)
+  }
+  expect(setupActivationProblems({ ...setup, draft: { ...setup.draft, choreEvent: "labeled", steps: running(setup.draft).steps } }))
+    .toContain("Choose the issue label.")
+  const issues = initialSetup("example/repo", "issues", "maintainer")
+  expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, schedule: "0 9 * * *" } })).not.toContain(unattended)
+})
+
 describe("repository setup receipt history", () => {
   it("archiving a displaced receipt preserves terminal evidence and deduplicates without granting activation", () => {
     const setup = initialSetup("example/repo", "issues", "maintainer")

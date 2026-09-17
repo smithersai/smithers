@@ -5,6 +5,7 @@ import { Action, Flow, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
+import { unattendedChoreProblem } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
@@ -59,7 +60,8 @@ export const WaitManual = Poll.make("repository/WaitManual", {
 export const normalEvents = (input: SetupInput) => input.job === "review"
   ? [{ type: "pull_request", actions: ["opened", "synchronize", "reopened"] }]
   : input.job === "ci" ? [{ type: "pull_request", actions: ["opened", "synchronize", "reopened"] }, { type: "push", actions: [] }]
-  : input.job === "chores" ? []
+  : input.job === "chores" ? input.draft.choreEvent === "push" ? [{ type: "push", actions: [] }]
+    : input.draft.choreEvent === "labeled" ? [{ type: "issues", actions: ["labeled"] }] : []
   : input.job === "feature" ? input.draft.steps.some(step => step.id === "feature" && (step.mode === "automatic" || step.mode === "approved"))
     ? [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }] : []
   : [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }, { type: "issue_comment", actions: ["created"] }]
@@ -101,6 +103,10 @@ export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandida
   }).pipe(Effect.catch(error => Effect.succeed({ satisfied: true, output: { status: "failed" as const, runId: "", executionId: "", evidence: [],
     error: error instanceof CodingError ? error.message : "The manual dispatch could not be verified" } })))),
   Register.toLayer(({ input, mode, deadlineAt }) => Effect.gen(function*() {
+    // The same configuration invariant the card applies. A schedule or event
+    // whose steps never run registers work that only ever reports skipped.
+    const unattended = mode === "enabled" ? unattendedChoreProblem(input) : undefined
+    if (unattended) return yield* invalid(unattended)
     if (Date.now() >= deadlineAt) return yield* invalid("Setup reached its configured time limit")
     const remote = yield* requireRemote
     if (remote.repo !== input.repo || (input.workspaceId !== undefined && input.workspaceId !== remote.workspaceId)) return yield* invalid("The candidate belongs to another workspace")
@@ -129,7 +135,7 @@ export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandida
     const body = { repo: input.repo, workspace_id: remote.workspaceId, flow_id: card.flowId, revision: input.revision,
       digest: input.digest, source_revision: source.commitId, execution_digest: card.executionDigest, envelope: card.envelope, mode,
       ...(issue ? { trial_issue_number: issue.number, trial_source: issue.source, events: [{ type: "issues", actions: ["opened"] }] }
-        : { events: normalEvents(input), ...(input.draft.scope === "label" ? { label: input.draft.label } : {}),
+        : { events: normalEvents(input), ...(input.draft.scope === "label" || (input.job === "chores" && input.draft.choreEvent === "labeled") ? { label: input.draft.label } : {}),
           ...(input.job === "chores" ? { schedule: input.draft.schedule } : {}) }), input: input.draft }
     const registration = yield* remote.register(input.job, json(body)).pipe(Effect.flatMap(Schema.decodeUnknownEffect(Registration)))
     if (registration.revision !== input.revision || registration.digest !== input.digest || registration.mode !== mode ||

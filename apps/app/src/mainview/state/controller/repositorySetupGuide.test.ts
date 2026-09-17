@@ -14,6 +14,7 @@ const setupCard = (job: RepositoryJob): SetupCard => ({
 })
 const fields = (control: SetupGuideControl): string[] => control.kind === "step" ? [control.modeField, control.promptField]
   : control.kind === "issue-filter" ? [control.scopeField, control.labelField]
+  : control.kind === "chore-event" ? [control.field, control.labelField]
   : control.kind === "trial" ? [...control.fields] : [control.field]
 
 test.each([...REPOSITORY_JOBS])("%s advertises only supported current steps and job-specific inputs", job => {
@@ -34,8 +35,11 @@ test.each([...REPOSITORY_JOBS])("%s advertises only supported current steps and 
   expect(advertised).not.toContain("step.invented.prompt")
   expect(advertised).not.toContain(`step.${unrelatedStep}.mode`)
   expect(advertised.includes("scope")).toBe(job === "issues")
-  expect(advertised.includes("label")).toBe(job === "issues")
+  expect(advertised.includes("label")).toBe(job === "issues" || job === "chores")
   expect(advertised.includes("schedule")).toBe(job === "chores")
+  expect(advertised.includes("choreEvent")).toBe(job === "chores")
+  expect(guide.controls.filter(control => control.kind === "chore-event")).toEqual(job === "chores"
+    ? [{ kind: "chore-event", field: "choreEvent", labelField: "label", values: ["none", "push", "labeled"], pushRef: "default-branch" }] : [])
   expect(guide.controls.filter(control => control.kind === "trial")).toEqual(job === "review" || job === "ci"
     ? [{ kind: "trial", subject: "pull-request", fields: ["trialTitle", "trial.source", "trial.number"], sources: ["github", "smithers-cloud"] }]
     : [{ kind: "trial", subject: "test-request", fields: ["trialTitle", "trialBody"] }])
@@ -106,6 +110,9 @@ test.each([...REPOSITORY_JOBS])("every %s advertised field and enum is accepted 
         break
       case "eval-cases": edits.push([control.field, initialCases.map(item => item.id === "case-a" ? { ...item, input: "Revised input", expected: "Revised expectation" } : item)]); break
       case "schedule": edits.push([control.field, "0 9 * * 1"], [control.field, ""]); break
+      case "chore-event":
+        edits.push(...control.values.map(value => [control.field, value] as [string, unknown]), [control.labelField, "maintenance"])
+        break
       case "trial":
         edits.push(["trialTitle", "A meaningful scoped trial"])
         if (control.subject === "pull-request") edits.push(...control.sources.map(source => ["trial.source", source] as [string, unknown]), ["trial.number", 42])

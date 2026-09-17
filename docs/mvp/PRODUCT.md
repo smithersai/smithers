@@ -164,7 +164,7 @@ The implementation must preserve the audit's important adaptations: real PR comp
 
 **CHORE-01 — Identify repeat work.** Suggest chores from repeated maintenance PRs or accept a direct request, such as dependency upgrades. Cite evidence for patterns and retain the user's intended scope.
 
-**CHORE-02 — Configure execution.** Define inputs, editable prompt/steps, checks, bounds, and manual/event/scheduled operation. Schedules include their timezone and next intended execution. Starting a chore does not grant landing permission.
+**CHORE-02 — Configure execution.** Define inputs, editable prompt/steps, checks, bounds, and manual/event/scheduled operation. The events are a push to the repository's default branch and an issue gaining the chosen label. Schedules include their timezone and next intended execution. A schedule or event also needs a step that runs automatically or on approval. Starting a chore does not grant landing permission.
 
 **CHORE-03 — Test and operate.** Evaluate representative cases and run one bounded real trial. Only then enable recurring execution. Demonstrate event/schedule delivery, pause, restart recovery, deduplication, failure, and approval behavior. A schedule declaration or cron string by itself is insufficient.
 

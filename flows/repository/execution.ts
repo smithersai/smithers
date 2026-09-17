@@ -47,8 +47,15 @@ export const runIndependentSteps = <A, B, E, R>(steps: ReadonlyArray<A>, execute
   }
   return [...completed, ...(yield* Effect.forEach(steps.slice(cursor), execute, { concurrency: 3 }))]
 })
+// Plue's push rule carries no ref filter, so a registered chore would otherwise
+// start on every branch and tag. Only the repository's own default branch may.
+const defaultBranchPush = (event: typeof Event.Type) => {
+  const payload = object(event.payload), branch = object(payload.repository).default_branch
+  return typeof branch === "string" && branch !== "" && payload.ref === `refs/heads/${branch}`
+}
 export const selectedSteps = (input: Pick<JobInput, "job" | "configuration" | "event">) => {
   if (sourceEvent(input.event).ignored) return []
+  if (input.job === "chores" && input.event.type === "push" && !defaultBranchPush(input.event)) return []
   const manualStep = input.event.manualStep
   if (manualStep !== undefined && (input.event.type !== "manual" || input.event.action !== `manual:${manualStep}` ||
       !input.configuration.steps.some(step => step.id === manualStep && step.mode !== "off"))) throw invalid("The manual event does not select an enabled step")

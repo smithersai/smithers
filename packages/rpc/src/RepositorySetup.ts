@@ -43,13 +43,16 @@ export const SetupEvalCaseSchema = z.object({
   input: z.string().max(16000), expected: z.string().min(1).max(8000),
   source: z.string().max(1000).optional(), required: z.boolean()
 })
+/** Repository events a chore may start on; Plue delivers no other rule for one. @since 1.0.0 */
+export const SetupChoreEventSchema = z.enum(["none", "push", "labeled"])
 /** The editable draft; it carries no authority to activate automation. @since 1.0.0 */
 export const SetupDraftSchema = z.object({
   steps: z.array(SetupStepSchema).max(30), checks: z.array(SetupCheckSchema).max(50),
   cases: z.array(SetupEvalCaseSchema).max(100),
   replies: z.enum(["draft", "automatic"]), landing: z.enum(["ask", "checks"]),
   scope: z.enum(["future", "label"]), label: z.string().max(100),
-  schedule: z.string().max(200), budgetMinutes: z.number().int().min(1).max(120),
+  schedule: z.string().max(200), choreEvent: SetupChoreEventSchema.default("none"),
+  budgetMinutes: z.number().int().min(1).max(120),
   connectIssues: z.boolean(), trialTitle: z.string().min(1).max(240), trialBody: z.string().max(16000)
 }).superRefine((draft, context) => {
   for (const field of ["steps", "checks", "cases"] as const) {
@@ -144,7 +147,7 @@ export function initialSetup(repo: string, job: RepositoryJob, owner: string | n
     chores: [step("chore", "Run a chore", "manual", "Perform the chosen maintenance task within its scope. Reuse repository conventions and checks. Ask before a breaking change. Finish without creating a change when there is nothing to do.")]
   }
   return { repo, job, owner, revision: 1, view: "flows", selectedStep: steps[job][0]!.id, sources: [], previousReceipts: [], draft: {
-    steps: steps[job], checks: [], cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", budgetMinutes: 10, connectIssues: false,
+    steps: steps[job], checks: [], cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", choreEvent: "none", budgetMinutes: 10, connectIssues: false,
     trialTitle: `[Smithers test] ${REPOSITORY_JOB_TITLES[job]}`, trialBody: "A scoped setup trial. Handling remains inactive for other work until explicitly enabled."
   } }
 }
@@ -250,13 +253,23 @@ export const SetupRecoveryResponseSchema = z.object({
 /** Independent policy and stored-request results, including partial failure. @since 1.0.0 */
 export type SetupRecoveryResponse = z.infer<typeof SetupRecoveryResponseSchema>
 
+/** A chore that fires on a schedule or event but runs no step reports skipped forever. @since 1.0.0 */
+export function unattendedChoreProblem(setup: { job: RepositoryJob; draft: Pick<SetupDraft, "schedule" | "choreEvent"> &
+  { steps: ReadonlyArray<Pick<SetupDraft["steps"][number], "mode">> } }): string | undefined {
+  if (setup.job !== "chores" || (!setup.draft.schedule.trim() && setup.draft.choreEvent === "none")) return undefined
+  return setup.draft.steps.some(step => step.mode === "automatic" || step.mode === "approved") ? undefined
+    : "Set the chore to run automatically or on approval."
+}
+
 /** Whether the candidate has direct, current evidence sufficient to request activation. @since 1.0.0 */
 export function setupActivationProblems(setup: RepositorySetup): string[] {
   const problems: string[] = []
   const digest = setupCandidate(setup)
   const current = (receipt: SetupReceipt | undefined, operation: SetupReceipt["operation"]) => receipt?.operation === operation && !!receipt.runId && receipt.phase === "completed" && receipt.revision === setup.revision && receipt.digest === digest
   if (!setup.draft.steps.some(item => item.mode !== "off")) problems.push("Choose a flow to enable.")
-  if (setup.draft.scope === "label" && !setup.draft.label.trim()) problems.push("Choose the issue label.")
+  const unattended = unattendedChoreProblem(setup)
+  if (unattended) problems.push(unattended)
+  if ((setup.draft.scope === "label" || (setup.job === "chores" && setup.draft.choreEvent === "labeled")) && !setup.draft.label.trim()) problems.push("Choose the issue label.")
   if (setup.draft.checks.some(check => !check.rule.trim())) problems.push("Complete the check rules.")
   if (!current(setup.evaluation, "evaluate")) problems.push("Run evals for this draft.")
   else {

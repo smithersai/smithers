@@ -16,7 +16,8 @@ export const Draft = Schema.Struct({
   steps: Schema.Array(Step).check(Schema.isMaxLength(30)), checks: Schema.Array(Check).check(Schema.isMaxLength(50)),
   cases: Schema.Array(EvalCase).check(Schema.isMaxLength(100)), replies: Schema.Literals(["draft", "automatic"]),
   landing: Schema.Literals(["ask", "checks"]), scope: Schema.Literals(["future", "label"]), label: text(100),
-  schedule: text(200), budgetMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })),
+  schedule: text(200), choreEvent: Schema.Literals(["none", "push", "labeled"]),
+  budgetMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })),
   connectIssues: Schema.Boolean, trialTitle: text(240), trialBody: text(16000)
 })
 export type Draft = typeof Draft.Type
