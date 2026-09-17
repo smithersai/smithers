@@ -1,3 +1,7 @@
+import { digest } from "@smthrs/core/Digest"
+import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { describe,expect,test } from "bun:test"
 import type { AppServices } from "./AppController"
@@ -575,4 +579,35 @@ test("a recommended read warms its exact arguments without opening a view, then 
   await click
   expect(reads).toBe(1)
   expect(store.collections.cards.get("issues-will/demo")).toMatchObject({ kind: "issue-list", loading: false })
+})
+
+
+test("verified HTTP completion refreshes recommendations once after the final answer, never for deltas", async () => {
+  const worker = recorder([answer("http-answer", ["wiki"])])
+  const { store } = await boot({ fetchImpl: worker.fetchImpl })
+  const runId = "recommend-http", legId = "recommend-leg", attemptId = "recommend-attempt"
+  let cursor: AgentTurnCursor = { version: 1, runId, legId, batch: 0, position: 0, hash: "0".repeat(64) }
+  const batch = (frames: AgentTurnFrame[]): AgentTurnBatch => {
+    const body = { version: 1 as const, runId, legId, batch: cursor.batch + 1, from: cursor.position + 1, previousHash: cursor.hash, frames }
+    return { ...body, hash: digest(agentTurnJournalDigestInput("batch", body)) }
+  }
+  await store.dispatch({ type: "http.turn.started", actor: "user", attemptId, turnId: runId, text: "Read the docs", retry: false,
+    journal: { version: 1, legId, token: "a".repeat(64) } }).isPersisted.promise
+  await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId, legId, cursor }).isPersisted.promise
+  const delta = batch([{ type: "delta", runId, kind: "text", text: "Read the wiki." }])
+  await store.dispatch({ type: "http.turn.batch.received", actor: "system", attemptId, legId, batch: delta }).isPersisted.promise
+  await settle()
+  expect(worker.recommends()).toHaveLength(0)
+  cursor = { version: 1, runId, legId, batch: delta.batch, position: delta.from + delta.frames.length - 1, hash: delta.hash }
+  const complete = batch([{ type: "done", runId, reason: "stop" }])
+  const completion = { type: "http.turn.batch.received" as const, actor: "system" as const, attemptId, legId, batch: complete }
+  await store.dispatch(completion).isPersisted.promise
+  await settle()
+  expect(worker.recommends()).toHaveLength(1)
+  expect(worker.recommends()[0]?.body.tail).toEqual([
+    { role: "user", text: "Read the docs" }, { role: "assistant", text: "Read the wiki." }
+  ])
+  await store.dispatch(completion).isPersisted.promise
+  await settle()
+  expect(worker.recommends()).toHaveLength(1)
 })

@@ -388,6 +388,9 @@ describe("landings seam — prs.land (queues, never a terminal claim)", () => {
 })
 
 describe("landings seam — prs.review", () => {
+  const TIP_CHANGE = "/api/repos/will/flows/changes/chg-b"
+  const tipChange = json(200, { change_id: "chg-b", commit_id: "c0ffee42" })
+
   test("posts the verdict and re-reads the card so it states the new truth", async () => {
     const posted: unknown[] = []
     const { store, controller } = await ready(
@@ -400,16 +403,48 @@ describe("landings seam — prs.review", () => {
           return json(200, [reviewRow(2, "approve", "")])
         },
         [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+        [TIP_CHANGE]: tipChange,
         [STATUSES]: json(200, [])
       })
     )
     const outcome = await controller.commands.run("prs.review", "3 approve")
     expect(outcome.status).toBe("executed")
-    expect(posted).toEqual([{ type: "approve", body: "" }])
+    expect(posted).toEqual([{ type: "approve", body: "", commit_id: "c0ffee42" }])
     await settled()
     const card = store.collections.cards.get("pr-will/flows-3")
     if (card === undefined || card.kind !== "pr") throw new Error("expected the pr card")
     expect(card.payload.reviews).toEqual([{ author: null, type: "approve", reviewBody: "" }])
+  })
+
+  test.each(["comment", "request-changes"])("%s pins the reviewed revision", async (type) => {
+    const posted: unknown[] = []
+    const { controller } = await ready(backend({
+      [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+      [TIP_CHANGE]: tipChange,
+      [`${LANDINGS}/3/reviews`]: async request => {
+        if (request.method === "POST") {
+          posted.push(await request.json())
+          return json(201, reviewRow(2, type, "needs work"))
+        }
+        return json(200, [])
+      },
+      [STATUSES]: json(200, [])
+    }))
+    expect((await controller.commands.run("prs.review", `3 ${type} needs work`)).status).toBe("executed")
+    expect(posted).toEqual([{ type: type.replace("-", "_"), body: "needs work", commit_id: "c0ffee42" }])
+  })
+
+  test("an unreadable review tip never posts an unpinned review", async () => {
+    let posts = 0
+    const { controller } = await ready(backend({
+      [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+      [TIP_CHANGE]: json(503, { message: "tip unavailable" }),
+      [`${LANDINGS}/3/reviews`]: () => { posts++; return json(201, {}) }
+    }))
+    const outcome = await controller.commands.run("prs.review", "3 comment needs work")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("tip unavailable")
+    expect(posts).toBe(0)
   })
 
   test("request-changes without text answers honestly before touching the wire", async () => {
@@ -432,6 +467,8 @@ describe("landings seam — prs.review", () => {
   test("a 422 from the platform round-trips as the honest error", async () => {
     const { controller } = await ready(
       backend({
+        [`${LANDINGS}/3`]: json(200, landing(3, "open")),
+        [TIP_CHANGE]: tipChange,
         [`${LANDINGS}/3/reviews`]: json(422, { message: "body is required" })
       })
     )

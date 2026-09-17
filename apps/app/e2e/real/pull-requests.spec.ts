@@ -1,4 +1,5 @@
 import { closeComposer } from "./support"
+import { bootProductionRepository } from "./repositories-github/production"
 import { scenario } from "./coverage/types"
 import { fixtureCommentBody } from "./support/values"
 import { authenticatedTest as test, readAuthenticatedSession } from "./auth-permissions/profile"
@@ -94,6 +95,7 @@ test(
       await expect(detail.locator(".ghc-file")).toHaveCount(2)
 
       await page.reload({ waitUntil: "domcontentloaded" })
+      await bootProductionRepository(page)
       await command(page, `/prs.view ${created.number} ${owned.fullName}`)
       await expectFlowOutcome(page, "prs.view", `${created.number} ${owned.fullName}`, "executed")
       await expect(landingDetail(page, created.number)).toContainText(`Real detail ${owned.marker}`)
@@ -194,7 +196,14 @@ test(
         response.request().method() === "PUT" && new URL(response.url()).pathname.endsWith(`/landings/${created.number}/land`))
       trackLandingQueue(owned, created.number)
       await landingDetail(page, created.number).getByRole("button", { name: /Land \(queue merge\)/ }).click()
-      expect((await landResponse).status()).toBe(202)
+      const queueResponse = await landResponse
+      const queueBody = await queueResponse.json()
+      if (queueResponse.status() === 422 && (await readLanding(page, request, owned, created.number)).state === "open") {
+        // An explicit validation refusal accepted no job; cleanup must not
+        // wait three minutes for an open PR to become a terminal worker job.
+        owned.queuedLandings.splice(owned.queuedLandings.indexOf(created.number), 1)
+      }
+      expect(queueResponse.status(), JSON.stringify(queueBody)).toBe(202)
       await expectFlowOutcome(page, "prs.land", `${created.number} ${owned.fullName}`, "executed")
       await expect(landingDetail(page, created.number)).toContainText(/queued/i)
 

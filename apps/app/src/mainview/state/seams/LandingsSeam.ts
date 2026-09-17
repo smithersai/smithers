@@ -264,28 +264,28 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     try {
       response = await ctx.http(`${landingsUrl(repo)}/${number}`)
     } catch {
-      return { error: `Pull request #${number} couldn't be read before landing — the platform didn't answer; nothing was landed.` }
+      return { error: `Pull request #${number} couldn't be read — the platform didn't answer.` }
     }
     if (!response.ok) {
-      return { error: await readErrorMessage(response, `Pull request #${number} on ${repo} couldn't be read before landing — nothing was landed.`) }
+      return { error: await readErrorMessage(response, `Pull request #${number} on ${repo} couldn't be read before submitting.`) }
     }
     const landing = parseLandingDetail(await response.json().catch(() => undefined))
     const tip = landing?.changeIds.at(-1)
     if (landing === null || tip === undefined || tip === "") {
-      return { error: `Pull request #${number} names no tip change to land — nothing was landed.` }
+      return { error: `Pull request #${number} names no tip change.` }
     }
     let changeResponse: Response
     try {
       changeResponse = await ctx.http(`${ctx.baseUrl}${repoApiRoot(repo)}/changes/${encodeURIComponent(tip)}`)
     } catch {
-      return { error: `The tip change ${tip} of #${number} couldn't be read — the platform didn't answer; nothing was landed.` }
+      return { error: `The tip change ${tip} of #${number} couldn't be read — the platform didn't answer.` }
     }
     if (!changeResponse.ok) {
-      return { error: await readErrorMessage(changeResponse, `The tip change ${tip} of #${number} couldn't be read — nothing was landed.`) }
+      return { error: await readErrorMessage(changeResponse, `The tip change ${tip} of #${number} couldn't be read.`) }
     }
     const body: unknown = await changeResponse.json().catch(() => undefined)
     const commitId = isRecord(body) && typeof body.commit_id === "string" && body.commit_id !== "" ? body.commit_id : null
-    if (commitId === null) return { error: `The tip change ${tip} of #${number} carries no commit id — nothing was landed.` }
+    if (commitId === null) return { error: `The tip change ${tip} of #${number} carries no commit id.` }
     return { commitId }
   }
 
@@ -633,12 +633,14 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         const verb = type === "comment" ? "comment" : "request-changes"
         return `A ${verb} review needs text: /prs.review ${number} ${verb} <why>`
       }
+      const tip = await fetchTipCommit(repo, number)
+      if ("error" in tip) return tip.error
       let response: Response
       try {
         response = await ctx.http(`${landingsUrl(repo)}/${number}/reviews`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ type, body: text })
+          body: JSON.stringify({ type, body: text, commit_id: tip.commitId })
         })
       } catch {
         return `The review on #${number} couldn't be posted — the platform didn't answer.`

@@ -237,7 +237,21 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
       for (const suggestion of suggestions) void ctx.commands.preload?.(suggestion.flow, suggestion.args)
     }
     const subscription = store.collections.transitions.subscribeChanges((changes) => {
-      if (changes.some((change) => change.type === "insert" && isMaterialTransition(change.value.type))) schedule()
+      if (changes.some(change => {
+        if (change.type !== "insert") return false
+        const event = change.value
+        if (isMaterialTransition(event.type)) return true
+        // HTTP journal frames project message completion inside their batch;
+        // that nested fact is not a separate transitions-collection insert.
+        // Read the verified projection so deltas and tool continuations do not
+        // spend recommendation requests, and rejected batches cannot trigger one.
+        if (event.type !== "http.turn.batch.received" && event.type !== "http.turn.interrupted") return false
+        let payload: unknown
+        try { payload = JSON.parse(event.payload) } catch { return false }
+        if (typeof payload !== "object" || payload === null || !("attemptId" in payload) || typeof payload.attemptId !== "string") return false
+        const turn = store.collections.httpTurns.get(payload.attemptId)
+        return turn !== undefined && turn.status !== "active"
+      })) schedule()
     })
     const recommendations = store.collections.recommendations.subscribeChanges(changes => {
       for (const change of changes) if (change.type !== "delete") warm(change.value.suggestions)

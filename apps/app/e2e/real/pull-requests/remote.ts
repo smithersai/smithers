@@ -96,16 +96,16 @@ const createGitHubBranch = async (owned: OwnedGitHubRepository, branch: string):
   await newBranch.click()
   const dialog = github.getByRole("dialog").last()
   const surface = await dialog.isVisible().catch(() => false) ? dialog : github.locator("body")
-  const name = surface.locator([
-    'input[aria-label="New branch name"]:visible',
-    'input[name="branch_name"]:visible',
-    'input[placeholder*="branch name" i]:visible'
-  ].join(", ")).first()
+  const name = surface.getByRole("textbox", { name: "New branch name", exact: true })
   await expect(name).toBeVisible()
   await name.fill(branch)
   const create = surface.getByRole("button", { name: /^Create (?:new )?branch$/ })
   await expect(create).toBeEnabled()
+  const created = github.waitForResponse(response =>
+    response.request().method() === "POST" && new URL(response.url()).pathname.includes(owned.fullName))
   await create.click()
+  expect((await created).ok(), "GitHub must acknowledge branch creation before navigating").toBe(true)
+  await expect(dialog).toBeHidden()
   const branchPage = await github.goto(`${owned.url}/tree/${encodeURIComponent(branch)}`, { waitUntil: "domcontentloaded" })
   expect(branchPage?.status()).toBe(200)
 }
@@ -119,19 +119,11 @@ const commitGitHubFile = async (
 ): Promise<string> => {
   const github = owned.page
   await github.goto(`${owned.url}/new/${encodeURIComponent(branch)}`, { waitUntil: "domcontentloaded" })
-  const filename = github.locator([
-    'input[placeholder="Name your file…"]:visible',
-    'input[aria-label="Name your file…"]:visible',
-    'input[name="filename"]:visible'
-  ].join(", ")).first()
+  const filename = github.getByRole("textbox", { name: "File name", exact: true })
   await expect(filename).toBeVisible({ timeout: 30_000 })
   await filename.fill(path)
 
-  const editor = github.locator([
-    '.cm-content[contenteditable="true"]:visible',
-    'textarea[aria-label*="file content" i]:visible',
-    'textarea[name="value"]:visible'
-  ].join(", ")).first()
+  const editor = github.getByRole("textbox", { name: /^Editing .*file contents/ })
   await expect(editor).toBeVisible()
   await editor.fill(content)
 
@@ -140,11 +132,7 @@ const commitGitHubFile = async (
   await openCommit.click()
   const dialog = github.getByRole("dialog").last()
   await expect(dialog).toBeVisible()
-  const summary = dialog.locator([
-    'input[aria-label="Commit message"]:visible',
-    'input[name="commit-summary"]:visible',
-    '#commit-summary-input:visible'
-  ].join(", ")).first()
+  const summary = dialog.getByRole("textbox", { name: "Commit message", exact: true })
   await expect(summary).toBeVisible()
   await summary.fill(message)
   const commit = dialog.getByRole("button", { name: /^Commit changes$/ }).last()
@@ -174,7 +162,10 @@ const requireImportPreflight = async (
   await attachProductionJson(testInfo, "pull-request-import-preflight", status)
   expect(status.github_app_configured, "The production GitHub App must be configured before an owned repository is created.").toBe(true)
   expect(status.github_app_installed, "The production GitHub App must be installed before an owned repository is created.").toBe(true)
-  expect(typeof status.installation_id).toBe("number")
+  const inventoryResponse = await realApi(page, request, "GET", "/api/user/github-app/installations")
+  expect(inventoryResponse.status()).toBe(200)
+  const inventory = await inventoryResponse.json() as { repos?: Array<{ fullName: string; installationId: number }> }
+  expect(typeof inventory.repos?.find(repo => repo.fullName === CANARY_REPOSITORY)?.installationId).toBe("number")
 }
 
 /** Create the private GitHub fixture through UI only, after a no-mutation App preflight. */
