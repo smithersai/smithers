@@ -14,7 +14,7 @@ import { freezeProjectionValue, isImmutableProjectionValue } from "./ImmutablePr
 
 export const APP_EVENT_FORMAT_VERSION = 1
 // Bump whenever APP_PROJECTION_SCHEMAS row shapes or the transition set change.
-export const APP_PROJECTOR_VERSION = 5
+export const APP_PROJECTOR_VERSION = 6
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

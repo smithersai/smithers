@@ -16,8 +16,10 @@ export const publicSetupResult = (record: SetupRecord) => ({
 
 const RegistrationRow = z.object({ id: z.string().min(1), workspace_id: z.string().uuid(), user_id: z.number().int().positive(),
   job: z.string(), mode: z.enum(["enabled", "trial"]), revision: z.number().int().positive(), digest: z.string().regex(/^[0-9a-f]{64}$/),
-  source_revision: z.string().min(1), flow_id: z.string(), enabled: z.boolean(), configuration: z.object({
-    repo: z.string(), workspace_id: z.string().uuid(), source_revision: z.string().min(1), flow_id: z.string(), mode: z.enum(["enabled", "trial"]), revision: z.number().int().positive(), digest: z.string(), input: SetupDraftSchema
+  source_revision: z.string().min(1), flow_id: z.string(), enabled: z.boolean(),
+  schedule: z.string().max(200).default(""), next_fire_at: z.iso.datetime({ offset: true }).nullish(), configuration: z.object({
+    repo: z.string(), workspace_id: z.string().uuid(), source_revision: z.string().min(1), flow_id: z.string(), mode: z.enum(["enabled", "trial"]), revision: z.number().int().positive(), digest: z.string(), input: SetupDraftSchema,
+    schedule: z.string().max(200).default("")
   })
 })
 
@@ -50,8 +52,11 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
     const value = row.configuration
     if (result[field] || row.flow_id !== `repository-jobs/${job}` || value.repo !== repo || value.workspace_id !== row.workspace_id
       || value.source_revision !== row.source_revision || value.flow_id !== row.flow_id || value.mode !== row.mode || value.revision !== row.revision || value.digest !== row.digest || setupCandidate({ repo, job, revision: row.revision, draft: value.input }) !== row.digest) return yield* fail("Repository registration identity is inconsistent")
+    if (row.schedule !== value.schedule || (row.mode === "enabled" && job === "chores" && row.schedule !== value.input.schedule)) return yield* fail("Repository schedule does not match its registration")
     result[field] = { registrationId: row.id, workspaceId: row.workspace_id, revision: row.revision, digest: row.digest,
-      sourceRevision: row.source_revision, enabled: row.enabled, owned: row.user_id === user.data.id, draft: value.input }
+      sourceRevision: row.source_revision, enabled: row.enabled, owned: row.user_id === user.data.id, draft: value.input,
+      ...(job === "chores" && row.mode === "enabled" && row.enabled && row.schedule && row.next_fire_at
+        ? { schedule: { expression: row.schedule, nextFireAt: new Date(row.next_fire_at).toISOString() } } : {}) }
   }
   return result
 }).pipe(Effect.catch(error => Effect.succeed({ state: "unavailable", error: error instanceof RecoveryError ? error.message : "Repository registration state is unavailable" } as const)))

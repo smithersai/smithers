@@ -82,7 +82,8 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
   if (registration.state === "known") {
     const active = registration.active
     next.active = active ? { revision: active.revision, digest: active.digest, registrationId: active.registrationId,
-      sourceRevision: active.sourceRevision, enabled: active.enabled, owned: active.owned } : undefined
+      sourceRevision: active.sourceRevision, enabled: active.enabled, owned: active.owned,
+      ...(active.enabled && active.schedule ? { schedule: active.schedule } : {}) } : undefined
     if (active && next.revision <= active.revision && (!active.enabled || setupCandidate(next) !== active.digest)) {
       const { evaluation, trial, ...rest } = next
       next = { ...rest, revision: active.revision + 1, previousReceipts: [...new Map([...rest.previousReceipts, ...[evaluation, trial].filter(item => item !== undefined)]
@@ -100,13 +101,17 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
 export function createRepositorySetupController(ctx: ControllerContext, dependencies?: RepositorySetupDependencies): RepositorySetupController {
   const shared = actorSharedState(ctx, "repository-setup", () => ({
     pending: new Map<string, Promise<unknown>>(), sleepers: new Map<ReturnType<typeof setTimeout>, () => void>(),
-    recovering: new Map<string, Promise<unknown>>(), resumed: new Set<string>(), openingRuns: new Set<string>(), guidance: new Map<string, string>(), edits: new Map<string, Promise<unknown>>(), disposed: false
+    recovering: new Map<string, Promise<unknown>>(), resumed: new Set<string>(), openingRuns: new Set<string>(), guidance: new Map<string, string>(), edits: new Map<string, Promise<unknown>>(),
+    scheduleTimers: new Map<string, { timer: ReturnType<typeof setTimeout>; at: number; login: string | null; accountEpoch: number; registrationId: string }>(),
+    expiredSchedules: new Map<string, { login: string | null; accountEpoch: number }>(), disposed: false
   }))
   ctx.onDispose(() => {
     shared.disposed = true
     for (const [timer, wake] of shared.sleepers) { clearTimeout(timer); wake() }
     shared.sleepers.clear()
     shared.guidance.clear()
+    for (const { timer } of shared.scheduleTimers.values()) clearTimeout(timer)
+    shared.scheduleTimers.clear(); shared.expiredSchedules.clear()
   })
   const get = (id: string): SetupCard | undefined => {
     const card = ctx.store.collections.cards.get(id)
@@ -117,8 +122,38 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
   }
   const epoch = () => ctx.accountEpoch ?? 0
+  const scheduleRefresh = (card: SetupCard) => {
+    const prior = shared.scheduleTimers.get(card.id), active = card.payload.active, schedule = active?.schedule
+    const login = card.payload.owner, accountEpoch = epoch()
+    const at = card.payload.job === "chores" && active?.enabled && schedule?.expression === card.payload.draft.schedule
+      && card.payload.recovery?.registrationState === "known" && owner() === login ? Date.parse(schedule.nextFireAt) : 0
+    if (prior?.at === at && prior.login === login && prior.accountEpoch === accountEpoch && prior.registrationId === active?.registrationId) return
+    if (prior) clearTimeout(prior.timer)
+    shared.scheduleTimers.delete(card.id)
+    if (ctx.disposed || shared.disposed || at <= Date.now()) return
+    const timer = setTimeout(() => {
+      if (shared.scheduleTimers.get(card.id)?.timer !== timer) return
+      clearTimeout(timer); shared.scheduleTimers.delete(card.id)
+      if (ctx.disposed || shared.disposed || owner() !== login || epoch() !== accountEpoch) return
+      const latest = get(card.id)
+      if (!latest || latest.payload.owner !== login || latest.payload.active?.registrationId !== active!.registrationId || latest.payload.active.schedule?.nextFireAt !== schedule!.nextFireAt) return
+      if (at > Date.now()) { scheduleRefresh(latest); return }
+      // Expire this observation, never advance the schedule in the browser.
+      // A busy operation keeps its own admission; refresh after it settles.
+      void Promise.resolve(edit(card.id, async () => {
+        const current = get(card.id)
+        if (ctx.disposed || shared.disposed || owner() !== login || epoch() !== accountEpoch || current?.payload.active?.schedule?.nextFireAt !== schedule!.nextFireAt) return
+        await upsert({ ...current, payload: { ...current.payload, active: { ...current.payload.active!, schedule: undefined } } }, "system")
+        if (ctx.disposed || shared.disposed || owner() !== login || epoch() !== accountEpoch) return
+        if (["requested", "running"].includes(get(card.id)?.payload.request?.state ?? "")) shared.expiredSchedules.set(card.id, { login, accountEpoch })
+        else void requestRecovery(card.id)
+      })).catch(() => {}) // The store retains its own failed-persistence state.
+    }, Math.min(at - Date.now(), 2_147_483_647))
+    shared.scheduleTimers.set(card.id, { timer, at, login, accountEpoch, registrationId: active!.registrationId })
+    ctx.unref(timer)
+  }
   const upsert = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor) =>
-    ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise
+    ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise.then(() => { const latest = get(card.id); if (latest) scheduleRefresh(latest) })
   const edit = (id: string, apply: () => Result): Result => {
     const next = (shared.edits.get(id) ?? Promise.resolve()).then(apply)
     shared.edits.set(id, next)
@@ -224,7 +259,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
           }
           if (receipt.phase === "completed" && intent.operation === "pause" && !observing()) {
             if (!next.active || receipt.registrationId !== next.active.registrationId || !receipt.evidence.length) throw Error("The host did not confirm that this registration paused.")
-            next = { ...next, active: { ...next.active, enabled: false } }
+            next = { ...next, active: { ...next.active, enabled: false, schedule: undefined } }
             if (next.revision <= next.active!.revision) {
               const { evaluation, trial, ...preserved } = next
               next = { ...preserved, revision: next.active!.revision + 1,
@@ -236,7 +271,16 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
           await upsert(updated, "system")
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
           attachRun(updated)
-          if (terminal) return receipt.phase === "completed" ? { value: `${intent.operation} completed.` } : receipt.error ?? `Setup ${receipt.phase}.`
+          if (terminal) {
+            // The mutable next occurrence belongs to the registry, not the
+            // immutable apply receipt or a browser-side cron calculation.
+            const expired = shared.expiredSchedules.get(id)
+            if (job === "chores" && ((intent.operation === "apply" && receipt.phase === "completed" && !observing()) || (expired?.login === login && expired.accountEpoch === accountEpoch))) {
+              shared.expiredSchedules.delete(id)
+              void requestRecovery(id, intent.id)
+            }
+            return receipt.phase === "completed" ? { value: `${intent.operation} completed.` } : receipt.error ?? `Setup ${receipt.phase}.`
+          }
           await delay()
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
           const query = new URLSearchParams({ requestId: intent.id, repo, job })
@@ -306,9 +350,10 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     void work.finally(() => { if (shared.recovering.get(flight) === work) shared.recovering.delete(flight) }).catch(() => {})
     return work
   }
-  const requestRecovery = (id: string): Result => edit(id, async () => {
+  const requestRecovery = (id: string, completedRequestId?: string): Result => edit(id, async () => {
     const card = get(id), login = owner(), accountEpoch = epoch()
     if (!card || !login || card.payload.owner !== login) return "Sign in to configure your repository."
+    if (completedRequestId !== undefined && card.payload.request?.id !== completedRequestId) return
     shared.resumed.add(`${login}:${accountEpoch}:${id}`)
     const old = card.payload.recovery
     const intent: NonNullable<RepositorySetup["recovery"]> = old?.state === "requested" ? old : {
@@ -509,6 +554,12 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       return { value: "Setup guidance requested." }
     },
     resumeRepositorySetups: () => {
+      for (const [id, observed] of shared.scheduleTimers) {
+        if (observed.login !== owner() || observed.accountEpoch !== epoch()) { clearTimeout(observed.timer); shared.scheduleTimers.delete(id) }
+      }
+      for (const [id, observed] of shared.expiredSchedules) {
+        if (observed.login !== owner() || observed.accountEpoch !== epoch()) shared.expiredSchedules.delete(id)
+      }
       for (const card of ctx.store.collections.cards.values()) {
         if (card.kind === "repository-setup" && card.payload.owner === owner()) {
           if (!owner() || isPracticeRepo(card.payload.repo)) continue

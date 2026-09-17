@@ -26,6 +26,40 @@ const mount = (card = makeCard(), signedOut = false) => {
   return { host, calls, render, button, close: () => { flushSync(() => root.unmount()); host.remove() } }
 }
 
+test("next chore execution shows the recorded UTC date, never an unenabled, paused or edited schedule", () => {
+  const card = makeCard("chores"), t = mount(card)
+  try {
+    expect(t.host.querySelector("time")).toBeNull()
+    card.payload.draft.schedule = "30 1 * * *"
+    t.render(card)
+    expect(t.host.querySelector("time")).toBeNull()
+    card.payload.active = { revision: 1, digest: setupCandidate(card.payload), registrationId: "chore-registration", sourceRevision: "source", enabled: true,
+      schedule: { expression: "30 1 * * *", nextFireAt: "2026-12-31T23:30:00-02:00" } }
+    t.render(card)
+    const time = t.host.querySelector("time")!
+    expect(time.dateTime).toBe("2026-12-31T23:30:00-02:00")
+    expect(time.textContent).toContain("Jan 1, 2027")
+    expect(time.textContent).toContain("1:30 AM UTC")
+    expect(t.host.textContent).toContain("Next run")
+    card.payload.active.schedule!.nextFireAt = "2000-01-01T00:00:00Z"
+    t.render(card)
+    expect(t.host.querySelector("time")).toBeNull()
+    card.payload.active.schedule!.nextFireAt = "2026-12-31T23:30:00-02:00"
+    card.payload.active.enabled = false
+    t.render(card)
+    expect(t.host.querySelector("time")).toBeNull()
+    card.payload.active.enabled = true
+    card.payload.draft.schedule = "0 10 * * *"
+    t.render(card)
+    expect(t.host.querySelector("time")).toBeNull()
+    card.payload.draft.schedule = "30 1 * * *"
+    card.payload.recovery = { id: "recover", baseRevision: 1, baseDigest: setupCandidate(card.payload), state: "failed", registrationState: "unavailable", error: "Offline" }
+    t.render(card)
+    expect(t.host.querySelector("time")).toBeNull()
+    expect(t.calls).toEqual([])
+  } finally { t.close() }
+})
+
 test("recovery uses the existing status and Retry slot without claiming Off or borrowing another maintainer's actions", () => {
   const card = makeCard()
   card.payload.recovery = { id: "recover", baseRevision: 1, baseDigest: setupCandidate(card.payload), state: "requested", registrationState: "unknown" }

@@ -422,6 +422,180 @@ test("pausing retains evidence and advances the candidate before any reactivatio
   } finally { await t.close() }
 })
 
+test("chore apply refreshes the registry in the background; held duplicate input, edits, pause and restart cannot reuse its old next run", async () => {
+  const held = deferred()
+  let operation = "apply"
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", operation).json()
+    return Response.json({ ...value, receipt: { ...value.receipt, registrationId: "chore-registration", sourceRevision: "commit-1" } })
+  })
+  try {
+    const card = t.store.collections.cards.get("setup")!
+    const payload = { ...initialSetup("example/repo", "chores", "maintainer"), inspectedAt: 1 }
+    payload.draft.schedule = "0 9 * * *"
+    payload.draft.steps[0]!.mode = "automatic"
+    payload.draft.cases = [{ id: "check", name: "A maintenance change", input: "synthetic case fixture", expected: "A checked proposal", required: true }]
+    const digest = setupCandidate(payload)
+    const proof = { revision: 1, digest, phase: "completed" as const, updatedAt: 1, results: [{ caseId: "check", status: "passed" as const, observed: "A checked proposal", evidence: ["test:check"], executionId: "eval-case" }], evidence: ["artifact:checked"], sourceRevision: "commit-1" }
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, kind: "repository-setup", payload: { ...payload,
+      evaluation: { ...proof, requestId: "eval", runId: "eval-run", operation: "evaluate" }, trial: { ...proof, requestId: "trial", runId: "trial-run", operation: "trial" }
+    } } }).isPersisted.promise
+    const policy = { revision: 1, digest, registrationId: "chore-registration", sourceRevision: "commit-1", enabled: true, owned: true, workspaceId, draft: payload.draft,
+      schedule: { expression: "0 9 * * *", nextFireAt: "2026-09-18T09:00:00Z" } }
+    t.recovery.answer = async () => { await held.promise; return Response.json({ owner: "maintainer", repo: payload.repo, job: "chores", registration: { state: "known", active: policy }, setup: { state: "none" } }) }
+    const acknowledgment = await Promise.race([t.setup.runRepositorySetup("setup", "apply"), new Promise(resolve => setTimeout(() => resolve("blocked"), 100))])
+    expect(acknowledgment).not.toBe("blocked")
+    await until(() => t.recovery.calls.length === 1)
+    expect(t.state().request?.state).toBe("completed")
+    expect(t.state().active?.schedule).toBeUndefined()
+    expect(t.state().recovery?.state).toBe("requested")
+    await t.setup.runRepositorySetup("setup", "apply")
+    expect(t.calls).toHaveLength(1)
+    expect(t.recovery.calls).toHaveLength(1)
+    await t.setup.viewRepositorySetup("setup", "flows")
+    await t.setup.configureRepositorySetup("setup", "schedule", "0 10 * * *")
+    held.release()
+    await until(() => t.state().recovery?.state === "completed")
+    expect(t.state().draft.schedule).toBe("0 10 * * *")
+    expect(t.state().active?.schedule).toEqual(policy.schedule)
+    expect(t.state().revision).toBe(2)
+    expect(t.store.session().phase).toBe("idle")
+    operation = "pause"
+    await t.setup.runRepositorySetup("setup", "pause")
+    await until(() => t.state().receipt?.operation === "pause")
+    expect(t.state().active?.enabled).toBe(false)
+    expect(t.state().active?.schedule).toBeUndefined()
+    expect(t.calls.map(call => call.method)).toEqual(["POST", "POST"])
+    await t.close()
+    const again = await fixture(async () => { throw Error("Recovery must not execute") }, t.storage)
+    try {
+      again.recovery.answer = async () => Response.json({ owner: "maintainer", repo: payload.repo, job: "chores", registration: { state: "known", active: { ...policy, enabled: false, schedule: undefined } }, setup: { state: "none" } })
+      again.setup.resumeRepositorySetups()
+      await until(() => again.state().recovery?.state === "completed")
+      expect(again.state().active?.enabled).toBe(false)
+      expect(again.state().active?.schedule).toBeUndefined()
+      expect(again.state().draft.schedule).toBe("0 10 * * *")
+      expect(again.calls).toEqual([])
+    } finally { await again.close() }
+  } finally { held.release(); await t.close() }
+})
+
+test.each(["elapsed", "future", "failed"])("an open chore expires its observed time and makes one bounded %s refresh without blocking Chat", async outcome => {
+  let now = Date.UTC(2026, 8, 17, 9)
+  const due = now + 60_000, clock = spyOn(Date, "now").mockImplementation(() => now)
+  const originalTimeout = globalThis.setTimeout, scheduled: Array<() => void> = []
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 60_000) scheduled.push(() => callback(...args))
+    return originalTimeout(callback, delay, ...args)
+  }) as typeof setTimeout)
+  const held = deferred(), t = await fixture(async () => { throw Error("A schedule read cannot execute work") })
+  try {
+    const payload = { ...initialSetup("example/repo", "chores", "maintainer"), inspectedAt: 1 }
+    payload.draft.schedule = "* * * * *"
+    const policy = { revision: 1, digest: setupCandidate(payload), registrationId: "scheduled", sourceRevision: "source", enabled: true, owned: true, workspaceId, draft: payload.draft,
+      schedule: { expression: payload.draft.schedule, nextFireAt: new Date(due).toISOString() } }
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...t.store.collections.cards.get("setup")!, kind: "repository-setup", payload } }).isPersisted.promise
+    t.recovery.answer = async () => {
+      if (t.recovery.calls.length > 1) {
+        await held.promise
+        if (outcome === "failed") return Response.json({}, { status: 503 })
+        if (outcome === "future") policy.schedule.nextFireAt = new Date(due + 60_000).toISOString()
+      }
+      return Response.json({ owner: "maintainer", repo: payload.repo, job: "chores", registration: { state: "known", active: policy }, setup: { state: "none" } })
+    }
+    t.setup.resumeRepositorySetups()
+    await until(() => scheduled.length === 1)
+    expect(t.state().active?.schedule?.nextFireAt).toBe(new Date(due).toISOString())
+    now = due
+    scheduled[0]!()
+    await until(() => t.recovery.calls.length === 2)
+    expect(t.state().active?.schedule).toBeUndefined()
+    expect(t.state().recovery?.state).toBe("requested")
+    scheduled[0]!()
+    await t.setup.viewRepositorySetup("setup", "prompts", "chore")
+    expect(t.state().view).toBe("prompts")
+    expect(t.store.session().phase).toBe("idle")
+    held.release()
+    await until(() => t.state().recovery?.state !== "requested")
+    expect(t.recovery.calls).toHaveLength(2)
+    expect(scheduled).toHaveLength(outcome === "future" ? 2 : 1)
+    expect(t.state().recovery?.registrationState).toBe(outcome === "failed" ? "unavailable" : "known")
+    expect(t.calls).toEqual([])
+  } finally { held.release(); await t.close(); timers.mockRestore(); clock.mockRestore() }
+})
+
+test.each(["pause", "account", "dispose"])("%s cancels and fences a pending chore time refresh", async stop => {
+  let now = Date.UTC(2026, 8, 17, 9)
+  const due = now + 60_000, clock = spyOn(Date, "now").mockImplementation(() => now)
+  const originalTimeout = globalThis.setTimeout, scheduled: Array<() => void> = []
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 60_000) scheduled.push(() => callback(...args))
+    return originalTimeout(callback, delay, ...args)
+  }) as typeof setTimeout)
+  const t = await fixture(async body => {
+    const result = await response(body, "completed", "pause").json()
+    return Response.json({ ...result, receipt: { ...result.receipt, registrationId: "scheduled" } })
+  })
+  try {
+    const payload = { ...initialSetup("example/repo", "chores", "maintainer"), inspectedAt: 1 }
+    payload.draft.schedule = "* * * * *"
+    const policy = { revision: 1, digest: setupCandidate(payload), registrationId: "scheduled", sourceRevision: "source", enabled: true, owned: true, workspaceId, draft: payload.draft,
+      schedule: { expression: payload.draft.schedule, nextFireAt: new Date(due).toISOString() } }
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...t.store.collections.cards.get("setup")!, kind: "repository-setup", payload } }).isPersisted.promise
+    t.recovery.answer = async () => Response.json({ owner: "maintainer", repo: payload.repo, job: "chores", registration: { state: "known", active: policy }, setup: { state: "none" } })
+    t.setup.resumeRepositorySetups()
+    await until(() => scheduled.length === 1)
+    if (stop === "pause") {
+      await t.setup.runRepositorySetup("setup", "pause")
+      await until(() => t.state().active?.enabled === false)
+    } else if (stop === "account") {
+      t.ctx.accountEpoch++
+      await t.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      t.setup.resumeRepositorySetups()
+    } else await t.close()
+    now = due; scheduled[0]!()
+    await new Promise(resolve => originalTimeout(resolve, 10))
+    expect(t.recovery.calls).toHaveLength(1)
+    expect(t.calls).toHaveLength(stop === "pause" ? 1 : 0)
+  } finally { await t.close(); timers.mockRestore(); clock.mockRestore() }
+})
+
+test.each(["completed", "failed"])("a due chore keeps a busy setup admission and refreshes once after it %s", async phase => {
+  let now = Date.UTC(2026, 8, 17, 9)
+  const due = now + 60_000, clock = spyOn(Date, "now").mockImplementation(() => now)
+  const originalTimeout = globalThis.setTimeout, scheduled: Array<() => void> = []
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 60_000) scheduled.push(() => callback(...args))
+    return originalTimeout(callback, delay, ...args)
+  }) as typeof setTimeout)
+  const held = deferred(), t = await fixture(async body => { await held.promise; return response(body, phase) })
+  try {
+    const payload = { ...initialSetup("example/repo", "chores", "maintainer"), inspectedAt: 1 }
+    payload.draft.schedule = "* * * * *"
+    const policy = { revision: 1, digest: setupCandidate(payload), registrationId: "scheduled", sourceRevision: "source", enabled: true, owned: true, workspaceId, draft: payload.draft }
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...t.store.collections.cards.get("setup")!, kind: "repository-setup", payload } }).isPersisted.promise
+    t.recovery.answer = async () => Response.json({ owner: "maintainer", repo: payload.repo, job: "chores", registration: { state: "known", active: { ...policy,
+      schedule: { expression: payload.draft.schedule, nextFireAt: new Date(t.recovery.calls.length === 1 ? due : due + 60_000).toISOString() }
+    } }, setup: { state: "none" } })
+    t.setup.resumeRepositorySetups()
+    await until(() => scheduled.length === 1)
+    await t.setup.runRepositorySetup("setup", "evaluate")
+    const requestId = t.state().request!.id
+    now = due; scheduled[0]!()
+    await until(() => t.state().active?.schedule === undefined)
+    expect(t.state().request?.id).toBe(requestId)
+    expect(t.state().request?.state).toBe("requested")
+    expect(t.state().request?.observeOnly).toBeUndefined()
+    expect(t.recovery.calls).toHaveLength(1)
+    held.release()
+    await until(() => scheduled.length === 2)
+    expect(t.recovery.calls).toHaveLength(2)
+    expect(t.calls).toHaveLength(1)
+    expect(t.state().evaluation?.phase).toBe(phase)
+    expect(t.state().active?.schedule?.nextFireAt).toBe(new Date(due + 60_000).toISOString())
+  } finally { held.release(); await t.close(); timers.mockRestore(); clock.mockRestore() }
+})
+
 test("the composed app wires setup guidance to its existing conversation agent", async () => {
   const { createAppController } = await import("../AppController")
   const requests: StartAgentTurnRequest[] = []

@@ -445,8 +445,64 @@ test("a mismatched completed result leaves the original candidate unverified", a
 const policyRow = (source: ReturnType<typeof initialSetup>, enabled = true, userId = 1) => ({
   id: "registration-1", workspace_id: "11111111-1111-4111-8111-111111111111", user_id: userId, job: source.job, mode: "enabled",
   revision: source.revision, digest: setupCandidate(source), source_revision: "b".repeat(40), flow_id: `repository-jobs/${source.job}`, enabled,
+  schedule: source.job === "chores" ? source.draft.schedule : "",
   configuration: { repo: source.repo, workspace_id: "11111111-1111-4111-8111-111111111111", source_revision: "b".repeat(40), flow_id: `repository-jobs/${source.job}`, mode: "enabled", revision: source.revision, digest: setupCandidate(source), input: source.draft,
+    schedule: source.job === "chores" ? source.draft.schedule : "",
     envelope: { private: "not-public" }, execution_digest: "not-public" }
+})
+
+test("chore recovery reads the registry's advancing occurrence across restart and omits paused or absent times", async () => {
+  const t = await fixture(), source = initialSetup("org/repo", "chores", "alice")
+  source.draft.schedule = "30 1 * * *"
+  const row = { ...policyRow(source), next_fire_at: "2026-12-31T23:30:00-02:00" as string | null }
+  t.options.registrations = [row]
+  const read = async () => {
+    const result = await (await t.send("GET", "state?repo=org%2Frepo&job=chores")).json() as SetupRecoveryResponse
+    if (result.registration.state !== "known") throw Error("Expected a known registration")
+    return result.registration.active
+  }
+  expect((await read())?.schedule).toEqual({ expression: "30 1 * * *", nextFireAt: "2027-01-01T01:30:00.000Z" })
+  // The service, not this read, advances after durable schedule admission.
+  row.next_fire_at = "2027-01-02T01:30:00Z"
+  t.durable.restart()
+  expect((await read())?.schedule?.nextFireAt).toBe("2027-01-02T01:30:00.000Z")
+  row.enabled = false // Pause retains next_fire_at in SQL; it is no longer executable.
+  expect((await read())?.enabled).toBe(false)
+  expect((await read())?.schedule).toBeUndefined()
+  row.enabled = true; row.next_fire_at = null
+  expect((await read())?.enabled).toBe(true)
+  expect((await read())?.schedule).toBeUndefined()
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
+  expect(t.launched.size).toBe(0)
+})
+
+test("manual and trial chore registrations never manufacture a scheduled execution", async () => {
+  const t = await fixture(), source = initialSetup("org/repo", "chores", "alice")
+  const manual = { ...policyRow(structuredClone(source)), next_fire_at: null }
+  source.draft.schedule = "0 9 * * *"
+  const trial = { ...policyRow(source), mode: "trial", schedule: "", next_fire_at: null,
+    configuration: { ...policyRow(source).configuration, mode: "trial", schedule: "" } }
+  t.options.registrations = [manual, trial]
+  const result = await (await t.send("GET", "state?repo=org%2Frepo&job=chores")).json() as SetupRecoveryResponse
+  if (result.registration.state !== "known") throw Error("Expected a known registration")
+  expect(result.registration.active?.schedule).toBeUndefined()
+  expect(result.registration.trial?.schedule).toBeUndefined()
+  expect(t.calls).toEqual([])
+})
+
+test.each(["outer", "inner", "invalid time"])("chore recovery refuses %s scheduler evidence without executing work", async mismatch => {
+  const t = await fixture(), source = initialSetup("org/repo", "chores", "alice")
+  source.draft.schedule = "0 9 * * *"
+  const row = { ...policyRow(source), next_fire_at: "2026-09-18T09:00:00Z" }
+  if (mismatch === "outer") row.schedule = "0 10 * * *"
+  else if (mismatch === "inner") row.configuration.schedule = "0 10 * * *"
+  else row.next_fire_at = "tomorrow"
+  t.options.registrations = [row]
+  const result = await (await t.send("GET", "state?repo=org%2Frepo&job=chores")).json() as SetupRecoveryResponse
+  expect(result.registration.state).toBe("unavailable")
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
 })
 
 test("discovery reads current paused policy and exact owned request without replaying an old apply", async () => {

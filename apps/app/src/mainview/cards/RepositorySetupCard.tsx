@@ -45,6 +45,8 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const selected = draft.steps.find(step => step.id === state.selectedStep) ?? draft.steps[0]
   const gate = [...((state.job === "issues" || state.job === "review") && draft.replies !== "draft" ? ["Choose draft replies."] : []), ...setupActivationProblems(state)]
   const activeMatches = owned && !unknown && state.active?.enabled && state.active.revision === state.revision && state.active.digest === setupCandidate(state)
+  const schedule = state.job === "chores" && !unknown && state.active?.enabled && state.active.schedule?.expression === draft.schedule
+    && Date.parse(state.active.schedule.nextFireAt) > Date.now() ? state.active.schedule : undefined
   const manual = state.manualDraft
   const workStep = draft.steps.find(step => step.id === manual?.stepId)
   const needsSubject = state.job === "issues" || state.job === "review" || state.job === "ci"
@@ -74,6 +76,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         {state.job === "issues" && <label>Apply to<select value={draft.scope} onChange={event => set("scope", event.target.value)}><option value="future">New and edited issues</option><option value="label">Chosen issue label</option></select></label>}
         {draft.scope === "label" && <label>Issue label<input {...editor(draft.label)} onInput={event => set("label", event.currentTarget.value)} /></label>}
         {state.job === "chores" && <label>Schedule (UTC)<input {...editor(draft.schedule)} placeholder="Cron expression; blank for manual" onInput={event => set("schedule", event.currentTarget.value)} /></label>}
+        {schedule && <div className="setup-field"><span>Next run</span><time dateTime={schedule.nextFireAt}>{new Date(schedule.nextFireAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" })}</time></div>}
         {state.job === "feature" && <label className="setup-checkbox"><input type="checkbox" checked={draft.connectIssues} onChange={event => set("connectIssues", event.target.checked)} />Start from approved issues</label>}
       </div>
       {state.sources.length > 0 && <details><summary>Repository evidence</summary><ul>{state.sources.map((source, index) => <li key={`${source.path}:${index}`}><code>{source.path}</code> · {source.status}<div>{source.summary}</div></li>)}</ul></details>}

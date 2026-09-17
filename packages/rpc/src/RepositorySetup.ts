@@ -95,10 +95,14 @@ export const SetupRequestSchema = z.object({
   observeOnly: z.boolean().optional()
 })
 /** Backend policy truth is separate from evidence that can authorize a new candidate. @since 1.0.0 */
+export const SetupScheduleSchema = z.object({
+  expression: z.string().min(1).max(200), nextFireAt: z.iso.datetime({ offset: true })
+})
+/** The registry's current policy and optional scheduler observation. @since 1.0.0 */
 export const SetupRegistrationSchema = z.object({
   registrationId: z.string().min(1), workspaceId: z.string().uuid(), revision: z.number().int().positive(),
   digest: z.string().regex(/^[0-9a-f]{64}$/), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean(),
-  draft: SetupDraftSchema
+  draft: SetupDraftSchema, schedule: SetupScheduleSchema.optional()
 })
 /** The settings card projects a draft and separately verified active version. @since 1.0.0 */
 export const RepositorySetupSchema = z.object({
@@ -111,7 +115,7 @@ export const RepositorySetupSchema = z.object({
   request: SetupRequestSchema.optional(), evaluation: SetupReceiptSchema.optional(), trial: SetupReceiptSchema.optional(),
   receipt: SetupReceiptSchema.optional(),
   previousReceipts: z.array(SetupReceiptSchema).max(50).default([]),
-  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean().optional() }).optional(),
+  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean().optional(), schedule: SetupScheduleSchema.optional() }).optional(),
   recovery: z.object({ id: z.string().min(1), baseRevision: z.number().int().positive(), baseDigest: z.string(),
     adoptDraft: z.boolean().optional(),
     state: z.enum(["requested", "completed", "failed"]), registrationState: z.enum(["unknown", "known", "unavailable"]),

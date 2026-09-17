@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { editSetup, initialSetup, reconcileSetupHistory, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
+import { editSetup, initialSetup, reconcileSetupHistory, RepositorySetupSchema, SetupDraftSchema, SetupHostInputSchema, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupReceipt } from "../src/RepositorySetup.ts"
 
 const caseFixture = { id: "unrelated", name: "Unrelated change", input: "synthetic case fixture", expected: "Take no unrelated actions", required: true }
 
@@ -14,6 +14,22 @@ const proven = (): RepositorySetup => {
   setup.draft.cases = [{ ...caseFixture }]
   return { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
 }
+
+it("a scheduler observation is retained independently of a draft and never supplies activation proof", () => {
+  const setup = initialSetup("example/repo", "chores", "maintainer")
+  setup.draft.schedule = "0 9 * * *"
+  setup.active = { revision: 1, digest: setupCandidate(setup), registrationId: "chore", sourceRevision: "source", enabled: true,
+    schedule: { expression: setup.draft.schedule, nextFireAt: "2026-09-18T09:00:00Z" } }
+  const parsed = RepositorySetupSchema.parse(setup)
+  expect(parsed.active?.schedule).toEqual(setup.active.schedule)
+  expect(setupActivationProblems(parsed)).toContain("Run evals for this draft.")
+  expect(setupActivationProblems(parsed)).toContain("Complete the live trial for this draft.")
+  const changed = editSetup(parsed, { ...parsed.draft, schedule: "" })
+  expect(changed.draft.schedule).toBe("")
+  expect(changed.active?.schedule?.expression).toBe("0 9 * * *")
+  expect(changed.revision).toBe(2)
+  expect(RepositorySetupSchema.safeParse({ ...setup, active: { ...setup.active, schedule: { expression: "0 9 * * *", nextFireAt: "tomorrow" } } }).success).toBe(false)
+})
 
 describe("repository setup receipt history", () => {
   it("uses actual eval and trial receipts without inventing a missing outcome", () => {
