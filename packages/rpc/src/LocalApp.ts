@@ -50,8 +50,8 @@ export const HarnessSchema = z.object({
   account: z.object({ email: z.string().optional(), label: z.string().optional() }).nullable(),
   launch: z.object({ argv: z.array(z.string()) }),
   /**
-   * How this harness takes a model
-   * (apps/app/docs/workbench-lanes/custom-agents.md): the table's verified
+   * How this harness takes a model (the `HarnessModels` table in
+   * apps/app/src/bun/Harnesses.ts): the table's verified
    * suggestions and whether it has a list command
    * (`GET /api/harnesses/{id}/models` runs it). Absent when the binary's
    * `--help` names no model flag the app has verified — such a harness runs
