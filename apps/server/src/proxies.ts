@@ -44,8 +44,8 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
   { prefix: "/api/github/import", methods: ["GET", "POST"] },
   /* The signed-in user's mirrored repositories: the web funnel's first list (W0). */
   { prefix: "/api/user/repos", methods: ["GET"] },
-  /* Source-only repo metadata (import-readiness fallback): reads only. */
-  { prefix: "/api/user/github-repos/", methods: ["GET"] },
+  /* Source-only repo inventory and metadata (RepositoriesSeam ranking, import-readiness fallback): reads only. */
+  { prefix: "/api/user/github-repos", methods: ["GET"] },
   /*
    * Per-user cloud reads the app renders as trees and rows (RepositoriesSeam,
    * WorkspaceSeam). Every row below names only the methods a seam under

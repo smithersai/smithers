@@ -82,7 +82,7 @@ export const repoOpenFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
 export const tutorialRepositoryFlows = (actions: import("../../state/controller/tutorialRepository").TutorialRepositoryActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "repo.choose",
-    summary: "Choose a repository by authored contributions in the last 90 days",
+    summary: "Choose a recently pushed GitHub repository",
     args: "[owner/repo]", input: Schema.Struct({ repo: Schema.optional(Schema.String) }),
     handler: ({ repo }) => actions.chooseTutorialRepository(repo)
   }),

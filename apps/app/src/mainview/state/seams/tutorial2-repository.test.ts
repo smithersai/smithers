@@ -1,32 +1,30 @@
 import { expect, test } from "bun:test"
+import { PLATFORM_PROXY_RULES } from "smithers-server/index"
 import { rankTutorialRepositories } from "./RepositoriesSeam"
 const now = Date.parse("2026-09-09T00:00:00Z")
-const commit = (sha: string, login = "will", date = "2026-09-01T00:00:00Z") => ({ sha, author: { login }, commit: { author: { date } } })
-test("authored distinct SHAs rank above recent pushes, paginate and ignore other authors and old dates", async () => {
+/** plue serves the inventory at exactly /user/github-repos and no per-repo commits route: anything else is a 404. */
+const plue = (rows: unknown[], headers?: Record<string, string>) => async (url: string) => {
+  const u = new URL(url)
+  if (u.pathname !== "/api/user/github-repos") return new Response("", { status: 404 })
+  return u.searchParams.get("page") === "1" ? Response.json(rows, { headers }) : Response.json([])
+}
+test("ranks the inventory by pushed_at through the allowlisted path only", async () => {
   const urls: string[] = []
-  const result = await rankTutorialRepositories(async url => {
-    urls.push(url)
-    const u = new URL(url)
-    if (!u.pathname.endsWith("commits")) return Response.json([{ full_name: "org/recent", pushed_at: "2026-09-09" }, { full_name: "org/contributed", pushed_at: "2020-01-01" }])
-    if (u.pathname.includes("recent")) return Response.json([commit("x")])
-    return u.searchParams.get("page") === "1"
-      ? Response.json([commit("a"), commit("a"), commit("other", "other"), commit("old", "will", "2020-01-01")], { headers: { link: '<https://api.github.com/ignored>; rel="next"' } })
-      : Response.json([commit("b"), commit("a")])
-  }, "https://local.test", "will", now)
-  expect(result.repositories.map(r => [r.fullName, r.count])).toEqual([["org/contributed", 2], ["org/recent", 1]])
-  expect(result.partial).toBe(true)
-  expect(urls.every(url => url.startsWith("https://local.test/"))).toBe(true)
-  expect(new Set(urls.filter(u => u.includes("commits")).map(u => new URL(u).searchParams.get("since"))).size).toBe(1)
+  const result = await rankTutorialRepositories(async url => { urls.push(url); return plue([
+    { full_name: "org/old", pushed_at: "2020-01-01T00:00:00Z" }, { full_name: "org/recent", pushed_at: "2026-09-08T00:00:00Z" },
+    { full_name: "org/recent", pushed_at: "2026-09-08T00:00:00Z" }, { full_name: "bad name", pushed_at: "2026-09-08T00:00:00Z" }, { full_name: "org/unknown" }
+  ])(url) }, "https://local.test", now)
+  expect(result.error).toBeNull()
+  expect(result.repositories.map(r => [r.fullName, r.latest])).toEqual([["org/recent", "2026-09-08T00:00:00.000Z"], ["org/old", "2020-01-01T00:00:00.000Z"], ["org/unknown", null]])
+  expect(urls.every(url => url.startsWith("https://local.test/api/user/github-repos?"))).toBe(true)
+  for (const url of urls) expect(PLATFORM_PROXY_RULES.some(rule => rule.prefix !== undefined && new URL(url).pathname.startsWith(rule.prefix) && rule.methods.includes("GET"))).toBe(true)
 })
-test("permission failures are unknown, not zero", async () => {
-  const result = await rankTutorialRepositories(async url => url.includes("commits") ? new Response("", { status: 403 }) : Response.json([{ full_name: "org/private" }]), "", "will", now)
-  expect(result.repositories[0]?.count).toBeNull()
-  expect(result.repositories[0]?.coverage).toBe("unknown")
-})
-test("equal counts use latest authored date then lexical full name", async () => {
-  const result = await rankTutorialRepositories(async url => {
-    if (!url.includes("commits")) return Response.json([{ full_name: "org/z" }, { full_name: "org/old" }, { full_name: "org/a" }])
-    return Response.json([commit("one", "will", url.includes("/old/") ? "2026-08-01T00:00:00Z" : "2026-09-01T00:00:00Z")])
-  }, "", "will", now)
-  expect(result.repositories.map(row => row.fullName)).toEqual(["org/a", "org/z", "org/old"])
+test("paginates with the link header and reports a refused inventory", async () => {
+  const paged = await rankTutorialRepositories(async url => new URL(url).searchParams.get("page") === "1"
+    ? Response.json([{ full_name: "org/a" }], { headers: { link: '<https://api.github.com/ignored>; rel="next"' } })
+    : Response.json([{ full_name: "org/b", pushed_at: "2026-09-01T00:00:00Z" }]), "https://local.test", now)
+  expect(paged.repositories.map(r => r.fullName)).toEqual(["org/b", "org/a"])
+  const refused = await rankTutorialRepositories(async () => new Response("", { status: 403 }), "", now)
+  expect(refused.repositories).toEqual([])
+  expect(refused.error).toContain("403")
 })

@@ -27,13 +27,13 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
     chooseTutorialRepository: async (repo) => {
       const before = scope()
       const login = identity()?.state === "signed-in" ? identity()?.login : null
-      const ranking = login ? await rankTutorialRepositories(ctx.boundedFetch, ctx.baseUrl, login) : {
+      const ranking = login ? await rankTutorialRepositories(ctx.boundedFetch, ctx.baseUrl) : {
         cutoff: new Date(Date.now() - 90 * 86400000).toISOString(), repositories: [], partial: true,
-        error: "Sign in to rank GitHub contributions, or Skip to create a local repository."
+        error: "Sign in to list GitHub repositories, or Skip to create a local repository."
       }
       if (!current(before)) return "The account or tutorial changed; choose the repository again."
       if (repo === undefined) {
-        await ports.publish({ ...ranking, selected: ranking.repositories.find(row => row.count !== null)?.fullName ?? null, created: null })
+        await ports.publish({ ...ranking, selected: ranking.repositories[0]?.fullName ?? null, created: null })
         return
       }
       if (!ranking.repositories.some(row => row.fullName === repo)) return "That repository is not in the current GitHub inventory. Refresh the repository choice."

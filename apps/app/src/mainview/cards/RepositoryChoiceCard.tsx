@@ -10,11 +10,10 @@ export function RepositoryChoiceCard({ payload, onRunCommand }: {
   return <div data-testid="repository-choice">
     {payload.created ? <p>Created {payload.created.name} at {payload.created.path}</p> : <>
       {payload.error ? <p>{payload.error}</p> : null}
-      {payload.partial && payload.repositories.length > 0 ? <p>Partial ranking: authored commits on the default branch in the last 90 days.</p> : null}
       <ol>{payload.repositories.map(repo => <li key={repo.fullName}>
         <button type="button"  aria-pressed={payload.selected === repo.fullName}
           {...flowAction(onRunCommand, "repo.choose", repo.fullName)}>{repo.fullName}</button>
-        <span>{repo.count === null ? " — contribution count unknown" : ` — ${repo.count} authored commits`}</span>
+        <span>{repo.latest === null ? "" : ` — pushed ${repo.latest.slice(0, 10)}`}</span>
         {repo.error ? <p>{repo.error}</p> : null}
       </li>)}</ol>
       <button type="button"  {...flowAction(onRunCommand, "repo.create", "smithers-playground")}>Skip</button>

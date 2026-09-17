@@ -296,31 +296,26 @@ async function githubPages(http: (url: string) => Promise<Response>, path: strin
   throw new Error("GitHub pagination limit reached; contribution counts are unknown.")
 }
 
-/** One captured cutoff, authored timestamps and distinct SHAs, never pushed_at. */
+/**
+ * Ranked by the inventory's pushed_at, most recent first. plue serves no
+ * per-repository commits route, so authored counts are never known: count stays
+ * null and coverage "unknown" (the durable card schema keeps both fields).
+ */
 export async function rankTutorialRepositories(
-  http: (url: string) => Promise<Response>, baseUrl: string, login: string, now = Date.now()
+  http: (url: string) => Promise<Response>, baseUrl: string, now = Date.now()
 ): Promise<RepositoryRanking> {
   const cutoff = new Date(now - 90 * 24 * 60 * 60 * 1000).toISOString()
   let inventory: unknown[]
-  try { inventory = await githubPages(http, `${baseUrl}/api/user/github-repos`) }
+  try { inventory = await githubPages(http, `${baseUrl}/api/user/github-repos?sort=pushed&direction=desc`) }
   catch (error) { return { cutoff, repositories: [], partial: true, error: String(error) } }
-  const names = [...new Set(inventory.flatMap(row => isRecord(row) && typeof row.full_name === "string" && /^[^/\s]+\/[^/\s]+$/.test(row.full_name) ? [row.full_name] : []))]
+  const seen = new Set<string>()
   const repositories: RankedRepository[] = []
-  // Sequential to avoid turning a large organization inventory into a rate-limit burst.
-  for (const fullName of names) {
-    try {
-      const commits = await githubPages(http, `${baseUrl}/api/user/github-repos/${fullName.split("/").map(encodeURIComponent).join("/")}/commits?author=${encodeURIComponent(login)}&since=${encodeURIComponent(cutoff)}`)
-      const shas = new Map<string, string>()
-      for (const row of commits) {
-        if (!isRecord(row) || typeof row.sha !== "string" || !isRecord(row.author) || typeof row.author.login !== "string" || row.author.login.toLowerCase() !== login.toLowerCase() || !isRecord(row.commit) || !isRecord(row.commit.author)) continue
-        const date = row.commit.author.date
-        if (typeof date === "string" && Date.parse(date) >= Date.parse(cutoff) && Date.parse(date) <= now) shas.set(row.sha, new Date(date).toISOString())
-      }
-      repositories.push({ fullName, count: shas.size, latest: [...shas.values()].sort().at(-1) ?? null, coverage: "default-branch", error: null })
-    } catch (error) {
-      repositories.push({ fullName, count: null, latest: null, coverage: "unknown", error: String(error) })
-    }
+  for (const row of inventory) {
+    if (!isRecord(row) || typeof row.full_name !== "string" || !/^[^/\s]+\/[^/\s]+$/.test(row.full_name) || seen.has(row.full_name)) continue
+    seen.add(row.full_name)
+    const pushed = typeof row.pushed_at === "string" && !Number.isNaN(Date.parse(row.pushed_at)) ? new Date(row.pushed_at).toISOString() : null
+    repositories.push({ fullName: row.full_name, count: null, latest: pushed, coverage: "unknown", error: null })
   }
-  repositories.sort((a, b) => (b.count ?? -1) - (a.count ?? -1) || (b.latest ?? "").localeCompare(a.latest ?? "") || a.fullName.localeCompare(b.fullName))
+  repositories.sort((a, b) => (b.latest ?? "").localeCompare(a.latest ?? "") || a.fullName.localeCompare(b.fullName))
   return { cutoff, repositories, partial: true, error: null }
 }
