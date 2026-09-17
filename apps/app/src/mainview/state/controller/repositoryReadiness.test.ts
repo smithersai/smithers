@@ -612,3 +612,20 @@ test("refresh launch waits for the atomic retry admission commit", async () => {
     await until(() => requests === 1)
   } finally { release(); spy.mockRestore(); await h.close() }
 })
+
+/*
+ * One persisted park, two consumers: the readiness controller owns only
+ * "repository-ready", so a first-run wait is invisible to it — proof there is
+ * no second mechanism competing for session.pendingCommand.
+ */
+test("a first-run-target park is inert to the readiness controller", async () => {
+  const h = await setup()
+  try {
+    await h.store.dispatch({ type: "command.deferred", actor: "user", name: "issues.list", args: null, requirement: "first-run-target" }).isPersisted.promise
+    await h.ready()
+    await pause(30)
+    expect(h.store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
+    expect(h.store.collections.toasts.get("toast-repository.ready")).toBeUndefined()
+    expect([...h.store.collections.cards.values()]).toEqual([])
+  } finally { await h.close() }
+})

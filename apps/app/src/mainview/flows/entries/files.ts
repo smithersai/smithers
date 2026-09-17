@@ -30,7 +30,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     summary: "List a repository directory",
     runtimeAny: ["cloud", "local.repositories", "practice"],
     args: "[path] [owner/repo]",
-    requires: ["repo-source"],
+    requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
     prepare: ({ path, repo }) => actions.listFiles.preload?.(path, repo),
     handler: ({ path, repo }) => actions.listFiles(path, repo)
@@ -52,7 +52,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     runtimeAny: ["cloud", "local.repositories", "practice"],
     /* `:line[:col]` (docs/code-intel/PLAN.md §1): the card scrolls to and marks the line; the parser strips it off the path token. */
     args: "<path>[:<line>[:<col>]] [owner/repo]",
-    requires: ["repo-source"],
+    requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({
       path: Schema.String,
       repo: Schema.optional(Schema.String),

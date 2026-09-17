@@ -1,8 +1,35 @@
 import { selectFirstRunRepository } from "./FirstRunRepository"
 import { expect,test } from "bun:test"
+import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
+import { json,memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { PRACTICE_CARD,PRACTICE_REPO } from "./practice/PracticeRepository"
 import { resolveTargetRepo } from "./RepoContext"
+
+const until = async (check: () => boolean) => {
+  for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 10))
+  expect(check()).toBe(true)
+}
+
+test("a bare repository command during first-run selection parks instead of asking for a repo", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    fetchImpl: async () => json(404, {})
+  })
+  const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
+  try {
+    expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    expect(forms()).toEqual([])
+    expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
+
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    selectFirstRunRepository(store, controller.resumeDeferredCommand)
+    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    expect(forms()).toEqual([])
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
+    expect(store.session().pendingCommand ?? null).toBeNull()
+  } finally { await controller.dispose() }
+})
 
 test("signed-out entry selects the practice repository for bare flows", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: (() => { const data = new Map<string, string>(); return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } } })() })

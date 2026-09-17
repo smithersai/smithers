@@ -125,9 +125,11 @@ describe("requirement axis — the pure model", () => {
     expect(unmetRequirements({ summary: "" }, { ...chatState, signedOut: true })).toEqual([])
   })
 
+  // A requirement that is a pure wait declares no fulfilling flow: the app is
+  // already settling it, so there is nothing for the user or the agent to run.
   test("every requirement's fulfill names a registered flow shape", () => {
     for (const requirement of flowRequirements) {
-      expect(requirement.fulfill).toMatch(/^[a-z0-9_.-]+$/)
+      if (requirement.fulfill !== undefined) expect(requirement.fulfill).toMatch(/^[a-z0-9_.-]+$/)
       expect(requirement.reason.length).toBeGreaterThan(0)
     }
   })
@@ -259,6 +261,17 @@ describe("requirement axis — the run path", () => {
       (message) => message.action?.flow === "auth.sign-in"
     )
     expect(prompts).toHaveLength(1)
+  })
+
+  test("a fulfill-less requirement parks the command and runs no flow", async () => {
+    const { store, controller } = await freshController()
+    const outcome = await controller.commands.run("issues.list")
+    expect(outcome).toEqual({ status: "executed", value: "Requested" })
+    await settled()
+    expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
+    expect([...store.collections.cards.values()]).toEqual([])
+    expect([...store.collections.messages.values()]).toEqual([])
+    await controller.dispose()
   })
 
   test("a satisfied requirement never defers: the command just runs", async () => {

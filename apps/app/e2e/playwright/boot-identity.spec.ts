@@ -10,7 +10,7 @@ import { expect,test } from "@playwright/test"
  */
 
 
-import { signedOutVisitor } from "./identity"
+import { SCOPED_TEST_USER,signedOutVisitor } from "./identity"
 
 const slash = async (page: import("@playwright/test").Page, command: string) => {
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
@@ -94,4 +94,70 @@ test("chrome sign-in uses the shell's green action token", async ({ page }) => {
     probe.remove()
     return same
   })).toBe(true)
+})
+
+/*
+ * CT089: a bare repository command typed before first run has chosen its
+ * target parks and resumes into the practice list. Both identity reads are on
+ * the critical path (state/controller/auth-billing.ts dispatchSignedOut), so
+ * both are held here; releasing only the session read leaves a second hop.
+ */
+test("a bare issues.list during first-run identity resumes into the practice list", async ({ page }) => {
+  await signedOutVisitor(page)
+  let releaseSession!: () => void, releaseScopes!: () => void
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
+  const held = [
+    new Promise<void>(resolve => { releaseSession = resolve }),
+    new Promise<void>(resolve => { releaseScopes = resolve })
+  ]
+  await page.route("**/api/auth/session", async route => { await held[0]; await route.fulfill(json({ status: "signed-out" })) })
+  await page.route("**/api/auth/scopes", async route => { await held[1]; await route.fulfill(json({ scopes: [] })) })
+  const errors: string[] = []
+  const issueReads: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  page.on("request", request => { if (/\/api\/.*issues/.test(request.url())) issueReads.push(request.url()) })
+
+  await page.goto("/")
+  await page.getByRole("link", { name: "Start Here" }).click()
+  await expect(page.getByRole("button", { name: "Chat" })).toBeVisible()
+  await page.keyboard.press("Meta+k")
+  await page.getByTestId("composer-input").fill("/issues.list")
+  await page.getByTestId("composer-input").press("Enter")
+  // Chat answers now: the command parks, it does not ask for a repository.
+  await expect(page.getByTestId("composer-input")).toBeHidden({ timeout: 300 })
+  await expect(page.locator('[data-kind="flow-form"]')).toHaveCount(0)
+
+  releaseSession()
+  releaseScopes()
+  await expect(page.locator("#card-practice-issues")).toContainText("smithersai/hello-server")
+  await expect(page.locator('[data-kind="issue-list"]')).toHaveCount(1)
+  await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)
+  expect(errors).toEqual([])
+  expect(issueReads).toEqual([])
+})
+
+test("CONTROL: a persisted private selection resolves against that repo, never practice", async ({ page }) => {
+  await signedOutVisitor(page)
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
+  let releaseSession!: () => void, releaseScopes!: () => void
+  const held = [
+    new Promise<void>(resolve => { releaseSession = resolve }),
+    new Promise<void>(resolve => { releaseScopes = resolve })
+  ]
+  await page.route("**/api/auth/session", async route => { await held[0]; await route.fulfill(json({ status: "signed-in", ...SCOPED_TEST_USER })) })
+  await page.route("**/api/auth/scopes", async route => { await held[1]; await route.fulfill(json({ scopes: [] })) })
+  await page.route("**/api/user/repos", route => route.fulfill(json({ repos: [{ id: "scoped/private", org: "scoped", name: "private", ownerKind: "user", head: null }] })))
+  await page.route(/\/api\/repos\/scoped\/private\/issues/, route => route.fulfill(json([{ number: 7, title: "Private only", state: "open", author: { login: SCOPED_TEST_USER.login }, comment_count: 0, updated_at: null }])))
+
+  await page.goto("/scoped/private/")
+  await page.keyboard.press("Meta+k")
+  await page.getByTestId("composer-input").fill("/issues.list")
+  await page.getByTestId("composer-input").press("Enter")
+  releaseSession()
+  releaseScopes()
+  // A repository path entry is a target: firstRunTargetPending is false, so nothing parks.
+  await expect(page.getByText("Continuing:")).toHaveCount(0)
+  await expect(page.locator('[data-kind="flow-form"]')).toHaveCount(0)
+  await expect(page.locator("#card-practice-issues")).toHaveCount(0)
+  await expect(page.locator('[data-kind="issue-list"]')).toContainText("scoped/private")
 })

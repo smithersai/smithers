@@ -101,7 +101,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        * real controls need not wait on identity. Retained content/account
        * ownership keep the cloud identity barrier.
        */
-      yield* Effect.sync(() => void controller.loadSession().then(() => { if (requested === null) selectFirstRunRepository(store) }))
+      yield* Effect.sync(() => void controller.loadSession().then(() => { if (requested === null) selectFirstRunRepository(store, controller.resumeDeferredCommand) }))
     } else {
       /*
        * The cloud host gates the transcript on the signed-out answer, so the
@@ -110,7 +110,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        */
       yield* promiseEffect("load identity session", () => controller.loadSession())
     }
-    if (requested === null) yield* Effect.sync(() => selectFirstRunRepository(store))
+    // The awaited branch above has its identity answer here; the non-blocking
+    // one does not, so this call is its own no-op and the `.then()` decides.
+    if (requested === null) yield* Effect.sync(() => selectFirstRunRepository(store, controller.resumeDeferredCommand))
     if (runtime.backend.repositories !== undefined) {
       yield* Effect.sync(() => void controller.loadRepos())
       yield* Effect.sync(() => void controller.loadHarnesses())

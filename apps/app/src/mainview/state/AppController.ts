@@ -1812,6 +1812,11 @@ export const createAppController = (
         admin: (signedIn && identity.admin) ||
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
+        // First run has no identity answer, no selection and no entry yet: the
+        // app is still choosing the target, so a bare command waits for it.
+        // "unknown" is the seeded no-answer row; "unavailable" is an answer.
+        firstRunTargetPending: (identity === undefined || identity.state === "unknown") && repo === undefined &&
+          store.session().activeRepoKey == null && routeEntry == null,
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
         practiceRepo: fileTarget !== undefined
           ? "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo)

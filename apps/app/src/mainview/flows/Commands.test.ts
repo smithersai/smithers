@@ -591,3 +591,36 @@ describe("trace argument redaction", () => {
     }
   }
 })
+
+/*
+ * A requirement with no fulfilling flow is a pure wait: the app is already
+ * settling it, so the command parks and answers now. No form, no prompt.
+ */
+describe("fulfill-less requirement", () => {
+  test("a bare repository command parks, traces the wait, and renders no form", async () => {
+    const records: Parameters<CommandActions["traceFlow"]>[0][] = []
+    const deferred: Array<[string, string | null, string]> = []
+    const forms: unknown[] = []
+    const actions = {
+      repositoryFlows: () => undefined,
+      knownRepositories: () => new Set<string>(),
+      snapshot: () => ({
+        surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut: false,
+        firstRunTargetPending: true
+      }),
+      noteCommandRun: () => {},
+      traceFlow: (record) => { records.push(record) },
+      deferCommand: (name: string, args: string | null, requirement: string) => { deferred.push([name, args, requirement]) },
+      renderFlowForm: (request: unknown) => { forms.push(request); return undefined }
+    } satisfies Partial<CommandActions>
+    const commands = createCommandRegistry(actions as unknown as CommandActions)
+    expect(await commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    expect(deferred).toEqual([["issues.list", null, "first-run-target"]])
+    // The park is its own trace; the acknowledgment the door returns is the next one.
+    expect(records.map((record) => [record.outcome, record.detail])).toEqual([
+      ["deferred", "waits on first-run-target"],
+      ["executed", "Requested"]
+    ])
+    expect(forms).toEqual([])
+  })
+})

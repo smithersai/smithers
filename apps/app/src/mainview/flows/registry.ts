@@ -302,8 +302,12 @@ export interface FlowRequirement {
   readonly id: string
   /** True when the requirement is already met for this state. */
   readonly satisfied: (state: CommandState) => boolean
-  /** The registered flow that fulfills the requirement when unmet. */
-  readonly fulfill: string
+  /**
+   * The registered flow that fulfills the requirement when unmet. A
+   * requirement that is a pure wait — the app is already settling it — names
+   * no flow: the command parks and resumes itself.
+   */
+  readonly fulfill?: string
   /** Honest one-line reason, shown when the requirement defers or fails a flow. */
   readonly reason: string
 }
@@ -317,7 +321,8 @@ export interface FlowRequirement {
  * the namespace module whose flow fulfills them (auth.ts today).
  */
 export const flowRequirements: ReadonlyArray<FlowRequirement> = [
-  ...auth.requirements
+  ...auth.requirements,
+  ...repo.requirements
 ]
 
 /** The flow's unmet requirements for a state, in declaration order. */
@@ -351,6 +356,8 @@ export interface CommandState {
   readonly publicRepo?: boolean
   /** The resolved target — the file's repository, else the command's — is the bundled practice repository. */
   readonly practiceRepo?: boolean
+  /** First run has not finished choosing the starting repository: a bare repository command waits, it does not ask. */
+  readonly firstRunTargetPending?: boolean
   /** A named repository still needs a catalog answer before authorization. */
   readonly repositoryReadiness?: { readonly repo: string; readonly phase: "pending" | "unavailable" | "unrequested"; readonly error?: string; readonly scope?: "command" }
   /**

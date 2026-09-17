@@ -563,6 +563,16 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         }
         return { status: "failed", error: `${unmet.reason} — /${nameOf(target)} waits on that` }
       }
+      if (unmet.fulfill === undefined) {
+        /*
+         * A pure wait: the app is already settling this prerequisite, so there
+         * is nothing to ask and nothing to run. The command parks and the seam
+         * that settles the prerequisite resumes it — Chat answers now.
+         */
+        actions.deferCommand(nameOf(target), args ?? null, unmet.id)
+        trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
+        return { status: "executed", value: "Requested" }
+      }
       if (seen.has(unmet.fulfill)) {
         return {
           status: "failed",

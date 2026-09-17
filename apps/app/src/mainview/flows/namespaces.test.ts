@@ -51,13 +51,15 @@ describe("registry data tables read the namespace modules", () => {
     expect(row?.summary.toLowerCase()).not.toContain("computer")
   })
 
+  // A requirement that is a pure wait declares no fulfilling flow; it still
+  // belongs to the namespace that owns the thing being waited on.
   test("every requirement row comes from a module whose flow fulfills it", async () => {
     const found = await modules()
     const exported = [...found].flatMap(([id, module]) => (module.requirements ?? []).map((row) => ({ id, row })))
     expect(exported.length).toBe(flowRequirements.length)
     for (const { id, row } of exported) {
       expect(flowRequirements.includes(row)).toBe(true)
-      expect(namespaceOf(row.fulfill)).toBe(id)
+      if (row.fulfill !== undefined) expect(namespaceOf(row.fulfill)).toBe(id)
     }
   })
 
