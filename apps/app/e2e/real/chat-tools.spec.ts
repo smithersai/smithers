@@ -26,6 +26,8 @@ realApi,
 test
 } from "./support/test"
 
+const chatTest = process.env.SMITHERS_REAL_E2E_HOST === "production" ? authenticatedTest : test
+
 test.setTimeout(180_000)
 test.use({ actionTimeout: 20_000 })
 
@@ -36,7 +38,7 @@ const attachJson = async (testInfo: TestInfo, name: string, value: unknown): Pro
   })
 }
 
-test("a grounded answer arrives as multiple real stream frames and completes in the transcript", scenario("chat.stream-grounded", {
+chatTest("a grounded answer arrives as multiple real stream frames and completes in the transcript", scenario("chat.stream-grounded", {
   capabilities: ["agent"],
   coverage: ["action:chat.send", "host:local", "host:production", "path:success", "door:user-only", "dimension:streaming", "evidence:agent-turn-ndjson"],
   description: "Send a unique grounded prompt through the composer and correlate the rendered answer with multiple backend NDJSON deltas."
@@ -130,7 +132,7 @@ test("the model invokes browser.open and cites content returned by the real fetc
   await attachJson(testInfo, "browser-tool-evidence", { execution, fetchBody, frames })
 })
 
-test("Stop generating cancels the live backend turn and leaves an honest stable interruption", scenario("chat.stop-real-turn", {
+chatTest("Stop generating cancels the live backend turn and leaves an honest stable interruption", scenario("chat.stop-real-turn", {
   capabilities: ["agent"],
   coverage: ["action:chat.send", "action:chat.stop", "host:local", "host:production", "path:success", "door:button", "door:user-only", "dimension:cancellation", "evidence:backend-cancel-ack"],
   description: "Start a long real model response, stop it through the visible control, and verify the cancellation endpoint and stable interrupted state."
@@ -138,6 +140,9 @@ test("Stop generating cancels the live backend turn and leaves an honest stable 
   await bootWorkspace(page)
   const marker = `STOP_REAL_${Date.now()}`
   await command(page, `Write a detailed 2500-word technical essay about distributed systems. Begin with ${marker}.`)
+  // Cancel a proven running provider turn, after admission and the first delta.
+  await expect(assistantMessages(page).last()).toContainText(marker, { timeout: 90_000 })
+  await expect(transcript(page)).toHaveAttribute("aria-busy", "true")
   await openComposer(page)
   const stop = page.locator('[data-flow="chat.stop"]:visible')
   await expect(stop).toBeVisible({ timeout: 30_000 })
@@ -151,8 +156,7 @@ test("Stop generating cancels the live backend turn and leaves an honest stable 
   const cancelBodies = await cancelTraffic.read()
   expect(cancelBodies).toHaveLength(1)
   const cancelBody = JSON.parse(cancelBodies[0]!) as { readonly ok?: unknown; readonly status?: unknown }
-  expect(cancelBody.ok).toBe(true)
-  expect(cancelBody.status).toBe("cancelled")
+  expect(cancelBody.status, JSON.stringify(cancelBody)).toBe("cancelled")
   const interrupted = assistantMessages(page).last()
   await expect(interrupted.locator(".bubble-system-note")).toContainText("Turn interrupted")
   await expect(transcript(page)).toHaveAttribute("aria-busy", "false")

@@ -174,7 +174,8 @@ tutorialTest(
     await expect(card).toBeVisible()
     await expect(card.locator('[aria-label="Run trace"] [data-status="completed"]')).not.toHaveCount(0)
     expectReproductionEvidence(run)
-    await expect(card).toContainText(run.result!)
+    // The card renders Markdown; compare its summary as visible text.
+    await expect(card).toContainText(run.result!.split(/\n\s*\n/)[0]!.replace(/`/g, ""))
     await attachJson(testInfo, "live-issue-reproduction", run)
   }
 )

@@ -477,7 +477,7 @@ describe("SyncOpsCardBody", () => {
           ...syncOpsCard(),
           id: "sync-ops-mirror-will/smithers",
           payload: {
-            subject: "GitHub → will/smithers mirror",
+            subject: "will/smithers → GitHub",
             source: "github-mirror",
             repo: "will/smithers",
             runId: "88",
@@ -502,7 +502,7 @@ describe("SyncOpsCardBody", () => {
       />
     )
 
-    expect(host.textContent).toContain("GitHub → will/smithers mirror")
+    expect(host.textContent).toContain("will/smithers → GitHub")
     expect(host.textContent).toContain("unconfigured")
     expect(host.textContent).toContain("b775d9 → 3f2a1b ref refs/heads/main push")
     /* plue#491 retries only a FAILED ref, so a succeeded one offers nothing. */
@@ -517,7 +517,7 @@ describe("SyncOpsCardBody", () => {
           ...syncOpsCard(),
           id: "sync-ops-mirror-will/smithers",
           payload: {
-            subject: "GitHub → will/smithers mirror",
+            subject: "will/smithers → GitHub",
             source: "github-mirror",
             repo: "will/smithers",
             runId: "88",
@@ -560,7 +560,7 @@ describe("SyncOpsCardBody", () => {
           ...syncOpsCard(),
           id: "sync-ops-mirror-will/smithers",
           payload: {
-            subject: "GitHub → will/smithers mirror",
+            subject: "will/smithers → GitHub",
             source: "github-mirror",
             repo: "will/smithers",
             runState: null,

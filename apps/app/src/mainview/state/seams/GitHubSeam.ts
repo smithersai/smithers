@@ -549,7 +549,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     const existing = ctx.store.collections.cards.get(id)
     const prior = existing?.kind === "sync-ops" ? existing.payload : undefined
     const payload: SyncPayload = {
-      subject: `GitHub → ${repo} mirror`,
+      subject: `${repo} → GitHub`,
       source: "github-mirror",
       repo,
       runState: patch.runState !== undefined ? patch.runState : prior?.runState ?? null,
@@ -577,7 +577,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     const card: Card = {
       id,
       kind: "sync-ops",
-      title: `Mirror sync · GitHub → ${repo}`,
+      title: `Mirror sync · ${repo} → GitHub`,
       status: payload.error !== undefined ? "error" : payload.runState === "succeeded" ? "acted" : "active",
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),

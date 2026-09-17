@@ -32,6 +32,7 @@ export type OwnedPullRequestRepo = OwnedGitHubRepository & {
   importTerminal?: ImportTerminal
   tipChangeId?: string
   mainChangeId?: string
+  mirrorPending?: boolean
   readonly queuedLandings: number[]
 }
 
@@ -76,7 +77,7 @@ export const openProductionChat = async (page: Page): Promise<void> => {
   await expect(input).toBeVisible()
 }
 
-const githubCommitAtBranch = async (github: Page, owned: OwnedGitHubRepository, branch: string): Promise<string> => {
+export const githubCommitAtBranch = async (github: Page, owned: OwnedGitHubRepository, branch: string): Promise<string> => {
   await github.goto(`${owned.url}/commits/${encodeURIComponent(branch)}`, { waitUntil: "domcontentloaded" })
   const link = github.locator(`a[href^="/${owned.fullName}/commit/"]`).first()
   await expect(link).toBeVisible({ timeout: 30_000 })
@@ -527,7 +528,9 @@ export const cleanupOwnedPullRequestRepo = async (
 
   let cloudDeleted = !owned.importSubmitted
   let githubDeleted = false
-  if (importDrained && landingsDrained) {
+  if (owned.mirrorPending) {
+    failures.push(new Error(`Mirror on ${owned.fullName} has no terminal receipt; preserving its dependencies`))
+  } else if (importDrained && landingsDrained) {
     const cleanup = await Promise.allSettled([
       owned.importSubmitted ? deleteOwnedCloudRepository(page, request, owned.fullName) : Promise.resolve(undefined),
       deleteOwnedGitHubRepository(owned)

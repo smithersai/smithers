@@ -56,3 +56,7 @@ The rows offer Local repository, GitHub, and Smithers Cloud. The GitHub row coun
 | `github.app`, `github.reconcile` | `[repo]` |
 | `repos.import`, `repos.import.retry` | `<owner/repo>` / `<jobId>` |
 | `github.mirror-sync` | `[repo]` |
+
+`github.mirror-sync` pushes user refs from Smithers to the configured GitHub
+destination. Its card shows `owner/repo → GitHub`; GitHub import is the
+separate `repos.import` operation. Completion requires the mirror run receipt.

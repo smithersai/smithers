@@ -59,7 +59,7 @@ export const githubFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   }),
   flow({
     name: "github.mirror-sync",
-    summary: "Pull GitHub into the repository's mirror",
+    summary: "Sync the repository to GitHub",
     runtime: ["cloud"],
     args: "[owner/repo]",
     requires: ["signed-in"],

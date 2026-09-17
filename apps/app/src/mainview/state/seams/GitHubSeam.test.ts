@@ -449,7 +449,7 @@ describe("createGitHubSeam", () => {
     expect(requests).toContain(`GET ${REPO_PATH}`)
     expect(textOf(result)).toBe("Mirror run 88 started for will/smithers — the card tracks its refs.")
     const payload = mirrorPayloadOf(store)
-    expect(payload?.subject).toBe("GitHub → will/smithers mirror")
+    expect(payload?.subject).toBe("will/smithers → GitHub")
     expect(payload?.runId).toBe("88")
     expect(payload?.trigger).toBe("sync started · run 88")
     /* `unconfigured` is the word prod answers today, and it rides the header unchanged. */

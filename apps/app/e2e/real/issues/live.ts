@@ -58,11 +58,11 @@ export const runLiveOperation = async (
   start: () => Promise<void>
 ): Promise<LiveRun> => {
   const started = page.waitForResponse((response) =>
-    response.request().method() === "POST" && new URL(response.url()).pathname === `/api/tutorial/live/${operation}`)
+    response.request().method() === "POST" && new URL(response.url()).pathname === `/api/tutorial/live/${operation}`).then(async response => ({ status: response.status(), body: await response.json() as Partial<LiveRun> }))
   await start()
   const response = await started
-  expect(response.status(), `live ${operation} must start through the real tutorial service`).toBe(200)
-  const first = await response.json() as Partial<LiveRun>
+  expect(response.status, `live ${operation} must be accepted by the real tutorial service`).toBe(202)
+  const first = response.body
   expect(first.operation).toBe(operation)
   expect(first.runId).toEqual(expect.any(String))
   const runId = first.runId!
@@ -72,6 +72,7 @@ export const runLiveOperation = async (
     const polled = await realApi(page, request, "GET", `/api/tutorial/live/run/${encodeURIComponent(runId)}`)
     if (polled.status() !== 200) return `http-${polled.status()}`
     latest = await polled.json() as LiveRun
+    if (latest.phase === "failed") throw new Error(`Live ${operation} ${runId} failed: ${latest.error ?? latest.result ?? "no failure detail"}`)
     return latest.phase
   }, { timeout: 300_000, intervals: [1_000, 1_000, 2_000, 3_000] }).toBe("completed")
   expect(latest?.operation).toBe(operation)

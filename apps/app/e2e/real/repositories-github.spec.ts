@@ -2,7 +2,8 @@ import { writeFile } from "node:fs/promises"
 import { scenario } from "./coverage/types"
 import { fixtureRepositoryName } from "./support/values"
 import { command, expect, realApi, test } from "./support/test"
-import { authenticatedTest } from "./auth-permissions/profile"
+import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
+import { withOwnedPullRequestRepo, importOwnedPullRequestRepo, createPullRequestThroughUI, queueLandingThroughAPI, waitForLandingState, githubCommitAtBranch } from "./pull-requests/remote"
 import {
   attachJson,
   bootRepositoryWorkbench,
@@ -268,51 +269,72 @@ authenticatedTest(
       "dimension:mirror-terminal-run", "evidence:sync-card-and-repository-api-readback"
     ]
   }),
-  async ({ page, request }, testInfo) => {
-    await bootProductionRepository(page)
-    await enableProductionVerbose(page)
-    const mirrorPath = cloudRepoPath(PRODUCTION_REPO, "/mirror-sync")
-    const started = page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === mirrorPath)
-    await command(page, `/github.mirror-sync ${PRODUCTION_REPO}`)
-    const startedResponse = await started
-    await attachProductionJson(testInfo, "mirror-sync-start-response", {
-      method: startedResponse.request().method(),
-      path: new URL(startedResponse.url()).pathname,
-      status: startedResponse.status()
+  async ({ page, request, context }, testInfo) => {
+    testInfo.setTimeout(360_000)
+    const session = await readAuthenticatedSession(page)
+    expect(session).toBeDefined()
+    await withOwnedPullRequestRepo(page, request, context, session!.login, testInfo, "mirror", async owned => {
+      await importOwnedPullRequestRepo(page, request, owned)
+      const expectedCommit = owned.featureCommit
+      expect(await githubCommitAtBranch(owned.page, owned, "main")).not.toBe(expectedCommit)
+      const created = await createPullRequestThroughUI(page, request, owned, `Mirror proof ${owned.marker}`)
+      await queueLandingThroughAPI(page, request, owned, created.number)
+      await waitForLandingState(page, request, owned, created.number, "merged")
+      await enableProductionVerbose(page)
+      const mirrorPath = cloudRepoPath(owned.fullName, "/mirror-sync")
+      const started = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === mirrorPath)
+      owned.mirrorPending = true
+      await command(page, `/github.mirror-sync ${owned.fullName}`)
+      const startedResponse = await started
+      await attachProductionJson(testInfo, "mirror-sync-start-response", {
+        method: startedResponse.request().method(),
+        path: new URL(startedResponse.url()).pathname,
+        status: startedResponse.status()
+      })
+      const accepted = await startedResponse.json() as { run_id?: unknown }
+      expect(startedResponse.status()).toBe(202)
+      expect(typeof accepted.run_id).toBe("number")
+      await expect.poll(async () => {
+        const receipt = await readJson<{ state?: string }>(page, request, `${mirrorPath}/${accepted.run_id}`)
+        if (receipt.state === "succeeded" || receipt.state === "failed") owned.mirrorPending = false
+        return receipt.state
+      }, { timeout: 120_000, intervals: [1_000, 2_000, 5_000] }).toMatch(/^(succeeded|failed)$/)
+      await expectFlowOutcome(page, "github.mirror-sync", owned.fullName, "executed")
+      await dismissComposer(page)
+      const card = page.locator('.smithers-card[data-kind="sync-ops"]').last()
+      await expect(card).toBeVisible()
+      await expect(card).toContainText(`${owned.fullName} → GitHub`)
+      await expect(card).toHaveAttribute("data-status", "acted", { timeout: 120_000 })
+
+      const runId = /\brun\s+(\d+)\b/.exec(await card.textContent() ?? "")?.[1]
+      expect(runId).toBeDefined()
+      const run = await readJson<{
+        readonly state?: unknown
+        readonly refs?: ReadonlyArray<{ readonly name?: unknown; readonly status?: unknown }>
+      }>(page, request, `${mirrorPath}/${encodeURIComponent(runId!)}`)
+      expect(run.state).toBe("succeeded")
+      expect(Array.isArray(run.refs)).toBe(true)
+      // Verify both the Smithers source and the independent GitHub destination.
+      const bookmarks = await readJson<{ items: Array<{ name: string; target_commit_id: string }> }>(page, request, repositoryApiPath(owned.fullName, "/bookmarks"))
+      expect(bookmarks.items.find(row => row.name === "main")?.target_commit_id).toBe(expectedCommit)
+      expect(await githubCommitAtBranch(owned.page, owned, "main")).toBe(expectedCommit)
+      expect(run.refs?.every((ref) => ref.status === "succeeded")).toBe(true)
+
+      const repository = await readJson<{
+        readonly mirror_status?: unknown
+        readonly behind_refs?: unknown
+        readonly failed_refs?: unknown
+      }>(
+        page,
+        request,
+        cloudRepoPath(owned.fullName)
+      )
+      expect(repository.mirror_status).toBe("synced")
+      expect(repository.behind_refs).toBe(0)
+      expect(repository.failed_refs).toBe(0)
+      await attachProductionJson(testInfo, "mirror-sync", { runId, run, repository })
     })
-    expect(startedResponse.status()).toBe(202)
-    await expectFlowOutcome(page, "github.mirror-sync", PRODUCTION_REPO, "executed")
-    await dismissComposer(page)
-    const card = page.locator('.smithers-card[data-kind="sync-ops"]').last()
-    await expect(card).toBeVisible()
-    await expect(card).toContainText(`GitHub → ${PRODUCTION_REPO} mirror`)
-    await expect(card).toContainText("succeeded", { timeout: 120_000 })
-
-    const runId = /\brun\s+(\d+)\b/.exec(await card.textContent() ?? "")?.[1]
-    expect(runId).toBeDefined()
-    const run = await readJson<{
-      readonly state?: unknown
-      readonly refs?: ReadonlyArray<{ readonly name?: unknown; readonly status?: unknown }>
-    }>(page, request, `${mirrorPath}/${encodeURIComponent(runId!)}`)
-    expect(run.state).toBe("succeeded")
-    expect(Array.isArray(run.refs)).toBe(true)
-    expect(run.refs?.length).toBeGreaterThan(0)
-    expect(run.refs?.every((ref) => ref.status === "succeeded")).toBe(true)
-
-    const repository = await readJson<{
-      readonly mirror_status?: unknown
-      readonly behind_refs?: unknown
-      readonly failed_refs?: unknown
-    }>(
-      page,
-      request,
-      cloudRepoPath(PRODUCTION_REPO)
-    )
-    expect(repository.mirror_status).toBe("synced")
-    expect(repository.behind_refs).toBe(0)
-    expect(repository.failed_refs).toBe(0)
-    await attachProductionJson(testInfo, "mirror-sync", { runId, run, repository })
   }
 )
 
