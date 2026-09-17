@@ -675,7 +675,10 @@ describe("triggers seam: watching the registration run", () => {
   const MODEL_REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
   const DECLARED_INPUT =
     '"declared-input" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.'
-  const journalCause = (sentence: string): string => `invalid_receipt: ${sentence}\n    at repository/trigger (flows/repository/triggers.ts:20)`
+  /* The registrar's other code: the one it maps an unexpected failure to (flows/repository/triggers.ts:226). */
+  const CRASH = "The schedule registration did not complete; inspect the retained run"
+  const journalCause = (sentence: string, code = "invalid_receipt"): string =>
+    `${code}: ${sentence}\n    at repository/trigger (flows/repository/triggers.ts:20)`
 
   const approved = async (store: AppStore, controller: Awaited<ReturnType<typeof ready>>["controller"]) => {
     await controller.registerTrigger(REQUEST)
@@ -724,6 +727,18 @@ describe("triggers seam: watching the registration run", () => {
     run.status = "failed"
     await waitFor(() => registrationToast(store)?.status === "failed")
     expect(registrationToast(store)?.detail).toBe(DECLARED_INPUT)
+  })
+
+  test("the registrar's other code reaches the person as its sentence too, not as its code", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await ready(ROUTES(calls, run), { signedIn: true })
+    await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    run.cause = journalCause(CRASH, "execution")
+    run.status = "failed"
+    await waitFor(() => registrationToast(store)?.status === "failed")
+    expect(registrationToast(store)?.detail).toBe(CRASH)
   })
 
   test("a run that settles completed shows the registration the schedule now holds", async () => {

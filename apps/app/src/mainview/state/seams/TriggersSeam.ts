@@ -53,12 +53,13 @@ const TRIGGER_APPROVAL_PATH = "/api/workflow/trigger-approval"
 const REGISTRAR_FLOW = "repository/trigger"
 
 /**
- * The registrar's own refusal code (flows/repository/triggers.ts). Every
- * sentence it carries is about the person's input or their flow, so it names
- * the fault the way the typed-failures rule requires and the app never has to
- * read the prose to decide whose problem it is.
+ * The code a journalled failure carries in front of its sentence, as
+ * internal/FailureSummary.ts writes the pair. The registrar's codes say whose
+ * problem it is — `invalid_receipt` for the maintainer's input or their flow,
+ * `execution` for a registration that never finished — so the app never reads
+ * the prose to decide that, and the person reads the sentence alone.
  */
-const REGISTRAR_REFUSAL = "invalid_receipt"
+const JOURNALLED_CODE = /^[a-z][a-z0-9_]*: /
 
 /** One registration attempt's run card; the same attempt never registers twice. */
 const registrationCardId = (requestId: string): string => `trigger-register-${requestId}`
@@ -637,8 +638,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
    * front of the sentence and clips the pair to a hundred characters, so the
    * longer registrar refusals lose the instruction they end with. The journal
    * carries what the run actually recorded — `<code>: <sentence>` and then the
-   * rendered cause — and the code the registrar writes says whose problem it
-   * is, so the sentence can stand on its own.
+   * rendered cause — so the sentence behind the code is the whole of what the
+   * person has to act on.
    */
   const refusalOfRun = (repo: string, runId: string): string | undefined => {
     const events = ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.events ?? []
@@ -646,7 +647,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const payload = failed === undefined || !isRecord(failed.payload) ? undefined : failed.payload
     if (typeof payload?.cause !== "string") return undefined
     const line = payload.cause.split(/[\r\n]/, 1)[0] ?? ""
-    return line.startsWith(`${REGISTRAR_REFUSAL}: `) ? line.slice(REGISTRAR_REFUSAL.length + 2) : line
+    return line.replace(JOURNALLED_CODE, "")
   }
 
   /**
