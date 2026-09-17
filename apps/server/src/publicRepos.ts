@@ -2,7 +2,6 @@ import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
-import * as Semaphore from "effect/Semaphore"
 import type { ServerConfig } from "./Config"
 import { EdgeCache, GithubAppAuth } from "./githubApp"
 import { fetchWithDeadline, readJson, readText, Transport } from "./Http"
@@ -22,8 +21,8 @@ import type { PublicComingSoonRepository, PublicRepoCatalog, PublicRepoStats, Pu
  *
  * A credential leaves this module only inside the GitHub request's
  * authorization header; it never reaches a log, the catalog cache, or the
- * response. Edge caching and an in-flight join bound GitHub traffic on this
- * public page.
+ * response. Completed isolate and edge snapshots bound GitHub traffic on
+ * this public page; pending work belongs to the request that starts it.
  */
 
 export interface PublicReposRoster {
@@ -126,8 +125,8 @@ export type PublicReposHandler = (
 ) => Effect.Effect<Response, never, Transport | ServerConfig | GithubAppAuth | EdgeCache>
 
 /**
- * A catalog handler with its own snapshot and in-flight gate: the isolate's
- * copy of the catalog. `handlePublicRepos` is the deployed one; a test builds
+ * A catalog handler with its own completed snapshot: the isolate's copy of
+ * the catalog. `handlePublicRepos` is the deployed one; a test builds
  * its own to play two isolates over one edge cache.
  */
 export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicReposHandler => {
@@ -135,12 +134,11 @@ export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicRe
   const comingSoon = roster.comingSoon ?? COMING_SOON_REPOS
   const names = [...repos, ...comingSoon].map((repo) => repo.name)
   const snapshot = Ref.makeUnsafe<Snapshot | undefined>(undefined)
-  const gate = Semaphore.makeUnsafe(1)
 
   const readAll = (token: string | undefined) =>
     Effect.forEach(names, (name) => statsFor(name, token), { concurrency: "unbounded" })
 
-  const refresh = (cacheKey: string): Effect.Effect<void, never, Transport | GithubAppAuth | EdgeCache> =>
+  const refresh = (cacheKey: string): Effect.Effect<Snapshot, never, Transport | GithubAppAuth | EdgeCache> =>
     Effect.gen(function*() {
       const edge = yield* EdgeCache
       const auth = yield* GithubAppAuth
@@ -151,8 +149,9 @@ export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicRe
         if (ttl > 0) {
           const body = yield* Effect.result(readText(cached))
           if (Result.isSuccess(body)) {
-            yield* Ref.set(snapshot, { body: body.success, expiresAt: now + ttl * 1000 })
-            return
+            const next = { body: body.success, expiresAt: now + ttl * 1000 }
+            yield* Ref.set(snapshot, next)
+            return next
           }
         }
       }
@@ -184,13 +183,8 @@ export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicRe
       yield* edge.put(cacheKey, new Response(next.body, {
         headers: { ...headers, "cache-control": `public, max-age=${ttl}`, "x-catalog-expires": String(next.expiresAt) }
       }))
+      return next
     })
-
-  const stale = Effect.gen(function*() {
-    const current = yield* Ref.get(snapshot)
-    const now = yield* Clock.currentTimeMillis
-    return current === undefined || current.expiresAt <= now
-  })
 
   return (request) =>
     Effect.gen(function*() {
@@ -200,16 +194,15 @@ export const makePublicReposHandler = (roster: PublicReposRoster = {}): PublicRe
           status: 405, headers: { ...headers, allow: "GET, HEAD, OPTIONS" }
         })
       }
-      if (yield* stale) {
+      let current = yield* Ref.get(snapshot)
+      if (current === undefined || current.expiresAt <= (yield* Clock.currentTimeMillis)) {
         // Query strings and visitor headers never change the public cache key.
         const key = new URL(PUBLIC_REPOS_PATH, request.url).href
-        // Concurrent readers queue behind one refresh; a reader that waited
-        // finds the snapshot fresh and never refreshes again.
-        yield* gate.withPermit(Effect.gen(function*() {
-          if (yield* stale) yield* refresh(key)
-        }))
+        // A Worker request cannot wait on another request's in-flight fiber:
+        // workerd sees no owned event capable of settling it and returns 500.
+        // Concurrent misses own their I/O; only completed snapshots are shared.
+        current = yield* refresh(key)
       }
-      const current = (yield* Ref.get(snapshot))!
       const now = yield* Clock.currentTimeMillis
       return new Response(request.method === "HEAD" ? null : current.body, {
         headers: { ...headers, "cache-control": `public, max-age=${Math.max(0, Math.ceil((current.expiresAt - now) / 1000))}` }

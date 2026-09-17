@@ -292,10 +292,10 @@ describe("public available repositories", () => {
     ])
   })
 
-  test("joins concurrent reads, caches for five minutes, and refreshes after expiry", async () => {
-    const { handler, concurrently, requests, advance } = harness()
-    const responses = await concurrently([request(), request("?cache-bust=1"), request()])
-    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
+  test("shares completed snapshots for five minutes and refreshes after expiry", async () => {
+    const { handler, requests, advance } = harness()
+    expect((await handler(request())).status).toBe(200)
+    expect((await handler(request("?cache-bust=1"))).status).toBe(200)
     expect(requests).toHaveLength(FETCH_COUNT)
     advance(299_000)
     expect((await handler(request())).headers.get("cache-control")).toBe("public, max-age=1")
@@ -303,6 +303,32 @@ describe("public available repositories", () => {
     advance(1_001)
     await handler(request())
     expect(requests).toHaveLength(FETCH_COUNT * 2)
+  })
+
+  test("a cache miss owns its refresh instead of waiting on another Worker's request", async () => {
+    const pending: Array<{ req: Request; resolve: (response: Response) => void }> = []
+    const { handler, requests } = harness({
+      answer: req => new Promise(resolve => pending.push({ req, resolve }))
+    })
+    const first = handler(request("?first"))
+    await flush(() => requests.length === FETCH_COUNT)
+    const second = handler(request("?second"))
+    try {
+      await flush(() => requests.length === FETCH_COUNT * 2)
+      expect(requests).toHaveLength(FETCH_COUNT * 2)
+      for (const { req, resolve } of pending.slice(FETCH_COUNT)) {
+        resolve(Response.json({ ...metadataFor(repoName(req)), stargazers_count: 902 }))
+      }
+      const secondResponse = await second
+      expect(secondResponse.status).toBe(200)
+      expect((await secondResponse.json() as PublicRepoCatalog).repos[0]?.stats?.stars).toBe(902)
+      // The first request retains its own result even after another refresh completes.
+      for (const { req, resolve } of pending.slice(0, FETCH_COUNT)) resolve(answerEach(req))
+      expect((await (await first).json() as PublicRepoCatalog).repos[0]?.stats?.stars).toBe(407)
+    } finally {
+      for (const { req, resolve } of pending) resolve(answerEach(req))
+      await Promise.all([first, second])
+    }
   })
 
   test("the edge cache is reusable across Worker instances and expires", async () => {
