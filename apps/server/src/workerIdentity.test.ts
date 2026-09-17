@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, test } from "bun:test"
 import { WORKER_IDENTITY } from "./workerIdentity"
-import { readWranglerConfig } from "./wranglerConfig"
+import { readWranglerConfig, WRANGLER_CONFIG_PATH } from "./wranglerConfig"
 
 const bridge = readWranglerConfig()
 
@@ -123,4 +124,21 @@ describe("wrangler.jsonc, the adoption bridge, agrees with the identity", () => 
 
 test("all requests reach the Worker before asset navigation for repository slugs, headers, and host redirects", () => {
   expect(WORKER_IDENTITY.assets.runWorkerFirst).toEqual(["/*"])
+})
+
+/*
+ * The comments in wrangler.jsonc are read under incident pressure, so they may
+ * only name a rollback that still runs. The canary route's comment named a
+ * `wrangler deploy` from a `smithersai/ui` checkout until that repository
+ * dropped the route from its own config (smithersai/ui 56ffafab); the command
+ * still exits 0 there, publishes routeless, and re-attaches nothing.
+ */
+test("wrangler.jsonc names a rollback that still exists", () => {
+  const comments = readFileSync(WRANGLER_CONFIG_PATH, "utf8")
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("//"))
+    .join("\n")
+  expect(comments).toContain("bun apps/server/scripts/deploy.ts")
+  expect(comments).toContain("bun x wrangler rollback")
+  expect(comments).not.toContain("smithersai/ui")
 })

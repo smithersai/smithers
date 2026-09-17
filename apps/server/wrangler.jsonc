@@ -11,9 +11,13 @@
 	"compatibility_date": "2026-08-01",
 	"compatibility_flags": ["nodejs_compat"],
 	// Wave 7: this Worker IS the canary. The custom domain was repointed from
-	// the POC worker `smithers-ui-canary` (rollback: redeploy that worker from a
-	// `smithersai/ui` checkout — `bun x wrangler deploy` — and the domain
-	// re-attaches; its last POC version was bd819f28-8c25-4443-b3b2-13d1e18cd09d).
+	// the POC worker `smithers-ui-canary`, which cannot take it back: the
+	// repository it deploys from dropped this route from its own config and
+	// retired its deploy job, so a deploy there publishes routeless. The
+	// rollback is this Worker's own — `bun apps/server/scripts/deploy.ts` from a
+	// Smithers checkout at the wanted sha, or `bun x wrangler rollback
+	// <version-id>` from apps/server for a version already on the account
+	// (`bun x wrangler deployments list` names them; DEPLOY.md "Rollback").
 	// The app under the apex (wave "smithers.sh is the product"): this Worker
 	// serves the whole smithers.sh Astro build (landing, docs, the prerendered
 	// app page, /_astro chunks), so one zone route claims every apex path. A
