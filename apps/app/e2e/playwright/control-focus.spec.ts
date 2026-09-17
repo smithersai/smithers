@@ -2,9 +2,9 @@ import type { Page } from "@playwright/test"
 import { expect,test } from "@playwright/test"
 
 /*
- * Control focus ("spotlight"): clicking into a card's markdown editor dims the
- * rest of the app modal-style — ONE layer on the body with a hole cut where
- * the surface shows — but the layer is pointer-events:none, so hover and wheel
+ * Control focus ("spotlight"): taking a card's embedded surface dims the rest
+ * of the app modal-style — ONE layer on the body with a hole cut where the
+ * surface shows — but the layer is pointer-events:none, so hover and wheel
  * still reach the dimmed content. Clicking out releases exactly like a modal
  * backdrop: the releasing click is swallowed (it does not activate what it
  * landed on) and only the NEXT click acts.
@@ -14,6 +14,13 @@ import { expect,test } from "@playwright/test"
  * release affordance was scrolled out of reach while `toBeVisible()` still
  * passed (a bounding box is not a hit test), and its own styling lost every
  * declaration to `.sui-button-ghost` and `.first-run-actions button`.
+ *
+ * The surface used to be a Wiki note's editor. Wiki is a default-off release
+ * flag, so `/wiki.new-note` registers nowhere and the three tests failed in
+ * the helper. The browser card is the other card-shaped surface the module
+ * detects (state/controller/controlFocus.ts KINDS), so the geometry the tests
+ * measure — the box, its header, the inner element focus lands on — is the
+ * same shape, and every assertion below is the one it always made.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -26,29 +33,40 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-/** Open a world card showing its Document view: the markdown editor surface. */
-const openEditorSurface = async (page: Page) => {
+/* The page the card embeds: this host's own health route, so the frame loads same-origin and reaches no network. */
+const PAGE_URL = "/api/health"
+
+/** Open a browser card showing its embedded page: the surface control focus dresses. */
+const openControlledSurface = async (page: Page) => {
+  /*
+   * The T1 host runs offline, so it advertises no page reader and answers no
+   * fetch. Both reads are answered here — the real bootstrap plus the one
+   * capability the flow needs, and the reader's own reply — because what is
+   * under test is the client's dim, not the service behind the frame.
+   */
+  await page.route("**/api/bootstrap", async (route) => {
+    const bootstrap = await (await route.fetch()).json() as { readonly capabilities: ReadonlyArray<string> }
+    await route.fulfill({ json: { ...bootstrap, capabilities: [...new Set([...bootstrap.capabilities, "browser.read"])] } })
+  })
+  await page.route("**/api/tools/browser-fetch", (route) =>
+    route.fulfill({ json: { status: 200, finalUrl: PAGE_URL, contentType: "application/json", text: "ok", frameable: true, blockReason: null } }))
   await page.goto("/")
   await expect(page.locator(".app-shell")).toBeVisible()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
   await expect(composer).toBeVisible()
 
-  /* A note embedded as a world card; its Document view is the markdown editor surface. */
-  await composer.fill("/wiki.new-note")
+  /* A page embedded as a browser card; its frame is the surface. */
+  await composer.fill(`/browser.open ${PAGE_URL}`)
   await composer.press("Enter")
-  const card = page.locator(".smithers-card[data-kind='world']").last()
+  const card = page.locator(".smithers-card[data-kind='browser']").last()
   await expect(card).toBeVisible()
-  /* The Document view is the markdown editor surface; the flow door, not a click the open dock could occlude. */
-  const cardId = (await card.getAttribute("data-testid"))!.replace(/^card-/, "")
-  await composer.fill(`/wiki.card.view ${cardId} document`)
-  await composer.press("Enter")
-  const editor = card.locator("[data-slot='markdown-editor'] .ProseMirror")
-  await expect(editor).toBeVisible({ timeout: 15_000 })
+  const surface = card.locator("iframe.browser-card-frame")
+  await expect(surface).toBeVisible({ timeout: 15_000 })
   /* The composer dock is a fixed layer over the transcript while open; Escape closes it (2026-09-08 brief). */
   await page.keyboard.press("Escape")
   await expect(composer).toBeHidden()
-  return { card, composer, editor }
+  return { card, composer, surface }
 }
 
 /** Where the release affordance actually answers a pointer, which `toBeVisible()` never asks. */
@@ -69,12 +87,12 @@ const releaseIsReachable = async (page: Page): Promise<boolean> =>
  *
  * The experiment holds the DOM still and toggles only the layer, so nothing
  * but the dim can move a pixel; two frames of the undimmed state mask off what
- * the page animates on its own (the editor caret, the help bubble).
+ * the page animates on its own (the embedded page, the help bubble).
  */
 test("the dim is one layer: every pixel outside the surface is darkened exactly once", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 520 })
-  const { editor } = await openEditorSurface(page)
-  await editor.click()
+  const { surface } = await openControlledSurface(page)
+  await surface.click()
   await expect(page.locator(".control-focus-dim")).toHaveCount(1)
 
   const setDim = async (shown: boolean) => {
@@ -158,15 +176,15 @@ test("the dim is one layer: every pixel outside the surface is darkened exactly 
  * The BOX, not the element that took focus. Will's words are "we show the box
  * it's in expand just a tad": the hole, the ring and the affordance all dress
  * the card, so its title row and its footer stay bright with the rest of it.
- * The markdown editor is what focus lands on and what names the surface, and
+ * The embedded frame is what focus lands on and what names the surface, and
  * it must never be what the geometry is measured from — this viewport is tall
  * enough that the whole card is on screen, so the two are plainly different
  * rectangles and a regression cannot hide behind a scroller's clipping.
  */
 test("the hole is the card's box, not the inner element that took focus", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 })
-  const { card, editor } = await openEditorSurface(page)
-  await editor.click()
+  const { card, surface } = await openControlledSurface(page)
+  await surface.click()
   await expect(page.locator(".control-focus-dim")).toHaveCount(1)
 
   /*
@@ -190,28 +208,28 @@ test("the hole is the card's box, not the inner element that took focus", async 
       hole,
       card: rect(card),
       header: rect(card.querySelector(".smithers-card-header")!),
-      editor: rect(card.querySelector("[data-slot='markdown-editor']")!),
+      surface: rect(card.querySelector("iframe.browser-card-frame")!),
       outset: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-focus-outset")),
       marked: `${marked.tagName.toLowerCase()}.${(marked.className || "").toString().split(" ")[0] ?? ""}`,
       markedIsTheCard: marked === card,
       markers: document.querySelectorAll("[data-control-focus]").length,
-      editorIsMarked: card.querySelector("[data-slot='markdown-editor']")!.hasAttribute("data-control-focus")
+      surfaceIsMarked: card.querySelector("iframe.browser-card-frame")!.hasAttribute("data-control-focus")
     }
   })
 
   /* One box wears the ring, and it is the card. */
   expect(geometry.markers).toBe(1)
   expect({ marked: geometry.marked, isTheCard: geometry.markedIsTheCard }).toEqual({ marked: "section.smithers-card", isTheCard: true })
-  expect(geometry.editorIsMarked).toBe(false)
+  expect(geometry.surfaceIsMarked).toBe(false)
   /* The hole IS the card, grown by the ring's own outset so the ring is not dimmed either. */
   const { card: box, outset } = geometry
   expect(geometry.hole).toEqual([box[0]! - outset, box[1]! - outset, box[2]! + outset, box[3]! + outset])
   /* Which is strictly bigger than the element focus landed on, and covers the card's title row. */
-  expect(geometry.editor[1]!).toBeGreaterThan(geometry.hole[1]!)
+  expect(geometry.surface[1]!).toBeGreaterThan(geometry.hole[1]!)
   expect(geometry.header[1]!).toBeGreaterThanOrEqual(geometry.hole[1]!)
   expect(geometry.header[3]!).toBeLessThanOrEqual(geometry.hole[3]!)
   /* The whole card is on screen at this viewport, so nothing above is a scroller's doing. */
-  expect(box[3]! - box[1]!).toBeGreaterThan(geometry.editor[3]! - geometry.editor[1]!)
+  expect(box[3]! - box[1]!).toBeGreaterThan(geometry.surface[3]! - geometry.surface[1]!)
 
   await expect(card).toHaveAttribute("data-control-focus", "human")
 })
@@ -224,8 +242,8 @@ test("the hole is the card's box, not the inner element that took focus", async 
  */
 test("the release affordance is reachable at every viewport, and reads as a control", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 520 })
-  const { card, editor } = await openEditorSurface(page)
-  await editor.click()
+  const { card, surface } = await openControlledSurface(page)
+  await surface.click()
   const release = card.locator("[data-control-focus-release]")
   await expect(release).toHaveText("Release control")
 
