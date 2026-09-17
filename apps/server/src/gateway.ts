@@ -501,7 +501,23 @@ export type CloudTokenOutcome =
   | { readonly status: "ok"; readonly token: string }
   | { readonly status: "not_configured"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }
+  /*
+   * Smithers Cloud refused this ACCOUNT: it is not off the closed-alpha
+   * waitlist. A fact about the person, not about the bridge, so it is not an
+   * outage and no retry helps. Only the machine-readable codes Cloud itself
+   * publishes land here; anything else stays `not_found`, which is what this
+   * Worker did with every tokenless answer before.
+   */
+  | { readonly status: "not_eligible"; readonly detail: string }
   | { readonly status: "not_found"; readonly detail: string }
+
+/**
+ * Smithers Cloud's own machine-readable "not on the list yet" codes, carried
+ * through the identity worker verbatim. Matched against both fields the door
+ * can put one in, so this Worker and the identity worker can ship in either
+ * order.
+ */
+const CLOUD_ELIGIBILITY_REFUSALS = ["NOT_ON_WAITLIST", "access_not_granted"] as const
 
 /**
  * The per-user Cloud token door (wave-11b): POST /api/identity/cloud-token on
@@ -549,6 +565,10 @@ export const fetchCloudToken = (login: string): Effect.Effect<CloudTokenOutcome,
     }
     const cloudStatus = typeof body?.cloud?.status === "string" ? body.cloud.status : "unknown"
     const cloudReason = typeof body?.cloud?.reason === "string" ? body.cloud.reason : null
+    const refusal = CLOUD_ELIGIBILITY_REFUSALS.find((code) => code === cloudStatus || code === cloudReason)
+    if (refusal !== undefined) {
+      return { status: "not_eligible", detail: `Smithers Cloud has not let this account in yet (${refusal}).` } as const
+    }
     return {
       status: "not_found",
       detail: `No Smithers Cloud identity is available for this account (${cloudStatus}${
@@ -785,7 +805,9 @@ const provisionWithRemint = (
   Effect.gen(function* () {
     const cloudToken = yield* fetchCloudToken(login)
     if (cloudToken.status !== "ok") {
-      if (cloudToken.status === "not_found") return { status: "no_cloud_token", detail: cloudToken.detail } as const
+      if (cloudToken.status === "not_found" || cloudToken.status === "not_eligible") {
+        return { status: "no_cloud_token", detail: cloudToken.detail } as const
+      }
       return { status: "unavailable", detail: cloudToken.detail } as const
     }
     const first = yield* provisionGateway(repo, cloudToken.token, workspaceId, requiredCapability)
@@ -795,7 +817,7 @@ const provisionWithRemint = (
     // legitimately succeed. More than one retry would be a loop.
     const reminted = yield* fetchCloudToken(login)
     if (reminted.status !== "ok") {
-      return reminted.status === "not_found"
+      return reminted.status === "not_found" || reminted.status === "not_eligible"
         ? { status: "no_cloud_token", detail: reminted.detail } as const
         : { status: "unavailable", detail: reminted.detail } as const
     }

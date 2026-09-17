@@ -23,6 +23,7 @@ export const probeCloudSession = (request: Request) => Effect.gen(function* () {
   if (identity.status === "invalid") return answer({ state: "signed-out", username: null, expiresAt: null })
   if (identity.status === "unavailable") return identity.response
   const token = yield* fetchCloudToken(identity.identity.login)
+  if (token.status === "not_eligible") return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
   if (token.status !== "ok") return refuse("cloud_token_unavailable", "Smithers Cloud isn't reachable for your account right now.")
   const config = yield* ServerConfig
   const probe = yield* Effect.result(fetchWithDeadline(

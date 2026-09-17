@@ -154,6 +154,9 @@ export const handlePlatformProxy = (
       )
     }
     const token = yield* fetchCloudToken(gate.login)
+    if (token.status === "not_eligible") {
+      return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
+    }
     if (token.status !== "ok") {
       return refuse("cloud_token_unavailable", `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
     }

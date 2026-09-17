@@ -128,6 +128,7 @@ export const handleTerminalRelay = (request: Request, url: URL) => Effect.gen(fu
   if (identity.status === "unavailable") return identity.response
   if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return refuse("request_invalid", "Expected a WebSocket upgrade.")
   const token = yield* fetchCloudToken(identity.identity.login)
+  if (token.status === "not_eligible") return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
   if (token.status !== "ok") return refuse("cloud_token_unavailable", "Smithers Cloud isn't reachable for your account right now.")
   const config = yield* ServerConfig
   // Worker fetch performs a WebSocket handshake over HTTP(S). Only these

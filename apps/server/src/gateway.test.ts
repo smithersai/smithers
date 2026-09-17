@@ -490,6 +490,34 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(calls.filter((call) => call.url.includes("/gateway")).length).toBe(0)
   })
 
+  test("an eligibility refusal is its own outcome; every other state keeps today's path", async () => {
+    for (const reason of ["access_not_granted", "NOT_ON_WAITLIST"]) {
+      const { fetch } = relay({
+        cloudToken: () => json(200, { valid: true, found: false, cloud: { status: "exchange_failed", reason } })
+      })
+      const outcome = await run(fetchCloudToken("will").pipe(Effect.provide(seam(fetch))))
+      expect(outcome.status).toBe("not_eligible")
+      expect(outcome.status === "not_eligible" && outcome.detail).toContain(reason)
+    }
+    // An identity worker that has NOT shipped the pass-through yet, and any
+    // state this Worker has never seen, stay on today's path — so the three
+    // changes are safe to ship in any order.
+    for (const cloud of [{ status: "exchange_failed", reason: "exchange_unhealthy" }, { status: "never_attempted", reason: null }]) {
+      const { fetch } = relay({ cloudToken: () => json(200, { valid: true, found: false, cloud }) })
+      const outcome = await run(fetchCloudToken("will").pipe(Effect.provide(seam(fetch))))
+      expect(outcome.status).toBe("not_found")
+    }
+  })
+
+  test("provisioning still states an eligibility refusal as a missing Cloud identity", async () => {
+    const { calls, fetch } = relay({
+      cloudToken: () => json(200, { valid: true, found: false, cloud: { status: "exchange_failed", reason: "access_not_granted" } })
+    })
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
+    expect(outcome.status).toBe("no_cloud_token")
+    expect(calls.filter((call) => call.url.includes("/gateway")).length).toBe(0)
+  })
+
   test("a door that refuses is reported with its status and first 200 characters", async () => {
     const { fetch } = relay({ cloudToken: () => new Response(" service token rejected ", { status: 403 }) })
     const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))

@@ -21,6 +21,7 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
   if (gate instanceof Response) return gate
   if (gate === undefined) return refuse("seam_not_configured", "Repository actions need the identity seam, which this deployment does not have.")
   const token = yield* fetchCloudToken(gate.login)
+  if (token.status === "not_eligible") return refuse("account_not_allowlisted", "This account isn't off the closed-alpha waitlist yet.")
   if (token.status !== "ok") return refuse("cloud_token_unavailable", `Smithers Cloud isn't reachable for your account right now (${token.status}).`)
   const headers = { authorization: `Bearer ${token.token}`, accept: "application/json" }
   const read = (path: string) => Effect.gen(function* () {

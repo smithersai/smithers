@@ -4,7 +4,7 @@ import { configLayer } from "./Config"
 import { probeCloudSession } from "./cloudSession"
 import { transportLayer } from "./Http"
 
-const run = (options: { identity?: number; token?: boolean; scope?: number; message?: string; offline?: boolean } = {}) => {
+const run = (options: { identity?: number; token?: boolean; scope?: number; message?: string; offline?: boolean; refusal?: string } = {}) => {
   const calls: Request[] = []
   const response = Effect.runPromise(probeCloudSession(new Request("https://web.test/api/cloud-auth/session", {
     headers: { cookie: "session=fixture" }
@@ -15,7 +15,10 @@ const run = (options: { identity?: number; token?: boolean; scope?: number; mess
     calls.push(request)
     const path = new URL(request.url).pathname
     if (path === "/api/identity/validate") return Response.json({ login: "ada", allowlisted: true, admin: false, scopes: ["read:user"] }, { status: options.identity ?? 200 })
-    if (path === "/api/identity/cloud-token") return Response.json(options.token === false ? { found: false } : { found: true, token: "private-fixture-token" })
+    if (path === "/api/identity/cloud-token") {
+      if (options.refusal !== undefined) return Response.json({ found: false, cloud: { status: "exchange_failed", reason: options.refusal } })
+      return Response.json(options.token === false ? { found: false } : { found: true, token: "private-fixture-token" })
+    }
     if (options.offline) throw new Error("offline")
     return Response.json({ message: options.message ?? "upstream refused" }, { status: options.scope ?? 200 })
   }))))
@@ -35,6 +38,21 @@ test("the session exchange uses the validated login and never exposes its token"
   expect(calls[2]!.headers.get("authorization")).toBe("Bearer private-fixture-token")
   expect(calls[2]!.headers.has("cookie")).toBe(false)
 })
+
+// A closed-alpha refusal is a fact about the account, not an outage: it must
+// not be reported as Smithers Cloud being unreachable.
+for (const refusal of ["access_not_granted", "NOT_ON_WAITLIST"]) {
+  test(`a closed-alpha refusal refuses as the account, not as an outage: ${refusal}`, async () => {
+    const { response, calls } = run({ refusal })
+    const answer = await response
+    expect(answer.status).toBe(403)
+    expect(await answer.json()).toMatchObject({
+      code: "account_not_allowlisted",
+      message: "This account isn't off the closed-alpha waitlist yet."
+    })
+    expect(calls.map(request => new URL(request.url).pathname)).toEqual(["/api/identity/validate", "/api/identity/cloud-token"])
+  })
+}
 
 test("signed-out identity never exchanges a token or calls Cloud", async () => {
   const { response, calls } = run({ identity: 401 })
