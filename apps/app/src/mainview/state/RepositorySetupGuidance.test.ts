@@ -68,6 +68,7 @@ test("cloud setup controls are discoverable to the model and stay out of the hum
     expect(t.controller.commands.callable().some(command => command.declaredName === "target.list")).toBe(false)
     const read = JSON.parse(await t.call({ action: "execute", name: "setup.guide", args: id }))
     expect(read).toMatchObject({ cardId: id, repo: "example/repo", job: "issues", revision: 1, inspectedAt: 1234, draft: t.payload.draft })
+    expect(read.controls).toContainEqual(expect.objectContaining({ kind: "issue-filter", scopeField: "scope", labelField: "label", labelMeaning: "match-existing-label" }))
     expect(t.requests).toHaveLength(0)
     expect(t.fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")).toBe(false)
   } finally { await t.close() }
@@ -90,7 +91,12 @@ test.each(["ready", "recovering", "immediate"])("the production HTTP seat retain
       { type: "delta", runId: request.runId, kind: "text", text: "Should research run automatically on new issues?" },
       { type: "done", runId: request.runId, reason: "stop" }
     ]
-    if (output && "output" in output) expect(JSON.parse(output.output)).toMatchObject({ cardId: id, repo: "example/repo", revision: 1, inspectedAt: 1234 })
+    if (output && "output" in output) {
+      const guide = JSON.parse(output.output)
+      expect(guide).toMatchObject({ cardId: id, repo: "example/repo", revision: 1, inspectedAt: 1234 })
+      expect(guide.controls).toContainEqual(expect.objectContaining({ kind: "step", stepId: "research", modeField: "step.research.mode", promptField: "step.research.prompt" }))
+      expect(guide.controls).toContainEqual(expect.objectContaining({ kind: "issue-filter", labelMeaning: "match-existing-label" }))
+    }
     expect(request.instructions).toContain("Current repository setup cards:")
     const body = { version: 1 as const, runId: request.runId, legId: journal.legId, batch: 1, from: 1, previousHash: cursor.hash, frames }
     const batch = { ...body, hash: digest(agentTurnJournalDigestInput("batch", body)) }
