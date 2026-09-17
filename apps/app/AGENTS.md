@@ -8,6 +8,11 @@ Users must be able to operate all of Smithers without a mouse. Every action need
 
 Open the app directly. New sessions show registry-backed recommended actions, grouped by namespace, until dismissal or dispatch. Signed-out visitors start with the practice repository. First-sight hints use HelpBubble, persist dismissal, and show one at a time in DOM order. Command/Control-K opens Chat; touch hints omit key names. There is no scripted lesson sequence.
 
+## Current onboarding brief (Will, 2026-09-08)
+
+The new shell opens with a one-second SMITHERS entrance and progressively introduces capabilities. The UI is the default view: full-screen, no composer, and a composer left open is never restored on load. Command-K summons ONLY the composer — one solid floating card in a transparent layer over the content at the top of the page; the chat history lives in the full-screen UI underneath. Escape, a press outside the card, or a second Command-K dismisses it (Will, 2026-09-14: this restores the pre-dock overlay and supersedes the 2026-09-09 bottom dock). The guide's lessons keep their own bottom Chat dock, documented in `docs/ONBOARDING.md`. This explicit brief supersedes the always-visible-chat and fixed-sidebar requirements below. Outputs still use the existing flows and shared state.
+
+
 ## ⚖️ THE EMBED LAW — read this before anything else (will, 2026-08-09, permanent)
 
 **Everything embeds in the chat. Nothing opens full-screen unless the user explicitly asks.**
