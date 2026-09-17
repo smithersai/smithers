@@ -78,7 +78,7 @@ const deleteGitHub = async (owned: OwnedGitHubRepository): Promise<void> => {
   await owned.page.close()
 }
 
-const drainRuns = async (
+export const drainRuns = async (
   page: Page,
   request: APIRequestContext,
   owned: OwnedWorkflowRepository

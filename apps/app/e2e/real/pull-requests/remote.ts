@@ -299,15 +299,16 @@ export const importOwnedPullRequestRepo = async (
   owned: OwnedPullRequestRepo
 ): Promise<void> => {
   const importing = page.waitForResponse((response) => response.request().method() === "POST"
-    && new URL(response.url()).pathname === "/api/cloud/api/github/import")
+    && new URL(response.url()).pathname === "/api/cloud/api/github/import").then(async response => ({
+      response, start: await response.json() as Record<string, unknown>
+    }))
   owned.importSubmitted = true
   await command(page, `/repos.import ${owned.fullName}`)
-  const response = await importing
+  const { response, start } = await importing
   owned.importResponseStatus = response.status()
   // A status code alone does not prove no job was accepted. In particular,
   // conflicts can describe an existing import; only its server terminal ID drains it.
   owned.importRejected = false
-  const start = await response.json().catch(() => undefined) as Record<string, unknown> | undefined
   owned.acceptedJobId = typeof start?.importJobId === "string" && start.importJobId !== "" ? start.importJobId : undefined
   expect(response.status()).toBeGreaterThanOrEqual(200)
   expect(response.status()).toBeLessThan(300)

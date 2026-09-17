@@ -37,9 +37,16 @@ const projectionRows = (answer: { readonly payload?: unknown }): ReadonlyArray<P
   return rows as ReadonlyArray<ProjectionRow>
 }
 
-const bootOwnedWorkflow = async (page: Parameters<typeof bootProductionRepository>[0], repo: string): Promise<void> => {
+const bootOwnedWorkflow = async (page: Parameters<typeof bootProductionRepository>[0], repo: string, workspaceId?: string): Promise<void> => {
   await bootProductionRepository(page, repo)
   await enableProductionVerbose(page)
+  if (workspaceId !== undefined) {
+    await command(page, `/workspace.view ${workspaceId}`)
+    await expect(page.getByTestId(`card-workspace-${workspaceId}`)).toBeVisible()
+    await closeComposer(page)
+    await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
+    await closeComposer(page)
+  }
 }
 
 const createFlowRun = async (
@@ -152,7 +159,7 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   description: "Run the real create-flow provider to completion, compare the embedded inspection facets with gateway projections, then reload its persisted trace selection and editable handoff."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
-  await bootOwnedWorkflow(page, repo)
+  await bootOwnedWorkflow(page, repo, workflowRepo.workspaceId)
   const marker = fixtureInputText(`s16-inspect-${Date.now().toString(36)}`)
   const launched = await createFlowRun(page, repo, marker, workflowRepo)
 
@@ -246,7 +253,7 @@ workflowTest("live message, thinking, and tool steering persist as real control 
   description: "Launch an owned provider run, steer its live engine through three typed UI commands, prove their exact server-authored event ids, then reconnect to the same persisted run."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
-  await bootOwnedWorkflow(page, repo)
+  await bootOwnedWorkflow(page, repo, workflowRepo.workspaceId)
   const marker = fixtureInputText(`s16-steer-${Date.now().toString(36)}`)
   const launched = await createFlowRun(page, repo, marker, workflowRepo)
   const liveStatuses = new Set(["accepted", "running", "parked", "waiting-approval"])
@@ -358,7 +365,7 @@ workflowTest("run again creates a second real execution and both appear in the s
   description: "Complete an owned provider run, keyboard-run it again from its card, prove a distinct accepted id executes, and open both exact ids from the completed run list."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
-  await bootOwnedWorkflow(page, repo)
+  await bootOwnedWorkflow(page, repo, workflowRepo.workspaceId)
   const marker = fixtureInputText(`s16-rerun-${Date.now().toString(36)}`)
   const first = await createFlowRun(page, repo, marker, workflowRepo)
   const firstTerminal = await waitForTerminalRun(page, request, repo, first.runId, 9 * 60_000, workflowRepo.workspaceId)
@@ -408,7 +415,7 @@ workflowTest("stop all cancels two live owned runs, leaves a terminal sibling un
   description: "Cancel one owned run, launch two more, stop the private workspace through its run-list button, prove both live ids cancel while the terminal sibling stays unchanged, and require the gateway's typed refusal when the UI tries to resume a terminal id."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
-  await bootOwnedWorkflow(page, repo)
+  await bootOwnedWorkflow(page, repo, workflowRepo.workspaceId)
   const terminalMarker = fixtureInputText(`s16-terminal-${Date.now().toString(36)}`)
   const terminalSibling = await createFlowRun(page, repo, terminalMarker, workflowRepo)
   await terminalSibling.card.getByTestId(`flow-run-stop-${terminalSibling.runId}`).click()

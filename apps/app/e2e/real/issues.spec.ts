@@ -12,7 +12,7 @@ import {
 } from "./issues/cloud"
 import { attachJson, bootPracticeIssues, openPracticeIssue, practiceIssueCommentCount, PRACTICE_REPO, runSlash } from "./issues/local"
 import { expectReproductionEvidence, expectVerifiedGreetingChange, runLiveOperation } from "./issues/live"
-import { attachProductionJson, repositoryApiPath } from "./repositories-github/production"
+import { attachProductionJson, repositoryApiPath, drainOwnedCloudWorkspaces } from "./repositories-github/production"
 
 test.setTimeout(600_000)
 test.use({ actionTimeout: 20_000 })
@@ -416,6 +416,8 @@ authenticatedTest(
   }),
   async ({ page, context, request }, testInfo) => {
     await withOwnedImportedRepository({ page, context, request }, testInfo, async (first) => {
+      // Issue isolation needs the repositories, not idle sandbox capacity.
+      await drainOwnedCloudWorkspaces(page, request, first.repo)
       await withOwnedImportedRepository({ page, context, request }, testInfo, async (second) => {
         const marker = `sol12-isolation-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const firstTitle = `${marker}-first`

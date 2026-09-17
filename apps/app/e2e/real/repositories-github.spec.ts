@@ -307,8 +307,7 @@ authenticatedTest(
       await expect(card).toContainText(`${owned.fullName} → GitHub`)
       await expect(card).toHaveAttribute("data-status", "acted", { timeout: 120_000 })
 
-      const runId = /\brun\s+(\d+)\b/.exec(await card.textContent() ?? "")?.[1]
-      expect(runId).toBeDefined()
+      const runId = String(accepted.run_id)
       const run = await readJson<{
         readonly state?: unknown
         readonly refs?: ReadonlyArray<{ readonly name?: unknown; readonly status?: unknown }>

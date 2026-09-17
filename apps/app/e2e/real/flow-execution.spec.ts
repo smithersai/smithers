@@ -67,9 +67,16 @@ test(
   }
 )
 
-const bootPrivateWorkflowRepository = async (page: Page, repo: string): Promise<void> => {
+const bootPrivateWorkflowRepository = async (page: Page, repo: string, workspaceId?: string): Promise<void> => {
   await bootProductionRepository(page, repo)
   await enableProductionVerbose(page)
+  if (workspaceId !== undefined) {
+    await command(page, `/workspace.view ${workspaceId}`)
+    await expect(page.getByTestId(`card-workspace-${workspaceId}`)).toBeVisible()
+    await closeComposer(page)
+    await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
+    await closeComposer(page)
+  }
 }
 
 const waitForCompletedRun = async (
@@ -126,7 +133,7 @@ configuredGatewayTest(
   }),
   async ({ page, request, workflowRepo }, testInfo) => {
     const repo = workflowRepo.repo
-    await bootPrivateWorkflowRepository(page, repo)
+    await bootPrivateWorkflowRepository(page, repo, workflowRepo.workspaceId)
     const list = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workflowRepo.workspaceId)
     const catalog = list.payload as { readonly items?: ReadonlyArray<{ readonly flowId?: unknown; readonly inputSchema?: unknown }> }
     expect(Array.isArray(catalog.items), "the real flow list must expose an items array").toBe(true)
@@ -184,7 +191,7 @@ configuredGatewayTest(
   }),
   async ({ page, request, workflowRepo }, testInfo) => {
     const repo = workflowRepo.repo
-    await bootPrivateWorkflowRepository(page, repo)
+    await bootPrivateWorkflowRepository(page, repo, workflowRepo.workspaceId)
     const missing = `s15-absent-${Date.now().toString(36)}`
     await command(page, `/flow.run ${missing} ${repo}`)
     await expect(transcript(page).getByText(new RegExp(`There's no flow called ${missing} on ${repo.replace("/", "\\/")}`)).last()).toBeVisible({ timeout: 180_000 })
@@ -212,7 +219,7 @@ workflowTest(
   }),
   async ({ page, request, workflowRepo }, testInfo) => {
     const repo = workflowRepo.repo
-    await bootPrivateWorkflowRepository(page, repo)
+    await bootPrivateWorkflowRepository(page, repo, workflowRepo.workspaceId)
     const before = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workflowRepo.workspaceId)
     const beforeIds = new Set(((before.payload as { readonly items?: ReadonlyArray<{ readonly flowId?: unknown }> })?.items ?? [])
       .flatMap((flow) => typeof flow.flowId === "string" ? [flow.flowId] : []))
@@ -280,7 +287,7 @@ workflowTest(
   }),
   async ({ page, request, workflowRepo }, testInfo) => {
     const repo = workflowRepo.repo
-    await bootPrivateWorkflowRepository(page, repo)
+    await bootPrivateWorkflowRepository(page, repo, workflowRepo.workspaceId)
     const marker = `s15-cancel-${Date.now().toString(36)}`
     const [runId] = await Promise.all([
       acceptedRunId(page, repo, workflowRepo),
