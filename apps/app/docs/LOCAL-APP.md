@@ -728,8 +728,10 @@ runtime request or gateway refresh must register the gate first.
 
 From `apps/app`, `pnpm test` runs Bun tests under `src/` and `scripts/`.
 `pnpm run test:e2e:auth` runs the browser OAuth callback regression with
-Playwright Chromium and local fixture servers. CI's `browserE2e` wrapper runs
-it before the Playwright specs; packaged native probes remain a separate tier.
+Playwright Chromium and local fixture servers. `pnpm run test:e2e:probes` runs
+the probe helpers' Chromium tests under `e2e/probes/`. CI's `browserE2e`
+wrapper runs both before the Playwright specs; packaged native probes remain a
+separate tier.
 
 `pnpm run checklist -- --target <origin>` works from the repository root or
 `apps/app`. `--dry-run` writes reports without network calls or a browser.

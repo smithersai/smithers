@@ -80,6 +80,7 @@ const owners = (path: string): string[] => {
   const result: string[] = []
   if (selected(path, bunPaths(scripts.test))) result.push("unit")
   if (selected(path, bunPaths(scripts["test:e2e:auth"]))) result.push("browser OAuth")
+  if (selected(path, bunPaths(scripts["test:e2e:probes"]))) result.push("probe helpers")
   if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
   if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
@@ -91,6 +92,9 @@ test("every app test belongs to an executable runner", () => {
   expect(files.length).toBeGreaterThan(100)
   expect(files.filter((path) => owners(path).length === 0)).toEqual([])
   expect(owners("e2e/native/CloudAuthFragment.test.ts")).toEqual(["browser OAuth"])
+  // A Bun test that launches Chromium belongs to the tier that installs it,
+  // never to the hermetic unit gate.
+  expect(owners("e2e/probes/support.test.mjs")).toEqual(["probe helpers"])
   expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
@@ -118,7 +122,9 @@ test("the target unit gate matches package discovery and CI executes browser OAu
   expect(paths).toEqual(bunPaths(scripts.test))
   expect(paths).toContain("scripts")
   expect(scripts["test:e2e:auth"]).toBe("bun test e2e/native/CloudAuthFragment.test.ts")
+  expect(scripts["test:e2e:probes"]).toBe("bun test e2e/probes")
   expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:auth"]')
+  expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:probes"]')
   expect(inspectTarget('console.log(JSON.stringify(metadata(Package.browserE2e).attrs.runner.entry.path))'))
     .toBe("scripts/run-pr-e2e.mjs")
 }, 240_000)
