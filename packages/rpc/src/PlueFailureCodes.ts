@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:f60aeac764dcfa49fc7916133cbdd167a278e1ae7675bbc1ea8978ecce14eefd"
+export const PLUE_FAILURE_DIGEST = "sha256:226ab206efe27406ae7f052d51679e835d35791bb2f8a62b1db6875096e747e1"
 
 /**
  * Whose problem a failure is — plue's own word, and the only question the app
@@ -161,6 +161,7 @@ export const PLUE_FAILURE_CODES = [
   "retained_runtime_not_running",
   "retained_runtime_not_stopped",
   "runtime_error",
+  "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
   "snapshot_in_use",
@@ -408,6 +409,8 @@ export const PLUE_FAILURES = {
   "retained_runtime_not_stopped": { fault: "user", status: 409, retryAfter: 0 },
   /** The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed. */
   "runtime_error": { fault: "infra", status: 500, retryAfter: 0 },
+  /** A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears. */
+  "sandbox_control_busy": { fault: "infra", status: 503, retryAfter: 2 },
   /** This worker build cannot deliver secrets into a guest. */
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */

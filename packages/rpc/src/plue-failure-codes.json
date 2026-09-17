@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:f60aeac764dcfa49fc7916133cbdd167a278e1ae7675bbc1ea8978ecce14eefd",
+  "digest": "sha256:226ab206efe27406ae7f052d51679e835d35791bb2f8a62b1db6875096e747e1",
   "faults": [
     "user",
     "wait",
@@ -666,6 +666,13 @@
       "status": 500,
       "retry_after": 0,
       "doc": "The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed."
+    },
+    {
+      "code": "sandbox_control_busy",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 2,
+      "doc": "A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears."
     },
     {
       "code": "secret_delivery_unavailable",

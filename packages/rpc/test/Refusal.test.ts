@@ -94,6 +94,21 @@ describe("the vendored plue failure registry", () => {
     // caller's to clear, so a refresh may not turn the closed alpha into infra.
     expect(PLUE_FAILURES.access_not_granted).toEqual({ fault: "user", status: 403, retryAfter: 0 })
   })
+
+  test("control-plane contention is plue's own infra refusal, and its pacing licenses no retry loop", () => {
+    // plue's newest code: a control-plane transaction that kept losing a race
+    // with a concurrent writer. Without a row the app reads it as an unnamed
+    // 503 — right fault by accident, attributed to the Worker, with no code to
+    // branch on. With one it is plue's, and the pacing it states is the trap:
+    // `infra` may state a wait the way no_capacity does, and neither licenses
+    // retrying on a timer.
+    expect(PLUE_FAILURES.sandbox_control_busy).toEqual({ fault: "infra", status: 503, retryAfter: 2 })
+    const busy = refusalOf({ body: { code: "sandbox_control_busy", retry_after: 2 }, status: 503, message: "x" })
+    expect(busy.code).toBe("sandbox_control_busy")
+    expect(busy.origin).toBe("plue")
+    expect(busy.fault).toBe("infra")
+    expect(mayAutoRetry(busy)).toBe(false)
+  })
 })
 
 describe("classifying a refusal", () => {
