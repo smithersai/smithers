@@ -55,6 +55,14 @@ import { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import { handlePublicRepoActivity, parsePublicRepoActivityPath } from "./publicRepoActivity"
 import { handlePublicRepos } from "./publicRepos"
 import { handleRecommend, handleRecommendOutcome, RecommendLog } from "./recommend"
+import {
+  handleTriggerApproval,
+  handleTriggerPause,
+  handleTriggerRegistrations,
+  TRIGGER_APPROVAL_PATH,
+  TRIGGER_PAUSE_PATH,
+  TRIGGER_REGISTRATIONS_PATH
+} from "./repositoryTriggers"
 import { ISOLATION_HEADERS, json, methodNotAllowed, notFound, refuse, withIsolationHeaders } from "./Responses"
 import {
   ANONYMOUS_ALL_CEILING,
@@ -385,6 +393,18 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === WORKFLOW_TRIGGERS_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
       return yield* handleWorkflowTriggers(request, url)
+    }
+    if (url.pathname === TRIGGER_REGISTRATIONS_PATH) {
+      if (request.method !== "GET") return methodNotAllowed()
+      return yield* handleTriggerRegistrations(request, url)
+    }
+    if (url.pathname === TRIGGER_PAUSE_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      return yield* handleTriggerPause(request)
+    }
+    if (url.pathname === TRIGGER_APPROVAL_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      return yield* handleTriggerApproval(request)
     }
     if (url.pathname === TOOLS_BROWSER_FETCH_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
