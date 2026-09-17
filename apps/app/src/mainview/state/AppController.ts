@@ -1462,7 +1462,14 @@ export const createAppController = (
    */
   ctx.settleFirstRunTarget = (): void => {
     if (firstRunTargetSettled) return
-    if (services.repositoryApp !== undefined) {
+    /*
+     * The seam announces; boot chooses. Binding the practice repository here
+     * would bind it for every signed-out web visitor and take away the opening
+     * sign-in message, which App.tsx drops once the practice key is active. The
+     * park is the exception: it is already waiting on the target boot would
+     * have chosen, and without one it resumes into a repository form.
+     */
+    if (services.repositoryApp !== undefined || store.session().pendingCommand?.requirement !== "first-run-target") {
       settleFirstRunTarget()
       return
     }

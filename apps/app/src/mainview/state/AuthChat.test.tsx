@@ -10,7 +10,9 @@ import { openRequestedRepo,requestedRepo } from "../RepoLink"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { selectFirstRunRepository } from "./FirstRunRepository"
+import { PRACTICE_CARD } from "./practice/PracticeRepository"
+import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories,waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -204,6 +206,60 @@ describe("auth is a conversation state — the chat is the only page", () => {
     // The chat is still the only page: transcript and composer, no takeover.
     expect(host.querySelector(".smithers-composer")).not.toBeNull()
     expect(host.querySelector(".landing-surface")).toBeNull()
+  })
+
+  /*
+   * Both halves of the first-run contract, together, because either one alone
+   * can be bought with the other: binding the practice repository from the
+   * identity seam hides this opening message (App.tsx reads isPracticeRepo),
+   * and never binding it resumes a command parked on the choice into a
+   * repository form. The choice is boot's (ControllerBoot.client.ts); the seam
+   * settles the latch, and makes the choice only for the park that waits on it.
+   */
+  test("signed-out on the web: the identity seam settles the first-run latch without binding a repository, and a command parked through a raced read still lands on the practice list", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      bootstrap: WEB,
+      ...backend({
+        "/api/auth/session": json(401, { status: "error" }),
+        "/api/auth/scopes": json(200, { scopes: [] })
+      })
+    })
+    await controller.loadSession()
+    await settled()
+    const { host } = mount(controller)
+    expect(host.querySelector<HTMLButtonElement>('.message-cta[data-flow="auth.sign-in"]')?.textContent).toBe("Sign in with GitHub")
+    expect(store.session().activeRepoKey ?? null).toBeNull()
+
+    const parked = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const waiting = createAppController(parked, unavailableRepositories, silentAgent, {
+      bootstrap: WEB,
+      // The deadline must not be what settles this: the seam has to announce.
+      firstRunSettleMs: 60_000,
+      fetchImpl: async (input: unknown): Promise<Response> => {
+        const path = new URL(String(input), "https://smithers.sh").pathname
+        if (path === "/api/auth/session") {
+          await held
+          return json(401, { status: "error" })
+        }
+        if (path === "/api/auth/scopes") return json(200, { scopes: [] })
+        return json(404, { status: "error" })
+      }
+    })
+    expect(await waiting.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
+    // ControllerBoot.client.ts's non-blocking branch, raced by the focus re-read
+    // watchIdentityAcrossTabs makes: the boot closure returns at the epoch guard
+    // with nothing to settle, so only the read that writes the row can announce.
+    const settle = () => selectFirstRunRepository(parked, waiting.settleFirstRunTarget)
+    void waiting.loadSession().then(settle, settle)
+    void waiting.loadSession()
+    release()
+
+    await waitFor(() => parked.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    expect([...parked.collections.cards.values()].filter((card) => card.kind === "flow-form")).toEqual([])
+    expect(parked.session().pendingCommand ?? null).toBeNull()
   })
 
   for (const repo of ["nope/nope", "smithersai/smithres", "Some-Owner/repo_name", "cached/selection"]) {
