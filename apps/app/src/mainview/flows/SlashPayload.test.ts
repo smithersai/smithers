@@ -313,7 +313,10 @@ describe("every declaration that takes arguments names a decoder", () => {
     expect(payloadFor("triggers.list", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
     expect(payloadFor("triggers.register", "")).toEqual({ payload: {} })
     expect(payloadFor("triggers.register", "other/repo extra")).toEqual({
-      error: "triggers.register takes just an owner/repo name"
+      error: "triggers.register takes an owner/repo and --flow, --slug, --schedule, --input"
+    })
+    expect(payloadFor("triggers.register", 'other/repo --flow nightly-lint --slug nightly --schedule 0 9 * * 1-5 --input {"label":"a"}')).toEqual({
+      payload: { repo: "other/repo", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: '{"label":"a"}' }
     })
   })
 })

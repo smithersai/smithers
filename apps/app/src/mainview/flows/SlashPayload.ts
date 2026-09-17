@@ -121,6 +121,32 @@ const flowRunBody = (args: string | undefined): { name?: string; repo?: string; 
   return { name, repo: target[1]!, ...(target[2] === undefined ? {} : { input: target[2] }) }
 }
 
+/**
+ * `[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>]`:
+ * the registration triggers.register takes. The repository leads because a
+ * cron expression and a JSON input both hold spaces, so nothing trailing is
+ * unambiguous; each flag runs to the next one, which keeps those spaces.
+ */
+const TRIGGER_FIELDS: ReadonlyArray<string> = ["flow", "slug", "schedule", "input"]
+const triggerRegistration = (args: string | undefined): Parsed => {
+  const reason = `triggers.register takes an owner/repo and ${TRIGGER_FIELDS.map((field) => `--${field}`).join(", ")}`
+  const head = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed(args))
+  const payload: Record<string, unknown> = {}
+  let rest = trimmed(args)
+  if (head !== null && !head[1]!.startsWith("--")) {
+    if (!REPO_TOKEN.test(head[1]!)) return no(reason)
+    payload["repo"] = head[1]!
+    rest = (head[2] ?? "").trim()
+  }
+  if (rest === "") return ok(payload)
+  for (const part of rest.split(/\s+(?=--)/)) {
+    const flag = /^--([a-z]+)(?:\s+([\s\S]*))?$/.exec(part.trim())
+    if (flag === null || !TRIGGER_FIELDS.includes(flag[1]!)) return no(reason)
+    payload[flag[1]!] = (flag[2] ?? "").trim()
+  }
+  return ok(payload)
+}
+
 /** The three sandbox kinds `workspace.open --kind` accepts (ADR 0002). */
 const KINDS: ReadonlyArray<string> = ["container", "vm", "desktop"]
 
@@ -380,7 +406,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "approvals.open": (args) => required("runId", args, "approvals.open needs a run id"),
   "flow.list": (args) => repoOnly("flow.list", args),
   "triggers.list": (args) => repoOnly("triggers.list", args),
-  "triggers.register": (args) => repoOnly("triggers.register", args),
+  "triggers.register": (args) => triggerRegistration(args),
   "flow.run": (args) => {
     const { name, repo, input } = flowRunParts(args)
     if (name === undefined) return no("flow.run needs a flow name")

@@ -6,7 +6,8 @@ import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
-import { NO_RULES_SENTENCE, registerUnavailableSentence } from "./TriggersSeam"
+import { Schema } from "effect"
+import { NO_RULES_SENTENCE } from "./TriggersSeam"
 
 // The first controller in a file pays the module warm-up; under machine load that alone passes 5 s.
 setDefaultTimeout(30_000)
@@ -249,7 +250,10 @@ describe("triggers seam: the box, signed in", () => {
       { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
     ])
     expect(card.payload.webhooks).toEqual([{ name: "github-push", flowId: "review" }])
-    expect(seen.filter((path) => path !== PROJECTION)).toEqual([`${LIVE}?repo=will%2Fflows`])
+    /* Two live sources now: the box's own store and the repository's Smithers Cloud registrations. */
+    expect(seen.filter((path) => path !== PROJECTION).sort()).toEqual(
+      [`${LIVE}?repo=will%2Fflows`, `/api/workflow/trigger-registrations?repo=will%2Fflows`].sort()
+    )
     expect(seen).toContain(PROJECTION)
   })
 
@@ -271,11 +275,12 @@ describe("triggers seam: the box, signed in", () => {
     expect(triggerCard(down.store).payload.live).toBe(false)
   })
 
-  test("the register door runs signed in and refuses honestly until a register procedure crosses the relay", async () => {
+  /* Was: the door refused every registration with a sentence. THE FORM LAW replaces that with the form. */
+  test("the register door runs signed in and asks for what it is missing", async () => {
     const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(DAY_ONE) }), { signedIn: true })
     const outcome = await controller.commands.run("triggers.register")
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).toBe(registerUnavailableSentence("will/flows"))
+    expect(outcome.status).toBe("form")
+    if (outcome.status === "form") expect(outcome.fields).toEqual(["flow", "slug", "schedule"])
   })
 
   test("re-listing re-surfaces the one card at the end of the transcript instead of adding a second", async () => {
@@ -289,5 +294,310 @@ describe("triggers seam: the box, signed in", () => {
     expect([...store.collections.cards.values()].filter((card) => card.kind === "trigger-list")).toHaveLength(1)
     expect(second.createdAt).toBe(first.createdAt)
     expect(second.ordinal).toBeGreaterThan(first.ordinal)
+  })
+})
+
+/*
+ * The generic flow trigger: prepare a registration, preview the plan the
+ * workspace made, approve it as the human, and register. The relay, the
+ * Worker's three trigger routes and Smithers Cloud are all stubs here; no
+ * test in this file may reach a network.
+ */
+
+const RPC = "/api/workflow/rpc"
+const REGISTRATIONS = "/api/workflow/trigger-registrations"
+const PAUSE = "/api/workflow/trigger-pause"
+const APPROVAL = "/api/workflow/trigger-approval"
+
+interface RelayCall {
+  readonly procedure: string
+  readonly payload: Record<string, unknown>
+}
+
+const PLAN_DIGEST = "d".repeat(64)
+const PLAN = {
+  planId: "plan-1",
+  digest: PLAN_DIGEST,
+  flowId: "nightly-lint",
+  executionDigest: "e".repeat(64),
+  envelope: { capabilities: ["fs:read:**"], flows: ["nightly-lint"], tokens: 200_000, milliseconds: 1_800_000 }
+}
+
+/* Exactly what the workspace publishes for a flow's input: registry Descriptor.inputDocument's own document. */
+const LINT_SCHEMA = JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(Schema.Struct({ label: Schema.String })))) as unknown
+
+const FLOW_ITEMS = [{ flowId: "nightly-lint", description: "Lints the repository.", inputSchema: LINT_SCHEMA }]
+
+/** The relay stub: every call recorded, answered by procedure with a gateway frame. */
+const relayRoute = (
+  calls: Array<RelayCall>,
+  answers: Record<string, (payload: Record<string, unknown>) => unknown>
+): Route =>
+async (request) => {
+  const frame = await request.json() as { procedure: string; payload: Record<string, unknown> }
+  calls.push({ procedure: frame.procedure, payload: frame.payload })
+  const answer = answers[frame.procedure]
+  return json(200, answer === undefined ? { ok: false, error: { message: `no stub for ${frame.procedure}` } } : answer(frame.payload))
+}
+
+const okFrame = (payload: unknown) => ({ ok: true, payload })
+const refusedFrame = (message: string, detail?: unknown) => ({ ok: false, error: { message, ...(detail === undefined ? {} : { detail }) } })
+
+/** The workspace that holds one markdown flow and plans it deterministically. */
+const workspaceAnswers = (overrides: Record<string, (payload: Record<string, unknown>) => unknown> = {}) => ({
+  List: () => okFrame({ _tag: "flows", items: FLOW_ITEMS }),
+  Plan: (payload: Record<string, unknown>) =>
+    payload.flowId === "nightly-lint"
+      ? okFrame(PLAN)
+      : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) }),
+  "Approval.Submit": () => okFrame({ decision: { _tag: "Accepted" } }),
+  Run: () => okFrame({ runId: "run-1" }),
+  ...overrides
+})
+
+const lastAction = (store: AppStore) =>
+  [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal).find((message) => message.action !== undefined)?.action
+
+const REQUEST = { operation: "register" as const, repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: '{"label":"nightly"}' }
+
+describe("triggers seam: registering a repository flow on a schedule", () => {
+  test("a bad name or a schedule that is not five UTC cron fields is refused before anything is asked of the workspace", async () => {
+    const seen: Array<string> = []
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(DAY_ONE) }, seen), { signedIn: true })
+    expect(await controller.registerTrigger({ ...REQUEST, slug: "Nightly" })).toContain("schedule name")
+    expect(await controller.registerTrigger({ ...REQUEST, schedule: "0 9 * *" })).toBe("schedule must have five cron fields in UTC")
+    expect(await controller.registerTrigger({ ...REQUEST, input: "{not json" })).toContain("valid JSON")
+    expect(seen.filter((path) => path.startsWith(RPC))).toEqual([])
+  })
+
+  test("input the flow's own schema refuses never reaches a plan, and an unknown flow lists what the workspace has", async () => {
+    const calls: Array<RelayCall> = []
+    const { controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    const refused = await controller.registerTrigger({ ...REQUEST, input: "{}" })
+    expect(typeof refused).toBe("string")
+    expect(String(refused)).toContain("label")
+    expect(calls.map((call) => call.procedure)).toEqual(["List"])
+
+    const unknown = await controller.registerTrigger({ ...REQUEST, flow: "weekly-sweep" })
+    expect(String(unknown)).toContain("nightly-lint")
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "List"])
+  })
+
+  test("a prepared registration previews the plan and offers the human's approve button; nothing is approved yet", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    const prepared = await controller.registerTrigger(REQUEST)
+    expect(typeof prepared).toBe("object")
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+    expect(calls[1]?.payload).toEqual({
+      flowId: "nightly-lint",
+      input: { label: "nightly" },
+      idempotencyKey: "trigger:will/flows:nightly:plan"
+    })
+    const action = lastAction(store)
+    expect(action?.flow).toBe("triggers.approve")
+    expect(JSON.parse(action?.args ?? "{}")).toEqual({
+      repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5",
+      input: '{"label":"nightly"}', planId: "plan-1", planDigest: PLAN_DIGEST
+    })
+    const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
+    expect(preview).toContain("nightly-lint")
+    expect(preview).toContain("0 9 * * 1-5")
+    expect(preview).toContain("fs:read:**")
+    expect(preview).toContain(PLAN.executionDigest.slice(0, 12))
+  })
+
+  test("the agent may prepare a registration and may never approve one", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger(REQUEST)
+    const args = lastAction(store)?.args ?? "{}"
+    const refused = await controller.commands.runForAgent("triggers.approve", args)
+    expect(refused.status).toBe("failed")
+    if (refused.status === "failed") expect(refused.error).toContain("approvals belong to the human")
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+  })
+
+  test("the human's approval submits the plan once, records the receipt once, and starts one registration run", async () => {
+    const calls: Array<RelayCall> = []
+    const receipts: Array<unknown> = []
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute(calls, workspaceAnswers()),
+        [APPROVAL]: async (request) => {
+          receipts.push(await request.json())
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
+        }
+      }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger(REQUEST)
+    const args = lastAction(store)?.args ?? "{}"
+    const approved = await controller.commands.run("triggers.approve", args)
+    expect(approved.status).toBe("executed")
+    expect(receipts).toEqual([{
+      repo: "will/flows", slug: "nightly", planId: "plan-1", planDigest: PLAN_DIGEST, envelope: PLAN.envelope
+    }])
+    expect(calls.map((call) => call.procedure)).toEqual([
+      "List", "Plan", "Plan", "Approval.Submit", "Plan", "Approval.Submit", "Run"
+    ])
+    /* The target's plan is approved by its own digest; the registrar's plan carries the approved pair. */
+    expect(calls[3]?.payload).toMatchObject({ target: { _tag: "Plan", planId: "plan-1", digest: PLAN_DIGEST }, decision: "approve" })
+    expect(calls[4]?.payload).toMatchObject({
+      flowId: "repository/trigger",
+      idempotencyKey: "trigger:will/flows:nightly:register-plan",
+      input: {
+        operation: "register", repo: "will/flows", slug: "nightly", flow: "nightly-lint",
+        schedule: "0 9 * * 1-5", input: { label: "nightly" },
+        approvedPlanId: "plan-1", approvedPlanDigest: PLAN_DIGEST
+      }
+    })
+    expect(calls[6]?.payload).toMatchObject({ _tag: "Plan", idempotencyKey: "trigger:will/flows:nightly:register-run" })
+
+    /* A retry after a lost answer repeats the same keys and adds no second receipt shape. */
+    const again = await controller.commands.run("triggers.approve", args)
+    expect(again.status).toBe("executed")
+    expect(receipts).toHaveLength(2)
+    expect(receipts[0]).toEqual(receipts[1])
+    expect(calls.filter((call) => call.payload.idempotencyKey === "trigger:will/flows:nightly:register-run")).toHaveLength(2)
+  })
+
+  test("the host's own refusal and Smithers Cloud's own refusal each reach the human as themselves", async () => {
+    const moduleRefusal = 'Scheduled triggers run single-file markdown flows. "nightly-lint" is a module entry (flow.ts).'
+    const hosted = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute([], workspaceAnswers({
+          Plan: (payload) => payload.flowId === "repository/trigger" ? refusedFrame(moduleRefusal) : okFrame(PLAN)
+        })),
+        [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
+      }),
+      { signedIn: true }
+    )
+    await hosted.controller.registerTrigger(REQUEST)
+    const hostArgs = lastAction(hosted.store)?.args ?? "{}"
+    const hostRefused = await hosted.controller.commands.run("triggers.approve", hostArgs)
+    expect(hostRefused).toEqual({ status: "failed", error: moduleRefusal })
+
+    const cloudRefusal = "register only the plan a person approved; approve the preview, then apply"
+    const clouded = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute([], workspaceAnswers()),
+        [APPROVAL]: json(409, { status: "error", code: "request_conflict", message: cloudRefusal })
+      }),
+      { signedIn: true }
+    )
+    await clouded.controller.registerTrigger(REQUEST)
+    const cloudArgs = lastAction(clouded.store)?.args ?? "{}"
+    const cloudRefused = await clouded.controller.commands.run("triggers.approve", cloudArgs)
+    expect(cloudRefused.status).toBe("failed")
+    if (cloudRefused.status === "failed") {
+      expect(cloudRefused.error).toContain("request_conflict")
+      expect(cloudRefused.error).toContain(cloudRefusal)
+    }
+  })
+
+  test("a plan that no longer reproduces refuses rather than registering something else", async () => {
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute([], workspaceAnswers())
+      }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger(REQUEST)
+    const args = JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>
+    const moved = await controller.commands.run("triggers.approve", JSON.stringify({ ...args, planDigest: "a".repeat(64) }))
+    expect(moved.status).toBe("failed")
+    if (moved.status === "failed") expect(moved.error).toContain("changed")
+  })
+})
+
+describe("triggers seam: listing and pausing a schedule", () => {
+  const ROWS = {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{
+      slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+      digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+      registrationId: "registration-nightly"
+    }]
+  }
+
+  test("the dispatcher lists the registered schedule beside the box's own rows", async () => {
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [LIVE]: json(200, { status: "ok", repo: "will/flows", live: true, triggers: [{ id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }], webhooks: [] }),
+        [REGISTRATIONS]: json(200, ROWS)
+      }),
+      { signedIn: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    const card = triggerCard(store)
+    expect(card.payload.live).toBe(true)
+    expect(card.payload.triggers).toEqual([
+      { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false },
+      {
+        id: "registration-nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
+        enabled: true, nextFireAt: Date.parse("2026-09-18T09:00:00Z")
+      }
+    ])
+  })
+
+  test("a registrations route that did not answer leaves the declaration and the box alone", async () => {
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [REGISTRATIONS]: json(502, { message: "gateway down" }) }),
+      { signedIn: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(triggerCard(store).payload).toEqual({ repo: "will/flows", declared: DAY_ONE.on, live: false, triggers: [], webhooks: [] })
+  })
+
+  test("pause stops the schedule through the Worker and re-reads the listing; a refusal stays the refusing party's", async () => {
+    const seen: Array<string> = []
+    const paused: Array<unknown> = []
+    const { controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [REGISTRATIONS]: json(200, { ...ROWS, rows: [{ ...ROWS.rows[0], enabled: false }] }),
+        [PAUSE]: async (request) => {
+          paused.push(await request.json())
+          return json(200, { status: "ok", paused: 1 })
+        }
+      }, seen),
+      { signedIn: true }
+    )
+    const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    expect(typeof outcome).toBe("object")
+    expect(paused).toEqual([{ repo: "will/flows", slug: "nightly" }])
+    expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toHaveLength(1)
+
+    const refused = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [PAUSE]: json(404, { status: "error", code: "upstream_refused", message: "unknown repository job" }) }),
+      { signedIn: true }
+    )
+    const answer = await refused.controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
+    expect(String(answer)).toContain("unknown repository job")
+  })
+
+  test("the pause door is the agent's to ask for and the human's to confirm", async () => {
+    const { store, controller } = await ready(backend({ [PROJECTION]: projectionDocument(DAY_ONE) }), { signedIn: true })
+    const asked = await controller.commands.runForAgent("triggers.pause", JSON.stringify({ repo: "will/flows", slug: "nightly" }))
+    expect(asked.status).toBe("executed")
+    expect(lastAction(store)?.flow).toBe("triggers.pause")
   })
 })

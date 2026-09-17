@@ -3,9 +3,53 @@
  * flow here touches no other flow module, and Flows.ts registers each block in
  * the aggregator order.
  */
+import { Schema } from "effect"
+import { flag, line, text } from "../FlowForms"
 import { flow, RepoTarget } from "./Declare"
 import type { FlowEntry } from "../registry"
 import type { CommandActions } from "./Declare"
+import type { Parsed } from "../SlashPayload"
+
+/**
+ * The registration a person asks for: which flow, under which name, on which
+ * schedule, with which input. Every field but the repository is required,
+ * which is what makes the form appear for a door that named none of them.
+ */
+const Registration = Schema.Struct({
+  repo: Schema.optional(Schema.String),
+  flow: Schema.String,
+  slug: Schema.String,
+  schedule: Schema.String,
+  /** The target flow's own input, as JSON text; the seam validates it against that flow's declared schema. */
+  input: Schema.optional(Schema.String)
+})
+
+/** The prepared registration the plan preview's approve button carries back. */
+const PreparedRegistration = Schema.Struct({
+  repo: Schema.optional(Schema.String),
+  flow: Schema.String,
+  slug: Schema.String,
+  schedule: Schema.String,
+  input: Schema.optional(Schema.String),
+  planId: Schema.String,
+  planDigest: Schema.String
+})
+
+/** One schedule, by its own name. */
+const ScheduleTarget = Schema.Struct({ repo: Schema.optional(Schema.String), slug: Schema.String })
+
+/**
+ * The button doors below carry their values as one JSON object rather than a
+ * positional line: a cron expression holds spaces and a flow's input is
+ * itself JSON, so no positional grammar reads them back unambiguously.
+ */
+const carried = (name: string) => (args: string | undefined): Parsed => {
+  try {
+    const value: unknown = JSON.parse((args ?? "").trim())
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) return { payload: value as Record<string, unknown> }
+  } catch { /* fall through to the one honest refusal */ }
+  return { error: `${name} takes the values its button carries` }
+}
 
 /** The `triggers` flows registered as one aggregator block. */
 export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
@@ -24,13 +68,58 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     handler: ({ repo }) => actions.listTriggers(repo)
   }),
   flow({
-    /* The register door: a write, so sign-in is the door; it refuses honestly until a register procedure crosses the relay. */
+    /*
+     * The register door: it prepares. The workspace plans the target flow with
+     * exactly the input given, the plan is previewed, and the registration is
+     * written only after the human approves that plan (triggers.approve).
+     */
     name: "triggers.register",
-    summary: "Register a rule on the repository's box",
+    summary: "Register a repository flow to run on a schedule",
     runtime: ["cloud"],
-    args: "[owner/repo]",
+    args: "[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>]",
     requires: ["signed-in"],
-    input: RepoTarget,
-    handler: ({ repo }) => actions.registerTrigger(repo)
+    input: Registration,
+    form: {
+      submitLabel: "Prepare",
+      args: (payload) => line(text(payload, "repo"), flag(payload, "flow"), flag(payload, "slug"), flag(payload, "schedule"), flag(payload, "input")),
+      fields: {
+        repo: { label: "Repository", optionsFrom: "cloud-repos", kind: "text" },
+        flow: { label: "Flow", placeholder: "nightly-lint" },
+        slug: { label: "Name", placeholder: "nightly" },
+        schedule: { label: "Schedule", placeholder: "0 9 * * 1-5" },
+        input: { label: "Input", placeholder: "{}" }
+      }
+    },
+    handler: (payload) => actions.registerTrigger({ operation: "register", ...payload })
+  }),
+  flow({
+    /*
+     * The approval. An approval is the human's to give (apps/app/AGENTS.md,
+     * three-door law), so the agent may prepare a registration and may never
+     * approve one — the same rule approval.approve states.
+     */
+    name: "triggers.approve",
+    summary: "Approve the previewed plan and register the schedule",
+    hidden: true,
+    runtime: ["cloud"],
+    requires: ["signed-in"],
+    capabilities: ["approve:self"],
+    userOnly: true,
+    userOnlyReason: "approvals belong to the human",
+    grammar: carried("triggers.approve"),
+    input: PreparedRegistration,
+    handler: (payload) => actions.registerTrigger({ operation: "approve", ...payload })
+  }),
+  flow({
+    /* Stopping a schedule is consequential, so the agent asks and the human confirms. */
+    name: "triggers.pause",
+    summary: "Pause a schedule",
+    hidden: true,
+    runtime: ["cloud"],
+    requires: ["signed-in"],
+    confirm: (payload) => `pause ${String(payload["slug"])}`,
+    grammar: carried("triggers.pause"),
+    input: ScheduleTarget,
+    handler: ({ repo, slug }) => actions.registerTrigger({ operation: "pause", repo, slug })
   })
 ]
