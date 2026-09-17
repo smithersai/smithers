@@ -29,8 +29,12 @@ const score = { verdict: "pass" as const, reason: "The recorded result classifie
 
 test("the committed candidate keeps each public test definition and never its held-out answer", () => {
   const input = held(true), files = candidateFiles(input)
-  for (const [name, contents] of Object.entries(files)) assert(!contents.includes("HELD_OUT_EXPECTATION"), `${name} retains the answer`)
-  const definitions = [{ id: "research", name: "Held-out question", input: caseInput, required: true }]
+  for (const [name, contents] of Object.entries(files)) {
+    assert(!contents.includes("HELD_OUT_EXPECTATION"), `${name} retains the answer`)
+    assert(!contents.includes("/results/0/output/classification"), `${name} retains the deterministic answer key`)
+  }
+  const definitions = [{ id: "research", name: "Held-out question", input: JSON.stringify({ event, sourceRevision }), required: true }]
+  assert.deepEqual(input.draft.cases[0]!.input, caseInput)
   assert.deepEqual(JSON.parse(files["evals.json"]!), definitions)
   const candidate = JSON.parse(files["candidate.json"]!)
   assert.deepEqual(candidate.draft.cases, definitions)
@@ -59,7 +63,7 @@ test("the evaluated job receives no case material and still verifies the configu
     digest: input.digest, configuration: input.draft, sourceRevision, event: { ...event, deliveryKey: "live-key" } }))
 })
 
-test("the judge still decides the held-out case against the maintainer's original answer", () => {
+test("the retained deterministic assertions and the judge's verdict decide the held-out case", () => {
   const input = held(true), test = input.draft.cases[0]!
   assert.equal(test.expected, heldOut)
   assert.equal(assessScore(test, observedQuestion("question"), score).status, "passed")

@@ -8,6 +8,7 @@ import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { registrationScopeProblems } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
+import { evaluatedCandidate } from "./evaluation.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
 import { RepositoryRemote } from "./remote.ts"
 import { completedJob } from "./receipts.ts"
@@ -121,10 +122,11 @@ export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandida
       revision: input.revision, digest: input.digest, title: input.draft.trialTitle, body: input.draft.trialBody })).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(TrialIssue)), Effect.mapError(() => invalid("The trial issue response does not match its request"))) : undefined
     if (issue !== undefined && issue.request_id !== input.requestId) return yield* invalid("The trial issue receipt names another request")
-    // Planning fixes the exact bundle authority before event dispatch. The
-    // input event varies later; executable identity and finite envelope do not.
-    const jobInput: JobInput = { repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, sourceRevision: source.commitId,
-      configuration: input.draft, event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: `setup:${input.requestId}`,
+    // Planning fixes the exact bundle authority before event dispatch. The input
+    // event and the held-out cases vary; executable identity and finite envelope
+    // do not, so the probe reads them from the configuration without the answers.
+    const jobInput: JobInput = { ...evaluatedCandidate(input), sourceRevision: source.commitId,
+      event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: `setup:${input.requestId}`,
         ...(issue ? { issueNumber: issue.number, trial: true } : {}), payload: { issue: { number: issue?.number ?? 0, title: input.draft.trialTitle, body: input.draft.trialBody } } } }
     const planned = yield* (yield* ControlRuntime).plan({ flowId: `repository-jobs/${input.job}`, input: jobInput, idempotencyKey: `setup:${input.requestId}:job-plan` })
     const card = planned.card

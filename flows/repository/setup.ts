@@ -127,8 +127,14 @@ const verifyEvaluation = (input: SetupInput, receipt: typeof Receipt.Type) => {
     return results.length !== 1 || results[0]!.status !== "passed" || !results[0]!.evidence.length
   })) throw invalid("Required evaluation cases have not passed with evidence")
 }
-/** The repository keeps the test definition; its expected answer stays with the setup authority. */
-export const publicCase = (test: typeof EvalCase.Type) => ({ id: test.id, name: test.name, input: test.input, required: test.required })
+/** The repository keeps the executable test definition; the expected answer and the
+ * deterministic assertions that decide it stay with the setup authority. An input the
+ * case contract cannot read carries no assertions and is kept as the maintainer wrote it. */
+export const publicCase = (test: typeof EvalCase.Type) => ({ id: test.id, name: test.name,
+  input: Option.match(Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input), {
+    onNone: () => test.input,
+    onSome: ({ event, sourceRevision }) => JSON.stringify({ event, sourceRevision })
+  }), required: test.required })
 export const candidateFiles = (input: SetupInput): Record<string, string> => {
   const cases = input.draft.cases.map(publicCase)
   const files: Record<string, string> = { "candidate.json": JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft: { ...input.draft, cases } }, null, 2) + "\n",

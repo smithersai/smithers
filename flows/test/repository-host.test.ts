@@ -303,6 +303,12 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       if (operation === "evaluate") assert.equal(result.receipt?.results[0]?.status, "passed", JSON.stringify(result))
       // Inspect returns the maintainer's own editable draft; every other result is read by the repository.
       if (operation !== "inspect") assert(!JSON.stringify(result).includes("HELD_OUT_EXPECTATION"), `${operation} result must not return the held-out answer`)
+      if (operation === "evaluate") {
+        const evaluated = events.filter(event => ["repository/Investigate", "repository/InvestigateStep"]
+          .includes((event.payload as any)?.payload?.state?.flowName))
+        assert(evaluated.length > 0, "the evaluation must execute the production investigation")
+        for (const event of evaluated) assert(!JSON.stringify(event).includes("HELD_OUT_EXPECTATION"), "the evaluated job's own records must not carry the held-out answer")
+      }
       if (operation === "trial") {
         assert(result.receipt?.evidence.some(item => item.startsWith("execution:")))
         assert.equal(comments, 0)
@@ -311,6 +317,19 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         assert.equal(result.receipt?.jobRunId, dispatches.find(row => row.id === 2).run_id)
         assert.notEqual(result.receipt?.jobRunId, result.receipt?.runId)
       }
+    }
+    if (proof.setup) {
+      // The registered authority is the flow's executable identity and its finite
+      // envelope; the planned input moves only the plan digest and its summary.
+      const probe = (configuration: unknown, candidate: string, key: string) => client.Plan({ flowId: "repository-jobs/issues", idempotencyKey: key,
+        input: json({ repo, job: "issues", revision: setup.revision, digest: candidate, sourceRevision: "a".repeat(40), configuration,
+          event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: key, payload: { issue: { number: 0, title: setup.draft.trialTitle, body: setup.draft.trialBody } } } }) })
+      const whole = yield* probe(setup.draft, digest, "identity-whole")
+      const caseFree = { ...setup.draft, cases: [] }
+      const held = yield* probe(caseFree, setupCandidate({ repo, job: "issues", revision: setup.revision, draft: caseFree }), "identity-case-free")
+      assert.equal(held.executionDigest, whole.executionDigest)
+      assert.deepEqual(held.envelope, whole.envelope)
+      assert.notEqual(held.digest, whole.digest)
     }
     const source = (yield* Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped)).head
     for (const kind of proof.jobs ?? []) {
@@ -555,7 +574,12 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       }
     }
     assert.deepEqual(JSON.parse(await readFile(join(candidateRoot, "evals.json"), "utf8")),
-      setup.draft.cases.map(test => ({ id: test.id, name: test.name, input: test.input, required: test.required })), "the repository keeps the public test definition")
+      setup.draft.cases.map(test => { const { event, sourceRevision } = JSON.parse(test.input)
+        return { id: test.id, name: test.name, input: JSON.stringify({ event, sourceRevision }), required: test.required } }),
+      "the repository keeps the executable test definition without its deterministic answer key")
+    for (const name of ["candidate.json", "evals.json"]) {
+      assert(!(await readFile(join(candidateRoot, name), "utf8")).includes("/results/0/output/classification"), `${name} must not retain the deterministic assertions`)
+    }
   }
   await writeFile(join(temporary, "model-requests.json"), JSON.stringify(requests))
   assert.deepEqual(projectionMismatches, [], "Worker needs the exact typed finalOutput for every setup operation")
