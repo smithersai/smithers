@@ -79,8 +79,18 @@ interface Probe {
   readonly head: any
 }
 
-async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>) {
-  const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
+/** One temporary repository, served by one host start at a time. A restart is
+ * what makes a discovery snapshot move, so drift is proved across two. */
+interface Fixture {
+  readonly root: string
+  readonly jj: (...args: string[]) => string
+  readonly base: { repositoryPath: string; adapterPath: string; sourcePublication: "local-only"; exporterPath: string | undefined }
+  readonly native: any
+  readonly registrations: Array<Record<string, any>>
+  readonly settled: () => void
+}
+
+async function makeRepository(t: TestContext): Promise<Fixture> {
   const temporary = await mkdtemp(join(tmpdir(), "repository-trigger-")), root = join(temporary, "repo")
   let passed = false
   t.diagnostic(`Native trigger evidence: ${temporary}`)
@@ -105,10 +115,16 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
   await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
   await writeFile(nativeSource, (await readFile(source!, "utf8")).replace('"/usr/local/bin/smithers-jj-export"', JSON.stringify(exporter)))
   await writeFile(adapter, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(nativeSource)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)}, engine="--engine" in sys.argv)))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
+  const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
   const base = { repositoryPath: root, adapterPath: adapter, sourcePublication: "local-only" as const, exporterPath: exporter }
   const native = await Effect.runPromise(Effect.flatMap(NativeCoding, coding => coding.read()).pipe(
     Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped))
-  const registrations: Array<Record<string, any>> = []
+  return { root, jj, base, native, registrations: [], settled: () => { passed = true } }
+}
+
+async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) => Promise<void>) {
+  const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
+  const { root, base, native, registrations } = fixture
   const remote = RepositoryRemote.of({ repo, workspaceId,
     source: Effect.succeed("smithers-cloud"),
     registrations: Effect.suspend(() => Effect.succeed(json(registrations.map((row, index) => ({
@@ -153,6 +169,7 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
     const flows = (): Promise<ReadonlyArray<string>> => Effect.runPromise(Effect.map(client.List({ _tag: "flows" }),
       (listed: any) => (listed.items as ReadonlyArray<{ readonly flowId: string }>).map(item => item.flowId)))
     let attempt = 0
+    const session = Math.random().toString(36).slice(2, 8)
     const runs = (): Promise<ReadonlyArray<Record<string, unknown>>> => Effect.runPromise(Effect.map(client.List({ _tag: "runs" }),
       (listed: any) => (listed.items as ReadonlyArray<any>).map(row => ({ runId: row.runId, flowId: row.flowId, status: row.status, waitingReason: row.waitingReason, pendingWaits: row.pendingWaits }))))
     const settle = (runId: string) => control.watch({ runId, follow: true }).pipe(
@@ -166,7 +183,7 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
       return (yield* Effect.promise(runs)).find(row => row.runId === launched.runId)
     }).pipe(Effect.provideService(Control.Control, control)))
     const register = (request: Record<string, unknown>) => Effect.runPromise(Effect.gen(function*() {
-      const key = `register:${String(request.slug)}:${String(request.operation ?? "register")}:${attempt++}`
+      const key = `register:${session}:${String(request.slug)}:${String(request.operation ?? "register")}:${attempt++}`
       const planned: any = yield* client.Plan({ flowId: "repository/trigger", input: json(request), idempotencyKey: `${key}:plan` })
       yield* client.Approve({ ...planned.approval, scope: "once" })
       const launched: any = yield* client.Run({ _tag: "Plan", planId: planned.planId, digest: planned.digest, envelope: planned.envelope, idempotencyKey: `${key}:run` })
@@ -178,7 +195,12 @@ async function proveTrigger(t: TestContext, use: (probe: Probe) => Promise<void>
     }).pipe(Effect.provideService(Control.Control, control)))
     yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, head: native.head }))
   }).pipe(Effect.provide(hostLayer), Effect.scoped))
-  passed = true
+}
+
+const proveTrigger = async (t: TestContext, use: (probe: Probe) => Promise<void>) => {
+  const fixture = await makeRepository(t)
+  await withHost(t, fixture, use)
+  fixture.settled()
 }
 
 /** The exact sentence, as it survives JSON encoding inside a recorded event. */
@@ -263,6 +285,38 @@ test("the registrar registers only a plan a person approved, with the exact cand
     assert.equal(registered.output.planDigest, planned.digest)
     assert.equal(registered.output.testRunId, undefined, "no test run is claimed when the caller ran none")
   }))
+
+test("the registrar reads the approved plan by id under the app's own request key, and refuses one that no longer reproduces", nativeOptions, async t => {
+  const fixture = await makeRepository(t)
+  let approved: any
+  await withHost(t, fixture, async probe => {
+    // The app's per-request key. The host never reproduces it; it reads the
+    // plan a person approved by the id the app sent.
+    approved = await probe.plan("nightly-report", { label: "nightly" }, "trigger:req-1:plan")
+    await probe.approve(approved)
+    const registered = await probe.register({ ...REQUEST, requestId: "req-1", input: { label: "nightly" },
+      approvedPlanId: approved.planId, approvedPlanDigest: approved.digest })
+    assert(registered.output, `expected a receipt for the plan approved under the app's key; got ${String(registered.failure).slice(0, 2000)}`)
+    assert.equal(registered.output.requestId, "req-1")
+    assert.equal(fixture.registrations.length, 1, JSON.stringify(fixture.registrations))
+    const other = await probe.register({ ...REQUEST, slug: "other", requestId: "req-2", input: { label: "weekly" },
+      approvedPlanId: approved.planId, approvedPlanDigest: approved.digest })
+    says(String(other.failure), `The approved plan for "nightly-report" was made for different input.`)
+    assert.equal(fixture.registrations.length, 1, "a plan approved for other input registers nothing")
+  })
+  // The flow changes. Discovery is a per-start snapshot, so only a restart
+  // moves the execution digest the person approved.
+  await writeFile(join(fixture.root, "flows/nightly-report/flow.mdx"), ["---", "description: A maintainer's own scheduled report.",
+    "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository, briefly.", ""].join("\n"))
+  fixture.jj("status")
+  await withHost(t, fixture, async probe => {
+    const stale = await probe.register({ ...REQUEST, slug: "stale", requestId: "req-3", input: { label: "nightly" },
+      approvedPlanId: approved.planId, approvedPlanDigest: approved.digest })
+    says(String(stale.failure), `The approved plan no longer reproduces for "nightly-report"; review the preview and approve it again.`)
+    assert.equal(fixture.registrations.length, 1, "an approval of bytes that changed registers nothing")
+  })
+  fixture.settled()
+})
 
 test("the registrar never resolves an approval, installs a grant, or submits one", nativeOptions, t =>
   proveTrigger(t, async () => {

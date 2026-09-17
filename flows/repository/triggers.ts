@@ -126,24 +126,34 @@ export const triggerLayers = Layer.mergeAll(
     const source = (yield* (yield* NativeCoding).read()).head
     if (source.kind !== "resolved") return yield* invalid("Resolve native source conflicts before registering a schedule")
     const control = yield* ControlRuntime
-    // The same idempotency key the app planned under, so this is the stored
-    // card a person already approved and not a second, unapproved plan.
-    const planned = yield* control.plan({ flowId: request.flow, input: request.input, idempotencyKey: `trigger:${request.repo}:${request.slug}:plan` }).pipe(
-      Effect.mapError(() => invalid(`"${request.flow}" could not be planned on this workspace`)))
-    const card = planned.card
-    if (!card.executionDigest || card.flowId !== request.flow ||
+    // The plan a person approved, read by the id the app sent. The app owns
+    // its own idempotency key; reproducing one here would couple both halves
+    // to a shared string and mint a second, unapproved plan when they differ.
+    const stored = yield* control.getPlan(approvedPlanId).pipe(
+      Effect.mapError(() => invalid(`The approved plan for "${request.flow}" is not stored on this workspace.`)))
+    const card = stored.card
+    if (card.flowId !== request.flow) return yield* invalid(`The approved plan is for "${card.flowId}", not "${request.flow}".`)
+    if (card.digest !== approvedPlanDigest) return yield* invalid(`The approved plan for "${request.flow}" does not match the digest you sent.`)
+    if (Digest.canonical(stored.decodedInput) !== Digest.canonical(request.input)) {
+      return yield* invalid(`The approved plan for "${request.flow}" was made for different input.`)
+    }
+    if (!card.executionDigest ||
         !card.envelope.budget || card.envelope.budget.milliseconds === undefined || card.envelope.budget.tokens === undefined ||
         card.envelope.budget.milliseconds > deploymentMinutes * 60_000 || card.envelope.budget.tokens > deploymentTokens) {
       return yield* invalid("The job declaration has no bounded reviewed execution policy")
     }
-    if (card.planId !== approvedPlanId || card.digest !== approvedPlanDigest) {
-      return yield* invalid(`The approved plan no longer reproduces for "${request.flow}"; review the preview and approve it again.`)
-    }
     // Step 3 of the approval sequence, re-verified here: this host asks its own
     // journal whether a person decided this exact plan. The registrar never
     // decides one, and a pending or denied plan registers nothing.
-    const stored = yield* control.getPlan(card.planId).pipe(Effect.mapError(() => invalid("The approved plan is no longer stored on this workspace")))
     if (stored.decision !== "approved") return yield* invalid(`The plan for "${request.flow}" is ${stored.decision}; a person approves the preview before it can be scheduled.`)
+    // Planned once more with no key, so this reads the flow as it is now
+    // instead of replaying the card the key already stored. A discovery
+    // snapshot that moved under the approval stops here.
+    const fresh = yield* control.plan({ flowId: request.flow, input: request.input }).pipe(
+      Effect.mapError(() => invalid(`"${request.flow}" could not be planned on this workspace`)))
+    if (fresh.card.digest !== approvedPlanDigest || fresh.card.executionDigest !== card.executionDigest) {
+      return yield* invalid(`The approved plan no longer reproduces for "${request.flow}"; review the preview and approve it again.`)
+    }
     const testRunId = request.testRunId
     if (testRunId !== undefined) {
       const run = yield* control.getRun(testRunId).pipe(Effect.mapError(() => invalid("The named test run is not a run of this workspace")))
