@@ -17,7 +17,7 @@ import { CodingError } from "../coding/schema.ts"
 import { CaptureRepository, currentExecutionId, StartBudget, type InspectionOptions } from "./inspection.ts"
 import { CaseInput, Evaluate } from "./evaluation.ts"
 import { RepositoryRemote } from "./remote.ts"
-import { Draft, EvalCase, Event, JobInput, JobResult, OperationResult, Receipt, RepositoryEvidence, SetupInput } from "./schema.ts"
+import { Draft, EvalCase, Event, JobInput, JobResult, OperationResult, Receipt, RepositoryEvidence, SetupInput, Step } from "./schema.ts"
 import { Observation, RepositoryJob } from "./jobs.ts"
 import { CheckResult } from "./checks.ts"
 import { priorSetupReceipt } from "./receipts.ts"
@@ -39,14 +39,33 @@ export const SuggestedCaseInput = Schema.Struct({ ...CaseInput.fields,
       base: Schema.Struct({ sha: Schema.NonEmptyString }), head: Schema.Struct({ sha: Schema.NonEmptyString }) }) }),
     Schema.Struct({ prompt: Schema.NonEmptyString })
   ]) }) })
+// The draft already carries every step. A suggestion overrides the few the
+// evidence changes instead of re-emitting the product defaults unchanged.
+const SuggestedStep = Schema.Struct({ id: Step.fields.id,
+  mode: Schema.optionalKey(Step.fields.mode), prompt: Schema.optionalKey(Step.fields.prompt) })
 const SuggestedDraft = Schema.Struct({ ...Draft.fields,
+  steps: Schema.optionalKey(Schema.Array(SuggestedStep).check(Schema.isMaxLength(30))),
   cases: Schema.Array(Schema.Struct({ ...EvalCase.fields, input: SuggestedCaseInput })).check(Schema.isMinLength(1), Schema.isMaxLength(100)) })
+/** An override may only adjust a step the current draft already defines. */
+export const suggestedSteps = (existing: Draft["steps"], overrides: readonly (typeof SuggestedStep.Type)[] = []): Draft["steps"] =>
+  existing.map(step => {
+    const override = overrides.find(value => value.id === step.id)
+    return override === undefined ? step : { ...step, ...(override.mode === undefined ? {} : { mode: override.mode }),
+      ...(override.prompt === undefined ? {} : { prompt: override.prompt }) }
+  })
 /** A model suggestion cannot promote its own rule into a required policy. */
 export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["checks"]): Draft["checks"] => suggested.map(check => {
   if (check.kind !== "ai") return check
   const prior = existing.filter(value => value.id === check.id && value.kind === "ai" && value.rule === check.rule &&
     Digest.canonical(value.paths) === Digest.canonical(check.paths))
   return { ...check, policy: prior.length === 1 ? prior[0]!.policy : "report" }
+})
+/** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text. */
+export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type): Draft => ({
+  ...suggested, steps: suggestedSteps(existing.steps, suggested.steps), checks: suggestedChecks(existing.checks, suggested.checks),
+  cases: existing.cases.length ? existing.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })),
+  replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
+  schedule: existing.schedule, budgetMinutes: existing.budgetMinutes
 })
 export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   payload: { input: SetupInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number }, output: SuggestedDraft,
@@ -56,6 +75,7 @@ export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   system: [
     "Propose a configuration for this one repository responsibility using the actual supplied source, issue, PR and CI evidence.",
     "Keep the user's chosen permissions, scope and budget. Suggest concrete reusable patterns when history supports them. Missing API/history evidence is not proof of no issues or no CI.",
+    "The supplied input.draft already holds every step. Return steps ONLY as overrides {id,mode?,prompt?} for existing step IDs this repository's evidence proves need a different mode or prompt, with just the changed fields. Omit steps entirely when the evidence changes none, which is the normal answer. Never re-emit an unchanged step, and never invent a step ID; an unknown ID is dropped.",
     "New or rewritten AI checks start report-only. A required check is a separate maintainer decision after evals and a live trial; preserve unchanged user-authored rules and policies.",
     "Each new case.input is a typed OBJECT {event,sourceRevision,assertions}, not a JSON string. Follow its schema exactly. event.source is github, smithers-cloud or schedule; it is never the repository name. sourceRevision is the captured immutable commit ID. Assertions are {path: JSON pointer into JobResult, equals: expected JSON}.",
     "Each event.payload contains the actual task for the worker: {issue:{title,body}} for issues, {pull_request:{title,body,base:{sha},head:{sha}}} for captured PRs, or {prompt} for a feature/chore. Put the complete concrete request there. The worker never sees the case name, expected answer, or assertions. An empty payload cannot test issue handling.",
@@ -162,8 +182,7 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
       const evidence = yield* runtime.execute(Capture, { executionId: key("capture"), payload: { repo: input.repo, prompt: input.draft.steps.map(step => step.prompt).join("\n") } })
       if (input.operation === "inspect") {
         const suggested = yield* runtime.execute(Suggest, { executionId: key("suggest"), payload: { input, evidence, deadlineAt } })
-        const suggestedDraft = { ...suggested, checks: suggestedChecks(input.draft.checks, suggested.checks), cases: input.draft.cases.length ? input.draft.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })), replies: input.draft.replies, landing: input.draft.landing,
-          scope: input.draft.scope, label: input.draft.label, schedule: input.draft.schedule, budgetMinutes: input.draft.budgetMinutes }
+        const suggestedDraft = suggestedSetupDraft(input.draft, suggested)
         return yield* respond({ ...identity, inspection: { sources: evidence.sources, suggestedDraft, inspectedAt: Date.now() },
           receipt: receipt({ sourceRevision: evidence.source.commitId, evidence: evidence.sources.filter(source => source.status === "read").map(source => source.path) }) })
       }

@@ -8,12 +8,17 @@ export class SetupStoreError extends Data.TaggedError("SetupStoreError")<{ reado
 export const SetupPlanSchema = z.object({ planId: z.string().min(1), flowId: z.literal("repository/setup"), digest: z.string().min(1),
   executionDigest: z.string().min(1), envelope: z.object({ capabilities: z.array(z.string()), flows: z.array(z.string()),
     budget: z.object({ tokens: z.number().int().positive().max(200_000), milliseconds: z.number().int().positive().max(7_200_000) }), host: z.string().optional() }) })
+const instant = () => z.number().int().nonnegative().optional()
 export const SetupRecordSchema = z.object({ version: z.number().int().nonnegative(), input: SetupHostInputSchema,
   workspaceId: z.string().uuid().optional(),
   binding: z.object({ gatewayId: z.string().min(1), workspaceId: z.string().uuid().optional() }).optional(),
   plan: SetupPlanSchema.optional(), runId: z.string().min(1).optional(), receipt: SetupReceiptSchema,
   result: SetupOperationResponseSchema.optional(), observationError: z.string().max(1000).optional(),
-  resultPendingSince: z.number().int().nonnegative().optional() })
+  resultPendingSince: instant(),
+  // Server-side phase clock. Every instant is optional so a record stored
+  // before this existed still decodes, and none of them reaches the wire.
+  createdAt: instant(), workspaceSelectedAt: instant(), workspaceReadyAt: instant(), gatewayReadyAt: instant(),
+  plannedAt: instant(), approvedAt: instant(), runStartedAt: instant() })
 export type SetupRecord = z.infer<typeof SetupRecordSchema>
 const KeySchema = z.string().min(1).max(128).regex(/^[a-zA-Z0-9:_-]+$/)
 const RegistrationMatchSchema = z.object({ registrationId: z.string(), revision: z.number().int().positive(), digest: z.string(), workspaceId: z.string().uuid(), sourceRevision: z.string().min(1) })
@@ -75,7 +80,7 @@ export const repositorySetupStorageRequest = (request: Request) => Effect.gen(fu
       if (!old || !sameInput(old.input, command.record.input) || command.record.input.requestId !== id) return Response.json({ message: "The setup request identity cannot change" }, { status: 409 })
       if (old.version !== command.expectedVersion || old.result) return Response.json({ record: old })
     }
-    const record: SetupRecord = command.action === "create" ? { version: 0, input: command.input, receipt: {
+    const record: SetupRecord = command.action === "create" ? { version: 0, input: command.input, createdAt: Date.now(), receipt: {
       requestId: id, revision: command.input.revision, digest: command.input.digest, operation: command.input.operation,
       phase: "queued", updatedAt: Date.now(), results: [], evidence: []
     } } : { ...command.record, version: old!.version + 1 }

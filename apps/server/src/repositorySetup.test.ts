@@ -303,6 +303,59 @@ test("malformed completed output is refused without receiving the absent-output 
   expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
 })
 
+const PHASE_INSTANTS = ["createdAt", "workspaceSelectedAt", "workspaceReadyAt", "gatewayReadyAt", "plannedAt", "approvedAt", "runStartedAt"] as const
+
+test("each setup phase instant is stamped once in order and survives a replayed advance", async () => {
+  const t = await fixture()
+  t.options.workspaceState = "starting"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const rows = t.durable.gatewayRows("alice")
+  const queued = rows.get(key) as SetupRecord
+  expect(queued.createdAt).toBeGreaterThan(0)
+  expect(queued.workspaceSelectedAt).toBeGreaterThanOrEqual(queued.createdAt!)
+  expect(queued.workspaceReadyAt).toBeUndefined()
+  expect(queued.runStartedAt).toBeUndefined()
+  t.options.workspaceState = "running"
+  await t.durable.runGatewayAlarms()
+  const started = { ...rows.get(key) as SetupRecord }
+  for (let index = 1; index < PHASE_INSTANTS.length; index++) {
+    expect(started[PHASE_INSTANTS[index]!]).toBeGreaterThanOrEqual(started[PHASE_INSTANTS[index - 1]!]!)
+  }
+  expect(t.launched.size).toBe(1)
+  t.durable.restart()
+  await t.durable.runGatewayAlarms()
+  await t.durable.runGatewayAlarms()
+  const replayed = rows.get(key) as SetupRecord
+  for (const instant of PHASE_INSTANTS) expect(replayed[instant]).toBe(started[instant])
+  expect(t.launched.size).toBe(1)
+})
+
+test("a stored setup record without phase instants still decodes and finishes", async () => {
+  const t = await fixture()
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const key = `repository-setup:request:${t.input.requestId}`
+  const rows = t.durable.gatewayRows("alice")
+  const legacy = { ...rows.get(key) as Record<string, unknown> }
+  for (const instant of PHASE_INSTANTS) delete legacy[instant]
+  rows.set(key, legacy)
+  t.durable.restart()
+  t.options.runState = "completed"
+  await t.durable.runGatewayAlarms()
+  const response = await t.read()
+  expect(response.status).toBe(200)
+  expect((await response.json() as { receipt: { phase: string } }).receipt.phase).toBe("completed")
+  expect(t.launched.size).toBe(1)
+})
+
+test("the phase instants never reach the setup response", async () => {
+  const t = await fixture()
+  t.options.runState = "completed"
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const body = await (await t.read()).text()
+  for (const instant of PHASE_INSTANTS) expect(body.includes(instant)).toBe(false)
+})
+
 test("retry can echo the server-pinned workspace but cannot move an admitted request", async () => {
   const t = await fixture()
   await t.send("POST", "evaluate", "alice", t.input); await t.settle()

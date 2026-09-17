@@ -10,6 +10,10 @@ class SetupExecutionError extends Data.TaggedError("SetupExecutionError")<{ read
 const failure = (message: string) => new SetupExecutionError({ message })
 const recordOf = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 type Services = SetupRequests | GatewaySessions | Transport | ServerConfig
+type Instant = "workspaceSelectedAt" | "workspaceReadyAt" | "gatewayReadyAt" | "plannedAt" | "approvedAt" | "runStartedAt"
+/** A phase instant is written the first time its phase is reached and never again. */
+const stamps = (record: SetupRecord, ...names: readonly Instant[]): Partial<Record<Instant, number>> =>
+  Object.fromEntries(names.filter(name => record[name] === undefined).map(name => [name, Date.now()]))
 
 /** Cloud deduplicates one compatible automation VM without replacing the user's existing primary. */
 const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(function* () {
@@ -78,7 +82,8 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
       if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
       return
     }
-    if (record.workspaceId !== workspace.id) record = yield* requests.update(login, record, { ...record, workspaceId: workspace.id })
+    const selected = { ...stamps(record, "workspaceSelectedAt"), ...(workspace.ready ? stamps(record, "workspaceReadyAt") : {}) }
+    if (record.workspaceId !== workspace.id || Object.keys(selected).length) record = yield* requests.update(login, record, { ...record, workspaceId: workspace.id, ...selected })
     if (!workspace.ready) {
       if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
       return
@@ -89,22 +94,23 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
       return
     }
     if (gateway.status !== "ready") return yield* Effect.fail(failure(gateway.detail))
-    record = yield* requests.update(login, record, { ...record, binding: { gatewayId: gateway.record.gatewayId, workspaceId: gateway.record.workspaceId } })
+    record = yield* requests.update(login, record, { ...record, ...stamps(record, "gatewayReadyAt"), binding: { gatewayId: gateway.record.gatewayId, workspaceId: gateway.record.workspaceId } })
   }
   if (!observeOnly && !record.plan) {
     const planned = SetupPlanSchema.safeParse(yield* rpc(login, record, "Plan", {
       flowId: "repository/setup", input: { ...record.input, ...(record.binding?.workspaceId ? { workspaceId: record.binding.workspaceId } : {}) }, idempotencyKey: `setup:${requestId}:plan`
     }))
     if (!planned.success) return yield* Effect.fail(failure("The workspace did not return a source-bound repository setup plan"))
-    record = yield* requests.update(login, record, { ...record, plan: planned.data, observationError: undefined })
+    record = yield* requests.update(login, record, { ...record, ...stamps(record, "plannedAt"), plan: planned.data, observationError: undefined })
   }
   if (!observeOnly && !record.runId && record.plan) {
     const { planId, digest, envelope } = record.plan
     yield* rpc(login, record, "Approval.Submit", { target: { _tag: "Plan", planId, digest, envelope },
       scope: "run", decision: "approve", idempotencyKey: `setup:${requestId}:approve` })
+    const approved = stamps(record, "approvedAt")
     const started = recordOf(yield* rpc(login, record, "Run", { _tag: "Plan", planId, digest, envelope, idempotencyKey: `setup:${requestId}:run` }))
     if (typeof started.runId !== "string" || !started.runId) return yield* Effect.fail(failure("The workspace did not identify the setup run"))
-    record = yield* requests.update(login, record, { ...record, runId: started.runId, observationError: undefined,
+    record = yield* requests.update(login, record, { ...record, ...approved, ...stamps(record, "runStartedAt"), runId: started.runId, observationError: undefined,
       receipt: { ...record.receipt, runId: started.runId, phase: "queued", updatedAt: Date.now(), evidence: [`run:${started.runId}`] } })
   }
   if (!record.runId) return
