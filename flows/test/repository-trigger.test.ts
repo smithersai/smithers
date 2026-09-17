@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { test, type TestContext } from "node:test"
 import * as Seat from "@smthrs/agent/Seat"
 import { Control, ControlRpcs } from "@smthrs/control"
@@ -29,7 +30,7 @@ const repo = "example/demo", workspaceId = "22222222-2222-4222-8222-222222222222
 const SCHEDULE = "0 9 * * 1-5"
 
 /** Every fixture entry this host discovers, and why each one is there. */
-const fixtures = (target: string) => ({
+const fixtures = (target: string, marker: string) => ({
   /** The supported form: one model this workspace's resolver answers. */
   "flows/nightly-report/flow.mdx": ["---", "description: A maintainer's own scheduled report.",
     "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
@@ -42,9 +43,15 @@ const fixtures = (target: string) => ({
   /** Runnable, but declares an input schema the engine ignores. */
   "flows/declared-input/flow.mdx": ["---", "description: Run the reviewed command on a schedule.",
     "model: test:scripted", "input: { label: string }", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
-  /** A module entry: refused by the markdown gate, by name and by file. */
+  /** A module entry whose imports do not resolve: refused by the markdown gate. */
   "flows/module-entry/flow.ts": ['import { Flow } from "@smthrs/core"', 'import { Schema } from "effect"',
     'export default Flow.make({ description: "A module entry.", flows: ["coding/CommandCheck"], capabilities: ["proc:spawn:*"],',
+    '  budget: { tokens: 200000, milliseconds: 600000 }, input: Schema.Unknown, output: Schema.Unknown })', ""].join("\n"),
+  /** A module entry that imports cleanly, so it is the one an executable
+   * catalog accepts. It records that its top-level code ran. */
+  "flows/loaded-module/flow.ts": ['import { appendFileSync } from "node:fs"', 'import { Flow } from "@smthrs/core"', 'import { Schema } from "effect"',
+    `appendFileSync(${JSON.stringify(marker)}, "loaded-module evaluated\\n")`,
+    'export default Flow.make({ description: "A module entry that loads.", flows: ["coding/CommandCheck"], capabilities: ["proc:spawn:*"],',
     '  budget: { tokens: 200000, milliseconds: 600000 }, input: Schema.Unknown, output: Schema.Unknown })', ""].join("\n")
 })
 
@@ -76,6 +83,8 @@ interface Probe {
   readonly runs: () => Promise<ReadonlyArray<Record<string, unknown>>>
   readonly registrations: Array<Record<string, any>>
   readonly dispatches: Array<Record<string, any>>
+  /** This host start's repository root, so a test can move the working copy. */
+  readonly root: string
   /** The repository's own resolved head, so a fixture can name a real revision. */
   readonly head: any
 }
@@ -87,6 +96,8 @@ interface Fixture {
   readonly jj: (...args: string[]) => string
   readonly base: { repositoryPath: string; adapterPath: string; sourcePublication: "local-only"; exporterPath: string | undefined }
   readonly native: any
+  /** Written by `flows/loaded-module/flow.ts` whenever its module body runs. */
+  readonly marker: string
   readonly registrations: Array<Record<string, any>>
   readonly dispatches: Array<Record<string, any>>
   readonly settled: () => void
@@ -103,8 +114,12 @@ async function makeRepository(t: TestContext): Promise<Fixture> {
   jj("config", "set", "--repo", "user.email", "repository@example.com")
   await writeFile(join(root, ".gitignore"), "node_modules\n.flows/\n")
   await writeFile(join(root, "README.md"), "# Trigger fixture\n")
+  const marker = join(temporary, "module-evaluated.marker")
   const target = JSON.stringify({ argv: [process.execPath, "-e", "process.exit(0)"], cwd: ".", timeoutMs: 30000 })
-  for (const [name, contents] of Object.entries(fixtures(target))) {
+  await mkdir(join(root, "node_modules/@smthrs"), { recursive: true })
+  await symlink(fileURLToPath(new URL("../../packages/smithers/flows/core", import.meta.url)), join(root, "node_modules/@smthrs/core"))
+  await symlink(fileURLToPath(new URL("../../node_modules/effect", import.meta.url)), join(root, "node_modules/effect"))
+  for (const [name, contents] of Object.entries(fixtures(target, marker))) {
     await mkdir(join(root, name.split("/").slice(0, -1).join("/")), { recursive: true })
     await writeFile(join(root, name), contents)
   }
@@ -121,7 +136,7 @@ async function makeRepository(t: TestContext): Promise<Fixture> {
   const base = { repositoryPath: root, adapterPath: adapter, sourcePublication: "local-only" as const, exporterPath: exporter }
   const native = await Effect.runPromise(Effect.flatMap(NativeCoding, coding => coding.read()).pipe(
     Effect.provide(nativeLayer(base)), Effect.provide(platform.host), Effect.scoped))
-  return { root, jj, base, native, registrations: [], dispatches: [], settled: () => { passed = true } }
+  return { root, jj, base, native, marker, registrations: [], dispatches: [], settled: () => { passed = true } }
 }
 
 async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) => Promise<void>) {
@@ -196,7 +211,7 @@ async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) =>
       if (outputs.length === 1) return { output: outputs[0] } as { failure?: string; output?: any }
       return { failure: JSON.stringify(events) } as { failure?: string; output?: any }
     }).pipe(Effect.provideService(Control.Control, control)))
-    yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, dispatches, head: native.head }))
+    yield* Effect.promise(() => use({ register, plan, approve, runFlow, flows, runs, registrations, dispatches, root, head: native.head }))
   }).pipe(Effect.provide(hostLayer), Effect.scoped))
 }
 
@@ -217,7 +232,7 @@ test("this host runs a maintainer's model-only markdown flow, and every flow the
   proveTrigger(t, async probe => {
     const listed = await probe.flows()
     assert(listed.includes("repository/trigger"), `repository/trigger must be registered; got ${JSON.stringify(listed)}`)
-    for (const name of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry"]) {
+    for (const name of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry", "loaded-module"]) {
       assert(listed.includes(name), `discovery lists ${name}; got ${JSON.stringify(listed)}`)
     }
     // The form the registrar admits is the form this host executes: plan it,
@@ -226,7 +241,7 @@ test("this host runs a maintainer's model-only markdown flow, and every flow the
     assert.equal(run?.status, "completed", `a model-only markdown flow must run here; got ${JSON.stringify(run)}`)
     // The picker and the registrar agree: every offered flow either registers
     // or is refused by a sentence that names it.
-    for (const flow of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry"]) {
+    for (const flow of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry", "loaded-module"]) {
       const answer = await probe.register({ ...REQUEST, slug: "picked", flow })
       says(String(answer.failure ?? JSON.stringify(answer.output)), `"${flow}"`)
     }
@@ -241,6 +256,10 @@ test("the form gate refuses a reserved name, an unknown flow, a module entry, a 
     says(String(unknown.failure), "nightly-report")
     const module = await probe.register({ ...REQUEST, slug: "modular", flow: "module-entry" })
     says(String(module.failure), `"module-entry" is a flow.ts. Schedules run flow.mdx.`)
+    // The entry a catalog accepts takes the same branch: the gate reads the
+    // discovered body, never an import.
+    const loaded = await probe.register({ ...REQUEST, slug: "loaded", flow: "loaded-module" })
+    says(String(loaded.failure), `"loaded-module" is a flow.ts. Schedules run flow.mdx.`)
     const declared = await probe.register({ ...REQUEST, slug: "declared", flow: "declared-input" })
     says(String(declared.failure), `"declared-input" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.`)
     const modelless = await probe.register({ ...REQUEST, slug: "delegated", flow: "nightly-check" })
@@ -320,6 +339,21 @@ test("the registrar reads the approved plan by id under the app's own request ke
   })
   fixture.settled()
 })
+
+test("a flow edited after its approval registers nothing, so no source revision names unapproved bytes", nativeOptions, t =>
+  proveTrigger(t, async probe => {
+    const input = { label: "nightly" }
+    const planned = await probe.plan("nightly-report", input, "trigger:edited:plan")
+    await probe.approve(planned)
+    // The person approved these bytes. The working copy moves before the
+    // registration reaches the snapshot the receipt would name.
+    await writeFile(join(probe.root, "flows/nightly-report/flow.mdx"), ["---", "description: A maintainer's own scheduled report.",
+      "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository and open an issue.", ""].join("\n"))
+    const edited = await probe.register({ ...REQUEST, requestId: "edited", input,
+      approvedPlanId: planned.planId, approvedPlanDigest: planned.digest })
+    says(String(edited.failure), `"nightly-report" changed on disk. Review the preview and approve it again.`)
+    assert.equal(probe.registrations.length, 0, "edited bytes register nothing")
+  }))
 
 test("two manual fires of one schedule are two dispatches", nativeOptions, t =>
   proveTrigger(t, async probe => {

@@ -1,6 +1,7 @@
 /** One repository flow, registered once on the schedule a person approved. */
 import * as Digest from "@smthrs/core/Digest"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
@@ -121,7 +122,13 @@ export const triggerLayers = Layer.mergeAll(
     if (!/^\d{1,2}$/.test(fields[0]!)) return yield* invalid("Schedules run at most once an hour.")
     const approvedPlanId = request.approvedPlanId ?? "", approvedPlanDigest = request.approvedPlanDigest ?? ""
     if (!approvedPlanId || !/^[a-f0-9]{64}$/.test(approvedPlanDigest)) return yield* invalid("a flow trigger must name the plan a person approved")
-    yield* admittedEntry(request.flow)
+    const descriptor = yield* admittedEntry(request.flow)
+    const executionDigest = Descriptor.executionDigest(descriptor)
+    // Discovery measured these bytes once, at host start. This is the second
+    // read, before the snapshot whose revision the receipt names, so a
+    // working copy edited after the approval cannot be labelled as approved.
+    yield* (yield* Registry.Registry).loadBody(request.flow, executionDigest).pipe(
+      Effect.mapError(() => invalid(`"${request.flow}" changed on disk. Review the preview and approve it again.`)))
     yield* (yield* Jj.Jj).snapshot("repository trigger registration")
     const source = (yield* (yield* NativeCoding).read()).head
     if (source.kind !== "resolved") return yield* invalid("Resolve native source conflicts before registering a schedule")
@@ -133,6 +140,9 @@ export const triggerLayers = Layer.mergeAll(
       Effect.mapError(() => invalid(`The approved plan for "${request.flow}" is not stored on this workspace.`)))
     const card = stored.card
     if (card.flowId !== request.flow) return yield* invalid(`The approved plan is for "${card.flowId}", not "${request.flow}".`)
+    if (card.executionDigest !== executionDigest) {
+      return yield* invalid(`The approved plan no longer reproduces for "${request.flow}"; review the preview and approve it again.`)
+    }
     if (card.digest !== approvedPlanDigest) return yield* invalid(`The approved plan for "${request.flow}" does not match the digest you sent.`)
     if (Digest.canonical(stored.decodedInput) !== Digest.canonical(request.input)) {
       return yield* invalid(`The approved plan for "${request.flow}" was made for different input.`)
