@@ -35,13 +35,16 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const labels = jobActions[state.job]
   const needsTrialPr = state.job === "review" || state.job === "ci"
   const trialPr = setupTrialPr(draft.trialBody)
-  const pending = state.request?.state === "requested" || state.request?.state === "running"
+  const recovering = state.recovery?.state === "requested"
+  const unknown = state.recovery !== undefined && state.recovery.registrationState !== "known"
+  const pending = recovering || state.request?.state === "requested" || state.request?.state === "running"
+  const owned = state.active?.owned !== false
   const set = (field: string, value: unknown) => onRunCommand("setup.configure", flowArgs("setup.configure", { cardId: card.id, field, value }))
   const run = (operation: "inspect" | "evaluate" | "trial" | "apply" | "pause") => onRunCommand("setup.run", flowArgs("setup.run", { cardId: card.id, operation }))
   const view = (next: RepositorySetup["view"], step?: string) => onRunCommand("setup.view", flowArgs("setup.view", { cardId: card.id, view: next, ...(step ? { step } : {}) }))
   const selected = draft.steps.find(step => step.id === state.selectedStep) ?? draft.steps[0]
   const gate = [...((state.job === "issues" || state.job === "review") && draft.replies !== "draft" ? ["Choose draft replies."] : []), ...setupActivationProblems(state)]
-  const activeMatches = state.active?.enabled && state.active.revision === state.revision && state.active.digest === setupCandidate(state)
+  const activeMatches = owned && !unknown && state.active?.enabled && state.active.revision === state.revision && state.active.digest === setupCandidate(state)
   const manual = state.manualDraft
   const workStep = draft.steps.find(step => step.id === manual?.stepId)
   const needsSubject = state.job === "issues" || state.job === "review" || state.job === "ci"
@@ -54,7 +57,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
     {observed.jobRunId && <button type="button" onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { runId: observed.jobRunId!, repo: state.repo, sourceCard: card.id }))}>Job run</button>}
   </div>
   return <div className="repository-setup" data-testid={`setup-${state.job}`}>
-    <div className="setup-heading"><span>{state.repo}</span><span>{state.active?.enabled ? state.active.revision === state.revision ? "Enabled" : "Enabled · draft changes" : "Off"}</span></div>
+    <div className="setup-heading"><span>{state.repo}</span><span>{unknown ? "" : state.active?.enabled ? state.active.revision === state.revision ? "Enabled" : "Enabled · draft changes" : state.active ? "Paused" : state.recovery?.trialRegistration ? state.recovery.trialRegistration.enabled ? "Trial" : "Paused" : "Off"}</span></div>
     <nav className="setup-tabs" aria-label="Setup views">{views.map(tab => <button type="button" key={tab.id} aria-current={state.view === tab.id ? "page" : undefined} onClick={() => view(tab.id)}>{tab.name}</button>)}</nav>
     {state.view === "flows" && <>
       {draft.steps.map(step => <div className="setup-step" key={step.id}>
@@ -62,7 +65,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         <label><span className="setup-sr-only">When to run {step.name}</span><select value={step.mode} onChange={event => set(`step.${step.id}.mode`, event.target.value)}>
           {Object.entries(modeNames).map(([mode, name]) => <option key={mode} value={mode}>{name}</option>)}
         </select></label>
-        {canRun && state.active?.enabled && step.mode !== "off" && <button type="button" aria-label={`Run ${step.name}`} onClick={() => onRunCommand("setup.work", flowArgs("setup.work", { cardId: card.id, stepId: step.id }))}>Run</button>}
+        {canRun && owned && !unknown && state.active?.enabled && step.mode !== "off" && <button type="button" aria-label={`Run ${step.name}`} onClick={() => onRunCommand("setup.work", flowArgs("setup.work", { cardId: card.id, stepId: step.id }))}>Run</button>}
       </div>)}
       <div className="setup-fields">
         {(state.job === "issues" || state.job === "review") && <label>Replies<select value={draft.replies} onChange={event => set("replies", event.target.value)}><option value="draft">Draft for approval</option>{draft.replies === "automatic" && <option value="automatic" disabled>Automatic (unavailable)</option>}</select></label>}
@@ -136,12 +139,12 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
       </div>}
     </>}
     {receipt && runAccess(receipt)}
-    {state.request?.state === "failed" && <div role="alert" className="setup-error"><p>{state.request.error}</p>{canRun && <button type="button" onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
+    {(state.request?.state === "failed" || state.recovery?.state === "failed") && <div role="alert" className="setup-error"><p>{state.recovery?.error ?? state.request?.error}</p>{canRun && <button type="button" disabled={recovering} onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
     <footer className="setup-actions" aria-live="polite">
       {preview ? <button type="button" onClick={() => onRunCommand("auth.prompt")}>Sign in</button> : practice ? <button type="button" onClick={() => onRunCommand("repo.choose")}>Choose repository</button> : <>
-        {pending && <span>{receipt?.phase === "waiting" ? "Waiting" : receipt?.phase === "running" ? "Running" : receipt?.phase === "queued" ? "Queued" : "Requested"}</span>}
-        {state.active?.enabled && <button type="button" disabled={pending} onClick={() => run("pause")}>Pause</button>}
-        <button type="button" disabled={pending || gate.length > 0 || (state.active?.enabled && state.active.revision === state.revision)} onClick={() => run("apply")}>{state.active?.enabled ? labels.update : labels.enable}</button>
+        {pending && <span>{recovering ? "Requested" : receipt?.phase === "waiting" ? "Waiting" : receipt?.phase === "running" ? "Running" : receipt?.phase === "queued" ? "Queued" : "Requested"}</span>}
+        {owned && !unknown && state.active?.enabled && <button type="button" disabled={pending} onClick={() => run("pause")}>Pause</button>}
+        <button type="button" disabled={pending || unknown || !owned || gate.length > 0 || (state.active?.enabled && state.active.revision === state.revision)} onClick={() => run("apply")}>{state.active?.enabled ? labels.update : labels.enable}</button>
         {gate.length > 0 && <span className="setup-gate">{gate[0]}</span>}
       </>}
     </footer>

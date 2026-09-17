@@ -122,6 +122,19 @@ describe("repository setup activation evidence", () => {
     expect(setupActivationProblems({ ...changed, evaluation: setup.evaluation, trial: setup.trial })).toHaveLength(2)
     expect(editSetup(changed, changed.draft)).toBe(changed)
   })
+  it("editing recovered pending work retains its read-only identity until a real terminal receipt arrives", () => {
+    const setup = proven()
+    setup.receipt = { ...receipt(setup, "apply"), phase: "waiting" }
+    setup.request = { id: setup.receipt.requestId, operation: "apply", revision: setup.revision, digest: setupCandidate(setup), state: "failed", error: "Disconnected", observeOnly: true }
+    const edited = editSetup(setup, { ...setup.draft, budgetMinutes: 12 })
+    expect(edited.request).toEqual(setup.request)
+    expect(edited.receipt?.phase).toBe("waiting")
+    expect(edited.evaluation).toBeUndefined()
+    expect(edited.trial).toBeUndefined()
+    const finished = editSetup({ ...edited, receipt: { ...edited.receipt!, phase: "completed" } }, { ...edited.draft, budgetMinutes: 13 })
+    expect(finished.request).toBeUndefined()
+    expect(finished.previousReceipts.find(item => item.requestId === setup.receipt!.requestId)?.phase).toBe("completed")
+  })
   it("requires a label for label-scoped activation and at least one enabled flow", () => {
     const setup = proven()
     setup.draft.scope = "label"

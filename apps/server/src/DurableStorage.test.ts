@@ -34,6 +34,29 @@ describe("DurableStorage over the platform storage", () => {
     expect(failure?.operation).toBe("storage.put reports")
   })
 
+  test("batch admission is one platform write and failed serialization commits no keys", async () => {
+    const storage = memoryStorage({ retained: 1 }), calls: unknown[] = []
+    const layer = storageLayer({ ...storage, put: async (key, value) => { calls.push(key); await storage.put(key, value) } })
+    await Effect.runPromise(DurableStorage.use(store => store.putMany({ request: { id: 1 }, pointer: 1, queue: [1] })).pipe(Effect.provide(layer)))
+    expect(calls).toEqual([{ request: { id: 1 }, pointer: 1, queue: [1] }])
+    const before = [...storage.data]
+    const failed = await Effect.runPromise(DurableStorage.use(store => store.putMany({ request: { id: 2 }, pointer: 2, queue: () => {} })).pipe(Effect.result, Effect.provide(layer)))
+    expect(Result.isFailure(failed)).toBe(true)
+    expect([...storage.data]).toEqual(before)
+    const row = await storage.get<{ id: number }>("request"); row!.id = 99
+    expect(await storage.get<{ id: number }>("request")).toEqual({ id: 1 })
+  })
+
+  test("prefix pagination reads cloned rows and proves the final partial page", async () => {
+    const storage = memoryStorage({ "r:b": { value: 2 }, "r:a": { value: 1 }, "other:a": 3 })
+    const rows = await Effect.runPromise(DurableStorage.use(store => store.list<{ value: number }>({ prefix: "r:", limit: 1 })).pipe(Effect.provide(storageLayer(storage))))
+    expect([...rows.keys()]).toEqual(["r:a"])
+    rows.get("r:a")!.value = 9
+    const rest = await storage.list!({ prefix: "r:", limit: 50, startAfter: "r:a" })
+    expect([...rest]).toEqual([["r:b", { value: 2 }]])
+    expect(await storage.get<{ value: number }>("r:a")).toEqual({ value: 1 })
+  })
+
   test("namespaceCall addresses the object by name and returns its answer", async () => {
     const seen: Array<string> = []
     const namespace = {

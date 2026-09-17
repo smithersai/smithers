@@ -2302,7 +2302,7 @@ const memoryStorage = (seed?: Record<string, unknown>): TurnCancelStorage => {
   const data = new Map<string, unknown>(Object.entries(seed ?? {}))
   return {
     get: async (key) => data.get(key) as never,
-    put: async (key, value) => void data.set(key, value)
+    put: async (key, value) => { for (const [name, item] of typeof key === "string" ? [[key, value]] as const : Object.entries(key)) data.set(name, item) }
   }
 }
 

@@ -5,6 +5,7 @@ import { configLayer } from "./Config"
 import type { ServerConfig, ServerEnvVars } from "./Config"
 import { storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
+import { memoryStorage } from "./DurableStorage"
 import { GatewaySessionRegistry, gatewayResolutionsLayer, gatewaySessionRequest, makeGatewayResolutions } from "./gateway"
 import type { GatewayRecord } from "./gateway"
 import { TransportLive } from "./Http"
@@ -52,17 +53,7 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   }
   // The fixture's map IS the object's storage: recreating the object (a
   // Worker restart) keeps the rows, like a Durable Object keeps its SQLite.
-  const nativeStorageOver = (data: Map<string, unknown>): NativeStorage => ({
-      get: <T>(key: string) => Promise.resolve(structuredClone(data.get(key)) as T | undefined),
-      put: (key: string, value: unknown) => {
-        data.set(key, structuredClone(value))
-        return Promise.resolve()
-      },
-      delete: (key: string) => {
-        data.delete(key)
-        return Promise.resolve()
-      }
-    })
+  const nativeStorageOver = (data: Map<string, unknown>): NativeStorage => memoryStorage(undefined, data)
   const storageOver = (data: Map<string, unknown>) => storageLayer(nativeStorageOver(data))
   const GATEWAY_SESSIONS: NativeNamespace = {
     idFromName: (name) => name,

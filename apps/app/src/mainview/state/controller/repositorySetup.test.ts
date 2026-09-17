@@ -1,11 +1,11 @@
-import { expect, test } from "bun:test"
-import { initialSetup, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft } from "@smthrs/rpc/RepositorySetup"
+import { expect, spyOn, test } from "bun:test"
+import { initialSetup, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { createAppStore } from "../AppStore"
 import { memoryStorage, recordingAgent, unavailableRepositories } from "../TestFixtures"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { ControllerContext } from "./context"
 import { createFailureController } from "./failures"
-import { createRepositorySetupController, type RepositorySetupDependencies } from "./repositorySetup"
+import { createRepositorySetupController, projectRecoveredSetup, type RepositorySetupDependencies } from "./repositorySetup"
 import { cardContainsRun, runScopeFromCard } from "../RunReference"
 import { PRACTICE_REPO } from "../practice/PracticeRepository"
 
@@ -33,16 +33,26 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
     payload: { ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1 }
   } }).isPersisted.promise
   const calls: Array<{ method: string; body: Body }> = []
+  const recovery = { calls: [] as string[], answer: async (repo: string, job: string): Promise<Response> => Response.json({ owner: "maintainer", repo, job, registration: { state: "known" }, setup: { state: "none" } }) }
   const disposers: Array<() => void> = []
   const background: Promise<unknown>[] = []
   let previous: Body
   const ctx = { store, commandActor: "user", baseUrl: "", workflowPollMs: 5, toastRuns: new Map(),
-    toastDebounceMs: 5, toastAutoDismissMs: 10000, disposed: false, unref: () => {},
+    toastDebounceMs: 5, toastAutoDismissMs: 10000, accountEpoch: 0, disposed: false, unref: () => {},
     onDispose: (close: () => void) => { disposers.push(close) },
     errorMessageOf: async () => "The host refused the request.",
     boundedFetch: async (_url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET"
-      const body = init?.body ? JSON.parse(String(init.body)) as Body : previous!
+      if (_url.includes("/state?")) {
+        recovery.calls.push(_url)
+        const url = new URL(_url, "https://app.test")
+        return recovery.answer(url.searchParams.get("repo")!, url.searchParams.get("job")!)
+      }
+      const selected = _url.includes("/observe?") ? [...store.collections.cards.values()].find(card => card.kind === "repository-setup" && card.payload.request?.id === new URL(_url, "https://app.test").searchParams.get("requestId")) : undefined
+      const observed = selected?.kind === "repository-setup" ? selected.payload : undefined
+      const body = init?.body ? JSON.parse(String(init.body)) as Body : observed?.request ? {
+        requestId: observed.request.id, repo: observed.repo, job: observed.job, revision: observed.request.revision, digest: observed.request.digest, draft: observed.draft, workspaceId: observed.workspaceId
+      } : previous!
       previous = body
       calls.push({ method, body })
       return answer(body, method)
@@ -55,7 +65,7 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
   const setup = createRepositorySetupController(ctx, dependencies)
   const state = () => (store.collections.cards.get("setup") as { payload: RepositorySetup }).payload
   const close = async () => { disposers.forEach(dispose => dispose()); await store.settled?.(); await store.dispose?.() }
-  return { store, storage, calls, background, setup, state, close, ctx }
+  return { store, storage, calls, recovery, background, setup, state, close, ctx }
 }
 
 const doors = (overrides: Partial<RepositorySetupDependencies> = {}): RepositorySetupDependencies => ({
@@ -150,7 +160,7 @@ test("reload reconnects the same persisted request without granting it success",
   const second = await fixture(async body => response(body), first.storage)
   try {
     expect(second.state().request?.state).toBe("requested")
-    second.setup.resumeRepositorySetups(); await Promise.all(second.background)
+    second.setup.resumeRepositorySetups(); await until(() => second.state().request?.state === "completed")
     expect(second.calls[0]?.body.requestId).toBe(id)
     expect(second.state().request?.state).toBe("completed")
   } finally { await second.close() }
@@ -359,7 +369,7 @@ test("new setup ignores an ambient older workspace and keeps the server's compat
     await t.close()
     const again = await fixture(async body => response(body, "failed", "inspect"), t.storage)
     try {
-      await again.setup.openRepositorySetup("ci", "example/repo")
+      await again.setup.openRepositorySetup("ci", "example/repo"); await Promise.all(again.background)
       await again.setup.retryRepositorySetup(card.id); await Promise.all(again.background)
       expect(again.calls).toHaveLength(1)
       expect(again.calls[0]?.body.workspaceId).toBe(workspaceId)
@@ -527,5 +537,296 @@ test("a bare manual Run opens the persisted work form instead of sending missing
     expect(t.state().view).toBe("work")
     expect(t.state().manualDraft).toMatchObject({ stepId: "research", prompt: "" })
     expect(t.calls).toHaveLength(0)
+  } finally { await t.close() }
+})
+
+const recoveredInspection = (repo = "example/repo"): SetupRecoveryResponse => {
+  const setup = initialSetup(repo, "issues", "maintainer")
+  const input = { requestId: "stored-inspection", operation: "inspect" as const, repo, job: setup.job, revision: 1, digest: setupCandidate(setup), draft: setup.draft }
+  const receipt = { requestId: input.requestId, runId: "stored-run", revision: 1, digest: input.digest, operation: "inspect" as const,
+    phase: "completed" as const, updatedAt: 10, results: [], evidence: ["source:abc"] }
+  return { owner: "maintainer", repo, job: "issues", registration: { state: "known" }, setup: { state: "found", input,
+    result: { requestId: input.requestId, revision: 1, digest: input.digest, workspaceId, receipt,
+      inspection: { inspectedAt: 10, sources: [{ path: "README.md", status: "read", summary: "Actual source", revision: "abc" }],
+        suggestedDraft: { ...setup.draft, cases: [{ id: "repo-case", name: "Repository case", input: "An example issue", expected: "A source-bound answer", required: true }] } } } } }
+}
+const setupCard = (t: Awaited<ReturnType<typeof fixture>>) => [...t.store.collections.cards.values()].find(card => card.kind === "repository-setup" && card.id !== "setup") as Extract<import("../AppState").Card, { kind: "repository-setup" }>
+
+// This is the actual absent-card/controller/store seam. Fixtures answer the
+// backend state contract explicitly; no local completion flags are seeded.
+test("missing-card recovery acknowledges before an unresolved read, coalesces opens and restores completed cases without POST", async () => {
+  const opened: string[] = []
+  const t = await fixture(async () => { throw Error("Recovery must not POST") }, memoryStorage(), doors({ openRun: async id => { opened.push(id) } })), held = deferred()
+  t.recovery.answer = async () => { await held.promise; return Response.json(recoveredInspection()) }
+  try {
+    const acknowledged = await Promise.race([t.setup.openRepositorySetup("issues", "example/repo"), new Promise(resolve => setTimeout(() => resolve("blocked"), 150))])
+    expect(acknowledged).not.toBe("blocked")
+    const card = setupCard(t)
+    expect(card.payload.recovery?.state).toBe("requested")
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    expect(t.recovery.calls).toHaveLength(1)
+    await t.setup.viewRepositorySetup(card.id, "evals")
+    expect(t.store.session().phase).toBe("idle")
+    await until(() => [...t.store.collections.toasts.values()].some(toast => toast.status === "running"))
+    held.release(); await Promise.all(t.background)
+    const restored = setupCard(t).payload
+    expect(restored.draft.cases.map(item => item.id)).toEqual(["repo-case"])
+    expect(restored.revision).toBe(2)
+    expect(restored.view).toBe("evals")
+    expect(restored.request?.observeOnly).toBe(true)
+    expect(restored.request?.state).toBe("completed")
+    expect(restored.previousReceipts[0]?.phase).toBe("completed")
+    expect(restored.workspaceId).toBe(workspaceId)
+    expect(opened).toEqual([])
+    expect(restored.evaluation).toBeUndefined()
+    expect(restored.trial).toBeUndefined()
+    expect(t.calls).toEqual([])
+  } finally { held.release(); await t.close() }
+})
+
+test("pending recovery survives restart; late old-owner replies and edited drafts are fenced", async () => {
+  const first = await fixture(async () => { throw Error("No launch") }), old = deferred()
+  first.recovery.answer = async () => { await old.promise; return Response.json(recoveredInspection()) }
+  await first.setup.openRepositorySetup("issues", "example/repo")
+  const id = setupCard(first).id
+  await first.close()
+  const t = await fixture(async () => { throw Error("No launch") }, first.storage), held = deferred()
+  t.recovery.answer = async () => { await held.promise; return Response.json(recoveredInspection()) }
+  try {
+    t.setup.resumeRepositorySetups()
+    await until(() => t.recovery.calls.length === 1)
+    await t.setup.configureRepositorySetup(id, "budgetMinutes", 17)
+    old.release(); await Promise.all(first.background)
+    held.release(); await Promise.all(t.background)
+    expect(setupCard(t).payload.draft.budgetMinutes).toBe(17)
+    expect(setupCard(t).payload.draft.cases).toEqual([])
+    expect(setupCard(t).payload.request?.id).toBe("stored-inspection")
+    expect(t.calls).toEqual([])
+    const again = deferred()
+    t.recovery.answer = async () => { await again.promise; return Response.json(recoveredInspection()) }
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    t.ctx.accountEpoch += 1
+    await t.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    again.release(); await Promise.all(t.background)
+    expect(setupCard(t)).toBeUndefined()
+    expect([...t.store.collections.cards.values()].some(card => card.kind === "repository-setup")).toBe(false)
+    expect(t.calls).toEqual([])
+  } finally { old.release(); held.release(); await t.close() }
+})
+
+test("actual observed apply completion cannot replace newer paused policy or become a new POST after reload", async () => {
+  const t = await fixture(async body => response(body, "completed", "apply"))
+  const recovered = recoveredInspection(), base = initialSetup("example/repo", "issues", "maintainer")
+  const digest = setupCandidate(base), newer = { ...base, revision: 3 }
+  recovered.setup = { state: "found", input: { requestId: "old-apply", operation: "apply", repo: base.repo, job: base.job, draft: base.draft, revision: 1, digest }, result: {
+    requestId: "old-apply", revision: 1, digest, workspaceId, receipt: { requestId: "old-apply", operation: "apply", revision: 1, digest, runId: "run-1", phase: "running", updatedAt: 2, results: [], evidence: ["run:run-1"] }
+  } }
+  recovered.registration = { state: "known", active: { registrationId: "registration-new", workspaceId, owned: true, enabled: false,
+    revision: 3, digest: setupCandidate(newer), sourceRevision: "new-source", draft: base.draft } }
+  t.recovery.answer = async () => Response.json(recovered)
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    await until(() => setupCard(t).payload.request?.state === "completed")
+    expect(setupCard(t).payload.active?.enabled).toBe(false)
+    expect(setupCard(t).payload.active?.revision).toBe(3)
+    expect(setupCard(t).payload.revision).toBe(4)
+    expect(t.calls.map(call => call.method)).toEqual(["GET"])
+    const id = setupCard(t).id
+    await t.close()
+    const again = await fixture(async body => response(body, "completed", "apply"), t.storage)
+    try {
+      await again.setup.retryRepositorySetup(id); await Promise.all(again.background)
+      expect(again.calls.map(call => call.method)).toEqual(["GET"])
+      expect(setupCard(again).payload.active?.enabled).toBe(false)
+      expect(setupCard(again).payload.request?.observeOnly).toBe(true)
+    } finally { await again.close() }
+  } finally { await t.close() }
+})
+
+test("partial recovery failure never launches a fresh inspection or infers missing eval and trial proof", async () => {
+  const t = await fixture(async () => { throw Error("No launch") })
+  const base = initialSetup("example/repo", "issues", "maintainer")
+  const registration = { registrationId: "active-foreign", workspaceId, revision: 4, digest: setupCandidate({ ...base, revision: 4 }), sourceRevision: "source", enabled: true, owned: false, draft: base.draft }
+  t.recovery.answer = async () => Response.json({ owner: "maintainer", repo: base.repo, job: base.job, registration: { state: "known", active: registration }, setup: { state: "unavailable", error: "Stored receipt is unavailable" } })
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.active?.enabled).toBe(true)
+    expect(card.payload.active?.owned).toBe(false)
+    expect(card.payload.workspaceId).toBeUndefined()
+    expect(card.payload.recovery?.registrationState).toBe("known")
+    expect(card.payload.evaluation).toBeUndefined()
+    expect(card.payload.trial).toBeUndefined()
+    expect(card.payload.recovery?.state).toBe("failed")
+    expect(t.calls).toEqual([])
+    t.recovery.answer = async () => Response.json({ owner: "maintainer", repo: base.repo, job: base.job, registration: { state: "unavailable", error: "HTTP 503" }, setup: { state: "none" } })
+    await t.setup.retryRepositorySetup(card.id); await Promise.all(t.background)
+    expect(setupCard(t).payload.recovery?.registrationState).toBe("unavailable")
+    expect(setupCard(t).payload.active?.enabled).toBe(true)
+    expect(t.calls).toEqual([])
+  } finally { await t.close() }
+})
+
+test("expired unknown execution has a finite failure toast and its Retry only observes", async () => {
+  const t = await fixture(async (_body, method) => { expect(method).toBe("GET"); return Response.json({ message: "No recorded run" }, { status: 503 }) })
+  const recovered = recoveredInspection()
+  if (recovered.setup.state !== "found") throw Error("fixture")
+  const input = { ...recovered.setup.input, operation: "apply" as const }
+  recovered.setup = { state: "found", input, observationError: "Expired", result: { requestId: input.requestId, revision: input.revision, digest: input.digest,
+    receipt: { requestId: input.requestId, revision: input.revision, digest: input.digest, operation: "apply", phase: "queued", updatedAt: 1, results: [], evidence: [] } } }
+  t.recovery.answer = async () => Response.json(recovered)
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.request?.state).toBe("failed")
+    expect(card.payload.request?.error).toContain("unknown")
+    expect(t.calls).toEqual([])
+    expect([...t.store.collections.toasts.values()].every(toast => toast.status !== "running")).toBe(true)
+    await t.setup.retryRepositorySetup(card.id); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["GET"])
+    expect(setupCard(t).payload.receipt?.phase).toBe("queued")
+  } finally { await t.close() }
+})
+
+test("known-run observation error gets one bounded read; another failure settles and Retry remains read-only", async () => {
+  let failing = true
+  const t = await fixture(async body => {
+    if (failing) return Response.json({}, { status: 503 })
+    const result = await response(body, "completed", "evaluate").json() as { receipt: { runId: string } }
+    result.receipt.runId = "stored-run"
+    return Response.json(result)
+  })
+  const recovered = recoveredInspection()
+  if (recovered.setup.state !== "found") throw Error("fixture")
+  recovered.setup = { ...recovered.setup, observationError: "Observation expired", input: { ...recovered.setup.input, operation: "evaluate" },
+    result: { ...recovered.setup.result, inspection: undefined, receipt: { ...recovered.setup.result.receipt!, operation: "evaluate", phase: "waiting" } } }
+  t.recovery.answer = async () => Response.json(recovered)
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    await until(() => setupCard(t).payload.request?.state === "failed")
+    const id = setupCard(t).id
+    expect(t.calls.map(call => call.method)).toEqual(["GET"])
+    expect(setupCard(t).payload.receipt?.phase).toBe("waiting")
+    expect([...t.store.collections.toasts.values()].every(toast => toast.status !== "running")).toBe(true)
+    failing = false
+    await t.setup.retryRepositorySetup(id); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["GET", "GET"])
+    expect(setupCard(t).payload.request?.state).toBe("completed")
+  } finally { await t.close() }
+})
+
+test("recovery rejects mismatched candidate and workspace identities while retaining current input", () => {
+  const initial = initialSetup("example/repo", "issues", "maintainer")
+  const current = { ...initial, recovery: { id: "recover", baseRevision: 1, baseDigest: setupCandidate(initial), adoptDraft: true, state: "requested" as const, registrationState: "unknown" as const } }
+  const badDigest = recoveredInspection()
+  if (badDigest.setup.state !== "found") throw Error("fixture")
+  badDigest.setup.input.draft.budgetMinutes += 1
+  expect(() => projectRecoveredSetup(current, badDigest)).toThrow("does not match")
+  const wrongWorkspace = recoveredInspection()
+  if (wrongWorkspace.setup.state !== "found") throw Error("fixture")
+  wrongWorkspace.setup.input.workspaceId = "22222222-2222-4222-8222-222222222222"
+  expect(() => projectRecoveredSetup(current, wrongWorkspace)).toThrow("does not match")
+  expect(current.revision).toBe(1)
+})
+
+test("edits survive a failed discovery followed by successful Retry and later refresh", async () => {
+  const t = await fixture(async () => { throw Error("No launch") }), held = deferred()
+  t.recovery.answer = async () => { await held.promise; return Response.json({ owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "unavailable", error: "Offline" }, setup: { state: "none" } }) }
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    const id = setupCard(t).id
+    await t.setup.configureRepositorySetup(id, "budgetMinutes", 19)
+    held.release(); await Promise.all(t.background)
+    t.recovery.answer = async () => Response.json(recoveredInspection())
+    await t.setup.retryRepositorySetup(id); await Promise.all(t.background)
+    expect(setupCard(t).payload.draft.budgetMinutes).toBe(19)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    expect(setupCard(t).payload.draft.budgetMinutes).toBe(19)
+    expect(t.calls).toEqual([])
+  } finally { held.release(); await t.close() }
+})
+
+test("held recovery admission persists before network and duplicates cannot cross a failed sign-out epoch", async () => {
+  const t = await fixture(async () => { throw Error("No launch") }), held = deferred()
+  const dispatch = t.store.dispatch.bind(t.store)
+  let persisting = false
+  const spy = spyOn(t.store, "dispatch").mockImplementation(transition => {
+    const result = dispatch(transition)
+    if (transition.type !== "card.upsert" || transition.card.kind !== "repository-setup" || transition.card.payload.recovery?.state !== "requested") return result
+    persisting = true
+    const persisted = { ...result.isPersisted, promise: held.promise.then(() => result.isPersisted.promise) }
+    return new Proxy(result, { get: (target, key, receiver) => key === "isPersisted" ? persisted : Reflect.get(target, key, receiver) })
+  })
+  try {
+    const first = t.setup.openRepositorySetup("issues", "example/repo")
+    await until(() => persisting)
+    const duplicate = t.setup.openRepositorySetup("issues", "example/repo")
+    expect(t.recovery.calls).toEqual([])
+    // The identity row remains after refused local sign-out cleanup, but the
+    // account epoch already invalidates both waiting admissions.
+    t.ctx.accountEpoch += 1
+    held.release(); await Promise.all([first, duplicate])
+    expect(t.recovery.calls).toEqual([])
+    expect(t.calls).toEqual([])
+  } finally { held.release(); spy.mockRestore(); await t.close() }
+})
+
+test.each(["registration", "setup"] as const)("a held %s partial-response body cannot cross owner epochs or release the next observer", async failed => {
+  const t = await fixture(async () => { throw Error("No launch") }), old = deferred(), next = deferred()
+  let count = 0, reading = false
+  const value: SetupRecoveryResponse = failed === "registration" ? { ...recoveredInspection(), registration: { state: "unavailable", error: "Policy offline" } }
+    : { owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "known" }, setup: { state: "unavailable", error: "Receipt offline" } }
+  t.recovery.answer = async () => {
+    count += 1
+    if (count > 1) { await next.promise; return Response.json(recoveredInspection()) }
+    const response = Response.json(value)
+    response.json = async () => { reading = true; await old.promise; return value }
+    return response
+  }
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    await until(() => reading)
+    t.ctx.accountEpoch += 1
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    expect(count).toBe(2)
+    old.release(); await t.background[0]
+    expect(setupCard(t).payload.recovery?.state).toBe("requested")
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    expect(count).toBe(2)
+    next.release(); await Promise.all(t.background)
+    expect(setupCard(t).payload.request?.state).toBe("completed")
+    expect(setupCard(t).payload.recovery?.state).toBe("completed")
+    expect(setupCard(t).payload.draft.cases[0]?.id).toBe("repo-case")
+    expect(t.calls).toEqual([])
+  } finally { old.release(); next.release(); await t.close() }
+})
+
+test("a late discovery remains bound to its explicit repository when global selection changes", async () => {
+  const t = await fixture(async () => { throw Error("No launch") }), held = deferred()
+  t.recovery.answer = async () => { await held.promise; return Response.json(recoveredInspection()) }
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo")
+    await t.store.dispatch({ type: "repo.selected", actor: "user", id: "other/repository" }).isPersisted.promise
+    held.release(); await Promise.all(t.background)
+    expect(setupCard(t).payload.repo).toBe("example/repo")
+    expect(setupCard(t).payload.request?.state).toBe("completed")
+    expect(t.recovery.calls.every(url => new URL(url, "https://app.test").searchParams.get("repo") === "example/repo")).toBe(true)
+    expect(t.calls).toEqual([])
+  } finally { held.release(); await t.close() }
+})
+
+test("a changed server session cannot adopt another account's recovery before the local identity row refreshes", async () => {
+  const t = await fixture(async () => { throw Error("No launch") })
+  t.recovery.answer = async () => Response.json({ ...recoveredInspection(), owner: "bob" })
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.owner).toBe("maintainer")
+    expect(card.payload.recovery?.error).toContain("different account")
+    expect(card.payload.workspaceId).toBeUndefined()
+    expect(card.payload.request).toBeUndefined()
+    expect(card.payload.draft.cases).toEqual([])
+    expect(card.payload.active).toBeUndefined()
+    expect(t.calls).toEqual([])
   } finally { await t.close() }
 })

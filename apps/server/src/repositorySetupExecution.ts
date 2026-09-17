@@ -42,10 +42,11 @@ const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(functi
 })
 
 /** Credentials stay in the existing gateway relay; the fixed caller chooses the procedure. */
-const rpc = (login: string, record: SetupRecord, procedure: string, payload: unknown) => Effect.gen(function* () {
+const rpc = (login: string, record: SetupRecord, procedure: string, payload: unknown, observeOnly = false) => Effect.gen(function* () {
   const outcome = yield* callGateway(login, record.input.repo, GATEWAY_PROCEDURE_MOUNTS[procedure]!, {
     method: "POST", workspaceId: record.binding?.workspaceId ?? record.input.workspaceId, text: encodeGatewayRequest(procedure, payload),
     requiredCapability: "repository-jobs/v1",
+    provision: !observeOnly,
     // A later durable retry retains the persisted key; this relay never
     // repeats a consequential Run within one attempt after losing its answer.
     replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)
@@ -66,11 +67,12 @@ const rpc = (login: string, record: SetupRecord, procedure: string, payload: unk
  * Run keys; the modern control journal joins them. No browser-supplied receipt
  * or completion boolean participates in approval or activation.
  */
-export const advanceRepositorySetup = (login: string, requestId: string): Effect.Effect<void, never, Services> => Effect.gen(function* () {
+const executeRepositorySetup = (login: string, requestId: string, observeOnly: boolean): Effect.Effect<void, never, Services> => Effect.gen(function* () {
   const requests = yield* SetupRequests
   let record = yield* requests.read(login, requestId)
   if (!record || record.result) return
-  if (!record.binding) {
+  if (observeOnly && (!record.runId || !record.binding?.workspaceId)) return yield* Effect.fail(failure("The previous setup has no recorded run to reconnect. Its execution state is unknown."))
+  if (!observeOnly && !record.binding) {
     const workspace = yield* setupWorkspace(login, record)
     if (workspace.status === "pending") {
       if (record.observationError) yield* requests.update(login, record, { ...record, observationError: undefined })
@@ -89,14 +91,14 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
     if (gateway.status !== "ready") return yield* Effect.fail(failure(gateway.detail))
     record = yield* requests.update(login, record, { ...record, binding: { gatewayId: gateway.record.gatewayId, workspaceId: gateway.record.workspaceId } })
   }
-  if (!record.plan) {
+  if (!observeOnly && !record.plan) {
     const planned = SetupPlanSchema.safeParse(yield* rpc(login, record, "Plan", {
       flowId: "repository/setup", input: { ...record.input, ...(record.binding?.workspaceId ? { workspaceId: record.binding.workspaceId } : {}) }, idempotencyKey: `setup:${requestId}:plan`
     }))
     if (!planned.success) return yield* Effect.fail(failure("The workspace did not return a source-bound repository setup plan"))
     record = yield* requests.update(login, record, { ...record, plan: planned.data, observationError: undefined })
   }
-  if (!record.runId && record.plan) {
+  if (!observeOnly && !record.runId && record.plan) {
     const { planId, digest, envelope } = record.plan
     yield* rpc(login, record, "Approval.Submit", { target: { _tag: "Plan", planId, digest, envelope },
       scope: "run", decision: "approve", idempotencyKey: `setup:${requestId}:approve` })
@@ -106,7 +108,7 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
       receipt: { ...record.receipt, runId: started.runId, phase: "queued", updatedAt: Date.now(), evidence: [`run:${started.runId}`] } })
   }
   if (!record.runId) return
-  const snapshot = recordOf(yield* rpc(login, record, "Projection.Snapshot", { selector: { _tag: "run-summary", runId: record.runId } }))
+  const snapshot = recordOf(yield* rpc(login, record, "Projection.Snapshot", { selector: { _tag: "run-summary", runId: record.runId } }, observeOnly))
   const rows = snapshot.rows
   if (!Array.isArray(rows)) return yield* Effect.fail(failure("The workspace did not return the setup run projection"))
   const run = rows.map(recordOf).find(row => row.runId === record!.runId)
@@ -131,6 +133,7 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
     const result = decoded.data
     const { input } = record
     if (result.requestId !== input.requestId || result.digest !== input.digest || result.revision !== input.revision
+      || (result.workspaceId !== undefined && result.workspaceId !== record.binding?.workspaceId)
       || (result.inspection !== undefined && input.operation !== "inspect")
       || (input.operation === "inspect" && result.inspection === undefined)
       || (result.receipt !== undefined && (result.receipt.requestId !== input.requestId || result.receipt.digest !== input.digest || result.receipt.revision !== input.revision
@@ -157,3 +160,9 @@ export const advanceRepositorySetup = (login: string, requestId: string): Effect
   const record = yield* requests.read(login, requestId)
   if (record && !record.result) yield* requests.update(login, record, { ...record, observationError: error.message.slice(0, 1000) })
 }).pipe(Effect.catch(() => Effect.void))))
+
+/** Normal admission alone may provision, plan, approve and start its durable request. */
+export const advanceRepositorySetup = (login: string, requestId: string) => executeRepositorySetup(login, requestId, false)
+
+/** Recovered observers can only read the already recorded run, never replay admission. */
+export const observeRepositorySetup = (login: string, requestId: string) => executeRepositorySetup(login, requestId, true)

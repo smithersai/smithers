@@ -1,4 +1,5 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
+import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { afterEach,describe,expect,test } from "bun:test"
@@ -137,6 +138,44 @@ const installProjectorFixture = async (storage: StorageApi, version: number, ret
 }
 
 describe("the live store's authoritative event path", () => {
+  test("version 4 upgrade preserves setup cases and an unfinished receipt; recovery markers survive the next reopen", async () => {
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    const payload = initialSetup("org/repo", "issues", "alice")
+    payload.draft.cases = [{ id: "retained-case", name: "Retained case", input: "An issue", expected: "A source-bound answer", required: true }]
+    const candidate = setupCandidate(payload)
+    payload.request = { id: "retained-request", operation: "evaluate", revision: 1, digest: candidate, state: "running" }
+    payload.receipt = { requestId: "retained-request", operation: "evaluate", revision: 1, digest: candidate, runId: "retained-run", phase: "waiting", updatedAt: 1, results: [], evidence: ["run:retained-run"] }
+    await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1, payload } }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 4 }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", { ...old.head, projectorVersion: 4 }], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage), card = restored.collections.cards.get("setup")!
+    if (card.kind !== "repository-setup") throw Error("Setup was not retained")
+    expect(card.payload).toEqual(payload)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(5)
+    await restored.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { ...card.payload,
+      request: { ...card.payload.request!, observeOnly: true }, recovery: { id: "recover", baseRevision: 1, baseDigest: candidate, state: "requested", registrationState: "unknown", adoptDraft: false }
+    } } }).isPersisted.promise
+    await restored.dispose?.(); opened.splice(opened.indexOf(restored), 1)
+    const reopened = await open(storage), resumed = reopened.collections.cards.get("setup")!
+    if (resumed.kind !== "repository-setup") throw Error("Setup was not retained")
+    expect(resumed.payload.request?.observeOnly).toBe(true)
+    expect(resumed.payload.recovery?.state).toBe("requested")
+    expect(resumed.payload.receipt?.phase).toBe("waiting")
+    expect(resumed.payload.trial).toBeUndefined()
+    expect(resumed.payload.evaluation).toBeUndefined()
+    expect((await reopened.verifyState()).valid).toBe(true)
+  })
+
   test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
     const storage = memoryStorage()
     const store = await open(storage)

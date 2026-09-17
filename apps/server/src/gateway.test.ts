@@ -1191,9 +1191,9 @@ describe("the gateway session registry", () => {
           if (failures.get) throw new Error("read failed")
           return rows.get(key) as T | undefined
         },
-        put: async (key: string, value: unknown) => {
+        put: async (key, value) => {
           if (failures.put) throw new Error("write failed")
-          rows.set(key, value)
+          for (const [name, item] of typeof key === "string" ? [[key, value]] as const : Object.entries(key)) rows.set(name, item)
         }
       }
     }

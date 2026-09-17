@@ -91,7 +91,14 @@ export type SetupReceipt = z.infer<typeof SetupReceiptSchema>
 export const SetupRequestSchema = z.object({
   id: z.string().min(1), operation: SetupOperationSchema,
   revision: z.number().int().positive(), digest: z.string(),
-  state: z.enum(["requested", "running", "completed", "failed"]), error: z.string().optional(), manual: SetupManualRequestSchema.optional()
+  state: z.enum(["requested", "running", "completed", "failed"]), error: z.string().optional(), manual: SetupManualRequestSchema.optional(),
+  observeOnly: z.boolean().optional()
+})
+/** Backend policy truth is separate from evidence that can authorize a new candidate. @since 1.0.0 */
+export const SetupRegistrationSchema = z.object({
+  registrationId: z.string().min(1), workspaceId: z.string().uuid(), revision: z.number().int().positive(),
+  digest: z.string().regex(/^[0-9a-f]{64}$/), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean(),
+  draft: SetupDraftSchema
 })
 /** The settings card projects a draft and separately verified active version. @since 1.0.0 */
 export const RepositorySetupSchema = z.object({
@@ -104,7 +111,12 @@ export const RepositorySetupSchema = z.object({
   request: SetupRequestSchema.optional(), evaluation: SetupReceiptSchema.optional(), trial: SetupReceiptSchema.optional(),
   receipt: SetupReceiptSchema.optional(),
   previousReceipts: z.array(SetupReceiptSchema).max(50).default([]),
-  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean() }).optional()
+  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean().optional() }).optional(),
+  recovery: z.object({ id: z.string().min(1), baseRevision: z.number().int().positive(), baseDigest: z.string(),
+    adoptDraft: z.boolean().optional(),
+    state: z.enum(["requested", "completed", "failed"]), registrationState: z.enum(["unknown", "known", "unavailable"]),
+    error: z.string().optional(), trialRegistration: SetupRegistrationSchema.optional()
+  }).optional()
 })
 /** Durable setup state retained inside a card and checked by the host. @since 1.0.0 */
 export type RepositorySetup = z.infer<typeof RepositorySetupSchema>
@@ -198,6 +210,7 @@ export function editSetup(setup: RepositorySetup, draft: SetupDraft): Repository
   if (JSON.stringify(parsed) === JSON.stringify(current.draft)) return current
   const { request: _request, evaluation: _evaluation, trial: _trial, receipt: _receipt, ...preserved } = current
   return { ...preserved, revision: current.revision + 1, draft: parsed,
+    ...(_request?.observeOnly && (!current.receipt || !terminalReceipt(current.receipt)) ? { request: _request, ...(_receipt ? { receipt: _receipt } : {}) } : {}),
     previousReceipts: rememberReceipts([...current.previousReceipts, ...availableReceipts(current)]) }
 }
 
@@ -208,6 +221,22 @@ export const SetupOperationResponseSchema = z.object({
   receipt: SetupReceiptSchema.optional(),
   inspection: z.object({ sources: z.array(SetupSourceSchema), suggestedDraft: SetupDraftSchema, inspectedAt: z.number() }).optional()
 }).refine(value => value.receipt !== undefined || value.inspection !== undefined, "An operation must return observed state")
+
+/** Read-only recovery cannot manufacture evals or authorize host execution. @since 1.0.0 */
+export const SetupRecoveryResponseSchema = z.object({
+  owner: z.string().min(1), repo: z.string(), job: RepositoryJobSchema,
+  registration: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("known"), active: SetupRegistrationSchema.optional(), trial: SetupRegistrationSchema.optional() }),
+    z.object({ state: z.literal("unavailable"), error: z.string() })
+  ]),
+  setup: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("found"), input: SetupHostInputSchema, result: SetupOperationResponseSchema, observationError: z.string().optional() }),
+    z.object({ state: z.literal("none") }),
+    z.object({ state: z.literal("unavailable"), error: z.string() })
+  ])
+})
+/** Independent policy and stored-request results, including partial failure. @since 1.0.0 */
+export type SetupRecoveryResponse = z.infer<typeof SetupRecoveryResponseSchema>
 
 /** Whether the candidate has direct, current evidence sufficient to request activation. @since 1.0.0 */
 export function setupActivationProblems(setup: RepositorySetup): string[] {

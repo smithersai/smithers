@@ -127,7 +127,8 @@ describe("the client-error log (Durable Object state)", () => {
           return structuredClone(data.get(key)) as never
         },
         put: async (key, value) => {
-          data.set(key, structuredClone(value))
+          const entries = structuredClone(typeof key === "string" ? [[key, value]] : Object.entries(key)) as Array<[string, unknown]>
+          for (const [name, item] of entries) data.set(name, item)
           trace.push("put")
         }
       }

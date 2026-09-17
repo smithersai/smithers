@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
-import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupCandidate, type SetupHostInput, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import worker from "./index"
+import { setupPointerKey, type SetupRecord } from "./repositorySetupStore"
 import { memoryDurableObjects } from "./memoryDurableObjects"
 
 const originalFetch = globalThis.fetch
@@ -20,7 +21,7 @@ async function fixture() {
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
     sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed";
-    workspaceRefusal?: { status: number; code: string; message: string } } = { runState: "running", workspaceState: "running" }
+    workspaceRefusal?: { status: number; code: string; message: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
   const plans = new Map<string, Record<string, unknown>>()
@@ -34,6 +35,11 @@ async function fixture() {
       return !login || login === "expired" ? Response.json({}, { status: 401 }) : Response.json({ login, allowlisted: login !== "visitor", admin: false })
     }
     if (url.hostname === "cloud.test") {
+      if (url.pathname === "/api/user") return Response.json(options.userError ? {} : { id: request.headers.get("authorization") === "Bearer cloud-alice" ? 1 : 2 }, { status: options.userError ? 503 : 200 })
+      if (url.pathname.endsWith("/repository-jobs")) {
+        if (options.holdRegistrations) await options.holdRegistrations
+        return Response.json(options.registrations ?? [], { status: options.registrationError ? 503 : 200 })
+      }
       if (options.beforeWorkspace) await options.beforeWorkspace
       const login = request.headers.get("authorization")?.replace("Bearer cloud-", "") as keyof typeof workspaceIds
       expect(workspaceIds[login]).toBeDefined()
@@ -54,6 +60,7 @@ async function fixture() {
     expect(request.headers.get("authorization")).toBe(`Bearer synthetic-${login}`)
     const body = JSON.parse(await request.text()) as { tag: string; payload: Record<string, unknown> }
     calls.push({ login, ...body })
+    if (body.tag === "Projection.Snapshot" && options.relayStatus) return Response.json({ message: "Unavailable" }, { status: options.relayStatus })
     if (options.sleepBefore === body.tag) {
       options.sleepBefore = undefined
       options.incompatibleHost = options.rejectResumedHost
@@ -73,7 +80,8 @@ async function fixture() {
     const operation = (calls.find(call => call.login === login && call.tag === "Plan")!.payload.input as { operation: string }).operation
     const receipt = { requestId: options.wrongResult ? "different-request" : input.requestId, runId: `run-${id}`, revision: input.revision, digest: input.digest,
       operation, phase: "completed", updatedAt: Date.now(), results: [], evidence: ["actual-host-artifact"],
-      ...(operation === "run" ? { jobRunId: "actual-manual-job" } : {}) }
+      ...(operation === "run" ? { jobRunId: "actual-manual-job" } : {}),
+      ...(operation === "apply" ? { registrationId: "registration-1", sourceRevision: "a".repeat(40) } : {}) }
     return frame({ selector: body.payload.selector, rows: [{ runId: `run-${id}`, flowId: "repository/setup", status: options.runState, updatedAt: Date.now(), verdict: "Run failed",
       ...(options.runState === "completed" && options.resultPayload !== "missing" ? { finalOutput: options.resultPayload === "malformed" ? "not JSON" : JSON.stringify({ requestId: receipt.requestId, revision: input.revision, digest: input.digest, receipt }) } : {}) }] })
   }) as typeof fetch
@@ -432,4 +440,119 @@ test("a mismatched completed result leaves the original candidate unverified", a
   await t.send("POST", "evaluate", "alice", t.input); await t.settle()
   expect((await t.read()).status).toBe(503); await t.settle()
   expect(t.launched.size).toBe(1)
+})
+
+const policyRow = (source: ReturnType<typeof initialSetup>, enabled = true, userId = 1) => ({
+  id: "registration-1", workspace_id: "11111111-1111-4111-8111-111111111111", user_id: userId, job: source.job, mode: "enabled",
+  revision: source.revision, digest: setupCandidate(source), source_revision: "b".repeat(40), flow_id: `repository-jobs/${source.job}`, enabled,
+  configuration: { repo: source.repo, workspace_id: "11111111-1111-4111-8111-111111111111", source_revision: "b".repeat(40), flow_id: `repository-jobs/${source.job}`, mode: "enabled", revision: source.revision, digest: setupCandidate(source), input: source.draft,
+    envelope: { private: "not-public" }, execution_digest: "not-public" }
+})
+
+test("discovery reads current paused policy and exact owned request without replaying an old apply", async () => {
+  const t = await fixture()
+  await t.send("POST", "apply", "alice", t.input); await t.settle()
+  const writes = t.calls.filter(call => call.tag !== "Projection.Snapshot").length
+  const newer = { ...initialSetup("org/repo", "issues", "alice"), revision: 2 }
+  t.options.registrations = [policyRow(newer, false)]
+  t.options.runState = "completed"
+  const raw = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).text()
+  const recovered = JSON.parse(raw) as SetupRecoveryResponse
+  expect(recovered.owner).toBe("alice")
+  expect(recovered.registration.state).toBe("known")
+  if (recovered.registration.state !== "known" || recovered.setup.state !== "found") throw Error("Expected recovery")
+  expect(recovered.registration.active?.enabled).toBe(false)
+  expect(recovered.registration.active?.revision).toBe(2)
+  expect(recovered.registration.active?.owned).toBe(true)
+  expect(recovered.setup.result.receipt?.phase).toBe("running")
+  expect(raw.includes("not-public")).toBe(false)
+  expect(raw.includes("synthetic-")).toBe(false)
+  const response = await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)
+  expect(response.status).toBe(200)
+  expect((await response.json() as { receipt: { phase: string } }).receipt.phase).toBe("completed")
+  expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(writes)
+  expect(t.launched.size).toBe(1)
+  const after = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  expect(after.registration.state === "known" && after.registration.active?.enabled).toBe(false)
+  expect(t.workspaceCalls.filter(call => call.method === "POST")).toHaveLength(1)
+})
+
+test("expired legacy setup without a recorded run fails reconnection without provisioning or Plan", async () => {
+  const t = await fixture(), input: SetupHostInput = { ...t.input, operation: "apply" }
+  const old: SetupRecord = { version: 0, input, observationError: "Expired", receipt: { requestId: input.requestId, revision: 1, digest: input.digest,
+    operation: "apply", phase: "queued", updatedAt: 1, results: [], evidence: [] } }
+  t.durable.gatewayRows("alice").set(`repository-setup:request:${input.requestId}`, old)
+  const state = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  expect(state.setup.state).toBe("found")
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
+  expect((await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${input.requestId}`)).status).toBe(503)
+  await t.settle()
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
+  expect(t.durable.gatewayRows("alice").has("repository-setup:pending")).toBe(false)
+  expect((t.durable.gatewayRows("alice").get(`repository-setup:request:${input.requestId}`) as SetupRecord).receipt.phase).toBe("queued")
+})
+
+test("registration failure and invalid legacy state stay independent; foreign activator is never an owned binding", async () => {
+  const t = await fixture()
+  t.options.registrations = [policyRow(initialSetup("org/repo", "issues", "alice"))]
+  let recovered = await (await t.send("GET", "state?repo=org%2Frepo&job=issues", "bob")).json() as SetupRecoveryResponse
+  expect(recovered.owner).toBe("bob")
+  expect(recovered.registration.state === "known" && recovered.registration.active?.owned).toBe(false)
+  expect(recovered.setup.state).toBe("none")
+  t.durable.gatewayRows("alice").set(setupPointerKey("org/repo", "issues"), { sequence: 3, requestId: "missing" })
+  recovered = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  expect(recovered.registration.state).toBe("known")
+  expect(recovered.setup.state).toBe("unavailable")
+  t.durable.gatewayRows("alice").delete(setupPointerKey("org/repo", "issues"))
+  t.options.registrationError = true
+  recovered = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  expect(recovered.registration.state).toBe("unavailable")
+  expect(recovered.setup.state).toBe("none")
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
+  expect((await t.send("GET", "state?repo=org%2Frepo&job=issues", "")).status).toBe(401)
+})
+
+test.each(["expired", "missing", "sleeping", "401", "502"])("recovered observation with %s gateway never wakes, renews or starts a workspace", async kind => {
+  const t = await fixture()
+  await t.send("POST", "apply", "alice", t.input); await t.settle()
+  const before = { capabilities: t.capabilityCalls.length, workspace: t.workspaceCalls.length, writes: t.calls.filter(call => call.tag !== "Projection.Snapshot").length }
+  const key = `gateway:org/repo\u0000${t.workspaceIds.alice}`
+  const rows = t.durable.gatewayRows("alice")
+  if (kind === "expired") rows.set(key, { ...rows.get(key) as object, renewAfter: 0 })
+  else if (kind === "missing") rows.delete(key)
+  else if (kind === "sleeping") t.options.sleepBefore = "Projection.Snapshot"
+  else t.options.relayStatus = Number(kind)
+  expect((await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)).status).toBe(503)
+  await t.settle()
+  expect(t.capabilityCalls).toHaveLength(before.capabilities)
+  expect(t.workspaceCalls).toHaveLength(before.workspace)
+  expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(before.writes)
+  expect(t.launched.size).toBe(1)
+})
+
+test.each(["source_revision", "flow_id", "mode", "digest", "workspace_id"])("registration recovery refuses inconsistent inner %s proof", async field => {
+  const t = await fixture(), row = policyRow(initialSetup("org/repo", "issues", "alice"))
+  Object.assign(row.configuration, { [field]: field === "mode" ? "trial" : field === "workspace_id" ? t.workspaceIds.bob : "different" })
+  t.options.registrations = [row]
+  const state = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  expect(state.registration.state).toBe("unavailable")
+  expect(state.setup.state).toBe("none")
+  expect(t.calls).toEqual([])
+  expect(t.workspaceCalls).toEqual([])
+})
+
+test("paused active and paused trial registrations remain distinct facts with no fabricated receipts", async () => {
+  const t = await fixture(), active = policyRow(initialSetup("org/repo", "issues", "alice"), false)
+  const trial = { ...active, id: "trial-registration", mode: "trial", configuration: { ...active.configuration, mode: "trial" } }
+  t.options.registrations = [active, trial]
+  const state = await (await t.send("GET", "state?repo=org%2Frepo&job=issues")).json() as SetupRecoveryResponse
+  if (state.registration.state !== "known") throw Error("Expected actual registration state")
+  expect(state.registration.active?.enabled).toBe(false)
+  expect(state.registration.trial?.enabled).toBe(false)
+  expect(state.registration.trial?.registrationId).toBe("trial-registration")
+  expect(state.setup.state).toBe("none")
+  expect(t.calls).toEqual([])
 })

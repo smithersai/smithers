@@ -26,6 +26,37 @@ const mount = (card = makeCard(), signedOut = false) => {
   return { host, calls, render, button, close: () => { flushSync(() => root.unmount()); host.remove() } }
 }
 
+test("recovery uses the existing status and Retry slot without claiming Off or borrowing another maintainer's actions", () => {
+  const card = makeCard()
+  card.payload.recovery = { id: "recover", baseRevision: 1, baseDigest: setupCandidate(card.payload), state: "requested", registrationState: "unknown" }
+  const t = mount(card)
+  const status = () => t.host.querySelector(".setup-heading")?.lastElementChild?.textContent
+  try {
+    expect(status()).toBe("")
+    expect(t.button("Enable issue handling")?.disabled).toBe(true)
+    card.payload.recovery = { ...card.payload.recovery, state: "failed", error: "Registration unavailable", registrationState: "unavailable" }
+    t.render(card)
+    expect(status()).toBe("")
+    t.button("Retry")!.click()
+    expect(t.calls).toEqual([["setup.retry", card.id]])
+    card.payload.recovery = { ...card.payload.recovery, state: "completed", error: undefined, registrationState: "known" }
+    card.payload.active = { revision: 1, digest: setupCandidate(card.payload), registrationId: "active", sourceRevision: "source", enabled: true, owned: false }
+    t.render(card)
+    expect(status()).toBe("Enabled")
+    expect(t.button("Pause")).toBeUndefined()
+    expect(t.button("Run")).toBeUndefined()
+    expect(t.button("Update issue handling")?.disabled).toBe(true)
+    card.payload.active = { ...card.payload.active, enabled: false, owned: true }
+    t.render(card)
+    expect(status()).toBe("Paused")
+    card.payload.active = undefined
+    card.payload.recovery.trialRegistration = { revision: 1, digest: setupCandidate(card.payload), registrationId: "trial", sourceRevision: "source", enabled: true, owned: true,
+      workspaceId: "11111111-1111-4111-8111-111111111111", draft: card.payload.draft }
+    t.render(card)
+    expect(status()).toBe("Trial")
+  } finally { t.close() }
+})
+
 test("signed-out preview has a real sign-in door, editable native controls and no network action", () => {
   const t = mount(makeCard(), true)
   try {

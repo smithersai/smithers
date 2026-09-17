@@ -73,7 +73,13 @@ export const createNativeTurnJournal = (stateDir: string | undefined) => {
             const row = db.query<{ value: string }, [string, string]>("SELECT value FROM turn_storage WHERE scope=? AND key=?").get(scope, key)
             return row === null ? undefined : JSON.parse(row.value) as T
           },
-          put: async (key, value) => { db.query("INSERT INTO turn_storage(scope,key,value) VALUES(?,?,?) ON CONFLICT(scope,key) DO UPDATE SET value=excluded.value").run(scope, key, JSON.stringify(value)) },
+          put: async (key, value) => {
+            const entries = (typeof key === "string" ? [[key, value]] as const : Object.entries(key)).map(([name, item]) => [name, JSON.stringify(item)] as const)
+            db.transaction(() => {
+              const write = db.query("INSERT INTO turn_storage(scope,key,value) VALUES(?,?,?) ON CONFLICT(scope,key) DO UPDATE SET value=excluded.value")
+              for (const [name, encoded] of entries) write.run(scope, name, encoded)
+            })()
+          },
           delete: async key => { db.query("DELETE FROM turn_storage WHERE scope=? AND key=?").run(scope, key) }
         }
         object = new TurnCancelRegistry({ storage })
