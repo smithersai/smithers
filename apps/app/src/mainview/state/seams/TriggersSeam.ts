@@ -52,8 +52,19 @@ const TRIGGER_APPROVAL_PATH = "/api/workflow/trigger-approval"
 /** The workspace built-in that registers a repository flow on a schedule. */
 const REGISTRAR_FLOW = "repository/trigger"
 
+/**
+ * The registrar's own refusal code (flows/repository/triggers.ts). Every
+ * sentence it carries is about the person's input or their flow, so it names
+ * the fault the way the typed-failures rule requires and the app never has to
+ * read the prose to decide whose problem it is.
+ */
+const REGISTRAR_REFUSAL = "invalid_receipt"
+
 /** One registration attempt's run card; the same attempt never registers twice. */
 const registrationCardId = (requestId: string): string => `trigger-register-${requestId}`
+
+/** The run id a refused launch leaves on its card: the workspace named none. */
+const unlaunchedRunId = (requestId: string): string => `pending-${requestId}`
 
 /** A run this client has seen settle: nothing is left to watch or to reconnect to. */
 const SETTLED_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "stopped"])
@@ -396,6 +407,9 @@ const summarize = (repo: string, declared: ReadonlyArray<FactoryRule>, live: Liv
 }
 
 export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): TriggersSeam => {
+  /** The attempts this session has in flight, by requestId: a second press joins one rather than starting another. */
+  const attempts = new Map<string, Promise<unknown>>()
+
   const listTriggers = async (repoArg?: string): Promise<string | void | { readonly value: string }> => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
@@ -549,7 +563,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     input: unknown
   ): Promise<string | { readonly value: string }> => {
     const refuse = async (message: string): Promise<string> => {
-      await putRunCard(requestId, repo, slug, { runId: `pending-${requestId}`, phase: "failed", error: message })
+      await putRunCard(requestId, repo, slug, { runId: unlaunchedRunId(requestId), phase: "failed", error: message })
       return message
     }
     const items = await registrarFlows(repo)
@@ -612,7 +626,27 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const runId = typeof started.value.runId === "string" ? started.value.runId : undefined
     if (runId === undefined) return refuse("The registration started but the workspace didn't name the run.")
     await putRunCard(requestId, repo, slug, { runId, phase: "running" })
-    return watchRegistration(requestId, repo, slug, runId)
+    return watchRegistration(requestId, repo, slug)
+  }
+
+  /**
+   * The refusing party's own sentence for a failed run, read from the run's
+   * journal rather than from the gateway's verdict.
+   *
+   * The verdict is a one-line summary: it puts the failure's machine code in
+   * front of the sentence and clips the pair to a hundred characters, so the
+   * longer registrar refusals lose the instruction they end with. The journal
+   * carries what the run actually recorded — `<code>: <sentence>` and then the
+   * rendered cause — and the code the registrar writes says whose problem it
+   * is, so the sentence can stand on its own.
+   */
+  const refusalOfRun = (repo: string, runId: string): string | undefined => {
+    const events = ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.events ?? []
+    const failed = events.filter((event) => event.kind === "control.run.failed").at(-1)
+    const payload = failed === undefined || !isRecord(failed.payload) ? undefined : failed.payload
+    if (typeof payload?.cause !== "string") return undefined
+    const line = payload.cause.split(/[\r\n]/, 1)[0] ?? ""
+    return line.startsWith(`${REGISTRAR_REFUSAL}: `) ? line.slice(REGISTRAR_REFUSAL.length + 2) : line
   }
 
   /**
@@ -624,26 +658,37 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   const watchRegistration = async (
     requestId: string,
     repo: string,
-    slug: string,
-    runId: string
+    slug: string
   ): Promise<string | { readonly value: string }> => {
-    await runtime.watchRun(registrationCardId(requestId))
-    const summary = ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.summary
+    const cardId = registrationCardId(requestId)
+    await runtime.watchRun(cardId)
+    /* The run this attempt reached is the one on its card, not the one this call was handed. */
+    const held = ctx.store.collections.cards.get(cardId)
+    const runId = held?.kind === "run-trace" ? held.payload.runId : undefined
+    const summary = runId === undefined ? undefined : ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.summary
     if (summary?.status === "completed") {
       await listTriggers(repo)
       return { value: `${slug} runs on ${repo}.` }
     }
-    if (summary?.status === "failed" || summary?.status === "cancelled") return summary.verdict
+    if (runId !== undefined && (summary?.status === "failed" || summary?.status === "cancelled")) {
+      return refusalOfRun(repo, runId) ?? summary.verdict
+    }
     return `The registration of ${slug} on ${repo} is no longer being watched.`
   }
 
   /**
    * The human's approval, and only theirs (triggers.approve is userOnly).
    *
-   * The approval is persisted as this attempt's run card and answered at
-   * once; the workspace calls and the registrar run happen behind one notice
-   * that settles from the run rather than from its launch. A second press
-   * reconnects to the attempt already running instead of registering twice.
+   * The approval is answered at once; the workspace calls and the registrar
+   * run happen behind one notice that settles from the run rather than from
+   * its launch. Pressing again while the attempt is in flight, or while its
+   * run is still being watched, joins what is already running: one plan, one
+   * receipt, one run.
+   *
+   * The card appears when the attempt has something durable to say — the run
+   * the workspace named, or the refusal that stopped it. A card naming a run
+   * nobody started is what stranded the attempt across a reload: the app's own
+   * resume watched a run the workspace had never heard of.
    */
   const approveTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
     const slug = request.slug ?? ""
@@ -663,16 +708,20 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       }
     }
     const held = ctx.store.collections.cards.get(registrationCardId(requestId))
-    const running = held?.kind === "run-trace" && !SETTLED_PHASES.has(held.payload.phase) ? held.payload.runId : undefined
-    if (running === undefined) await putRunCard(requestId, repo, slug, { runId: `pending-${requestId}`, phase: "launching" })
-    void runtime.withToast(
-      `trigger.register.${repo}.${slug}`,
-      `Registering ${slug} on ${repo}…`,
-      `${slug} registered`,
-      running === undefined
-        ? () => runRegistration(request, repo, slug, requestId, planId, planDigest, input)
-        : () => watchRegistration(requestId, repo, slug, running)
-    )
+    const watching = held?.kind === "run-trace" && !SETTLED_PHASES.has(held.payload.phase) &&
+      held.payload.runId !== unlaunchedRunId(requestId)
+    if (!attempts.has(requestId) && !watching) {
+      const attempt = runtime.withToast(
+        `trigger.register.${repo}.${slug}`,
+        `Registering ${slug} on ${repo}…`,
+        `${slug} registered`,
+        () => runRegistration(request, repo, slug, requestId, planId, planDigest, input)
+      )
+      attempts.set(requestId, attempt)
+      void attempt.finally(() => {
+        if (attempts.get(requestId) === attempt) attempts.delete(requestId)
+      })
+    }
     return { value: `Registering ${slug} on ${repo}.` }
   }
 

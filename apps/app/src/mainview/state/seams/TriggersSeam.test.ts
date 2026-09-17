@@ -344,7 +344,8 @@ async (request) => {
   const frame = await request.json() as { procedure: string; payload: Record<string, unknown> }
   calls.push({ procedure: frame.procedure, payload: frame.payload })
   const answer = answers[frame.procedure]
-  return json(200, answer === undefined ? { ok: false, error: { message: `no stub for ${frame.procedure}` } } : answer(frame.payload))
+  /* A stub may answer late, or never: a launch a reload interrupts is a call the workspace never answers. */
+  return json(200, answer === undefined ? { ok: false, error: { message: `no stub for ${frame.procedure}` } } : await answer(frame.payload))
 }
 
 const okFrame = (payload: unknown) => ({ ok: true, payload })
@@ -356,18 +357,48 @@ const REGISTRAR_RUN = "run-1"
 /** How the registrar run stands, as the workspace's own run-summary projection answers for it. */
 interface HostRun {
   status: "running" | "completed" | "failed"
+  /** A completed run's own output line. A failed run's verdict is derived from its journal cause, as the gateway derives it. */
   verdict: string
+  /**
+   * What the agent journals on `control.run.failed`: `<code>: <sentence>` on
+   * the first line (internal/FailureSummary.ts), then the rendered cause.
+   */
+  cause?: string
 }
+
+/**
+ * The gateway's own one-line verdict for a failed run, as
+ * `packages/smithers/gateway` Diagnosis.verdict writes it: the cause's first
+ * line behind `failed — `, clipped to 100 code points. The registrar's code
+ * rides in front of the sentence, and a long sentence loses its ending.
+ */
+const hostVerdict = (cause: string): string => {
+  const line = cause.split(/[\r\n]/)[0] ?? ""
+  const points = [...line]
+  return `failed — ${points.length <= 100 ? line : `${points.slice(0, 99).join("")}…`}`
+}
+
+/** The one journal event a failed registrar run leaves behind. */
+const FAILED_SEQUENCE = 1
 
 const runSummarySnapshot = (run: HostRun, tag: string): unknown => {
   /* A settled run is newer lifecycle evidence than the running one it replaces. */
   const at = run.status === "running" ? 2 : 3
+  const verdict = run.status === "failed" ? hostVerdict(run.cause ?? "") : run.verdict
+  if (tag === "run-events") {
+    return {
+      cursor: { selector: { _tag: tag, runId: REGISTRAR_RUN }, projection: tag, runId: REGISTRAR_RUN, value: FAILED_SEQUENCE, offset: 0 },
+      rows: run.cause === undefined ? [] : [{
+        sequence: FAILED_SEQUENCE, kind: "control.run.failed", runId: REGISTRAR_RUN, occurredAt: at, payload: { cause: run.cause }
+      }]
+    }
+  }
   return {
     cursor: { selector: { _tag: tag, runId: REGISTRAR_RUN }, projection: tag, runId: REGISTRAR_RUN, value: at, offset: 0 },
     rows: tag !== "run-summary" ? [] : [{
       runId: REGISTRAR_RUN, flowId: "repository/trigger", status: run.status, createdAt: 1, updatedAt: at,
       turns: 0, calls: 0, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
-      verdict: run.verdict, diagnosis: run.verdict
+      verdict, diagnosis: verdict
     }]
   }
 }
@@ -628,12 +659,23 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
  * already knows how to watch carries the outcome (AGENTS.md, instant chat).
  */
 describe("triggers seam: watching the registration run", () => {
-  const ROUTES = (calls: Array<RelayCall>, run: HostRun, extra: Record<string, Route> = {}) => watched(backend({
+  const ROUTES = (
+    calls: Array<RelayCall>,
+    run: HostRun,
+    extra: Record<string, Route> = {},
+    answers: Record<string, (payload: Record<string, unknown>) => unknown> = {}
+  ) => watched(backend({
     [PROJECTION]: projectionDocument(DAY_ONE),
-    [RPC]: relayRoute(calls, workspaceAnswers({}, run)),
+    [RPC]: relayRoute(calls, workspaceAnswers(answers, run)),
     [APPROVAL]: json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 }),
     ...extra
   }))
+
+  /** The registrar's own refusal, as the host writes it: one coded error, one sentence for the person. */
+  const MODEL_REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
+  const DECLARED_INPUT =
+    '"declared-input" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.'
+  const journalCause = (sentence: string): string => `invalid_receipt: ${sentence}\n    at repository/trigger (flows/repository/triggers.ts:20)`
 
   const approved = async (store: AppStore, controller: Awaited<ReturnType<typeof ready>>["controller"]) => {
     await controller.registerTrigger(REQUEST)
@@ -644,18 +686,44 @@ describe("triggers seam: watching the registration run", () => {
     return String((JSON.parse(args) as Record<string, unknown>).requestId)
   }
 
+  /*
+   * The falsifier for every fake in this file: the run-summary shape below is
+   * what the real gateway projects for a real registrar refusal, measured on
+   * host 54db60f5 through GatewayProjection.runSummary. If the fake ever
+   * drifts to a bare sentence, this fails.
+   */
+  test("the fake's verdict is what the real gateway projects: the code in front and 100 code points of it", () => {
+    expect(hostVerdict(journalCause('Add a model to "nightly-check" to schedule it.')))
+      .toBe('failed — invalid_receipt: Add a model to "nightly-check" to schedule it.')
+    expect(hostVerdict(journalCause(DECLARED_INPUT)))
+      .toBe('failed — invalid_receipt: "declared-input" declares an input schema the engine ignores (discovery warning un…')
+  })
+
   test("a run that settles failed shows the host's own sentence as this run's typed failure", async () => {
     const calls: Array<RelayCall> = []
     const run: HostRun = { status: "running", verdict: "" }
     const { store, controller } = await ready(ROUTES(calls, run), { signedIn: true })
     const requestId = await approved(store, controller)
     await waitFor(() => registrationToast(store)?.status === "running")
+    run.cause = journalCause(MODEL_REFUSAL)
     run.status = "failed"
-    run.verdict = 'Add a model to "nightly-lint" to schedule it.'
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
-    expect(registrationRun(store, requestId)?.payload.error).toBe(run.verdict)
+    expect(registrationRun(store, requestId)?.payload.error).toContain(MODEL_REFUSAL)
     await waitFor(() => registrationToast(store)?.status === "failed")
-    expect(registrationToast(store)?.detail).toBe(run.verdict)
+    /* The host's own sentence, with no `failed — invalid_receipt:` in front of it. */
+    expect(registrationToast(store)?.detail).toBe(MODEL_REFUSAL)
+  })
+
+  test("a refusal longer than the gateway's one line still reaches the person whole", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await ready(ROUTES(calls, run), { signedIn: true })
+    await approved(store, controller)
+    await waitFor(() => registrationToast(store)?.status === "running")
+    run.cause = journalCause(DECLARED_INPUT)
+    run.status = "failed"
+    await waitFor(() => registrationToast(store)?.status === "failed")
+    expect(registrationToast(store)?.detail).toBe(DECLARED_INPUT)
   })
 
   test("a run that settles completed shows the registration the schedule now holds", async () => {
@@ -717,6 +785,60 @@ describe("triggers seam: watching the registration run", () => {
     resumed.controller.resumeWorkflowRuns()
     await waitFor(() => registrationRun(resumed.store, requestId)?.payload.phase === "completed")
     expect(calls.filter((call) => call.procedure === "Run")).toHaveLength(1)
+  })
+
+  test("a second press inside the launch window joins the attempt already running", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    let start = () => {}
+    const held = new Promise<void>((resolve) => { start = resolve })
+    const { store, controller } = await ready(
+      ROUTES(calls, run, {}, { Run: async () => { await held; return okFrame({ runId: REGISTRAR_RUN }) } }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger(REQUEST)
+    const args = lastAction(store)?.args ?? "{}"
+    expect((await controller.commands.run("triggers.approve", args)).status).toBe("executed")
+    await waitFor(() => calls.some((call) => call.procedure === "Run"))
+    /* The button has no pressed state, and the launch window is six relayed round trips. */
+    expect((await controller.commands.run("triggers.approve", args)).status).toBe("executed")
+    start()
+    run.status = "completed"
+    run.verdict = "Registered nightly on will/flows."
+    await waitFor(() => registrationToast(store)?.status === "ok")
+    expect(calls.filter((call) => call.procedure === "Run")).toHaveLength(1)
+  })
+
+  test("a reload inside the launch window strands nothing, and the approve button still registers", async () => {
+    const calls: Array<RelayCall> = []
+    const storage = memoryStorage()
+    const run: HostRun = { status: "running", verdict: "" }
+    /* A launch the reload interrupts: this `Run` is never answered, as a closed tab's never is. */
+    const unanswered = new Promise<never>(() => {})
+    const first = await ready(
+      ROUTES(calls, run, {}, { Run: () => unanswered }),
+      { signedIn: true, store: await createAppStore({ kind: "localStorage", storage }) }
+    )
+    await first.controller.registerTrigger(REQUEST)
+    const args = lastAction(first.store)?.args ?? "{}"
+    const requestId = String((JSON.parse(args) as Record<string, unknown>).requestId)
+    expect((await first.controller.commands.run("triggers.approve", args)).status).toBe("executed")
+    await waitFor(() => calls.some((call) => call.procedure === "Run"))
+    await first.controller.dispose()
+
+    const resumed = await ready(ROUTES(calls, run), {
+      signedIn: true, store: await createAppStore({ kind: "localStorage", storage })
+    })
+    resumed.controller.resumeWorkflowRuns()
+    /* No card names a run the workspace never started, so nothing reconnects to one. */
+    expect(registrationRun(resumed.store, requestId)).toBeUndefined()
+    expect((await resumed.controller.commands.run("triggers.approve", args)).status).toBe("executed")
+    run.status = "completed"
+    run.verdict = "Registered nightly on will/flows."
+    await waitFor(() => registrationRun(resumed.store, requestId)?.payload.phase === "completed")
+    /* The retry carries the attempt's own key, so the workspace can refuse a second run of the same registration. */
+    expect(calls.filter((call) => call.procedure === "Run").map((call) => call.payload.idempotencyKey))
+      .toEqual([`trigger:${requestId}:register-run`, `trigger:${requestId}:register-run`])
   })
 })
 
