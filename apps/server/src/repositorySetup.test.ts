@@ -348,12 +348,80 @@ test("a stored setup record without phase instants still decodes and finishes", 
   expect(t.launched.size).toBe(1)
 })
 
-test("the phase instants never reach the setup response", async () => {
+test("the phase instants never reach the setup response, which still carries the completed receipt", async () => {
   const t = await fixture()
   t.options.runState = "completed"
   await t.send("POST", "evaluate", "alice", t.input); await t.settle()
-  const body = await (await t.read()).text()
+  const response = await t.read()
+  expect(response.status).toBe(200)
+  const body = await response.text()
   for (const instant of PHASE_INSTANTS) expect(body.includes(instant)).toBe(false)
+  const result = JSON.parse(body) as { requestId: string; revision: number; digest: string; workspaceId: string
+    receipt: { requestId: string; runId: string; revision: number; digest: string; operation: string; phase: string; evidence: string[] } }
+  expect(result.requestId).toBe(t.input.requestId)
+  expect(result.revision).toBe(t.input.revision)
+  expect(result.digest).toBe(t.input.digest)
+  expect(result.workspaceId).toBe(t.workspaceIds.alice)
+  expect(result.receipt.phase).toBe("completed")
+  expect(result.receipt.operation).toBe("evaluate")
+  expect(result.receipt.runId).toBe("run-alice:setup-test")
+  expect(result.receipt.requestId).toBe(t.input.requestId)
+  expect(result.receipt.digest).toBe(t.input.digest)
+  expect(result.receipt.evidence).toEqual(["actual-host-artifact"])
+})
+
+const capturePhaseLines = () => {
+  const original = console.log
+  const lines: Array<Record<string, unknown>> = []
+  console.log = (...args: unknown[]) => {
+    const parsed = typeof args[0] === "string" && args[0].startsWith("{") ? JSON.parse(args[0]) as Record<string, unknown> : undefined
+    if (parsed?.event === "repository_setup_phases") lines.push(parsed)
+    else original(...args)
+  }
+  return { lines, restore: () => { console.log = original } }
+}
+
+test("a finished setup logs its phase durations exactly once across replayed advances and alarms", async () => {
+  const t = await fixture()
+  t.options.workspaceState = "starting"
+  const log = capturePhaseLines()
+  try {
+    await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+    expect(log.lines).toHaveLength(0)
+    t.options.workspaceState = "running"
+    await t.durable.runGatewayAlarms()
+    expect(log.lines).toHaveLength(0)
+    t.options.runState = "completed"
+    await t.durable.runGatewayAlarms()
+    expect(log.lines).toHaveLength(1)
+    const line = log.lines[0]!
+    expect(line).toMatchObject({ event: "repository_setup_phases", requestId: t.input.requestId, job: "issues",
+      operation: "evaluate", phase: "completed", runId: "run-alice:setup-test" })
+    for (const name of ["totalMs", "workspaceSelectedMs", "workspaceReadyMs", "gatewayReadyMs", "plannedMs", "approvedMs", "runStartedMs", "runMs"]) {
+      expect(typeof line[name]).toBe("number")
+      expect(line[name] as number).toBeGreaterThanOrEqual(0)
+    }
+    const text = JSON.stringify(line)
+    for (const secret of ["synthetic-", "cloud-", "Classify the issue", "org/repo"]) expect(text.includes(secret)).toBe(false)
+    t.durable.restart()
+    await t.durable.runGatewayAlarms()
+    await t.read(); await t.settle()
+    expect(log.lines).toHaveLength(1)
+  } finally { log.restore() }
+})
+
+test("a failed setup logs once and a logging failure never fails the request", async () => {
+  const t = await fixture()
+  t.options.runState = "failed"
+  const log = capturePhaseLines()
+  const broken = console.log
+  console.log = () => { throw Error("log sink is gone") }
+  try {
+    await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+    const failed = await t.read()
+    expect(failed.status).toBe(200)
+    expect((await failed.json() as { receipt: { phase: string } }).receipt.phase).toBe("failed")
+  } finally { console.log = broken; log.restore() }
 })
 
 test("retry can echo the server-pinned workspace but cannot move an admitted request", async () => {

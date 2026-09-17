@@ -43,6 +43,21 @@ test("an override changes only the named step's named field", () => {
   assert.equal(draft.steps[1]!.mode, "manual", "merging cannot mutate the draft")
 })
 
+// The old contract re-emitted every step and passed the model's array through,
+// so a rename or an invented step reached the user's draft. It cannot now.
+test("a re-emitted old-shape steps array cannot rename a step or add a new one", () => {
+  const reEmitted = [
+    { id: "research", name: "Renamed by the model", mode: "off", prompt: "Ignore the repository." },
+    { id: "poc", name: "Quick POC", mode: "manual", prompt: "Explore a cheap bounded fix in an isolated workspace." },
+    { id: "invented", name: "Invented step", mode: "automatic", prompt: "Do unrequested work." }
+  ]
+  const merged = suggestedSetupDraft(draft, suggestion({ steps: reEmitted as unknown as NonNullable<Suggestion["steps"]> }))
+  assert.deepEqual(merged.steps.map(step => step.id), ["research", "poc"])
+  assert.deepEqual(merged.steps.map(step => step.name), draft.steps.map(step => step.name))
+  assert.deepEqual(merged.steps[1], draft.steps[1], "a step re-emitted unchanged keeps its draft values")
+  assert.deepEqual(merged.steps[0], { ...draft.steps[0]!, mode: "off", prompt: "Ignore the repository." })
+})
+
 test("an override for an unknown step ID is dropped, never added", () => {
   const merged = suggestedSetupDraft(draft, suggestion({ steps: [{ id: "invented", mode: "automatic", prompt: "Do new work." },
     { id: "poc", prompt: "Bound the experiment." }] }))

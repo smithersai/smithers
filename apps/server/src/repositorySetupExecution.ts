@@ -14,6 +14,29 @@ type Instant = "workspaceSelectedAt" | "workspaceReadyAt" | "gatewayReadyAt" | "
 /** A phase instant is written the first time its phase is reached and never again. */
 const stamps = (record: SetupRecord, ...names: readonly Instant[]): Partial<Record<Instant, number>> =>
   Object.fromEntries(names.filter(name => record[name] === undefined).map(name => [name, Date.now()]))
+const PHASE_SEGMENTS: readonly (readonly [string, "createdAt" | Instant])[] = [["workspaceSelectedMs", "createdAt"],
+  ["workspaceReadyMs", "workspaceSelectedAt"], ["gatewayReadyMs", "workspaceReadyAt"], ["plannedMs", "gatewayReadyAt"],
+  ["approvedMs", "plannedAt"], ["runStartedMs", "approvedAt"], ["runMs", "runStartedAt"]]
+/**
+ * One bounded, content-free line per finished request, so the phase clock has a
+ * consumer. It carries identifiers and durations only: no prompt, repository,
+ * issue or user text, and no credential. Logging never fails the request.
+ */
+const logSetupPhases = (record: SetupRecord, terminalAt: number) => {
+  const at = (name: "createdAt" | Instant) => record[name]
+  const durations = Object.fromEntries(PHASE_SEGMENTS.flatMap(([name, from], index) => {
+    const start = at(from), end = index + 1 < PHASE_SEGMENTS.length ? at(PHASE_SEGMENTS[index + 1]![1]) : terminalAt
+    return start === undefined || end === undefined ? [] : [[name, end - start]]
+  }))
+  try {
+    console.log(JSON.stringify({ event: "repository_setup_phases", requestId: record.input.requestId, job: record.input.job,
+      operation: record.input.operation, phase: record.receipt.phase, ...(record.runId ? { runId: record.runId } : {}),
+      ...(record.createdAt === undefined ? {} : { totalMs: terminalAt - record.createdAt }), ...durations }))
+  } catch { /* Observability never decides whether a finished setup request stands. */ }
+}
+/** The store refuses a second terminal write, so only the committed one logs. */
+const finish = (record: SetupRecord, stored: SetupRecord, terminalAt: number) =>
+  stored.version === record.version + 1 ? Effect.sync(() => logSetupPhases(stored, terminalAt)) : Effect.void
 
 /** Cloud deduplicates one compatible automation VM without replacing the user's existing primary. */
 const setupWorkspace = (login: string, record: SetupRecord) => Effect.gen(function* () {
@@ -149,17 +172,20 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
     if (result.receipt && !["completed", "failed", "stopped"].includes(result.receipt.phase)) return yield* Effect.fail(failure("The completed run returned an unfinished setup receipt"))
     if (record.input.operation === "run" && (!result.receipt || (result.receipt.phase === "completed" && !result.receipt.jobRunId))) return yield* Effect.fail(failure("The manual work returned no verified job run"))
     const completed = result.receipt ? { ...result, receipt: { ...result.receipt, runId: record.runId } } : result
-    yield* requests.update(login, record, { ...record, observationError: undefined, result: completed,
-      receipt: completed.receipt ?? { ...record.receipt, phase: "completed", updatedAt: Date.now() } })
+    const terminalAt = Date.now()
+    const stored = yield* requests.update(login, record, { ...record, observationError: undefined, result: completed,
+      receipt: completed.receipt ?? { ...record.receipt, phase: "completed", updatedAt: terminalAt } })
+    yield* finish(record, stored, terminalAt)
     return
   }
   const phase: SetupReceipt["phase"] | undefined = ({ accepted: "queued", queued: "queued", running: "running", "waiting-approval": "waiting", parked: "waiting", waiting: "waiting", failed: "failed", stopped: "stopped", cancelled: "stopped" } as Record<string, SetupReceipt["phase"]>)[String(run.status)]
   if (!phase) return yield* Effect.fail(failure("The workspace returned an unknown setup run state"))
   const receipt: SetupReceipt = { ...record.receipt, phase, updatedAt: typeof run.updatedAt === "number" ? run.updatedAt : Date.now(),
     ...(phase === "failed" || phase === "stopped" ? { error: typeof run.verdict === "string" ? run.verdict : `Setup ${phase}` } : {}) }
-  const terminal = phase === "failed" || phase === "stopped"
-  yield* requests.update(login, record, { ...record, receipt, observationError: undefined,
+  const terminal = phase === "failed" || phase === "stopped", terminalAt = Date.now()
+  const stored = yield* requests.update(login, record, { ...record, receipt, observationError: undefined,
     ...(terminal ? { result: { requestId, revision: record.input.revision, digest: record.input.digest, receipt } } : {}) })
+  if (terminal) yield* finish(record, stored, terminalAt)
 }).pipe(Effect.catch(error => Effect.gen(function* () {
   // Observation/transport failure cannot change the execution phase.
   const requests = yield* SetupRequests
