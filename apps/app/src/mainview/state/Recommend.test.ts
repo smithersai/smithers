@@ -5,7 +5,10 @@ import {
   isMaterialTransition,
   MAX_RECOMMENDATIONS,
   parseRecommendation,
+  RECOMMEND_RETRY_MAX_MS,
   recommendRequest,
+  recommendRetryAt,
+  recommendServiceOrigin,
   recommendTail,
   repositoryRecommendationTail,
   ruleSuggestions,
@@ -265,4 +268,47 @@ test("hidden repository observations fit the recommender contract without cuttin
   const observation = tail.at(-1)!
   expect(observation.role).toBe("system")
   expect(JSON.parse(observation.text.slice(observation.text.indexOf("\n") + 1))).toMatchObject({ truncated: true, openIssues: 20 })
+})
+
+describe("recommend: the retry window a 429 names", () => {
+  const now = Date.parse("2026-09-17T00:00:00.000Z")
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString()
+
+  test("the body's retryAt is the window, exact to the millisecond, and beats the header", () => {
+    expect(recommendRetryAt({ body: { status: "error", retryAt: iso(90_500) }, retryAfter: "3600" }, now)).toBe(now + 90_500)
+  })
+
+  test("without a body window, Retry-After delta seconds or an HTTP-date stands in", () => {
+    expect(recommendRetryAt({ body: undefined, retryAfter: "120" }, now)).toBe(now + 120_000)
+    expect(recommendRetryAt({ body: "<html>", retryAfter: " 7 " }, now)).toBe(now + 7_000)
+    expect(recommendRetryAt({ body: { retryAt: "soon" }, retryAfter: new Date(now + 30_000).toUTCString() }, now)).toBe(now + 30_000)
+  })
+
+  test("a missing, unparseable, past or present window is no window", () => {
+    expect(recommendRetryAt({ body: { status: "error" }, retryAfter: null }, now)).toBeUndefined()
+    expect(recommendRetryAt({ body: { retryAt: "not-a-date" }, retryAfter: "later" }, now)).toBeUndefined()
+    expect(recommendRetryAt({ body: { retryAt: 12345 }, retryAfter: "-5" }, now)).toBeUndefined()
+    expect(recommendRetryAt({ body: { retryAt: iso(-1) }, retryAfter: "0" }, now)).toBeUndefined()
+    expect(recommendRetryAt({ body: { retryAt: iso(0) }, retryAfter: null }, now)).toBeUndefined()
+    expect(recommendRetryAt({ body: null, retryAfter: "" }, now)).toBeUndefined()
+  })
+
+  test("a window past the daily bucket is clamped to it, never trusted whole", () => {
+    expect(recommendRetryAt({ body: { retryAt: iso(10 * RECOMMEND_RETRY_MAX_MS) }, retryAfter: null }, now)).toBe(now + RECOMMEND_RETRY_MAX_MS)
+    expect(recommendRetryAt({ body: undefined, retryAfter: String(3 * 24 * 60 * 60) }, now)).toBe(now + RECOMMEND_RETRY_MAX_MS)
+    expect(recommendRetryAt({ body: { retryAt: iso(RECOMMEND_RETRY_MAX_MS - 1) }, retryAfter: null }, now)).toBe(now + RECOMMEND_RETRY_MAX_MS - 1)
+  })
+})
+
+test("recommendation quota origins normalize hosts and resolve the current browser service", () => {
+  expect(recommendServiceOrigin("https://ALPHA.example:443/api", "https://beta.example/app")).toBe("https://alpha.example")
+  expect(recommendServiceOrigin("/service", "https://beta.example/app")).toBe("https://beta.example")
+  expect(recommendServiceOrigin("", "https://beta.example/owner/repo")).toBe("https://beta.example")
+  expect(recommendServiceOrigin("")).toBe("same-origin")
+})
+
+test("an invalid or opaque recommendation service does not retain a quota window", () => {
+  expect(recommendServiceOrigin("https://[")).toBeUndefined()
+  expect(recommendServiceOrigin("data:text/plain,hello")).toBeUndefined()
+  expect(recommendServiceOrigin("", "about:blank")).toBeUndefined()
 })

@@ -300,6 +300,7 @@ export const APP_TRANSITION_TYPES = {
   "target.starred": true,
   "target.unstarred": true,
   "recommendations.updated": true,
+  "recommendations.deferred": true,
 } as const satisfies Record<AppTransition["type"], true>
 export type AppProjectionPersistenceMode = "opfs" | "localStorage" | "memory"
 export interface AppProjectionEventContext {
@@ -3271,19 +3272,42 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (existing !== undefined && existing.revision > transition.revision) {
             break
           }
+          // The rule writes through a retry window; an agent answer proves the window is over.
+          const retry = transition.source === "agent" ? undefined : existing?.retry
           const row: Recommendation = {
             id: RECOMMENDATION_ID,
             suggestions: transition.suggestions.map((suggestion) => ({ ...suggestion })),
             source: transition.source,
             revision: transition.revision,
-            createdAt
+            createdAt,
+            ...(retry === undefined ? {} : { retry: { ...retry } })
           }
           if (existing === undefined) collections.recommendations.insert(row)
           else {
             collections.recommendations.update(RECOMMENDATION_ID, (draft) => {
               Object.assign(draft, row)
+              if (retry === undefined) delete draft.retry
             })
           }
+          break
+        }
+        case "recommendations.deferred": {
+          /*
+           * The window binds to the account that asked, read here like
+           * http.turn.started reads it: the persisted owner outlives an
+           * identity outage, a visitor is null, and an unknown owner (a legacy
+           * row before its first definitive answer) retains nothing, because
+           * there is no one to bind it to. No row means the account already
+           * left (forgetAccountState); a window for it would be an empty row.
+           */
+          const existing = collections.recommendations.get(RECOMMENDATION_ID)
+          if (existing === undefined) return
+          const identity = collections.identitySessions.get("identity")
+          const owner = identity === undefined ? undefined : accountOwner(identity)
+          if (owner === undefined) return
+          collections.recommendations.update(RECOMMENDATION_ID, (draft) => {
+            draft.retry = { at: transition.retryAt, owner, origin: transition.origin }
+          })
           break
         }
         default: {

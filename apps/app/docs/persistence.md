@@ -705,6 +705,34 @@ server answer when available. `App.tsx` projects the stored suggestions; before
 that row exists it uses the repository-step fallback. Reload retains the last
 recommendation while regeneration is pending.
 
+The row's optional `retry` field is the recommender's own retry window. When
+`POST /api/recommend` answers 429, the controller reads the window the server
+states (`retryAt` in the body first, then `Retry-After`; `recommendRetryAt` in
+`Recommend.ts`) and dispatches `recommendations.deferred`. The projection binds
+the window to the current account owner (`accountOwnerLogin`, which outlives an
+identity outage; a visitor is `null`; an unknown owner retains nothing). Before
+the window passes, a material change and a reload still write the rule's
+suggestions but send no request. A rule write keeps the window; an agent answer
+clears it; `forgetAccountState` drops the row with the account. A window whose
+owner differs from the current owner does not apply, so a visitor's spent
+bucket never closes the login that follows. A 429 without a usable window
+retains nothing: the next material change asks again, as before. A window past
+`RECOMMEND_RETRY_MAX_MS` (24h) is clamped.
+
+The retry also records its normalized service origin. Browser boot uses the
+page's origin; an injected `AppServices.baseUrl` resolves against that page.
+Changing hosts cannot reuse another service's cooldown, including when the
+same store is reopened. An old row without an origin does not block requests.
+An invalid or opaque origin retains no window.
+
+Only one request per current owner/epoch runs at once. New material revisions
+update the rule immediately and invalidate an older success; settlement may
+schedule the latest revision once. A 429 still closes the same owner's bucket
+even if the rule revision changed while waiting. Response-body reads recheck
+the owner and epoch before publication, and an old request cannot clear a newer
+owner's in-flight token. `controller/recommend.test.ts` pins these held-response
+and held-body boundaries with real controller/store dispatch.
+
 ## HumanTask answer drafts
 
 Human question input enters through `form.set` with `answer:<questionHash>`.

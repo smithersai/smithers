@@ -84,8 +84,20 @@ const recorder = (answers: Array<() => Response> = []) => {
 
 const answer = (id: string, commands: ReadonlyArray<string>) => () => json(200, { id, commands, model: "gpt-oss-120b" })
 
-const boot = async (services: AppServices = {}, repositories = unavailableRepositories, _freshTutorial = false) => {
-  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+/** The Worker's 429 exactly as turnLimitResponse writes it: the window in the body and in Retry-After. */
+const refused = (retryAt: number | string | undefined, retryAfter?: string) => () =>
+  new Response(
+    JSON.stringify({
+      status: "error",
+      code: "turn_rate_limited",
+      message: "Command suggestions have reached their daily limit. Chat keeps working; suggestions come back in about 3 hours. Nothing was charged.",
+      ...(retryAt === undefined ? {} : { retryAt: typeof retryAt === "number" ? new Date(retryAt).toISOString() : retryAt })
+    }),
+    { status: 429, headers: { "content-type": "application/json", ...(retryAfter === undefined ? {} : { "retry-after": retryAfter }) } }
+  )
+
+const boot = async (services: AppServices = {}, repositories = unavailableRepositories, _freshTutorial = false, storage = memoryStorage()) => {
+  const store = await createAppStore({ kind: "localStorage", storage })
   // Most tests isolate a later material event from the first-entry background read.
   const controller = createAppController(store, repositories, silentAgent, {
     bootstrap: cloudBootstrap,
@@ -98,15 +110,23 @@ const boot = async (services: AppServices = {}, repositories = unavailableReposi
 const row = (store: Awaited<ReturnType<typeof boot>>["store"]) =>
   store.collections.recommendations.get(RECOMMENDATION_ID)
 
-const signIn = (store: Awaited<ReturnType<typeof boot>>["store"]) =>
+const signIn = (store: Awaited<ReturnType<typeof boot>>["store"], login = "will") =>
   store.dispatch({
     type: "identity.session.loaded",
     actor: "system",
     state: "signed-in",
-    login: "will",
+    login,
     allowlisted: true,
     admin: false,
     scopesPlain: null
+  })
+
+/** A material change that carries no identity: what a tab open, a finished turn or a repo load look like to the recommender. */
+const materialChange = (store: Awaited<ReturnType<typeof boot>>["store"], step: string) =>
+  store.dispatch({
+    type: "tab.opened",
+    actor: "user",
+    tab: { id: `tab-${step}`, kind: "terminal", title: "Terminal", sessionId: `pty-${step}`, cwd: "/Users/will/smithers" }
   })
 
 describe("recommend: the flow", () => {
@@ -331,6 +351,169 @@ describe("recommend: the flow", () => {
     await settle()
     expect(row(store)?.source).toBe("rule")
     expect(worker.recommends().length).toBe(0)
+  })
+
+  test("a 429 that names its window closes the recommender until then: material changes and a reload send nothing more, the rule still writes", async () => {
+    const retryAt = Date.now() + 60 * 60 * 1000
+    const worker = recorder([refused(retryAt, "3600"), answer("rec-never", ["wiki"])])
+    const storage = memoryStorage()
+    const first = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, false, storage)
+    signIn(first.store)
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(first.store)?.source).toBe("rule")
+    expect(row(first.store)?.retry).toEqual({ at: retryAt, owner: "will", origin: "same-origin" })
+
+    // Every material change still regenerates the rule's pills, and sends nothing.
+    let writes = 0
+    const writer = first.store.collections.recommendations.subscribeChanges(() => { writes += 1 })
+    for (const step of [1, 2, 3]) {
+      const before = writes
+      materialChange(first.store, String(step))
+      await settle()
+      expect(worker.recommends().length).toBe(1)
+      expect(writes).toBeGreaterThan(before)
+      expect(row(first.store)?.source).toBe("rule")
+      expect(row(first.store)?.suggestions.length).toBeGreaterThan(0)
+      expect(row(first.store)?.retry).toEqual({ at: retryAt, owner: "will", origin: "same-origin" })
+    }
+    writer.unsubscribe()
+
+    // A reload: the window is on the persisted row, so the boot's own material change sends nothing either.
+    await first.controller.dispose()
+    await first.store.dispose?.()
+    const reopened = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, false, storage)
+    expect(row(reopened.store)?.retry).toEqual({ at: retryAt, owner: "will", origin: "same-origin" })
+    signIn(reopened.store)
+    materialChange(reopened.store, "after-reload")
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(reopened.store)?.source).toBe("rule")
+    expect(row(reopened.store)?.suggestions.length).toBeGreaterThan(0)
+  }, 20_000)
+
+  test("the window passes: the next material change asks again, and the agent's answer clears it", async () => {
+    // The recommender's clock is the test's: the window is measured, never slept through.
+    let clock = Date.parse("2026-09-17T00:00:00.000Z")
+    const retryAt = clock + 60 * 60 * 1000
+    const worker = recorder([refused(retryAt, "3600"), answer("rec-open", ["wiki"])])
+    const { store } = await boot({ fetchImpl: worker.fetchImpl, recommender: { enabled: true, debounceMs: 0, now: () => clock } })
+    signIn(store)
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(store)?.retry).toEqual({ at: retryAt, owner: "will", origin: "same-origin" })
+    clock = retryAt - 1
+    materialChange(store, "closed")
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(store)?.source).toBe("rule")
+    clock = retryAt
+    materialChange(store, "open")
+    await settle()
+    expect(worker.recommends().length).toBe(2)
+    expect(row(store)?.source).toBe("agent")
+    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["wiki"])
+    expect(row(store)?.retry).toBeUndefined()
+  })
+
+  test("a 429 with no usable window retains nothing: the next material change asks again, as before", async () => {
+    const worker = recorder([
+      refused("not-a-date", "later"),
+      refused(Date.now() - 1000, "0"),
+      refused(undefined),
+      answer("rec-1", ["wiki"])
+    ])
+    const { store } = await boot({ fetchImpl: worker.fetchImpl })
+    signIn(store)
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(store)?.retry).toBeUndefined()
+    for (const step of [2, 3, 4]) {
+      materialChange(store, String(step))
+      await settle()
+      expect(worker.recommends().length).toBe(step)
+    }
+    expect(row(store)?.source).toBe("agent")
+  })
+
+  test("a window past the daily bucket is clamped on the row", async () => {
+    const worker = recorder([refused(Date.now() + 30 * 24 * 60 * 60 * 1000)])
+    const { store } = await boot({ fetchImpl: worker.fetchImpl })
+    const before = Date.now()
+    signIn(store)
+    await settle()
+    const retry = row(store)?.retry
+    expect(retry?.owner).toBe("will")
+    expect(retry?.at).toBeGreaterThan(before)
+    expect(retry?.at).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000)
+  })
+
+  test("the window binds the account that asked: a visitor's never closes a login, a login's survives an outage and leaves with the account", async () => {
+    const far = Date.now() + 60 * 60 * 1000
+    const worker = recorder([refused(far, "3600"), refused(far, "3600"), answer("rec-bob", ["wiki"]), answer("rec-visitor", ["connect"])])
+    const { store } = await boot({ fetchImpl: worker.fetchImpl })
+    // A visitor (no session yet) spends the address bucket and is refused.
+    materialChange(store, "visitor")
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    expect(row(store)?.retry).toEqual({ at: far, owner: null, origin: "same-origin" })
+
+    // The login that follows spends its own bucket: the visitor's window does not apply.
+    signIn(store, "will")
+    await settle()
+    expect(worker.recommends().length).toBe(2)
+    expect(row(store)?.retry).toEqual({ at: far, owner: "will", origin: "same-origin" })
+
+    // The identity seam goes away; the persisted owner still binds the window.
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "unavailable", login: null, allowlisted: false, admin: false, scopesPlain: null })
+    materialChange(store, "outage")
+    await settle()
+    expect(store.collections.identitySessions.get("identity")?.accountOwnerLogin).toBe("will")
+    expect(worker.recommends().length).toBe(2)
+    expect(row(store)?.retry).toEqual({ at: far, owner: "will", origin: "same-origin" })
+
+    // Another login replaces the account: its private state, the window with it, is gone and bob asks at once.
+    signIn(store, "bob")
+    await settle()
+    expect(worker.recommends().length).toBe(3)
+    expect(row(store)?.source).toBe("agent")
+    expect(row(store)?.retry).toBeUndefined()
+
+    // Signing out drops bob's state too; the visitor asks again.
+    store.dispatch({ type: "identity.session.cleared", actor: "user" })
+    await settle()
+    expect(worker.recommends().length).toBe(4)
+    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["connect"])
+  }, 20_000)
+
+  test("a delayed 429 for the account that left never closes the next account's recommender", async () => {
+    let releaseFirst: (() => void) | undefined
+    const worker = recorder([refused(Date.now() + 60 * 60 * 1000, "3600"), answer("rec-bob", ["wiki"]), answer("rec-bob-2", ["connect"])])
+    const gated = async (input: unknown, init?: RequestInit) => {
+      const response = await worker.fetchImpl(input, init)
+      const path = new URL(typeof input === "string" ? input : String(input), "https://app.test").pathname
+      if (path === RECOMMEND_PATH && worker.recommends().length === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve })
+      }
+      return response
+    }
+    const { store } = await boot({ fetchImpl: gated })
+    signIn(store, "will")
+    await settle()
+    expect(worker.recommends().length).toBe(1)
+    signIn(store, "bob")
+    await settle()
+    expect(worker.recommends().length).toBe(2)
+    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["wiki"])
+    // Will's refusal arrives now, for bob's row.
+    releaseFirst?.()
+    await settle()
+    expect(row(store)?.retry).toBeUndefined()
+    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["wiki"])
+    materialChange(store, "bob")
+    await settle()
+    expect(worker.recommends().length).toBe(3)
+    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["connect"])
   })
 
   test("the local host: opening a repository retires 'Select a repo' at once through the rule", async () => {

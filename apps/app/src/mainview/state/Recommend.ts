@@ -25,11 +25,30 @@ export const MAX_RECOMMENDATIONS = 3
 /** The recommend routes, spelled once in the rpc package the Worker shares. */
 export { RECOMMEND_OUTCOME_PATH, RECOMMEND_PATH }
 
+/** A quota belongs to its service origin, even when a store is reused with another host. */
+export const recommendServiceOrigin = (baseUrl: string, pageUrl?: string): string | undefined => {
+  // Non-browser controller fixtures may supply only a relative transport.
+  if (baseUrl === "" && pageUrl === undefined) return "same-origin"
+  try {
+    const origin = new URL(baseUrl || ".", pageUrl).origin
+    return origin === "null" || origin.length > 512 ? undefined : origin
+  } catch {
+    return undefined
+  }
+}
+
 /** The tail the request carries: the newest messages, capped by count and by text. */
 export const TAIL_MAX_MESSAGES = 12
 export const TAIL_MAX_CHARS = 4000
 /** The command list the request carries, capped; the server refuses more. */
 export const COMMANDS_MAX = 300
+/**
+ * The longest retry window a 429 may close the recommender for: the server's
+ * daily bucket (turnLimit.ts ANONYMOUS_TURN_WINDOW_MS). A hint past it is
+ * clamped, never trusted whole: a later 429 restates the real window, and a
+ * garbled far-future date must not silence the pills for the life of a device.
+ */
+export const RECOMMEND_RETRY_MAX_MS = 24 * 60 * 60 * 1000
 
 /*
  * The transitions after which the recommendation is stale: the state a pill
@@ -150,6 +169,35 @@ export const recommendRequest = (input: Pick<RecommendInput, "repo" | "messages"
     .slice(0, COMMANDS_MAX)
     .map((command): RecommendCommand => ({ name: command.name, summary: command.summary }))
 })
+
+/**
+ * When a 429 says the recommender reopens, as epoch ms, or undefined when it
+ * does not say. The body's `retryAt` (ISO 8601, what turnLimitResponse
+ * writes) is read first because it is exact; the `Retry-After` header
+ * (delta seconds or an HTTP-date, RFC 9110 §10.2.3) stands in for a
+ * gateway's 429 that carries no body of ours. A window that is unparseable,
+ * already past, or not in the future is no window: the caller retains
+ * nothing and asks again on the next material change, exactly as before.
+ * A window past RECOMMEND_RETRY_MAX_MS is clamped to it.
+ */
+export const recommendRetryAt = (
+  hints: { readonly body: unknown; readonly retryAfter: string | null },
+  now: number
+): number | undefined => {
+  const bodyAt = typeof hints.body === "object" && hints.body !== null
+    ? (hints.body as { readonly retryAt?: unknown }).retryAt
+    : undefined
+  const fromBody = typeof bodyAt === "string" ? Date.parse(bodyAt) : Number.NaN
+  const header = hints.retryAfter?.trim() ?? ""
+  const fromHeader = header === ""
+    ? Number.NaN
+    : /^\d+$/.test(header)
+    ? now + Number(header) * 1000
+    : Date.parse(header)
+  const at = Number.isFinite(fromBody) ? fromBody : fromHeader
+  if (!Number.isFinite(at) || at <= now) return undefined
+  return Math.min(at, now + RECOMMEND_RETRY_MAX_MS)
+}
 
 /** The flow that opens the surface the user is already on: a no-op click, never a recommendation. */
 export const currentSurfaceFlow = (surface: CommandState["surface"]): string =>

@@ -179,6 +179,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "target.starred": z.object({ "type": z.literal("target.starred"), "actor": ActorSchema, "repoId": z.string(), "star": StarredTargetSchema }).strict(),
   "target.unstarred": z.object({ "type": z.literal("target.unstarred"), "actor": ActorSchema, "repoId": z.string(), "id": z.string() }).strict(),
   "recommendations.updated": z.object({ "type": z.literal("recommendations.updated"), "actor": z.enum(["system", "smithers"]), "suggestions": z.array(SuggestionSchema), "source": RecommendationSourceSchema, "revision": z.number().finite() }).strict(),
+  "recommendations.deferred": z.object({ "type": z.literal("recommendations.deferred"), "actor": z.literal("system"), "retryAt": z.number().finite(), "origin": z.string().min(1).max(512) }).strict(),
 } as const satisfies { [K in AppTransition["type"]]: z.ZodType<Extract<AppTransition, { type: K }>> }
 
 export class InvalidAppTransitionError extends Error {

@@ -597,7 +597,16 @@ export const RecommendationSchema = z.object({
   source: RecommendationSourceSchema,
   /** The session revision the recommendation was made against. */
   revision: z.number().int().nonnegative(),
-  createdAt: z.number()
+  createdAt: z.number(),
+  /**
+   * The recommender's own retry window, as its last 429 stated it: no request
+   * leaves before `at` (epoch ms) for `owner` (the account owner login, null
+   * for a visitor). The rule keeps writing the row meanwhile. Bound to the
+   * owner because the server's daily bucket is per login or per address, so
+   * a visitor's spent bucket says nothing about the login that follows it.
+   * Absent once an agent answer lands or the account leaves.
+   */
+  retry: z.object({ at: z.number(), owner: z.string().nullable(), origin: z.string().optional() }).optional()
 })
 export type Recommendation = z.infer<typeof RecommendationSchema>
 
@@ -1680,6 +1689,18 @@ export type AppTransition =
     suggestions: ReadonlyArray<Suggestion>
     source: RecommendationSource
     revision: number
+  }
+  | {
+    /*
+     * The server's recommender refused with a 429 and named when the bucket
+     * reopens (Recommend.ts recommendRetryAt): no POST /api/recommend leaves
+     * before `retryAt` (epoch ms) for the account that asked. The row keeps
+     * the rule's pills; nothing user-visible changes.
+     */
+    type: "recommendations.deferred"
+    actor: "system"
+    retryAt: number
+    origin: string
   }
 
 export const initialSession = (theme: Session["theme"]): Session => ({
