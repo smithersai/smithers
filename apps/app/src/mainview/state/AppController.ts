@@ -1304,7 +1304,7 @@ export const createAppController = (
       return
     }
     const pending = store.session().pendingCommand
-    const asked = request ?? (pending?.requirement === "signed-in" ? pending : undefined)
+    const asked = request ?? (pending?.requirement === "signed-in" || pending?.requirement === "repo-read" ? pending : undefined)
     let summary = asked && "summary" in asked ? asked.summary : undefined
     if (asked?.name === "flow.run") {
       const [flow, explicit] = asked.args?.trim().split(/\s+/) ?? []

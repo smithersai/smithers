@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { PRACTICE_CARD, PRACTICE_REPO } from "./practice/PracticeRepository"
 
 const createAppController = scopedControllers()
 const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImpl"]) => {
@@ -84,3 +85,27 @@ test("a repository launch names its human summary and repository for both actors
     expect(prompt?.text).not.toContain("internal-review-42")
   }
 })
+
+/*
+ * A repository read parks on repo-read, not signed-in; the gate must still
+ * name the flow the user asked for, never the generic fallback.
+ */
+for (const [name, args] of [["issues.view", "3"], ["issues.comment", "3 Looks right to me"]] as const) {
+  test(`${name} signed out on a non-practice repository names its own summary in the sign-in line`, async () => {
+    const { controller, store } = await setup()
+    await controller.commands.run(name, args)
+    await settle()
+    const prompts = [...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in").sort((a, b) => a.ordinal - b.ordinal)
+    const summary = controller.commands.find(name)!.metadata.summary
+    expect(prompts.at(-1)?.text).toBe(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue")).toEqual([])
+
+    // The bundled practice source needs no account: the same line asks for nothing.
+    await store.dispatch({ type: "repo.selected", actor: "user", id: PRACTICE_REPO }).isPersisted.promise
+    await store.dispatch({ type: "command.deferral.cleared", actor: "system" }).isPersisted.promise
+    await controller.commands.run(name, args)
+    await settle()
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(prompts.length)
+    expect(store.collections.cards.get(PRACTICE_CARD.issue(3))?.status).toBe("active")
+  })
+}
