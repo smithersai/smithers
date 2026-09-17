@@ -3,14 +3,18 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
+import { NodeServices } from "@effect/platform-node"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import { Action, HumanTask } from "@smthrs/flow"
+import { Action, FlowRuntime, HumanTask } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import * as RunStore from "@smthrs/run-store/RunStore"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, FileSystem, Layer, Option, Schema } from "effect"
+import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { NativeCoding } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
+import { executionLayers } from "../repository/execution.ts"
+import { ContinueAuthor } from "../repository/jobs.ts"
 import { ConfirmReply, consolidatedReply, PublishReply, replyLayers } from "../repository/replies.ts"
 import { RepositoryRemote } from "../repository/remote.ts"
 import { JobInput, JobResult, Reply, type StepResult } from "../repository/schema.ts"
@@ -22,7 +26,8 @@ const material = [step("research", "completed", "greeting.mjs exports hello."),
   step("duplicates", "needs-author", "No duplicate defect found.", { question: "Which release first showed this?" })]
 
 const fixture = (options: { replies?: "draft" | "automatic"; source?: "github" | "smithers-cloud"; trial?: boolean
-  results?: ReadonlyArray<ReturnType<typeof step>>; status?: typeof JobResult.Type["status"]; body?: string } = {}) => {
+  results?: ReadonlyArray<ReturnType<typeof step>>; status?: typeof JobResult.Type["status"]; body?: string
+  remainingMs?: number } = {}) => {
   const setup = initialSetup("example/repo", "issues", "maintainer")
   setup.draft.replies = options.replies ?? "draft"
   const input = Schema.decodeUnknownSync(JobInput)({ repo: setup.repo, job: setup.job, revision: setup.revision,
@@ -33,7 +38,7 @@ const fixture = (options: { replies?: "draft" | "automatic"; source?: "github" |
   const result = Schema.decodeUnknownSync(JobResult)({ repo: input.repo, job: input.job, revision: input.revision,
     digest: input.digest, sourceRevision: input.sourceRevision, eventKey: input.event.deliveryKey,
     status: options.status ?? "needs-author", results: json(options.results ?? material), publicActions: [] })
-  return { input, result }
+  return { input, result, deadlineAt: Date.now() + (options.remainingMs ?? input.configuration.budgetMinutes * 60_000) }
 }
 const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") => {
   const root = await mkdtemp(join(tmpdir(), "repository-reply-"))
@@ -82,12 +87,14 @@ const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") =
       yield* PublishReply.execute(payload, { executionId, discard: true })
       return yield* (yield* DurableEngineState.DurableEngineState).waiting(`${executionId}-approval`)
     }).pipe(Effect.provide(engine())))),
-    confirmRequest: (executionId: string) => Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const row = yield* (yield* RunStore.RunStore).get(`${executionId}-approval`)
-      return JSON.parse(row.stateJson).payload as { timeoutMs?: number }
+    /** The absolute instant the parked question is armed to expire at. */
+    confirmDueAt: (executionId: string) => Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const clocks = yield* (yield* DurableEngineState.DurableEngineState).pendingClocks({ executionId: `${executionId}-approval` })
+      assert.equal(clocks.length, 1, JSON.stringify(clocks))
+      return clocks[0]!.dueAtMs
     }).pipe(Effect.provide(engine())))),
-    confirm: (reply: typeof Reply.Type, timeoutMs: number, executionId: string) => Effect.runPromise(Effect.scoped(
-      ConfirmReply.execute({ reply, timeoutMs }, { executionId }).pipe(Effect.flip, Effect.provide(engine())))),
+    confirm: (reply: typeof Reply.Type, deadlineAt: number, executionId: string) => Effect.runPromise(Effect.scoped(
+      ConfirmReply.execute({ reply, deadlineAt }, { executionId }).pipe(Effect.flip, Effect.provide(engine())))),
     answer: (row: DurableEngineState.WaitingRow, value: boolean, payload: ReturnType<typeof fixture>, executionId: string) =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         yield* HumanTask.answer({ token: Schema.decodeUnknownSync(DurableDeferred.Token)(row.token), value })
@@ -233,8 +240,9 @@ test("an author reply produces a second draft that is confirmed and posted as it
 test("two approvals of the same words publish two comments with their own receipts", { timeout: 60_000 }, async (t) => {
   const { comments, park, answer } = await host(t)
   const receipts: Array<Schema.Json> = []
-  for (const round of ["same-words-one", "same-words-two"]) {
-    const payload = fixture()
+  // The rounds also hold different remaining budgets: the identity is the round, never its deadline.
+  for (const [index, round] of ["same-words-one", "same-words-two"].entries()) {
+    const payload = fixture({ remainingMs: 120_000 + index * 60_000 })
     const parked = await park(payload, round)
     assert.ok(Option.isSome(parked), round)
     const posted = await answer(parked.value, true, payload, round)
@@ -274,14 +282,30 @@ test("a round whose step already carries other text fails typed and is never pos
   assert.equal(target.comments.length, 0, "a conflicting publication is never counted as this round's")
 })
 
-test("the confirmation is bounded by the job's own budget, and a deadline already passed settles it", { timeout: 60_000 }, async (t) => {
-  const { comments, park, confirmRequest, confirm } = await host(t)
-  const payload = fixture()
+test("the confirmation is bounded by what is left of the job's deadline, and a deadline already passed settles it", { timeout: 60_000 }, async (t) => {
+  const { comments, park, confirmDueAt, confirm } = await host(t)
+  // A job 90 s from its limit cannot hold the question for the whole configured budget.
+  const payload = fixture({ remainingMs: 90_000 })
   assert.ok(Option.isSome(await park(payload, "bounded")))
-  assert.equal((await confirmRequest("bounded")).timeoutMs, payload.input.configuration.budgetMinutes * 60_000)
-  const failed = await confirm({ body: "Nobody is waiting.", issueNumber: 42, state: "drafted" }, 0, "expired")
+  const dueAt = await confirmDueAt("bounded")
+  // HumanTask arms a duration, so the only slack is the time it took to arm it.
+  assert.ok(dueAt - payload.deadlineAt < 1_000, `${dueAt} must not outlive the job deadline ${payload.deadlineAt}`)
+  assert.ok(dueAt > payload.deadlineAt - 30_000, `${dueAt} must still be the job's remaining 90 s`)
+  assert.ok(dueAt < Date.now() + payload.input.configuration.budgetMinutes * 60_000, "a second round never restarts the configured budget")
+  const failed = await confirm({ body: "Nobody is waiting.", issueNumber: 42, state: "drafted" }, Date.now() - 1_000, "expired")
   assert.ok(failed instanceof HumanTask.HumanTaskFailed, String(failed))
   assert.equal(failed.code, "timeout")
+  assert.equal(comments.length, 0)
+})
+
+test("a job already past its deadline drafts the reply, types the timeout and never parks", { timeout: 60_000 }, async (t) => {
+  const { comments, park, publish } = await host(t)
+  const expired = fixture({ remainingMs: -1_000 })
+  assert.equal(Option.isNone(await park(expired, "past-deadline")), true, "a question nobody can answer is never asked")
+  const drafted = await publish(expired, "past-deadline")
+  assert.equal(drafted.reply?.state, "drafted")
+  assert.match(drafted.reply?.reason ?? "", /time limit/)
+  assert.deepEqual(drafted.publicActions, [])
   assert.equal(comments.length, 0)
 })
 
@@ -313,16 +337,67 @@ test("a body clipped at the limit never ends in half a character", { timeout: 60
 
 test("automatic native replies post exactly one comment for each round, and none for a replay", { timeout: 60_000 }, async (t) => {
   const { comments, publish } = await host(t)
-  const published = await publish(fixture({ replies: "automatic" }), "automatic-native")
+  // One round is one payload: the deadline is part of it, so a replay re-drives
+  // the same admitted bytes rather than a freshly built fixture.
+  const round = fixture({ replies: "automatic" })
+  const published = await publish(round, "automatic-native")
   assert.equal(published.reply?.state, "posted")
   assert.equal(comments.length, 1)
   assert.equal(comments[0]?.delivery_key, "delivery:42")
   assert.equal(comments[0]?.issue_number, 42)
   assert.equal(comments[0]?.body, published.reply?.body)
   assert.equal(published.publicActions.length, 1)
-  assert.deepEqual((await publish(fixture({ replies: "automatic" }), "automatic-native")).publicActions, published.publicActions)
+  assert.deepEqual((await publish(round, "automatic-native")).publicActions, published.publicActions)
   assert.equal(comments.length, 1, "a replayed round publishes nothing new")
   const second = await publish(fixture({ replies: "automatic" }), "automatic-second-round")
   assert.equal(second.reply?.state, "posted")
   assert.equal(comments.length, 2, "a second automatic round is its own publication")
+})
+
+/**
+ * `ContinueAuthor` re-runs its handler from the top on every wake and reads
+ * each round's stored result. Once a round's confirmation is bounded by the
+ * job's deadline, a replay after that deadline is the normal end of round two,
+ * so the loop must decide on the journal (`reply === null`) and never on a
+ * fresh clock reading, which discarded every round after the first.
+ */
+test("a continuation replayed after the deadline keeps the last round it published", { timeout: 60_000 }, async () => {
+  const { input, result, deadlineAt } = fixture({ remainingMs: -1_000 })
+  const posted = { ...result, status: "completed" as const, reply: { body: "Round two.", issueNumber: 42, state: "posted" as const },
+    publicActions: [json({ comment_id: 201 })] }
+  const executed: Array<{ flow: string; executionId: string; payload: any }> = []
+  const handlers = new Map<string, (payload: unknown) => { execute: Effect.Effect<unknown, unknown, never> }>()
+  const runtime = { register: (declared: any, action: any) => Effect.sync(() => handlers.set(declared._tag, action)),
+    execute: (flow: any, options: any) => Effect.sync(() => {
+      executed.push({ flow: flow._tag, executionId: options.executionId, payload: options.payload })
+      // Attempt 0 replays the author's stored comment; attempt 1 wakes on the journaled deadline.
+      if (flow._tag === "repository/AwaitReply") {
+        return executed.filter(entry => entry.flow === "repository/AwaitReply").length > 1 ? null
+          : json({ source: "smithers-cloud", type: "issue_comment", action: "created", deliveryKey: "reply:1", issueNumber: 42,
+            payload: { comment: { id: 7, body: "Release 1.4.", user: { id: 1, login: "reporter" } } } })
+      }
+      if (flow._tag === "repository/CheckReply") return input
+      if (flow._tag === "repository/CaptureFollowup") return { repo: input.repo, files: [], missing: [], history: [], records: [], sources: [],
+        source: { changeId: "change", commitId: "a".repeat(40), treeId: "tree", operationId: "operation", parentCommitIds: [] } }
+      if (flow._tag === "repository/Investigate") return { ...result, status: "needs-author" }
+      if (flow._tag === "repository/PublishReply") return posted
+      throw new Error(`unexpected ${flow._tag}`)
+    }) }
+  await Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    yield* Layer.build(executionLayers({ repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } } as never).pipe(
+      Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never),
+        Layer.succeed(Jj.Jj, undefined as never), Layer.succeed(NativeCoding, undefined as never)])))
+    const handler = handlers.get("repository/continue-author")
+    if (!handler) return yield* Effect.die("repository/continue-author has no implementation")
+    const continued = yield* handler(Schema.decodeUnknownSync(ContinueAuthor.payloadSchema)({ input, result, deadlineAt })).execute.pipe(
+      Effect.provideService(FlowRuntime.FlowRuntime, runtime as never),
+      Effect.provideService(FlowRuntime.FlowInstance, { executionId: "job-root" } as never))
+    const round = continued as typeof JobResult.Type
+    assert.equal(round.reply?.body, "Round two.", "the replay returns the round it published, not round one")
+    assert.deepEqual(round.publicActions, [json({ comment_id: 201 })])
+    assert.equal(round.status, "completed")
+    const publish = executed.find(entry => entry.flow === "repository/PublishReply")!
+    assert.equal(publish.payload.deadlineAt, deadlineAt, "each round's publication carries the job's own deadline")
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise)
 })

@@ -176,7 +176,7 @@ export const RepositoryJob = Flow.make("repository/Job", {
   payload: JobInput, success: JobResult, error: Schema.Union([CodingError, WaitFor.WaitForRequestInvalid]),
   body: input => StartBudget.call({ minutes: input.configuration.budgetMinutes }).pipe(Node.bindPlanned(deadlineAt =>
     CaptureJob.call({ ...input, deadlineAt }).pipe(Node.bindPlanned(evidence =>
-      Investigate.child({ input, evidence, deadlineAt }).pipe(Node.bindPlanned(result => PublishReply.child({ input, result })), Node.bindPlanned(result => Node.branch(Node.succeed(result), {
+      Investigate.child({ input, evidence, deadlineAt }).pipe(Node.bindPlanned(result => PublishReply.child({ input, result, deadlineAt })), Node.bindPlanned(result => Node.branch(Node.succeed(result), {
         if: result => result.status === "needs-author",
         then: result => ContinueAuthor.call({ input, result, deadlineAt }),
         else: result => Node.succeed(result)

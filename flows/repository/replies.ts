@@ -55,29 +55,34 @@ const post = (input: JobInput, result: JobResult, reply: Reply, round: string) =
       receipt.step !== step || receipt.issue_number !== reply.issueNumber) return yield* invalid("The public reply receipt belongs to another dispatch")
   return { ...result, reply: { ...reply, state: "posted" as const }, publicActions: [...result.publicActions, JSON.parse(JSON.stringify(receipt))] }
 })
+/** One journaled reading of the clock, so a replay asks the question with the
+ * duration it was first armed with and never a fresh one. */
+const RemainingBudget = Action.make("repository/reply-budget", { payload: { deadlineAt: Schema.Number }, success: Schema.Int, error: Schema.Never, nondeterministic: true })
 /** The maintainer confirms the drafted text itself; no source text can answer it.
- * The question is bounded like the rest of the job, so a parked draft cannot
- * hold a sandbox past the budget the maintainer configured. */
-export const ConfirmReply = Flow.make("repository/ConfirmReply", { payload: { reply: Reply, timeoutMs: Schema.Int },
+ * The question is bounded by what is LEFT of the job's own deadline, so a second
+ * round cannot hold a sandbox past the budget the maintainer configured, and a
+ * deadline already spent settles as a timeout without asking anyone. */
+export const ConfirmReply = Flow.make("repository/ConfirmReply", { payload: { reply: Reply, deadlineAt: Schema.Number },
   success: Schema.Boolean, error: HumanTask.HumanTaskFailed,
-  body: ({ reply, timeoutMs }) => Node.succeed(reply).pipe(Node.map(value => `Post this reply to issue #${value.issueNumber}?\n\n${value.body}`),
-    Node.bindPlanned(prompt => HumanTask.action.call({ name: "repository-reply", kind: "confirm", prompt, maxAttempts: 1, timeoutMs })),
-    Node.map(answer => answer === true)) })
+  body: ({ reply, deadlineAt }) => RemainingBudget.call({ deadlineAt }).pipe(Node.bindPlanned(timeoutMs =>
+    Node.succeed(reply).pipe(Node.map(value => `Post this reply to issue #${value.issueNumber}?\n\n${value.body}`),
+      Node.bindPlanned(prompt => HumanTask.action.call({ name: "repository-reply", kind: "confirm", prompt, maxAttempts: 1, timeoutMs })),
+      Node.map(answer => answer === true)))) })
 /** Nobody refused a question that was never answered: the draft is retained
  * with the reason, and a failure never reads as a maintainer's decision. */
 const unanswered = (reply: Reply, error: unknown): Reply => ({ ...reply,
   reason: error instanceof HumanTask.HumanTaskFailed && error.code === "timeout"
     ? "No decision before the job's time limit." : "The confirmation could not be asked." })
-const Publish = Action.make("repository/publish-reply", { payload: { input: JobInput, result: JobResult }, success: JobResult, error: CodingError, nondeterministic: true })
+const Publish = Action.make("repository/publish-reply", { payload: { input: JobInput, result: JobResult, deadlineAt: Schema.Number }, success: JobResult, error: CodingError, nondeterministic: true })
 export const PublishReply = Flow.make("repository/PublishReply", { payload: Publish.payloadSchema, success: JobResult, error: CodingError, body: input => Publish.call(input) })
 export const replyLayers = Layer.mergeAll(Interpreter.layer(PublishReply), Interpreter.layer(ConfirmReply),
-  Publish.toLayer(({ input, result }) => Effect.gen(function*() {
+  RemainingBudget.toLayer(({ deadlineAt }) => Effect.sync(() => Math.max(0, deadlineAt - Date.now()))),
+  Publish.toLayer(({ input, result, deadlineAt }) => Effect.gen(function*() {
     const drafted = consolidatedReply(input, result), reply = drafted.reply
     if (reply === undefined || reply.state !== "drafted" || input.event.trial === true) return drafted
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
     if (input.configuration.replies === "automatic") return yield* post(input, drafted, reply, instance.executionId)
-    const decision = yield* runtime.execute(ConfirmReply, { executionId: `${instance.executionId}-approval`,
-      payload: { reply, timeoutMs: input.configuration.budgetMinutes * 60_000 } })
+    const decision = yield* runtime.execute(ConfirmReply, { executionId: `${instance.executionId}-approval`, payload: { reply, deadlineAt } })
       .pipe(Effect.catch(error => Effect.succeed(unanswered(reply, error))))
     if (decision === true) return yield* post(input, drafted, reply, instance.executionId)
     return { ...drafted, reply: decision === false ? { ...reply, state: "declined" as const } : decision }

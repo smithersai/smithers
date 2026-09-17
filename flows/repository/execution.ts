@@ -240,14 +240,16 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
     let current = input, previous = result
     for (let attempt = 0; attempt < 32 && previous.status === "needs-author"; attempt++) {
       const key = Digest.digest(Digest.canonical(["repository/author/v1", instance.executionId, attempt]))
+      // The journaled wait already settled the deadline; a fresh clock reading here
+      // discarded every round after the first on any replay past it.
       const reply = yield* runtime.execute(AwaitReply, { executionId: `${key}-wait`, payload: { deadlineAt } })
-      if (reply === null || Date.now() >= deadlineAt) return { ...previous, eventKey: input.event.deliveryKey, status: "needs-maintainer" as const }
+      if (reply === null) return { ...previous, eventKey: input.event.deliveryKey, status: "needs-maintainer" as const }
       const updated = yield* runtime.execute(CheckReply, { executionId: `${key}-validate`, payload: { input: current, reply, previous } })
       if (updated === null) continue
       current = updated
       const evidence = yield* runtime.execute(CaptureFollowup, { executionId: `${key}-capture`, payload: { ...current, deadlineAt } })
       const investigated = yield* runtime.execute(Investigate, { executionId: `${key}-investigate`, payload: { input: current, evidence, deadlineAt } })
-      const published = yield* runtime.execute(PublishReply, { executionId: `${key}-reply`, payload: { input: current, result: investigated } })
+      const published = yield* runtime.execute(PublishReply, { executionId: `${key}-reply`, payload: { input: current, result: investigated, deadlineAt } })
       previous = { ...published, publicActions: [...previous.publicActions, ...published.publicActions] }
     }
     return { ...previous, eventKey: input.event.deliveryKey, status: previous.status === "needs-author" ? "needs-maintainer" as const : previous.status }
