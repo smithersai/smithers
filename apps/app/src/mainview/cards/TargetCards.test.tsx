@@ -360,6 +360,19 @@ describe("the targets table's rows walk under the arrows", () => {
     expect(calls).toEqual([["target.select", `force ${labels[0] ?? ""}`]])
   })
 
+  test("Enter and Space on a row's nested control stay with the control, never the row", () => {
+    const { host, calls } = render(targetsCard)
+    const run = host.querySelector('[data-testid="targets-run-//src:lint"]') as HTMLButtonElement
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    flushSync(() => void run.dispatchEvent(enter))
+    expect(enter.defaultPrevented).toBe(false)
+    const star = host.querySelector('tr[data-target-row="//src:lint"] [data-flow="target.star"]') as HTMLButtonElement
+    const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })
+    flushSync(() => void star.dispatchEvent(space))
+    expect(space.defaultPrevented).toBe(false)
+    expect(calls).toEqual([])
+  })
+
   test("a key the table does not own is left to the browser", () => {
     const { host, calls } = render(targetsCard)
     const rows = rowsOf(host)

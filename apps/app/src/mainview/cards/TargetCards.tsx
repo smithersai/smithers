@@ -291,9 +291,10 @@ export const TargetsCardBody = ({
   const selectedRow = view?.selected === undefined ? undefined : flat.find((row) => row.target.label === view.selected)
   const expanded = new Set(view?.expanded ?? [])
 
-  /* Arrow keys walk the rows; Enter opens the row's drawer. */
+  /* Arrow keys walk the rows; Enter on the row itself opens its drawer. A row's own controls (star, Run, pick) keep their keys. */
   const onRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, label: string): void => {
     if (event.key === "Enter" || event.key === " ") {
+      if (event.target !== event.currentTarget) return
       event.preventDefault()
       onRunCommand("target.select", flowArgs("target.select", { repoId, label }))
       return
