@@ -11,6 +11,7 @@ import * as Landing from "./landing.ts"
 import { load as loadLanding } from "./landing-config.ts"
 import { loadProject } from "./project-config.ts"
 import * as CodingState from "./state.ts"
+import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
 import { remoteLayer } from "../repository/remote.ts"
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 
@@ -64,7 +65,8 @@ if (parsed.values.version) {
         ...options, ...(planning === undefined ? {} : { planning }),
         ...(landing === undefined ? {} : {
           landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie),
-          repositoryRemote: remoteLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" }).pipe(Layer.provide(http), Layer.orDie)
+          repositoryRemote: Layer.merge(remoteLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" }),
+            checkReceiptLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" })).pipe(Layer.provide(http), Layer.orDie)
         })
       })))),
       Effect.provide(platform.host)

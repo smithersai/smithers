@@ -6,6 +6,7 @@ import { Landing } from "../coding/landing.ts"
 import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "../coding/landing-schema.ts"
 import { NativeCoding, SourceCreation, requestIdFor } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
+import { CheckReceipt, RepositoryCheckReceipts, verifiedCheckStep } from "./check-receipt.ts"
 import { currentExecutionId } from "./inspection.ts"
 import { Work, retainedStepError } from "./jobs.ts"
 import { StepResult } from "./schema.ts"
@@ -16,6 +17,8 @@ const service = Effect.gen(function*() { const value = yield* Effect.serviceOpti
 const Input = Schema.Struct({ work: Work, result: StepResult })
 const Prepared = Schema.Struct({ input: Input, source: Revision, preparation: AppendPreparation })
 const Prepare = Action.make("repository/prepare-landing", { payload: Input, success: Prepared, error: CodingError, nondeterministic: true })
+const Reported = Schema.Struct({ prepared: Prepared, receipt: Schema.NullOr(CheckReceipt) })
+const Report = Action.make("repository/report-check-receipt", { payload: Prepared, success: Reported, error: CodingError, nondeterministic: true })
 const Create = Action.make("repository/create-landing", { payload: Prepared, success: LandingIdentity, error: CodingError, nondeterministic: true })
 const Queue = Action.make("repository/queue-landing", { payload: { prepared: Prepared, identity: LandingIdentity }, success: QueuedAppend, error: CodingError, nondeterministic: true })
 const Observed = Schema.Union([AppendObservation, Schema.Struct({ status: Schema.Literal("unobserved"), reason: Schema.String })])
@@ -26,7 +29,8 @@ const Retain = Action.make("repository/retain-landing", { payload: { prepared: P
 const RetainFailure = Action.make("repository/retain-delivery-failure", { payload: { input: Input, error: Schema.Json }, success: StepResult, error: CodingError })
 export const DeliverChange = Flow.make("repository/DeliverChange", { payload: Input, success: StepResult, error: Schema.Union([CodingError, Poll.Failure]),
   body: input => Prepare.call(input).pipe(
-    Node.bindPlanned(prepared => Create.call(prepared).pipe(
+    Node.bindPlanned(prepared => Report.call(prepared).pipe(
+      Node.bindPlanned(reported => Create.call(reported.prepared)),
       Node.bindPlanned(identity => Queue.call({ prepared, identity })),
       Node.bindPlanned(queued => AwaitLanding.child({ queued, deadlineAt: input.work.deadlineAt }).pipe(
         Node.bindPlanned(observed => Retain.call({ prepared, queued, observed }))
@@ -64,6 +68,21 @@ export const deliveryLayers = Layer.mergeAll(Interpreter.layer(DeliverChange), I
     if (preparation.changes.length !== 1 || preparation.changes[0]!.change_id !== source.value.changeId || preparation.changes[0]!.commit_id !== source.value.commitId) return yield* invalid("Landing includes work outside this checked native change")
     return { input, source: source.value, preparation }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("Checked source retention or landing preparation failed")))),
+  Report.toLayer(prepared => Effect.gen(function*() {
+    const receipts = yield* Effect.serviceOption(RepositoryCheckReceipts)
+    if (Option.isNone(receipts)) return { prepared, receipt: null }
+    const policy = yield* receipts.value.policy(prepared.input.work)
+    if (policy.kind === "none") return { prepared, receipt: null }
+    const executionId = object(object(prepared.input.result.output).checks).executionId
+    if (typeof executionId !== "string" || !executionId) return yield* invalid("The checked step names no durable check execution")
+    const verified = yield* verifiedCheckStep({ executionId, commitId: prepared.source.commitId, ref: policy.ref, rawCheckId: receipts.value.rawCheckId })
+    const receipt = yield* receipts.value.report(requestIdFor(verified.executionId, "repository-ci-receipt"), {
+      repo: prepared.input.work.repo, workspace_id: (yield* service).binding.workspaceId, registration_id: policy.ref.registrationId,
+      revision: policy.ref.revision, digest: policy.ref.digest, execution_digest: policy.ref.executionDigest, run_id: verified.runId,
+      execution_id: verified.executionId, commit_id: prepared.source.commitId, change_id: prepared.source.changeId,
+      base_commit_id: prepared.preparation.source_base_commit_id, checks: verified.checks, gate: "passed" })
+    return { prepared, receipt }
+  })),
   Create.toLayer(prepared => Effect.gen(function*() { return yield* (yield* service).create(requestIdFor(yield* currentExecutionId, "repository-landing"),
     prepared.preparation, prepared.input.work.step.name + "\n\n" + prepared.input.result.summary) })),
   Queue.toLayer(({ prepared, identity }) => Effect.gen(function*() { return yield* (yield* service).queue(identity, prepared.preparation, {
