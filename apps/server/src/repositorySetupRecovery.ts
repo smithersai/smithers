@@ -23,8 +23,8 @@ const RegistrationRow = z.object({ id: z.string().min(1), workspace_id: z.string
   })
 })
 
-/** Rows outside this shape belong to registration kinds this Worker does not project. */
-const RegistrationKind = z.object({ job: RepositoryJobSchema, mode: z.enum(["enabled", "trial"]) })
+/** A row naming another job belongs to a registration kind this Worker does not project; a row naming one of ours is always ours to interpret. */
+const RegistrationKind = z.object({ job: RepositoryJobSchema })
 const KNOWN_REGISTRATION_LIMIT = 50
 
 /** The authenticated Cloud user id, never a browser claim, owns the gateway binding. */

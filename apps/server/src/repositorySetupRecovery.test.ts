@@ -215,3 +215,16 @@ test("an empty registry is known and unconfigured; a body that is not an array s
   const wrong = await everyJob({ registrations: [] })
   for (const job of REPOSITORY_JOBS) expect(wrong[job]).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
 })
+
+test("a known job in a mode the Worker cannot interpret is unavailable, never unconfigured", async () => {
+  const paused = known("issues", "enabled")
+  const states = await everyJob([...REPOSITORY_JOBS.filter(job => job !== "issues").map(job => known(job, "enabled")),
+    { ...paused, mode: "paused-v2", configuration: { ...paused.configuration, mode: "paused-v2" } },
+    { ...unknownRow("registration-nightly"), mode: "whatever" }])
+  expect(states.issues).toEqual({ state: "unavailable", error: "Repository registration state is invalid" })
+  for (const job of REPOSITORY_JOBS.filter(name => name !== "issues")) {
+    const state = states[job]
+    if (state.state !== "known") throw Error(`Expected ${job} to stay known, got ${JSON.stringify(state)}`)
+    expect(state.active?.registrationId).toBe(`registration-${job}-enabled`)
+  }
+})
