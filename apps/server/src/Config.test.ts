@@ -23,12 +23,12 @@ describe("ServerConfig from the binding bag", () => {
     expect(config.billingCheckoutEnabled).toBe(true)
   })
 
-  test("TYPESAFE_API_KEY is an optional redacted secret, like the Cerebras key beside it", () => {
-    expect(configFrom({}).typesafeApiKey).toBeUndefined()
-    expect(configFrom({ TYPESAFE_API_KEY: "  " }).typesafeApiKey).toBeUndefined()
-    const config = configFrom({ TYPESAFE_API_KEY: " tsk-live " })
-    expect(JSON.stringify(config)).not.toContain("tsk-live")
-    expect(Redacted.value(config.typesafeApiKey!)).toBe("tsk-live")
+  test("AI_GATEWAY_API_KEY is an optional redacted secret, like the Cerebras key beside it", () => {
+    expect(configFrom({}).aiGatewayApiKey).toBeUndefined()
+    expect(configFrom({ AI_GATEWAY_API_KEY: "  " }).aiGatewayApiKey).toBeUndefined()
+    const config = configFrom({ AI_GATEWAY_API_KEY: " vck-live " })
+    expect(JSON.stringify(config)).not.toContain("vck-live")
+    expect(Redacted.value(config.aiGatewayApiKey!)).toBe("vck-live")
   })
 
   test("secrets are redacted: their value is only reachable on purpose", () => {

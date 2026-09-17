@@ -130,7 +130,7 @@ export const WORKER_IDENTITY = {
     "CEREBRAS_MODEL",
     "CEREBRAS_MODEL_LIBRARIAN",
     "CEREBRAS_MODEL_FLOWS",
-    "TYPESAFE_API_KEY"
+    "AI_GATEWAY_API_KEY"
   ] as ReadonlyArray<string>
 } as const
 

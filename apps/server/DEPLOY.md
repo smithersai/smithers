@@ -224,7 +224,7 @@ bun x wrangler secret list                         # names only
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
 way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`, `CEREBRAS_MODEL`,
 `CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`,
-`TYPESAFE_API_KEY`. `SMITHERS_BUILD_SHA` is
+`AI_GATEWAY_API_KEY`. `SMITHERS_BUILD_SHA` is
 not a binding: `scripts/deploy.ts` bakes it into the site build as
 `/__build.json`. The frozen vars (`IDENTITY_UPSTREAM_URL`,
 `BILLING_UPSTREAM_URL`, `SMITHERS_CLOUD_API_BASE_URL`, `SMITHERS_CHAT_URL`,
@@ -358,11 +358,12 @@ and `POST /api/recommend/outcome` records what the user ran. Both are open to
 signed-out visitors under their own daily ceilings (300 per address or login,
 5000 deployment-wide). The route needs:
 
-- `TYPESAFE_API_KEY` (secret, optional). Set, the route asks Jev
-  (`jev-latest`, 1.5 s deadline) first: one choice question whose options are
-  the commands the client offered, ordered by the probability Jev gives each.
-  Unset, a Jev that fails, or a request offering more than 255 commands, and
-  the route asks Cerebras instead.
+- `AI_GATEWAY_API_KEY` (secret, optional). Set, the route asks Jev through the
+  Vercel AI Gateway (`typesafe-ai/jev`, 1.5 s deadline) first: one choice
+  question whose options are the commands the client offered, ordered by the
+  probability Jev gives each. Every call asks the gateway for zero data
+  retention. Unset, a Jev that fails, or a request offering more than 255
+  commands, and the route asks Cerebras instead.
 - `CEREBRAS_API_KEY` (secret, exported in the deploying shell). Cerebras
   (`gpt-oss-120b`, 6 s deadline) answers whenever Jev does not. With neither
   key set, the route answers `503` and the app keeps its rule-based pills;

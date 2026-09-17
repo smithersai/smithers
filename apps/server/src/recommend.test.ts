@@ -121,18 +121,25 @@ const completion = (content: string, model = "gpt-oss-120b"): Response =>
     headers: { "content-type": "application/json" }
   })
 
-/** A Jev evaluation whose one choice answer carries `probabilities`. */
-const decision = (probabilities: Record<string, number>, model = "jev-latest"): Response => {
+/** A gateway evaluation whose one choice answer carries `probabilities`. */
+const decision = (probabilities: Record<string, number>): Response => {
   const best = Object.entries(probabilities).sort(([, left], [, right]) => right - left)[0]?.[0] ?? ""
   return new Response(
     JSON.stringify({
-      model,
-      answers: { command: { type: "choice", choice: best, probabilities, confidence: 0.82 } },
-      usage: { input_tokens: 420, output_tokens: 0 }
+      answers: { command: { type: "choice", choice: best, probabilities } },
+      usage: { inputTokens: 420, outputTokens: 21 },
+      providerMetadata: { typesafe: { confidence: 0.82 } }
     }),
     { status: 200, headers: { "content-type": "application/json" } }
   )
 }
+
+/** A gateway evaluation whose one choice answer names the option and nothing else. */
+const chosen = (choice: string): Response =>
+  new Response(JSON.stringify({ answers: { command: { type: "choice", choice } } }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
 
 /** Stand in for the network: `cerebras` and `jev` answer the two model calls, and every call is recorded. */
 const network = (cerebras: (request: Request) => Promise<Response>, jev?: (request: Request) => Promise<Response>) => {
@@ -142,9 +149,9 @@ const network = (cerebras: (request: Request) => Promise<Response>, jev?: (reque
     layer: transportLayer(async (input, init) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
       const host = new URL(request.url).hostname
-      if (host !== "api.cerebras.ai" && host !== "api.typesafe.ai") throw new Error(`unexpected fetch to ${request.url}`)
+      if (host !== "api.cerebras.ai" && host !== "ai-gateway.vercel.sh") throw new Error(`unexpected fetch to ${request.url}`)
       calls.push(request)
-      if (host !== "api.typesafe.ai") return cerebras(request)
+      if (host !== "ai-gateway.vercel.sh") return cerebras(request)
       if (jev === undefined) throw new Error(`unexpected fetch to ${request.url}`)
       return jev(request)
     })
@@ -165,7 +172,7 @@ interface Deps {
 }
 
 const KEY = { cerebrasApiKey: Redacted.make("csk-test") }
-const JEV_KEY = { typesafeApiKey: Redacted.make("tsk-test") }
+const JEV_KEY = { aiGatewayApiKey: Redacted.make("vck-test") }
 
 /** The route with its dependencies injected: the key is set unless `config` says otherwise. */
 const recommend = (request: Request, deps: Deps = {}): Promise<{ readonly response: Response; readonly calls: Array<Request> }> => {
@@ -471,19 +478,28 @@ describe("POST /api/recommend asks Jev first", () => {
     expect(response.status).toBe(200)
     const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
     expect(body.commands).toEqual(["run.start", "help", "repo.open"])
-    expect(body.model).toBe("jev-latest")
+    expect(body.model).toBe("typesafe-ai/jev")
 
-    // One call, to TypeSafe, carrying the key, the state, and one choice
-    // question whose options are exactly the offered commands.
+    // One call, to the gateway's evaluation endpoint, carrying the key, the
+    // five protocol headers, the state, and one choice question whose options
+    // are exactly the offered commands.
     expect(calls.length).toBe(1)
-    expect(calls[0]!.url).toBe("https://api.typesafe.ai/v1/systemone")
-    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tsk-test")
+    expect(calls[0]!.url).toBe("https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
+    const headers = calls[0]!.headers
+    expect(headers.get("authorization")).toBe("Bearer vck-test")
+    expect(headers.get("ai-gateway-protocol-version")).toBe("0.0.1")
+    expect(headers.get("ai-gateway-auth-method")).toBe("api-key")
+    expect(headers.get("ai-evaluation-model-specification-version")).toBe("4")
+    expect(headers.get("ai-model-id")).toBe("typesafe-ai/jev")
     const sent = (await calls[0]!.json()) as {
-      model: string
+      model?: unknown
       state: { repository: string; conversation: string }
       questions: Record<string, { type: string; instructions: string; criteria: Record<string, string> }>
+      providerOptions: { gateway: { zeroDataRetention: boolean } }
     }
-    expect(sent.model).toBe("jev-latest")
+    // The model rides in the header, never in the body.
+    expect(sent.model).toBeUndefined()
+    expect(sent.providerOptions.gateway.zeroDataRetention).toBe(true)
     expect(sent.state.repository).toBe("smithersai/smithers")
     expect(sent.state.conversation).toContain("How do I run the tests here?")
     const question = Object.values(sent.questions)[0]!
@@ -492,8 +508,18 @@ describe("POST /api/recommend asks Jev first", () => {
     expect(question.criteria).toEqual(Object.fromEntries(COMMANDS.map((command) => [command.name, command.summary])))
 
     const rows = await readRows(logs)
-    expect(rows[0]!.model).toBe("jev-latest")
+    expect(rows[0]!.model).toBe("typesafe-ai/jev")
     expect(rows[0]!.commands).toEqual(["run.start", "help", "repo.open"])
+  })
+
+  test("a choice answer with no probabilities is the one command Jev chose", async () => {
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: JEV_KEY,
+      jev: async () => chosen("run.start")
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["run.start"])
+    expect(calls.length).toBe(1)
   })
 
   test("an empty conversation reads as the prompt's own wording, and the answer is capped at five", async () => {
@@ -522,7 +548,7 @@ describe("POST /api/recommend asks Jev first", () => {
     const body = (await response.json()) as { commands: Array<string>; model: string }
     expect(body.commands).toEqual(["help", "repo.open"])
     expect(body.model).toBe("gpt-oss-120b")
-    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai", "api.cerebras.ai"])
+    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh", "api.cerebras.ai"])
   })
 
   test("a Jev that misses its own short deadline leaves Cerebras the rest of the budget", async () => {
@@ -550,7 +576,7 @@ describe("POST /api/recommend asks Jev first", () => {
     const body = (await response.json()) as { commands: Array<string>; model: string }
     expect(body.commands).toEqual(["help"])
     expect(body.model).toBe("gpt-oss-120b")
-    expect(net.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai", "api.cerebras.ai"])
+    expect(net.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh", "api.cerebras.ai"])
   })
 
   test("more commands than a choice question holds never reach Jev", async () => {
@@ -568,10 +594,10 @@ describe("POST /api/recommend asks Jev first", () => {
       config: JEV_KEY,
       jev: async () => decision({ c3: 1 })
     })
-    expect(fits.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai"])
+    expect(fits.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh"])
   })
 
-  test("with only the TypeSafe key Jev answers, and a Jev that fails is the route's own 503", async () => {
+  test("with only the gateway key Jev answers, and a Jev that fails is the route's own 503", async () => {
     const config = { ...JEV_KEY, cerebrasApiKey: undefined }
     const { response, calls } = await recommend(post("/api/recommend", goodBody), {
       config,
@@ -584,19 +610,19 @@ describe("POST /api/recommend asks Jev first", () => {
     const failed = await recommend(post("/api/recommend", goodBody), { config, jev: async () => new Response("no", { status: 529 }) })
     expect(failed.response.status).toBe(503)
     expect(((await failed.response.json()) as { status: string }).status).toBe("error")
-    expect(failed.calls.map((call) => new URL(call.url).hostname)).toEqual(["api.typesafe.ai"])
+    expect(failed.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh"])
   })
 
   test("with neither key the route is the same honest 503, and it names both keys", async () => {
     const limits = memoryLimits()
     const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config: { cerebrasApiKey: undefined, typesafeApiKey: undefined },
+      config: { cerebrasApiKey: undefined, aiGatewayApiKey: undefined },
       limits
     })
     expect(response.status).toBe(503)
     const body = (await response.json()) as { message: string }
     expect(body.message).toContain("CEREBRAS_API_KEY")
-    expect(body.message).toContain("TYPESAFE_API_KEY")
+    expect(body.message).toContain("AI_GATEWAY_API_KEY")
     expect(limits.keys()).toEqual([])
     expect(calls.length).toBe(0)
   })

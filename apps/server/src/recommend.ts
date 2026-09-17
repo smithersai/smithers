@@ -700,20 +700,22 @@ const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer | undefined, 
     }, RECOMMEND_JEV_TIMEOUT_MS)
     if (!answer.ok) return undefined
     const decision = answer.answers["command"]
-    if (decision?.type !== "choice" || typeof decision.probabilities !== "object" || decision.probabilities === null) {
-      return undefined
-    }
+    if (decision?.type !== "choice" || typeof decision.choice !== "string") return undefined
     // Best first, and an option Jev gave no weight is not a recommendation.
-    const ranked = Object.entries(decision.probabilities)
-      .filter(([, probability]) => typeof probability === "number" && probability > 0)
-      .sort(([, left], [, right]) => right - left)
-      .map(([name]) => name)
+    // Probabilities are optional, and without them the chosen option is the
+    // whole recommendation.
+    const ranked = typeof decision.probabilities !== "object" || decision.probabilities === null
+      ? [decision.choice]
+      : Object.entries(decision.probabilities)
+        .filter(([, probability]) => typeof probability === "number" && probability > 0)
+        .sort(([, left], [, right]) => right - left)
+        .map(([name]) => name)
     return { ok: true, commands: filterAnswer(ranked, body.commands), model: answer.model } as const
   })
 
 /**
  * One recommendation under the deadline. Jev decides when the deployment has
- * a TypeSafe key and the request fits one choice question; anything else, and
+ * an AI Gateway key and the request fits one choice question; anything else, and
  * any Jev that does not answer, is the Cerebras path below. There the strict
  * JSON schema is asked for first; a provider that refuses the format (HTTP
  * 400) is asked once more without it and its prose is parsed defensively. One
@@ -723,7 +725,7 @@ const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer | undefined, 
 const askModel = (body: RecommendRequest, model: string): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
-    if (config.typesafeApiKey !== undefined && body.commands.length <= RECOMMEND_JEV_COMMANDS_MAX) {
+    if (config.aiGatewayApiKey !== undefined && body.commands.length <= RECOMMEND_JEV_COMMANDS_MAX) {
       const decided = yield* askJev(body)
       if (decided !== undefined) return decided
     }
@@ -784,10 +786,10 @@ export const handleRecommend = (
     const parsed = yield* parseRecommendRequest(request)
     if (!parsed.ok) return refusal(parsed.code, parsed.message, headers)
     const config = yield* ServerConfig
-    if (config.cerebrasApiKey === undefined && config.typesafeApiKey === undefined) {
+    if (config.cerebrasApiKey === undefined && config.aiGatewayApiKey === undefined) {
       return refusal(
         "seam_not_configured",
-        "Neither TYPESAFE_API_KEY nor CEREBRAS_API_KEY is set. Command suggestions are unavailable on this deployment.",
+        "Neither AI_GATEWAY_API_KEY nor CEREBRAS_API_KEY is set. Command suggestions are unavailable on this deployment.",
         headers
       )
     }
