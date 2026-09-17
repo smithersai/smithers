@@ -181,7 +181,7 @@ export const createAuthBillingController = (
     // The balance read is driven by the session answer, not fired blind at
     // boot: signed out it could only come back 401 — the expected state,
     // logged by the browser as a console error anyway.
-    void refreshBalance()
+    void refreshBalanceSilently()
     // On the web GitHub OAuth is also the Cloud login. Recheck its scope
     // verdict before a parked workspace act resumes, including tab refreshes.
     await refreshCloudSession?.()
@@ -656,10 +656,24 @@ export const createAuthBillingController = (
     return true
   }
 
-  const refreshBalance = (): Promise<void> =>
-    withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", refreshBalanceImpl).then(
-      () => undefined
-    )
+  /*
+   * A read nobody asked for has nothing to announce: a successful automatic
+   * refresh settles like a superseded one, so its running notice leaves
+   * instead of stating "Balance is up to date" for an act the user never
+   * requested. A failure and a superseded reply settle exactly as they do
+   * for the read a user asked for.
+   */
+  const readBalance = (announce: boolean): Promise<void> =>
+    withToast("billing.balance.refresh", "Refreshing your balance…", "Balance is up to date", async () => {
+      const outcome = await refreshBalanceImpl()
+      return announce || outcome !== true ? outcome : TOAST_SUPERSEDED
+    }).then(() => undefined)
+
+  /** The balance the user asked for: the read states its result. */
+  const refreshBalance = (): Promise<void> => readBalance(true)
+
+  /** A session load, a settled turn: the chip updates, the toast stack stays empty. */
+  const refreshBalanceSilently = (): Promise<void> => readBalance(false)
 
   /*
    * §22.7: this returned void, so the model's own `billing.balance` call
@@ -1010,7 +1024,7 @@ export const createAuthBillingController = (
    * line. The balance chip still refreshes from the real answer after a turn.
    */
   const settleTurnBilling = (): void => {
-    void refreshBalance()
+    void refreshBalanceSilently()
   }
 
   /*

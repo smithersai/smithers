@@ -406,3 +406,110 @@ for (const entry of ["load", "adopt"] as const) {
     expect(calls).toEqual(["cloud", "resume"])
   })
 }
+
+/*
+ * A balance read nobody asked for updates the chip and announces nothing:
+ * the reads a session load and a settled turn fire leave the toast stack
+ * empty. A failed one still states what failed, a superseded one still
+ * writes nothing, and the read a user asks for still names its result.
+ */
+describe("automatic balance refreshes", () => {
+  const TOAST_ID = "toast-billing.balance.refresh"
+  const balanceOk = {
+    state: "ok",
+    allowedToStartWork: true,
+    balance: { totalUsd: "500", lifetimeChargedUsd: "0", chargeCount: 0 }
+  }
+  const setupBilling = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    let release: (response: Response) => void = () => {}
+    const ctx = createControllerContext(store, repositories, agent, {
+      fetchImpl: (input) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        return new URL(url, "https://app.test").pathname.endsWith("/auth/session")
+          ? Promise.resolve(Response.json(signedIn))
+          : new Promise<Response>((resolve) => {
+            release = resolve
+          })
+      },
+      toastDebounceMs: 0,
+      toastAutoDismissMs: 10_000
+    })
+    ctx.withToast = createFailureController(ctx).withToast
+    const toast = () => store.collections.toasts.get(TOAST_ID)
+    const until = async (ready: () => boolean) => {
+      for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      expect(ready()).toBe(true)
+    }
+    return {
+      ctx,
+      controller: createAuthBillingController(ctx, () => 0),
+      toast,
+      balance: () => store.collections.billingAccounts.get("billing"),
+      release: (response: Response) => release(response),
+      // The notice is up before the answer lands, so a silent settlement is
+      // a dismissal this test can see, not a toast that never appeared.
+      running: () => until(() => toast()?.status === "running"),
+      until
+    }
+  }
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  test("a session load's refresh writes the balance and leaves no notice", async () => {
+    const h = await setupBilling()
+    void h.controller.loadSession()
+    await h.running()
+    h.release(Response.json(balanceOk))
+    await h.until(() => h.balance()?.state === "ok")
+    await tick()
+    expect(h.balance()?.totalUsd).toBe("500")
+    expect(h.toast()).toBeUndefined()
+  })
+
+  test("a settled turn's refresh writes the balance and leaves no notice", async () => {
+    const h = await setupBilling()
+    h.controller.settleTurnBilling()
+    await h.running()
+    h.release(Response.json(balanceOk))
+    await h.until(() => h.balance()?.state === "ok")
+    await tick()
+    expect(h.balance()?.totalUsd).toBe("500")
+    expect(h.toast()).toBeUndefined()
+  })
+
+  test("a failed automatic refresh still states the failure", async () => {
+    const h = await setupBilling()
+    h.controller.settleTurnBilling()
+    await h.running()
+    h.release(new Response("", { status: 500 }))
+    await h.until(() => h.toast()?.status === "failed")
+    expect(h.toast()).toMatchObject({
+      title: "Refreshing your balance…",
+      status: "failed",
+      detail: "Your balance couldn't be refreshed right now."
+    })
+    expect(h.balance()?.state).not.toBe("ok")
+  })
+
+  test("an automatic refresh the account outlives writes no balance", async () => {
+    const h = await setupBilling()
+    h.controller.settleTurnBilling()
+    await h.running()
+    h.ctx.accountEpoch += 1
+    h.release(Response.json(balanceOk))
+    await h.until(() => h.toast() === undefined)
+    await tick()
+    expect(h.balance()?.state).not.toBe("ok")
+  })
+
+  test("the balance a user asks for still states its result", async () => {
+    const h = await setupBilling()
+    const asked = h.controller.showBalance()
+    await h.running()
+    h.release(Response.json(balanceOk))
+    expect(await asked).toEqual({ value: "balance: $500 left; $0 spent across 0 turn(s)" })
+    expect(h.toast()).toMatchObject({ title: "Balance is up to date", status: "ok" })
+  })
+})
