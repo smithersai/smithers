@@ -148,23 +148,35 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   const notImported = (repo: string): string => `${repo} isn't imported yet — run /repos.import ${repo} first`
 
   /*
-   * The 404 split on a mutation, from the typed refusal and from local state —
-   * never from the platform's prose. plue codes a number it does not have
-   * ("issue not found") and a namespace it does not have ("repository not
-   * found") alike as `not_found` (PlueFailureCodes.ts, fault "user"), so the
-   * response cannot name the cause: reading it as the namespace told
-   * `/issue.close 999` in a repository the user had just listed to import it.
-   * A pin the sidebar holds is the one cause local state still names — that
-   * checkout is here and Cloud does not have it, which is what the import
-   * fixes. Otherwise this is the not-found it is, at the address this app
-   * asked for, which the generic code's own message does not name.
+   * The 404 split on a mutation, from the typed refusal — never from the
+   * platform's prose. plue codes a number it does not have ("issue not found")
+   * and a namespace it does not have ("repository not found") alike as
+   * `not_found` (PlueFailureCodes.ts, fault "user"), so the response cannot
+   * name the cause: reading it as the namespace told `/issue.close 999` in a
+   * repository the user had just listed to import it. This is the not-found it
+   * is, at the address this app asked for, which the generic code's own
+   * message does not name.
    */
-  const explain404 = async (response: Response, repo: string, fallback: string): Promise<string> => {
-    if ([...ctx.store.collections.pinnedRepos.values()].some((pin) => pin.name === repo)) return notImported(repo)
+  const explain404 = async (response: Response, fallback: string, whenNotFound?: string): Promise<string> => {
     const body: unknown = await response.json().catch(() => null)
     const refusal = refusalOf({ body, status: response.status, message: errorMessage(body, fallback) })
-    return refusal.code === "not_found" ? fallback : refusal.message
+    return refusal.code === "not_found" ? whenNotFound ?? fallback : refusal.message
   }
+
+  /*
+   * The one cause local state still names, and only on the namespace-scoped
+   * create: a checkout the sidebar pins that this launch has not opened. Open
+   * is `collections.repos`, the state FilesSeam's `knownRepo` reads; opening a
+   * checkout pins it (AppProjection, `repos.loaded`), so a pin on its own says
+   * nothing. A pin says the checkout is here, never that an issue number
+   * exists, so the number-scoped routes never read an import out of it, and it
+   * answers only the typed `not_found` — any other code still has its own say.
+   */
+  const notImportedPin = (repo: string): string | undefined =>
+    ![...ctx.store.collections.repos.values()].some((open) => open.name === repo)
+      && [...ctx.store.collections.pinnedRepos.values()].some((pin) => pin.name === repo)
+      ? notImported(repo)
+      : undefined
 
   const unreachable = (what: string, error: unknown): string => unreachableSentence(`the backend to ${what}`, error)
 
@@ -466,7 +478,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       }
       if (!response.ok) {
         // Mutations never fall back — the GitHub-source proxy is GET-only.
-        if (response.status === 404) return explain404(response, repo, `${repo} was not found`)
+        if (response.status === 404) return explain404(response, `${repo} was not found`, notImportedPin(repo))
         return readErrorMessage(response, `Creating the issue in ${repo} failed (${response.status})`)
       }
       const body: unknown = await response.json().catch(() => null)
@@ -504,7 +516,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       }
       if (!response.ok) {
         // Mutations never fall back — the GitHub-source proxy is GET-only.
-        if (response.status === 404) return explain404(response, repo, `Issue #${number} in ${repo} was not found`)
+        if (response.status === 404) return explain404(response, `Issue #${number} in ${repo} was not found`)
         return readErrorMessage(
           response,
           `Could not ${verb} issue #${number} in ${repo} (${response.status})`
@@ -533,7 +545,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       }
       if (!response.ok) {
         // Mutations never fall back — the GitHub-source proxy is GET-only.
-        if (response.status === 404) return explain404(response, repo, `Issue #${number} in ${repo} was not found`)
+        if (response.status === 404) return explain404(response, `Issue #${number} in ${repo} was not found`)
         return readErrorMessage(
           response,
           `Commenting on issue #${number} in ${repo} failed (${response.status})`

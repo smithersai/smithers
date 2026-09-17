@@ -97,6 +97,21 @@ const reposChosen = async (store: AppStore): Promise<void> => {
   await settled()
 }
 
+/** Opening a checkout pins it (AppProjection "opening pins"), so a pin alone never means "not imported". */
+const openCheckout = (store: AppStore): Promise<unknown> =>
+  store.dispatch({
+    type: "repos.loaded",
+    actor: "system",
+    repos: [{
+      id: "repo-flows",
+      name: "will/flows",
+      path: "/Users/will/flows",
+      warnings: [],
+      git: { branch: "main", remote: "git@github.com:will/flows.git" },
+      smithers: { detected: false, workspaceFile: null, declarationFiles: [], workspaces: [], reason: "none" }
+    }]
+  }).isPersisted.promise
+
 const issuesController = async (services: AppServices) => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
@@ -680,6 +695,74 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     if (outcome.status === "failed") {
       expect(outcome.error).toBe("will/flows isn't imported yet — run /repos.import will/flows first")
     }
+  })
+
+  test("closing a missing number in an open, imported checkout answers the number, not the import", async () => {
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "GET /api/repos/will/flows/issues": json(200, [wireIssue(7)]),
+      "PATCH /api/repos/will/flows/issues/999": json(404, ISSUE_NOT_FOUND)
+    }, calls))
+    await openCheckout(store)
+    // The state the defect needed: the open checkout is pinned, and its issues list came back imported.
+    expect([...store.collections.pinnedRepos.values()].map((pin) => pin.name)).toEqual(["will/flows"])
+    expect((await controller.commands.run("issues.list", "")).status).toBe("executed")
+    const outcome = await controller.commands.run("issues.close", "999")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("Issue #999 in will/flows was not found")
+    expect(calls.filter((call) => call.startsWith("PATCH"))).toEqual(["PATCH /api/repos/will/flows/issues/999"])
+  })
+
+  test("creating an issue in an open checkout the platform 404s names the repository, not the import", async () => {
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues": json(404, REPOSITORY_NOT_FOUND)
+    }))
+    await openCheckout(store)
+    const outcome = await controller.commands.run("issues.create", "A brand new idea")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("will/flows was not found")
+  })
+
+  /* A pin says the checkout is here, never that a number exists, so a number-scoped 404 keeps its own sentence. */
+  test("a pinned, unopened checkout still answers the number on a number-scoped 404", async () => {
+    const { store, controller } = await issuesController(backend({
+      "PATCH /api/repos/will/flows/issues/999": json(404, ISSUE_NOT_FOUND)
+    }))
+    await store.dispatch({
+      type: "repo.pinned",
+      actor: "user",
+      pin: { id: "pin-flows", name: "will/flows", path: "/Users/will/flows", branch: "main", origin: "local", pinnedAt: 1 }
+    }).isPersisted.promise
+    const outcome = await controller.commands.run("issues.close", "999")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("Issue #999 in will/flows was not found")
+  })
+
+  test("a pinned, unopened checkout keeps the platform's message when the 404 carries another code", async () => {
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues": json(404, { status: "error", code: "route_not_found", message: "Not found." })
+    }))
+    await store.dispatch({
+      type: "repo.pinned",
+      actor: "user",
+      pin: { id: "pin-flows", name: "will/flows", path: "/Users/will/flows", branch: "main", origin: "local", pinnedAt: 1 }
+    }).isPersisted.promise
+    const outcome = await controller.commands.run("issues.create", "A brand new idea")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("Not found.")
+  })
+
+  test("a 404 with no code keeps the platform's message, and an unreadable 404 answers the act's own sentence", async () => {
+    const { controller } = await issuesController(backend({
+      "PATCH /api/repos/will/flows/issues/7": json(404, { status: "error", message: "issue not found" }),
+      "POST /api/repos/will/flows/issues/7/comments": new Response("<!doctype html>404", { status: 404, headers: { "content-type": "text/html" } })
+    }))
+    const closed = await controller.commands.run("issues.close", "7")
+    expect(closed.status).toBe("failed")
+    if (closed.status === "failed") expect(closed.error).toBe("issue not found")
+    const commented = await controller.commands.run("issues.comment", "7 hello there")
+    expect(commented.status).toBe("failed")
+    if (commented.status === "failed") expect(commented.error).toBe("Issue #7 in will/flows was not found")
   })
 })
 
