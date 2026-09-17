@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
 
 /*
@@ -83,23 +83,42 @@ test("T1: a restored form after reload does not take the keyboard; Cancel return
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeFocused()
 })
 
-test("T1: delayed file options keep the focused path field usable from the keyboard", async ({ page }) => {
+/*
+ * The inventory is a SUGGESTION (flows/entries/files.ts): a repository path is
+ * not a closed enumeration, so the Path field is a text input from the first
+ * frame to the last and the file list arrives as its datalist. The arrival is
+ * read from the suggestions, never from the control's tag, because the control
+ * never changes.
+ */
+const heldInventory = async (page: Page) => {
   let release!: () => void
   const inventory = new Promise<void>(resolve => { release = resolve })
   await page.route("**/api/repos/smithersai/smithers/contents", async route => {
     await inventory
     await route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] })
   })
+  return { release: () => release() }
+}
+
+const suggestion = (form: Locator): Locator => form.locator("datalist option").first()
+
+test("T1: delayed file options keep the focused path field usable from the keyboard", async ({ page }) => {
+  const held = await heldInventory(page)
   await page.route("**/api/repos/smithersai/smithers/contents/README.md*", route => route.fulfill({ json: README }))
   try {
     const { form, path } = await askForPath(page)
     await expect(path).toHaveJSProperty("tagName", "INPUT")
     await expect(path).toBeFocused()
-    release()
-    await expect(path).toHaveJSProperty("tagName", "SELECT")
+    held.release()
+    await expect(suggestion(form)).toHaveAttribute("value", "README.md")
+    await expect(path).toHaveJSProperty("tagName", "INPUT")
     await expect(path).toBeFocused()
-    await page.keyboard.type("README")
+    // Nothing is filled in yet, so Tab has no Submit to reach.
+    await expect(form.getByTestId("flow-form-submit")).toBeDisabled()
+    await page.keyboard.type("README.md")
     await expect(path).toHaveValue("README.md")
+    // The draft commits through form.set, so Submit becomes a tab stop only once the card holds it.
+    await expect(form.getByTestId("flow-form-submit")).toBeEnabled()
     await page.keyboard.press("Tab")
     await expect(form.getByTestId("flow-form-cancel")).toBeFocused()
     await page.keyboard.press("Tab")
@@ -107,24 +126,40 @@ test("T1: delayed file options keep the focused path field usable from the keybo
     await page.keyboard.press("Enter")
     await expect(form).toBeFocused()
     await expect(form.locator("xpath=ancestor::section[1]")).toHaveAttribute("data-status", "acted")
-  } finally { release() }
+  } finally { held.release() }
+})
+
+test("T1: a path typed before the file options arrive survives them and reads that file", async ({ page }) => {
+  const held = await heldInventory(page)
+  await page.route("**/api/repos/smithersai/smithers/contents/README.md*", route => route.fulfill({ json: README }))
+  try {
+    const { form, path } = await askForPath(page)
+    await expect(path).toBeFocused()
+    await page.keyboard.type("REA")
+    await expect(path).toHaveValue("REA")
+    held.release()
+    await expect(suggestion(form)).toHaveAttribute("value", "README.md")
+    // The half-typed path is still on screen, in the same control, still holding the keyboard.
+    await expect(path).toHaveValue("REA")
+    await expect(path).toHaveJSProperty("tagName", "INPUT")
+    await expect(path).toBeFocused()
+    await page.keyboard.type("DME.md")
+    await expect(path).toHaveValue("README.md")
+    await page.keyboard.press("Enter")
+    await expect(page.getByTestId("card-file-smithersai/smithers-README.md")).toBeVisible({ timeout: 15_000 })
+  } finally { held.release() }
 })
 
 test("T1: delayed file options leave a newer Chat draft and its focus alone", async ({ page }) => {
-  let release!: () => void
-  const inventory = new Promise<void>(resolve => { release = resolve })
-  await page.route("**/api/repos/smithersai/smithers/contents", async route => {
-    await inventory
-    await route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] })
-  })
+  const held = await heldInventory(page)
   try {
-    const { composer, path } = await askForPath(page)
+    const { composer, form, path } = await askForPath(page)
     await expect(path).toBeFocused()
     await page.keyboard.press("Control+k")
     await composer.fill("Keep this draft while file options arrive")
-    release()
-    await expect(path).toHaveJSProperty("tagName", "SELECT")
+    held.release()
+    await expect(suggestion(form)).toHaveAttribute("value", "README.md")
     await expect(composer).toBeFocused()
     await expect(composer).toHaveValue("Keep this draft while file options arrive")
-  } finally { release() }
+  } finally { held.release() }
 })
