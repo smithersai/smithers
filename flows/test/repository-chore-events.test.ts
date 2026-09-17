@@ -101,6 +101,21 @@ test("only a push to the repository's default branch starts a chore", () => {
   for (const mode of ["manual", "off"] as const) assert.deepEqual(pushed("chores", mode, "refs/heads/main"), [], mode)
 })
 
+test("a chore starts only on the event its own draft chose", () => {
+  const labeled = { type: "issues", action: "labeled" } as const
+  const push = { source: "github" as const, type: "push", action: "pushed", deliveryKey: "push:main", payload: pushPayload("refs/heads/main") }
+  const schedule = { source: "schedule" as const, type: "schedule", action: "", deliveryKey: "schedule:1", payload: {} }
+  for (const mode of ["automatic", "approved"] as const) {
+    assert.deepEqual(selected("chores", mode, labeled, { choreEvent: "none" }), [], mode)
+    assert.deepEqual(selected("chores", mode, labeled, { choreEvent: "push" }), [], mode)
+    assert.deepEqual(selected("chores", mode, push, { choreEvent: "none" }), [], mode)
+    assert.deepEqual(selected("chores", mode, push, { choreEvent: "labeled", label: "chore" }), [], mode)
+    assert.deepEqual(selected("chores", mode, { type: "issues", action: "opened" }, { choreEvent: "labeled", label: "chore" }), [], mode)
+    assert.deepEqual(selected("chores", mode, { type: "issue_comment", action: "created" }, { choreEvent: "labeled", label: "chore" }), [], mode)
+    assert.deepEqual(selected("chores", mode, schedule, { schedule: "0 9 * * *" }), ["chore"], mode)
+  }
+})
+
 test("the CI job keeps starting on a side branch push", () => {
   assert.deepEqual(pushed("ci", "automatic", "refs/heads/feature/x"), ["checks"])
   assert.deepEqual(pushed("ci", "automatic", "refs/tags/v1.0.0"), ["checks"])
@@ -202,12 +217,22 @@ test("the chosen label reaches registration exactly as it was typed", async () =
   const scoped = await registerCandidate("enabled", setupInput("issues", "automatic", { scope: "label", label: "triage" }))
   assert.equal(scoped.outcome._tag, "Success")
   assert.equal((scoped.calls.find(call => call.name === "register")!.body as Record<string, unknown>).label, "triage")
-  const padded = await registerCandidate("enabled", setupInput("chores", "automatic", { choreEvent: "labeled", label: " chore " }))
-  assert.equal(padded.outcome._tag, "Success")
-  assert.equal((padded.calls.find(call => call.name === "register")!.body as Record<string, unknown>).label, " chore ",
-    "a label with surrounding whitespace is registered unchanged, exactly as the card keeps it")
+  const chore = await registerCandidate("enabled", setupInput("chores", "automatic", { choreEvent: "labeled", label: "chore" }))
+  assert.equal(chore.outcome._tag, "Success")
+  assert.equal((chore.calls.find(call => call.name === "register")!.body as Record<string, unknown>).label, "chore")
   const trial = await registerCandidate("trial", setupInput("chores", "automatic", { choreEvent: "labeled", label: "" }, "trial"))
   assert.equal(trial.outcome._tag, "Success", "a scoped trial registers no label-scoped event")
+})
+
+test("a padded label is refused before any registration side effect, like a blank one", async () => {
+  for (const [name, input] of [
+    ["labeled chore", setupInput("chores", "automatic", { choreEvent: "labeled", label: " chore " })],
+    ["label-scoped issues", setupInput("issues", "automatic", { scope: "label", label: "triage " })]
+  ] as const) {
+    const refused = await registerCandidate("enabled", input)
+    assert.equal(message(refused.outcome), "Remove the spaces around the issue label.", name)
+    assert.deepEqual(refused.calls, [], name)
+  }
 })
 
 test("the refusal spares an unscheduled chore, an automatic chore and the scoped trial", async () => {

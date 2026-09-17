@@ -61,6 +61,20 @@ it("a chore event joins the candidate, defaults to none in a stored draft and ne
   expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, schedule: "0 9 * * *" } })).not.toContain(unattended)
 })
 
+it("refuses a padded label where the label decides what runs, so a label that never fires cannot register", () => {
+  const padded = "Remove the spaces around the issue label."
+  const chore = initialSetup("example/repo", "chores", "maintainer")
+  const running = chore.draft.steps.map(step => ({ ...step, mode: "approved" as const }))
+  expect(setupActivationProblems({ ...chore, draft: { ...chore.draft, steps: running, choreEvent: "labeled", label: " chore " } })).toContain(padded)
+  expect(setupActivationProblems({ ...chore, draft: { ...chore.draft, steps: running, choreEvent: "labeled", label: "chore" } })).not.toContain(padded)
+  const issues = initialSetup("example/repo", "issues", "maintainer")
+  expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, scope: "label", label: "triage " } })).toContain(padded)
+  const blank = setupActivationProblems({ ...issues, draft: { ...issues.draft, scope: "label", label: " " } })
+  expect(blank).toContain("Choose the issue label.")
+  expect(blank).not.toContain(padded)
+  expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, label: " triage " } })).not.toContain(padded)
+})
+
 /** Digests the pre-stack code at 1f7d9b40bcc5 computed, which is what stored
  * setup records, registration rows and retained cards still carry. */
 const STORED_DIGESTS = {

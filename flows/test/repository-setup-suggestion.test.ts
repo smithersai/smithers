@@ -28,7 +28,7 @@ test("a suggestion without step overrides keeps every step and the user's own de
   assert.deepEqual(merged.steps, draft.steps)
   assert.equal(merged.steps[0], draft.steps[0], "an unchanged step is the draft's own step")
   assert.equal(merged.steps[1], draft.steps[1])
-  for (const field of ["replies", "landing", "scope", "label", "schedule", "choreEvent", "budgetMinutes"] as const) assert.deepEqual(merged[field], draft[field])
+  for (const field of ["replies", "landing", "scope", "label", "schedule", "choreEvent", "connectIssues", "budgetMinutes"] as const) assert.deepEqual(merged[field], draft[field])
   assert.equal(merged.trialTitle, "Reproduce the reported crash")
   assert.equal(merged.trialBody, "A realistic first request.")
 })

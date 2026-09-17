@@ -259,8 +259,9 @@ export const SetupRecoveryResponseSchema = z.object({
 export type SetupRecoveryResponse = z.infer<typeof SetupRecoveryResponseSchema>
 
 /** What a registration's own scope refuses: a chore that fires on a schedule or
- * event but runs no step reports skipped forever, and a label-scoped candidate
- * with no chosen label matches every labeled issue. @since 1.0.0 */
+ * event but runs no step reports skipped forever, a label-scoped candidate
+ * with no chosen label matches every labeled issue, and a padded label matches
+ * none, since the registry compares label names exactly. @since 1.0.0 */
 export function registrationScopeProblems(setup: { job: RepositoryJob; draft: Pick<SetupDraft, "schedule" | "choreEvent" | "scope" | "label"> &
   { steps: ReadonlyArray<Pick<SetupDraft["steps"][number], "mode">> } }): string[] {
   const problems: string[] = []
@@ -268,8 +269,9 @@ export function registrationScopeProblems(setup: { job: RepositoryJob; draft: Pi
     !setup.draft.steps.some(step => step.mode === "automatic" || step.mode === "approved")) {
     problems.push("Set the chore to run automatically or on approval.")
   }
-  if ((setup.draft.scope === "label" || (setup.job === "chores" && setup.draft.choreEvent === "labeled")) && !setup.draft.label.trim()) {
-    problems.push("Choose the issue label.")
+  if (setup.draft.scope === "label" || (setup.job === "chores" && setup.draft.choreEvent === "labeled")) {
+    if (!setup.draft.label.trim()) problems.push("Choose the issue label.")
+    else if (setup.draft.label !== setup.draft.label.trim()) problems.push("Remove the spaces around the issue label.")
   }
   return problems
 }

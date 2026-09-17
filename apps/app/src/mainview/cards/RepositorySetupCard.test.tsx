@@ -312,6 +312,19 @@ test("a per-step work form edits labeled fields and opens the actual dispatched 
   } finally { t.close() }
 })
 
+test("the issue label input belongs to the issues scope and to a chore's own labeled event", () => {
+  const card = makeCard("issues"), t = mount(card)
+  try {
+    card.payload.draft.choreEvent = "labeled"
+    t.render(card)
+    expect(t.host.textContent).not.toContain("Issue label")
+    card.payload.draft.scope = "label"
+    t.render(card)
+    expect(t.host.textContent).toContain("Issue label")
+    expect(t.calls).toEqual([])
+  } finally { t.close() }
+})
+
 test("a chore picks an event beside its schedule and cannot enable automation no step would run", () => {
   const unattended = "Set the chore to run automatically or on approval."
   const card = makeCard("chores"), t = mount(card)

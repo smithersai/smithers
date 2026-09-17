@@ -65,7 +65,8 @@ export const suggestedSetupDraft = (existing: Draft, suggested: typeof Suggested
   ...suggested, steps: suggestedSteps(existing.steps, suggested.steps), checks: suggestedChecks(existing.checks, suggested.checks),
   cases: existing.cases.length ? existing.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })),
   replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
-  schedule: existing.schedule, choreEvent: existing.choreEvent, budgetMinutes: existing.budgetMinutes
+  schedule: existing.schedule, choreEvent: existing.choreEvent, connectIssues: existing.connectIssues,
+  budgetMinutes: existing.budgetMinutes
 })
 export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   payload: { input: SetupInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number }, output: SuggestedDraft,

@@ -53,9 +53,16 @@ const defaultBranchPush = (event: typeof Event.Type) => {
   const payload = object(event.payload), branch = object(payload.repository).default_branch
   return typeof branch === "string" && branch !== "" && payload.ref === `refs/heads/${branch}`
 }
+// Plue's rule filter is not the only authority. A chore starts on the event its
+// own draft chose, on its schedule, or by a manual dispatch or a trial.
+const choreEventStarts = (configuration: JobInput["configuration"], event: typeof Event.Type) =>
+  event.type === "push" ? configuration.choreEvent === "push" && defaultBranchPush(event)
+    : event.type === "issues" ? configuration.choreEvent === "labeled" && event.action === "labeled"
+      : event.type === "schedule" || event.type === "manual"
 export const selectedSteps = (input: Pick<JobInput, "job" | "configuration" | "event">) => {
   if (sourceEvent(input.event).ignored) return []
-  if (input.job === "chores" && input.event.type === "push" && !defaultBranchPush(input.event)) return []
+  if (input.job === "chores" && input.event.trial !== true && input.event.manualStep === undefined &&
+    !choreEventStarts(input.configuration, input.event)) return []
   const manualStep = input.event.manualStep
   if (manualStep !== undefined && (input.event.type !== "manual" || input.event.action !== `manual:${manualStep}` ||
       !input.configuration.steps.some(step => step.id === manualStep && step.mode !== "off"))) throw invalid("The manual event does not select an enabled step")

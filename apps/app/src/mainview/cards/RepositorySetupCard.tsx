@@ -74,7 +74,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         <label>Landing<select value={draft.landing} onChange={event => set("landing", event.target.value)}><option value="ask">Ask me</option><option value="checks">When approved checks pass</option></select></label>
         <label>Time limit (minutes)<input type="number" min={1} max={120} {...editor(draft.budgetMinutes)} onInput={event => { if (event.currentTarget.value) set("budgetMinutes", Number(event.currentTarget.value)) }} /></label>
         {state.job === "issues" && <label>Apply to<select value={draft.scope} onChange={event => set("scope", event.target.value)}><option value="future">New and edited issues</option><option value="label">Chosen issue label</option></select></label>}
-        {(draft.scope === "label" || draft.choreEvent === "labeled") && <label>Issue label<input {...editor(draft.label)} onInput={event => set("label", event.currentTarget.value)} /></label>}
+        {(draft.scope === "label" || (state.job === "chores" && draft.choreEvent === "labeled")) && <label>Issue label<input {...editor(draft.label)} onInput={event => set("label", event.currentTarget.value)} /></label>}
         {state.job === "chores" && <label>Schedule (UTC)<input {...editor(draft.schedule)} placeholder="Cron expression; blank for manual" onInput={event => set("schedule", event.currentTarget.value)} /></label>}
         {state.job === "chores" && <label>Also run on<select aria-label="Also run on" value={draft.choreEvent} onChange={event => set("choreEvent", event.target.value)}>
           <option value="none">Nothing</option><option value="push">Push to the default branch</option><option value="labeled">Labeled issue</option>
