@@ -107,6 +107,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   const connect = () => RpcClient.make(ControlRpcs.ControlRpcs)
   let client!: Effect.Success<ReturnType<typeof connect>>
   let issueNumber = 10, creates = 0, comments = 0
+  const replies = new Map<string, { body: string; commentId: number }>()
   const issues = new Map<string, any>()
   const remote = RepositoryRemote.of({ repo, workspaceId,
     source: Effect.succeed("smithers-cloud"),
@@ -116,6 +117,14 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     comment: (job, step, raw) => Effect.sync(() => {
       assert.equal(job, "issues")
       const value = raw as Record<string, any>
+      if (value.delivery_key === "author" || String(value.delivery_key).startsWith("reply:")) {
+        // Plue keys a published comment by (dispatch, step): a retry returns its receipt, another body is HTTP 409.
+        const key = `${value.delivery_key}|${step}`, prior = replies.get(key)
+        assert(prior === undefined || prior.body === value.body, "one publication step never carries two bodies")
+        if (prior === undefined) replies.set(key, { body: value.body, commentId: 200 + replies.size })
+        return json({ registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision, digest: value.digest,
+          delivery_key: value.delivery_key, step, source: "smithers-cloud", issue_number: value.issue_number, comment_id: replies.get(key)!.commentId, api_path: "/repos/example/demo/issues/50/comments" })
+      }
       assert.equal(value.delivery_key, "manual:test-run", "a setup trial cannot publish its draft")
       comments++
       return json({ registration_id: "33333333-3333-4333-8333-333333333333", revision: value.revision, digest: value.digest,
@@ -494,6 +503,16 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       const launched = yield* client.Run({ _tag: "Plan", planId: plan.planId, digest: plan.digest, envelope: plan.envelope, idempotencyKey: `${mode}:run` })
       assert.equal(launched._tag, "Accepted")
       const runId = launched.runId!
+      const decideReply = (label: string, post: boolean) => Effect.gen(function*() {
+        const waiting = yield* waitFor(runId, row => row.status === "waiting-approval" && row.pendingWaits?.some((wait: any) => wait.name === "repository-reply"))
+        assert(waiting.pendingWaits?.some((wait: any) => wait.name === "repository-reply"))
+        for (let attempt = 0; attempt < 800; attempt++) {
+          const receipt = yield* client.Signal({ runId, signal: { name: "repository-reply", payload: post }, idempotencyKey: `reply:${label}:${attempt}` }).pipe(Effect.result)
+          if (receipt._tag === "Success") { assert.equal(receipt.success._tag, "Accepted"); break }
+          if (receipt.failure._tag !== "/control/NoMatchingWait" || attempt === 799) throw receipt.failure
+          yield* Effect.sleep("50 millis")
+        }
+      })
       if (mode !== "author") {
         const waiting = yield* waitFor(runId, row => row.status === "waiting-approval")
         assert(waiting.pendingWaits?.some((wait: any) => wait.name === "repository-run-reproduction"))
@@ -504,7 +523,10 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
           if (receipt.failure._tag !== "/control/NoMatchingWait" || attempt === 799) throw receipt.failure
           yield* Effect.sleep("50 millis")
         }
+        // A demonstrated reproduction is a material finding, so draft mode asks before it posts; No posts nothing.
+        if (mode === "reproduction") yield* decideReply("declined", false)
       } else {
+        yield* decideReply("first", true)
         for (const [index, author] of [2, 1, 1].entries()) {
           yield* waitFor(runId, row => row.status === "parked" && row.waitingReason === "event")
           const reply = { source: "smithers-cloud", type: "issue_comment", action: "created", deliveryKey: `reply:${index}`, issueNumber: 50,
@@ -515,6 +537,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
             if (receipt.failure._tag !== "/control/NoMatchingWait" || attempt === 799) throw receipt.failure
             yield* Effect.sleep("50 millis")
           }
+          if (author === 1) yield* decideReply(`round-${index}`, true)
         }
       }
       yield* waitFor(runId, row => row.status === "completed")
@@ -534,6 +557,13 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       } else {
         const investigated = requests.filter(request => request.includes("Ask twice") && !request.includes("Propose a configuration") && !request.includes("Independently evaluate"))
         assert.equal(investigated.length, 3, "an unrelated reply cannot rerun the investigation")
+        // Every approved round is its own publication: its own step, its own reply event, its own receipt.
+        assert.equal(replies.size, 3)
+        assert.equal(new Set([...replies.keys()].map(key => key.split("|")[1])).size, 3)
+        assert.deepEqual([...replies.keys()].map(key => key.split("|")[0]), ["author", "reply:1", "reply:2"])
+        assert.equal(result.publicActions.length, 3)
+        assert.deepEqual(result.publicActions.map((action: any) => action.comment_id), [200, 201, 202])
+        assert.equal(result.reply?.state, "posted")
       }
     }
     if (proof.mutation) {

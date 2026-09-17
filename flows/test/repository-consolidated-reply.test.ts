@@ -46,6 +46,7 @@ const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") =
   const remote = Layer.succeed(RepositoryRemote, RepositoryRemote.of({
     repo: "example/repo", workspaceId: "22222222-2222-4222-8222-222222222222",
     history: Effect.succeed({ records: [], sources: [] }),
+    registrations: Effect.die("a reply never reads registrations"),
     register: () => Effect.die("a reply never registers a job"),
     pause: () => Effect.die("a reply never pauses a job"),
     dispatches: () => Effect.die("a reply never reads dispatches"),
