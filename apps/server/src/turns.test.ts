@@ -13,7 +13,7 @@ import type { NativeExecutionContext } from "./Environment"
 import { StorageFailure } from "./Failures"
 import { transportLayer } from "./Http"
 import {
-  CANCEL_POLL_LIMIT,
+  CANCEL_MONITOR_MS,
   CANCEL_POLL_MAX_MS,
   CANCEL_POLL_MS,
   handleCancel,
@@ -320,9 +320,10 @@ describe("the tagged pump's silent-stream poll", () => {
     const frames = await Effect.runPromise(
       Effect.gen(function* () {
         const collecting = yield* Effect.forkChild(Stream.runCollect(taggedTurnFrames(upstream.body, "run-poll", hooks)))
-        // The schedule the pump keeps while the upstream says nothing.
+        // The schedule the pump keeps while the upstream says nothing, run
+        // past the eight-minute monitoring cap.
         const steps = [CANCEL_POLL_MS, 1000, 2000, 4000, CANCEL_POLL_MAX_MS]
-        for (let index = 0; index < CANCEL_POLL_LIMIT + 2; index += 1) {
+        for (let index = 0; (yield* Clock.currentTimeMillis) <= CANCEL_MONITOR_MS; index += 1) {
           yield* TestClock.adjust(steps[Math.min(index, steps.length - 1)]!)
           yield* Effect.yieldNow
         }
@@ -331,7 +332,9 @@ describe("the tagged pump's silent-stream poll", () => {
     )
     const decoded = [...frames].map((bytes) => JSON.parse(new TextDecoder().decode(bytes).trim()))
     expect(decoded).toEqual([{ runId: "run-poll", type: "done", reason: "stop", error: MONITORING_LIMIT_ERROR }])
-    expect(polledAt).toHaveLength(CANCEL_POLL_LIMIT)
+    // Polls at 0, 500, 1500, 3500, 7500, then every 5000ms up to 477500: 99 polls, then the cap.
+    expect(polledAt).toHaveLength(99)
+    expect(polledAt.at(-1)).toBeLessThan(CANCEL_MONITOR_MS)
     const intervals = polledAt.slice(1).map((at, index) => at - polledAt[index]!)
     expect(intervals.slice(0, 5)).toEqual([500, 1000, 2000, 4000, 5000])
     expect(Math.max(...intervals)).toBe(CANCEL_POLL_MAX_MS)
@@ -340,40 +343,47 @@ describe("the tagged pump's silent-stream poll", () => {
     expect(upstream.wasCancelled()).toBe(true)
   })
 
-  test("data resets the backoff: after a chunk the next silent poll is 500ms away again", async () => {
+  test("a stream that never falls silent backs its polls off and outlives the old 48-second wall", async () => {
+    // A poll is a subrequest. A chunk every 250ms for two minutes must not cost
+    // one poll per 500ms (240 polls, the budget spent at 48 seconds): the
+    // interval backs off to CANCEL_POLL_MAX_MS whether or not data flows.
     const polledAt: Array<number> = []
+    const aborts: Array<string> = []
     let controller!: ReadableStreamDefaultController<Uint8Array>
-    const body = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({ start(c) { controller = c }, cancel: () => { cancelled = true } })
     const hooks: TurnStreamHooks = {
       isCancelled: Effect.map(Clock.currentTimeMillis, (now) => {
         polledAt.push(now)
         return false
       }),
-      abort: () => Effect.void,
+      abort: (reason) => Effect.sync(() => { aborts.push(reason) }),
       settle: Effect.void
     }
-    await Effect.runPromise(
+    const chunkMs = 250
+    const chunks = 120_000 / chunkMs
+    const frames = await Effect.runPromise(
       Effect.gen(function* () {
-        const collecting = yield* Effect.forkChild(Stream.runCollect(taggedTurnFrames(body, "run-reset", hooks)))
-        // Silence backs the poll off: 500, 1000, 2000.
-        for (const step of [500, 1000, 2000]) {
-          yield* TestClock.adjust(step)
-          yield* Effect.yieldNow
+        const collecting = yield* Effect.forkChild(Stream.runCollect(taggedTurnFrames(body, "run-stream", hooks)))
+        for (let index = 0; index < chunks && !cancelled; index += 1) {
+          yield* TestClock.adjust(chunkMs)
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "delta", kind: "text", text: `t${index}` })}\n`))
+          yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
         }
-        expect(polledAt).toEqual([0, 500, 1500, 3500])
-        // A chunk arrives: the interval resets to 500ms for the next silence.
-        controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "delta", kind: "text", text: "hi" })}\n`))
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)))
-        yield* TestClock.adjust(500)
-        yield* Effect.yieldNow
-        expect(polledAt.at(-1)).toBe(4000)
-        yield* TestClock.adjust(1000)
-        yield* Effect.yieldNow
-        expect(polledAt.at(-1)).toBe(5000)
-        controller.close()
-        yield* Fiber.join(collecting)
+        if (!cancelled) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "done", reason: "stop" })}\n`))
+          controller.close()
+        }
+        return yield* Fiber.join(collecting)
       }).pipe(Effect.provide(TestClock.layer()))
     )
+    const decoded = [...frames].map((bytes) => JSON.parse(new TextDecoder().decode(bytes).trim()))
+    expect(decoded).toHaveLength(chunks + 1)
+    expect(decoded.at(-1)).toEqual({ runId: "run-stream", type: "done", reason: "stop" })
+    expect(aborts).toEqual([])
+    // 500, 1000, 2000, 4000, then one poll per CANCEL_POLL_MAX_MS.
+    expect(polledAt.length).toBeLessThanOrEqual(5 + 120_000 / CANCEL_POLL_MAX_MS)
+    expect(polledAt.length).toBeGreaterThan(5)
   })
 
   test("a registry read that fails ends the stream with the lost-monitoring frame", async () => {

@@ -339,25 +339,34 @@ const registryUnreachable = (failure: StorageFailure): Response =>
 /* The tagged NDJSON pump                                                    */
 /* ------------------------------------------------------------------------ */
 
-/** How often the streaming pump re-checks the kill state while the upstream is silent, at first. */
+/** How often the streaming pump re-checks the kill state, at first. */
 export const CANCEL_POLL_MS = 500
-/** The poll backs off during silence up to this interval, and resets when data flows. */
+/**
+ * The poll backs off to this interval whether the upstream streams or stays
+ * silent: data must not reset it, or a token stream would pay one poll per
+ * 500ms and spend any budget under the subrequest ceiling within a minute.
+ */
 export const CANCEL_POLL_MAX_MS = 5000
 /**
- * At most eight minutes of silent monitoring, below the stale registration
- * window and with ample subrequests reserved for auth, inference and cleanup.
+ * At most eight minutes of monitoring, below the stale registration window;
+ * a turn still streaming then is beyond any honest answer.
  */
-export const CANCEL_POLL_LIMIT = 96
-
+export const CANCEL_MONITOR_MS = 8 * 60 * 1000
 /**
  * The poll is a Durable Object subrequest, and a Worker request may only make
- * ~1000 of those — a token-streamed turn delivers far more chunks than that,
- * so polling once per chunk would kill long turns with "Too many subrequests".
- * The poll backs off during silence to CANCEL_POLL_MAX_MS. Also, because
- * workerd's clock only advances on I/O — at least one every
- * CANCEL_POLL_CHUNKS chunks, so a fast stream can never starve the check.
+ * ~1000 of those. The cadence keeps a CANCEL_MONITOR_MS turn far below this
+ * cap (about a hundred timed polls plus one per CANCEL_POLL_CHUNKS chunks),
+ * which leaves ample subrequests for auth, inference and cleanup.
  */
-export const CANCEL_POLL_CHUNKS = 64
+export const CANCEL_POLL_LIMIT = 600
+
+/**
+ * Polling once per chunk would kill long turns with "Too many subrequests",
+ * so the timed poll governs. Because workerd's clock only advances on I/O, a
+ * poll also fires at least once every CANCEL_POLL_CHUNKS chunks, so a fast
+ * stream can never starve the check.
+ */
+export const CANCEL_POLL_CHUNKS = 256
 
 export const MONITORING_LIMIT_ERROR = "The turn exceeded its cancellation monitoring limit. Try again."
 export const MONITORING_LOST_ERROR = "The turn lost cancellation monitoring. Try again."
@@ -446,6 +455,7 @@ export const taggedTurnFrames = (
   // wins the race leaves the read in place for the next pull instead of
   // issuing a second read on the same reader (which would throw).
   let pendingRead: ReturnType<typeof reader.read> | undefined
+  let startedAt: number | undefined
   let lastPollAt = 0
   let chunksSincePoll = CANCEL_POLL_CHUNKS
   let pollInterval = CANCEL_POLL_MS
@@ -469,15 +479,20 @@ export const taggedTurnFrames = (
   // Rate-limited kill check: skipped once the turn has settled (the registry
   // entry is then free for the next leg, and a later "cancelled" on it is not
   // this stream's business) and while neither the clock nor the chunk count
-  // says another poll is due.
+  // says another poll is due. A timed poll backs the interval off, data or
+  // no data; a chunk-count poll leaves it alone.
   const killed: Effect.Effect<KillReason | false> = Effect.gen(function* () {
     if (settled) return false
     const now = yield* Clock.currentTimeMillis
-    if (now - lastPollAt < pollInterval && chunksSincePoll < CANCEL_POLL_CHUNKS) return false
-    if (polls >= CANCEL_POLL_LIMIT) return "limit"
+    startedAt ??= now
+    // The first poll is due by the chunk count, never "elapsed".
+    const elapsed = polls > 0 && now - lastPollAt >= pollInterval
+    if (!elapsed && chunksSincePoll < CANCEL_POLL_CHUNKS) return false
+    if (now - startedAt >= CANCEL_MONITOR_MS || polls >= CANCEL_POLL_LIMIT) return "limit"
     polls += 1
     lastPollAt = now
     chunksSincePoll = 0
+    if (elapsed) pollInterval = Math.min(pollInterval * 2, CANCEL_POLL_MAX_MS)
     const read = yield* Effect.result(hooks.isCancelled)
     if (Result.isFailure(read)) {
       yield* Effect.sync(() => console.error("turn registry state failed:", read.failure.cause))
@@ -502,14 +517,9 @@ export const taggedTurnFrames = (
       const result = settled
         ? yield* read
         : yield* Effect.raceFirst(read, Effect.sleep(pollInterval).pipe(Effect.as("tick" as const)))
-      if (result === "tick") {
-        // Keep the pending read alive; force the elapsed poll even as the
-        // next wait backs off.
-        chunksSincePoll = CANCEL_POLL_CHUNKS
-        pollInterval = Math.min(pollInterval * 2, CANCEL_POLL_MAX_MS)
-        continue
-      }
-      pollInterval = CANCEL_POLL_MS
+      // A tick keeps the pending read alive; the interval it slept has
+      // elapsed, so the next `killed` polls.
+      if (result === "tick") continue
       pendingRead = undefined
       chunksSincePoll += 1
       const { value, done } = result
