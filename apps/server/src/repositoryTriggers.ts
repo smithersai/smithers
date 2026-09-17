@@ -15,14 +15,15 @@
  * listing, and the five setup jobs' own recovery (repositorySetupRecovery.ts)
  * is a separate reader that this file never touches.
  */
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { Data, Effect, Result } from "effect"
 import { z } from "zod"
 import { ServerConfig } from "./Config"
-import { fetchCloudToken, isRelayRepoName } from "./gateway"
+import { cloudTokenRefusal, fetchCloudToken, isRelayRepoName } from "./gateway"
 import type { UpstreamFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
-import { json, readBody, refuse, refuseWithStatus, upstreamUnreachable } from "./Responses"
+import { json, readBody, refuse, upstreamUnreachable } from "./Responses"
 import { requireWorkflowSession } from "./workflows"
 
 /** The Worker routes this file serves, beside the existing `/api/workflow/*` block. */
@@ -34,6 +35,8 @@ export const TRIGGER_APPROVAL_PATH = "/api/workflow/trigger-approval"
 export const FLOW_JOB_KEY = /^flow:[a-z0-9][a-z0-9-]{0,63}$/
 /** The slug alone, as the app names a schedule. */
 export const FLOW_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
+/** The flow id Plue records an approval against (`repositoryJobFlowName`, repository_jobs.go). */
+export const FLOW_ID = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,199}$/
 
 /** The `flow:<slug>` key of a slug, for the routes that address one registration. */
 export const flowJobKey = (slug: string): string => `flow:${slug}`
@@ -42,8 +45,16 @@ type TriggerServices = Transport | ServerConfig
 
 class TriggerError extends Data.TaggedError("TriggerError")<{ readonly status: number; readonly message: string }> {}
 
-/** Either Smithers Cloud refused with a status, or nothing answered at all. */
-type TriggerFailure = TriggerError | UpstreamFailure
+/**
+ * This deployment never got as far as asking, and the reason is a fact about
+ * the ACCOUNT rather than about Smithers Cloud: `cloudTokenRefusal` classifies
+ * it once, beside every other Cloud-token consumer, so a waitlisted user reads
+ * a closed-alpha refusal instead of an outage.
+ */
+class TokenError extends Data.TaggedError("TokenError")<{ readonly code: WorkerFailureCode; readonly message: string }> {}
+
+/** Either Smithers Cloud refused with a status, or this account has no token, or nothing answered at all. */
+type TriggerFailure = TriggerError | TokenError | UpstreamFailure
 
 /** One `flow:*` registration as this route publishes it. Every field is Plue's own. */
 export interface TriggerRegistrationRow {
@@ -107,12 +118,12 @@ const cloud = (
         ...(init.body === undefined ? {} : { body: init.body })
       }, config.upstreamTimeoutMs)
     let token = yield* fetchCloudToken(login)
-    if (token.status !== "ok") return yield* Effect.fail(new TriggerError({ status: 503, message: token.detail }))
+    if (token.status !== "ok") return yield* Effect.fail(new TokenError(cloudTokenRefusal(token, token.detail)))
     let response = yield* call(token.token)
     if (response.status === 401) {
       yield* discardBody(response)
       token = yield* fetchCloudToken(login)
-      if (token.status !== "ok") return yield* Effect.fail(new TriggerError({ status: 503, message: token.detail }))
+      if (token.status !== "ok") return yield* Effect.fail(new TokenError(cloudTokenRefusal(token, token.detail)))
       response = yield* call(token.token)
     }
     const body = yield* readBoundedJson(response, limit).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -125,17 +136,21 @@ const cloud = (
   })
 
 /**
- * The refusal a failure earns, honest about which side it came from: Smithers
- * Cloud's own status where the status is the evidence, this deployment's
- * missing Cloud identity, or a transport that never produced a response.
+ * The refusal a failure earns, honest about which side it came from: this
+ * account's own standing with Smithers Cloud, Cloud's own status where the
+ * status is the evidence, or a transport that never produced a response.
+ *
+ * A 409 is the one Cloud status this family has a word of its own for: no
+ * approval is on file for the plan a schedule names, which a person clears by
+ * approving the preview again and waiting never clears.
  */
 const cloudRefusal = (failure: TriggerFailure): Response =>
-  failure._tag !== "TriggerError"
+  failure._tag === "TokenError"
+    ? refuse(failure.code, failure.message)
+    : failure._tag !== "TriggerError"
     ? upstreamUnreachable("Smithers Cloud", failure)
     : failure.status === 409
-    ? refuseWithStatus(409, "request_conflict", failure.message)
-    : failure.status === 503
-    ? refuse("cloud_token_unavailable", failure.message)
+    ? refuse("trigger_approval_missing", failure.message)
     : refuse("upstream_refused", failure.message)
 
 const repoOf = (value: unknown): string | undefined =>
@@ -188,8 +203,12 @@ export const handleTriggerPause = (request: Request): Effect.Effect<Response, ne
       cloud(session.login, `/api/repos/${repo}/repository-jobs/${flowJobKey(slug)}/pause`, { method: "POST" }, 16_000)
     )
     if (Result.isFailure(paused)) return cloudRefusal(paused.failure)
-    const record = typeof paused.success === "object" && paused.success !== null ? paused.success as Record<string, unknown> : {}
-    return json(200, { status: "ok", paused: typeof record.paused === "number" ? record.paused : 1 })
+    /*
+     * Plue answers the registrations it updated, so an unregistered slug that
+     * passes the job-name gate answers `[]` and stops nothing. The count is
+     * that array's length; anything else stopped nothing either.
+     */
+    return json(200, { status: "ok", paused: Array.isArray(paused.success) ? paused.success.length : 0 })
   })
 
 /**
@@ -197,7 +216,9 @@ export const handleTriggerPause = (request: Request): Effect.Effect<Response, ne
  *
  * Plue stamps who approved and when from the authenticated session; nothing
  * on this wire can name either. The app supplies only what Control produced:
- * the plan's id, its digest, and the envelope that plan was made under.
+ * the plan's id, its digest, the flow it plans, and the envelope it was made
+ * under. Plue refuses the receipt unless the flow id matches the one the
+ * registration names, so an absent one is refused here rather than there.
  */
 export const handleTriggerApproval = (request: Request): Effect.Effect<Response, never, TriggerServices> =>
   Effect.gen(function* () {
@@ -208,17 +229,18 @@ export const handleTriggerApproval = (request: Request): Effect.Effect<Response,
     const candidate = typeof body === "object" && body !== null ? body as Record<string, unknown> : {}
     const repo = repoOf(candidate.repo)
     const slug = slugOf(candidate.slug)
+    const flowId = typeof candidate.flowId === "string" && FLOW_ID.test(candidate.flowId) ? candidate.flowId : undefined
     const planId = typeof candidate.planId === "string" && candidate.planId !== "" ? candidate.planId : undefined
     const planDigest = digestOf(candidate.planDigest)
-    if (repo === undefined || slug === undefined || planId === undefined || planDigest === undefined) {
-      return refuse("request_invalid", "Body must be { repo, slug, planId, planDigest, envelope }.")
+    if (repo === undefined || slug === undefined || flowId === undefined || planId === undefined || planDigest === undefined) {
+      return refuse("request_invalid", "Body must be { repo, slug, flowId, planId, planDigest, envelope }.")
     }
     const recorded = yield* Effect.result(cloud(
       session.login,
       `/api/repos/${repo}/repository-jobs/${flowJobKey(slug)}/approvals`,
       {
         method: "POST",
-        body: JSON.stringify({ plan_id: planId, plan_digest: planDigest, envelope: candidate.envelope ?? null })
+        body: JSON.stringify({ plan_id: planId, plan_digest: planDigest, flow_id: flowId, envelope: candidate.envelope ?? null })
       },
       16_000
     ))

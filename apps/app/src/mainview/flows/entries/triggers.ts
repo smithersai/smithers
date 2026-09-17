@@ -24,8 +24,13 @@ const Registration = Schema.Struct({
   input: Schema.optional(Schema.String)
 })
 
-/** The prepared registration the plan preview's approve button carries back. */
+/**
+ * The prepared registration the plan preview's approve button carries back.
+ * `requestId` names the one attempt the preview belongs to, so approving
+ * repeats that attempt's plan rather than minting a second one.
+ */
 const PreparedRegistration = Schema.Struct({
+  requestId: Schema.String,
   repo: Schema.optional(Schema.String),
   flow: Schema.String,
   slug: Schema.String,

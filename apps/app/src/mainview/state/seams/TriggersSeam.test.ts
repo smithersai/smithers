@@ -7,7 +7,7 @@ import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { Schema } from "effect"
-import { NO_RULES_SENTENCE } from "./TriggersSeam"
+import { NO_RULES_SENTENCE, registerUnavailableSentence } from "./TriggersSeam"
 
 // The first controller in a file pays the module warm-up; under machine load that alone passes 5 s.
 setDefaultTimeout(30_000)
@@ -315,18 +315,22 @@ interface RelayCall {
 }
 
 const PLAN_DIGEST = "d".repeat(64)
+/* The card Control publishes: its envelope carries the budget nested, exactly as control/ControlSchema.ts Envelope declares it. */
 const PLAN = {
   planId: "plan-1",
   digest: PLAN_DIGEST,
   flowId: "nightly-lint",
   executionDigest: "e".repeat(64),
-  envelope: { capabilities: ["fs:read:**"], flows: ["nightly-lint"], tokens: 200_000, milliseconds: 1_800_000 }
+  envelope: { capabilities: ["fs:read:**"], flows: ["nightly-lint"], budget: { tokens: 200_000, milliseconds: 1_800_000 } }
 }
 
 /* Exactly what the workspace publishes for a flow's input: registry Descriptor.inputDocument's own document. */
 const LINT_SCHEMA = JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(Schema.Struct({ label: Schema.String })))) as unknown
 
-const FLOW_ITEMS = [{ flowId: "nightly-lint", description: "Lints the repository.", inputSchema: LINT_SCHEMA }]
+const FLOW_ITEMS = [
+  { flowId: "nightly-lint", description: "Lints the repository.", inputSchema: LINT_SCHEMA },
+  { flowId: "repository/trigger", description: "Register one repository flow to run on a reviewed schedule." }
+]
 
 /** The relay stub: every call recorded, answered by procedure with a gateway frame. */
 const relayRoute = (
@@ -395,22 +399,58 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const prepared = await controller.registerTrigger(REQUEST)
     expect(typeof prepared).toBe("object")
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+    const action = lastAction(store)
+    expect(action?.flow).toBe("triggers.approve")
+    const args = JSON.parse(action?.args ?? "{}") as Record<string, unknown>
+    const requestId = String(args.requestId)
+    expect(requestId).not.toBe("undefined")
+    expect(args).toEqual({
+      requestId, repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5",
+      input: '{"label":"nightly"}', planId: "plan-1", planDigest: PLAN_DIGEST
+    })
+    /* The plan is keyed by this request, not by the schedule's name (L36 §3 step 4). */
     expect(calls[1]?.payload).toEqual({
       flowId: "nightly-lint",
       input: { label: "nightly" },
-      idempotencyKey: "trigger:will/flows:nightly:plan"
-    })
-    const action = lastAction(store)
-    expect(action?.flow).toBe("triggers.approve")
-    expect(JSON.parse(action?.args ?? "{}")).toEqual({
-      repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5",
-      input: '{"label":"nightly"}', planId: "plan-1", planDigest: PLAN_DIGEST
+      idempotencyKey: `trigger:${requestId}:plan`
     })
     const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
     expect(preview).toContain("nightly-lint")
     expect(preview).toContain("0 9 * * 1-5")
     expect(preview).toContain("fs:read:**")
     expect(preview).toContain(PLAN.executionDigest.slice(0, 12))
+    /* The standing budget a person grants by approving is on the card they approve. */
+    expect(preview).toContain("200000 tokens")
+    expect(preview).toContain("30 min")
+  })
+
+  test("correcting the input prepares a new plan instead of pinning the first one to the name forever", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger({ ...REQUEST, input: '{"label":"nightlyy"}' })
+    const first = String((JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>).requestId)
+    await controller.registerTrigger(REQUEST)
+    const second = String((JSON.parse(lastAction(store)?.args ?? "{}") as Record<string, unknown>).requestId)
+    expect(second).not.toBe(first)
+    expect(calls.filter((call) => call.procedure === "Plan").map((call) => call.payload.idempotencyKey))
+      .toEqual([`trigger:${first}:plan`, `trigger:${second}:plan`])
+  })
+
+  test("a workspace that cannot register schedules says so before it plans anything", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute(calls, workspaceAnswers({ List: () => okFrame({ _tag: "flows", items: [FLOW_ITEMS[0]] }) }))
+      }),
+      { signedIn: true }
+    )
+    expect(await controller.registerTrigger(REQUEST)).toBe(registerUnavailableSentence("will/flows"))
+    expect(calls.map((call) => call.procedure)).toEqual(["List"])
+    expect(lastAction(store)).toBeUndefined()
   })
 
   test("the agent may prepare a registration and may never approve one", async () => {
@@ -443,33 +483,35 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     )
     await controller.registerTrigger(REQUEST)
     const args = lastAction(store)?.args ?? "{}"
+    const requestId = String((JSON.parse(args) as Record<string, unknown>).requestId)
     const approved = await controller.commands.run("triggers.approve", args)
     expect(approved.status).toBe("executed")
+    /* Plue's RecordApproval refuses an approval whose flow_id does not match the registered flow. */
     expect(receipts).toEqual([{
-      repo: "will/flows", slug: "nightly", planId: "plan-1", planDigest: PLAN_DIGEST, envelope: PLAN.envelope
+      repo: "will/flows", slug: "nightly", flowId: "nightly-lint", planId: "plan-1", planDigest: PLAN_DIGEST, envelope: PLAN.envelope
     }])
     expect(calls.map((call) => call.procedure)).toEqual([
-      "List", "Plan", "Plan", "Approval.Submit", "Plan", "Approval.Submit", "Run"
+      "List", "Plan", "List", "Plan", "Approval.Submit", "Plan", "Approval.Submit", "Run"
     ])
     /* The target's plan is approved by its own digest; the registrar's plan carries the approved pair. */
-    expect(calls[3]?.payload).toMatchObject({ target: { _tag: "Plan", planId: "plan-1", digest: PLAN_DIGEST }, decision: "approve" })
-    expect(calls[4]?.payload).toMatchObject({
+    expect(calls[4]?.payload).toMatchObject({ target: { _tag: "Plan", planId: "plan-1", digest: PLAN_DIGEST }, decision: "approve" })
+    expect(calls[5]?.payload).toMatchObject({
       flowId: "repository/trigger",
-      idempotencyKey: "trigger:will/flows:nightly:register-plan",
+      idempotencyKey: `trigger:${requestId}:register-plan`,
       input: {
-        operation: "register", repo: "will/flows", slug: "nightly", flow: "nightly-lint",
+        requestId, operation: "register", repo: "will/flows", slug: "nightly", flow: "nightly-lint",
         schedule: "0 9 * * 1-5", input: { label: "nightly" },
         approvedPlanId: "plan-1", approvedPlanDigest: PLAN_DIGEST
       }
     })
-    expect(calls[6]?.payload).toMatchObject({ _tag: "Plan", idempotencyKey: "trigger:will/flows:nightly:register-run" })
+    expect(calls[7]?.payload).toMatchObject({ _tag: "Plan", idempotencyKey: `trigger:${requestId}:register-run` })
 
     /* A retry after a lost answer repeats the same keys and adds no second receipt shape. */
     const again = await controller.commands.run("triggers.approve", args)
     expect(again.status).toBe("executed")
     expect(receipts).toHaveLength(2)
     expect(receipts[0]).toEqual(receipts[1])
-    expect(calls.filter((call) => call.payload.idempotencyKey === "trigger:will/flows:nightly:register-run")).toHaveLength(2)
+    expect(calls.filter((call) => call.payload.idempotencyKey === `trigger:${requestId}:register-run`)).toHaveLength(2)
   })
 
   test("the host's own refusal and Smithers Cloud's own refusal each reach the human as themselves", async () => {
@@ -494,7 +536,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [RPC]: relayRoute([], workspaceAnswers()),
-        [APPROVAL]: json(409, { status: "error", code: "request_conflict", message: cloudRefusal })
+        [APPROVAL]: json(409, { status: "error", code: "trigger_approval_missing", message: cloudRefusal })
       }),
       { signedIn: true }
     )
@@ -503,7 +545,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     const cloudRefused = await clouded.controller.commands.run("triggers.approve", cloudArgs)
     expect(cloudRefused.status).toBe("failed")
     if (cloudRefused.status === "failed") {
-      expect(cloudRefused.error).toContain("request_conflict")
+      expect(cloudRefused.error).toContain("trigger_approval_missing")
       expect(cloudRefused.error).toContain(cloudRefusal)
     }
   })
@@ -557,6 +599,19 @@ describe("triggers seam: listing and pausing a schedule", () => {
     ])
   })
 
+  test("a repository with no registrations and no box is not listening", async () => {
+    /* Smithers Cloud answers 200 [] for every repository, which is the shape every signed-in user meets on day one. */
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [REGISTRATIONS]: json(200, { status: "ok", repo: "will/flows", rows: [] }) }),
+      { signedIn: true }
+    )
+    const outcome = await controller.commands.run("triggers.list")
+    expect(outcome.status).toBe("executed")
+    if (outcome.status === "executed") expect(outcome.value).not.toContain("listening")
+    await settled()
+    expect(triggerCard(store).payload).toEqual({ repo: "will/flows", declared: DAY_ONE.on, live: false, triggers: [], webhooks: [] })
+  })
+
   test("a registrations route that did not answer leaves the declaration and the box alone", async () => {
     const { store, controller } = await ready(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [REGISTRATIONS]: json(502, { message: "gateway down" }) }),
@@ -592,6 +647,20 @@ describe("triggers seam: listing and pausing a schedule", () => {
     )
     const answer = await refused.controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "nightly" })
     expect(String(answer)).toContain("unknown repository job")
+  })
+
+  test("a pause that stopped nothing says so instead of saying paused", async () => {
+    const seen: Array<string> = []
+    const { controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [PAUSE]: json(200, { status: "ok", paused: 0 })
+      }, seen),
+      { signedIn: true }
+    )
+    const outcome = await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "no-such-schedule" })
+    expect(outcome).toBe('No schedule "no-such-schedule" is registered on will/flows.')
+    expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toEqual([])
   })
 
   test("the pause door is the agent's to ask for and the human's to confirm", async () => {

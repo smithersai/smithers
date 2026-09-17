@@ -35,6 +35,10 @@ export type WebhookRow = NonNullable<TriggerListCard["payload"]["webhooks"]>[num
 /** The signed-out card's whole text while the mirror holds no projection. */
 export const NO_RULES_SENTENCE = "No rules declared yet"
 
+/** The honest refusal of the register door while the workspace holds no registrar (L36 §2.4 step 4). */
+export const registerUnavailableSentence = (repo: string): string =>
+  `A schedule cannot be registered on ${repo} from here yet: this workspace has no repository/trigger flow.`
+
 /*
  * The Worker's generic-trigger routes (apps/server repositoryTriggers.ts).
  * They address `flow:<slug>` repository jobs on Smithers Cloud, which the
@@ -65,6 +69,13 @@ export interface TriggerWrite {
   readonly flow?: string
   readonly slug?: string
   readonly schedule?: string
+  /**
+   * The one registration attempt this is, minted when the door prepares.
+   * Every idempotency key of the attempt hangs off it, so pressing the same
+   * button twice repeats one plan and preparing the schedule again — with a
+   * corrected input, or against an edited flow — asks for a fresh one.
+   */
+  readonly requestId?: string
   /** The user's input for the target flow, as the form holds it: JSON text. */
   readonly input?: string
   /** The plan the preview showed, pinned so approval cannot drift to another one. */
@@ -221,6 +232,10 @@ const registrationRow = (value: unknown): TriggerRow | undefined => {
  * The repository's generic trigger registrations, through the Worker. A route
  * that did not answer is "no registrations read", never an empty listing
  * pretending the schedules were retired.
+ *
+ * `live` here says the route answered, which every repository's listing does
+ * whether or not it holds a schedule; what the card calls listening is the
+ * merge in `listTriggers`, which asks for a row.
  */
 export const readTriggerRegistrations = async (ctx: SeamContext, repo: string): Promise<LiveList> => {
   const answer = await readJson(ctx, `${ctx.baseUrl}${TRIGGER_REGISTRATIONS_PATH}?repo=${encodeURIComponent(repo)}`)
@@ -313,16 +328,22 @@ const schemaRefusal = (document: unknown, input: unknown): string | undefined =>
   }
 }
 
-/** The plan preview: the facts the workspace stated about what a fire would run. */
+/**
+ * The plan preview: the facts the workspace stated about what a fire would
+ * run. The budget is what approving grants to every unattended fire, so it is
+ * read from the envelope's own `budget` (control/ControlSchema.ts Envelope)
+ * and shown beside the capabilities rather than left off the card.
+ */
 const previewOf = (plan: Record<string, unknown>, schedule: string): string => {
   const envelope = isRecord(plan.envelope) ? plan.envelope : {}
   const capabilities = Array.isArray(envelope.capabilities) ? envelope.capabilities.filter((value): value is string => typeof value === "string") : []
-  const minutes = typeof envelope.milliseconds === "number" ? Math.round(envelope.milliseconds / 60_000) : undefined
+  const budget = isRecord(envelope.budget) ? envelope.budget : {}
+  const minutes = typeof budget.milliseconds === "number" ? Math.round(budget.milliseconds / 60_000) : undefined
   const digest = typeof plan.executionDigest === "string" ? plan.executionDigest.slice(0, 12) : ""
   return [
     `${String(plan.flowId)} · ${schedule} UTC`,
     capabilities.join(", "),
-    [typeof envelope.tokens === "number" ? `${envelope.tokens} tokens` : undefined, minutes === undefined ? undefined : `${minutes} min`]
+    [typeof budget.tokens === "number" ? `${budget.tokens} tokens` : undefined, minutes === undefined ? undefined : `${minutes} min`]
       .filter((part) => part !== undefined).join(" · "),
     digest
   ].filter((line) => line !== "").join("\n")
@@ -361,8 +382,9 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
       signedIn ? readTriggerRegistrations(ctx, repo) : Promise.resolve(NO_LIVE)
     ])
     if ("error" in declared) return declared.error
+    /* Listening means a box answered or a schedule is registered — never that the registrations route answered with nothing. */
     const live: LiveList = {
-      live: box.live || registered.live,
+      live: box.live || registered.triggers.length > 0,
       triggers: [...box.triggers, ...registered.triggers],
       webhooks: box.webhooks
     }
@@ -388,8 +410,9 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
   }
 
   /** The prepared registration the approve button carries, as one JSON object. */
-  const prepared = (request: TriggerWrite, repo: string, planId: string, planDigest: string): string =>
+  const prepared = (request: TriggerWrite, repo: string, requestId: string, planId: string, planDigest: string): string =>
     JSON.stringify({
+      requestId,
       repo,
       flow: request.flow,
       slug: request.slug,
@@ -398,6 +421,21 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
       planId,
       planDigest
     })
+
+  /**
+   * The workspace's own flow list, or the reason a registration cannot be
+   * made from here. A workspace with no registrar is answered in one sentence
+   * before anything is planned and before any approval is asked for, so no
+   * person approves a plan this app cannot go on to register.
+   */
+  const registrarFlows = async (
+    repo: string
+  ): Promise<ReadonlyArray<Record<string, unknown>> | { readonly error: string }> => {
+    const listed = await relay(ctx, repo, "List", { _tag: "flows" })
+    if (!listed.ok) return { error: listed.message }
+    const items = (Array.isArray(listed.value.items) ? listed.value.items : []).filter(isRecord)
+    return items.some((item) => item.flowId === REGISTRAR_FLOW) ? items : { error: registerUnavailableSentence(repo) }
+  }
 
   /**
    * Prepare a registration: validate it here, ask the workspace to plan the
@@ -418,9 +456,8 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
         return "Input is not valid JSON."
       }
     }
-    const listed = await relay(ctx, repo, "List", { _tag: "flows" })
-    if (!listed.ok) return listed.message
-    const items = (Array.isArray(listed.value.items) ? listed.value.items : []).filter(isRecord)
+    const items = await registrarFlows(repo)
+    if ("error" in items) return items.error
     const target = items.find((item) => item.flowId === request.flow)
     if (target === undefined) {
       const names = items.map((item) => String(item.flowId)).join(", ")
@@ -428,10 +465,11 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
     }
     const refusal = schemaRefusal(target.inputSchema, input)
     if (refusal !== undefined) return refusal
+    const requestId = crypto.randomUUID()
     const planned = await relay(ctx, repo, "Plan", {
       flowId: request.flow,
       input,
-      idempotencyKey: `trigger:${repo}:${slug}:plan`
+      idempotencyKey: `trigger:${requestId}:plan`
     })
     if (!planned.ok) return planned.message
     const planId = typeof planned.value.planId === "string" ? planned.value.planId : undefined
@@ -441,7 +479,7 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
       type: "message.appended",
       actor: "system",
       text: previewOf(planned.value, schedule),
-      action: { flow: "triggers.approve", args: prepared(request, repo, planId, planDigest), label: "Approve and register" }
+      action: { flow: "triggers.approve", args: prepared(request, repo, requestId, planId, planDigest), label: "Approve and register" }
     })
     return { value: `Prepared ${slug}. It registers when the user approves the plan.` }
   }
@@ -449,16 +487,20 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
   /**
    * The human's approval, and only theirs (triggers.approve is userOnly).
    *
-   * The plan is re-made under the same idempotency key and must reproduce the
-   * pair the preview showed, so approving cannot drift to another plan. Then
-   * the plan is approved, Smithers Cloud stamps who approved it, and the
-   * workspace's registrar runs the test run and writes the registration.
+   * The workspace is asked for its registrar first, so a button prepared
+   * against a workspace that has since lost it refuses before the plan and
+   * before the approval rather than after them. The plan is then re-made under
+   * this request's own idempotency key and must reproduce the pair the preview
+   * showed, so approving cannot drift to another plan. Then the plan is
+   * approved, Smithers Cloud stamps who approved it, and the workspace's
+   * registrar writes the registration.
    */
   const approveTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
     const slug = request.slug ?? ""
+    const requestId = request.requestId
     const planId = request.planId
     const planDigest = request.planDigest
-    if (!SLUG.test(slug) || planId === undefined || planDigest === undefined) {
+    if (!SLUG.test(slug) || requestId === undefined || request.flow === undefined || planId === undefined || planDigest === undefined) {
       return "This approval does not name a prepared registration."
     }
     const text = (request.input ?? "").trim()
@@ -470,10 +512,12 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
         return "Input is not valid JSON."
       }
     }
+    const items = await registrarFlows(repo)
+    if ("error" in items) return items.error
     const planned = await relay(ctx, repo, "Plan", {
       flowId: request.flow,
       input,
-      idempotencyKey: `trigger:${repo}:${slug}:plan`
+      idempotencyKey: `trigger:${requestId}:plan`
     })
     if (!planned.ok) return planned.message
     if (planned.value.planId !== planId || planned.value.digest !== planDigest) {
@@ -487,11 +531,12 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
       decision: "approve"
     })
     if (!approved.ok) return approved.message
-    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, { repo, slug, planId, planDigest, envelope })
+    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, { repo, slug, flowId: request.flow, planId, planDigest, envelope })
     if (!receipt.ok) return receipt.message
     const registrar = await relay(ctx, repo, "Plan", {
       flowId: REGISTRAR_FLOW,
       input: {
+        requestId,
         operation: "register",
         repo,
         slug,
@@ -501,7 +546,7 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
         approvedPlanId: planId,
         approvedPlanDigest: planDigest
       },
-      idempotencyKey: `trigger:${repo}:${slug}:register-plan`
+      idempotencyKey: `trigger:${requestId}:register-plan`
     })
     if (!registrar.ok) return registrar.message
     const registrarPlan = typeof registrar.value.planId === "string" ? registrar.value.planId : undefined
@@ -521,7 +566,7 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
       planId: registrarPlan,
       digest: registrarDigest,
       envelope: registrar.value.envelope,
-      idempotencyKey: `trigger:${repo}:${slug}:register-run`
+      idempotencyKey: `trigger:${requestId}:register-run`
     })
     if (!started.ok) return started.message
     return { value: `Registering ${slug} on ${repo}.` }
@@ -533,6 +578,10 @@ export const createTriggersSeam = (ctx: SeamContext): TriggersSeam => {
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
     const paused = await workerCall(ctx, TRIGGER_PAUSE_PATH, { repo, slug })
     if (!paused.ok) return paused.message
+    /* Smithers Cloud counts the registrations it stopped; a name it does not hold stops none, and that is not a pause. */
+    if (typeof paused.value.paused === "number" && paused.value.paused < 1) {
+      return `No schedule "${slug}" is registered on ${repo}.`
+    }
     await listTriggers(repo)
     return { value: `Paused ${slug} on ${repo}.` }
   }

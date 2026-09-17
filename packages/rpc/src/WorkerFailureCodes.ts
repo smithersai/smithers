@@ -63,6 +63,7 @@ export const WORKER_FAILURE_CODES = [
   "sign_in_required",
   "storage_failed",
   "tools_not_supported",
+  "trigger_approval_missing",
   "turn_already_running",
   "turn_not_yours",
   "turn_rate_limited",
@@ -167,6 +168,8 @@ export const WORKER_FAILURES = {
   "storage_failed": { fault: "infra", status: 500, retryAfter: 0 },
   /** A sealed relay was handed a turn carrying tools, or a tool result it has no tools to continue. */
   "tools_not_supported": { fault: "user", status: 400, retryAfter: 0 },
+  /** Smithers Cloud holds no approval for the plan a schedule names. Approving the preview clears it; waiting does not. */
+  "trigger_approval_missing": { fault: "user", status: 409, retryAfter: 0 },
   /** That runId is already streaming; a second start would fork the same turn. */
   "turn_already_running": { fault: "user", status: 409, retryAfter: 0 },
   /** The runId exists and belongs to a different account. */

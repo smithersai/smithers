@@ -35,8 +35,14 @@ const triggerRow = (slug: string, overrides: Record<string, unknown> = {}) => ({
 
 interface CloudCall { readonly method: string; readonly path: string; readonly body: string | null }
 
+/** What the identity door answers for a Cloud token; the default is a minted one. */
+type CloudToken = () => Response
+const minted: CloudToken = () => Response.json({ found: true, token: "cloud-alice" })
+/** The account is signed in and still on the closed-alpha waitlist (gateway.ts CLOUD_ELIGIBILITY_REFUSALS). */
+const waitlisted: CloudToken = () => Response.json({ found: false, cloud: { status: "NOT_ON_WAITLIST" } })
+
 /** The Worker under a stubbed identity door and a stubbed Smithers Cloud. */
-const deployment = (cloud: (call: CloudCall) => Response) => {
+const deployment = (cloud: (call: CloudCall) => Response, token: CloudToken = minted) => {
   const settings = { ASSETS: { fetch: async () => new Response("SPA") }, IDENTITY_UPSTREAM_URL: "https://identity.test",
     IDENTITY_SERVICE_TOKEN: "synthetic-service", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }
   const durable = memoryDurableObjects({ env: settings, nativeAlarms: true })
@@ -45,7 +51,7 @@ const deployment = (cloud: (call: CloudCall) => Response) => {
   globalThis.fetch = (async (target: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(target instanceof Request ? target.url : String(target), "https://identity.test")
     if (url.hostname === "identity.test") {
-      if (url.pathname === "/api/identity/cloud-token") return Response.json({ found: true, token: "cloud-alice" })
+      if (url.pathname === "/api/identity/cloud-token") return token()
       const cookie = (target instanceof Request ? target.headers.get("cookie") : null) ??
         new Headers(init?.headers ?? {}).get("cookie")
       return cookie === null || cookie === ""
@@ -116,11 +122,17 @@ test("the listing names its repository and its session before it spends anything
   expect(calls).toEqual([])
 })
 
-test("pause stops one schedule and surfaces Smithers Cloud's own refusal", async () => {
-  const stopped = deployment(() => Response.json({ paused: 1 }))
+test("pause counts the rows Smithers Cloud actually stopped, and says zero when it stopped none", async () => {
+  /* Plue's pause answers the rows it updated (db/queries/repository_jobs.sql PauseRepositoryJob), never a count. */
+  const stopped = deployment(() => Response.json([triggerRow("nightly", { enabled: false })]))
   const answer = await stopped.fetchAs(TRIGGER_PAUSE_PATH, { method: "POST", body: JSON.stringify({ repo: "org/repo", slug: "nightly" }) })
   expect(await body(answer)).toEqual({ status: "ok", paused: 1 })
   expect(stopped.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["POST /api/repos/org/repo/repository-jobs/flow:nightly/pause"])
+
+  /* A well-formed slug nobody registered passes Plue's name gate and updates nothing. */
+  const none = deployment(() => Response.json([]))
+  const missing = await none.fetchAs(TRIGGER_PAUSE_PATH, { method: "POST", body: JSON.stringify({ repo: "org/repo", slug: "no-such-schedule" }) })
+  expect(await body(missing)).toEqual({ status: "ok", paused: 0 })
 
   const refused = deployment(() => Response.json({ message: "unknown repository job" }, { status: 404 }))
   const unknown = await refused.fetchAs(TRIGGER_PAUSE_PATH, { method: "POST", body: JSON.stringify({ repo: "org/repo", slug: "nightly" }) })
@@ -132,37 +144,59 @@ test("pause stops one schedule and surfaces Smithers Cloud's own refusal", async
   expect(invalid.calls).toEqual([])
 })
 
-test("the approval receipt sends only what Control produced, and Cloud alone states who approved", async () => {
+const APPROVED_PLAN = { repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: {} }
+const APPROVAL = { ...APPROVED_PLAN, flowId: "nightly-lint" }
+
+test("the approval receipt names the registered flow, sends only what Control produced, and Cloud alone states who approved", async () => {
   const recorded = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
   const answer = await recorded.fetchAs(TRIGGER_APPROVAL_PATH, {
     method: "POST",
-    body: JSON.stringify({
-      repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64),
-      envelope: { capabilities: ["fs:read:**"] }, approvedBy: 99, approvedAt: "1999-01-01T00:00:00Z"
-    })
+    body: JSON.stringify({ ...APPROVAL, envelope: { capabilities: ["fs:read:**"] }, approvedBy: 99, approvedAt: "1999-01-01T00:00:00Z" })
   })
   expect(await body(answer)).toEqual({ status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
   expect(recorded.calls[0]?.path).toBe("/api/repos/org/repo/repository-jobs/flow:nightly/approvals")
+  /* Plue's RecordApproval decodes exactly these four with DisallowUnknownFields and refuses an empty flow_id. */
   const sent = JSON.parse(recorded.calls[0]?.body ?? "{}") as Record<string, unknown>
-  expect(Object.keys(sent).sort()).toEqual(["envelope", "plan_digest", "plan_id"])
-
-  const conflicted = deployment(() => Response.json({ message: "register only the plan a person approved; approve the preview, then apply" }, { status: 409 }))
-  const refusal = await conflicted.fetchAs(TRIGGER_APPROVAL_PATH, {
-    method: "POST",
-    body: JSON.stringify({ repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: {} })
-  })
-  expect(refusal.status).toBe(409)
-  expect(await body(refusal)).toMatchObject({
-    code: "request_conflict",
-    message: "register only the plan a person approved; approve the preview, then apply"
-  })
+  expect(sent).toEqual({ plan_id: "plan-1", plan_digest: "d".repeat(64), flow_id: "nightly-lint", envelope: { capabilities: ["fs:read:**"] } })
 
   const silent = deployment(() => Response.json({ ok: true }))
-  const malformed = await silent.fetchAs(TRIGGER_APPROVAL_PATH, {
-    method: "POST",
-    body: JSON.stringify({ repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: {} })
-  })
+  const malformed = await silent.fetchAs(TRIGGER_APPROVAL_PATH, { method: "POST", body: JSON.stringify(APPROVAL) })
   expect((await body(malformed)).code).toBe("upstream_malformed")
+})
+
+test("an approval that does not name a registrable flow never reaches Smithers Cloud", async () => {
+  for (const flowId of [undefined, "", "-leading-dash", "x".repeat(201)]) {
+    const attempt = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
+    const answer = await attempt.fetchAs(TRIGGER_APPROVAL_PATH, {
+      method: "POST",
+      body: JSON.stringify({ ...APPROVED_PLAN, ...(flowId === undefined ? {} : { flowId }) })
+    })
+    expect((await body(answer)).code).toBe("request_invalid")
+    expect(attempt.calls).toEqual([])
+  }
+})
+
+test("a conflict from Smithers Cloud is the typed approval refusal, with Plue's own sentence", async () => {
+  const sentence = "register only the plan a person approved; approve the preview, then apply"
+  const conflicted = deployment(() => Response.json({ message: sentence }, { status: 409 }))
+  const refusal = await conflicted.fetchAs(TRIGGER_APPROVAL_PATH, { method: "POST", body: JSON.stringify(APPROVAL) })
+  expect(refusal.status).toBe(409)
+  expect(await body(refusal)).toMatchObject({ code: "trigger_approval_missing", message: sentence })
+})
+
+test("an account still on the waitlist reads as its own eligibility on every trigger route", async () => {
+  const listing = deployment(() => Response.json([]), waitlisted)
+  expect((await body(await listing.fetchAs(`${TRIGGER_REGISTRATIONS_PATH}?repo=org%2Frepo`))).code).toBe("account_not_allowlisted")
+  expect(listing.calls).toEqual([])
+
+  const pausing = deployment(() => Response.json([]), waitlisted)
+  const paused = await pausing.fetchAs(TRIGGER_PAUSE_PATH, { method: "POST", body: JSON.stringify({ repo: "org/repo", slug: "nightly" }) })
+  expect((await body(paused)).code).toBe("account_not_allowlisted")
+
+  const approving = deployment(() => Response.json({}), waitlisted)
+  const approved = await approving.fetchAs(TRIGGER_APPROVAL_PATH, { method: "POST", body: JSON.stringify(APPROVAL) })
+  expect(approved.status).toBe(403)
+  expect((await body(approved)).code).toBe("account_not_allowlisted")
 })
 
 test("the row reader keeps a trigger and drops everything else", () => {

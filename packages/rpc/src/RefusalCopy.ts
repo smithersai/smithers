@@ -588,6 +588,7 @@ export const WORKER_REFUSAL_COPY = {
     doors: ["retry", "report"]
   },
   tools_not_supported: { lead: "That part of Smithers answers in plain text and runs no tools.", doors: [] },
+  trigger_approval_missing: { lead: "Smithers Cloud has no record of anyone approving that plan.", doors: ["retry"] },
   turn_already_running: { lead: "That turn is already running.", doors: [] },
   turn_not_yours: { lead: "That turn belongs to a different account.", doors: [] },
   turn_rate_limited: {
