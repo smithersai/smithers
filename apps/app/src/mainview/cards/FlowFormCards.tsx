@@ -1,6 +1,6 @@
 import { flowAction } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
-import { useCallback, useContext, type KeyboardEvent } from "react"
+import { useCallback, useContext, useRef, type KeyboardEvent } from "react"
 import { ControllerContext } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -25,7 +25,9 @@ import { flowArgs } from "../flows/FlowArgs"
  * submission disables the control that held focus, so focus is held at the
  * form (never <body>) until the outcome: refused returns it to the open field,
  * acted leaves it there. Cancel moves it to the next control after the card
- * before the card leaves.
+ * before the card leaves. Options that arrive (or are withdrawn) while a field
+ * holds focus swap its <input> and <select>; the replacement keeps the
+ * keyboard unless the human has moved on.
  */
 
 type FlowFormCard = Extract<Card, { kind: "flow-form" }>
@@ -109,6 +111,28 @@ export const FlowFormCardBody = ({
     if (!fromButton && active !== null && active !== node.ownerDocument.body && active.closest(".composer-wrap") === null) return
     firstOpenControl(node)?.focus()
   }, [card.id, card.ordinal, card.payload.via, flow, settled, busy, handoff])
+  // DOM bookkeeping, never application state: the field control that owned
+  // focus when React detached it, for its replacement to claim in that commit.
+  const detachedFocus = useRef<{ readonly row: Element; readonly node: Element } | undefined>(undefined)
+  // Arriving (or withdrawn) options swap a select field's <input> and <select>,
+  // and the browser drops a removed node's focus to <body>. A ref detaches
+  // before its node leaves the DOM, so the cleanup still sees who owned focus;
+  // the replacement in the same row (this card, this field) takes it only while
+  // focus rests nowhere, so a human who moved on keeps the keyboard. A stable
+  // node, a restored form, and a field nobody focused never match.
+  const keepFocus = useCallback((node: HTMLInputElement | HTMLSelectElement | null): (() => void) | undefined => {
+    const row = node?.closest("[data-field]") ?? null
+    if (node === null || row === null) return undefined
+    const detached = detachedFocus.current
+    if (detached?.row === row) {
+      detachedFocus.current = undefined
+      const active = node.ownerDocument.activeElement
+      if (detached.node !== node && !detached.node.isConnected && (active === null || active === node.ownerDocument.body)) node.focus({ preventScroll: true })
+    }
+    return () => {
+      if (node.ownerDocument.activeElement === node) detachedFocus.current = { row, node }
+    }
+  }, [])
   const cancel = flowAction(onRunCommand, "card.dismiss", card.id)
   return (
     <form ref={bindFocus} className="flow-form" data-flow-name={flow} data-via={card.payload.via} onSubmit={(event) => {
@@ -142,6 +166,7 @@ export const FlowFormCardBody = ({
                 <select
                   aria-label={field.label}
                   data-testid={testId}
+                  ref={keepFocus}
                   value={text}
                   required={field.required}
                   disabled={settled || busy}
@@ -178,7 +203,10 @@ export const FlowFormCardBody = ({
                     step={field.kind === "number" ? "any" : undefined}
                     aria-label={field.label}
                     data-testid={testId}
-                    ref={restoreDraft}
+                    ref={(node) => {
+                      restoreDraft(node)
+                      return keepFocus(node)
+                    }}
                     defaultValue={text}
                     placeholder={field.placeholder}
                     required={field.required}

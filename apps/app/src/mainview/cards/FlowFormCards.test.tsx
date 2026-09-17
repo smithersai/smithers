@@ -335,6 +335,46 @@ const mountWith = (controller: AppController, card: FlowFormCard, onRunCommand: 
   mount(<ControllerTestProvider controller={controller}><FlowFormCardBody card={card} onRunCommand={onRunCommand} /></ControllerTestProvider>)
 
 describe("form focus handoff from the slash door", () => {
+  const optionForm = () => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+    const card = formCard({ via: "user", fields: [{ name: "path", label: "Path", kind: "select", required: true }], draft: {} })
+    const { controller } = handoffFor(card.id)
+    const render = (options: ReadonlyArray<{ value: string; label: string }>) => flushSync(() => root.render(
+      <ControllerTestProvider controller={controller}>
+        <FlowFormCardBody card={{ ...card, payload: { ...card.payload, fields: card.payload.fields.map(field => ({ ...field, options: [...options] })) } }} onRunCommand={() => {}} />
+      </ControllerTestProvider>
+    ))
+    return { host, render }
+  }
+
+  test("a focused field keeps the keyboard when arriving options replace its input and when they disappear", () => {
+    const { host, render } = optionForm()
+    render([])
+    expect(document.activeElement).toBe(host.querySelector("input"))
+    render([{ value: "README.md", label: "README.md" }])
+    expect(document.activeElement).toBe(host.querySelector("select"))
+    render([])
+    expect(document.activeElement).toBe(host.querySelector("input"))
+  })
+
+  test("arriving options do not take the keyboard from an editor the human moved to", () => {
+    const { host, render } = optionForm()
+    render([])
+    expect(document.activeElement).toBe(host.querySelector("input"))
+    const editor = document.createElement("textarea")
+    document.body.append(editor)
+    cleanups.push(() => editor.remove())
+    editor.value = "draft while file options arrive"
+    editor.focus()
+    render([{ value: "README.md", label: "README.md" }])
+    expect(host.querySelector("select")).not.toBeNull()
+    expect(document.activeElement).toBe(editor)
+    expect(editor.value).toBe("draft while file options arrive")
+  })
+
   test("a user form the controller handed focus takes it on mount from <body>, on its first unfilled required field", () => {
     const { controller, pending } = handoffFor("form-tab.harness")
     expect(document.activeElement).toBe(document.body)

@@ -82,3 +82,49 @@ test("T1: a restored form after reload does not take the keyboard; Cancel return
   await expect(form).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeFocused()
 })
+
+test("T1: delayed file options keep the focused path field usable from the keyboard", async ({ page }) => {
+  let release!: () => void
+  const inventory = new Promise<void>(resolve => { release = resolve })
+  await page.route("**/api/repos/smithersai/smithers/contents", async route => {
+    await inventory
+    await route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] })
+  })
+  await page.route("**/api/repos/smithersai/smithers/contents/README.md*", route => route.fulfill({ json: README }))
+  try {
+    const { form, path } = await askForPath(page)
+    await expect(path).toHaveJSProperty("tagName", "INPUT")
+    await expect(path).toBeFocused()
+    release()
+    await expect(path).toHaveJSProperty("tagName", "SELECT")
+    await expect(path).toBeFocused()
+    await page.keyboard.type("README")
+    await expect(path).toHaveValue("README.md")
+    await page.keyboard.press("Tab")
+    await expect(form.getByTestId("flow-form-cancel")).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(form.getByTestId("flow-form-submit")).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(form).toBeFocused()
+    await expect(form.locator("xpath=ancestor::section[1]")).toHaveAttribute("data-status", "acted")
+  } finally { release() }
+})
+
+test("T1: delayed file options leave a newer Chat draft and its focus alone", async ({ page }) => {
+  let release!: () => void
+  const inventory = new Promise<void>(resolve => { release = resolve })
+  await page.route("**/api/repos/smithersai/smithers/contents", async route => {
+    await inventory
+    await route.fulfill({ json: [{ name: "README.md", path: "README.md", type: "file" }] })
+  })
+  try {
+    const { composer, path } = await askForPath(page)
+    await expect(path).toBeFocused()
+    await page.keyboard.press("Control+k")
+    await composer.fill("Keep this draft while file options arrive")
+    release()
+    await expect(path).toHaveJSProperty("tagName", "SELECT")
+    await expect(composer).toBeFocused()
+    await expect(composer).toHaveValue("Keep this draft while file options arrive")
+  } finally { release() }
+})
