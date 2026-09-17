@@ -239,6 +239,11 @@ test("this host runs a maintainer's model-only markdown flow, and every flow the
     // approve it, run it, and let the run settle on its own.
     const run = await probe.runFlow("nightly-report", { label: "nightly" }, "falsifier:nightly-report")
     assert.equal(run?.status, "completed", `a model-only markdown flow must run here; got ${JSON.stringify(run)}`)
+    // The measured reason the gate keeps refusing module entries: a module
+    // body reaches its host delegate's typed payload, not a prompt, so a
+    // schedule's registered JSON cannot drive one.
+    const module = await probe.runFlow("loaded-module", { label: "nightly" }, "measured:loaded-module")
+    assert.equal(module?.status, "failed", `a module entry cannot run a schedule's input; got ${JSON.stringify(module)}`)
     // The picker and the registrar agree: every offered flow either registers
     // or is refused by a sentence that names it.
     for (const flow of ["nightly-report", "nightly-check", "unbound-seat", "declared-input", "module-entry", "loaded-module"]) {
