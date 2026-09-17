@@ -486,7 +486,11 @@ const humanWaitRow = (
         envelope: { capabilities: [], flows: [], budget: {} }
       },
       scope: "once",
-      idempotencyKey: `answer:${run.runId}:${requestId}`
+      // The identity is the PARK, not its name: a loop that re-asks one
+      // question parks again under the same run, name and attempt, and a
+      // name-keyed answer would deduplicate the second decision into the
+      // first — accepted, never delivered, and parked forever.
+      idempotencyKey: `answer:${run.runId}:${requestId}:${wait.tokenDigest ?? wait.token}`
     },
     requestedAt: projected?.createdAtMs ?? wait.createdAt,
     status: "pending"

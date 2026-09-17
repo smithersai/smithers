@@ -439,6 +439,29 @@ describe("GatewayProjection.approvals", () => {
     expect(row.payload.target).toMatchObject({ _tag: "Node", runId: "run-1", requestId: "coding-clarification#1" })
   })
 
+  /**
+   * A loop that re-asks one question — `ContinueAuthor` publishing a second
+   * consolidated reply, two `approved` steps parked at once — parks again under
+   * the SAME run, name and attempt. Keying the answer by name alone made the
+   * second answer `AlreadyApplied`: never delivered, stamped decided, parked
+   * forever. The answer identity is the wait, not the name.
+   */
+  it("gives every park of one wait point its own answer identity", () => {
+    const keyOf = (wait: ControlSchema.PendingWait) =>
+      GatewayProjection.approvals([], { ...run, status: "waiting-approval", pendingWaits: [wait] })[0]!.payload
+        .idempotencyKey
+    const first = { ...humanWait, tokenDigest: "digest-of-first" }
+    const second = { ...first, token: "second-token", tokenDigest: "digest-of-second", createdAt: 84 }
+
+    expect(keyOf(first)).not.toBe(keyOf(second))
+    expect(keyOf(first)).toContain("answer:run-1:coding-clarification#1")
+    // A re-read of the same park is the same submission, so a duplicate
+    // submit still deduplicates.
+    expect(keyOf(first)).toBe(keyOf({ ...first, createdAt: 99 }))
+    // A plane that named no digest still separates the two parks.
+    expect(keyOf(humanWait)).not.toBe(keyOf({ ...humanWait, token: "second-token" }))
+  })
+
   it("binds decisions over observed human waits to their exact request and digest", () => {
     const summary = { ...run, status: "waiting-approval" as const, pendingWaits: [humanWait] }
     const target = {
