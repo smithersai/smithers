@@ -54,10 +54,14 @@ export const WaitManual = Poll.make("repository/WaitManual", {
   intervalMs: 3000, maxAttempts: 2401, onTimeout: "return-last",
   check: Node.capture({ action: ProbeManual.name, policy: "repository-manual/v1" }, value => ProbeManual.call(value))
 })
+// The feature step's own mode is the only authority for issue-triggered
+// feature work, and a comment is never a request to build another feature.
 export const normalEvents = (input: SetupInput) => input.job === "review"
   ? [{ type: "pull_request", actions: ["opened", "synchronize", "reopened"] }]
   : input.job === "ci" ? [{ type: "pull_request", actions: ["opened", "synchronize", "reopened"] }, { type: "push", actions: [] }]
   : input.job === "chores" ? []
+  : input.job === "feature" ? input.draft.steps.some(step => step.id === "feature" && (step.mode === "automatic" || step.mode === "approved"))
+    ? [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }] : []
   : [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }, { type: "issue_comment", actions: ["created"] }]
 export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandidate), Interpreter.layer(WaitTrial), Interpreter.layer(DispatchManual), Interpreter.layer(WaitManual), Poll.layer, Sleep.layer,
   RequestManual.toLayer(({ input, deadlineAt }) => Effect.gen(function*() {

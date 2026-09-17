@@ -78,7 +78,7 @@ The current app instructions already remove scripted global onboarding. Preserve
 
 **UX-07 — One behavior through every entry.** Buttons, slash commands, and agent calls invoke the same typed flows. Missing inputs render a form for those fields. Human decisions and physical browser gestures retain their explicit human boundary. The UI cannot silently supply approvals on the user's behalf.
 
-**UX-08 — Contextual composition.** When issue or feature work lacks useful validation, offer a short Configure CI suggestion. Existing GitHub CI counts. Suppress the tip after dismissal or configuration until new evidence makes it relevant. It does not block investigation. Suggest connecting a reusable feature flow to approved issues when relevant. Do not recommend disabled Wiki or Mythical history.
+**UX-08 — Contextual composition.** When issue or feature work lacks useful validation, offer a short Configure CI suggestion. Existing GitHub CI counts. Suppress the tip after dismissal or configuration until new evidence makes it relevant. It does not block investigation. Suggest the feature step's Approved mode for issue-triggered work when relevant. Do not recommend disabled Wiki or Mythical history.
 
 ## Handle issues
 
@@ -156,7 +156,7 @@ The implementation must preserve the audit's important adaptations: real PR comp
 
 **FEAT-02 — Discover specific patterns.** Where merged PRs show repeated work, suggest a concrete flow such as Add an adapter and cite example PRs. Let the user confirm or correct the pattern. A generic “build anything” template is not evidence that a useful pattern was discovered.
 
-**FEAT-03 — Author together.** Chat-driven setup defines inputs, editable steps/prompts, outputs, and checks in an ordinary .smithers workflow. Offer relevant existing CI and optional connection to approved Issues triggers. Preserve manual invocation through the existing framework and typed app flow doors.
+**FEAT-03 — Author together.** Chat-driven setup defines inputs, editable steps/prompts, outputs, and checks in an ordinary .smithers workflow. Offer relevant existing CI and the feature step's Approved mode for issue triggers. Preserve manual invocation through the existing framework and typed app flow doors.
 
 **FEAT-04 — Evaluate and trial.** Author repository-specific evals, review expectations, and execute a scoped real feature example through plan, implementation, checks, and the selected landing boundary. A fixture plan alone does not prove the created flow runs.
 

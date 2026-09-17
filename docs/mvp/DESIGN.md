@@ -159,7 +159,7 @@ Editing the draft retains the applied policy and its prior evidence. A tool fail
 
 [Explore feature setup](mockups/start.html) — choose Build a feature · FEAT-01–04
 
-![Feature setup proposes Add an adapter from example PRs, exposes the name and prompt, shows implementation/check/review steps, and optionally connects approved feature issues.](mockups/figures/16-feature.png)
+![Feature setup proposes Add an adapter from example PRs, exposes the name and prompt, shows implementation/check/review steps, and offers the step's Approved mode for issue-triggered feature work.](mockups/figures/16-feature.png)
 
 A direct feature request also works without a discovered pattern. The reusable flow has its own evals and trial; authoring it does not activate an issue trigger.
 

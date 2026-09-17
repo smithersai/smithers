@@ -43,8 +43,12 @@ export const Work = Schema.Struct({
   executionMode: Schema.Literals(["live", "trial", "evaluation"]),
   proposal: Schema.optionalKey(Proposal)
 })
-export const ApproveStep = Flow.make("repository/ApproveStep", { payload: { name: Schema.String, prompt: Schema.String }, success: Schema.Boolean, error: HumanTask.HumanTaskFailed,
-  body: work => Node.succeed(work).pipe(Node.map(value => `Run ${value.name}?\n${value.prompt}`),
+export const ApproveStep = Flow.make("repository/ApproveStep", { payload: { name: Schema.String, prompt: Schema.String,
+  repo: Schema.String, sourceRevision: Schema.String, issueNumber: Schema.optionalKey(Schema.Int), issueTitle: Schema.optionalKey(Schema.String) },
+  success: Schema.Boolean, error: HumanTask.HumanTaskFailed,
+  body: work => Node.succeed(work).pipe(Node.map(value => `Run ${value.name}?\n${[
+    value.issueNumber === undefined ? value.repo : `${value.repo}#${value.issueNumber}`, value.issueTitle, value.sourceRevision
+  ].filter(Boolean).join(" · ")}\n${value.prompt}`),
     Node.bindPlanned(prompt => HumanTask.action.call({ name: "repository-approved-step", kind: "confirm", prompt, maxAttempts: 1 })),
     Node.map(answer => answer === true)) })
 const model = <const Name extends string>(name: Name, role: string) => AgentAction.make(name, {

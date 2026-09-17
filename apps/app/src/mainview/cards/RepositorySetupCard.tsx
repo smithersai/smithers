@@ -77,7 +77,6 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         {draft.scope === "label" && <label>Issue label<input {...editor(draft.label)} onInput={event => set("label", event.currentTarget.value)} /></label>}
         {state.job === "chores" && <label>Schedule (UTC)<input {...editor(draft.schedule)} placeholder="Cron expression; blank for manual" onInput={event => set("schedule", event.currentTarget.value)} /></label>}
         {schedule && <div className="setup-field"><span>Next run</span><time dateTime={schedule.nextFireAt}>{new Date(schedule.nextFireAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" })}</time></div>}
-        {state.job === "feature" && <label className="setup-checkbox"><input type="checkbox" checked={draft.connectIssues} onChange={event => set("connectIssues", event.target.checked)} />Start from approved issues</label>}
       </div>
       {state.sources.length > 0 && <details><summary>Repository evidence</summary><ul>{state.sources.map((source, index) => <li key={`${source.path}:${index}`}><code>{source.path}</code> · {source.status}<div>{source.summary}</div></li>)}</ul></details>}
       {canRun && <div className="setup-actions"><button type="button" onClick={() => onRunCommand("setup.guide", card.id)}>Configure in Chat</button>

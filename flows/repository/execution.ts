@@ -57,6 +57,9 @@ export const selectedSteps = (input: Pick<JobInput, "job" | "configuration" | "e
     // action string can start a privileged manual action.
     if (manualStep !== undefined) return step.id === manualStep && step.mode !== "off"
     if (input.event.trial === true && input.job !== "issues") return step.id === core[input.job] && step.mode !== "off"
+    // Ordinary feature work answers the issue lifecycle its step mode
+    // registered, never a comment or a fabricated action string.
+    if (input.job === "feature" && input.event.type !== "issues") return false
     // An issue setup trial exercises automatic handling. Deliberately manual
     // fixes, POCs and splitting remain available through their own run action.
     return step.mode === "automatic" || step.mode === "approved"
@@ -157,8 +160,12 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
       const work = { repo: input.repo, job: input.job, event: { ...input.event, payload: evidence.subject ?? input.event.payload }, step, evidence, deadlineAt,
         checks: input.configuration.checks, landing: input.configuration.landing, replies: input.configuration.replies,
         executionMode: evaluation ? "evaluation" as const : input.event.trial ? "trial" as const : "live" as const }
+      const subject = object(object(work.event.payload).issue)
       const performed = Effect.gen(function*() {
-        if (step.mode === "approved" && !evaluation && !(yield* runtime.execute(ApproveStep, { executionId: `${executionId}-approval`, payload: { name: step.name, prompt: step.prompt } }))) {
+        if (step.mode === "approved" && !evaluation && !(yield* runtime.execute(ApproveStep, { executionId: `${executionId}-approval`,
+          payload: { name: step.name, prompt: step.prompt, repo: input.repo, sourceRevision: evidence.source.commitId,
+            ...(input.event.issueNumber === undefined ? {} : { issueNumber: input.event.issueNumber }),
+            ...(typeof subject.title === "string" ? { issueTitle: subject.title } : {}) } }))) {
           return yield* invalid("The selected step was not approved")
         }
         if (step.id === "checks") return yield* runtime.execute(CheckStep, { executionId, payload: { work } })

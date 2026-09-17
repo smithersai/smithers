@@ -119,7 +119,11 @@ test.each(["issues", "feature"] as const)("%s links optional CI setup to the sam
   try {
     t.button("Set up CI")!.click()
     expect(t.calls).toEqual([["ci.setup", card.payload.repo]])
-    if (job === "feature") expect(t.host.textContent).toContain("Start from approved issues")
+    if (job === "feature") {
+      expect(t.host.textContent).not.toContain("Start from approved issues")
+      expect(t.host.querySelector('input[type="checkbox"]')).toBeNull()
+      expect([...t.host.querySelectorAll<HTMLOptionElement>("option")].map(option => option.value)).toContain("approved")
+    }
   } finally { t.close() }
 })
 
