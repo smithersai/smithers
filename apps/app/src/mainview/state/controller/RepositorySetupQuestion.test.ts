@@ -145,15 +145,14 @@ test("a substituted check cannot be answered with the replaced check's edits", a
   const t = await controllerFor(setup)
   try {
     const asked = t.current()
-    expect(setupGuideQuestions(asked)[0]?.id).toBe("ci.checks.policy")
+    expect(setupGuideQuestions(asked)[0]?.id).toBe("ci.checks.keep")
     await t.controller.configureRepositorySetup("setup", "checks",
       [{ id: "second", name: "Another check", kind: "command", rule: "bun run lint", paths: [], policy: "report" }])
-    expect(await t.controller.answerRepositorySetupQuestion("setup", "ci.checks.policy", asked.revision, setupCandidate(asked), "required")).toBeTypeOf("string")
+    expect(await t.controller.answerRepositorySetupQuestion("setup", "ci.checks.keep", asked.revision, setupCandidate(asked), "remove")).toBeTypeOf("string")
     expect(t.current().draft.checks.map(check => check.id)).toEqual(["second"])
-    expect(t.current().draft.checks[0]?.policy).toBe("report")
     // The question re-derived against the live draft answers the check that is actually there.
-    expect(await t.answer("ci.checks.policy", "required")).toEqual({ value: "Draft updated." })
-    expect(t.current().draft.checks).toEqual([{ id: "second", name: "Another check", kind: "command", rule: "bun run lint", paths: [], policy: "required" }])
+    expect(await t.answer("ci.checks.keep", "remove")).toEqual({ value: "Draft updated." })
+    expect(t.current().draft.checks).toEqual([])
   } finally { await t.close() }
 })
 
@@ -282,5 +281,40 @@ test("another account's setup and an account switch both refuse the answer", asy
     expect(await t.answer("issues.steps.automatic", "approved", before)).toBeTypeOf("string")
     const after = t.store.collections.cards.get("setup")
     if (after?.kind === "repository-setup") expect(after.payload).toEqual(before)
+  } finally { await t.close() }
+})
+
+/*
+ * PRODUCT.md O-07: a new AI check starts report-only, and making one required
+ * is a separate reviewed decision after evals and a trial. On 2026-09-18 the CI
+ * setup's very first question was "Must this repository's configured check pass
+ * before a change lands, or only report?", and answering "It must pass" wrote
+ * policy "required" into the draft before either existed
+ * (.artifacts/mvp-canary-walk-20260917/B-24-state-ci-terminal.json).
+ */
+test("no setup question can make a check required, and CI first asks what a person can decide now", async () => {
+  const suggested = { id: "docs-grounded", name: "Documentation stays grounded in what the README supports", kind: "ai" as const,
+    rule: "Every documentation claim is supported by the README.", paths: [], policy: "report" as const }
+  for (const job of REPOSITORY_JOBS) {
+    const setup = initialSetup("codeplanesmithers/canary-sandbox", job, "maintainer")
+    setup.draft.checks = [suggested]
+    for (const question of setupGuideQuestions(setup)) {
+      for (const choice of question.choices) {
+        for (const edit of choice.edits) expect(JSON.stringify(edit.value)).not.toContain("required")
+      }
+    }
+  }
+  const setup = initialSetup("codeplanesmithers/canary-sandbox", "ci", "maintainer")
+  setup.draft.checks = [suggested]
+  const question = setupGuideQuestions(setup)[0]!
+  expect(question.id).toBe("ci.checks.keep")
+  expect(question.text).toBe("Keep the suggested check, reporting findings without blocking?")
+  expect(question.choices.map(choice => choice.id)).toEqual(["keep", "remove"])
+  const t = await controllerFor(setup)
+  try {
+    expect(await t.answer("ci.checks.keep", "keep")).toEqual({ value: "Draft updated." })
+    expect(t.current().draft.checks).toEqual([suggested])
+    expect(await t.answer("ci.checks.keep", "remove")).toEqual({ value: "Draft updated." })
+    expect(t.current().draft.checks).toEqual([])
   } finally { await t.close() }
 })

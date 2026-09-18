@@ -134,12 +134,18 @@ export function setupGuideQuestions(setup: QuestionSetup): ReadonlyArray<SetupGu
     questions.push(landingQuestion("review.landing", "Land a reviewed change after its checks pass, or ask you first?"))
   }
   if (setup.job === "ci") {
-    // The whole array is the supported write, so every unrelated check survives.
+    /*
+     * The whole array is the supported write, so every unrelated check
+     * survives. Whether to carry the suggested check at all is decidable now;
+     * whether it may block a change is not, because O-07 keeps a required
+     * check behind its own evals and trial. So no choice here writes "required".
+     */
     const only = setup.draft.checks.length === 1 ? setup.draft.checks[0]! : undefined
-    if (only) questions.push({ id: "ci.checks.policy", text: "Must this repository's configured check pass before a change lands, or only report?",
-      fields: ["checks"], choices: ([["required", "It must pass"], ["report", "Report it, do not block"]] as const).map(([policy, label]) => ({
-        id: policy, label, edits: [{ field: "checks", value: setup.draft.checks.map(check => check.id === only.id ? { ...check, policy } : check) }]
-      })) })
+    if (only) questions.push({ id: "ci.checks.keep", text: "Keep the suggested check, reporting findings without blocking?",
+      fields: ["checks"], choices: [
+        { id: "keep", label: "Keep it, report only", edits: [{ field: "checks", value: setup.draft.checks.map(check => check.id === only.id ? { ...check, policy: "report" } : check) }] },
+        { id: "remove", label: "Leave it out", edits: [{ field: "checks", value: setup.draft.checks.filter(check => check.id !== only.id) }] }
+      ] })
     automatic("ci.steps.automatic", ["checks"], { mode: "approved", label: "Ask me before each run" })
     questions.push(landingQuestion("ci.landing", "Land a change after its checks pass, or ask you first?"))
   }
