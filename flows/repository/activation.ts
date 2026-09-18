@@ -5,7 +5,7 @@ import { Action, Flow, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
-import { registrationScopeProblems } from "../../packages/rpc/src/RepositorySetup.ts"
+import { registrationScopeProblems, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
 import { evaluatedCandidate } from "./evaluation.ts"
@@ -21,6 +21,38 @@ const requireRemote = Effect.gen(function*() {
   const remote = yield* Effect.serviceOption(RepositoryRemote)
   return Option.isSome(remote) ? remote.value : yield* invalid("Connect the repository host before activation")
 })
+const RegistrationRow = Schema.Struct({ id: Schema.NonEmptyString, job: Schema.String, mode: Schema.Literals(["trial", "enabled"]),
+  revision: Schema.Int, digest: Schema.String, source_revision: Schema.String, enabled: Schema.Boolean })
+const registrationRows = (response: unknown): readonly (typeof RegistrationRow.Type)[] => {
+  const listed = Array.isArray(response) ? response : object(response).items
+  return (Array.isArray(listed) ? listed : []).flatMap(value => {
+    const row = Schema.decodeUnknownOption(RegistrationRow)(value)
+    return Option.isSome(row) ? [row.value] : []
+  })
+}
+/** The registry keeps one row per job and mode, so the job's enabled-mode row
+ * is its active policy whatever revision the local draft has reached. */
+const policyRow = (response: unknown, input: SetupInput) => registrationRows(response).find(row => row.job === input.job && row.mode === "enabled")
+/** The registration a pause is asked to stop, read before the registry is written. */
+export const activeRegistration = (response: unknown, input: SetupInput) => {
+  const row = policyRow(response, input)
+  return row?.enabled === true ? row : undefined
+}
+/** The paused row a pause receipt may speak for. The request carries the local
+ * draft's revision, which moves on while the active policy stays where it was
+ * applied, so that revision identifies nothing in the registry. */
+export const pausedRegistration = (response: unknown, input: SetupInput) => {
+  const row = policyRow(response, input)
+  return row !== undefined && !row.enabled ? row : undefined
+}
+/** A paused policy whose reviewed draft this candidate still carries. Cloud
+ * re-enables a row only at a newer revision, so a restart applies the next
+ * revision of the same draft and keeps that row's evaluation and live trial. */
+export const restartedRegistration = (response: unknown, input: SetupInput) => {
+  const row = policyRow(response, input)
+  return row !== undefined && !row.enabled && row.revision < input.revision
+    && setupCandidate({ repo: input.repo, job: input.job, revision: row.revision, draft: JSON.parse(JSON.stringify(input.draft)) }) === row.digest ? row : undefined
+}
 export const TrialIssue = Schema.Struct({ source: Schema.Literal("smithers-cloud"), number: Schema.Int.check(Schema.isGreaterThan(0)), issue_id: Schema.Number, request_id: Schema.String, api_path: Schema.String })
 export const Registration = Schema.Struct({ registration_id: Schema.String, revision: Schema.Int, digest: Schema.String,
   source_revision: Schema.String, mode: Schema.Literals(["trial", "enabled"]), enabled: Schema.Boolean })

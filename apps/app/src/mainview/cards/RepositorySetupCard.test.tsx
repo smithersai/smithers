@@ -209,6 +209,30 @@ test("only a real scoped run enables Run; waiting alone never claims an approval
   } finally { t.close() }
 })
 
+test("a paused job keeps its way back on the card, through the flow every door runs", () => {
+  const card = makeCard("feature")
+  const digest = setupCandidate(card.payload)
+  card.payload.active = { revision: 1, digest, registrationId: "active-1", sourceRevision: "commit-1", enabled: false }
+  card.payload.revision = 2
+  const t = mount(card)
+  const status = () => t.host.querySelector(".setup-heading")?.lastElementChild?.textContent
+  try {
+    expect(status()).toBe("Paused")
+    expect(t.button("Pause")).toBeUndefined()
+    expect(t.host.querySelector(".setup-gate")).toBeNull()
+    const enable = t.button("Enable feature flow")!
+    expect(enable.disabled).toBe(false)
+    enable.click()
+    expect(t.calls).toEqual([["setup.run", flowArgs("setup.run", { cardId: card.id, operation: "apply" })]])
+    expect(payloadFor("setup.run", t.calls[0]![1]!)).toEqual({ payload: { cardId: card.id, operation: "apply" } })
+    card.payload.draft.budgetMinutes = 20
+    card.payload.revision = 3
+    t.render(card)
+    expect(t.button("Enable feature flow")?.disabled).toBe(true)
+    expect(t.host.querySelector(".setup-gate")?.textContent).toBe("Run evals for this draft.")
+  } finally { t.close() }
+})
+
 test("old eval evidence remains readable after a candidate edit", () => {
   const card = makeCard()
   card.payload.view = "evals"

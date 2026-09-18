@@ -189,6 +189,20 @@ describe("repository setup activation evidence", () => {
     expect(setup.draft.replies).toBe("draft")
     expect(setupActivationProblems(setup)).toHaveLength(2)
   })
+  it("restarts a paused registration from the draft it was activated with, without new evals or trial", () => {
+    const applied = proven()
+    const active = { revision: applied.revision, digest: setupCandidate(applied), registrationId: "paused-registration", sourceRevision: "candidate-commit", enabled: false }
+    // The post-pause card: Cloud re-enables only a newer revision, so the
+    // candidate advances while its evidence moves into the history.
+    const paused: RepositorySetup = { ...applied, revision: applied.revision + 1, evaluation: undefined, trial: undefined, active,
+      previousReceipts: [applied.evaluation!, applied.trial!] }
+    expect(setupActivationProblems(paused)).toEqual([])
+    expect(setupActivationProblems({ ...paused, active: { ...active, enabled: true } })).toHaveLength(2)
+    const edited = editSetup(paused, { ...paused.draft, budgetMinutes: 20 })
+    expect(setupActivationProblems(edited)).toContain("Complete the live trial for this draft.")
+    expect(setupActivationProblems(edited)).toContain("Run evals for this draft.")
+    expect(setupActivationProblems({ ...paused, active: { ...active, digest: setupCandidate(edited) } })).toContain("Run evals for this draft.")
+  })
   it("requires both current evals and a real live issue trial", () => {
     const setup = proven()
     expect(setupActivationProblems(setup)).toEqual([])

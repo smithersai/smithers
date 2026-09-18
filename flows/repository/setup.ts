@@ -21,7 +21,7 @@ import { Draft, EvalCase, Event, JobInput, JobResult, OperationResult, Receipt, 
 import { Observation, RepositoryJob } from "./jobs.ts"
 import { CheckResult } from "./checks.ts"
 import { priorSetupReceipt } from "./receipts.ts"
-import { DispatchManual, RegisterCandidate, WaitManual, WaitTrial } from "./activation.ts"
+import { activeRegistration, DispatchManual, pausedRegistration, RegisterCandidate, restartedRegistration, WaitManual, WaitTrial } from "./activation.ts"
 import { admitSourcePath } from "./source.ts"
 
 const Error = Schema.Union([CodingError, AgentAction.AgentFailure])
@@ -118,8 +118,6 @@ export const RunJob = Flow.make("repository/RunJob", { payload: Executable.Invoc
   }
 })
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
-const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
-const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 const verifyEvaluation = (input: SetupInput, receipt: typeof Receipt.Type) => {
   const required = input.draft.cases.filter(test => test.required)
@@ -210,10 +208,13 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
     const remote = available.value
     if (remote.repo !== input.repo || (input.workspaceId !== undefined && remote.workspaceId !== input.workspaceId)) return yield* invalid("Setup belongs to a different repository or workspace")
     if (input.operation === "pause") {
-      const answer = yield* remote.pause(input.job)
-      const paused = Array.isArray(answer) ? answer.map(record).find(row => row.mode === "enabled" && row.revision === input.revision && row.digest === input.digest && row.enabled === false) : undefined
-      if (!paused || typeof paused.id !== "string") return yield* invalid("The active registration could not be verified as paused")
-      return yield* respond({ ...identity, receipt: receipt({ registrationId: paused.id, evidence: [JSON.stringify(paused)] }) })
+      // Read the row before writing it: a pause the registry cannot confirm
+      // must leave the active policy running, not disable it and report failure.
+      const active = activeRegistration(yield* remote.registrations, input)
+      if (!active) return yield* invalid("This job has no enabled registration to pause")
+      const paused = pausedRegistration(yield* remote.pause(input.job), input)
+      if (!paused || paused.id !== active.id) return yield* invalid("The active registration could not be verified as paused")
+      return yield* respond({ ...identity, receipt: receipt({ registrationId: paused.id, evidence: [`registration:${paused.id}`] }) })
     }
     if (input.operation === "run") {
       // The server resolves the subject and checks the active registration.
@@ -224,7 +225,11 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
         registrationId: dispatch.registration_id, ...(work.runId ? { jobRunId: work.runId } : {}),
         ...(work.result ? { sourceRevision: work.result.sourceRevision } : {}), ...(work.error ? { error: work.error } : {}), evidence: work.evidence }) })
     }
-    const evaluation = yield* priorSetupReceipt(input, "evaluate")
+    // Restarting a paused policy applies the draft it was activated with, so its
+    // own evaluation and live trial are this candidate's proof.
+    const restart = input.operation === "apply" ? restartedRegistration(yield* remote.registrations, input) : undefined
+    const reviewed: SetupInput = restart ? { ...input, revision: restart.revision, digest: restart.digest } : input
+    const evaluation = yield* priorSetupReceipt(reviewed, "evaluate")
     yield* Effect.try({ try: () => verifyEvaluation(input, evaluation), catch: error => error instanceof CodingError ? error : invalid("Evaluation proof is invalid") })
     const candidate = yield* writeCandidate(options, input)
     if (input.operation === "trial") {
@@ -235,8 +240,9 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
         trialIssue: { source: "smithers-cloud", number: activation.trialIssue!.number }, registrationId: activation.registration.registration_id,
         evidence: [candidate, ...trial.evidence] }) })
     }
-    const trial = yield* priorSetupReceipt(input, "trial")
+    const trial = yield* priorSetupReceipt(reviewed, "trial")
     if (!trial.sourceRevision || !trial.evidence.some(ref => ref.startsWith("execution:")) || !trial.trialIssue) return yield* invalid("The live trial has no verified real source result")
+    if (restart && restart.source_revision !== trial.sourceRevision) return yield* invalid("The paused registration was activated from another source; test this draft again")
     const current = (yield* (yield* NativeCoding).read()).head
     if (current.kind !== "resolved" || current.commitId !== trial.sourceRevision) return yield* invalid("Repository source changed after the live trial; test the candidate again")
     const activation = yield* runtime.execute(RegisterCandidate, { executionId: key("enable"), payload: { input, mode: "enabled", deadlineAt } })

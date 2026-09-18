@@ -427,9 +427,10 @@ test("PR trials require a real selector and immediate launch uses both ordered f
   } finally { await t.close() }
 })
 
-test("pausing retains evidence and advances the candidate before any reactivation", async () => {
+test("pausing retains evidence and advances the candidate, and the same reviewed draft enables it again", async () => {
+  let operation = "pause"
   const t = await fixture(async body => {
-    const value = await response(body, "completed", "pause").json()
+    const value = await response(body, "completed", operation).json()
     return Response.json({ ...value, receipt: { ...value.receipt, registrationId: "active-1", sourceRevision: "commit-1" } })
   })
   try {
@@ -449,8 +450,14 @@ test("pausing retains evidence and advances the candidate before any reactivatio
     expect(t.state().trial).toBeUndefined()
     expect(t.state().previousReceipts.map(receipt => receipt.requestId)).toEqual(["eval-1", "trial-1"])
     expect(t.state().receipt?.operation).toBe("pause")
-    expect(await t.setup.runRepositorySetup("setup", "apply")).toContain("Run evals for this draft")
-    expect(t.calls).toHaveLength(1)
+    // The way back: Cloud re-enables a paused row only at a newer revision, and
+    // the advanced candidate is the draft that registration was activated with.
+    operation = "apply"
+    await t.setup.runRepositorySetup("setup", "apply"); await Promise.all(t.background)
+    expect(t.calls).toHaveLength(2)
+    expect(t.calls[1]?.body.revision).toBe(2)
+    expect(t.state().active).toMatchObject({ revision: 2, registrationId: "active-1", enabled: true })
+    expect(t.state().request).toMatchObject({ operation: "apply", state: "completed" })
   } finally { await t.close() }
 })
 
@@ -1252,7 +1259,10 @@ test("a recovered result naming the replacement of the pin its own request carri
       answers.push(await t.setup.runRepositorySetup(card.id, operation)); await Promise.all(t.background)
     }
     expect(answers).not.toContainEqual({ value: "Setup recovery requested." })
-    expect(t.calls.filter(call => call.method === "POST")).toHaveLength(4)
+    // Retry, then the four operations a paused registration accepts; pause is
+    // the one refusal, because this registration is already paused.
+    expect(t.calls.filter(call => call.method === "POST")).toHaveLength(5)
+    expect(answers.at(-1)).toBe("This setup is not enabled.")
     expect(t.calls.every(call => call.body.workspaceId === replacement)).toBe(true)
   } finally { await t.close() }
 })

@@ -284,6 +284,12 @@ export function setupActivationProblems(setup: RepositorySetup): string[] {
   if (!setup.draft.steps.some(item => item.mode !== "off")) problems.push("Choose a flow to enable.")
   problems.push(...registrationScopeProblems(setup))
   if (setup.draft.checks.some(check => !check.rule.trim())) problems.push("Complete the check rules.")
+  // Restarting a paused registration applies the draft it was activated with,
+  // which keeps the evals and live trial it was activated on. Cloud re-enables
+  // a row only at a newer revision, so the candidate advances and its evidence
+  // moves into the history; that advance is not a replacement.
+  if (setup.active !== undefined && !setup.active.enabled
+    && setupCandidate({ ...setup, revision: setup.active.revision }) === setup.active.digest) return problems
   if (!current(setup.evaluation, "evaluate")) problems.push("Run evals for this draft.")
   else {
     for (const test of setup.draft.cases.filter(test => test.required)) {
