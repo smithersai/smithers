@@ -79,9 +79,11 @@ describe("Routes through the OpenCode SDK client", () => {
     ).toEqual([served.directory])
     expect(await get("/find/file")).toEqual([])
     expect(await get("/find/file?dirs=true")).toEqual([served.directory])
+    // Dot directories stay out of the picker: .git and .smithers are there, dot files are listed.
+    writeFileSync(join(served.directory, ".gitignore"), "node_modules\n")
     const files = (await sdk.file.list({ query: { path: "" } })).data!
     expect(((await get("/file")) as Array<unknown>).length).toBe(files.length)
-    expect(files.map((node) => node.name)).toEqual([".git", ".smithers", "package.json", "src"])
+    expect(files.map((node) => node.name)).toEqual([".gitignore", "package.json", "src"])
     expect(files.find((node) => node.name === "src")).toMatchObject({ type: "directory", path: "src/", ignored: false })
     expect((await sdk.file.list({ query: { path: "missing" } })).data).toEqual([])
     const fromParent =

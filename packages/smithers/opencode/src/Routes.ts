@@ -162,7 +162,9 @@ export const gitBranch = (directory: string): string | undefined => {
  * The entries of a directory, as `/file` lists them: `path` relative to
  * `directory`. The app's project picker walks from the home directory with
  * this route, one typed segment at a time, so the base is whatever the app
- * names, the way OpenCode's own server answers it.
+ * names, the way OpenCode's own server answers it. A directory whose name
+ * starts with a dot (`.git`, `.smithers`) is left out, so the picker does
+ * not offer to open the project there.
  *
  * @category constructors
  * @since 1.0.0
@@ -171,7 +173,7 @@ export const listFiles = (directory: string, path: string): Array<Protocol.FileN
   const target = resolve(directory, path)
   try {
     return readdirSync(target, { withFileTypes: true })
-      .filter((entry) => entry.isFile() || entry.isDirectory())
+      .filter((entry) => entry.isFile() || (entry.isDirectory() && !entry.name.startsWith(".")))
       .map((entry): Protocol.FileNode => {
         const absolute = join(target, entry.name)
         const type = entry.isDirectory() ? "directory" : "file"

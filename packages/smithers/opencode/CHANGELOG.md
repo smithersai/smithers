@@ -20,6 +20,14 @@
   to the app, and no limit answers the whole history, the way 1.18.31 does.
   The app marked the history complete when the header was absent, so a
   session longer than twenty messages lost its beginning on reload.
+- A failed call card leads with what was called: the app's error card
+  shows the words before the first `:` of the error in its header and the
+  rest in its body, so a failed shell reads as the command and the reason
+  (`node test.mjs: This host pins no trees ...`) instead of "Shell Failed"
+  over nothing.
+- The `/file` listing behind the app's folder picker leaves out directories
+  whose name starts with a dot, so the picker no longer offers to open the
+  project at `.git` or `.smithers`.
 - The health dot reads the facts before the answers: a run parked on a
   permission, a question or quota, or ended by a cap, is red even when Jev is
   unavailable or unconfident (day one, with no gateway key, a park showed
