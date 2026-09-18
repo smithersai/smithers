@@ -260,16 +260,22 @@ describe("the optional Wiki summary on chat.clear", () => {
     expect(prompt).not.toContain("--summarize")
   })
 
-  test("with the flag off an explicit --summarize archives, writes no note and calls no model", async () => {
+  /*
+   * Canary D-6 changed this expectation. Archiving under a flag the build has
+   * no door for still archives: the person typed one thing, a consequential
+   * act happened, and the flag they typed did nothing. A flag the flow never
+   * declared is refused, and nothing happens at all.
+   */
+  test("with the flag off an explicit --summarize is refused, archives nothing and calls no model", async () => {
     const { store, controller, sweeps } = await readyToArchive({})
     // The typed line stays an invocation rather than falling through to the model as prose.
     expect(parseSubmit("/chat.clear --summarize", controller.commands.all()))
       .toEqual({ kind: "command", name: "chat.clear", args: "--summarize" })
     const outcome = await controller.commands.run("chat.clear", "--summarize")
-    expect(outcome.status).toBe("executed")
+    expect(outcome).toEqual({ status: "failed", error: "chat.clear takes no --summarize" })
     expect(sweeps).toEqual([])
     expect([...store.collections.worldDocuments.values()].filter((row) => row.sources.includes("chat-sweep"))).toEqual([])
-    expect([...store.collections.transitions.values()].some((row) => row.type === "conversation.cleared")).toBe(true)
+    expect([...store.collections.transitions.values()].some((row) => row.type === "conversation.cleared")).toBe(false)
   })
 
   test("with the flag on the option, its copy and the note it writes are what they are today", async () => {

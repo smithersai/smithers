@@ -1202,3 +1202,28 @@ export const payloadFor = (
  * above cannot name it, so the flow carries this as `metadata.grammar`.
  */
 export const repoTargetGrammar = (name: string): Grammar => (args) => repoOnly(name, args)
+
+/** Every `--flag` a flow's declared `args` spells, wherever it sits: `[--source github|smithers-cloud]`. */
+const DECLARED_FLAG = /--([a-z][\w-]*)/g
+/** A flag in a typed line, which is a token of its own rather than part of a word. */
+const TYPED_FLAG = /(?:^|\s)--([a-z][\w-]*)/g
+
+/**
+ * The first flag the line names that the flow does not, or nothing.
+ *
+ * `payloadFor` answers the empty payload for a name with no grammar, and a
+ * grammar reads the flags it knows and drops the rest: `/chat.clear
+ * --summarize` on a build where summarising is off archived the conversation
+ * with the flag discarded, so the person watched a consequential act happen
+ * under a flag that did nothing. A door whose declared `args` takes free text
+ * takes it as typed; a door that takes FLAGS, or takes nothing at all, has no
+ * reading for one it never named.
+ */
+export const unknownFlag = (args: string | undefined, spec?: string): string | undefined => {
+  if (spec !== undefined && !spec.includes("--")) return undefined
+  const declared = new Set([...(spec ?? "").matchAll(DECLARED_FLAG)].map((match) => match[1]!))
+  for (const match of trimmed(args).matchAll(TYPED_FLAG)) {
+    if (!declared.has(match[1]!)) return match[1]!
+  }
+  return undefined
+}

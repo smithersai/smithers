@@ -48,7 +48,7 @@ import {
   visible
 } from "./registry"
 import type { Parsed } from "./SlashPayload"
-import { payloadFor } from "./SlashPayload"
+import { payloadFor, unknownFlag } from "./SlashPayload"
 import { namesPractice } from "../state/practice/PracticeRepository"
 import { formFieldsFor } from "./FlowForms"
 
@@ -511,6 +511,15 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       return { status: "failed", error: userOnlyError(nameOf(target), target.metadata.userOnlyReason) }
     }
     const acting = invoker === "agent" ? agentActions : actions
+    /*
+     * A flag the flow never declared (SlashPayload.unknownFlag) is refused
+     * before anything runs, and NOT through the form law: the form collects
+     * input a flow asks for, and a flow with no reading for `--summarize` has
+     * no field to offer — rendering one would answer a refused flag with a
+     * door to the very option that was refused.
+     */
+    const stray = named === undefined ? unknownFlag(args, target.metadata.args) : undefined
+    if (stray !== undefined) return { status: "failed", error: `${nameOf(target)} takes no --${stray}` }
     // Parse once before prerequisites: an explicit public repository is a
     // read source even when the current URL could not be opened.
     const parsed: Parsed = named === undefined

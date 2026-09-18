@@ -88,6 +88,37 @@ describe("a flow typed into the composer states its refusal", () => {
   })
 
   /*
+   * Canary D-6: `/chat.clear --summarize` archived the conversation on a
+   * build where summarising is off. The flag has no grammar there, so it was
+   * dropped and the consequential half ran anyway — the person watched an act
+   * happen under a flag that did nothing. A flag a flow never declared is a
+   * misunderstanding, not input, so it refuses and performs nothing.
+   */
+  test("an unknown flag refuses instead of running the flow without it", async () => {
+    const store = await signedInStore()
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async () => json(200, {})
+    })
+    controller.send("hello")
+    await settled()
+    const before = store.collections.messages.size
+    controller.send("/chat.clear --summarize")
+    await settled()
+    await settled()
+    /* Nothing was archived: the earlier turn is still the conversation. */
+    expect([...store.collections.messages.values()].map((message) => message.text).join("\n"))
+      .not.toContain("Open the archived conversation")
+    expect(store.collections.messages.size).toBeGreaterThanOrEqual(before)
+    expect(failedToasts(store).map((toast) => toast.detail).join("\n")).toContain("--summarize")
+
+    /* A flow that DOES take flags refuses the one it never named, and keeps the ones it did. */
+    controller.send("/issues.view 3 --bogus codeplanesmithers/canary-sandbox")
+    await settled()
+    await settled()
+    expect(failedToasts(store).map((toast) => toast.detail).join("\n")).toContain("--bogus")
+  })
+
+  /*
    * Canary D-4: `/flow.create <description>` answered `POST
    * /api/workflow/provision 200` and one `POST /api/workflow/rpc 200`, and
    * then nothing — no line, no toast, no card, no flow. One rpc is the
