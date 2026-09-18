@@ -2,13 +2,14 @@ import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage,AgentTurnCommand,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { CommandOutcome } from "../../flows/Commands"
 import { agentFailureText,agentVisibleCatalog } from "../../flows/agentTools"
-import { parseSubmit, visible } from "../../flows/registry"
+import { itemOf, parseSubmit, unmetRequirements, visible } from "../../flows/registry"
 import { boundToolResult,boundTurnRequest } from "../AgentTurnPolicy"
 import type { Card } from "../AppState"
 import { CardPatchSchema,CardSchema,conversationTabIdOf,inConversation,MAIN_TAB_ID } from "../AppState"
@@ -533,11 +534,26 @@ export const createTurnController = (
    * `{ name, summary }` list the recommender posts (state/Recommend.ts
    * recommendRequest) — `visible(catalog)`, capped — and the front door reads
    * data.
+   *
+   * With one narrowing the recommender does not make. Choosing a command here
+   * RUNS it, so an option this client would refuse is not an option: the
+   * catalog is the model-invocable set (`callable()` — the human's own
+   * browser mechanics, chat.stop and sign-in among them, are refused with
+   * userOnlyError) and, of those, the ones whose requirements are met right
+   * now (`unmetRequirements`, which at the agent boundary is an honest
+   * failure and never a deferral: Commands.ts runAs). The live front door
+   * offered all 208 visible commands and routed "show me my runs" to one that
+   * answered with a refusal. The pills keep the wider list on purpose: a
+   * recommendation is a suggestion the human clicks, and that click is what
+   * renders the sign-in step or the first-run choice.
    */
-  const turnCommands = (): ReadonlyArray<AgentTurnCommand> =>
-    visible(ctx.commands.all())
+  const turnCommands = (): ReadonlyArray<AgentTurnCommand> => {
+    const state = ctx.commands.state()
+    return visible(ctx.commands.callable().map(itemOf))
+      .filter((command) => unmetRequirements(command, state).length === 0)
       .slice(0, COMMANDS_MAX)
       .map((command) => ({ name: command.name, summary: command.summary }))
+  }
 
   const composeTurn = (): {
     readonly context: AgentRuntimeContext
@@ -808,6 +824,11 @@ export const createTurnController = (
         // The model asked for a command; the done frame right after it ends
         // this leg, and the continuation is driven from there.
         ctx.activeTurn.pendingCall = { callId: frame.call_id, name: frame.name, args: frame.arguments }
+        // A call the front door minted (apps/server frontDoor.ts) IS the
+        // turn's answer: the act line this call renders says what happened,
+        // so its continuation leg carries no text, and a silent leg here is
+        // the ordinary end of a worked turn, not an empty response.
+        if (frame.call_id.startsWith(AGENT_TURN_FRONT_DOOR_CALL_PREFIX)) ctx.activeTurn.receivedText = true
         return
       }
       if (frame.type === "delta") {
