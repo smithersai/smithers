@@ -152,7 +152,9 @@ describe("Store", () => {
         const before = yield* store.listMessages("ses_m", { limit: 5, before: "msg_2" })
         const got = yield* store.getMessage("msg_2")
         const none = yield* store.getMessage("msg_nope")
-        return { all, last, before, got: Option.isSome(got), none: Option.isNone(none) }
+        const parts = yield* store.listParts("msg_2")
+        const noParts = yield* store.listParts("msg_nope")
+        return { all, last, before, got: Option.isSome(got), none: Option.isNone(none), parts, noParts }
       })
     )
     expect(result.all.map((item) => item.info.id)).toEqual(["msg_1", "msg_2", "msg_3"])
@@ -161,6 +163,8 @@ describe("Store", () => {
     expect(result.before.map((item) => item.info.id)).toEqual(["msg_1"])
     expect(result.got).toBe(true)
     expect(result.none).toBe(true)
+    expect(result.parts.map((part) => part.id)).toEqual(["prt_2a", "prt_2b"])
+    expect(result.noParts).toEqual([])
   })
 
   it("applies what emitted events imply and ignores the rest", async () => {

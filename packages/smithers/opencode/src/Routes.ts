@@ -18,9 +18,9 @@
 import { Effect, type Layer, Option, Stream } from "effect"
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { basename, join, relative, resolve } from "node:path"
+import { basename, join, relative, resolve, sep } from "node:path"
 import * as Events from "./Events.ts"
 import * as Health from "./Health.ts"
 import * as Ids from "./Ids.ts"
@@ -189,6 +189,30 @@ export const listFiles = (directory: string, path: string): Array<Protocol.FileN
   }
 }
 
+/**
+ * A file's content, as `/file/content` answers it: `text` with the bytes
+ * decoded, or `binary` with no content when the head of the file holds a
+ * NUL byte. `undefined` when `path` does not name a regular file under
+ * `directory`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fileContent = (directory: string, path: string): Protocol.FileContent | undefined => {
+  const base = resolve(directory)
+  const target = resolve(base, path)
+  if (!target.startsWith(base + sep)) return undefined
+  try {
+    if (!statSync(target).isFile()) return undefined
+    const bytes = readFileSync(target)
+    return bytes.subarray(0, 8192).includes(0)
+      ? { type: "binary", content: "" }
+      : { type: "text", content: bytes.toString("utf8") }
+  } catch {
+    return undefined
+  }
+}
+
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status })
 
 const notFound = (message: string) => json({ name: "NotFoundError", data: { message } }, 404)
@@ -309,6 +333,20 @@ export const layer = (
       yield* router.add("GET", "/project", Effect.sync(() => json([projectInfo()])))
       yield* router.add("GET", "/project/current", Effect.sync(() => json(projectInfo())))
       yield* router.add(
+        "PATCH",
+        "/project/:id",
+        (request) =>
+          Effect.gen(function*() {
+            const params = yield* HttpRouter.params
+            if (params["id"] !== project) return notFound(`Project ${params["id"]} not found`)
+            // A rename from the app: the name rides on the answer, the
+            // directory stays what it is.
+            const input = yield* body(request)
+            const name = input["name"]
+            return json({ ...projectInfo(), ...(typeof name === "string" ? { name } : {}) })
+          })
+      )
+      yield* router.add(
         "GET",
         "/provider",
         json({
@@ -352,6 +390,18 @@ export const layer = (
         (request) => {
           const params = query(request)
           return Effect.sync(() => json(listFiles(params.get("directory") ?? directory, params.get("path") ?? "")))
+        }
+      )
+      yield* router.add(
+        "GET",
+        "/file/content",
+        (request) => {
+          const params = query(request)
+          const path = params.get("path") ?? ""
+          return Effect.sync(() => {
+            const content = fileContent(params.get("directory") ?? directory, path)
+            return content === undefined ? notFound(`File ${path} not found`) : json(content)
+          })
         }
       )
       yield* router.add(
@@ -489,6 +539,20 @@ export const layer = (
                 (messages) => json(messages)
               )
             }))
+      )
+      yield* router.add(
+        "GET",
+        "/session/:id/message/:messageID",
+        Effect.flatMap(HttpRouter.params, (params) =>
+          withSession(params["id"]!, (session) =>
+            Effect.gen(function*() {
+              const messageID = params["messageID"]!
+              const message = yield* store.getMessage(messageID)
+              if (Option.isNone(message) || message.value.sessionID !== session.id) {
+                return notFound(`Message ${messageID} not found`)
+              }
+              return json({ info: message.value, parts: yield* store.listParts(messageID) })
+            })))
       )
       yield* router.add("GET", "/session/:id/todo", json([]))
       yield* router.add("GET", "/session/:id/children", json([]))

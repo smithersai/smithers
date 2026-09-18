@@ -376,6 +376,147 @@ describe("Routes through the OpenCode SDK client", () => {
     await lastID.body!.cancel()
   })
 
+  it("serves one message by id, a file's content, and the project update the app sends", async () => {
+    const sdk = client()
+    const session = (await sdk.session.create({ query: { directory: served.directory }, body: {} })).data!
+    // Twenty-one messages, stored the way a turn stores them: ten prompt and
+    // reply pairs and one more prompt, so the last twenty start with a
+    // reply whose prompt lies outside the page. The app fetches that prompt
+    // by id (server-session.ts fetchMessage) and renders the reply without
+    // it only when the id answers 404.
+    const store = Store.layerSqlite(Serve.databasePath(served.directory))
+    const ids = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* Store.Store
+        const ids: Array<string> = []
+        for (let index = 0; index < 11; index++) {
+          const at = 1_800_000_000_000 + index * 1000
+          const userID = Ids.make("message", at)
+          yield* store.putMessage({
+            id: userID,
+            sessionID: session.id,
+            role: "user",
+            time: { created: at },
+            agent: "smithers",
+            model: { providerID: "scripted", modelID: "demo" }
+          })
+          yield* store.putPart({
+            id: Ids.part(userID, { frame: 0, slot: 0, ordinal: 0 }),
+            sessionID: session.id,
+            messageID: userID,
+            type: "text",
+            text: `prompt ${index}`
+          })
+          ids.push(userID)
+          if (index === 10) break
+          const replyID = Ids.reply(userID)
+          yield* store.putMessage({
+            id: replyID,
+            sessionID: session.id,
+            role: "assistant",
+            time: { created: at + 1, completed: at + 2 },
+            parentID: userID,
+            modelID: "demo",
+            providerID: "scripted",
+            mode: "smithers",
+            agent: "smithers",
+            path: { cwd: served.directory, root: served.directory },
+            cost: 0,
+            tokens: Protocol.noTokens,
+            finish: "stop"
+          })
+          ids.push(replyID)
+        }
+        return ids
+      }).pipe(Effect.provide(store))
+    )
+    expect(ids.length).toBe(21)
+    const page = await served.handler(
+      new Request(`http://test/session/${session.id}/message?limit=20`, {
+        headers: { origin: "https://app.opencode.ai" }
+      })
+    )
+    const items = (await page.json()) as Array<{ info: Message; parts: Array<Part> }>
+    expect(items.length).toBe(20)
+    expect(items[0]!.info.role).toBe("assistant")
+    const parentID = (items[0]!.info as Protocol.AssistantMessage).parentID
+    expect(parentID).toBe(ids[0])
+    const parent = await served.handler(
+      new Request(`http://test/session/${session.id}/message/${parentID}`, {
+        headers: { origin: "https://app.opencode.ai" }
+      })
+    )
+    expect(parent.status).toBe(200)
+    expect(parent.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
+    const fetched = (await parent.json()) as { info: Message; parts: Array<Part> }
+    expect(fetched.info).toMatchObject({ id: parentID, role: "user" })
+    expect(fetched.parts.map((part) => part.type)).toEqual(["text"])
+    expect((await sdk.session.message({ path: { id: session.id, messageID: parentID } })).data).toEqual(fetched)
+    // A message that is not there, or belongs to another session, is a 404
+    // the app reads (the reply renders without its prompt).
+    const gone = await served.handler(
+      new Request(`http://test/session/${session.id}/message/msg_nope`, {
+        headers: { origin: "https://app.opencode.ai" }
+      })
+    )
+    expect(gone.status).toBe(404)
+    expect(gone.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
+    expect(await gone.json()).toEqual({ name: "NotFoundError", data: { message: "Message msg_nope not found" } })
+    const other = (await sdk.session.create({ query: { directory: served.directory }, body: {} })).data!
+    expect((await served.handler(new Request(`http://test/session/${other.id}/message/${parentID}`))).status).toBe(404)
+    expect((await served.handler(new Request(`http://test/session/ses_missing/message/${parentID}`))).status).toBe(404)
+
+    // A click on a file in a read card reads it.
+    writeFileSync(join(served.directory, "src", "hello.ts"), "export const hello = 1\n")
+    writeFileSync(join(served.directory, "src", "blob.bin"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))
+    expect((await sdk.file.read({ query: { path: "src/hello.ts" } })).data).toEqual({
+      type: "text",
+      content: "export const hello = 1\n"
+    })
+    expect(await get(`/file/content?path=${encodeURIComponent(join(served.directory, "src", "hello.ts"))}`)).toEqual({
+      type: "text",
+      content: "export const hello = 1\n"
+    })
+    expect(await get(`/file/content?path=src/blob.bin`)).toEqual({ type: "binary", content: "" })
+    expect(await get(`/file/content?directory=${encodeURIComponent(join(served.directory, "src"))}&path=hello.ts`))
+      .toEqual({ type: "text", content: "export const hello = 1\n" })
+    expect((await served.handler(new Request("http://test/file/content"))).status).toBe(404)
+    for (const path of ["src/nope.ts", "src", "../outside", ""]) {
+      const missing = await served.handler(new Request(`http://test/file/content?path=${encodeURIComponent(path)}`))
+      expect(missing.status, path).toBe(404)
+      expect(await missing.json()).toEqual({ name: "NotFoundError", data: { message: `File ${path} not found` } })
+    }
+
+    // A project rename or update from the app echoes the project.
+    const project = Routes.projectID(served.directory)
+    const patched = await served.handler(
+      new Request(`http://test/project/${project}`, {
+        method: "PATCH",
+        body: `{"name":"Mine"}`,
+        headers: { "content-type": "application/json", origin: "https://app.opencode.ai" }
+      })
+    )
+    expect(patched.status).toBe(200)
+    expect(patched.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
+    expect(await patched.json()).toMatchObject({ id: project, worktree: served.directory, name: "Mine" })
+    const unnamed = await served.handler(new Request(`http://test/project/${project}`, { method: "PATCH" }))
+    expect(await unnamed.json()).not.toHaveProperty("name")
+    const wrong = await served.handler(new Request("http://test/project/abc", { method: "PATCH" }))
+    expect(wrong.status).toBe(404)
+
+    // A route the app calls that this server does not mount: a JSON 404 with
+    // the allow headers, never a CORS failure in the browser.
+    const unmounted = await served.handler(
+      new Request(`http://test/session/${session.id}/revert`, {
+        method: "POST",
+        headers: { origin: "https://app.opencode.ai" }
+      })
+    )
+    expect(unmounted.status).toBe(404)
+    expect(unmounted.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
+    expect(await unmounted.json()).toEqual({ name: "NotFoundError", data: { message: "Route not found" } })
+  })
+
   it("answers 500 with a typed error when the store fails", async () => {
     const failing: Store.Service = new Proxy({} as Store.Service, {
       get: () => () => Effect.fail(new Store.StoreError({ message: "disk gone" }))

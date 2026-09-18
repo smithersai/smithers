@@ -332,6 +332,17 @@ export interface Project {
 }
 
 /**
+ * A file's content, as `GET /file/content` answers it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface FileContent {
+  readonly type: "text" | "binary"
+  readonly content: string
+}
+
+/**
  * A directory entry, as `GET /file` lists it.
  *
  * @category models

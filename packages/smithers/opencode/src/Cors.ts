@@ -13,6 +13,7 @@
  */
 import { Effect, type Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import * as HttpServerError from "effect/unstable/http/HttpServerError"
 
 /**
  * The origin patterns allowed by default. A `*` matches one host label.
@@ -66,9 +67,21 @@ export const headersFor = (origin: string): Record<string, string> => ({
 })
 
 /**
+ * The answer to a route the server does not mount: the JSON 404 the
+ * mounted routes answer, so the app reads a status it handles (a parent
+ * message it marks removed, a file it cannot show) instead of a network
+ * error it retries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const routeNotFound = { name: "NotFoundError", data: { message: "Route not found" } }
+
+/**
  * The global middleware: answers preflights with 204 and stamps the allow
- * headers on every other answer from an allowed origin. A request with no
- * `Origin`, or a disallowed one, passes through untouched.
+ * headers on every other answer from an allowed origin, including the 404
+ * of a route the server does not mount. A request with no `Origin`, or a
+ * disallowed one, passes through untouched.
  *
  * @param extras patterns added on the command line
  * @category layers
@@ -79,7 +92,16 @@ export const layer = (extras: ReadonlyArray<string> = []): Layer.Layer<never, ne
     Effect.gen(function*() {
       const request = yield* HttpServerRequest.HttpServerRequest
       const origin = request.headers["origin"]
-      if (!allows(origin, extras)) return yield* app
+      // The router fails an unmatched route past the middleware, which is
+      // where a browser would see a bare 404 with no allow headers.
+      const answer = app.pipe(
+        Effect.catch((error) =>
+          error instanceof HttpServerError.HttpServerError && error.reason._tag === "RouteNotFound"
+            ? Effect.succeed(HttpServerResponse.jsonUnsafe(routeNotFound, { status: 404 }))
+            : Effect.fail(error)
+        )
+      )
+      if (!allows(origin, extras)) return yield* answer
       const headers = headersFor(origin!)
       if (request.method === "OPTIONS") {
         return HttpServerResponse.empty({ status: 204 }).pipe(
@@ -92,6 +114,6 @@ export const layer = (extras: ReadonlyArray<string> = []): Layer.Layer<never, ne
           })
         )
       }
-      const response = yield* app
+      const response = yield* answer
       return HttpServerResponse.setHeaders(response, headers)
     }), { global: true })

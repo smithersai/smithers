@@ -120,6 +120,8 @@ export interface Service {
   ) => Effect.Effect<Array<MessageWithParts>, StoreError>
   readonly putPart: (part: Protocol.Part) => Effect.Effect<void, StoreError>
   readonly getPart: (id: string) => Effect.Effect<Option.Option<Protocol.Part>, StoreError>
+  /** The parts of one message in id order. */
+  readonly listParts: (messageID: string) => Effect.Effect<Array<Protocol.Part>, StoreError>
   readonly putPermission: (request: Protocol.PermissionRequest) => Effect.Effect<void, StoreError>
   readonly listPermissions: (sessionID?: string) => Effect.Effect<Array<Protocol.PermissionRequest>, StoreError>
   readonly deletePermission: (id: string) => Effect.Effect<boolean, StoreError>
@@ -314,6 +316,12 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
       Effect.mapError(failure("The part could not be read"))
     )
 
+  const listParts: Service["listParts"] = (messageID) =>
+    sql`SELECT part FROM opencode_parts WHERE message_id = ${messageID} ORDER BY id ASC`.pipe(
+      Effect.map((rows) => rows.map((row) => parse<Protocol.Part>(row, "part"))),
+      Effect.mapError(failure("The parts could not be listed"))
+    )
+
   const putPermission: Service["putPermission"] = (request) =>
     sql`INSERT INTO opencode_permissions (id, session_id, request)
         VALUES (${request.id}, ${request.sessionID}, ${JSON.stringify(request)})
@@ -437,6 +445,7 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
     listMessages,
     putPart,
     getPart,
+    listParts,
     putPermission,
     listPermissions,
     deletePermission,

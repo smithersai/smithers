@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- A route the server does not mount answers the JSON 404 the mounted routes
+  answer, with the allow headers when the origin is allowed: the router
+  failed an unmatched route past the CORS middleware, so every v1 route the
+  app calls that this server lacks (revert, fork, share, and the message and
+  file reads below) surfaced in the browser as a CORS network error the app
+  retried instead of a 404 it handles.
+- `GET /session/:id/message/:messageID` answers `{info, parts}` (the app
+  fetches a reply's prompt by id when the prompt lies outside the last
+  twenty messages), `GET /file/content` answers a file under the served
+  directory (a click on a file in a read card), and `PATCH /project/:id`
+  echoes the project (a rename from the app).
 - The health dot reads the facts before the answers: a run parked on a
   permission, a question or quota, or ended by a cap, is red even when Jev is
   unavailable or unconfident (day one, with no gateway key, a park showed

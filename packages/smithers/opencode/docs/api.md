@@ -30,27 +30,30 @@ also importable from `@smthrs/opencode/<Module>`.
 
 ## `Routes`
 
-| Export      | Signature                                                                  | Meaning                                                |
-| ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `Options`   | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                    |
-| `layer`     | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                    |
-| `projectID` | `(directory: string) => string`                                            | A stable hash of the absolute path.                    |
-| `modelOf`   | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`. |
-| `slugOf`    | `(id: string) => string`                                                   | Two words from a session id.                           |
-| `provider`  | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads. |
-| `agent`     | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                   |
-| `gitBranch` | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                           |
-| `listFiles` | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.           |
+| Export        | Signature                                                                  | Meaning                                                                                         |
+| ------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `Options`     | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                                                             |
+| `layer`       | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                                                             |
+| `projectID`   | `(directory: string) => string`                                            | A stable hash of the absolute path.                                                             |
+| `modelOf`     | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`.                                          |
+| `slugOf`      | `(id: string) => string`                                                   | Two words from a session id.                                                                    |
+| `provider`    | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads.                                          |
+| `agent`       | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                                                            |
+| `gitBranch`   | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                                                                    |
+| `listFiles`   | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.                                                    |
+| `fileContent` | `(directory: string, path: string) => FileContent \| undefined`            | A regular file under `directory` as `text`, or `binary` with no content; `undefined` otherwise. |
 
 Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
-`/path`, `/project`, `/project/current`, `/provider`, `/agent`, `/command`,
-`/lsp`, `/mcp`, `/experimental/resource`, `/question`, `/permission`, `/vcs`,
-`/vcs/diff`, `/vcs/status`, `/find/file`, `/file`, `/api/reference`,
-`/session/status`, `/api/session`, `GET|POST /session`,
-`GET|PATCH|DELETE /session/:id`, `/session/:id/message`, `/session/:id/todo`,
+`/path`, `/project`, `/project/current`, `PATCH /project/:id`, `/provider`,
+`/agent`, `/command`, `/lsp`, `/mcp`, `/experimental/resource`, `/question`,
+`/permission`, `/vcs`, `/vcs/diff`, `/vcs/status`, `/find/file`, `/file`,
+`/file/content`, `/api/reference`, `/session/status`, `/api/session`,
+`GET|POST /session`, `GET|PATCH|DELETE /session/:id`, `/session/:id/message`,
+`/session/:id/message/:messageID`, `/session/:id/todo`,
 `/session/:id/children`, `/session/:id/diff`, `POST /session/:id/prompt_async`,
 `POST /session/:id/abort`, `POST /session/:id/permissions/:permissionID`,
-`/global/event` and `/event`.
+`/global/event` and `/event`. Any other route answers the JSON 404
+`Cors.routeNotFound`, with the allow headers when the origin is allowed.
 
 ## `Events`
 
@@ -76,6 +79,7 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | `Service`                 | sessions, messages, parts, permissions, grants, turns, `apply` | What the store does; `apply` persists what an emitted event implies.      |
 | `Store`                   | `Context.Service`                                              | The store service.                                                        |
 | `putHealth`, `listHealth` | on `Service`                                                   | One `flows.opencode.health.v1` record per decision, per session.          |
+| `listParts`               | on `Service`: `(messageID) => Effect<Array<Part>, StoreError>` | The parts of one message in id order.                                     |
 | `migrations`              | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger.      |
 | `make`                    | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                             |
 | `layer`                   | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                         |
@@ -200,7 +204,8 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
 | `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                           |
 | `Cors.allows`          | `(origin, extras?) => boolean`.                                                                |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers.                         |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.           |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.  |
 | `Auth.Credentials`     | `{ username, password }`.                                                                      |
 | `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                               |
 | `Auth.authorizes`      | `(header, credentials) => boolean`.                                                            |
