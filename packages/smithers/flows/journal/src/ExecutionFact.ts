@@ -265,11 +265,9 @@ export const fold = (inputs: ReadonlyArray<Input>, rootExecutionId: string, obse
   tree.sort((a, b) =>
     a.depth - b.depth ||
     a.state.observation!.createdAtMs - b.state.observation!.createdAtMs ||
-    (a.state.observation!.executionId < b.state.observation!.executionId ?
-      -1 :
-      a.state.observation!.executionId > b.state.observation!.executionId
-      ? 1
-      : 0)
+    // Execution ids are the reachable-map keys, so no two entries share one
+    // and the comparator never has to report a tie here.
+    (a.state.observation!.executionId < b.state.observation!.executionId ? -1 : 1)
   )
   const humanWaits = tree.flatMap(({ state }) => {
     const observation = state.observation!

@@ -310,3 +310,64 @@ describe("native execution fact fold", () => {
     expect(Facts.fold([], "root", { root: original, current: original }).provenance.source).toBe("legacy-observation")
   })
 })
+
+describe("semantic observation equality", () => {
+  const asking = (request: unknown): Facts.Observation =>
+    row("root", {
+      waiting: {
+        reason: "approval",
+        wakeAtMs: null,
+        tokenDigest: "digest",
+        point: "clarification#1",
+        request
+      } as never
+    })
+  const sameQuestion = (left: unknown, right: unknown) => Facts.equal(asking(left), asking(right))
+
+  it("compares recorded questions by JSON value, so writer key order is not a change", () => {
+    expect(sameQuestion(
+      { kind: "ask", prompt: "Which service?", attempt: 1 },
+      { attempt: 1, prompt: "Which service?", kind: "ask" }
+    )).toBe(true)
+    expect(sameQuestion({ ask: { options: [1, "two", null, { deep: true }] } }, {
+      ask: { options: [1, "two", null, { deep: true }] }
+    })).toBe(true)
+    expect(sameQuestion([], [])).toBe(true)
+    expect(sameQuestion("text", "text")).toBe(true)
+    expect(sameQuestion(null, null)).toBe(true)
+  })
+
+  it("treats a differing question shape, length, or leaf as a different question", () => {
+    // Same member count, different member name.
+    expect(sameQuestion({ prompt: "a" }, { question: "a" })).toBe(false)
+    // Same member name, different leaf value.
+    expect(sameQuestion({ prompt: "a" }, { prompt: "b" })).toBe(false)
+    expect(sameQuestion({ prompt: "a" }, { prompt: "a", attempt: 1 })).toBe(false)
+    expect(sameQuestion([1, 2], [1, 2, 3])).toBe(false)
+    expect(sameQuestion([1, 2], [1, 3])).toBe(false)
+    // An array and a record are never the same question, in either position.
+    expect(sameQuestion([1], { "0": 1 })).toBe(false)
+    expect(sameQuestion({ "0": 1 }, [1])).toBe(false)
+    for (const scalar of [null, 7, "text", true]) {
+      expect(sameQuestion(scalar, { prompt: "a" })).toBe(false)
+      expect(sameQuestion({ prompt: "a" }, scalar)).toBe(false)
+    }
+  })
+
+  it("orders equally deep, equally aged siblings by execution id", () => {
+    const parent = row("root", { status: "running", treeVersion: 1, parentPolicy: "cancel" })
+    const sibling = (id: string) =>
+      row(id, {
+        status: "running",
+        treeVersion: 1,
+        parentPolicy: "cancel",
+        parentRunId: "root" as never,
+        lineageId: id as never
+      })
+    const events = [parent, sibling("child-c"), sibling("child-a"), sibling("child-b")].map((observation) =>
+      entry(observation)
+    )
+    expect(Facts.fold(events, "root").provenance.humanWaitSources?.map((source) => source.executionId))
+      .toEqual(["root", "child-a", "child-b", "child-c"])
+  })
+})
