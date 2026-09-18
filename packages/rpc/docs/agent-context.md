@@ -8,6 +8,12 @@ units. This includes connector fields, repository identifiers and paths, GitHub
 names, cloud usernames, billing strings, wiki titles and paths, tab metadata,
 capabilities, and limitations. Optional and nullable fields retain those forms.
 
+A recent card's `setup` draft is metadata throughout. Its step names and cut
+prompts, `applyTo`, `trigger` and `gate` are user- and model-authored draft text
+with no newline rule of their own, so the client collapses each one's whitespace
+before it posts the turn; a raw draft string fails this schema at the server
+boundary and the turn is rejected rather than answered.
+
 The renderer also protects callers that have not parsed the schema: it replaces
 CRLF, CR, and LF in metadata with a space and truncates each value to 4096 code
 units. Metadata cannot introduce another top-level instruction line.

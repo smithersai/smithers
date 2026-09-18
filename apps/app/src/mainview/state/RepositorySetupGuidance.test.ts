@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
+import { AgentRuntimeContextSchema, AgentRuntimeSetupDraftSchema, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { agentVisibleCatalog } from "../flows/agentTools"
 import { disclosedEntries } from "../chain/FlowCatalog"
 import type { StorageApi } from "@tanstack/db"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
-import { setupQuestionCardId } from "./controller/repositorySetup"
+import { setupContextSummary, setupQuestionCardId } from "./controller/repositorySetup"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf } from "./Instructions"
@@ -549,4 +549,47 @@ test("a model answering only from that turn names the automatic steps instead of
     expect(transcript(t.store)).toContain("Automatic in this setup: Research issue, Find duplicates, Reproduce bugs.")
     expect(transcript(t.store)).not.toContain("Nothing runs automatically")
   } finally { await t.close() }
+})
+
+/*
+ * Each context metadata string is one instruction line and carries no CR or LF
+ * (packages/rpc/docs/agent-context.md); AgentRuntimeContextSchema enforces it
+ * and the server answers a context that fails it with 400. A draft's label is
+ * free text with no newline rule, so without the collapse every question asked
+ * beside a label-scoped card came back as a failed turn instead of an answer.
+ */
+test("a newline in the draft's label still posts a context the boundary accepts", async () => {
+  const t = await fixture()
+  try {
+    await t.controller.configureRepositorySetup(id, "scope", "label")
+    await t.controller.configureRepositorySetup(id, "label", "needs\ninvestigation")
+    expect(t.setup().draft.label).toBe("needs\ninvestigation")
+    await t.controller.send("what will run automatically?")
+    await waitFor(() => t.requests.length > 0)
+    const request = conversationTurn(t.requests)
+    expect(AgentRuntimeContextSchema.safeParse(request.context).success).toBe(true)
+    expect(request.context?.recentCards?.find(card => card.id === id)?.setup?.applyTo).toBe('issues labeled "needs investigation"')
+    expect(composeAgentInstructions(request.instructions, request.context)).toContain('apply to issues labeled "needs investigation"')
+  } finally { await t.close() }
+})
+
+/*
+ * A step name and an eval case name reach the draft from the repository
+ * inspection's own suggestedDraft, not only from a person, and neither has a
+ * newline rule either. Every string this summary emits is collapsed.
+ */
+test("every string the summary emits is one line, including a step name and a gate", () => {
+  const setup = initialSetup("example/repo", "chores", "maintainer")
+  setup.draft.steps = [{ ...setup.draft.steps[0]!, name: "Tidy\r\nthe repository", mode: "automatic" }]
+  setup.draft.schedule = "0 9\n* * 1"
+  setup.draft.choreEvent = "labeled"
+  setup.draft.label = "needs\ninvestigation"
+  setup.draft.cases = [{ id: "weekly", name: "A weekly\ntidy", input: "Tidy the repository", expected: "A checked proposal", required: true }]
+  const digest = setupCandidate(setup)
+  const summary = setupContextSummary({ ...setup, evaluation: { requestId: "eval", runId: "eval-run", operation: "evaluate",
+    revision: setup.revision, digest, phase: "completed", updatedAt: 1, results: [], evidence: ["artifact:eval"], sourceRevision: "commit-1" } })
+  expect(AgentRuntimeSetupDraftSchema.safeParse(summary).success).toBe(true)
+  expect(summary.steps[0]!.name).toBe("Tidy the repository")
+  expect(summary.trigger).toBe('cron 0 9 * * 1 UTC, on issues labeled "needs investigation"')
+  expect(summary.gate).toBe("Resolve eval: A weekly tidy.")
 })

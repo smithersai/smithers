@@ -46,7 +46,7 @@ export const setupGuidance = (card: SetupCard): string => JSON.stringify({
   ...repositorySetupGuide(card.payload)
 })
 
-/* A prompt's first sentence names the step; the rest of it stays behind setup.guide, because the turn pays for these bytes under the chat seam's cap. */
+/* Every string below is one bounded instruction line: the runtime context takes no CR or LF (packages/rpc/docs/agent-context.md) and the turn pays for these bytes under the chat seam's cap, so a prompt's first sentence names the step and the rest stays behind setup.guide. */
 const oneLine = (text: string): string => {
   const flat = text.replace(/\s+/g, " ").trim()
   return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
@@ -62,18 +62,18 @@ export const setupContextSummary = (setup: RepositorySetup): AgentRuntimeSetupDr
   const { draft } = setup
   const gate = setupActivationProblems(setup)[0]
   return {
-    steps: draft.steps.map(step => ({ name: step.name, mode: step.mode, prompt: oneLine(step.prompt) })),
+    steps: draft.steps.map(step => ({ name: oneLine(step.name), mode: step.mode, prompt: oneLine(step.prompt) })),
     replies: draft.replies, landing: draft.landing, budgetMinutes: draft.budgetMinutes,
     ...(setup.job === "issues"
-      ? { applyTo: draft.scope === "label" ? `issues labeled "${draft.label}"` : "new and edited issues" }
+      ? { applyTo: draft.scope === "label" ? oneLine(`issues labeled "${draft.label}"`) : "new and edited issues" }
       : {}),
     ...(setup.job === "chores"
-      ? { trigger: `${draft.schedule === "" ? "no schedule" : `cron ${draft.schedule} UTC`}, ${
+      ? { trigger: oneLine(`${draft.schedule === "" ? "no schedule" : `cron ${draft.schedule} UTC`}, ${
         draft.choreEvent === "push" ? "on push to the default branch"
           : draft.choreEvent === "labeled" ? `on issues labeled "${draft.label}"` : "no repository event"
-      }` }
+      }`) }
       : {}),
-    ...(gate === undefined ? {} : { gate })
+    ...(gate === undefined ? {} : { gate: oneLine(gate) })
   }
 }
 
