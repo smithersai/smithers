@@ -81,6 +81,22 @@ describe("the Worker identity stays frozen", () => {
   test("every secret and every optional knob is a name only, never a value", () => {
     for (const name of [...WORKER_IDENTITY.secrets, ...WORKER_IDENTITY.optionalVars]) expect(name).toMatch(/^[A-Z][A-Z0-9_]+$/)
     expect(new Set(WORKER_IDENTITY.secrets).size).toBe(WORKER_IDENTITY.secrets.length)
+    // No name is both required and optional, or the preflight would report it twice.
+    for (const name of WORKER_IDENTITY.optionalVars) expect(WORKER_IDENTITY.secrets).not.toContain(name)
+  })
+
+  test("AI_GATEWAY_API_KEY is a required secret: Jev is the main model and neither seam that spends it has a fallback", () => {
+    // src/recommend.ts (the composer pills) and src/frontDoor.ts (the turn
+    // route's front door) both refuse without it, so a canary without it is
+    // a canary with two dead seams, not a canary with one knob unset.
+    expect(WORKER_IDENTITY.secrets).toContain("AI_GATEWAY_API_KEY")
+    expect(WORKER_IDENTITY.optionalVars).not.toContain("AI_GATEWAY_API_KEY")
+    // The Cerebras key stays required for the cloud roles, and its recommender
+    // model override went with the recommender's Cerebras path.
+    expect(WORKER_IDENTITY.secrets).toContain("CEREBRAS_API_KEY")
+    expect(WORKER_IDENTITY.optionalVars).toContain("CEREBRAS_MODEL_LIBRARIAN")
+    expect(WORKER_IDENTITY.optionalVars).toContain("CEREBRAS_MODEL_FLOWS")
+    expect(WORKER_IDENTITY.optionalVars).not.toContain("CEREBRAS_MODEL")
   })
 })
 

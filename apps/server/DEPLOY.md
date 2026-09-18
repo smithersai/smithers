@@ -215,16 +215,17 @@ bun x wrangler secret list                         # names only
 | `BILLING_PRODUCT_SERVICE_TOKEN` | billing reads as the user |
 | `BILLING_ADMIN_TOKEN` | `POST /api/admin/grant` |
 | `ANONYMOUS_TURN_SALT` | the anonymous turn buckets |
-| `CEREBRAS_API_KEY` | `POST /api/recommend` |
+| `CEREBRAS_API_KEY` | the cloud roles (the Librarian, the Flows agent) |
+| `AI_GATEWAY_API_KEY` | Jev: `POST /api/recommend` and the turn route's front door |
 | `SMITHERS_GITHUB_APP_ID` | the GitHub App JWT (`src/githubApp.ts`) |
 | `SMITHERS_GITHUB_APP_PRIVATE_KEY` | the GitHub App JWT (PEM, PKCS#1 or PKCS#8) |
 | `GITHUB_TOKEN` | optional override of the App for catalog stats |
 | `TUTORIAL_SERVICE_TOKEN` | authenticating the live tutorial service |
 
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
-way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`, `CEREBRAS_MODEL`,
-`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`,
-`AI_GATEWAY_API_KEY`. `SMITHERS_BUILD_SHA` is
+way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`,
+`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`.
+`SMITHERS_BUILD_SHA` is
 not a binding: `scripts/deploy.ts` bakes it into the site build as
 `/__build.json`. The frozen vars (`IDENTITY_UPSTREAM_URL`,
 `BILLING_UPSTREAM_URL`, `SMITHERS_CLOUD_API_BASE_URL`, `SMITHERS_CHAT_URL`,
@@ -351,31 +352,37 @@ Deploying this Worker does not deploy them, and a broken sign-in is more
 often theirs than ours. `apps/UPSTREAMS.md` names each one, its source, its
 hostname, and how to deploy it with a receipt.
 
-### Command suggestions need a Cerebras key
+### Command suggestions need the AI Gateway key
 
 `POST /api/recommend` decides which of the user's commands to suggest next,
 and `POST /api/recommend/outcome` records what the user ran. Both are open to
 signed-out visitors under their own daily ceilings (300 per address or login,
 5000 deployment-wide). The route needs:
 
-- `AI_GATEWAY_API_KEY` (secret, optional). Set, the route asks Jev through the
-  Vercel AI Gateway (`typesafe-ai/jev`, 1.5 s deadline) first: one choice
-  question whose options are the commands the client offered, ordered by the
-  probability Jev gives each. Every call asks the gateway for zero data
-  retention. Unset, a Jev that fails, or a request offering more than 255
-  commands, and the route asks Cerebras instead.
-- `CEREBRAS_API_KEY` (secret, exported in the deploying shell). Cerebras
-  (`gpt-oss-120b`, 6 s deadline) answers whenever Jev does not. With neither
-  key set, the route answers `503` and the app keeps its rule-based pills;
-  nothing is invented.
+- `AI_GATEWAY_API_KEY` (secret, REQUIRED). The route asks Jev through the
+  Vercel AI Gateway (`typesafe-ai/jev`, 1.5 s deadline): choice questions
+  whose options are the commands the client offered, ordered by the
+  probability Jev gives each. A catalog longer than 255 commands is split
+  across several questions in ONE request — the gateway answers them in
+  parallel — and the answers are merged by probability, so size never changes
+  who decides. Every call asks the gateway for zero data retention.
+- There is no second model. Jev is the main model: an unset key is a
+  `seam_not_configured` 503 naming `AI_GATEWAY_API_KEY`, and a Jev that
+  refuses, times out or answers something unreadable is a
+  `service_temporarily_unavailable` 503 naming the failure. The route never
+  asks an LLM instead, and the app keeps its own rule-based pills. The same
+  rule governs the turn route's front door (`src/frontDoor.ts`), which
+  refuses with the typed failures a cloud role turn uses for an unavailable
+  model.
+- `CEREBRAS_API_KEY` is NOT spent here. It belongs to the cloud roles, the
+  Librarian and the Flows agent (`src/cloudRoleTurn.ts`), and stays required
+  for them.
 - `RECOMMEND_LOG` (Durable Object binding, `WORKER_IDENTITY.durableObjects`,
   Wrangler migration `v4`). One row per recommendation, a ring of the newest
   5000, holding a SHA-256 of the chat tail and never the text. Admins read it
   at `GET /api/admin/recommend/log?limit=N`, newest first, to score hit rate
   and top-1 rate. Each row names the model that answered it, so a live score
-  reads Jev's rows apart from Cerebras's.
-
-`CEREBRAS_MODEL` (knob, optional) overrides the model id.
+  still reads one model's rows apart from another's.
 
 ### The public catalog's GitHub stats authenticate as a GitHub App
 

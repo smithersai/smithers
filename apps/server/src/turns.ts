@@ -703,6 +703,11 @@ const handleTransientTurn = (
      * with nothing to kill, and the continuation leg re-POSTs the same runId
      * the instant the client reads the done frame, which a registration this
      * leg never settled would refuse with 409.
+     *
+     * A Jev that FAILS answers here too, with the typed refusal for an
+     * unavailable model. There is no fallback: only Jev deciding `none`, or
+     * deciding a command it is not sure enough about, spends the upstream
+     * below.
      */
     const routed = yield* handleFrontDoor(body, ISOLATION_HEADERS)
     if (routed !== undefined) return routed
@@ -850,10 +855,11 @@ const upstreamRetryAfter = (response: Response): number | null => {
  * owns the metered provider keys, authorizes the balance BEFORE calling the
  * provider, and enqueues the turn's authoritative usage onto the durable
  * metering queue, so the relay inherits per-user metering rather than
- * reproducing it. The one provider credential this Worker does hold is the
- * free Cerebras key (CEREBRAS_API_KEY), spent only by the command recommender
- * (recommend.ts) and the cloud role turns (cloudRoleTurn.ts), never by this
- * relay.
+ * reproducing it. The two provider credentials this Worker does hold are the
+ * free Cerebras key (CEREBRAS_API_KEY), spent only by the cloud role turns
+ * (cloudRoleTurn.ts), and the AI Gateway key (AI_GATEWAY_API_KEY), spent only
+ * on Jev by the command recommender (recommend.ts) and the front door
+ * (frontDoor.ts). Neither is ever spent by this relay.
  *
  * The router gates the route before any of this runs: anonymous callers get
  * 401, non-allowlisted ones 403, and the per-login turn ceiling applies — all

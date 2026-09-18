@@ -95,9 +95,9 @@ describe("compareVars", () => {
   })
 
   test("an optional knob living as a secret is a kept knob, not an undeclared secret", () => {
-    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_MODEL" }])
-    expect(findings.find((f) => f.check === "knob CEREBRAS_MODEL")?.level).toBe("PASS")
-    expect(findings.find((f) => f.check === "live secret CEREBRAS_MODEL")).toBeUndefined()
+    const findings = compareVars([...plain, { type: "secret_text", name: "CEREBRAS_MODEL_LIBRARIAN" }])
+    expect(findings.find((f) => f.check === "knob CEREBRAS_MODEL_LIBRARIAN")?.level).toBe("PASS")
+    expect(findings.find((f) => f.check === "live secret CEREBRAS_MODEL_LIBRARIAN")).toBeUndefined()
   })
 
   /*

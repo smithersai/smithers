@@ -37,7 +37,6 @@ export interface ServerEnvVars {
   readonly TUTORIAL_SERVICE_TOKEN?: string
   readonly ANONYMOUS_TURN_SALT?: string
   readonly CEREBRAS_API_KEY?: string
-  readonly CEREBRAS_MODEL?: string
   readonly CEREBRAS_MODEL_LIBRARIAN?: string
   readonly CEREBRAS_MODEL_FLOWS?: string
   readonly AI_GATEWAY_API_KEY?: string
@@ -72,11 +71,11 @@ export interface ServerConfigShape {
   readonly tutorialServiceUrl: string | undefined
   readonly tutorialServiceToken: Redacted.Redacted<string> | undefined
   readonly anonymousTurnSalt: Redacted.Redacted<string> | undefined
+  /** The Cerebras key the cloud roles (the Librarian, the Flows agent) spend. */
   readonly cerebrasApiKey: Redacted.Redacted<string> | undefined
-  readonly cerebrasModel: string | undefined
   readonly cerebrasModelLibrarian: string | undefined
   readonly cerebrasModelFlows: string | undefined
-  /** The Vercel AI Gateway key the command recommender spends on Jev before it asks Cerebras. */
+  /** The Vercel AI Gateway key the composer pills and the turn route's front door spend on Jev. Unset, both refuse. */
   readonly aiGatewayApiKey: Redacted.Redacted<string> | undefined
   readonly githubAppId: string | undefined
   readonly githubAppPrivateKey: Redacted.Redacted<string> | undefined
@@ -131,7 +130,6 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   tutorialServiceToken: secret(env.TUTORIAL_SERVICE_TOKEN),
   anonymousTurnSalt: exactSecret(env.ANONYMOUS_TURN_SALT),
   cerebrasApiKey: secret(env.CEREBRAS_API_KEY),
-  cerebrasModel: text(env.CEREBRAS_MODEL),
   cerebrasModelLibrarian: text(env.CEREBRAS_MODEL_LIBRARIAN),
   cerebrasModelFlows: text(env.CEREBRAS_MODEL_FLOWS),
   aiGatewayApiKey: secret(env.AI_GATEWAY_API_KEY),

@@ -98,7 +98,10 @@ export const WORKER_IDENTITY = {
    * deploying shell never needs to carry a value, and the preflight only
    * reports each name as live or not. All are optional to the code (an unset
    * one makes its route answer an honest 501 or 503); none is optional to a
-   * working canary.
+   * working canary. `AI_GATEWAY_API_KEY` joined the list when Jev became the
+   * only model behind the composer pills and the turn route's front door
+   * (src/recommend.ts, src/frontDoor.ts): without it both refuse, because
+   * neither has an LLM to fall back to.
    */
   secrets: [
     "SMITHERS_CHAT_AUTH_TOKEN",
@@ -110,6 +113,7 @@ export const WORKER_IDENTITY = {
     "BILLING_ADMIN_TOKEN",
     "ANONYMOUS_TURN_SALT",
     "CEREBRAS_API_KEY",
+    "AI_GATEWAY_API_KEY",
     "SMITHERS_GITHUB_APP_ID",
     "SMITHERS_GITHUB_APP_PRIVATE_KEY",
     "TUTORIAL_SERVICE_TOKEN",
@@ -127,10 +131,8 @@ export const WORKER_IDENTITY = {
     "TUTORIAL_SERVICE_URL",
     "UPSTREAM_TIMEOUT_MS",
     "BILLING_CHECKOUT_ENABLED",
-    "CEREBRAS_MODEL",
     "CEREBRAS_MODEL_LIBRARIAN",
-    "CEREBRAS_MODEL_FLOWS",
-    "AI_GATEWAY_API_KEY"
+    "CEREBRAS_MODEL_FLOWS"
   ] as ReadonlyArray<string>
 } as const
 

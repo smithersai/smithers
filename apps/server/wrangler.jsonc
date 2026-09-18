@@ -71,7 +71,7 @@
 			// The command recommender's log: one row per recommendation (tail
 			// digest, the ordered answer, the command the user ran next), a ring
 			// of the newest 5000, read back at GET /api/admin/recommend/log for
-			// scoring (src/recommend.ts). Needs the CEREBRAS_API_KEY secret below.
+			// scoring (src/recommend.ts). Needs the AI_GATEWAY_API_KEY secret below.
 			{ "name": "RECOMMEND_LOG", "class_name": "RecommendLog" }
 		]
 	},
@@ -124,14 +124,16 @@
 		//                              the validated login so the turn's comped charge lands on the user's OWN account
 		//   ANONYMOUS_TURN_SALT      (secret) salts the per-address buckets under the anonymous turn ceiling
 		//                              (PUBLIC-REPOSITORIES.md "Anonymous turns"); unset = unsalted hashes, still no raw address
-		//   CEREBRAS_API_KEY         (secret) the Cerebras key POST /api/recommend spends on command suggestions
-		//                              (src/recommend.ts); unset = the route answers an honest 503 and the client
-		//                              keeps its rule-based pills. CEREBRAS_MODEL (var, optional) overrides the
-		//                              default gpt-oss-120b.
-		//   AI_GATEWAY_API_KEY       (secret, optional) the Vercel AI Gateway key POST /api/recommend spends on Jev,
-		//                              the TypeSafe AI decision model it asks BEFORE Cerebras through the gateway
-		//                              (src/jev.ts). Unset, or a Jev that fails its 1.5 s deadline, and the route
-		//                              asks Cerebras exactly as before.
+		//   CEREBRAS_API_KEY         (secret) the Cerebras key the CLOUD ROLES spend: a turn asking the Librarian
+		//                              or the Flows agent is answered by this Worker on Cerebras and never reaches
+		//                              the chat upstream (src/cloudRoleTurn.ts); unset = those turns answer an
+		//                              honest 503. CEREBRAS_MODEL_LIBRARIAN / CEREBRAS_MODEL_FLOWS (vars, optional)
+		//                              override the served model ids. It is NOT spent on command suggestions.
+		//   AI_GATEWAY_API_KEY       (secret, REQUIRED) the Vercel AI Gateway key POST /api/recommend and the turn
+		//                              route's front door spend on Jev, the TypeSafe AI decision model (src/jev.ts).
+		//                              Jev is the main model and there is no fallback: unset, or a Jev that refuses
+		//                              or misses its 1.5 s deadline, and both answer a typed refusal rather than
+		//                              asking an LLM instead. The client keeps its own rule-based pills.
 		//   SMITHERS_GITHUB_APP_ID   (secret, SET) the numeric id of the GitHub App smitherspreviewrelease
 		//                              (4163546, owned by the smithersai org). With the private key below,
 		//                              GET /api/public/repos authenticates its api.github.com stats reads as

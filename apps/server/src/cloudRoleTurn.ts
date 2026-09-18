@@ -7,7 +7,9 @@ import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
  * A turn body may name the role it wants answered by (`role`, AgentRoles.ts).
  * Most roles are hints the chat upstream maps to a model. A CLOUD role
  * (`librarian`, `flows`; CLOUD_AGENT_ROLES) is different: this Worker holds
- * the deployment's own Cerebras key (the recommender spends it), so the turn
+ * the deployment's own Cerebras key, and these roles are all that spend it
+ * (the composer pills and the front door are Jev's, with no Cerebras path at
+ * all: src/recommend.ts), so the turn
  * is served here, on the free Cerebras seat, and never reaches the chat
  * upstream. That makes "the Librarian and the Flows agent run on Cerebras"
  * a fact this repository tests instead of a hint an upstream may ignore.

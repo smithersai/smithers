@@ -20,17 +20,21 @@ import {
 } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnCommand } from "@smthrs/rpc/NativeAgent"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
+import type { JevAnswer, JevAnswerValue, JevQuestion } from "./jev"
 /**
  * The command recommender: which `/command` should this user run next?
  *
  * The browser posts the tail of the current chat and every command the user
  * can invoke right now, and this route answers an ordered list of up to five
  * of those commands. Jev, a decision model that picks among named options and
- * reports a probability for each, is asked first; a Jev that fails, or a
- * command list too long for one choice question, falls through to a small,
- * fast chat model (Cerebras). The client renders the answer as pills under
- * the composer. The route works for a signed-out visitor as well as a login,
- * because the pills are how a visitor learns what the product can do.
+ * reports a probability for each, is the only model this route asks. There is
+ * no Cerebras path for pills: when Jev is unavailable the route refuses, and
+ * an LLM is never asked in its place. A catalog too long for one choice
+ * question is split across several questions in ONE request — the gateway
+ * answers them in parallel — and their probabilities are merged, so size is
+ * never a reason to ask someone else. The client renders the answer as pills
+ * under the composer. The route works for a signed-out visitor as well as a
+ * login, because the pills are how a visitor learns what the product can do.
  *
  * Every recommendation is a row in a bounded log (one Durable Object for the
  * deployment), and when the user runs a command next the client posts the
@@ -40,9 +44,16 @@ import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
  * tell two tails apart without reading either.
  *
  * Honesty rules the answers. A hallucinated command name is dropped, never
- * shown. A missing key, a slow model, or an unreadable answer is a 503, never
- * a made-up list: the client's rule-based fallback is the client's business,
- * and the log must only ever hold what the model actually said.
+ * shown. An unset `AI_GATEWAY_API_KEY` is a `seam_not_configured` 503; a Jev
+ * that refuses, times out or answers something unreadable is a
+ * `service_temporarily_unavailable` 503 naming what went wrong. Never a
+ * made-up list, and never a second model: the client's rule-based pills are
+ * the client's business, and the log must only ever hold what Jev said.
+ *
+ * `cerebrasChat` below is NOT part of this route. It is the Worker's one
+ * Cerebras client, and the cloud roles (cloudRoleTurn.ts: the Librarian, the
+ * Flows agent) spend it. Those are LLM roles a user asked for, not a fallback
+ * for a decision Jev owes.
  */
 import {
   ANONYMOUS_TURN_WINDOW_MS,
@@ -63,19 +74,18 @@ export const RECOMMEND_COMMANDS_MAX = AGENT_TURN_COMMANDS_MAX
 export const RECOMMEND_ANSWER_MAX = 5
 /** Rows the log keeps: a ring of the newest. */
 export const RECOMMEND_LOG_LIMIT = 5000
-/** How long the model gets, in ms. Pills that arrive after the user has moved on are noise. */
-export const RECOMMEND_TIMEOUT_MS = 6000
 /**
- * How long Jev gets, in ms. Jev answers a decision in well under a second, so
- * a short deadline leaves Cerebras most of the budget above when Jev is slow.
+ * How long Jev gets, in ms. Jev answers a decision in well under a second,
+ * and pills that arrive after the user has moved on are noise, so this is the
+ * whole budget: there is nobody else to ask with the rest of it.
  */
 export const RECOMMEND_JEV_TIMEOUT_MS = 1500
-/** The most options a Jev choice question holds; a longer command list goes straight to Cerebras. */
+/**
+ * The most options ONE Jev choice question holds. A longer catalog is split
+ * across several questions in one request (`recommendQuestions`), never
+ * refused and never handed to another model.
+ */
 export const RECOMMEND_JEV_COMMANDS_MAX = 255
-/** The model the deployment asks unless `CEREBRAS_MODEL` says otherwise. */
-export const RECOMMEND_DEFAULT_MODEL = "gpt-oss-120b"
-/** Includes the reasoning tokens needed before the structured command list. */
-export const RECOMMEND_MAX_TOKENS = 1024
 export const CEREBRAS_CHAT_COMPLETIONS_URL = "https://api.cerebras.ai/v1/chat/completions"
 
 /**
@@ -517,65 +527,77 @@ export const tailText = (tail: ReadonlyArray<RecommendTailMessage>): string =>
 /* The model                                                                 */
 /* ------------------------------------------------------------------------ */
 
-export const RECOMMEND_SYSTEM_PROMPT =
-  "You are choosing the next command for a user of Smithers, a product where a coding agent works on a repository. " +
-  "You are given the recent conversation, newest last, and then every command the user can run right now, one per line as `name: summary`. " +
-  `Answer with up to ${RECOMMEND_ANSWER_MAX} command names, best first, as JSON of the form {"commands": ["name", ...]}. ` +
-  "Use only names from the command list, exactly as written. Prefer commands that continue what the user is doing; when the conversation is empty, prefer commands that start something."
-
 /**
- * What Jev decides, in the same words. A decision model picks among the
- * options the question offers, so the instructions carry the intent of
- * `RECOMMEND_SYSTEM_PROMPT` without the answer format a chat model needs.
+ * What Jev decides, in its own words. A decision model picks among the
+ * options the question offers, so the instructions say the job and nothing
+ * about an answer format.
  */
 export const RECOMMEND_CHOICE_INSTRUCTIONS =
   "Choose the next command this user should run in Smithers, a product where a coding agent works on a repository. " +
   "Prefer commands that continue what the user is doing; when the conversation is empty, prefer commands that start something."
 
-/** The messages the model reads. Exported so the prompt is testable and the client can mirror it. */
-export const recommendMessages = (body: RecommendRequest): ReadonlyArray<{ role: "system" | "user"; content: string }> => {
-  const conversation = body.tail.length === 0
-    ? "(no messages yet)"
-    : body.tail.map((message) => `${message.role}: ${message.text}`).join("\n")
-  const commands = body.commands.map((command) => `${command.name}: ${command.summary}`).join("\n")
-  return [
-    { role: "system", content: RECOMMEND_SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: `Repository: ${body.repo ?? "(none selected)"}\n\nConversation:\n${conversation}\n\nCommands:\n${commands}`
-    }
-  ]
-}
-
-const ANSWER_SCHEMA = {
-  type: "object",
-  properties: { commands: { type: "array", items: { type: "string" } } },
-  required: ["commands"],
-  additionalProperties: false
-} as const
+/** The key of the `index`-th choice question in one request. */
+export const recommendQuestionKey = (index: number): string => `command${index + 1}`
 
 /**
- * The names in a model answer, read defensively: the strict JSON the schema
- * asks for, a JSON object buried in prose, or a bare JSON array. Anything
- * else is `undefined`, which the route reports as the model failing rather
- * than as an empty recommendation.
+ * The offered catalog as choice questions: one per RECOMMEND_JEV_COMMANDS_MAX
+ * commands, all carried by ONE request. The gateway answers the questions of
+ * a request in parallel, so a catalog of three hundred costs the latency of
+ * one question, and a catalog too big for one question is still Jev's
+ * decision rather than someone else's.
  */
-export const parseAnswer = (content: string): ReadonlyArray<string> | undefined => {
-  const candidates = [content.trim()]
-  const object = content.match(/\{[\s\S]*\}/)
-  if (object !== null) candidates.push(object[0])
-  const array = content.match(/\[[\s\S]*\]/)
-  if (array !== null) candidates.push(array[0])
-  for (const candidate of candidates) {
-    try {
-      const value: unknown = JSON.parse(candidate)
-      const list = Array.isArray(value) ? value : (value as { commands?: unknown } | null)?.commands
-      if (Array.isArray(list)) return list.filter((entry): entry is string => typeof entry === "string")
-    } catch {
-      // Try the next reading.
+export const recommendQuestions = (
+  commands: ReadonlyArray<RecommendCommand>
+): Readonly<Record<string, JevQuestion>> => {
+  const chunks: Array<ReadonlyArray<RecommendCommand>> = []
+  for (let start = 0; start < commands.length; start += RECOMMEND_JEV_COMMANDS_MAX) {
+    chunks.push(commands.slice(start, start + RECOMMEND_JEV_COMMANDS_MAX))
+  }
+  // An empty catalog is still one question, so the request's shape never
+  // depends on whether the client had anything to offer.
+  if (chunks.length === 0) chunks.push([])
+  return Object.fromEntries(chunks.map((chunk, index) => [
+    recommendQuestionKey(index),
+    {
+      type: "choice",
+      instructions: RECOMMEND_CHOICE_INSTRUCTIONS,
+      criteria: Object.fromEntries(chunk.map((command) => [command.name, command.summary]))
+    } satisfies JevQuestion
+  ]))
+}
+
+/**
+ * Every name Jev weighted, best first, merged across the questions of one
+ * request. A question that reported probabilities contributes each option it
+ * gave weight to; a question that reported only its chosen option contributes
+ * that one name, after every weighted name, because an unmeasured choice
+ * cannot be compared with a measured one. `undefined` means no question came
+ * back as a choice at all, which is Jev failing rather than Jev answering
+ * "nothing".
+ */
+export const rankJevAnswers = (
+  answers: Readonly<Record<string, JevAnswerValue>>,
+  keys: ReadonlyArray<string>
+): ReadonlyArray<string> | undefined => {
+  const weighted: Array<{ readonly name: string; readonly probability: number }> = []
+  const unweighted: Array<string> = []
+  let read = 0
+  for (const key of keys) {
+    const answer = answers[key]
+    if (answer?.type !== "choice" || typeof answer.choice !== "string") continue
+    read += 1
+    const probabilities = answer.probabilities
+    if (typeof probabilities !== "object" || probabilities === null) {
+      unweighted.push(answer.choice)
+      continue
+    }
+    for (const [name, probability] of Object.entries(probabilities)) {
+      if (typeof probability === "number" && probability > 0) weighted.push({ name, probability })
     }
   }
-  return undefined
+  if (read === 0) return undefined
+  weighted.sort((left, right) => right.probability - left.probability)
+  return [...weighted.map((entry) => entry.name), ...unweighted]
 }
 
 /** Keep only offered names, first mention wins, at most the answer cap. */
@@ -630,9 +652,11 @@ const CEREBRAS_SEAM = "cerebras"
 
 /**
  * One Cerebras chat completion, non-streaming, under a deadline. The one
- * client every Cerebras-spending route on this Worker uses (the recommender
- * below, the cloud role turns in cloudRoleTurn.ts), so there is one place
- * that says what a Cerebras request looks like and how its failures read.
+ * client every Cerebras-spending route on this Worker uses — today only the
+ * cloud role turns in cloudRoleTurn.ts, the Librarian and the Flows agent —
+ * so there is one place that says what a Cerebras request looks like and how
+ * its failures read. The recommender above does not use it: pills are Jev's
+ * decision or no decision at all.
  * The deadline covers the whole call, headers and body; when it wins, the
  * fetch is interrupted and so aborted. A refused response has its body
  * cancelled here. The key is the deployment's (`ServerConfig`); callers
@@ -681,92 +705,43 @@ type ModelAnswer =
   | { readonly ok: true; readonly commands: ReadonlyArray<string>; readonly model: string }
   | { readonly ok: false; readonly message: string }
 
-const recommendFailure = (answer: Exclude<CerebrasChatAnswer, { readonly ok: true }>): string => {
+/** Why Jev did not decide, in words a 503 body can carry. */
+export const jevFailureMessage = (answer: Exclude<JevAnswer, { readonly ok: true }>): string => {
   switch (answer.reason) {
     case "http":
-      return `The recommender answered HTTP ${answer.status}.`
+      return `Jev answered HTTP ${answer.status}.`
     case "empty":
-      return "The recommender did not answer with a command list."
+      return "Jev did not answer with a decision."
     case "timeout":
-    case "aborted":
-      return `The recommender did not answer within ${Math.round(RECOMMEND_TIMEOUT_MS / 1000)}s.`
+      return `Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`
     case "unreachable":
-      return "The recommender is unreachable."
+      return `Jev is unreachable: ${answer.message}`
   }
 }
 
 /**
- * One recommendation from Jev: the offered commands are the options of one
- * choice question over the same state the Cerebras prompt carries, and the
- * answer's probabilities order them. `undefined` means Jev did not decide, so
- * the caller asks Cerebras instead.
+ * One recommendation from Jev, and from nobody else. The offered commands are
+ * the options of one choice question, or of several when the catalog is
+ * longer than one question holds — all in one request, merged by probability.
+ * A Jev that refuses, misses its deadline, or answers something this client
+ * cannot read is a failure the route reports; no LLM is asked in its place.
  */
-const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer | undefined, never, Transport | ServerConfig> =>
+const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
+    const questions = recommendQuestions(body.commands)
     const answer = yield* jevEvaluate({
       model: JEV_DEFAULT_MODEL,
       state: {
         repository: body.repo ?? "(none selected)",
         conversation: body.tail.length === 0 ? "(no messages yet)" : tailText(body.tail)
       },
-      questions: {
-        command: {
-          type: "choice",
-          instructions: RECOMMEND_CHOICE_INSTRUCTIONS,
-          criteria: Object.fromEntries(body.commands.map((command) => [command.name, command.summary]))
-        }
-      }
+      questions
     }, RECOMMEND_JEV_TIMEOUT_MS)
-    if (!answer.ok) return undefined
-    const decision = answer.answers["command"]
-    if (decision?.type !== "choice" || typeof decision.choice !== "string") return undefined
-    // Best first, and an option Jev gave no weight is not a recommendation.
-    // Probabilities are optional, and without them the chosen option is the
-    // whole recommendation.
-    const ranked = typeof decision.probabilities !== "object" || decision.probabilities === null
-      ? [decision.choice]
-      : Object.entries(decision.probabilities)
-        .filter(([, probability]) => typeof probability === "number" && probability > 0)
-        .sort(([, left], [, right]) => right - left)
-        .map(([name]) => name)
+    if (!answer.ok) return { ok: false, message: jevFailureMessage(answer) } as const
+    const ranked = rankJevAnswers(answer.answers, Object.keys(questions))
+    if (ranked === undefined) return { ok: false, message: jevFailureMessage({ ok: false, reason: "empty" }) } as const
     return { ok: true, commands: filterAnswer(ranked, body.commands), model: answer.model } as const
   })
-
-/**
- * One recommendation under the deadline. Jev decides when the deployment has
- * an AI Gateway key and the request fits one choice question; anything else, and
- * any Jev that does not answer, is the Cerebras path below. There the strict
- * JSON schema is asked for first; a provider that refuses the format (HTTP
- * 400) is asked once more without it and its prose is parsed defensively. One
- * deadline spans every call: pills that arrive after the user has moved on
- * are noise.
- */
-const askModel = (body: RecommendRequest, model: string): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
-  Effect.gen(function*() {
-    const config = yield* ServerConfig
-    if (config.aiGatewayApiKey !== undefined && body.commands.length <= RECOMMEND_JEV_COMMANDS_MAX) {
-      const decided = yield* askJev(body)
-      if (decided !== undefined) return decided
-    }
-    const ask = (strict: boolean) =>
-      cerebrasChat({
-        model,
-        temperature: 0,
-        maxTokens: RECOMMEND_MAX_TOKENS,
-        ...(model === RECOMMEND_DEFAULT_MODEL ? { reasoningEffort: "low" as const } : {}),
-        messages: recommendMessages(body),
-        ...(strict ? { responseFormat: { type: "json_schema", json_schema: { name: "recommendation", strict: true, schema: ANSWER_SCHEMA } } } : {})
-      }, RECOMMEND_TIMEOUT_MS)
-    let answer = yield* ask(true)
-    if (!answer.ok && answer.reason === "http" && answer.status === 400) answer = yield* ask(false)
-    if (!answer.ok) return { ok: false, message: recommendFailure(answer) } as const
-    const names = parseAnswer(answer.content)
-    if (names === undefined) return { ok: false, message: recommendFailure({ ok: false, reason: "empty" }) } as const
-    return { ok: true, commands: filterAnswer(names, body.commands), model: answer.model } as const
-  }).pipe(Effect.timeoutOrElse({
-    duration: RECOMMEND_TIMEOUT_MS,
-    orElse: () => Effect.succeed<ModelAnswer>({ ok: false, message: recommendFailure({ ok: false, reason: "timeout" }) })
-  }))
 
 /* ------------------------------------------------------------------------ */
 /* The routes                                                                */
@@ -794,7 +769,7 @@ const refusal = (code: WorkerFailureCode, message: string, headers: Record<strin
  * caller has one; the router resolves it and passes `undefined` for a
  * visitor. Order: the body first (a refusal there costs nothing), then the
  * key (a deployment without one spends no ceiling), then both ceilings,
- * then the model.
+ * then Jev.
  */
 export const handleRecommend = (
   request: Request,
@@ -805,10 +780,10 @@ export const handleRecommend = (
     const parsed = yield* parseRecommendRequest(request)
     if (!parsed.ok) return refusal(parsed.code, parsed.message, headers)
     const config = yield* ServerConfig
-    if (config.cerebrasApiKey === undefined && config.aiGatewayApiKey === undefined) {
+    if (config.aiGatewayApiKey === undefined) {
       return refusal(
         "seam_not_configured",
-        "Neither AI_GATEWAY_API_KEY nor CEREBRAS_API_KEY is set. Command suggestions are unavailable on this deployment.",
+        "AI_GATEWAY_API_KEY is unset. Command suggestions are unavailable on this deployment.",
         headers
       )
     }
@@ -819,8 +794,7 @@ export const handleRecommend = (
     if (!own.allowed) return turnLimitResponse(own, headers, RECOMMEND_CEILING)
     const shared = yield* limits.spend(RECOMMEND_ALL_KEY, RECOMMEND_ALL_CEILING)
     if (!shared.allowed) return turnLimitResponse(shared, headers, RECOMMEND_ALL_CEILING)
-    const model = config.cerebrasModel ?? RECOMMEND_DEFAULT_MODEL
-    const answer = yield* askModel(parsed.body, model)
+    const answer = yield* askJev(parsed.body)
     if (!answer.ok) return refusal("service_temporarily_unavailable", answer.message, headers)
     const digest = yield* sha256Hex(tailText(parsed.body.tail))
     const store = yield* RecommendLogStore

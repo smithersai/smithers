@@ -13,6 +13,7 @@ import { transportLayer } from "./Http"
 import {
   memoryRecommendStorage,
   readRecommendLog,
+  RECOMMEND_JEV_COMMANDS_MAX,
   RECOMMEND_JEV_TIMEOUT_MS,
   RecommendLog,
   recommendLogLayer
@@ -25,8 +26,10 @@ import { handleTurn, TurnCancelRegistry, turnCancelsLayer } from "./turns"
  * it. These tests hold the route to the contract the client already speaks —
  * a routed turn is the tool_call / done pair the concierge would have emitted
  * — and to the three that keep it honest: the upstream is untouched when Jev
- * routes, the upstream answers every turn Jev does not, and the hidden
- * runtime context never leaves this Worker.
+ * routes, the hidden runtime context never leaves this Worker, and a Jev that
+ * FAILS refuses the turn rather than quietly spending the upstream. Only
+ * Jev's own answer — `none`, or a command under the floor — hands the turn to
+ * the concierge.
  */
 
 const COMMANDS = [
@@ -320,27 +323,6 @@ describe("the Jev front door on POST /api/agent/turn", () => {
     expect(calls.upstream.length).toBe(1)
   })
 
-  test("a refused gateway goes upstream and logs nothing", async () => {
-    const logs = memoryLog()
-    const { calls } = await turn(turnBody(), { jev: () => new Response("no", { status: 403 }), logs })
-
-    expect(calls.gateway.length).toBe(1)
-    expect(calls.upstream.length).toBe(1)
-    expect(await rowsOf(logs)).toEqual([])
-  })
-
-  test("a gateway that misses the deadline goes upstream", async () => {
-    const logs = memoryLog()
-    const slow = new Promise<Response>((resolve) => {
-      setTimeout(() => resolve(evaluation("runs.list", 0.99)), RECOMMEND_JEV_TIMEOUT_MS * 3)
-    })
-    const { calls } = await turn(turnBody(), { jev: () => slow, logs })
-
-    expect(calls.gateway.length).toBe(1)
-    expect(calls.upstream.length).toBe(1)
-    expect(await rowsOf(logs)).toEqual([])
-  }, 10_000)
-
   test("a body without commands goes upstream and Jev is never asked", async () => {
     const { calls } = await turn(turnBody({ commands: undefined }))
     expect(calls.gateway).toEqual([])
@@ -350,12 +332,6 @@ describe("the Jev front door on POST /api/agent/turn", () => {
   test("a malformed command list is dropped, never refused: the turn goes upstream and Jev is never asked", async () => {
     const { response, calls } = await turn(turnBody({ commands: [{ name: "", summary: 7 }] }))
     expect(response.status).toBe(200)
-    expect(calls.gateway).toEqual([])
-    expect(calls.upstream.length).toBe(1)
-  })
-
-  test("with no AI_GATEWAY_API_KEY nothing changes: no gateway call, the upstream answers", async () => {
-    const { calls } = await turn(turnBody(), { config: { aiGatewayApiKey: undefined } })
     expect(calls.gateway).toEqual([])
     expect(calls.upstream.length).toBe(1)
   })
@@ -411,6 +387,102 @@ describe("the Jev front door on POST /api/agent/turn", () => {
       ]
     }))
 
+    expect(calls.upstream.length).toBe(1)
+  })
+})
+
+/*
+ * The rule: Jev is the main model, and when it is unavailable the turn FAILS.
+ * There is no fallback to the chat upstream, because an LLM answering in
+ * Jev's place is the outage nobody sees. Every refusal below is the same
+ * typed failure a cloud role turn answers with for its own unavailable model
+ * (cloudRoleTurn.ts), so one client vocabulary covers both.
+ */
+describe("a Jev that does not answer refuses the turn", () => {
+  const refused = async (
+    jev: (request: Request) => Response | Promise<Response>
+  ): Promise<{ readonly status: number; readonly code: string; readonly message: string; readonly calls: Calls }> => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody(), { jev, logs })
+    const body = (await response.json()) as { status: string; code: string; message: string }
+    expect(body.status).toBe("error")
+    // A turn nobody decided leaves no row: the log holds decisions only.
+    expect(await rowsOf(logs)).toEqual([])
+    return { status: response.status, code: body.code, message: body.message, calls }
+  }
+
+  test("a refused gateway is upstream_refused, and the chat upstream is never asked instead", async () => {
+    const { status, code, message, calls } = await refused(() => new Response("no", { status: 403 }))
+    expect(status).toBe(502)
+    expect(code).toBe("upstream_refused")
+    expect(message).toBe("Jev's gateway answered HTTP 403.")
+    expect(calls.gateway.length).toBe(1)
+    expect(calls.upstream).toEqual([])
+  })
+
+  test("the gateway's own rate limit is model_rate_limited, not a reason to spend the upstream", async () => {
+    const { status, code, calls } = await refused(() => new Response("slow down", { status: 429 }))
+    expect(status).toBe(429)
+    expect(code).toBe("model_rate_limited")
+    expect(calls.upstream).toEqual([])
+  })
+
+  test("a 200 whose decision this client cannot read is model_no_answer", async () => {
+    const cases = [
+      new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify({ answers: { command: { type: "score", score: 4 } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    ]
+    for (const answer of cases) {
+      const { status, code, calls } = await refused(() => answer.clone())
+      expect(status).toBe(502)
+      expect(code).toBe("model_no_answer")
+      expect(calls.upstream).toEqual([])
+    }
+  })
+
+  test("a gateway that misses the deadline is upstream_timeout", async () => {
+    const slow = new Promise<Response>((resolve) => {
+      setTimeout(() => resolve(evaluation("runs.list", 0.99)), RECOMMEND_JEV_TIMEOUT_MS * 3)
+    })
+    const { status, code, message, calls } = await refused(() => slow)
+    expect(status).toBe(504)
+    expect(code).toBe("upstream_timeout")
+    expect(message).toBe(`Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`)
+    expect(calls.gateway.length).toBe(1)
+    expect(calls.upstream).toEqual([])
+  }, 10_000)
+
+  test("an unreachable gateway is upstream_unreachable", async () => {
+    const { status, code, message, calls } = await refused(() => {
+      throw new TypeError("fetch failed")
+    })
+    expect(status).toBe(502)
+    expect(code).toBe("upstream_unreachable")
+    expect(message).toContain("fetch failed")
+    expect(calls.upstream).toEqual([])
+  })
+
+  test("with no AI_GATEWAY_API_KEY the turn is seam_not_configured naming the key, and the upstream is never asked", async () => {
+    const { response, calls } = await turn(turnBody(), { config: { aiGatewayApiKey: undefined } })
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { code: string; message: string }
+    expect(body.code).toBe("seam_not_configured")
+    expect(body.message).toContain("AI_GATEWAY_API_KEY")
+    expect(calls.gateway).toEqual([])
+    expect(calls.upstream).toEqual([])
+  })
+
+  test("more commands than one choice question holds is not a Jev failure: the concierge answers, as for any turn the door never read", async () => {
+    // Each question would need its own `none`, and two questions'
+    // probabilities cannot be compared to pick one winner, so this catalog is
+    // not a decision Jev can be asked for. Nothing failed, so nothing refuses.
+    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX }, (_, index) => ({ name: `c${index}`, summary: "s" }))
+    const { response, calls } = await turn(turnBody({ commands }))
+    expect(response.status).toBe(200)
+    expect(calls.gateway).toEqual([])
     expect(calls.upstream.length).toBe(1)
   })
 })

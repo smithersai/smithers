@@ -10,12 +10,13 @@ import { memoryStorage } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { transportLayer } from "./Http"
 import {
+  CEREBRAS_CHAT_COMPLETIONS_URL,
   cerebrasChat,
   filterAnswer,
   handleRecommend,
   handleRecommendOutcome,
   memoryRecommendStorage,
-  parseAnswer,
+  rankJevAnswers,
   readRecommendLog,
   RECOMMEND_ADDRESS_MAX,
   RECOMMEND_ALL_KEY,
@@ -23,27 +24,31 @@ import {
   RECOMMEND_ANSWER_MAX,
   RECOMMEND_COMMAND_NAME_MAX_CHARS,
   RECOMMEND_COMMAND_SUMMARY_MAX_CHARS,
+  RECOMMEND_COMMANDS_MAX,
   RECOMMEND_JEV_COMMANDS_MAX,
   RECOMMEND_JEV_TIMEOUT_MS,
   RECOMMEND_LOG_LIMIT,
   RECOMMEND_LOG_NAME,
-  RECOMMEND_MAX_TOKENS,
   RECOMMEND_OUTCOME_BODY_MAX_BYTES,
   RECOMMEND_TAIL_MAX_CHARS,
   RECOMMEND_TAIL_MAX_ENTRIES,
-  RECOMMEND_TIMEOUT_MS,
   RecommendLog,
   recommendLogLayer,
-  recommendMessages
+  recommendQuestionKey,
+  recommendQuestions
 } from "./recommend"
 import type { RecommendLogRow } from "./recommend"
 import { turnLimitsLayer, TurnRateLimiter } from "./turnLimit"
 
 /*
  * The command recommender. These tests hold the route to its contract: an
- * ordered, filtered answer from the model; honest refusals (400, 413, 429,
- * 503) with never an invented list; one outcome per recommendation; and a
- * log the scorer can read newest first.
+ * ordered, filtered answer from Jev and from nobody else; honest refusals
+ * (400, 413, 429, 503) with never an invented list and never a second model;
+ * one outcome per recommendation; and a log the scorer can read newest first.
+ *
+ * The rule the whole file is built on: when Jev fails, the route FAILS. The
+ * transport double below refuses every host but the AI Gateway, so a test
+ * that even reaches for Cerebras throws rather than quietly passing.
  */
 
 const memoryLog = (): NativeNamespace & { readonly names: () => Array<string> } => {
@@ -114,19 +119,12 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
 
 const HEADERS = { "x-isolation": "1" }
 
-/** A Cerebras chat completion whose content is `content`. */
-const completion = (content: string, model = "gpt-oss-120b"): Response =>
-  new Response(JSON.stringify({ model, choices: [{ message: { role: "assistant", content } }] }), {
-    status: 200,
-    headers: { "content-type": "application/json" }
-  })
-
-/** A gateway evaluation whose one choice answer carries `probabilities`. */
+/** A gateway evaluation whose `command1` answer carries `probabilities`. */
 const decision = (probabilities: Record<string, number>): Response => {
   const best = Object.entries(probabilities).sort(([, left], [, right]) => right - left)[0]?.[0] ?? ""
   return new Response(
     JSON.stringify({
-      answers: { command: { type: "choice", choice: best, probabilities } },
+      answers: { command1: { type: "choice", choice: best, probabilities } },
       usage: { inputTokens: 420, outputTokens: 21 },
       providerMetadata: { typesafe: { confidence: 0.82 } }
     }),
@@ -136,34 +134,34 @@ const decision = (probabilities: Record<string, number>): Response => {
 
 /** A gateway evaluation whose one choice answer names the option and nothing else. */
 const chosen = (choice: string): Response =>
-  new Response(JSON.stringify({ answers: { command: { type: "choice", choice } } }), {
+  new Response(JSON.stringify({ answers: { command1: { type: "choice", choice } } }), {
     status: 200,
     headers: { "content-type": "application/json" }
   })
 
-/** Stand in for the network: `cerebras` and `jev` answer the two model calls, and every call is recorded. */
-const network = (cerebras: (request: Request) => Promise<Response>, jev?: (request: Request) => Promise<Response>) => {
+/**
+ * Stand in for the network. Only the AI Gateway may be reached: any other
+ * host — the Cerebras completions URL above all — throws, so "the recommender
+ * never falls back to an LLM" is enforced by the double rather than asserted
+ * once.
+ */
+const network = (jev?: (request: Request) => Promise<Response>) => {
   const calls: Array<Request> = []
   return {
     calls,
     layer: transportLayer(async (input, init) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
-      const host = new URL(request.url).hostname
-      if (host !== "api.cerebras.ai" && host !== "ai-gateway.vercel.sh") throw new Error(`unexpected fetch to ${request.url}`)
       calls.push(request)
-      if (host !== "ai-gateway.vercel.sh") return cerebras(request)
-      if (jev === undefined) throw new Error(`unexpected fetch to ${request.url}`)
+      if (new URL(request.url).hostname !== "ai-gateway.vercel.sh") {
+        throw new Error(`the recommender must never fetch ${request.url}`)
+      }
+      if (jev === undefined) throw new Error("Jev must not be asked")
       return jev(request)
     })
   }
 }
 
-const never = (): Promise<Response> => {
-  throw new Error("must not be called")
-}
-
 interface Deps {
-  readonly cerebras?: (request: Request) => Promise<Response>
   readonly jev?: (request: Request) => Promise<Response>
   readonly config?: Partial<ServerConfigShape>
   readonly limits?: NativeNamespace
@@ -171,17 +169,17 @@ interface Deps {
   readonly login?: string
 }
 
-const KEY = { cerebrasApiKey: Redacted.make("csk-test") }
 const JEV_KEY = { aiGatewayApiKey: Redacted.make("vck-test") }
+const JEV_MODEL = "typesafe-ai/jev"
 
-/** The route with its dependencies injected: the key is set unless `config` says otherwise. */
+/** The route with its dependencies injected: the gateway key is set unless `config` says otherwise. */
 const recommend = (request: Request, deps: Deps = {}): Promise<{ readonly response: Response; readonly calls: Array<Request> }> => {
-  const net = network(deps.cerebras ?? never, deps.jev)
+  const net = network(deps.jev)
   return Effect.runPromise(
     handleRecommend(request, deps.login, HEADERS).pipe(
       Effect.provide(Layer.mergeAll(
         net.layer,
-        testConfigLayer({ ...KEY, ...deps.config }),
+        testConfigLayer({ ...JEV_KEY, ...deps.config }),
         turnLimitsLayer(deps.limits),
         recommendLogLayer(deps.logs)
       )),
@@ -190,79 +188,265 @@ const recommend = (request: Request, deps: Deps = {}): Promise<{ readonly respon
   )
 }
 
+const ranks = async (jev: (request: Request) => Promise<Response>, body: unknown = goodBody) => {
+  const { response, calls } = await recommend(post("/api/recommend", body), { jev })
+  return { response, calls, body: (await response.json()) as { id: string; commands: Array<string>; model: string } }
+}
+
 const outcome = (request: Request, logs?: NativeNamespace): Promise<Response> =>
   Effect.runPromise(handleRecommendOutcome(request, HEADERS).pipe(Effect.provide(recommendLogLayer(logs))))
 
 const readRows = (logs: NativeNamespace | undefined, limit?: number): Promise<ReadonlyArray<RecommendLogRow>> =>
   Effect.runPromise(readRecommendLog(limit).pipe(Effect.provide(recommendLogLayer(logs))))
 
-describe("POST /api/recommend", () => {
-  test("a good answer is ordered as the model ranked it, hallucinations dropped, capped at five", async () => {
+describe("POST /api/recommend asks Jev, and only Jev", () => {
+  test("Jev ranks the offered commands, zero-probability names dropped, hallucinations dropped, and the log names Jev's model", async () => {
     const logs = memoryLog()
     const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async () => completion(JSON.stringify({ commands: ["run.start", "made.up", "repo.open", "run.start", "help", "keys.list", "extra"] })),
+      jev: async () =>
+        new Response(
+          JSON.stringify({
+            answers: {
+              command1: {
+                type: "choice",
+                choice: "run.start",
+                probabilities: { "run.start": 0.71, "help": 0.17, "repo.open": 0.12, "keys.list": 0, "made.up": 0.9 }
+              }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        ),
       logs
     })
     expect(response.status).toBe(200)
     expect(response.headers.get("x-isolation")).toBe("1")
     const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
-    expect(body.commands).toEqual(["run.start", "repo.open", "help", "keys.list"])
+    // `made.up` outranked everything and is still dropped: a name the request
+    // never offered is never shown.
+    expect(body.commands).toEqual(["run.start", "help", "repo.open"])
     expect(body.commands.length).toBeLessThanOrEqual(RECOMMEND_ANSWER_MAX)
-    expect(body.model).toBe("gpt-oss-120b")
+    expect(body.model).toBe(JEV_MODEL)
     expect(body.id).not.toBe("")
-    const providerRequest = await calls[0]!.clone().json() as { max_tokens: number; reasoning_effort: string }
-    expect(providerRequest.reasoning_effort).toBe("low")
-    expect(providerRequest.max_tokens).toBe(RECOMMEND_MAX_TOKENS)
-    expect(providerRequest.max_tokens).toBeGreaterThan(256)
 
-    // The call carried the contract: temperature 0, strict JSON, the key, every command.
+    // One call, to the gateway's evaluation endpoint, carrying the key, the
+    // protocol headers, the state, and one choice question whose options are
+    // exactly the offered commands.
     expect(calls.length).toBe(1)
-    expect(calls[0]!.headers.get("authorization")).toBe("Bearer csk-test")
+    expect(calls[0]!.url).toBe("https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
+    const headers = calls[0]!.headers
+    expect(headers.get("authorization")).toBe("Bearer vck-test")
+    expect(headers.get("ai-gateway-protocol-version")).toBe("0.0.1")
+    expect(headers.get("ai-gateway-auth-method")).toBe("api-key")
+    expect(headers.get("ai-evaluation-model-specification-version")).toBe("4")
+    expect(headers.get("ai-model-id")).toBe(JEV_MODEL)
     const sent = (await calls[0]!.json()) as {
-      temperature: number
-      model: string
-      response_format: { type: string }
-      messages: Array<{ role: string; content: string }>
+      model?: unknown
+      state: { repository: string; conversation: string }
+      questions: Record<string, { type: string; instructions: string; criteria: Record<string, string> }>
+      providerOptions: { gateway: { zeroDataRetention: boolean } }
     }
-    expect(sent.temperature).toBe(0)
-    expect(sent.model).toBe("gpt-oss-120b")
-    expect(sent.response_format.type).toBe("json_schema")
-    const prompt = sent.messages.map((message) => message.content).join("\n")
-    for (const command of COMMANDS) expect(prompt).toContain(`${command.name}: ${command.summary}`)
-    expect(prompt).toContain("How do I run the tests here?")
+    // The model rides in the header, never in the body.
+    expect(sent.model).toBeUndefined()
+    expect(sent.providerOptions.gateway.zeroDataRetention).toBe(true)
+    expect(sent.state.repository).toBe("smithersai/smithers")
+    expect(sent.state.conversation).toContain("How do I run the tests here?")
+    expect(Object.keys(sent.questions)).toEqual(["command1"])
+    const question = sent.questions["command1"]!
+    expect(question.type).toBe("choice")
+    expect(question.instructions).toContain("next command")
+    expect(question.criteria).toEqual(Object.fromEntries(COMMANDS.map((command) => [command.name, command.summary])))
+
+    const rows = await readRows(logs)
+    expect(rows[0]!.model).toBe(JEV_MODEL)
+    expect(rows[0]!.commands).toEqual(["run.start", "help", "repo.open"])
   })
 
-  test("CEREBRAS_MODEL names the model asked", async () => {
-    const { calls } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async () => completion(JSON.stringify({ commands: ["help"] }), "llama-fast"),
-      config: { cerebrasModel: "llama-fast" }
-    })
-    expect(((await calls[0]!.json()) as { model: string }).model).toBe("llama-fast")
-  })
-
-  test("every name hallucinated is an honest empty list, not a 503", async () => {
-    const { response } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async () => completion(JSON.stringify({ commands: ["nothing.real", "also.fake"] }))
-    })
+  test("a choice answer with no probabilities is the one command Jev chose", async () => {
+    const { response, calls, body } = await ranks(async () => chosen("run.start"))
     expect(response.status).toBe(200)
-    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual([])
+    expect(body.commands).toEqual(["run.start"])
+    expect(calls.length).toBe(1)
   })
 
-  test("a provider that refuses the JSON schema is asked once more without it and its prose is parsed", async () => {
+  test("every name Jev weighted is one the request never offered: an honest empty list, not a 503", async () => {
+    const { response, body } = await ranks(async () => decision({ "nothing.real": 0.8, "also.fake": 0.2 }))
+    expect(response.status).toBe(200)
+    expect(body.commands).toEqual([])
+  })
+
+  test("an empty conversation reads as the prompt's own wording, and the answer is capped at five", async () => {
+    const commands = Array.from({ length: 7 }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
+    const probabilities = Object.fromEntries(commands.map((command, index) => [command.name, (7 - index) / 28]))
+    const { response, calls, body } = await ranks(async () => decision(probabilities), { repo: null, tail: [], commands })
+    expect(response.status).toBe(200)
+    expect(body.commands).toEqual(["c0", "c1", "c2", "c3", "c4"])
+    expect(body.commands.length).toBe(RECOMMEND_ANSWER_MAX)
+    const sent = (await calls[0]!.json()) as { state: { repository: string; conversation: string } }
+    expect(sent.state.conversation).toBe("(no messages yet)")
+    expect(sent.state.repository).toBe("(none selected)")
+  })
+})
+
+describe("a Jev that does not answer is a refusal, never another model", () => {
+  test("a refused gateway is a 503 naming the status, and Cerebras is never requested", async () => {
     const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async (request) => {
-        const sent = (await request.json()) as { response_format?: unknown }
-        return sent.response_format !== undefined
-          ? new Response(JSON.stringify({ message: "incompatible", code: "wrong_api_format" }), { status: 400 })
-          : completion("Sure. Here you go: {\"commands\": [\"help\", \"repo.open\"]} Hope that helps.")
-      }
+      jev: async () => new Response("forbidden", { status: 403 })
     })
-    expect(response.status).toBe(200)
-    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["help", "repo.open"])
-    expect(calls.length).toBe(2)
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { status: string; code: string; message: string }
+    expect(body.status).toBe("error")
+    expect(body.code).toBe("service_temporarily_unavailable")
+    expect(body.message).toBe("Jev answered HTTP 403.")
+    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh"])
+    expect(calls.map((call) => call.url)).not.toContain(CEREBRAS_CHAT_COMPLETIONS_URL)
   })
 
-  test("a malformed body is 400 and never reaches the model", async () => {
+  test("every other gateway failure is the same typed 503, each naming what went wrong", async () => {
+    const cases: ReadonlyArray<{ readonly jev: () => Promise<Response>; readonly message: string }> = [
+      { jev: async () => new Response("overloaded", { status: 529 }), message: "Jev answered HTTP 529." },
+      { jev: async () => new Response("{}", { status: 200 }), message: "Jev did not answer with a decision." },
+      {
+        jev: async () =>
+          new Response(JSON.stringify({ answers: { command1: { type: "score", score: 2 } } }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }),
+        message: "Jev did not answer with a decision."
+      },
+      {
+        jev: async () => {
+          throw new TypeError("fetch failed")
+        },
+        message: "Jev is unreachable: fetch failed"
+      }
+    ]
+    for (const { jev, message } of cases) {
+      const { response } = await recommend(post("/api/recommend", goodBody), { jev })
+      expect(response.status).toBe(503)
+      const body = (await response.json()) as { code: string; message: string }
+      expect(body.code).toBe("service_temporarily_unavailable")
+      expect(body.message).toBe(message)
+    }
+  })
+
+  test("a Jev that misses its deadline is a 503, the call is aborted, and nothing else is asked", async () => {
+    expect(RECOMMEND_JEV_TIMEOUT_MS).toBe(1500)
+    let aborted = false
+    const net = network((request) =>
+      new Promise<Response>((_, reject) => {
+        request.signal.addEventListener("abort", () => {
+          aborted = true
+          reject(new DOMException("aborted", "AbortError"))
+        })
+      })
+    )
+    // The deadline is the Effect clock's, so the test moves the clock instead
+    // of waiting: once the gateway call is in flight, the deadline passes, the
+    // fetch is aborted, and the route answers.
+    const response = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(handleRecommend(post("/api/recommend", goodBody), undefined, HEADERS))
+        while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
+        yield* TestClock.adjust(RECOMMEND_JEV_TIMEOUT_MS - 1)
+        expect(aborted).toBe(false)
+        yield* TestClock.adjust(1)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(Layer.mergeAll(
+        net.layer,
+        testConfigLayer(JEV_KEY),
+        turnLimitsLayer(undefined),
+        recommendLogLayer(undefined),
+        TestClock.layer()
+      )))
+    )
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { code: string; message: string }
+    expect(body.code).toBe("service_temporarily_unavailable")
+    expect(body.message).toBe(`Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`)
+    expect(aborted).toBe(true)
+    expect(net.calls.length).toBe(1)
+  })
+
+  test("without AI_GATEWAY_API_KEY the route is seam_not_configured, names the key, and spends no ceiling", async () => {
+    const limits = memoryLimits()
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: { aiGatewayApiKey: undefined },
+      limits
+    })
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { status: string; code: string; message: string }
+    expect(body.status).toBe("error")
+    expect(body.code).toBe("seam_not_configured")
+    expect(body.message).toContain("AI_GATEWAY_API_KEY")
+    expect(limits.keys()).toEqual([])
+    expect(calls.length).toBe(0)
+  })
+
+  test("a deployment with a Cerebras key and no gateway key still refuses: the cloud roles' key is not a recommender fallback", async () => {
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      config: { aiGatewayApiKey: undefined, cerebrasApiKey: Redacted.make("csk-test") }
+    })
+    expect(response.status).toBe(503)
+    expect(((await response.json()) as { code: string }).code).toBe("seam_not_configured")
+    expect(calls.length).toBe(0)
+  })
+})
+
+describe("a catalog too long for one choice question", () => {
+  test("is split across questions in ONE request and merged by probability, never handed to another model", async () => {
+    expect(RECOMMEND_JEV_COMMANDS_MAX).toBe(255)
+    const commands = Array.from({ length: 300 }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
+    expect(commands.length).toBeLessThanOrEqual(RECOMMEND_COMMANDS_MAX)
+    const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, commands }), {
+      jev: async () =>
+        new Response(
+          JSON.stringify({
+            answers: {
+              // The first question saw c0..c254, the second c255..c299.
+              command1: { type: "choice", choice: "c3", probabilities: { c3: 0.4, c10: 0.1, c254: 0.05 } },
+              command2: { type: "choice", choice: "c260", probabilities: { c260: 0.9, c299: 0.2, c280: 0.3 } }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    })
+
+    expect(response.status).toBe(200)
+    // ONE request. The gateway answers a request's questions in parallel, so
+    // a catalog of three hundred costs one question's latency.
+    expect(calls.length).toBe(1)
+    const sent = (await calls[0]!.json()) as {
+      questions: Record<string, { type: string; criteria: Record<string, string> }>
+    }
+    expect(Object.keys(sent.questions)).toEqual(["command1", "command2"])
+    expect(Object.keys(sent.questions["command1"]!.criteria).length).toBe(RECOMMEND_JEV_COMMANDS_MAX)
+    expect(Object.keys(sent.questions["command2"]!.criteria).length).toBe(300 - RECOMMEND_JEV_COMMANDS_MAX)
+    expect(sent.questions["command1"]!.criteria["c0"]).toBe("does 0")
+    expect(sent.questions["command2"]!.criteria["c299"]).toBe("does 299")
+    // Every offered command is asked about exactly once, across the questions.
+    const asked = Object.values(sent.questions).flatMap((question) => Object.keys(question.criteria))
+    expect(asked.length).toBe(commands.length)
+    expect(new Set(asked).size).toBe(commands.length)
+
+    // Merged by probability across both questions, best first, capped at five.
+    const body = (await response.json()) as { commands: Array<string>; model: string }
+    expect(body.commands).toEqual(["c260", "c3", "c280", "c299", "c10"])
+    expect(body.commands.length).toBe(RECOMMEND_ANSWER_MAX)
+    expect(body.model).toBe(JEV_MODEL)
+  })
+
+  test("exactly one question's worth of commands is still one question", async () => {
+    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX }, (_, index) => ({ name: `c${index}`, summary: "s" }))
+    const { calls } = await recommend(post("/api/recommend", { ...goodBody, commands }), {
+      jev: async () => decision({ c3: 1 })
+    })
+    const sent = (await calls[0]!.json()) as { questions: Record<string, unknown> }
+    expect(Object.keys(sent.questions)).toEqual(["command1"])
+  })
+})
+
+describe("POST /api/recommend reads its body before it spends anything", () => {
+  test("a malformed body is 400 and never reaches Jev", async () => {
     const cases: Array<unknown> = [
       "not json",
       [],
@@ -294,7 +478,7 @@ describe("POST /api/recommend", () => {
     expect(((await response.json()) as { message: string }).message).toBe("The recommendation request could not be read.")
   })
 
-  test("repo is owner/name or null, and a command name or summary past its cap is 400, so the log and the prompt hold only what the contract names", async () => {
+  test("repo is owner/name or null, and a command name or summary past its cap is 400, so the log and the question hold only what the contract names", async () => {
     const badRepos = ["smithers", "a/b/c", "owner/na me", "-owner/name", `${"o".repeat(40)}/name`, `owner/${"n".repeat(101)}`, "x".repeat(4000)]
     for (const repo of badRepos) {
       const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, repo }))
@@ -310,19 +494,19 @@ describe("POST /api/recommend", () => {
       expect(calls.length).toBe(0)
     }
     // The shape admits real repositories at the caps, with dots, underscores and hyphens.
-    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
+    const jev = async () => decision({ help: 1 })
     for (const repo of ["smithersai/smithers", "my-org/my.repo_v2", `${"o".repeat(39)}/${"n".repeat(100)}`, null]) {
-      const { response } = await recommend(post("/api/recommend", { ...goodBody, repo }), { cerebras })
+      const { response } = await recommend(post("/api/recommend", { ...goodBody, repo }), { jev })
       expect(response.status).toBe(200)
     }
     const atCaps = [{ name: "c".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS), summary: "s".repeat(RECOMMEND_COMMAND_SUMMARY_MAX_CHARS) }]
-    expect((await recommend(post("/api/recommend", { ...goodBody, commands: atCaps }), { cerebras })).response.status).toBe(200)
+    expect((await recommend(post("/api/recommend", { ...goodBody, commands: atCaps }), { jev })).response.status).toBe(200)
   })
 
   test("an oversize body is 413: too many tail messages, too much tail text, too many commands", async () => {
     const longTail = Array.from({ length: RECOMMEND_TAIL_MAX_ENTRIES + 1 }, () => ({ role: "user", text: "x" }))
     const bigText = [{ role: "user", text: "x".repeat(RECOMMEND_TAIL_MAX_CHARS + 1) }]
-    const manyCommands = Array.from({ length: 301 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
+    const manyCommands = Array.from({ length: RECOMMEND_COMMANDS_MAX + 1 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
     for (const body of [{ ...goodBody, tail: longTail }, { ...goodBody, tail: bigText }, { ...goodBody, commands: manyCommands }]) {
       const { response, calls } = await recommend(post("/api/recommend", body))
       expect(response.status).toBe(413)
@@ -343,66 +527,14 @@ describe("POST /api/recommend", () => {
     expect(streamed.response.status).toBe(413)
     expect(declared.calls.length + streamed.calls.length).toBe(0)
   })
+})
 
-  test("without CEREBRAS_API_KEY the route is an honest 503 that spends no ceiling", async () => {
-    const limits = memoryLimits()
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), { config: { cerebrasApiKey: undefined }, limits })
-    expect(response.status).toBe(503)
-    const body = (await response.json()) as { status: string; message: string }
-    expect(body.status).toBe("error")
-    expect(body.message).toContain("CEREBRAS_API_KEY")
-    expect(limits.keys()).toEqual([])
-    expect(calls.length).toBe(0)
-  })
-
-  test("a model that does not answer within the deadline is a 503, never a list, and the call is aborted", async () => {
-    expect(RECOMMEND_TIMEOUT_MS).toBe(6000)
-    let aborted = false
-    const net = network((request) =>
-      new Promise<Response>((_, reject) => {
-        request.signal.addEventListener("abort", () => {
-          aborted = true
-          reject(new DOMException("aborted", "AbortError"))
-        })
-      })
-    )
-    // The deadline is the Effect clock's, so the test moves the clock instead
-    // of waiting six seconds: once the provider call is in flight, six seconds
-    // pass, the fetch is aborted, and the route answers.
-    const response = await Effect.runPromise(
-      Effect.gen(function*() {
-        const fiber = yield* Effect.forkChild(handleRecommend(post("/api/recommend", goodBody), undefined, HEADERS))
-        while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
-        yield* TestClock.adjust(RECOMMEND_TIMEOUT_MS - 1)
-        expect(aborted).toBe(false)
-        yield* TestClock.adjust(1)
-        return yield* Fiber.join(fiber)
-      }).pipe(Effect.provide(Layer.mergeAll(net.layer, testConfigLayer(KEY), turnLimitsLayer(undefined), recommendLogLayer(undefined), TestClock.layer())))
-    )
-    expect(response.status).toBe(503)
-    expect(((await response.json()) as { message: string }).message).toContain("did not answer within 6s")
-    expect(aborted).toBe(true)
-  })
-
-  test("a model error, an unreadable answer, or an unreachable host is a 503", async () => {
-    const answers: Array<() => Promise<Response>> = [
-      async () => new Response("upstream down", { status: 502 }),
-      async () => completion("I would suggest opening the repository first."),
-      async () => {
-        throw new TypeError("fetch failed")
-      }
-    ]
-    for (const cerebras of answers) {
-      const { response } = await recommend(post("/api/recommend", goodBody), { cerebras })
-      expect(response.status).toBe(503)
-      expect(((await response.json()) as { status: string }).status).toBe("error")
-    }
-  })
+describe("the recommendation ceilings", () => {
+  const jev = async () => decision({ help: 1 })
 
   test("a visitor spends an address bucket and the deployment bucket; the spent one is 429 in the turn_rate_limited shape", async () => {
     const limits = memoryLimits()
-    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
-    const first = await recommend(post("/api/recommend", goodBody), { cerebras, limits })
+    const first = await recommend(post("/api/recommend", goodBody), { jev, limits })
     expect(first.response.status).toBe(200)
     const keys = limits.keys()
     expect(keys).toContain(RECOMMEND_ALL_KEY)
@@ -412,8 +544,8 @@ describe("POST /api/recommend", () => {
     // A second visitor from the same IPv6 /64 shares the address bucket.
     const sibling = memoryLimits()
     const prefixed = (ip: string) => post("/api/recommend", goodBody, { "cf-connecting-ip": ip })
-    await recommend(prefixed("2001:db8:1:2::1"), { cerebras, limits: sibling })
-    await recommend(prefixed("2001:db8:1:2:ffff::9"), { cerebras, limits: sibling })
+    await recommend(prefixed("2001:db8:1:2::1"), { jev, limits: sibling })
+    await recommend(prefixed("2001:db8:1:2:ffff::9"), { jev, limits: sibling })
     expect(sibling.keys().filter((key) => key.startsWith("recommend:anonymous:")).length).toBe(1)
 
     const spentAddress = memoryLimits([{ key: address!, count: RECOMMEND_ADDRESS_MAX }])
@@ -436,11 +568,10 @@ describe("POST /api/recommend", () => {
   })
 
   test("the salt changes the address bucket, so buckets are not linkable across deployments", async () => {
-    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
     const a = memoryLimits()
     const b = memoryLimits()
-    await recommend(post("/api/recommend", goodBody), { cerebras, limits: a, config: { anonymousTurnSalt: Redacted.make("salt-a") } })
-    await recommend(post("/api/recommend", goodBody), { cerebras, limits: b, config: { anonymousTurnSalt: Redacted.make("salt-b") } })
+    await recommend(post("/api/recommend", goodBody), { jev, limits: a, config: { anonymousTurnSalt: Redacted.make("salt-a") } })
+    await recommend(post("/api/recommend", goodBody), { jev, limits: b, config: { anonymousTurnSalt: Redacted.make("salt-b") } })
     const addressOf = (limits: { keys: () => Array<string> }) => limits.keys().find((key) => key.startsWith("recommend:anonymous:"))
     expect(addressOf(a)).toBeDefined()
     expect(addressOf(a)).not.toBe(addressOf(b))
@@ -448,192 +579,25 @@ describe("POST /api/recommend", () => {
 
   test("a signed-in caller is keyed by login, apart from every turn bucket", async () => {
     const limits = memoryLimits()
-    const { response } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async () => completion(JSON.stringify({ commands: ["help"] })),
-      limits,
-      login: "will"
-    })
+    const { response } = await recommend(post("/api/recommend", goodBody), { jev, limits, login: "will" })
     expect(response.status).toBe(200)
     expect(limits.keys()).toContain("recommend:login:will")
     expect(limits.keys()).not.toContain("will")
   })
 
   test("with no TURN_LIMITS binding the route still answers", async () => {
-    const { response } = await recommend(post("/api/recommend", goodBody), {
-      cerebras: async () => completion(JSON.stringify({ commands: ["help"] }))
-    })
+    const { response } = await recommend(post("/api/recommend", goodBody), { jev })
     expect(response.status).toBe(200)
     expect(((await response.json()) as { id: string }).id).toMatch(/^unlogged-/)
   })
 })
 
-describe("POST /api/recommend asks Jev first", () => {
-  test("Jev ranks the offered commands, zero-probability names dropped, and the log names Jev's model", async () => {
-    const logs = memoryLog()
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config: JEV_KEY,
-      jev: async () => decision({ "repo.open": 0.12, "run.start": 0.71, "help": 0.17, "keys.list": 0 }),
-      logs
-    })
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
-    expect(body.commands).toEqual(["run.start", "help", "repo.open"])
-    expect(body.model).toBe("typesafe-ai/jev")
-
-    // One call, to the gateway's evaluation endpoint, carrying the key, the
-    // five protocol headers, the state, and one choice question whose options
-    // are exactly the offered commands.
-    expect(calls.length).toBe(1)
-    expect(calls[0]!.url).toBe("https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
-    const headers = calls[0]!.headers
-    expect(headers.get("authorization")).toBe("Bearer vck-test")
-    expect(headers.get("ai-gateway-protocol-version")).toBe("0.0.1")
-    expect(headers.get("ai-gateway-auth-method")).toBe("api-key")
-    expect(headers.get("ai-evaluation-model-specification-version")).toBe("4")
-    expect(headers.get("ai-model-id")).toBe("typesafe-ai/jev")
-    const sent = (await calls[0]!.json()) as {
-      model?: unknown
-      state: { repository: string; conversation: string }
-      questions: Record<string, { type: string; instructions: string; criteria: Record<string, string> }>
-      providerOptions: { gateway: { zeroDataRetention: boolean } }
-    }
-    // The model rides in the header, never in the body.
-    expect(sent.model).toBeUndefined()
-    expect(sent.providerOptions.gateway.zeroDataRetention).toBe(true)
-    expect(sent.state.repository).toBe("smithersai/smithers")
-    expect(sent.state.conversation).toContain("How do I run the tests here?")
-    const question = Object.values(sent.questions)[0]!
-    expect(question.type).toBe("choice")
-    expect(question.instructions).toContain("next command")
-    expect(question.criteria).toEqual(Object.fromEntries(COMMANDS.map((command) => [command.name, command.summary])))
-
-    const rows = await readRows(logs)
-    expect(rows[0]!.model).toBe("typesafe-ai/jev")
-    expect(rows[0]!.commands).toEqual(["run.start", "help", "repo.open"])
-  })
-
-  test("a choice answer with no probabilities is the one command Jev chose", async () => {
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config: JEV_KEY,
-      jev: async () => chosen("run.start")
-    })
-    expect(response.status).toBe(200)
-    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["run.start"])
-    expect(calls.length).toBe(1)
-  })
-
-  test("an empty conversation reads as the prompt's own wording, and the answer is capped at five", async () => {
-    const commands = Array.from({ length: 7 }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
-    const probabilities = Object.fromEntries(commands.map((command, index) => [command.name, (7 - index) / 28]))
-    const { response, calls } = await recommend(post("/api/recommend", { repo: null, tail: [], commands }), {
-      config: JEV_KEY,
-      jev: async () => decision(probabilities)
-    })
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { commands: Array<string> }
-    expect(body.commands).toEqual(["c0", "c1", "c2", "c3", "c4"])
-    expect(body.commands.length).toBe(RECOMMEND_ANSWER_MAX)
-    const sent = (await calls[0]!.json()) as { state: { repository: string; conversation: string } }
-    expect(sent.state.conversation).toBe("(no messages yet)")
-    expect(sent.state.repository).toBe("(none selected)")
-  })
-
-  test("a Jev that answers HTTP 529 leaves the Cerebras answer standing", async () => {
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config: JEV_KEY,
-      jev: async () => new Response("overloaded", { status: 529 }),
-      cerebras: async () => completion(JSON.stringify({ commands: ["help", "repo.open"] }))
-    })
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { commands: Array<string>; model: string }
-    expect(body.commands).toEqual(["help", "repo.open"])
-    expect(body.model).toBe("gpt-oss-120b")
-    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh", "api.cerebras.ai"])
-  })
-
-  test("a Jev that misses its own short deadline leaves Cerebras the rest of the budget", async () => {
-    expect(RECOMMEND_JEV_TIMEOUT_MS).toBe(1500)
-    expect(RECOMMEND_JEV_TIMEOUT_MS).toBeLessThan(RECOMMEND_TIMEOUT_MS)
-    const net = network(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      () => new Promise<Response>(() => {})
-    )
-    const response = await Effect.runPromise(
-      Effect.gen(function*() {
-        const fiber = yield* Effect.forkChild(handleRecommend(post("/api/recommend", goodBody), undefined, HEADERS))
-        while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
-        yield* TestClock.adjust(RECOMMEND_JEV_TIMEOUT_MS)
-        return yield* Fiber.join(fiber)
-      }).pipe(Effect.provide(Layer.mergeAll(
-        net.layer,
-        testConfigLayer({ ...KEY, ...JEV_KEY }),
-        turnLimitsLayer(undefined),
-        recommendLogLayer(undefined),
-        TestClock.layer()
-      )))
-    )
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { commands: Array<string>; model: string }
-    expect(body.commands).toEqual(["help"])
-    expect(body.model).toBe("gpt-oss-120b")
-    expect(net.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh", "api.cerebras.ai"])
-  })
-
-  test("more commands than a choice question holds never reach Jev", async () => {
-    expect(RECOMMEND_JEV_COMMANDS_MAX).toBe(255)
-    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX + 1 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
-    const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, commands }), {
-      config: JEV_KEY,
-      jev: never,
-      cerebras: async () => completion(JSON.stringify({ commands: ["c3"] }))
-    })
-    expect(response.status).toBe(200)
-    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["api.cerebras.ai"])
-    // One fewer command, and the same request is Jev's.
-    const fits = await recommend(post("/api/recommend", { ...goodBody, commands: commands.slice(0, RECOMMEND_JEV_COMMANDS_MAX) }), {
-      config: JEV_KEY,
-      jev: async () => decision({ c3: 1 })
-    })
-    expect(fits.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh"])
-  })
-
-  test("with only the gateway key Jev answers, and a Jev that fails is the route's own 503", async () => {
-    const config = { ...JEV_KEY, cerebrasApiKey: undefined }
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config,
-      jev: async () => decision({ "help": 0.9, "repo.open": 0.1 })
-    })
-    expect(response.status).toBe(200)
-    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["help", "repo.open"])
-    expect(calls.length).toBe(1)
-
-    const failed = await recommend(post("/api/recommend", goodBody), { config, jev: async () => new Response("no", { status: 529 }) })
-    expect(failed.response.status).toBe(503)
-    expect(((await failed.response.json()) as { status: string }).status).toBe("error")
-    expect(failed.calls.map((call) => new URL(call.url).hostname)).toEqual(["ai-gateway.vercel.sh"])
-  })
-
-  test("with neither key the route is the same honest 503, and it names both keys", async () => {
-    const limits = memoryLimits()
-    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
-      config: { cerebrasApiKey: undefined, aiGatewayApiKey: undefined },
-      limits
-    })
-    expect(response.status).toBe(503)
-    const body = (await response.json()) as { message: string }
-    expect(body.message).toContain("CEREBRAS_API_KEY")
-    expect(body.message).toContain("AI_GATEWAY_API_KEY")
-    expect(limits.keys()).toEqual([])
-    expect(calls.length).toBe(0)
-  })
-})
-
 describe("POST /api/recommend/outcome", () => {
-  const cerebras = async () => completion(JSON.stringify({ commands: ["run.start", "help"] }))
+  const jev = async () => decision({ "run.start": 0.7, "help": 0.3 })
 
   test("an outcome is 204 once, 409 the second time, and lands on the row", async () => {
     const logs = memoryLog()
-    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    const recommended = await recommend(post("/api/recommend", goodBody), { jev, logs })
     const { id } = (await recommended.response.json()) as { id: string }
     const first = await outcome(post("/api/recommend/outcome", { id, command: "help" }), logs)
     expect(first.status).toBe(204)
@@ -675,7 +639,7 @@ describe("POST /api/recommend/outcome", () => {
         }
       }
     }
-    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras: async () => completion(JSON.stringify({ commands: ["help"] })), logs: counted })
+    const recommended = await recommend(post("/api/recommend", goodBody), { jev: async () => decision({ help: 1 }), logs: counted })
     const { id } = (await recommended.response.json()) as { id: string }
     expect(touched).toBe(1)
     const huge = { id, command: "h".repeat(RECOMMEND_OUTCOME_BODY_MAX_BYTES + 1) }
@@ -694,7 +658,7 @@ describe("POST /api/recommend/outcome", () => {
 
   test("an id with the right sequence but the wrong random tail is 404, so ids cannot be guessed", async () => {
     const logs = memoryLog()
-    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    const recommended = await recommend(post("/api/recommend", goodBody), { jev, logs })
     const { id } = (await recommended.response.json()) as { id: string }
     const forged = `${id.split("-")[0]}-0000000000000000`
     const response = await outcome(post("/api/recommend/outcome", { id: forged, command: "help" }), logs)
@@ -719,14 +683,14 @@ describe("POST /api/recommend/outcome", () => {
 describe("the recommendation log", () => {
   test("a row holds the contract's fields and a digest of the tail, never the text", async () => {
     const logs = memoryLog()
-    await recommend(post("/api/recommend", goodBody), { cerebras: async () => completion(JSON.stringify({ commands: ["keys.list", "help"] })), logs })
+    await recommend(post("/api/recommend", goodBody), { jev: async () => decision({ "keys.list": 0.6, "help": 0.4 }), logs })
     const [row] = await readRows(logs)
     expect(row).toBeDefined()
     expect(Object.keys(row!).sort()).toEqual(["at", "commandCount", "commands", "id", "model", "outcome", "repo", "tailDigest"])
     expect(row!.repo).toBe("smithersai/smithers")
     expect(row!.commandCount).toBe(COMMANDS.length)
     expect(row!.commands).toEqual(["keys.list", "help"])
-    expect(row!.model).toBe("gpt-oss-120b")
+    expect(row!.model).toBe(JEV_MODEL)
     expect(row!.outcome).toBeNull()
     expect(row!.tailDigest).toMatch(/^[0-9a-f]{64}$/)
     expect(new Date(row!.at).toISOString()).toBe(row!.at)
@@ -735,11 +699,21 @@ describe("the recommendation log", () => {
     expect(RECOMMEND_LOG_NAME).toBe("recommendations")
   })
 
+  test("a refused recommendation writes no row: the log holds only what Jev said", async () => {
+    const logs = memoryLog()
+    const { response } = await recommend(post("/api/recommend", goodBody), {
+      jev: async () => new Response("no", { status: 502 }),
+      logs
+    })
+    expect(response.status).toBe(503)
+    expect(await readRows(logs)).toEqual([])
+  })
+
   test("the scorer reads the rows newest first, bounded by limit; an unbound log is empty", async () => {
     const logs = memoryLog()
     let calls = 0
-    const cerebras = async () => completion(JSON.stringify({ commands: [COMMANDS[calls++ % COMMANDS.length]!.name] }))
-    for (let index = 0; index < 3; index += 1) await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    const jev = async () => decision({ [COMMANDS[calls++ % COMMANDS.length]!.name]: 1 })
+    for (let index = 0; index < 3; index += 1) await recommend(post("/api/recommend", goodBody), { jev, logs })
     expect((await readRows(logs)).map((row) => row.commands[0])).toEqual(["keys.list", "run.start", "repo.open"])
     expect((await readRows(logs, 2)).length).toBe(2)
     expect(await readRows(undefined)).toEqual([])
@@ -790,10 +764,28 @@ describe("the recommendation log", () => {
   })
 })
 
-describe("the Cerebras client", () => {
+/*
+ * The Cerebras client still lives here, and the cloud roles (cloudRoleTurn.ts)
+ * are its only caller. These tests hold the client, not the recommender, so
+ * they bring their own transport.
+ */
+describe("the Cerebras client the cloud roles spend", () => {
   const request = { model: "m", messages: [{ role: "user" as const, content: "hi" }], maxTokens: 8, temperature: 0 }
-  const chat = (cerebras: (request: Request) => Promise<Response>, config: Partial<ServerConfigShape> = KEY) =>
-    Effect.runPromise(cerebrasChat(request, 1000).pipe(Effect.provide(Layer.mergeAll(network(cerebras).layer, testConfigLayer(config)))))
+  const completion = (content: string, model = "gpt-oss-120b"): Response =>
+    new Response(JSON.stringify({ model, choices: [{ message: { role: "assistant", content } }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  const cerebrasNetwork = (answer: (request: Request) => Promise<Response>) =>
+    transportLayer(async (input, init) => {
+      const outbound = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      expect(outbound.url).toBe(CEREBRAS_CHAT_COMPLETIONS_URL)
+      return answer(outbound)
+    })
+  const chat = (
+    cerebras: (request: Request) => Promise<Response>,
+    config: Partial<ServerConfigShape> = { cerebrasApiKey: Redacted.make("csk-test") }
+  ) => Effect.runPromise(cerebrasChat(request, 1000).pipe(Effect.provide(Layer.mergeAll(cerebrasNetwork(cerebras), testConfigLayer(config)))))
 
   test("answers content and the provider's model, and names each failure", async () => {
     expect(await chat(async () => completion("hello", "served-model"))).toEqual({ ok: true, content: "hello", model: "served-model" })
@@ -820,26 +812,41 @@ describe("the Cerebras client", () => {
   })
 })
 
-describe("the answer reading", () => {
-  test("parseAnswer reads strict JSON, an object in prose, a bare array, and refuses prose alone", () => {
-    expect(parseAnswer("{\"commands\":[\"a\",\"b\"]}")).toEqual(["a", "b"])
-    expect(parseAnswer("Try these: {\"commands\": [\"a\"]} ok?")).toEqual(["a"])
-    expect(parseAnswer("[\"a\", 3, \"b\"]")).toEqual(["a", "b"])
-    expect(parseAnswer("open the repository")).toBeUndefined()
-    expect(parseAnswer("{\"other\": 1}")).toBeUndefined()
+describe("the questions asked and the answers read", () => {
+  test("recommendQuestions chunks the catalog, asks about every command once, and is one question for an empty catalog", () => {
+    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX * 2 + 1 }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
+    const questions = recommendQuestions(commands)
+    expect(Object.keys(questions)).toEqual(["command1", "command2", "command3"])
+    expect(recommendQuestionKey(0)).toBe("command1")
+    const sizes = Object.values(questions).map((question) => Object.keys((question as { criteria: object }).criteria).length)
+    expect(sizes).toEqual([RECOMMEND_JEV_COMMANDS_MAX, RECOMMEND_JEV_COMMANDS_MAX, 1])
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(commands.length)
+    // An empty catalog still asks one question, so the request's shape never
+    // depends on what the client had to offer.
+    expect(Object.keys(recommendQuestions([]))).toEqual(["command1"])
   })
 
-  test("filterAnswer keeps offered names in the model's order, once each, at most five", () => {
+  test("rankJevAnswers merges by probability, drops zero weight, and puts an unmeasured choice last", () => {
+    const merged = rankJevAnswers({
+      command1: { type: "choice", choice: "a", probabilities: { a: 0.3, b: 0.9, c: 0 } },
+      command2: { type: "choice", choice: "d" },
+      command3: { type: "choice", choice: "e", probabilities: { e: 0.5 } }
+    }, ["command1", "command2", "command3"])
+    expect(merged).toEqual(["b", "e", "a", "d"])
+  })
+
+  test("rankJevAnswers is undefined when no question came back as a choice: Jev failed, it did not answer 'nothing'", () => {
+    expect(rankJevAnswers({}, ["command1"])).toBeUndefined()
+    expect(rankJevAnswers({ command1: { type: "score", score: 3 } }, ["command1"])).toBeUndefined()
+    // An answer under a key this request never asked is not this request's answer.
+    expect(rankJevAnswers({ other: { type: "choice", choice: "a" } }, ["command1"])).toBeUndefined()
+    // A choice whose every option carries zero weight IS an answer: Jev read
+    // the options and weighted none of them.
+    expect(rankJevAnswers({ command1: { type: "choice", choice: "a", probabilities: { a: 0 } } }, ["command1"])).toEqual([])
+  })
+
+  test("filterAnswer keeps offered names in Jev's order, once each, at most five", () => {
     const offered = Array.from({ length: 8 }, (_, index) => ({ name: `c${index}`, summary: "" }))
     expect(filterAnswer(["c3", " c1 ", "nope", "c3", "c0", "c7", "c2", "c5"], offered)).toEqual(["c3", "c1", "c0", "c7", "c2"])
-  })
-
-  test("the prompt says the job, lists every command, and marks an empty conversation as such", () => {
-    const messages = recommendMessages({ repo: null, tail: [], commands: COMMANDS })
-    expect(messages[0]!.role).toBe("system")
-    expect(messages[0]!.content).toContain("next command")
-    expect(messages[0]!.content).toContain("best first")
-    expect(messages[1]!.content).toContain("(no messages yet)")
-    for (const command of COMMANDS) expect(messages[1]!.content).toContain(command.name)
   })
 })

@@ -1,10 +1,13 @@
 import * as Effect from "effect/Effect"
 import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage, AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
+import type { JevAnswer } from "./jev"
 /**
  * The front door: Jev decides the turn before the concierge is paid for it.
  *
@@ -14,10 +17,17 @@ import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
  * can run right now, this Worker answers the turn itself with the same frames
  * the concierge would have emitted for that command — so the browser's own
  * execution boundary opens the command's form or runs it — and no chat turn
- * is spent. Below the floor, or on any Jev failure, the turn goes upstream
- * exactly as it did before this module existed.
+ * is spent. Below the floor, or on `none`, the turn goes upstream to the
+ * concierge: that is Jev deciding, and the concierge is what it decided on.
  *
- * Three things make that honest rather than clever.
+ * A Jev that FAILS is not that. There is no fallback: an unset
+ * `AI_GATEWAY_API_KEY`, a refused gateway, a missed deadline or an answer
+ * this client cannot read refuses the turn with the same typed failures a
+ * cloud role turn uses for an unavailable model (cloudRoleTurn.ts), and the
+ * chat upstream is never spent instead. The main model being down is an
+ * outage the client is told about, not a silent downgrade to an LLM.
+ *
+ * Three things make the routing honest rather than clever.
  *
  * The catalog is DATA. The offered commands ride the turn body
  * (`StartAgentTurnRequest.commands`, the same `{ name, summary }` list the
@@ -181,21 +191,38 @@ export const frontDoorRepo = (body: TurnRequest): string | null => {
 }
 
 /**
- * One Jev read over the offered commands. `undefined` means Jev did not
- * decide — no key, too many options for one choice question, a refused or
- * slow gateway, or an answer this client cannot read — and every one of those
- * falls through to the chat upstream.
+ * What one front-door read came back as.
+ *
+ * `skipped` is the only reading that spends the chat upstream without a
+ * decision, and it never means Jev failed: there was nothing for Jev to
+ * choose among (no commands offered), or more commands than one choice
+ * question can hold. A catalog that large cannot be split the way the
+ * recommender splits one (`recommendQuestions`), because each question would
+ * need its own `none` and two questions' probabilities cannot be compared to
+ * pick one winner — so the concierge answers, as it does for every turn the
+ * front door does not read.
  */
+export type FrontDoorRead =
+  /** Jev answered: route the turn, or hand it to the concierge. */
+  | { readonly kind: "decided"; readonly decision: FrontDoorDecision }
+  /** Not a turn Jev is asked about at all. */
+  | { readonly kind: "skipped" }
+  /** This deployment has no `AI_GATEWAY_API_KEY`. */
+  | { readonly kind: "unconfigured" }
+  /** Jev was asked and did not answer. The turn is refused, never re-routed. */
+  | { readonly kind: "failed"; readonly failure: Exclude<JevAnswer, { readonly ok: true }> }
+
+/** One Jev read over the offered commands. */
 export const askFrontDoor = (
   body: TurnRequest,
   commands: ReadonlyArray<RecommendCommand>
-): Effect.Effect<FrontDoorDecision | undefined, never, Transport | ServerConfig> =>
+): Effect.Effect<FrontDoorRead, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
-    if (config.aiGatewayApiKey === undefined) return undefined
+    if (config.aiGatewayApiKey === undefined) return { kind: "unconfigured" } as const
     // One extra option (`none`) rides beside the commands, so the list must
     // leave room for it under the choice question's own cap.
-    if (commands.length === 0 || commands.length >= RECOMMEND_JEV_COMMANDS_MAX) return undefined
+    if (commands.length === 0 || commands.length >= RECOMMEND_JEV_COMMANDS_MAX) return { kind: "skipped" } as const
     /*
      * The turn's own message is the decision; the rest of the tail is context
      * under its own key. `isFrontDoorTurn` has already held the last message
@@ -203,7 +230,7 @@ export const askFrontDoor = (
      */
     const tail = frontDoorTail(body)
     const message = tail[tail.length - 1]
-    if (message === undefined) return undefined
+    if (message === undefined) return { kind: "skipped" } as const
     const earlier = tail.slice(0, -1)
     const answer = yield* jevEvaluate({
       model: JEV_DEFAULT_MODEL,
@@ -230,9 +257,14 @@ export const askFrontDoor = (
         }
       }
     }, RECOMMEND_JEV_TIMEOUT_MS)
-    if (!answer.ok) return undefined
+    if (!answer.ok) return { kind: "failed", failure: answer } as const
     const choice = answer.answers["command"]
-    if (choice?.type !== "choice" || typeof choice.choice !== "string") return undefined
+    // A 200 whose command answer this client cannot read is Jev failing, and
+    // it reads as the same empty answer the client reports for a 200 that
+    // carried nothing at all.
+    if (choice?.type !== "choice" || typeof choice.choice !== "string") {
+      return { kind: "failed", failure: { ok: false, reason: "empty" } } as const
+    }
     const impossible = answer.answers["impossible"]
     const offered = new Set(commands.map((command) => command.name))
     // A choice the question never offered is not a decision; `none` is.
@@ -245,13 +277,16 @@ export const askFrontDoor = (
      */
     const probability = choice.probabilities?.[choice.choice]
     return {
-      command,
-      confidence: typeof probability === "number" && Number.isFinite(probability) ? probability : 0,
-      impossible: impossible?.type === "choice" && typeof impossible.choice === "string" &&
-          impossible.choice in FRONT_DOOR_IMPOSSIBLE_CRITERIA
-        ? impossible.choice
-        : FRONT_DOOR_NONE
-    }
+      kind: "decided",
+      decision: {
+        command,
+        confidence: typeof probability === "number" && Number.isFinite(probability) ? probability : 0,
+        impossible: impossible?.type === "choice" && typeof impossible.choice === "string" &&
+            impossible.choice in FRONT_DOOR_IMPOSSIBLE_CRITERIA
+          ? impossible.choice
+          : FRONT_DOOR_NONE
+      }
+    } as const
   })
 
 const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, string>): Response =>
@@ -259,6 +294,39 @@ const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, s
     status: 200,
     headers: { "content-type": "application/x-ndjson", "cache-control": "no-store", ...headers }
   })
+
+/* This route's own refusal: the code names the status, and the caller's headers ride along. */
+const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
+  new Response(JSON.stringify({ status: "error", code, message }), {
+    status: WORKER_FAILURES[code].status,
+    headers: { "content-type": "application/json", ...headers }
+  })
+
+/**
+ * A Jev that did not answer, as the turn route reports it. The mapping is the
+ * one a cloud role turn already uses for its own unavailable model
+ * (cloudRoleTurn.ts): the provider's own rate limit is 429, any other refusal
+ * is 502, a 200 this client cannot read is 502 `model_no_answer`, the
+ * deadline is 504, and an unreachable host is 502. One vocabulary, so a
+ * client that can read "the Librarian's model is down" reads this too.
+ */
+export const frontDoorRefusal = (
+  failure: Exclude<JevAnswer, { readonly ok: true }>,
+  headers: Record<string, string>
+): Response => {
+  switch (failure.reason) {
+    case "http":
+      return failure.status === 429
+        ? refusal("model_rate_limited", "Jev's gateway answered HTTP 429.", headers)
+        : refusal("upstream_refused", `Jev's gateway answered HTTP ${failure.status}.`, headers)
+    case "empty":
+      return refusal("model_no_answer", "Jev sent no decision this client can read.", headers)
+    case "timeout":
+      return refusal("upstream_timeout", `Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`, headers)
+    case "unreachable":
+      return refusal("upstream_unreachable", `Jev is unreachable: ${failure.message}`, headers)
+  }
+}
 
 /** The arguments of the one tool call a routed turn emits: execute, by name, with no args. */
 export const frontDoorArguments = (command: string): string => JSON.stringify({ action: "execute", name: command })
@@ -337,8 +405,9 @@ const logDecision = (
   })
 
 /**
- * The front door, as the turn route calls it: the routed turn's response, or
- * `undefined` to spend the upstream exactly as before.
+ * The front door, as the turn route calls it: the routed turn's response, the
+ * refusal a Jev that did not answer earns, or `undefined` to spend the
+ * upstream because Jev said the concierge should answer.
  *
  * The ceilings are already spent by the time this runs, so a routed turn
  * still counts as a turn — the user asked for one and got an answer.
@@ -352,12 +421,31 @@ export const handleFrontDoor = (
     const continued = frontDoorContinuation(body)
     if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId), headers)
     const commands = body.commands
+    // An older client that offers no catalog, and a tool-loop continuation,
+    // are turns the front door never read: the concierge answers them, as it
+    // always did.
     if (commands === undefined || !isFrontDoorTurn(body)) return undefined
-    const decision = yield* askFrontDoor(body, commands)
-    if (decision === undefined) return undefined
-    const routed = decision.command !== undefined && decision.confidence >= FRONT_DOOR_CONFIDENCE_FLOOR
-    yield* logDecision(body, commands.length, decision, routed)
-    if (!routed) return undefined
-    const callId = `${FRONT_DOOR_CALL_PREFIX}${crypto.randomUUID()}`
-    return ndjson(frontDoorFrames(body.runId, decision.command!, callId), headers)
+    const read = yield* askFrontDoor(body, commands)
+    switch (read.kind) {
+      case "skipped":
+        return undefined
+      case "unconfigured":
+        return refusal(
+          "seam_not_configured",
+          "AI_GATEWAY_API_KEY is unset. Smithers cannot read this turn on this deployment.",
+          headers
+        )
+      case "failed":
+        return frontDoorRefusal(read.failure, headers)
+      case "decided": {
+        const decision = read.decision
+        const routed = decision.command !== undefined && decision.confidence >= FRONT_DOOR_CONFIDENCE_FLOOR
+        yield* logDecision(body, commands.length, decision, routed)
+        // Jev's own answer: `none`, or a command it is not sure enough about.
+        // The concierge is what Jev decided on, so this is not a fallback.
+        if (!routed) return undefined
+        const callId = `${FRONT_DOOR_CALL_PREFIX}${crypto.randomUUID()}`
+        return ndjson(frontDoorFrames(body.runId, decision.command!, callId), headers)
+      }
+    }
   })

@@ -1,7 +1,7 @@
 # The command-recommender eval
 
 A scorer for the recommendation pills under the composer. Every time the
-server asks Cerebras for a recommendation it logs one row: the ordered list of
+server asks Jev for a recommendation it logs one row: the ordered list of
 commands it offered, and, once the user runs something, the command they ran
 next. This suite turns that log into three numbers.
 

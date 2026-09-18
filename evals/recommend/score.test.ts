@@ -189,7 +189,7 @@ describe("rendering", () => {
     expect(lines.length).toBe(6);
   });
 
-  test("the model table scores each model apart, so Jev's rows read against Cerebras's", () => {
+  test("the model table scores each model apart, so one model's rows read against another's", () => {
     const table = renderPerModel([
       row("a/b", ["flow.list"], "flow.list", { model: "jev-latest" }),
       row("a/b", ["flow.list"], "run.start", { model: "jev-latest" }),

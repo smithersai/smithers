@@ -23,7 +23,7 @@ describe("ServerConfig from the binding bag", () => {
     expect(config.billingCheckoutEnabled).toBe(true)
   })
 
-  test("AI_GATEWAY_API_KEY is an optional redacted secret, like the Cerebras key beside it", () => {
+  test("AI_GATEWAY_API_KEY is a redacted secret: the deployment's Jev key, required by the pills and the front door", () => {
     expect(configFrom({}).aiGatewayApiKey).toBeUndefined()
     expect(configFrom({ AI_GATEWAY_API_KEY: "  " }).aiGatewayApiKey).toBeUndefined()
     const config = configFrom({ AI_GATEWAY_API_KEY: " vck-live " })
