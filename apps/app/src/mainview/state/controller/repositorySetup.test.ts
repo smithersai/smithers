@@ -1302,3 +1302,44 @@ test("a pin the loaded workspaces no longer list is replaced by the registration
     expect(t.calls).toEqual([])
   } finally { await t.close() }
 })
+
+/* The Worker's answer to a same-id POST whose input differs (apps/server/src/repositorySetupStore.ts). */
+const REUSED = { status: "error", code: "setup_request_reused",
+  message: "This setup request was already used for another operation. Not your fault; retry starts a new one." }
+
+test("a request id the host says already names other work is spent: the next Retry asks under a new one", async () => {
+  let lost = true
+  const spent = new Set<string>()
+  const t = await fixture(async body => {
+    if (lost) { lost = false; spent.add(body.requestId); throw Error("Connection lost") }
+    return spent.has(body.requestId) ? Response.json(REUSED, { status: 409 }) : response(body)
+  })
+  try {
+    await t.setup.runRepositorySetup("setup", "evaluate"); await Promise.all(t.background)
+    const id = t.state().request!.id
+    expect(t.state().request?.state).toBe("failed")
+    // The lost response is retried under its own id, exactly as before.
+    await t.setup.retryRepositorySetup("setup"); await Promise.all(t.background)
+    expect(t.calls.map(call => call.body.requestId)).toEqual([id, id])
+    expect(t.state().request?.state).toBe("failed")
+    // The refusal says this one is spent, so a third attempt must not repeat it.
+    await t.setup.retryRepositorySetup("setup"); await Promise.all(t.background)
+    expect(t.calls).toHaveLength(3)
+    expect(t.calls[2]?.body.requestId).not.toBe(id)
+    expect(t.state().request?.state).toBe("completed")
+    expect(t.state().previousReceipts.some(item => item.requestId === id)).toBe(false)
+  } finally { await t.close() }
+})
+
+test("a settled failure recovered after a reload never reaches the reused-id refusal at all", async () => {
+  const t = await fixture(async body => body.requestId === SETTLED_REQUEST
+    ? Response.json(REUSED, { status: 409 }) : response(body, "completed", "inspect"))
+  t.recovery.answer = async () => Response.json(settledWorkspaceGone())
+  try {
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    expect(setupCard(t).payload.request).toMatchObject({ id: SETTLED_REQUEST, state: "failed" })
+    await t.setup.retryRepositorySetup(setupCard(t).id); await Promise.all(t.background)
+    expect(t.calls.every(call => call.body.requestId !== SETTLED_REQUEST)).toBe(true)
+    expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
+  } finally { await t.close() }
+})

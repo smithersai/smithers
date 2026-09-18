@@ -4,6 +4,7 @@ import {
   SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
+import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
 import { isPracticeRepo } from "../practice/PracticeRepository"
@@ -193,7 +194,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   const shared = actorSharedState(ctx, "repository-setup", () => ({
     pending: new Map<string, Promise<unknown>>(), sleepers: new Map<ReturnType<typeof setTimeout>, () => void>(),
     recovering: new Map<string, Promise<unknown>>(), resumed: new Set<string>(), openingRuns: new Set<string>(), edits: new Map<string, Promise<unknown>>(),
-    guidanceQueued: false, guiding: false, guidanceFailures: new Set<string>(),
+    guidanceQueued: false, guiding: false, guidanceFailures: new Set<string>(), spentRequests: new Set<string>(),
     scheduleTimers: new Map<string, { timer: ReturnType<typeof setTimeout>; at: number; login: string | null; accountEpoch: number; registrationId: string }>(),
     expiredSchedules: new Map<string, { login: string | null; accountEpoch: number }>(), disposed: false
   }))
@@ -405,7 +406,13 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         })
         for (;;) {
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
-          if (!response.ok) throw Error(await ctx.errorMessageOf(response, "The setup could not be completed."))
+          if (!response.ok) {
+            // A refusal that says this id already names other work spends it:
+            // asking again under the same one only earns the same 409.
+            const refusal: unknown = await response.clone().json().catch(() => undefined)
+            if (workerFailureCode((refusal as { code?: unknown } | undefined)?.code) === "setup_request_reused") shared.spentRequests.add(intent.id)
+            throw Error(await ctx.errorMessageOf(response, "The setup could not be completed."))
+          }
           const result = SetupOperationResponseSchema.parse(await response.json())
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
           if (result.requestId !== intent.id || result.revision !== intent.revision || result.digest !== intent.digest) throw Error("The host returned a result for a different setup draft.")
@@ -620,7 +627,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     // A lost response retries its durable request. A recorded failed execution
     // gets a new attempt; repeatedly POSTing the same id must never rerun work.
     const retry = old?.operation === operation && old.revision === card.payload.revision && old.state === "failed"
-      && JSON.stringify(old.manual) === JSON.stringify(manual)
+      && JSON.stringify(old.manual) === JSON.stringify(manual) && !shared.spentRequests.has(old.id)
       && !card.payload.previousReceipts.some(receipt => receipt.requestId === old.id)
     const intent: NonNullable<RepositorySetup["request"]> = { id: retry ? old.id : crypto.randomUUID(), operation,
       revision: card.payload.revision, digest: setupCandidate(card.payload), state: "requested", ...(manual ? { manual } : {}) }

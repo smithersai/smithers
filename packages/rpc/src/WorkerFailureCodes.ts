@@ -60,6 +60,7 @@ export const WORKER_FAILURE_CODES = [
   "service_auth_required",
   "service_temporarily_unavailable",
   "session_expired",
+  "setup_request_reused",
   "sign_in_required",
   "storage_failed",
   "tools_not_supported",
@@ -163,6 +164,14 @@ export const WORKER_FAILURES = {
   "service_temporarily_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
   /** A tutorial or example session that has aged out. Saved results survive it. */
   "session_expired": { fault: "user", status: 401, retryAfter: 0 },
+  /**
+   * A setup request id that already names other work: the same id arrived with
+   * a different candidate, operation or workspace. INFRA, not the reader's:
+   * they asked for one operation once, and the id is the client's bookkeeping.
+   * Nothing is exhausted either, so the sentence says what the next attempt
+   * does — the app spends the id and asks under a new one.
+   */
+  "setup_request_reused": { fault: "infra", status: 409, retryAfter: 0 },
   /** No signed-in session on a route that spends the deployment's own model credential. */
   "sign_in_required": { fault: "user", status: 401, retryAfter: 0 },
   /** A Durable Object's storage or stub call threw. Smithers' own fleet, not the caller and not an upstream. */

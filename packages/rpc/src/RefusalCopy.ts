@@ -593,6 +593,18 @@ export const WORKER_REFUSAL_COPY = {
     lead: "That session has expired. Anything you already finished is still saved.",
     doors: ["sign-in", "retry"]
   },
+  /*
+   * The third `infra` code that is neither a full fleet nor a misconfigured
+   * deployment: an id the client already spent on other work. The person did
+   * nothing wrong and nothing is broken, so the sentence spends the id out
+   * loud and says the next attempt is a new request.
+   */
+  setup_request_reused: {
+    lead: "This setup request was already used for another operation. Not your fault; retry starts a new one.",
+    agent:
+      "fault=infra: the setup request id the app sent already names different work on Smithers' side — another candidate, operation or workspace. Not the user's fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra. The next attempt asks under a new request id, so say plainly that retrying is worth it.",
+    doors: ["retry"]
+  },
   sign_in_required: { lead: "Smithers Cloud doesn't recognise this session.", doors: ["sign-in"] },
   storage_failed: {
     lead: "Smithers' own storage failed on that. Not your fault, and nothing you asked for caused it.",

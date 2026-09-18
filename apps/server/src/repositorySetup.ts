@@ -50,4 +50,5 @@ export const handleRepositorySetup = (request: Request): Effect.Effect<Response,
     yield* (yield* ExecutionContext).waitUntil(advanceRepositorySetup(session.login, record.input.requestId).pipe(Effect.provide(context)))
   }
   return record.observationError ? answer(503, { message: record.observationError }) : answer(record.result ? 200 : 202, publicSetupResult(record))
-}).pipe(Effect.catch(error => Effect.succeed(answer(error instanceof SetupStoreError ? error.status ?? 503 : 503, { message: error.message }))))
+}).pipe(Effect.catch(error => Effect.succeed(answer(error instanceof SetupStoreError ? error.status ?? 503 : 503,
+  { ...(error instanceof SetupStoreError && error.code ? { status: "error", code: error.code } : {}), message: error.message }))))

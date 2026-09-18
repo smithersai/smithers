@@ -1,10 +1,12 @@
 import { Context, Data, Effect, Layer, Semaphore } from "effect"
 import { z } from "zod"
 import { RepositoryJobSchema, SetupHostInputSchema, SetupOperationResponseSchema, SetupReceiptSchema, type SetupHostInput, type RepositoryJob } from "@smthrs/rpc/RepositorySetup"
+import { workerFailureCode, type WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { DurableStorage, namespaceCall, type NativeNamespace } from "./DurableStorage"
 import { readBoundedJson, readJsonOrUndefined } from "./Http"
+import { refuse } from "./Responses"
 
-export class SetupStoreError extends Data.TaggedError("SetupStoreError")<{ readonly message: string; readonly status?: number }> {}
+export class SetupStoreError extends Data.TaggedError("SetupStoreError")<{ readonly message: string; readonly status?: number; readonly code?: WorkerFailureCode }> {}
 export const SetupPlanSchema = z.object({ planId: z.string().min(1), flowId: z.literal("repository/setup"), digest: z.string().min(1),
   executionDigest: z.string().min(1), envelope: z.object({ capabilities: z.array(z.string()), flows: z.array(z.string()),
     budget: z.object({ tokens: z.number().int().positive().max(200_000), milliseconds: z.number().int().positive().max(7_200_000) }), host: z.string().optional() }) })
@@ -99,7 +101,9 @@ export const repositorySetupStorageRequest = (request: Request) => Effect.gen(fu
       return { ...queue, requests: { ...queue.requests, [id]: Date.now() + 86_400_000 } }
     })
     if (command.action === "create" && old) {
-      if (!sameInput(old.input, command.input, old.workspaceId ?? old.binding?.workspaceId)) return Response.json({ message: "This request id already names another setup operation" }, { status: 409 })
+      // A typed refusal, not a bare sentence: the app spends the id on this
+      // code and asks under a new one instead of repeating the same 409.
+      if (!sameInput(old.input, command.input, old.workspaceId ?? old.binding?.workspaceId)) return refuse("setup_request_reused", "This setup request was already used for another operation. Not your fault; retry starts a new one.")
       if (!old.result) yield* storage.put(SETUP_QUEUE_KEY, yield* enqueue())
       return Response.json({ record: old })
     }
@@ -207,7 +211,11 @@ export const setupRequestsLayer = (namespace: NativeNamespace): Layer.Layer<Setu
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command)
     }))
     const body = yield* readBoundedJson(response, 128_000)
-    if (!response.ok) return yield* Effect.fail(new SetupStoreError({ status: response.status, message: typeof (body as { message?: unknown })?.message === "string" ? (body as { message: string }).message : "Setup storage is unavailable" }))
+    if (!response.ok) {
+      const code = workerFailureCode((body as { code?: unknown })?.code)
+      return yield* Effect.fail(new SetupStoreError({ status: response.status, ...(code === null ? {} : { code }),
+        message: typeof (body as { message?: unknown })?.message === "string" ? (body as { message: string }).message : "Setup storage is unavailable" }))
+    }
     return body
   }).pipe(Effect.catch(error => Effect.fail(error instanceof SetupStoreError ? error : new SetupStoreError({ message: "Setup storage is unavailable" }))))
   const recordCall = (login: string, command: Command) => call(login, command).pipe(Effect.flatMap(body => Effect.gen(function* () {
