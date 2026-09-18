@@ -6,9 +6,9 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
-import { Effect, FileSystem, Layer } from "effect"
+import { Effect, FileSystem, Layer, Schema } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { assessSemantic, captureChecks, checkLocations, checksSummary, diffPaths, executeCommand, materializeProposal, probeCheckLocations, selectedComparison, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
+import { assessSemantic, captureChecks, CaptureChecks, checkLocations, checksSummary, diffPaths, executeCommand, materializeProposal, probeCheckLocations, selectedComparison, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check } from "../repository/schema.ts"
 
@@ -150,6 +150,17 @@ test("a summary that measured nothing names the kinds of the checks that did not
   assert.equal(checksSummary(plan, [checkResult({ checkId: "verify" })]), "No checks ran (1 configured command check skipped).")
   assert.equal(checksSummary(plan, [checkResult({ checkId: "withdrawn" })]), "No checks ran (1 configured check skipped).",
     "a result whose check the plan no longer carries contributes no kind")
+})
+
+test("a plan journaled before this step probed locations still decodes, and claims no search", async () => {
+  // The engine answers a journal hit by decoding the stored value through the
+  // action's own JSON codec, so a run captured by an older build resumes here.
+  const codec = Schema.toCodecJson(CaptureChecks.successSchema)
+  const encoded = await Effect.runPromise(Schema.encodeEffect(codec)(canaryPlan([], absent)))
+  const { searched, ...older } = encoded as Record<string, unknown>
+  assert.ok(searched, "the current build journals the locations it probed")
+  const decoded = await Effect.runPromise(Schema.decodeUnknownEffect(codec)(older))
+  assert.equal(checksSummary(decoded, [checkResult({})]), "No checks ran (1 configured ai check skipped).")
 })
 
 test("the check-location probe measures this immutable tree, not an alias out of it", async t => {

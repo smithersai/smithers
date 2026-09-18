@@ -24,7 +24,7 @@ export const Comparison = Schema.Struct({ base: Commit, candidate: Schema.NonEmp
   changes: Schema.Array(Schema.Struct({ path: Schema.String, before: Schema.NullOr(Schema.String), after: Schema.NullOr(Schema.String) })) })
 export const CheckSource = Schema.Struct({ path: Schema.NonEmptyString, present: Schema.Boolean })
 export const CheckPlan = Schema.Struct({ work: Work, comparison: Comparison, contexts: Schema.Array(CheckContext),
-  baseContexts: Schema.optionalKey(Schema.Array(CheckContext)), searched: Schema.Array(CheckSource) })
+  baseContexts: Schema.optionalKey(Schema.Array(CheckContext)), searched: Schema.optionalKey(Schema.Array(CheckSource)) })
 export const CheckResult = Schema.Struct({ checkId: Schema.String, policy: Check.fields.policy,
   status: Schema.Literals(["passed", "failed", "error", "skipped"]), summary: Schema.String,
   evidence: Schema.Array(Schema.String), executionId: Schema.String, detail: Schema.Json })
@@ -341,9 +341,10 @@ export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (ty
   const skipped = results.filter(result => result.status === "skipped")
   if (ran.length) return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed${skipped.length ? `, ${skipped.length} skipped` : ""}`
   const kinds = [...new Set(skipped.flatMap(result => plan.work.checks.filter(check => check.id === result.checkId).map(check => check.kind)))].sort()
-  const found = plan.searched.filter(source => source.present).map(source => source.path)
-  return `No checks ran${skipped.length ? ` (${skipped.length} configured ${kinds.length ? `${kinds.join("/")} ` : ""}check${skipped.length === 1 ? "" : "s"} skipped)` : ""}.${plan.searched.length
-    ? ` Searched for workflow files, manifests and scripts in ${plan.searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
+  const searched = plan.searched ?? []
+  const found = searched.filter(source => source.present).map(source => source.path)
+  return `No checks ran${skipped.length ? ` (${skipped.length} configured ${kinds.length ? `${kinds.join("/")} ` : ""}check${skipped.length === 1 ? "" : "s"} skipped)` : ""}.${searched.length
+    ? ` Searched for workflow files, manifests and scripts in ${searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
 }
 
 export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
