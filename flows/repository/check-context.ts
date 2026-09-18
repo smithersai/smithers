@@ -14,7 +14,9 @@ export const CheckContext = Schema.Struct({ checkId: Schema.String, source: Sche
   files: Schema.Array(Source), reads: Schema.Array(ContextRead) })
 export type CheckContext = typeof CheckContext.Type
 const maxFiles = 24, maxBytes = 128_000, maxReads = 96, maxDepth = 3
-const privatePath = (path: string) => /^\.smithers\/repository-jobs(?:\/|$)/i.test(path)
+/** A job's own retained configuration. `writeCandidate` commits it into the
+ * repository, and no check may read it back as reviewable source. */
+export const privatePath = (path: string): boolean => /^\.smithers\/repository-jobs(?:\/|$)/i.test(path)
 const script = /\.(?:[cm]?[jt]sx?)$/i
 const encoder = new TextEncoder()
 
@@ -80,9 +82,14 @@ export const sourceImports = (name: string, text: string): string[] => {
 
 export const contextFailure = (context: CheckContext, source: string, checkId: string, paths: readonly string[] = []): string | undefined => {
   if (context.source !== source || context.checkId !== checkId) return "Supporting context names another check or source"
-  const gap = context.reads.find(read => read.required && read.status !== "read")
+  // The comparison carries every changed file's own complete verified source, so
+  // a changed path this capture dropped at its read, file or byte budget is
+  // recorded evidence for the checker, not a gap in the repository.
+  const bounded = (read: typeof ContextRead.Type) => read.reason === "source" && read.status === "limit"
+  const gap = context.reads.find(read => read.required && read.status !== "read" && !bounded(read))
   if (gap) return `Supporting context ${gap.path}: ${gap.status}`
-  if (paths.some(path => !context.reads.some(read => read.path === path && read.required && read.reason === "source" && read.status === "read"))) return "Supporting context omits a changed source"
+  if (paths.some(path => !context.reads.some(read => read.path === path && read.reason === "source" &&
+      (bounded(read) || (read.required && read.status === "read"))))) return "Supporting context omits a changed source"
   for (const read of context.reads.filter(read => read.status === "read")) {
     const file = context.files.find(file => file.path === read.path)
     if (!file || file.truncated || file.digest !== read.digest || Digest.digest(file.text) !== file.digest) return `Supporting context ${read.path}: incomplete source`
@@ -95,6 +102,9 @@ export const captureCheckContext = (options: ImmutableSourceOptions, root: strin
   /** Host-selected direct rule paths for this source side. Imports never cross sides. */
   readonly ruleInputs?: readonly string[]
   readonly conventionPaths?: readonly string[]
+  /** Changed paths this check may not read. They are recorded as refused
+   * evidence so the checker sees what the change touched and was withheld. */
+  readonly refusedPaths?: readonly string[]
 }) => Effect.gen(function*() {
   const path = yield* Path.Path, fs = options.fs, reader = yield* repositorySourceReader(root, fs)
   type Pending = { path: string; from: string; reason: typeof ContextRead.Type["reason"]; required: boolean; depth: number }
@@ -113,6 +123,7 @@ export const captureCheckContext = (options: ImmutableSourceOptions, root: strin
   }
   for (const name of input.ruleInputs ?? rulePaths(input.check.rule)) add(name, "rule", "rule")
   for (const name of input.paths) { add(name, "comparison", "source"); conventions(name) }
+  for (const name of input.refusedPaths ?? []) add(name, "comparison", "source", false)
   for (const name of input.conventionPaths ?? []) conventions(name)
   const inspect = (name: string) => Effect.gen(function*() {
     if (normalizePath(name) !== name || privatePath(name)) return { status: "refused" as const }

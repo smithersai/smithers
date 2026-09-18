@@ -12,7 +12,7 @@ import { CodingError } from "../coding/schema.ts"
 import { currentExecutionId } from "./inspection.ts"
 import { Work } from "./jobs.ts"
 import { Check, Proposal, StepResult, type Draft, type JobResult, type Step } from "./schema.ts"
-import { captureCheckContext, CheckContext, contextFailure, rulePaths } from "./check-context.ts"
+import { captureCheckContext, CheckContext, contextFailure, privatePath, rulePaths } from "./check-context.ts"
 import { admitSourcePath, withCapturedCommit } from "./source.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -171,11 +171,20 @@ export const diffPaths = (diff: string): string[] => {
   if (diff.trim() && !paths.size) throw invalid("The native comparison did not identify the files it changed")
   return [...paths].sort()
 }
+const matched = (check: typeof Check.Type, path: string) => !check.paths.length || check.paths.some(pattern => matchesGlob(path, pattern))
+/** A job's own retained configuration is written into the repository by
+ * `writeCandidate` and refused by the context reader, so a change that touches
+ * it is recorded evidence and never reviewable scope a semantic check is asked
+ * to cover: supplying it would hand the checker the job's own configuration,
+ * and requiring it makes every such review error before the checker runs. */
+const reviewable = (check: typeof Check.Type, path: string) => check.kind !== "ai" || !privatePath(path)
 export const selectedComparison = (comparison: typeof Comparison.Type, check: typeof Check.Type): typeof Comparison.Type => {
   if (check.paths.some(pattern => pattern.startsWith("/") || pattern.split("/").includes(".."))) throw invalid("Check paths must stay inside the repository")
-  const paths = comparison.paths.filter(path => !check.paths.length || check.paths.some(pattern => matchesGlob(path, pattern)))
+  const paths = comparison.paths.filter(path => matched(check, path) && reviewable(check, path))
   return { ...comparison, paths, files: comparison.files.filter(file => paths.includes(file.path)), changes: comparison.changes.filter(file => paths.includes(file.path)) }
 }
+export const refusedComparison = (comparison: typeof Comparison.Type, check: typeof Check.Type): string[] =>
+  comparison.paths.filter(path => matched(check, path) && !reviewable(check, path))
 
 /** Full-file proposals alter only the private exported tree and name their exact preimages. */
 export const materializeProposal = (options: ImmutableSourceOptions, root: string, proposal: typeof Proposal.Type) => Effect.gen(function* () {
@@ -281,7 +290,8 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
     }
     const contexts = yield* Effect.forEach(semantic, check => captureCheckContext(options, root, {
       source: comparison.candidate, check, paths: selectedComparison(comparison, check).paths.filter(name => !deleted.has(name)),
-      ruleInputs: rulePaths(check.rule).filter(name => !deleted.has(name)), conventionPaths: selectedComparison(comparison, check).paths, deadlineAt: work.deadlineAt
+      ruleInputs: rulePaths(check.rule).filter(name => !deleted.has(name)), conventionPaths: selectedComparison(comparison, check).paths,
+      refusedPaths: refusedComparison(comparison, check), deadlineAt: work.deadlineAt
     }))
     const baseChecks = semantic.filter(check => {
       const scoped = selectedComparison(comparison, check).paths
