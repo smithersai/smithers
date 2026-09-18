@@ -42,19 +42,32 @@ describe("Events", () => {
         const hub = yield* Events.make(options)
         const anchor = yield* hub.publish({ type: "a", properties: {} })
         yield* hub.publish({ type: "b", properties: {} })
+        // The live subscriber registers only once the replay chunk has been
+        // written, and the heartbeat clock starts at that same moment, so a
+        // beat is the first observable proof that the stream is listening.
+        const beating = yield* Deferred.make<void>()
         const collected = yield* Effect.forkChild(
-          hub.stream({ after: anchor.payload.id }).pipe(Stream.take(5), Stream.runCollect)
+          hub.stream({ after: anchor.payload.id }).pipe(
+            Stream.tap((chunk) =>
+              chunk.startsWith(Events.heartbeatComment) ? Deferred.succeed(beating, undefined) : Effect.void
+            ),
+            Stream.takeUntil((chunk) => chunk.includes(`"type":"c"`)),
+            Stream.runCollect
+          )
         )
-        yield* Effect.sleep("5 millis")
+        yield* Deferred.await(beating)
         yield* hub.publish({ type: "c", properties: {} })
         return yield* Fiber.join(collected)
       })
     )
-    const [connected, replayed, live, ...beats] = result
+    const [connected, replayed, ...rest] = result
+    const live = rest.at(-1)
+    const beats = rest.slice(0, -1)
     expect(parse([connected!])[0]!.payload.type).toBe("server.connected")
     expect(parse([connected!])[0]!.directory).toBeUndefined()
     expect(parse([replayed!])[0]!.payload.type).toBe("b")
     expect(parse([live!])[0]!.payload.type).toBe("c")
+    expect(beats.length).toBeGreaterThan(0)
     expect(beats.every((beat) => beat.startsWith(Events.heartbeatComment))).toBe(true)
     expect(parse(beats)[0]!.payload.type).toBe("server.heartbeat")
   })
@@ -126,8 +139,19 @@ describe("Events", () => {
       Effect.gen(function*() {
         const hub = yield* Events.make(options)
         yield* hub.publish({ type: "a", properties: { sessionID: "s" } })
-        const collected = yield* Effect.forkChild(hub.stream({ bare: true }).pipe(Stream.take(4), Stream.runCollect))
-        yield* Effect.sleep("5 millis")
+        // As above: wait for a beat rather than a wall clock, so the live "b"
+        // is published into a stream that is already listening.
+        const beating = yield* Deferred.make<void>()
+        const collected = yield* Effect.forkChild(
+          hub.stream({ bare: true }).pipe(
+            Stream.tap((chunk) =>
+              chunk.startsWith(Events.heartbeatComment) ? Deferred.succeed(beating, undefined) : Effect.void
+            ),
+            Stream.takeUntil((chunk) => chunk.includes(`"type":"b"`)),
+            Stream.runCollect
+          )
+        )
+        yield* Deferred.await(beating)
         yield* hub.publish({ type: "b", properties: {} })
         return yield* Fiber.join(collected)
       })
@@ -137,7 +161,12 @@ describe("Events", () => {
         JSON.parse(line.slice(6)) as Record<string, unknown>
       )
     )
-    expect(bareEvents.map((event) => event["type"])).toEqual(["server.connected", "a", "b", "server.heartbeat"])
+    const bareTypes = bareEvents.map((event) => event["type"])
+    expect(bareTypes[0]).toBe("server.connected")
+    expect(bareTypes[1]).toBe("a")
+    expect(bareTypes.at(-1)).toBe("b")
+    expect(bareTypes.slice(2, -1)).toContain("server.heartbeat")
+    expect(bareTypes.slice(2, -1).every((type) => type === "server.heartbeat")).toBe(true)
     expect(bareEvents.every((event) => !("payload" in event) && !("directory" in event))).toBe(true)
     const count = await run(
       Effect.gen(function*() {
