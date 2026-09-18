@@ -28,6 +28,17 @@
 - The `/file` listing behind the app's folder picker leaves out directories
   whose name starts with a dot, so the picker no longer offers to open the
   project at `.git` or `.smithers`.
+- `GET /event` streams the bare `Event` (`{id, type, properties}`) of the
+  1.18.31 OpenAPI; `/global/event` keeps the `{directory, project, payload}`
+  envelope the app folds. A v1 client on `/event` (the SDK's
+  `event.subscribe`, the TUI) read `event.type` as undefined on every frame.
+- Each event stream's live queue is bounded to the replay depth (256),
+  sliding: a stalled consumer (a backgrounded tab, a half-closed socket)
+  keeps the newest events instead of every event of every later turn for
+  the life of the server.
+- A classify card's title leads with the door it went through
+  (`triage/relevance · 1 state · 3 questions · 212 ms`, or `ad hoc`), so a
+  check/verdict card is told from an edit/risk card without opening it.
 - The health dot reads the facts before the answers: a run parked on a
   permission, a question or quota, or ended by a cap, is red even when Jev is
   unavailable or unconfident (day one, with no gateway key, a park showed

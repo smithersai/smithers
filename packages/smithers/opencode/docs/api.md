@@ -57,17 +57,17 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 
 ## `Events`
 
-| Export             | Signature                                                     | Meaning                                                                                           |
-| ------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                                                   |
-| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                                                             |
-| `Service`          | `{ publish, replay, stream, close }`                          | Stamp and broadcast an event; read the replay buffer; one SSE body; end every stream on shutdown. |
-| `Events`           | `Context.Service`                                             | The hub service.                                                                                  |
-| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                                                     |
-| `frame`            | `(envelope: Envelope) => string`                              | One `data:` frame.                                                                                |
-| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                                                    |
-| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                                                  |
-| `defaultReplay`    | `number`                                                      | 256 events.                                                                                       |
+| Export             | Signature                                                     | Meaning                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                                                                                                                             |
+| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                                                                                                                                       |
+| `Service`          | `{ publish, replay, stream, close }`                          | Stamp and broadcast an event; read the replay buffer; one SSE body (`{ after?, bare? }`), its live queue bounded to `replay` events, sliding; end every stream on shutdown. |
+| `Events`           | `Context.Service`                                             | The hub service.                                                                                                                                                            |
+| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                                                                                                                               |
+| `frame`            | `(envelope: Envelope, bare?) => string`                       | One `data:` frame: the envelope, or with `bare` its payload alone (the `/event` shape).                                                                                     |
+| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                                                                                                                              |
+| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                                                                                                                            |
+| `defaultReplay`    | `number`                                                      | 256 events.                                                                                                                                                                 |
 
 ## `Store`
 
@@ -100,6 +100,7 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | `prose`, `answerText`, `chunks`                                                       | The model's prose outside code fences, the final answer, and its streamed deltas.                                                                                                                                               |
 | `slots`, `finalFrame`, `summarySlot`, `demandOrdinals`                                | The sort keys parts are derived from.                                                                                                                                                                                           |
 | `isClassify`, `classifyEntries`, `classifyAnswers`, `classifyOutput`, `classifyTitle` | How a classify call becomes the `classify` card: one line per state, the full answers as metadata.                                                                                                                              |
+| `classifyDoor`                                                                        | `(flowName) => string`: the curated id (`triage/relevance`) or `ad hoc`, which leads the classify card's title.                                                                                                                 |
 | `Step.health`                                                                         | The `Health.Facts` a folded event hands out when it triggers an evaluation: a settled cell, a park, an aborted close.                                                                                                           |
 | `decided`, `health`                                                                   | Fold a decision in: the dot on the title and a `health` card on a color change; `health` counts the Jev call when Jev answered and puts a failure on the card.                                                                  |
 | `Pricing`, `costOf`, `sessionNow`                                                     | Dollars per million tokens, the cost of a token count, and the session with this turn's tokens and cost.                                                                                                                        |
