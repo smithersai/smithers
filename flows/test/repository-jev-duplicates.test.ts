@@ -51,7 +51,7 @@ const runStep = async (work: typeof Work.Type, answer: (number: number) => Evalu
   })
   const seatOnly = (tag: string) => Effect.sync(() => {
     seat.push(tag)
-    return { classification: "unknown" as const, summary: "", question: "", citations: [], duplicates: [], reproduction: null }
+    return { summary: "", question: "", citations: [], reproduction: null }
   })
   const options = { repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } }
   const runtime = ManagedRuntime.make(Layer.mergeAll(
@@ -184,20 +184,9 @@ test("only a captured issue is a candidate, and never the event's own issue", ()
   assert.deepEqual(duplicateCandidates(workWith(prior)).map(candidate => candidate.number), [9])
 })
 
-test("the intake kind is the classification, and spam is irrelevant", () => {
-  const classification = (kind: NonNullable<typeof Work.Type["intake"]>["kind"] | undefined) =>
-    duplicateObservation(kind === undefined ? workWith([]) : workWith([], { kind, urgency: "low" }), []).classification
-  assert.equal(classification("bug"), "bug")
-  assert.equal(classification("feature"), "feature")
-  assert.equal(classification("question"), "question")
-  assert.equal(classification("spam"), "irrelevant")
-  assert.equal(classification("irrelevant"), "irrelevant")
-  assert.equal(classification(undefined), "unknown")
-})
-
 test("a matched record with no URL cites nothing rather than an unread reference", () => {
   const prior = [record(4, "no url", "")]
-  const observation: typeof Observation.Type = duplicateObservation(workWith(prior, { kind: "bug", urgency: "low" }), prior)
+  const observation: typeof Observation.Type = duplicateObservation(workWith(prior, { kind: "bug", urgency: "low" }), "bug", prior)
   assert.deepEqual([...observation.duplicates], [{ source: "github", number: 4, reason: same }])
   assert.deepEqual([...observation.citations], [])
 })

@@ -35,11 +35,19 @@ export const MAX_HUNK_BYTES = 32 * 1024
 export const MAX_STATES = 64
 
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
-const bounded = (text: string): string => {
-  const bytes = encoder.encode(text)
-  return bytes.length <= MAX_HUNK_BYTES ? text : decoder.decode(bytes.slice(0, MAX_HUNK_BYTES))
+const bytes = (value: string): number => encoder.encode(value).length
+/** Clips one string to a byte budget without splitting a surrogate pair. Every
+ * classifier in this directory holds its state to the same 32 KiB, so they all
+ * clip the same way. */
+export const clip = (value: string, limit: number): string => {
+  if (limit <= 0) return ""
+  if (bytes(value) <= limit) return value
+  let end = Math.min(value.length, limit)
+  while (end > 0 && bytes(value.slice(0, end)) > limit) end -= 1
+  if (end > 0 && value.codePointAt(end - 1)! >= 0xd800 && value.codePointAt(end - 1)! <= 0xdbff) end -= 1
+  return value.slice(0, end)
 }
+const bounded = (text: string): string => clip(text, MAX_HUNK_BYTES)
 
 /** One boolean per (rule, hunk). The state is exactly what the rule can be
  * judged against, so a hunk that needs more than itself reads indecisive. */

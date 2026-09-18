@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
@@ -22,6 +23,10 @@ const gate = { skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the 
 const RunEvaluate = Flow.make("test/RunEvaluate", { payload: Evaluate.payloadSchema, success: Evaluate.successSchema,
   error: CodingError, body: input => Evaluate.call(input) })
 const short = (id: string) => id.slice(0, 12)
+/** Every row's verdict is Jev's; this fixture is about source selection, so it
+ * answers `pass` confidently and lets the recorded facts decide the rest. */
+const scoredPass = Evaluator.layerScripted(() => ({
+  verdict: { choice: "pass", probabilities: { pass: 0.95, fail: 0.03, review: 0.02 } } }))
 /** A commit id no repository in this fixture holds; its lookup is the blind one. */
 const unreachable = "a".repeat(40)
 const judged = "The recorded result answers from the captured README."
@@ -91,7 +96,7 @@ const ciEvent = json({ source: "smithers-cloud", type: "manual", action: "manual
 /** The production wiring is `"snapshot"`; `"immutable"` is the captured-source path. */
 async function harness(t: TestContext, mode: "snapshot" | "immutable") {
   const f = await fixture(t, mode), captured: string[] = [], executed: string[] = [], refused = new Set<string>()
-  const runtime = ManagedRuntime.make(Layer.mergeAll(evaluationLayers, Interpreter.layer(Investigate), Interpreter.layer(RunEvaluate),
+  const runtime = ManagedRuntime.make(Layer.mergeAll(evaluationLayers({ evaluator: scoredPass }), Interpreter.layer(Investigate), Interpreter.layer(RunEvaluate),
     CaptureRepository.toLayer(input => {
       if (input.sourceRevision !== undefined) captured.push(input.sourceRevision)
       return input.sourceRevision !== undefined && refused.has(input.sourceRevision)
@@ -106,7 +111,7 @@ async function harness(t: TestContext, mode: "snapshot" | "immutable") {
     FinishJob.toLayer(({ input, results }) => Effect.succeed({ repo: input.repo, job: input.job, revision: input.revision,
       digest: input.digest, sourceRevision: input.sourceRevision, eventKey: input.event.deliveryKey, status: "completed" as const,
       results: Object.values(results), publicActions: [] } satisfies JobResult)),
-    ScoreCase.toLayer(() => Effect.succeed({ verdict: "pass" as const, reason: judged, evidenceIds: [1] }))
+    ScoreCase.toLayer(() => Effect.succeed({ reason: judged, evidenceIds: [1] }))
   ).pipe(Layer.provide(f.owned), Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer)))
   t.after(() => runtime.dispose())

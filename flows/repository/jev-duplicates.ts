@@ -5,8 +5,8 @@ import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Result, Schema } from "effect"
 import { CodingError } from "../coding/schema.ts"
-import { batches } from "./jev-checks.ts"
-import type { Observation, Work } from "./jobs.ts"
+import { batches, clip } from "./jev-checks.ts"
+import type { Classification, Observation, Work } from "./jobs.ts"
 import type { Record } from "./schema.ts"
 
 /**
@@ -72,15 +72,6 @@ export type PairState = typeof PairState.Type
 
 const encoder = new TextEncoder()
 const bytes = (value: string): number => encoder.encode(value).length
-/** Clips to a byte budget without splitting a surrogate pair. */
-const clip = (value: string, limit: number): string => {
-  if (limit <= 0) return ""
-  if (bytes(value) <= limit) return value
-  let end = Math.min(value.length, limit)
-  while (end > 0 && bytes(value.slice(0, end)) > limit) end -= 1
-  if (end > 0 && value.codePointAt(end - 1)! >= 0xd800 && value.codePointAt(end - 1)! <= 0xdbff) end -= 1
-  return value.slice(0, end)
-}
 const object = (value: unknown): globalThis.Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as globalThis.Record<string, unknown> : {}
 const string = (value: unknown): string => typeof value === "string" ? value : ""
@@ -128,26 +119,20 @@ export const duplicateStates = (work: typeof Work.Type): ReadonlyArray<PairState
   })
 }
 
-/** The intake screen's own vocabulary, carried onto the observation's. The
- * screen answers about the raw event and has no `unknown`; a job whose screen
- * answered nothing has no classification to report. */
-const classification = (work: typeof Work.Type): typeof Observation.Type["classification"] => {
-  const kind = work.intake?.kind
-  return kind === undefined ? "unknown" : kind === "spam" ? "irrelevant" : kind
-}
-
 /** The whole observation a duplicates step retains, built from Jev's answers
  * and the captured evidence alone: no prose, no follow-up question, and no
- * citation this execution did not read. */
+ * citation this execution did not read. The classification is the one
+ * `InvestigateStep` already read off the intake screen. */
 export const duplicateObservation = (
   work: typeof Work.Type,
+  classification: typeof Classification.Type,
   matched: ReadonlyArray<typeof Record.Type>
 ): typeof Observation.Type => {
   const judged = duplicateCandidates(work).length
   const allowed = new Set([...work.evidence.files.map(file => file.path),
     ...work.evidence.records.map(record => record.url).filter(Boolean)])
   return {
-    classification: classification(work),
+    classification,
     summary: matched.length
       ? `Jev matched ${matched.length} of ${judged} prior records as the same defect.`
       : "Jev found no prior record describing the same defect.",
@@ -172,11 +157,12 @@ const failed = (message: string): CodingError => new CodingError({ code: "unavai
  * compare, so there is no decision to make.
  */
 export const jevDuplicates = (
-  work: typeof Work.Type
+  work: typeof Work.Type,
+  classification: typeof Classification.Type
 ): Effect.Effect<typeof Observation.Type, CodingError, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     const candidates = duplicateCandidates(work)
-    if (!candidates.length) return duplicateObservation(work, [])
+    if (!candidates.length) return duplicateObservation(work, classification, [])
     const states = duplicateStates(work)
     const answered = (yield* Effect.forEach(batches(states), batch => pairClassifier.evaluateAll(batch), { concurrency: 1 })).flat()
     if (answered.length !== candidates.length) return yield* failed("Jev answered a different number of prior records than it was asked about")
@@ -195,5 +181,5 @@ export const jevDuplicates = (
     if (matched.length > MAX_DUPLICATES) {
       return yield* failed(`Jev matched ${matched.length} of ${candidates.length} prior records, more than one observation may carry`)
     }
-    return duplicateObservation(work, matched)
+    return duplicateObservation(work, classification, matched)
   })

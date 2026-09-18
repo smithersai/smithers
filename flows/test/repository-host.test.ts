@@ -201,21 +201,17 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     const suggesting = text.includes("Propose a configuration for this one repository responsibility")
     const changing = text.includes("Implement the maintainer's configured responsibility as a bounded full-file proposal")
     const checking = text.includes("Check the maintainer's exact rule against this captured base/candidate comparison")
-    const reviewingRepro = text.includes("Independently review this executed reproduction against the original issue")
     const taskText = request.system.find(part => part.type === "text" && part.text.startsWith("The task for this run:\n\n"))
     const task = taskText?.type === "text" ? JSON.parse(taskText.text.slice("The task for this run:\n\n".length).split("\n")[0]!) : undefined
     if (!scoring && !suggesting) assert(!text.includes("HELD_OUT_EXPECTATION"), "production worker must not receive expected eval answers")
     if (scoring) assert(text.includes("HELD_OUT_EXPECTATION"), "the independent judge keeps the maintainer's expectation")
     const response: any = suggesting ? { ...setup.draft, cases: setup.draft.cases.map(test => ({ ...test, input: JSON.parse(test.input) })) } : scoring
-      ? { verdict: "pass", reason: "The recorded result classifies a question and cites the source greeting.", evidenceIds: [0] }
+      ? { reason: "The recorded result answers a question and cites the source greeting.", evidenceIds: [0] }
       : checking ? { verdict: "pass", summary: "Every supplied changed file matches the fixture's requested behavior.", examinedPaths: task.comparison.paths, findings: [] }
-      : reviewingRepro ? { verdict: task.result.output.fixture[0].content.includes("import { greeting }") ? "demonstrates" : "unrelated",
-        summary: task.result.output.fixture[0].content.includes("import { greeting }") ? "The executed assertion imports the repository greeting and establishes its wrong value." : "An unconditional throw does not exercise repository behavior.",
-        citations: ["greeting.mjs", "repro.mjs"] }
       : changing ? { summary: "Change the greeting to goodbye and retain its regression test.", question: "", baseline: [],
         proposal: [{ path: "greeting.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "greeting.mjs").digest, content: "export const greeting = 'goodbye';\n" },
           { path: "regression.mjs", beforeDigest: null, content: "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }], children: [] }
-      : { classification: "question", summary: "The exported greeting is hello.", question: "", citations: ["greeting.mjs"], duplicates: [], reproduction: null }
+      : { summary: "The exported greeting is hello.", question: "", citations: ["greeting.mjs"], reproduction: null }
     if (changing && deleting) {
       response.summary = "Remove the obsolete handler and verify it stays absent."
       response.proposal = [{ path: "obsolete.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "obsolete.mjs").digest, content: null },
@@ -248,12 +244,13 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       response.verdict = "uncertain"
       response.summary = "The telemetry helper required by this rule was not supplied."
     }
-    if (!scoring && !suggesting && !checking && !changing && !reviewingRepro && task.event.payload.issue?.title === "Ask twice") {
+    if (!scoring && !suggesting && !checking && !changing && task.event.payload.issue?.title === "Ask twice") {
       const replies = task.event.payload.authorReplies ?? []
       response.question = replies.length < 2 ? `Provide detail ${replies.length + 1}` : ""
     }
+    // The step's classification is the intake screen's own answer about this
+    // issue, so a reproduce step only proposes the fixture.
     if (!scoring && !suggesting && task.step?.id === "reproduce" && ["Reproduce greeting", "False reproduction"].includes(task.event.payload.issue?.title)) {
-      response.classification = "bug"
       response.reproduction = { files: [{ path: "repro.mjs", content: task.event.payload.issue.title === "False reproduction" ? "throw new Error('wrong greeting');\n"
         : "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }],
         argv: [process.execPath, "repro.mjs"], cwd: ".", expected: "The greeting is goodbye", failureContains: "wrong greeting", timeoutMs: 5000 }

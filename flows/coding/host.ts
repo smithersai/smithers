@@ -105,8 +105,7 @@ export const roleResolver = (base: SeatResolver.Service, implementationModel: st
     "coding/poc": models.pocModel ?? implementationModel,
     "wiki/reviewer": models.wikiModel ?? implementationModel,
     "repository/research": models.planningModel ?? implementationModel,
-    "repository/evaluator": models.planningModel ?? implementationModel,
-    "repository/checker": models.planningModel ?? implementationModel, "repository/author": implementationModel }
+    "repository/evaluator": models.planningModel ?? implementationModel, "repository/author": implementationModel }
   return SeatResolver.make({ resolve: id => base.resolve(Object.hasOwn(roles, id) ? roles[id]! : id).pipe(
     Effect.map(seat => Object.hasOwn(roles, id) ? Seat.make({ ...seat, id }) : seat)
   ) })
@@ -158,16 +157,17 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer)),
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])
     )
-    // Jev, the decision-only model the intake screen asks about every inbound
-    // event and the AI checks ask about every changed hunk. It is the only
-    // model that answers either question. A host without AI_GATEWAY_API_KEY
-    // installs the unavailable transport, so every AI check errors and every
-    // event intake fails with that typed error, by design: nothing falls back
+    // Jev, the decision-only model behind every enumerable answer this host
+    // makes: the intake screen over each inbound event, the duplicates step,
+    // each AI check's changed hunks, a reproduction review's verdict and an
+    // evaluation row's verdict. It is the only model that answers any of them.
+    // A host without AI_GATEWAY_API_KEY installs the unavailable transport, so
+    // each of those fails with that typed error, by design: nothing falls back
     // to a frontier seat and no unscreened text reaches a model prompt.
     const evaluator = evaluatorLayer(process.env)
     const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
-        exporterPath: options.exporterPath, environment: options.checkEnvironment, evaluator }), evaluationLayers,
+        exporterPath: options.exporterPath, environment: options.checkEnvironment, evaluator }), evaluationLayers({ evaluator }),
       setupLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }), activationLayers, triggerLayers, replyLayers, deliveryLayers,
       repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath,
         environment: options.checkEnvironment, evaluator }),

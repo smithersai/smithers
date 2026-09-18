@@ -9,10 +9,11 @@ import { normalizePath } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { captureCiPolicy, composeCiChecks, inheritsCiPolicy, revalidateCiPolicy } from "./ci-policy.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
-import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, JevDuplicates, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
+import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, JevDuplicates, JevReproduction, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
 import { Event, StepResult, type IntakeScreening, type JobInput } from "./schema.ts"
 import { screenEvent } from "./intake.ts"
 import { jevDuplicates } from "./jev-duplicates.ts"
+import { jevReproduction } from "./jev-reproduction.ts"
 import { CheckStep, reviewCheck } from "./checks.ts"
 import { ProposalStep } from "./changes.ts"
 import { RepositoryRemote } from "./remote.ts"
@@ -106,7 +107,9 @@ export const assessReproduction = (work: typeof Work.Type, observation: typeof O
 }
 const result = (work: typeof Work.Type, observation: typeof Observation.Type, executionId: string): typeof StepResult.Type => ({
   stepId: work.step.id,
-  status: observation.question.trim() ? "needs-author" : observation.classification === "unknown" ? "needs-maintainer" : "completed",
+  // Every observation carries the screen's own classification, so there is no
+  // "the model could not tell" escalation left to make here.
+  status: observation.question.trim() ? "needs-author" : "completed",
   summary: observation.summary, evidence: observation.citations.map(reference => {
     const file = work.evidence.files.find(file => file.path === reference)
     return file ? `source:${file.path}@${file.digest}` : reference
@@ -132,12 +135,14 @@ export const captureJobSource = (options: ImmutableSourceOptions, input: typeof 
     return { ...evidence, subject: screened.payload, intake: screened.screening }
   }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
     orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))
-/** `evaluator` is the duplicates step's whole model. A composition that names
- * none keeps `layerUnavailable`, so every duplicates step fails as unavailable
- * rather than reporting a history it never read. */
+/** `evaluator` is the whole model behind the duplicates step and the
+ * reproduction review. A composition that names none keeps `layerUnavailable`,
+ * so both fail as unavailable rather than reporting an answer they never got. */
 export const executionLayers = (options: ImmutableSourceOptions & { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   CaptureJob.toLayer(input => captureJobSource(options, input)),
-  JevDuplicates.toLayer(({ work }) => jevDuplicates(work)).pipe(
+  JevDuplicates.toLayer(({ work, classification }) => jevDuplicates(work, classification)).pipe(
+    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
+  JevReproduction.toLayer(({ work, observation, result }) => jevReproduction(work, observation, result.output)).pipe(
     Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
   RetainObservation.toLayer(({ work, observation }) => Effect.gen(function*() {
     yield* Effect.try({ try: () => verifyObservation(work, observation), catch: error => error instanceof CodingError ? error : invalid("Invalid step evidence") })
@@ -198,8 +203,9 @@ export const executionLayers = (options: ImmutableSourceOptions & { readonly eva
       const work = { repo: input.repo, job: input.job, event: { ...input.event, payload: evidence.subject ?? input.event.payload }, step, evidence, deadlineAt, policy,
         checks: input.configuration.checks, landing: input.configuration.landing, replies: input.configuration.replies,
         executionMode: evaluation ? "evaluation" as const : input.event.trial ? "trial" as const : "live" as const,
-        // The screen's answers ride along as data. Nothing reads them yet;
-        // Observation.classification stays the investigation's own finding.
+        // The screen's answers ride along. `kind` is the authority for every
+        // Observation.classification this step produces, so a step that needs
+        // one and finds none here refuses instead of asking a seat.
         ...(evidence.intake?.kind === undefined || evidence.intake.urgency === undefined ? {}
           : { intake: { kind: evidence.intake.kind, urgency: evidence.intake.urgency } }) }
       const subject = object(object(work.event.payload).issue)
