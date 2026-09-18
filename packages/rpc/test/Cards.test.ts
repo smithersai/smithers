@@ -13,8 +13,18 @@ import { LSP_DIAGNOSTICS_CAP } from "../src/LocalLsp.ts"
 import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
 
 const builtIn = AGENT_ROLES[0]!
-const builtInCardRow = { id: builtIn.id, label: builtIn.label, purpose: builtIn.purpose, harness: builtIn.harness,
-  model: builtIn.model, builtin: true, harnessName: "Claude", available: true, reason: "", account: "will@example.com" }
+const builtInCardRow = {
+  id: builtIn.id,
+  label: builtIn.label,
+  purpose: builtIn.purpose,
+  harness: builtIn.harness,
+  model: builtIn.model,
+  builtin: true,
+  harnessName: "Claude",
+  available: true,
+  reason: "",
+  account: "will@example.com"
+}
 
 const base = { id: "card-r1", title: "Aomi", status: "active", createdAt: 0, ordinal: 0 }
 
@@ -172,10 +182,17 @@ describe("the agent cards", () => {
   const row = builtInCardRow
 
   test("the agents card retains availability but resets custom definitions and edited built-in models", () => {
-    const card = CardSchema.parse({ ...base, kind: "agents", payload: { native: true, agents: [
-      { ...row, model: { provider: "openai", id: "gpt 5", label: "Edited" }, label: "Edited" },
-      { ...row, id: "custom-reviewer", builtin: false }
-    ] } })
+    const card = CardSchema.parse({
+      ...base,
+      kind: "agents",
+      payload: {
+        native: true,
+        agents: [
+          { ...row, model: { provider: "openai", id: "gpt 5", label: "Edited" }, label: "Edited" },
+          { ...row, id: "custom-reviewer", builtin: false }
+        ]
+      }
+    })
     expect(card.payload).toEqual({ native: true, agents: [row] })
   })
 
@@ -387,6 +404,53 @@ const statusRollup = (subjectId: string, state: string, activity: string) => ({
   updatedAt: 1_757_000_000_000
 })
 
+/*
+ * Repository setup (src/RepositorySetup.ts). A draft is a required payload
+ * field, so both fixtures carry one; `choreEvent` is stated because it is
+ * defaulted, and a fixture that left it out would not equal what decoding
+ * produces. `setupReceipt` is the host's evidence for one executed operation.
+ */
+const setupDraft = {
+  steps: [{ id: "research", name: "Research issue", mode: "automatic", prompt: "Classify the issue." }],
+  checks: [],
+  cases: [],
+  replies: "draft",
+  landing: "ask",
+  scope: "future",
+  label: "",
+  schedule: "",
+  choreEvent: "none",
+  budgetMinutes: 10,
+  connectIssues: false,
+  trialTitle: "[Smithers test] Handle issues",
+  trialBody: "A scoped setup trial."
+}
+
+const setupDigest = "0".repeat(64)
+
+const setupReceipt = (requestId: string, operation: string, phase: string) => ({
+  requestId,
+  runId: `run-${requestId}`,
+  jobRunId: `job-${requestId}`,
+  revision: 1,
+  operation,
+  phase,
+  digest: setupDigest,
+  updatedAt: 1_757_000_000_000,
+  results: [{
+    caseId: "case-1",
+    status: "passed",
+    observed: "the reply cited the failing line",
+    evidence: ["https://example.invalid/run/1"],
+    executionId: "exec-1"
+  }],
+  evidence: ["https://example.invalid/run/1"],
+  error: "the workspace went away",
+  trialIssue: { source: "github", number: 12, url: "https://example.invalid/issues/12" },
+  registrationId: "registration-1",
+  sourceRevision: "abc1234"
+})
+
 type KindFixtures = {
   /** Only the fields the schema requires: what a card persisted before every later lane carries. */
   readonly minimal: Record<string, unknown>
@@ -465,12 +529,41 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "billing-plans": {
     minimal: { planKey: null, sandbox: null, plans: [], checkout: false },
     full: {
-      planKey: "free", checkout: true,
-      sandbox: { concurrentSandboxes: 1, concurrentInUse: 1, idleTimeoutSecs: 1800, hoursPerDay: 4, secondsUsedToday: 3600, dayResetsAt: "2026-09-16T00:00:00Z" },
-      plans: [{ key: "pro", display_name: "Pro", price_cents: 5000, interval: "monthly", checkout_available: true, limits: {
-        concurrent_sandboxes: 3, idle_timeout_secs: 14400, hours_per_day: -1, private_repos: -1, storage_bytes: -1, ci_minutes: -1, agent_runs: -1, seats: 1
-      } }],
-      refusal: { status: 402, code: "plan_limit_exceeded", message: "Upgrade or suspend a sandbox.", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" }
+      planKey: "free",
+      checkout: true,
+      sandbox: {
+        concurrentSandboxes: 1,
+        concurrentInUse: 1,
+        idleTimeoutSecs: 1800,
+        hoursPerDay: 4,
+        secondsUsedToday: 3600,
+        dayResetsAt: "2026-09-16T00:00:00Z"
+      },
+      plans: [{
+        key: "pro",
+        display_name: "Pro",
+        price_cents: 5000,
+        interval: "monthly",
+        checkout_available: true,
+        limits: {
+          concurrent_sandboxes: 3,
+          idle_timeout_secs: 14400,
+          hours_per_day: -1,
+          private_repos: -1,
+          storage_bytes: -1,
+          ci_minutes: -1,
+          agent_runs: -1,
+          seats: 1
+        }
+      }],
+      refusal: {
+        status: 402,
+        code: "plan_limit_exceeded",
+        message: "Upgrade or suspend a sandbox.",
+        plan_key: "free",
+        limit_kind: "concurrent_sandboxes",
+        upgrade_plan_key: "pro"
+      }
     }
   },
   balance: {
@@ -1820,6 +1913,87 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       }]
     }
   },
+  /*
+   * Repository setup: the editable candidate plus the host's evidence about it.
+   * `previousReceipts` carries a default, so a card written before that field
+   * decodes with an empty history rather than with the field absent, and the
+   * minimal fixture states what that card reads back as.
+   */
+  "repository-setup": {
+    minimal: {
+      repo: "smithersai/smithers",
+      job: "issues",
+      revision: 1,
+      owner: null,
+      draft: setupDraft,
+      view: "flows",
+      selectedStep: "research",
+      sources: [],
+      previousReceipts: []
+    },
+    full: {
+      repo: "smithersai/smithers",
+      job: "issues",
+      revision: 2,
+      owner: "will",
+      workspaceId: "9f1d4d7e-6d1f-4a2b-8d0e-2f3a4b5c6d7e",
+      draft: setupDraft,
+      view: "work",
+      selectedStep: "research",
+      manualDraft: { stepId: "research", prompt: "Look at the flake", source: "github", number: 12 },
+      guidance: { id: "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed", state: "admitted", error: "the model refused" },
+      sources: [{ path: "CONTRIBUTING.md", status: "read", summary: "states the review rules", revision: "abc1234" }],
+      inspectedAt: 1_757_000_000_000,
+      request: {
+        id: "request-1",
+        operation: "run",
+        revision: 2,
+        digest: setupDigest,
+        state: "running",
+        error: "the host refused the request",
+        manual: {
+          stepId: "research",
+          prompt: "Look at the flake",
+          subject: { source: "github", kind: "issue", number: 12 }
+        },
+        observeOnly: false
+      },
+      evaluation: setupReceipt("evaluate-1", "evaluate", "completed"),
+      trial: setupReceipt("trial-1", "trial", "completed"),
+      receipt: setupReceipt("apply-1", "apply", "running"),
+      previousReceipts: [setupReceipt("inspect-1", "inspect", "completed")],
+      active: {
+        revision: 1,
+        digest: setupDigest,
+        registrationId: "registration-1",
+        sourceRevision: "abc1234",
+        enabled: true,
+        owned: true,
+        draft: setupDraft,
+        schedule: { expression: "0 9 * * 1", nextFireAt: "2026-09-21T09:00:00+00:00" }
+      },
+      recovery: {
+        id: "recovery-1",
+        baseRevision: 1,
+        baseDigest: setupDigest,
+        adoptDraft: true,
+        state: "completed",
+        registrationState: "known",
+        error: "the registry did not answer",
+        trialRegistration: {
+          registrationId: "registration-1",
+          workspaceId: "9f1d4d7e-6d1f-4a2b-8d0e-2f3a4b5c6d7e",
+          revision: 1,
+          digest: setupDigest,
+          sourceRevision: "abc1234",
+          enabled: false,
+          owned: true,
+          draft: setupDraft,
+          schedule: { expression: "0 9 * * 1", nextFireAt: "2026-09-21T09:00:00+00:00" }
+        }
+      }
+    }
+  },
   retired: { minimal: {}, full: {} },
   "plugin-library": {
     minimal: { tutorial: false },
@@ -1836,8 +2010,17 @@ const payloadFields = (kind: string): Record<string, z.ZodType> | null => {
   return payload instanceof z.ZodObject ? payload.shape as Record<string, z.ZodType> : null
 }
 
-/** True when the schema accepts the field's absence — the "optional so older cards parse" promise. */
-const optional = (schema: z.ZodType): boolean => schema.safeParse(undefined).success
+/**
+ * True when the schema accepts the field's absence and leaves it absent: the
+ * "optional so older cards parse" promise. A field carrying a default also
+ * accepts absence, but fills itself in, so the payload read back off disk
+ * states it. It belongs in the minimal fixture, where the assertions below can
+ * see exactly what a card written before that field now decodes to.
+ */
+const optional = (schema: z.ZodType): boolean => {
+  const absent = schema.safeParse(undefined)
+  return absent.success && absent.data === undefined
+}
 
 /** Union payloads have branch-specific compatibility checks below. */
 const objectKinds = kinds.filter((kind) => payloadFields(kind) !== null)
@@ -2036,25 +2219,52 @@ describe("the persisted local and cloud agent variants", () => {
 describe("removed presentation compatibility", () => {
   const saved = (kind: string, payload: unknown) => ({ ...base, kind, payload, body: "Old content", loading: true })
   const retired = [
-    ...["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form"].map(kind => saved(kind, { draft: "old data" })),
+    ...["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form"].map((kind) =>
+      saved(kind, { draft: "old data" })
+    ),
     saved("connector-setup", { connector: "linear" }),
     saved("sync-ops", { source: "linear" }),
-    ...["repo.welcome", "repo.explore", "repo.contribute", "repo.maintain", "repo.home", "factory.show",
-      "workspace.fork", "workspace.snapshot", "workspace.snapshot.delete", "workspace.snapshot.fork", "workspace.template",
-      "change.open-computer", "agent.create", "agent.edit", "agent.models", "agent.new", "agent.remove",
-      "issues.link-linear", "issues.unlink-linear", "sync.retry", "sync.ops.load-older", "linear.setup"].map(flow =>
-      saved("flow-form", { flow, via: "user", submitting: true, draft: { secret: "obsolete" } }))
+    ...[
+      "repo.welcome",
+      "repo.explore",
+      "repo.contribute",
+      "repo.maintain",
+      "repo.home",
+      "factory.show",
+      "workspace.fork",
+      "workspace.snapshot",
+      "workspace.snapshot.delete",
+      "workspace.snapshot.fork",
+      "workspace.template",
+      "change.open-computer",
+      "agent.create",
+      "agent.edit",
+      "agent.models",
+      "agent.new",
+      "agent.remove",
+      "issues.link-linear",
+      "issues.unlink-linear",
+      "sync.retry",
+      "sync.ops.load-older",
+      "linear.setup"
+    ].map((flow) => saved("flow-form", { flow, via: "user", submitting: true, draft: { secret: "obsolete" } }))
   ]
   test.each(retired)("retires $kind without losing the card identity", (row) => {
     const result = CardSchema.parse(JSON.parse(JSON.stringify(row)))
     expect(result).toEqual({ ...base, kind: "retired", title: "", status: "acted", payload: {}, loading: false })
     expect(CardSchema.parse(result)).toEqual(result)
     expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [row] }).cards).toEqual([result])
-    if (row.kind !== "flow-form") expect(CardPatchSchema.safeParse({ kind: row.kind, payload: row.payload }).success).toBe(false)
+    if (row.kind !== "flow-form") {
+      expect(CardPatchSchema.safeParse({ kind: row.kind, payload: row.payload }).success).toBe(false)
+    }
   })
   test("the old snapshot facet becomes a terminal while internal snapshot provenance survives", () => {
-    const old = saved("workspace", { ...FIXTURES.workspace.minimal, facet: "snapshots", snapshot: true,
-      snapshots: [{ id: "old", name: "Old", createdAt: null }] })
+    const old = saved("workspace", {
+      ...FIXTURES.workspace.minimal,
+      facet: "snapshots",
+      snapshot: true,
+      snapshots: [{ id: "old", name: "Old", createdAt: null }]
+    })
     const result = CardSchema.parse(old)
     expect(result.kind).toBe("workspace")
     expect(result.payload).toMatchObject({ facet: "terminal", snapshot: true, workspaceId: "ws-1" })

@@ -22,10 +22,10 @@ Each route family has one home module, and a route constant is declared only the
 | `/api/targets`                                                                                                                                                                     | `TargetGraph.ts`           |
 | `/api/bootstrap`                                                                                                                                                                   | `AppBootstrap.ts`          |
 | `/api/tutorial/live`                                                                                                                                                               | `LiveTutorial.ts`          |
+| `/api/repository-setup`                                                                                                                                                            | `RepositorySetup.ts`       |
 | `/api/tutorial/provider`                                                                                                                                                           | `TutorialProviderProxy.ts` |
 | `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`        |
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.
 
 Run `pnpm run check`, `pnpm run lint`, and `pnpm run test` here. Sources use the standard NodeNext configuration with unchecked indexed access enabled; an array or dictionary lookup must handle absence. Tests live in `test/` and run under Vitest, matching the other packages. `IndexAccess.types.ts` pins the compiler contract.
-
