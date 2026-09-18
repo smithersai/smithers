@@ -110,6 +110,11 @@ describe("copied producer record admission", () => {
     ["non-record attempted metadata", (state) => {
       state.record.meta = null
     }],
+    // Absent metadata is not the ancestor's metadata, and comparing the two
+    // never canonicalizes `undefined`.
+    ["absent attempted metadata", (state) => {
+      state.record = { ...state.record, meta: undefined }
+    }],
     ["cyclic ancestry", (state) => {
       const remote = { lineageId: FlowEngine.Lineage.root("unrelated") }
       state.parents.parent = "child"

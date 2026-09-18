@@ -323,6 +323,13 @@ describe("validated history identity", () => {
       s.child[0] = makeEntry("child", { meta: { lineageId: "foreign" } })
       s.child[1] = { ...marker(), meta: { lineageId: "foreign" } }
       s.parent[0] = makeEntry("parent", { meta: { lineageId: "foreign" } })
+    }],
+    // The ancestry walk ends on the right lineage, so the record is proven,
+    // but a verdict's metadata carries the lineage and nothing else.
+    ["extra fields beside a proven ancestor lineage", (s) => {
+      const decorated = { ...meta, forkedFrom: "parent" }
+      s.child[0] = makeEntry("child", { meta: decorated })
+      s.parent[0] = makeEntry("parent", { meta: decorated })
     }]
   ]
   for (const [name, mutate] of mutations) {
