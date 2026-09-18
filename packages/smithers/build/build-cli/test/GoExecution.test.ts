@@ -5,6 +5,10 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -429,6 +433,35 @@ describe.runIf(hasGo)("Go native compiler inputs", () => {
 })
 
 describe.runIf(hasGo)("Go toolchain environment", () => {
+  /**
+   * The confinement admitted the directories the SDK's executables sit in --
+   * `$GOROOT/bin` and `$GOTOOLDIR` -- and nothing else of the SDK. `go build`
+   * compiles the standard library from `$GOROOT/src` and reads `$GOROOT/lib`
+   * and `$GOROOT/go.env`, so every Go target failed with
+   * `package <path>: cannot find package`. It was invisible on a host whose Go
+   * lives under a broad runtime grant (`/usr`, `/opt/homebrew`, `/nix/store`)
+   * and fatal on one where it does not, which is every GitHub runner: the SDK
+   * sits in the hosted tool cache. The SDK is one installed tree, and the whole
+   * of it is the toolchain's read.
+   */
+  it("admits the whole selected SDK, not just the directories its executables sit in", async () => {
+    const root = await fixture()
+    const goPath = PackageTree.findOnPath("go")!
+    const probe = await PackageTree.probeVersion(goPath, { cwd: root, args: ["env", "-json", "GOROOT"] })
+    const { GOROOT } = JSON.parse(probe.output) as { readonly GOROOT: string }
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const planned = await PackageExec.plan({
+      index: PackageIndex.make(loaded),
+      pattern: "//:test",
+      cacheDirectory: ".flows",
+      verb: "auto"
+    })
+    const reads = planned.nodes.get("//:test")?.externalReads
+    expect(reads).toContain(GOROOT)
+    // The grant is the SDK, not its parent: a sibling installation stays out.
+    expect(reads).not.toContain(NodePath.dirname(GOROOT))
+  }, 120_000)
+
   it("gives the toolchain's GOEXPERIMENT to plan-time go list, so a jsonv2 module plans and runs", async () => {
     const root = await experimentFixture()
     const plan = await serve(root, ["//:test", "--plan"])

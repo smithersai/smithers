@@ -598,7 +598,13 @@ const goIdentity = async (
   resolved: Extract<Awaited<ReturnType<typeof GoExec.resolveGo>>, { readonly ok: true }>
 ): Promise<unknown> => ({
   resolution: resolved.identity,
-  executables: await Promise.all(resolved.executables.map((path) => binaryIdentity(context, path)))
+  executables: await Promise.all(resolved.executables.map((path) => binaryIdentity(context, path))),
+  // `go build` compiles the standard library from `$GOROOT/src` and reads
+  // `$GOROOT/go.env` and `$GOROOT/lib`, none of which sit beside the
+  // executables above. The SDK is one installed tree, so name its root here
+  // and let the confinement admit the whole of it. The launcher's own host
+  // path already keys, so the root adds no new key variation.
+  sdkRoot: { _tag: "ExecutableRoot", path: resolved.sdkRoot }
 })
 
 const moduleVersion = async (root: string, packageName: string): Promise<string | null> => {
@@ -2729,6 +2735,23 @@ const visit = async (
         const read = temporaryRoots.has(directory) || Path.contains(directory, context.root) ? path : directory
         if (!externalReads.includes(read)) externalReads.push(read)
       }
+    }
+    // A toolchain SDK is an installed tree, not a bin directory. Admitting
+    // only the directories its executables sit in left the rest of the tree
+    // hidden, which is invisible on a host whose SDK happens to live under a
+    // broad runtime grant (`/usr`, `/opt/homebrew`, `/nix/store`) and fatal on
+    // one where it does not: a Go under a hosted tool cache reported
+    // "cannot find package" for every package in the module under test,
+    // because `$GOROOT/src` was unreadable.
+    const roots: Array<Record<string, unknown>> = []
+    collectTagged([toolchain, executable], "ExecutableRoot", roots, new Set())
+    for (const root of roots) {
+      const path = String(root["path"])
+      // A root that swallows the workspace, or one inside it, would open
+      // undeclared workspace inputs; the executables above stay admitted.
+      if (!NodePath.isAbsolute(path)) continue
+      if (Path.contains(path, context.root) || Path.contains(context.root, path)) continue
+      if (!externalReads.includes(path)) externalReads.push(path)
     }
   }
 

@@ -147,6 +147,8 @@ export const resolveGo = async (context: Context): Promise<
     readonly path: string
     readonly identity: unknown
     readonly executables: ReadonlyArray<string>
+    /** The selected SDK's `GOROOT`, which the compiler reads far beyond its `bin`. */
+    readonly sdkRoot: string
   }
   | { readonly ok: false; readonly refusal: string; readonly identity: unknown }
 > => {
@@ -216,6 +218,7 @@ export const resolveGo = async (context: Context): Promise<
     ok: true,
     path,
     executables,
+    sdkRoot: String(sdk.GOROOT),
     identity: { tag: "GoBin", path, cwd: NodePath.relative(context.root, cwd), probe, authorities }
   }
 }
