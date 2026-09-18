@@ -15,3 +15,8 @@
 .setup-checklist li > button { flex: 1; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 12px; text-align: left; color: var(--text); font: inherit; overflow-wrap: anywhere; }
 .setup-checklist li > button:hover { background: var(--hover-subtle); }
 .setup-checklist button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.setup-checklist-jobs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; flex: 1; }
+.setup-checklist-jobs > button { min-height: 44px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 12px; text-align: left; color: var(--text); font: inherit; overflow-wrap: anywhere; }
+.setup-checklist-jobs > button:hover { background: var(--hover-subtle); }
+.setup-checklist-jobs > button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (max-width: 480px) { .setup-checklist-jobs { grid-template-columns: 1fr; } }

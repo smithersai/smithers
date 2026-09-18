@@ -2,10 +2,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { initialSetup } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { ControllerContext } from "../ControllerContext"
 import type { AppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
+import { FIRST_RUN_JOBS } from "./FirstRunActions"
 import { resolveSteps, SETUP_STEPS, SetupChecklist, SetupChecklistCard } from "./SetupChecklist"
 
 GlobalRegistrator.register()
@@ -18,6 +19,8 @@ const commands = [
   { name: "issues.setup", summary: "Handle issues" },
   { name: "debug.snapshot", summary: "Snapshot", hidden: true },
 ]
+const jobTitles = ["Handle issues", "Review PRs", "Set up CI", "Build a feature", "Automate a chore"]
+const jobCommands = [...commands, ...FIRST_RUN_JOBS.map((name, index) => ({ name, summary: jobTitles[index]! }))]
 const empty = { signedIn: false, hasRepo: false, hasSetup: false }
 const done = { signedIn: true, hasRepo: true, hasSetup: true }
 
@@ -96,4 +99,69 @@ test("signing in checks the first step off live, and a finished list unmounts it
     host.remove()
     await store.dispose?.()
   }
+})
+
+/*
+ * Canary walk run 3, step B3-1: on a profile whose recommended-actions card is
+ * dismissed (`firstRunDismissed`) and whose first job exists, a fresh
+ * conversation offered only "Set up a job" and none of the five jobs — the
+ * other four were reachable only through slash doors.
+ */
+const dismissedHome = async (calls: Array<[string, string | undefined]>, options: { readonly repositories?: boolean; readonly dismissed?: boolean } = {}) => {
+  const data = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) },
+  } })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
+  if (options.repositories !== false) store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/demo", org: "will", ownerKind: "user", name: "demo", head: null }] })
+  store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "pending" } })
+  store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "ready" } })
+  const card = (job: "issues" | "review", enabled?: boolean) => {
+    const payload = initialSetup("will/demo", job, "will")
+    return { id: `setup:will:will%2Fdemo:${job}`, kind: "repository-setup" as const, title: job, status: "active" as const, createdAt: 1, ordinal: 1,
+      payload: enabled === undefined ? payload : { ...payload, active: { revision: payload.revision, digest: setupCandidate(payload), registrationId: "reg", sourceRevision: "f4d4814e", enabled } } }
+  }
+  store.dispatch({ type: "card.upsert", actor: "system", card: card("issues") })
+  store.dispatch({ type: "card.upsert", actor: "system", card: card("review", false) })
+  if (options.dismissed !== false) store.dispatch({ type: "first-run.dismissed", actor: "user" })
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, commands: { all: () => jobCommands }, runCommand: (name: string, args?: string) => { calls.push([name, args]) } } as unknown as AppController}><SetupChecklist /></ControllerContext>))
+  render()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  return { store, host, render, jobs: () => [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Repository jobs"] > button')],
+    settle: async () => { await store.settled?.(); await new Promise(resolve => setTimeout(resolve, 20)); render() },
+    dispose: async () => { flushSync(() => root.unmount()); host.remove(); await store.dispose?.() } }
+}
+
+test("the five jobs are buttons on the home surface once the first job exists, with the recommended actions dismissed", async () => {
+  const calls: Array<[string, string | undefined]> = []
+  const home = await dismissedHome(calls)
+  try {
+    expect(home.host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+    expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+    expect(home.jobs().map(button => button.textContent)).toEqual(["Handle issues · Off", "Review PRs · Paused", "Set up CI", "Build a feature", "Automate a chore"])
+    home.jobs()[1]!.click()
+    await home.settle()
+    expect(calls).toEqual([["review.setup", "will/demo"]])
+    expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+  } finally { await home.dispose() }
+})
+
+test("the third step is the job row once a job exists, and the checklist still names its remaining steps", async () => {
+  const home = await dismissedHome([], { repositories: false })
+  try {
+    expect(home.host.querySelector("header")?.textContent).toContain("2 of 3")
+    expect(home.host.querySelector('[data-flow="repos.import"]')).not.toBeNull()
+    expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+  } finally { await home.dispose() }
+})
+
+test("the recommended actions still own the row until they are dismissed", async () => {
+  const home = await dismissedHome([], { dismissed: false })
+  try {
+    expect(home.jobs()).toEqual([])
+    expect(home.host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+  } finally { await home.dispose() }
 })
