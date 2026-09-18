@@ -20,6 +20,7 @@ import type { ClientErrorRecord } from "./clientErrorLog"
 import { memoryStorage as memoryObjectStorage, storageLayer } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { WORKSPACE_GONE_REFUSAL } from "./gateway"
+import type { ProvisionOutcome } from "./gateway"
 import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
 import { memoryDurableObjects } from "./memoryDurableObjects"
@@ -4565,6 +4566,52 @@ describe("wave 11 — the /api/workflow/* routes", () => {
           expect(result.status).toBe(400)
         }
         expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+      })
+    })
+  })
+
+  /*
+   * A gradual deployment: this Worker reads a gateway-sessions object already
+   * running the next script, so `/resolve` answers a status this version's
+   * `ProvisionOutcome` does not have. `isProvisionOutcome` (gateway.ts) takes
+   * any object whose `status` is a string, so the value reaches both routes'
+   * exhaustive `default:` — which still owes the wire a Response.
+   */
+  describe("a gateway-sessions object on a newer script", () => {
+    const FUTURE_DETAIL = "The next script calls this state from_the_future."
+    const newerScript = (): NativeNamespace => ({
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (request: Request) =>
+          new URL(request.url).pathname === "/resolve"
+            ? json(200, { status: "from_the_future", detail: FUTURE_DETAIL } as unknown as ProvisionOutcome)
+            : json(200, { record: null })
+      })
+    })
+
+    test("the provision route answers 502 upstream_refused, never a bare outcome", async () => {
+      await withRelay({}, async (calls) => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }),
+          env({ GATEWAY_SESSIONS: newerScript() })
+        )
+        expect(response.status).toBe(502)
+        expect(await response.json()).toEqual({ status: "error", code: "upstream_refused", message: FUTURE_DETAIL })
+        expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+      })
+    })
+
+    test("the rpc relay answers 502 upstream_refused, never a bare outcome", async () => {
+      await withRelay({}, async () => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({ repo: "will/mvp", procedure: "List", payload: { _tag: "flows" } })
+          }),
+          env({ GATEWAY_SESSIONS: newerScript() })
+        )
+        expect(response.status).toBe(502)
+        expect(await response.json()).toEqual({ status: "error", code: "upstream_refused", message: FUTURE_DETAIL })
       })
     })
   })

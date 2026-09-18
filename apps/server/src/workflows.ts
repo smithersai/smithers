@@ -55,6 +55,20 @@ export const requireWorkflowSession = (request: Request): Effect.Effect<Validate
     return session
   })
 
+/*
+ * The sentence for a status neither union has. A gradual deployment can leave
+ * this script reading a gateway-sessions object already running the next one,
+ * and `isProvisionOutcome` (gateway.ts) passes any object with a string status
+ * through, so the exhaustive `default:` is dead to the compiler and alive on
+ * the wire. Its own detail is the honest sentence when it sent one.
+ */
+const UNKNOWN_STATUS_DETAIL = "The workspace gateway answered a state this deployment does not know."
+
+const unknownStatusDetail = (outcome: unknown): string => {
+  const detail = typeof outcome === "object" && outcome !== null ? (outcome as { detail?: unknown }).detail : undefined
+  return typeof detail === "string" && detail !== "" ? detail : UNKNOWN_STATUS_DETAIL
+}
+
 /** The typed, non-gateway answers a gateway call can produce, in one place. */
 const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status: "ok" }>): Response => {
   switch (call.status) {
@@ -82,7 +96,7 @@ const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status
       return refuse("upstream_refused", call.detail)
     default: {
       const exhaustive: never = call
-      return exhaustive
+      return refuse("upstream_refused", unknownStatusDetail(exhaustive))
     }
   }
 }
@@ -146,7 +160,7 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
         return refuse("upstream_refused", outcome.detail)
       default: {
         const exhaustive: never = outcome
-        return exhaustive
+        return refuse("upstream_refused", unknownStatusDetail(exhaustive))
       }
     }
   })
