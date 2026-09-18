@@ -26,16 +26,16 @@
  * traffic.
  *
  * The row catalog, the runner, and the CLI contract live under
- * src/launch-checklist/ and are covered by bun tests there; this file is the
+ * scripts/launch-checklist/ and are covered by bun tests there; this file is the
  * process shell (clock, filesystem, browser, exit code).
  */
 import { mkdirSync, writeFileSync } from "node:fs"
 import { setTimeout as delay } from "node:timers/promises"
-import { NO_BROWSER_REQUESTED_REASON } from "../src/launch-checklist/BrowserLaunch.ts"
-import { HELP, NO_TARGET_ERROR, parseArgs, reportDir } from "../src/launch-checklist/Cli.ts"
-import { ROWS } from "../src/launch-checklist/Rows.ts"
-import { buildReport, exitCodeFor, renderMarkdown, runChecklist } from "../src/launch-checklist/Runner.ts"
-import { BrowserUnavailableError, type ProbePage, type RowResult } from "../src/launch-checklist/Types.ts"
+import { NO_BROWSER_REQUESTED_REASON } from "./launch-checklist/BrowserLaunch.ts"
+import { HELP, NO_TARGET_ERROR, parseArgs, reportDir } from "./launch-checklist/Cli.ts"
+import { ROWS } from "./launch-checklist/Rows.ts"
+import { buildReport, exitCodeFor, renderMarkdown, runChecklist } from "./launch-checklist/Runner.ts"
+import { BrowserUnavailableError, type ProbePage, type RowResult } from "./launch-checklist/Types.ts"
 import { createHeadlessBrowser } from "./headless-page.ts"
 
 const args = parseArgs(process.argv.slice(2))

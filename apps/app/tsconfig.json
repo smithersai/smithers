@@ -23,6 +23,7 @@
   },
   "include": [
     "src",
+    "lint",
     "scripts",
     "e2e",
     "vite.config.ts",

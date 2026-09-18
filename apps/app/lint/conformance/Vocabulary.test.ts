@@ -31,7 +31,6 @@ import {
   emittedDataAttributes,
   GATEWAY_LIBRARY,
   idVocabularySegments,
-  LAUNCH_CHECKLIST,
   productDottedIdentifiers,
   productSourceFiles,
   productStringLiterals,
@@ -72,7 +71,7 @@ const literalsOf = (files: ReadonlyArray<string>, form: "string" | "template-hea
  * trees under test are dropped exactly as `productSourceFiles` drops them, so
  * a name is "retired" only when nothing outside a test spells it anywhere.
  */
-const underTest = (file: string): boolean => file.startsWith(LAUNCH_CHECKLIST) || file.startsWith(CONFORMANCE)
+const underTest = (file: string): boolean => file.startsWith(CONFORMANCE)
 const appFiles = [UI_SRC, SHARED_SRC]
   .flatMap((root) => [...sourceFiles(root)])
   .filter((file) => !assertsAgainstTheApp(file) && !underTest(file))

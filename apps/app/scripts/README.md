@@ -23,7 +23,7 @@ E2E and live-check scripts. Unless a section says otherwise, run them from
 | `pnpm run test:e2e:packaged` | Bridge, fixture lease and packaged-app tests named by `e2e/packaged/run.ts` | Packaged Electrobun app |
 
 `test:e2e:native` aliases the packaged runner. Native process probes are Bun
-tests, separate from Playwright specs. `src/conformance/TestInventory.test.ts`
+tests, separate from Playwright specs. `lint/conformance/TestInventory.test.ts`
 checks that each test file belongs to an executable runner. The `unitTests`
 target uses the same discovery as `pnpm test`; its inputs include scripts,
 E2E harnesses, configs and RPC fixtures. It depends on the RPC, gateway and
@@ -116,7 +116,7 @@ disabled browsers. Probe-undecided rows include an empty watched set or no run
 identifier in the rendered state. Inspect row reasons and totals before
 accepting a release. Connection failures from probes that run are failed rows.
 
-The catalog, runner and CLI contract live in `../src/launch-checklist/`.
+The catalog, runner and CLI contract live in `./launch-checklist/`.
 `pnpm test` covers them and the script contracts. The process shell owns the
 clock, filesystem, browser lifecycle and final exit code.
 

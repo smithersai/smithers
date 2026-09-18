@@ -35,6 +35,9 @@ const buildConfigs = [
  * the typecheck measures them and its key has to carry them too.
  */
 const harnessSources = Smithers.glob("//apps/app/scripts/**/*")
+
+/** The lint sources outside `src/`: the literal pin and the vocabularies it derives. */
+const lintSources = Smithers.glob("//apps/app/lint/**/*")
 const suiteSources = Smithers.glob("//apps/app/e2e/**/*")
 
 /** The assertion contracts the e2e tiers share; pure, so the unit suite gates them. */
@@ -70,8 +73,8 @@ const devkit = Smithers.NodeBinary({
  */
 const check = Smithers.Typecheck({
   /*
-   * Everything this tsconfig includes: `scripts`, `e2e`, and the bundler and
-   * Electrobun configs are compiled by this target, so a key made of `src`
+   * Everything this tsconfig includes: `scripts`, `e2e`, `lint`, and the
+   * bundler and Electrobun configs are compiled by this target, so a key made of `src`
    * alone would serve a green cache entry over an edit that breaks the
    * typecheck.
    */
@@ -80,6 +83,7 @@ const check = Smithers.Typecheck({
     componentSources,
     harnessSources,
     suiteSources,
+    lintSources,
     ...buildConfigs,
     Smithers.file("electrobun.config.ts"),
     Smithers.file("hutch.config.ts"),
@@ -106,8 +110,6 @@ const check = Smithers.Typecheck({
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.testSuite(["src", "e2e/contracts", "e2e/real/coverage", "scripts"]),
-  // Conformance reads harnesses, configuration and workspace vocabularies.
-  // Discovery paths alone do not contribute to the target's input identity.
   srcs: [
     sources,
     componentSources,
@@ -123,6 +125,43 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("//pnpm-lock.yaml"),
     Smithers.file("//packages/rpc/fixtures/force/graph.json"),
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
+  ],
+  // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check],
+  cwd
+})
+
+/**
+ * The conformance lint: the literal pin under `lint/conformance/`.
+ *
+ * It is a lint, not a unit suite. It derives the app's vocabularies — flow
+ * names, card kinds, card-id prefixes, emitted `data-*` attributes — from
+ * product source and the running store, then refuses any literal the e2e
+ * suites and the `scripts/` runners assert against that no longer resolves.
+ * Because it reads harnesses, configuration and workspace vocabularies by
+ * path, its key carries every tree it scans; discovery paths alone do not
+ * contribute to a target's input identity.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const conformance = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["lint/conformance"]),
+  srcs: [
+    sources,
+    componentSources,
+    styleSources,
+    contractSources,
+    harnessSources,
+    suiteSources,
+    lintSources,
+    ...buildConfigs,
+    Smithers.glob("//apps/app/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("package.json"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
   deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check],
@@ -166,5 +205,5 @@ const solidCodegenInputs = Smithers.Filegroup({
 })
 
 export const Package = Smithers.Package({
-  targets: { solidCodegenInputs, devkit, check, unitTests, browserE2e, webSources }
+  targets: { solidCodegenInputs, devkit, check, unitTests, conformance, browserE2e, webSources }
 })

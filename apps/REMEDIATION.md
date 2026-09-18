@@ -92,7 +92,7 @@ All fixed. `worker-e2e.ts` is green at 27 assertions.
 ## Closing the class, not the instances
 
 A one-off sweep proves the suites are clean today and does nothing for the next
-rename. `src/conformance/` pins every literal the e2e and canary suites assert
+rename. `lint/conformance/` pins every literal the e2e and canary suites assert
 against to the vocabulary the app owns — card kinds from the type union, command
 names from the `data-flows` manifest the shell publishes, collection keys,
 card-id prefixes, DOM attributes. A literal that no longer resolves fails the

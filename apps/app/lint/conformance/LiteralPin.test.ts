@@ -19,7 +19,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { relative } from "node:path"
-import { RUN_LAUNCH_COMMANDS } from "../mainview/state/RunClaims"
+import { RUN_LAUNCH_COMMANDS } from "../../src/mainview/state/RunClaims"
 import { fixtureRepositoryName } from "../../e2e/real/support/values"
 import {
   dataAttributesIn,
@@ -41,7 +41,6 @@ import {
   E2E,
   emittedDataAttributes,
   idVocabularySegments,
-  LAUNCH_CHECKLIST,
   manifestFlowNames,
   productDottedIdentifiers,
   productSourceFiles,
@@ -53,13 +52,12 @@ import {
 } from "./Vocabulary"
 
 /*
- * The trees under test. `scripts/` holds the standalone runners and the test
- * doubles, `e2e/` the hermetic harness and its suites, and
- * `src/launch-checklist/` the canary rows and the probe vocabulary they share
- * with the hermetic suites. All three assert against the app with literals, so
- * all three rot the same way.
+ * The trees under test. `scripts/` holds the standalone runners, the test
+ * doubles and `scripts/launch-checklist/`'s canary rows and probe vocabulary;
+ * `e2e/` holds the hermetic harness and its suites. Both assert against the
+ * app with literals, so both rot the same way.
  */
-const TREES = [SCRIPTS, E2E, LAUNCH_CHECKLIST] as const
+const TREES = [SCRIPTS, E2E] as const
 
 const shortPath = (file: string): string => relative(UI_APP, file)
 
@@ -133,7 +131,7 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   },
   {
     literal: "flow.ghost",
-    file: "src/launch-checklist/Probes.test.ts",
+    file: "scripts/launch-checklist/Probes.test.ts",
     reason: "a flow name this unit test invents to exercise the unnamed-affordance rule, never sent to the app"
   },
   {
@@ -143,17 +141,17 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   },
   {
     literal: "promotional",
-    file: "src/launch-checklist/Rows.ts",
+    file: "scripts/launch-checklist/Rows.ts",
     reason: "the billing grant kind the checklist reads back from its own /api/billing audit row; it is an upstream grant kind, never a card kind"
   },
   {
     literal: "launch-checklist-d2-",
-    file: "src/launch-checklist/Rows.ts",
+    file: "scripts/launch-checklist/Rows.ts",
     reason: "a run id the checklist coins for its own /api/agent/turn probe; the server echoes it back and no card is ever built from it"
   },
   {
     literal: "launch-checklist-d4-",
-    file: "src/launch-checklist/Rows.ts",
+    file: "scripts/launch-checklist/Rows.ts",
     reason: "a run id the checklist coins for its own zero-balance turn probe; the server echoes it back and no card is ever built from it"
   },
   {

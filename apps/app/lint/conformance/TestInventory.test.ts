@@ -79,6 +79,7 @@ const playwrightOwns = (path: string, config: PlaywrightTestConfig): boolean =>
 const owners = (path: string): string[] => {
   const result: string[] = []
   if (selected(path, bunPaths(scripts.test))) result.push("unit")
+  if (selected(path, bunPaths(scripts["lint:conformance"]))) result.push("conformance lint")
   if (selected(path, bunPaths(scripts["test:e2e:auth"]))) result.push("browser OAuth")
   if (selected(path, bunPaths(scripts["test:e2e:probes"]))) result.push("probe helpers")
   if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
@@ -97,6 +98,8 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/probes/support.test.mjs")).toEqual(["probe helpers"])
   expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
+  // The literal pin is a lint target with its own runner, never the unit gate.
+  expect(owners("lint/conformance/LiteralPin.test.ts")).toEqual(["conformance lint"])
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
   expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
   // The real tier's coverage gate is its own source, tested by Bun rather than
@@ -127,6 +130,11 @@ test("the target unit gate matches package discovery and CI executes browser OAu
   expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:probes"]')
   expect(inspectTarget('console.log(JSON.stringify(metadata(Package.browserE2e).attrs.runner.entry.path))'))
     .toBe("scripts/run-pr-e2e.mjs")
+}, 240_000)
+
+test("the conformance lint gate matches package discovery", () => {
+  expect(inspectTarget('console.log(JSON.stringify(metadata(Package.conformance).attrs.runner.paths))'))
+    .toEqual(bunPaths(scripts["lint:conformance"]))
 }, 240_000)
 
 test("unit inputs include inspected sources, harnesses and configs", () => {

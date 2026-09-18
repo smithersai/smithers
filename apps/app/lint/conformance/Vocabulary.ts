@@ -12,12 +12,12 @@ import { fileURLToPath } from "node:url"
 import type { Card } from "@smthrs/rpc/Cards"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import ts from "typescript"
-import { adminFlows, baseFlows, type CommandActions } from "../mainview/flows/Flows"
-import { nameOf } from "../mainview/flows/registry"
-import type { NativeRepositories } from "../mainview/native/NativeBridge"
-import type { AgentPort } from "../mainview/runtime/AgentPort"
-import { createAppController } from "../mainview/state/AppController"
-import { createAppStore } from "../mainview/state/AppStore"
+import { adminFlows, baseFlows, type CommandActions } from "../../src/mainview/flows/Flows"
+import { nameOf } from "../../src/mainview/flows/registry"
+import type { NativeRepositories } from "../../src/mainview/native/NativeBridge"
+import type { AgentPort } from "../../src/mainview/runtime/AgentPort"
+import { createAppController } from "../../src/mainview/state/AppController"
+import { createAppStore } from "../../src/mainview/state/AppStore"
 import {
   DOTTED_IDENTIFIER,
   extractLiterals,
@@ -36,13 +36,11 @@ const DOTTED_HEAD = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.$/
 /** `apps/app`. */
 export const UI_APP = from("../../")
 /** `apps/app/src`. */
-export const UI_SRC = from("../")
-/** `apps/app/scripts` — the standalone e2e and live-check runners. */
+export const UI_SRC = from("../../src/")
+/** `apps/app/scripts` — the standalone e2e and live-check runners, the launch checklist included. */
 export const SCRIPTS = from("../../scripts")
 /** `apps/app/e2e` — the hermetic harness and its suites. */
 export const E2E = from("../../e2e")
-/** `apps/app/src/launch-checklist` — the canary checklist's probes and rows. */
-export const LAUNCH_CHECKLIST = from("../launch-checklist")
 /** This directory. */
 export const CONFORMANCE = from(".")
 /** `packages/rpc/src` — the wire model both halves of the app share. */
@@ -71,10 +69,9 @@ export const assertsAgainstTheApp = (file: string): boolean => TEST_FILE.test(fi
 
 /**
  * Product source: everything the app is built from, minus the trees under
- * test and the files that only assert against it. Excluding the checklist,
- * this directory, and every test and fixture is what makes the presence rule
- * mean "the app still spells this name" rather than "some test still mentions
- * it".
+ * test and the files that only assert against it. Excluding this directory
+ * and every test and fixture is what makes the presence rule mean "the app
+ * still spells this name" rather than "some test still mentions it".
  */
 export const productSourceFiles = (): ReadonlyArray<string> =>
   [
@@ -86,9 +83,7 @@ export const productSourceFiles = (): ReadonlyArray<string> =>
       .map((entry) => join(UI_APP, entry.name)),
     ...sourceFiles(UI_SRC),
     ...sourceFiles(SHARED_SRC)
-  ].filter((file) =>
-    !file.startsWith(LAUNCH_CHECKLIST) && !file.startsWith(CONFORMANCE) && !assertsAgainstTheApp(file)
-  )
+  ].filter((file) => !file.startsWith(CONFORMANCE) && !assertsAgainstTheApp(file))
 
 /** The gateway source the app reads through, its own suites left out. */
 const gatewaySourceFiles = (): ReadonlyArray<string> =>

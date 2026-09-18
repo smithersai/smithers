@@ -27,7 +27,7 @@ const FIRST_FRAME_MAX_BYTES = 64 * 1024
 
 /**
  * The end-to-end product bar this repo already states: row A-2's
- * `FIRST_MESSAGE_BUDGET_MS` in apps/app/src/launch-checklist/Probes.ts. It is
+ * `FIRST_MESSAGE_BUDGET_MS` in apps/app/scripts/launch-checklist/Probes.ts. It is
  * the only latency contract written down anywhere in the tree, so every budget
  * below is derived from it rather than invented.
  */

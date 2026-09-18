@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Effect } from "effect"
-import { declaredFlowNames } from "../../conformance/Vocabulary"
+import { declaredFlowNames } from "../../../lint/conformance/Vocabulary"
 import { load, PluginHost } from "./AppPlugin"
 import { CATALOG, installedPlugins, manifests, pluginById, shelfOrder } from "./catalog"
 

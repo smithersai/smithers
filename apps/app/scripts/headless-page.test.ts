@@ -1,7 +1,7 @@
 import { fixtureProtocolId } from "../e2e/real/support/values"
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test"
 import { createHeadlessBrowser, type HeadlessBrowser } from "./headless-page.ts"
-import { runChecklist } from "../src/launch-checklist/Runner.ts"
+import { runChecklist } from "./launch-checklist/Runner.ts"
 
 type Command = { id: number; method: string; params: any; sessionId?: string }
 class FakeSocket extends EventTarget {

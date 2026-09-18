@@ -24,7 +24,7 @@ of done and the alpha bar, with no shared context.
 Round 1's failure spawned a fix lane, which rewrote the checklist runner so all
 32 rows carry a real probe (headless Chrome over the DevTools protocol for the
 §A/§B/§C/§F rows plus D-3 and D-4's pause half, HTTP for D-1/D-2 and §E), moved
-the row catalog and CLI contract under `apps/app/src/launch-checklist/` so
+the row catalog and CLI contract under `apps/app/scripts/launch-checklist/` so
 `bun test src` covers them, and added the root `checklist` script. The panel
 loop was configured for up to three rounds; it converged on round 2 and did not
 exhaust its rounds. No panel node failed or ran out of retries. Both panelists

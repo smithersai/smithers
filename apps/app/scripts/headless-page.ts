@@ -1,7 +1,7 @@
 /*
  * Launch checklist (U7) — the real headless page driver.
  *
- * Implements src/launch-checklist/Types.ts's ProbePage over the Chrome
+ * Implements scripts/launch-checklist/Types.ts's ProbePage over the Chrome
  * DevTools protocol against a system Chrome, the same way
  * scripts/web-chat-e2e.ts already drives the app. No Playwright, no download,
  * no new dependency: a checklist run either finds a browser or the browser
@@ -12,8 +12,8 @@
  */
 import { existsSync } from "node:fs"
 import { setTimeout as delay } from "node:timers/promises"
-import { browserArgv, findBrowser, NO_BROWSER_REASON } from "../src/launch-checklist/BrowserLaunch.ts"
-import { BrowserUnavailableError, type ProbePage } from "../src/launch-checklist/Types.ts"
+import { browserArgv, findBrowser, NO_BROWSER_REASON } from "./launch-checklist/BrowserLaunch.ts"
+import { BrowserUnavailableError, type ProbePage } from "./launch-checklist/Types.ts"
 
 const wait = (ms: number, signal?: AbortSignal): Promise<void> => delay(ms, undefined, { signal })
 
