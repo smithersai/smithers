@@ -17,8 +17,9 @@ ten frames.
 The flow needs one host service, the `Evaluator` from
 [`@smthrs/model`](https://model.smithers.sh/reference/api/), which is Jev through the Vercel AI Gateway. A
 host without a gateway key binds `Evaluator.layerUnavailable()`, and every
-call then resolves as `{ ok: false, error }` whose message begins
-`unreachable:`. The cell carries on; nothing hangs and nothing is invented.
+call then resolves as `{ ok: false, error: { code: "flow_failed", message } }`
+whose message contains `unreachable:` after the binding's `Flow <name> failed:`
+prefix. The cell carries on; nothing hangs and nothing is invented.
 
 ## Ask your own questions
 

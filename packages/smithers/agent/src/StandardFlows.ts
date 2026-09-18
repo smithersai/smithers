@@ -85,7 +85,7 @@ const publicSearchError = (error: StdError): string | undefined => {
   return publicExecutionError(error)
 }
 
-/** A classifier failure names the evaluator's code first, so a cell can read `unreachable` off the message. */
+/** A classifier failure names the evaluator's code first in the public message, so a cell can find `unreachable:` in `error.message` after the binding's `Flow <name> failed:` prefix. */
 const publicClassifierError = (error: Classifier.ClassifierError): string => `${error.code}: ${error.message}`
 
 /**
@@ -224,8 +224,11 @@ export interface ClassifyOptions {
  *
  * The one service is the `Evaluator`. A host without a gateway key binds
  * `Evaluator.layerUnavailable()`, and every call then resolves in the cell as
- * `{ ok: false, error }` whose message begins `unreachable:`; nothing hangs
- * and nothing is invented.
+ * `{ ok: false, error: { code: "flow_failed", message } }` whose message
+ * contains `unreachable:` after the binding's `Flow <name> failed:` prefix
+ * (the other evaluator codes, `timeout:`, `refused:`, `empty:`,
+ * `invalid_answer:`, and `invalid_question:`, arrive the same way); nothing
+ * hangs and nothing is invented.
  *
  * @category constructors
  * @since 1.0.0-rc.0

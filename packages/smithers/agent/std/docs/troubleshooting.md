@@ -237,8 +237,9 @@ because a host that calls the handler directly never decodes.
 
 **What happened.** `classify` or a `classify/<id>` flow ran with
 `Evaluator.layerUnavailable()` bound, which is what a host without a gateway
-key installs. The cell saw `{ ok: false, error }` with a message beginning
-`unreachable:`; the call never left the host.
+key installs. The cell saw `{ ok: false, error: { code: "flow_failed", message } }`
+with a message containing `unreachable:` after the binding's
+`Flow <name> failed:` prefix; the call never left the host.
 
 **What to change.** Bind `Evaluator.layerVercelGateway({ apiKey })` from
 `@smthrs/model` with a Vercel AI Gateway key, and grant `model:call:*` in the

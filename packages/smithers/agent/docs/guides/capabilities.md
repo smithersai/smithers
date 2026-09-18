@@ -72,8 +72,9 @@ per curated classifier, which takes the classifier's own state. The one service
 is the `Evaluator` from [`@smthrs/model`](/api/model). A host with a Vercel AI
 Gateway key binds `Evaluator.layerVercelGateway({ apiKey })`; a host without
 one binds `Evaluator.layerUnavailable()`, and every classify call then resolves
-in the cell as `{ ok: false, error }` with a message beginning `unreachable:`,
-so the cell carries on instead of hanging. Grant `model:call:*` in the
+in the cell as `{ ok: false, error: { code: "flow_failed", message } }` with a
+message containing `unreachable:` after the binding's `Flow <name> failed:`
+prefix, so the cell carries on instead of hanging. Grant `model:call:*` in the
 capability envelope beside `fs:read:/**` and the rest, or the boundary refuses
 the call before it reaches the transport. Pass `{ classifiers: [] }` to offer
 the ad-hoc door alone, or your own `Classifier.make` declarations to add doors

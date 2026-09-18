@@ -1241,8 +1241,8 @@ since changed.
 The one service is the `Evaluator` from [`@smthrs/model`](/api/model). A host
 without a gateway key binds `Evaluator.layerUnavailable()`, and every call then
 resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
-with a message beginning `unreachable:`; the batch shape reports the same code
-per state. Nothing hangs and nothing is invented.
+with a message containing `unreachable:` after the binding's
+`Flow <name> failed:` prefix; the batch shape reports the same code per state. Nothing hangs and nothing is invented.
 
 ### StandardFlows.ApprovalUnavailable
 
