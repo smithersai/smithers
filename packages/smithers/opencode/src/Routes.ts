@@ -22,6 +22,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join, relative, resolve } from "node:path"
 import * as Events from "./Events.ts"
+import * as Health from "./Health.ts"
 import * as Ids from "./Ids.ts"
 import * as Protocol from "./Protocol.ts"
 import * as Store from "./Store.ts"
@@ -439,13 +440,19 @@ export const layer = (
               Effect.gen(function*() {
                 const input = yield* body(request)
                 const time = isRecord(input["time"]) ? input["time"] : {}
+                const archived = typeof time["archived"] === "number" ? time["archived"] : undefined
+                // A rename keeps the health dot in front of the person's
+                // words; an archive drops it.
+                const renamed = typeof input["title"] === "string"
+                  ? Health.retitle(session.title, input["title"])
+                  : session.title
                 const updated: Protocol.Session = {
                   ...session,
-                  title: typeof input["title"] === "string" ? input["title"] : session.title,
+                  title: archived === undefined ? renamed : Health.strip(renamed),
                   time: {
                     ...session.time,
                     updated: now(),
-                    ...(typeof time["archived"] === "number" ? { archived: time["archived"] } : {})
+                    ...(archived === undefined ? {} : { archived })
                   }
                 }
                 yield* store.putSession(updated)

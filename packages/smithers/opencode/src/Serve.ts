@@ -9,12 +9,15 @@
  *
  * The application is the routes behind the CORS and basic-auth middleware,
  * over the hub and the turns, and whichever driver and store the host
- * supplies. `layer` binds it to a Node socket; `app` is the same assembly
- * without the socket, for an in-process handler in tests.
+ * supplies. The health evaluator is the host's too, or the one the
+ * environment names (`Health.evaluatorLayer`). `layer` binds it to a Node
+ * socket; `app` is the same assembly without the socket, for an in-process
+ * handler in tests.
  *
  * @since 1.0.0
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
@@ -25,6 +28,8 @@ import * as Auth from "./Auth.ts"
 import * as Cors from "./Cors.ts"
 import type * as Driver from "./Driver.ts"
 import * as Events from "./Events.ts"
+import * as Health from "./Health.ts"
+import type * as Projection from "./Projection.ts"
 import * as Routes from "./Routes.ts"
 import type * as Store from "./Store.ts"
 import * as Turns from "./Turns.ts"
@@ -123,6 +128,14 @@ export interface Options {
   readonly agent?: string | undefined
   /** The hub's keepalive cadence; the default is fifteen seconds. */
   readonly heartbeat?: Events.Options["heartbeat"]
+  /** The evaluator health asks. `Health.evaluatorLayer` over `environment` by default. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /** Where `AI_GATEWAY_API_KEY` is read from when no evaluator is given. The process environment by default. */
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** The frame budget the health state reports. */
+  readonly maxFrames?: number | undefined
+  /** The seat's price, for the cost the session and the messages carry. */
+  readonly pricing?: Projection.Pricing | undefined
 }
 
 /**
@@ -138,9 +151,14 @@ export const app = (
   const directory = resolve(options.directory)
   const agentName = options.agent ?? "smithers"
   const hub = Events.layer({ directory, project: Routes.projectID(directory), heartbeat: options.heartbeat })
-  const turns = Turns.layer({ directory, agent: agentName, model: Routes.modelOf(options.seat) }).pipe(
-    Layer.provide(hub)
-  )
+  const evaluator = options.evaluator ?? Health.evaluatorLayer(options.environment ?? Health.ambientEnvironment())
+  const turns = Turns.layer({
+    directory,
+    agent: agentName,
+    model: Routes.modelOf(options.seat),
+    maxFrames: options.maxFrames,
+    pricing: options.pricing
+  }).pipe(Layer.provide(Layer.mergeAll(hub, evaluator)))
   return Layer.mergeAll(
     Routes.layer({ directory, version: options.version, seat: options.seat, agent: agentName }),
     Cors.layer(options.bind.cors),

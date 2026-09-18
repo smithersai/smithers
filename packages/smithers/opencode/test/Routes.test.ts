@@ -121,6 +121,16 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(read).toEqual(created)
     const renamed = (await sdk.session.update({ path: { id: created.id }, body: { title: "Renamed" } })).data!
     expect(renamed.title).toBe("Renamed")
+    // A rename keeps the health dot the session carries; an archive drops it.
+    await served.handler(
+      new Request(`http://test/session/${titled.id}`, {
+        method: "PATCH",
+        body: `{"title":"🟢 Given"}`,
+        headers: { "content-type": "application/json" }
+      })
+    )
+    const redotted = (await sdk.session.update({ path: { id: titled.id }, body: { title: "Mine" } })).data!
+    expect(redotted.title).toBe("🟢 Mine")
     const archived = (await (await served.handler(
       new Request(`http://test/session/${titled.id}`, {
         method: "PATCH",
@@ -129,6 +139,7 @@ describe("Routes through the OpenCode SDK client", () => {
       })
     )).json()) as Protocol.Session
     expect(archived.time.archived).toBe(5)
+    expect(archived.title).toBe("Mine")
     const listed =
       (await get(`/session?directory=${encodeURIComponent(served.directory)}&roots=true&limit=55`)) as Array<Session>
     expect(listed.map((session) => session.id)).toEqual([created.id])
@@ -303,7 +314,16 @@ describe("Routes through the OpenCode SDK client", () => {
       parentID: "msg_0000000000010000000000000u"
     })
     const tools = assistant.parts.filter((part: Part): part is Extract<Part, { type: "tool" }> => part.type === "tool")
-    expect(tools.map((part) => part.tool)).toEqual(["cell", "read", "list", "cell", "bash", "demand"])
+    expect(tools.map((part) => part.tool)).toEqual([
+      "cell",
+      "read",
+      "list",
+      "classify",
+      "health",
+      "cell",
+      "bash",
+      "demand"
+    ])
     expect(tools.every((part) => part.state.status === "completed")).toBe(true)
     const bash = tools.find((part) => part.tool === "bash")!
     expect(bash.state.status === "completed" && bash.state.metadata).toMatchObject({ exit: 0 })
@@ -318,7 +338,8 @@ describe("Routes through the OpenCode SDK client", () => {
     >
     expect(paged.map((item) => item.info.role)).toEqual(["user"])
     const updated = (await sdk.session.get({ path: { id: session.id } })).data as unknown as Protocol.Session
-    expect(updated.title).toBe("Read package.json and tell me the name field.")
+    // No evaluator is installed, so the first frame turned the dot gray.
+    expect(updated.title).toBe("⚪ Read package.json and tell me the name field.")
     expect(updated.tokens.input).toBeGreaterThan(0)
     expect((await sdk.session.abort({ path: { id: session.id } })).data).toBe(false)
     await reader.cancel()

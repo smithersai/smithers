@@ -229,6 +229,40 @@
     }
   },
   {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 812,
+          "output": 96,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1004
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -240,33 +274,7 @@
         "text": "I'll read package.json and list the directory first.",
         "time": {
           "start": 1003,
-          "end": 1004
-        }
-      },
-      "time": 1005
-    }
-  },
-  {
-    "type": "message.part.updated",
-    "properties": {
-      "sessionID": "ses_ffffffffeffe00000000000000",
-      "part": {
-        "sessionID": "ses_ffffffffeffe00000000000000",
-        "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000200000000",
-        "type": "tool",
-        "callID": "cell_0_91a577d8",
-        "tool": "cell",
-        "state": {
-          "status": "running",
-          "input": {
-            "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
-          },
-          "title": "frame 1",
-          "time": {
-            "start": 1006
-          }
+          "end": 1005
         }
       },
       "time": 1006
@@ -279,22 +287,23 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000000000",
+        "id": "prt_00000000100200000200000000",
         "type": "tool",
-        "callID": "call_0_91a577d8_0",
-        "tool": "read",
+        "callID": "cell_0_9265220e",
+        "tool": "cell",
         "state": {
           "status": "running",
           "input": {
-            "filePath": "/repo/package.json"
+            "frame": 1,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
-          "title": "package.json",
+          "title": "frame 1",
           "time": {
             "start": 1007
           }
         }
       },
-      "time": 1008
+      "time": 1007
     }
   },
   {
@@ -306,7 +315,32 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000000000",
         "type": "tool",
-        "callID": "call_0_91a577d8_0",
+        "callID": "call_0_9265220e_0",
+        "tool": "read",
+        "state": {
+          "status": "running",
+          "input": {
+            "filePath": "/repo/package.json"
+          },
+          "title": "package.json",
+          "time": {
+            "start": 1008
+          }
+        }
+      },
+      "time": 1009
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000000000",
+        "type": "tool",
+        "callID": "call_0_9265220e_0",
         "tool": "read",
         "state": {
           "status": "completed",
@@ -321,12 +355,12 @@
             }
           },
           "time": {
-            "start": 1007,
-            "end": 1009
+            "start": 1008,
+            "end": 1010
           }
         }
       },
-      "time": 1009
+      "time": 1010
     }
   },
   {
@@ -338,7 +372,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000010000",
         "type": "tool",
-        "callID": "call_0_91a577d8_1",
+        "callID": "call_0_9265220e_1",
         "tool": "list",
         "state": {
           "status": "running",
@@ -347,11 +381,11 @@
           },
           "title": "/repo",
           "time": {
-            "start": 1010
+            "start": 1011
           }
         }
       },
-      "time": 1011
+      "time": 1012
     }
   },
   {
@@ -363,7 +397,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000010000",
         "type": "tool",
-        "callID": "call_0_91a577d8_1",
+        "callID": "call_0_9265220e_1",
         "tool": "list",
         "state": {
           "status": "completed",
@@ -393,12 +427,132 @@
             }
           },
           "time": {
-            "start": 1010,
-            "end": 1012
+            "start": 1011,
+            "end": 1013
           }
         }
       },
-      "time": 1012
+      "time": 1013
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000020000",
+        "type": "tool",
+        "callID": "call_0_9265220e_2",
+        "tool": "classify",
+        "state": {
+          "status": "running",
+          "input": {
+            "task": "Read package.json and tell me the name field.",
+            "file": "package.json",
+            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+          },
+          "title": "1 state",
+          "time": {
+            "start": 1014
+          }
+        }
+      },
+      "time": 1015
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000020000",
+        "type": "tool",
+        "callID": "call_0_9265220e_2",
+        "tool": "classify",
+        "state": {
+          "status": "completed",
+          "input": {
+            "task": "Read package.json and tell me the name field.",
+            "file": "package.json",
+            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+          },
+          "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
+          "title": "1 state · 3 questions · 212 ms",
+          "metadata": {
+            "answers": [
+              {
+                "relevant": {
+                  "value": true,
+                  "probability": 0.93
+                },
+                "role": {
+                  "value": "implementation",
+                  "probabilities": {
+                    "implementation": 0.81,
+                    "fixture": 0.14,
+                    "unrelated": 0.05
+                  },
+                  "confidence": 0.81
+                },
+                "risk": {
+                  "value": 0.4,
+                  "label": "none",
+                  "probabilities": {
+                    "none": 0.62,
+                    "low": 0.3,
+                    "medium": 0.06,
+                    "high": 0.02
+                  },
+                  "confidence": 0.62
+                }
+              }
+            ],
+            "result": {
+              "answers": {
+                "relevant": {
+                  "value": true,
+                  "probability": 0.93
+                },
+                "role": {
+                  "value": "implementation",
+                  "probabilities": {
+                    "implementation": 0.81,
+                    "fixture": 0.14,
+                    "unrelated": 0.05
+                  },
+                  "confidence": 0.81
+                },
+                "risk": {
+                  "value": 0.4,
+                  "label": "none",
+                  "probabilities": {
+                    "none": 0.62,
+                    "low": 0.3,
+                    "medium": 0.06,
+                    "high": 0.02
+                  },
+                  "confidence": 0.62
+                }
+              },
+              "confidence": {
+                "relevant": 0.86,
+                "role": 0.81,
+                "risk": 0.62
+              },
+              "latencyMs": 212
+            }
+          },
+          "time": {
+            "start": 1014,
+            "end": 1016
+          }
+        }
+      },
+      "time": 1016
     }
   },
   {
@@ -410,28 +564,28 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200000200000000",
         "type": "tool",
-        "callID": "cell_0_91a577d8",
+        "callID": "cell_0_9265220e",
         "tool": "cell",
         "state": {
           "status": "completed",
           "input": {
             "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
-          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n",
-          "title": "frame 1 · 2 calls · read-only",
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n",
+          "title": "frame 1 · 3 calls · read-only",
           "metadata": {
             "transition": "continue",
-            "calls": 2,
+            "calls": 3,
             "edits": 0
           },
           "time": {
-            "start": 1006,
-            "end": 1013
+            "start": 1007,
+            "end": 1017
           }
         }
       },
-      "time": 1013
+      "time": 1017
     }
   },
   {
@@ -452,12 +606,12 @@
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
-            "start": 1014,
-            "end": 1014
+            "start": 1018,
+            "end": 1018
           }
         }
       },
-      "time": 1014
+      "time": 1018
     }
   },
   {
@@ -481,7 +635,7 @@
           }
         }
       },
-      "time": 1015
+      "time": 1019
     }
   },
   {
@@ -494,7 +648,7 @@
         "id": "prt_00000000100200010000000000",
         "type": "step-start"
       },
-      "time": 1016
+      "time": 1020
     }
   },
   {
@@ -508,10 +662,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1017
+          "start": 1021
         }
       },
-      "time": 1017
+      "time": 1021
     }
   },
   {
@@ -665,6 +819,40 @@
     }
   },
   {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 2052,
+          "output": 184,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1022
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -675,11 +863,11 @@
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
-          "start": 1017,
-          "end": 1018
+          "start": 1021,
+          "end": 1023
         }
       },
-      "time": 1019
+      "time": 1024
     }
   },
   {
@@ -701,11 +889,11 @@
           },
           "title": "frame 2",
           "time": {
-            "start": 1020
+            "start": 1025
           }
         }
       },
-      "time": 1020
+      "time": 1025
     }
   },
   {
@@ -726,12 +914,12 @@
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {
-            "start": 1021,
-            "end": 1021
+            "start": 1026,
+            "end": 1026
           }
         }
       },
-      "time": 1021
+      "time": 1026
     }
   },
   {
@@ -752,11 +940,11 @@
           },
           "title": "ls -la",
           "time": {
-            "start": 1022
+            "start": 1027
           }
         }
       },
-      "time": 1022
+      "time": 1027
     }
   },
   {
@@ -795,7 +983,7 @@
         "id": "prt_00000000100200000000000000",
         "type": "step-start"
       },
-      "time": 1023
+      "time": 1028
     }
   },
   {
@@ -809,10 +997,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1024
+          "start": 1029
         }
       },
-      "time": 1024
+      "time": 1029
     }
   },
   {
@@ -906,6 +1094,40 @@
     }
   },
   {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 2864,
+          "output": 280,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1030
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -916,11 +1138,11 @@
         "type": "reasoning",
         "text": "I'll read package.json and list the directory first.",
         "time": {
-          "start": 1024,
-          "end": 1025
+          "start": 1029,
+          "end": 1031
         }
       },
-      "time": 1026
+      "time": 1032
     }
   },
   {
@@ -932,21 +1154,21 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200000200000000",
         "type": "tool",
-        "callID": "cell_0_91a577d8",
+        "callID": "cell_0_9265220e",
         "tool": "cell",
         "state": {
           "status": "running",
           "input": {
             "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
           "title": "frame 1",
           "time": {
-            "start": 1027
+            "start": 1033
           }
         }
       },
-      "time": 1027
+      "time": 1033
     }
   },
   {
@@ -958,7 +1180,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000000000",
         "type": "tool",
-        "callID": "call_0_91a577d8_0",
+        "callID": "call_0_9265220e_0",
         "tool": "read",
         "state": {
           "status": "running",
@@ -967,11 +1189,11 @@
           },
           "title": "package.json",
           "time": {
-            "start": 1028
+            "start": 1034
           }
         }
       },
-      "time": 1029
+      "time": 1035
     }
   },
   {
@@ -983,7 +1205,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000000000",
         "type": "tool",
-        "callID": "call_0_91a577d8_0",
+        "callID": "call_0_9265220e_0",
         "tool": "read",
         "state": {
           "status": "completed",
@@ -998,12 +1220,12 @@
             }
           },
           "time": {
-            "start": 1028,
-            "end": 1030
+            "start": 1034,
+            "end": 1036
           }
         }
       },
-      "time": 1030
+      "time": 1036
     }
   },
   {
@@ -1015,7 +1237,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000010000",
         "type": "tool",
-        "callID": "call_0_91a577d8_1",
+        "callID": "call_0_9265220e_1",
         "tool": "list",
         "state": {
           "status": "running",
@@ -1024,11 +1246,11 @@
           },
           "title": "/repo",
           "time": {
-            "start": 1031
+            "start": 1037
           }
         }
       },
-      "time": 1032
+      "time": 1038
     }
   },
   {
@@ -1040,7 +1262,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200001000010000",
         "type": "tool",
-        "callID": "call_0_91a577d8_1",
+        "callID": "call_0_9265220e_1",
         "tool": "list",
         "state": {
           "status": "completed",
@@ -1070,12 +1292,132 @@
             }
           },
           "time": {
-            "start": 1031,
-            "end": 1033
+            "start": 1037,
+            "end": 1039
           }
         }
       },
-      "time": 1033
+      "time": 1039
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000020000",
+        "type": "tool",
+        "callID": "call_0_9265220e_2",
+        "tool": "classify",
+        "state": {
+          "status": "running",
+          "input": {
+            "task": "Read package.json and tell me the name field.",
+            "file": "package.json",
+            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+          },
+          "title": "1 state",
+          "time": {
+            "start": 1040
+          }
+        }
+      },
+      "time": 1041
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_00000000100200001000020000",
+        "type": "tool",
+        "callID": "call_0_9265220e_2",
+        "tool": "classify",
+        "state": {
+          "status": "completed",
+          "input": {
+            "task": "Read package.json and tell me the name field.",
+            "file": "package.json",
+            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+          },
+          "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
+          "title": "1 state · 3 questions · 212 ms",
+          "metadata": {
+            "answers": [
+              {
+                "relevant": {
+                  "value": true,
+                  "probability": 0.93
+                },
+                "role": {
+                  "value": "implementation",
+                  "probabilities": {
+                    "implementation": 0.81,
+                    "fixture": 0.14,
+                    "unrelated": 0.05
+                  },
+                  "confidence": 0.81
+                },
+                "risk": {
+                  "value": 0.4,
+                  "label": "none",
+                  "probabilities": {
+                    "none": 0.62,
+                    "low": 0.3,
+                    "medium": 0.06,
+                    "high": 0.02
+                  },
+                  "confidence": 0.62
+                }
+              }
+            ],
+            "result": {
+              "answers": {
+                "relevant": {
+                  "value": true,
+                  "probability": 0.93
+                },
+                "role": {
+                  "value": "implementation",
+                  "probabilities": {
+                    "implementation": 0.81,
+                    "fixture": 0.14,
+                    "unrelated": 0.05
+                  },
+                  "confidence": 0.81
+                },
+                "risk": {
+                  "value": 0.4,
+                  "label": "none",
+                  "probabilities": {
+                    "none": 0.62,
+                    "low": 0.3,
+                    "medium": 0.06,
+                    "high": 0.02
+                  },
+                  "confidence": 0.62
+                }
+              },
+              "confidence": {
+                "relevant": 0.86,
+                "role": 0.81,
+                "risk": 0.62
+              },
+              "latencyMs": 212
+            }
+          },
+          "time": {
+            "start": 1040,
+            "end": 1042
+          }
+        }
+      },
+      "time": 1042
     }
   },
   {
@@ -1087,28 +1429,28 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_00000000100200000200000000",
         "type": "tool",
-        "callID": "cell_0_91a577d8",
+        "callID": "cell_0_9265220e",
         "tool": "cell",
         "state": {
           "status": "completed",
           "input": {
             "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nreturn ctx.continue()"
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
-          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n",
-          "title": "frame 1 · 2 calls · read-only",
+          "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n",
+          "title": "frame 1 · 3 calls · read-only",
           "metadata": {
             "transition": "continue",
-            "calls": 2,
+            "calls": 3,
             "edits": 0
           },
           "time": {
-            "start": 1027,
-            "end": 1034
+            "start": 1033,
+            "end": 1043
           }
         }
       },
-      "time": 1034
+      "time": 1043
     }
   },
   {
@@ -1129,12 +1471,12 @@
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
-            "start": 1035,
-            "end": 1035
+            "start": 1044,
+            "end": 1044
           }
         }
       },
-      "time": 1035
+      "time": 1044
     }
   },
   {
@@ -1158,7 +1500,7 @@
           }
         }
       },
-      "time": 1036
+      "time": 1045
     }
   },
   {
@@ -1171,7 +1513,7 @@
         "id": "prt_00000000100200010000000000",
         "type": "step-start"
       },
-      "time": 1037
+      "time": 1046
     }
   },
   {
@@ -1185,10 +1527,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1038
+          "start": 1047
         }
       },
-      "time": 1038
+      "time": 1047
     }
   },
   {
@@ -1342,6 +1684,40 @@
     }
   },
   {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 4104,
+          "output": 368,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1048
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -1352,11 +1728,11 @@
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
-          "start": 1038,
-          "end": 1039
+          "start": 1047,
+          "end": 1049
         }
       },
-      "time": 1040
+      "time": 1050
     }
   },
   {
@@ -1378,11 +1754,11 @@
           },
           "title": "frame 2",
           "time": {
-            "start": 1041
+            "start": 1051
           }
         }
       },
-      "time": 1041
+      "time": 1051
     }
   },
   {
@@ -1403,12 +1779,12 @@
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {
-            "start": 1042,
-            "end": 1042
+            "start": 1052,
+            "end": 1052
           }
         }
       },
-      "time": 1042
+      "time": 1052
     }
   },
   {
@@ -1429,11 +1805,11 @@
           },
           "title": "ls -la",
           "time": {
-            "start": 1022
+            "start": 1027
           }
         }
       },
-      "time": 1043
+      "time": 1053
     }
   },
   {
@@ -1469,12 +1845,12 @@
             }
           },
           "time": {
-            "start": 1022,
-            "end": 1044
+            "start": 1027,
+            "end": 1054
           }
         }
       },
-      "time": 1044
+      "time": 1054
     }
   },
   {
@@ -1502,12 +1878,12 @@
             "edits": 0
           },
           "time": {
-            "start": 1041,
-            "end": 1045
+            "start": 1051,
+            "end": 1055
           }
         }
       },
-      "time": 1045
+      "time": 1055
     }
   },
   {
@@ -1531,7 +1907,7 @@
           }
         }
       },
-      "time": 1046
+      "time": 1056
     }
   },
   {
@@ -1545,10 +1921,10 @@
         "type": "text",
         "text": "",
         "time": {
-          "start": 1047
+          "start": 1057
         }
       },
-      "time": 1047
+      "time": 1057
     }
   },
   {
@@ -1612,11 +1988,11 @@
         "type": "text",
         "text": "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.",
         "time": {
-          "start": 1047,
-          "end": 1048
+          "start": 1057,
+          "end": 1058
         }
       },
-      "time": 1049
+      "time": 1059
     }
   },
   {
@@ -1629,7 +2005,7 @@
         "role": "assistant",
         "time": {
           "created": 1001,
-          "completed": 1050
+          "completed": 1060
         },
         "parentID": "msg_0000000010010000000000000a",
         "modelID": "demo",
@@ -1652,6 +2028,25 @@
         },
         "finish": "stop"
       }
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_000000001002ffff0100000000",
+        "type": "text",
+        "text": "4 frames · 7 calls · 2 classify · Jev 2 calls · 424 ms · $0.0000",
+        "synthetic": true,
+        "time": {
+          "start": 1061,
+          "end": 1061
+        }
+      },
+      "time": 1061
     }
   },
   {
@@ -1683,7 +2078,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1051
+          "updated": 1061
         }
       }
     }

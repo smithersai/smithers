@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the routes, the event hub, the store, the projection, the turn composition, the driver seam, the engine driver and the scripted driver, identifiers, CORS, and basic authentication."
+description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the routes, the event hub, the store, the projection, the health color, the turn composition, the driver seam, the engine driver and the scripted driver, identifiers, CORS, and basic authentication."
 ---
 
 The package declares `effect`, `@effect/platform-node` and
@@ -12,19 +12,19 @@ also importable from `@smthrs/opencode/<Module>`.
 
 ## `Serve`
 
-| Export          | Signature                                                              | Meaning                                                                                     |
-| --------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `Bind`          | `{ hostname, port, listen, cors, credentials }`                        | What the verb was asked to bind.                                                            |
-| `defaultBind`   | `Bind`                                                                 | Loopback on 4096, the port the hosted app expects.                                          |
-| `loopbackHosts` | `ReadonlyArray<string>`                                                | The addresses that need no opt-in.                                                          |
-| `refusal`       | `(bind: Bind) => string \| undefined`                                  | Why a bind is refused: a non-loopback host needs `listen` and credentials.                  |
-| `url`           | `(bind: Bind) => string`                                               | The URL the app connects to.                                                                |
-| `banner`        | `(bind: Bind, directory: string) => string`                            | The line printed once the server listens.                                                   |
-| `databasePath`  | `(directory: string) => string`                                        | `<directory>/.smithers/opencode.sqlite`.                                                    |
-| `Options`       | `{ directory, bind, version, seat, agent?, heartbeat? }`               | How the server is assembled.                                                                |
-| `app`           | `(options) => Layer<never, never, HttpRouter \| Driver \| Store>`      | The routes behind CORS and auth over the hub and the turns, for an in-process handler.      |
-| `layer`         | `(options) => Layer<HttpServer, ServeError \| Error, Driver \| Store>` | The application on a Node socket over the host's driver and store. Fails on a refused bind. |
-| `host`          | `(options) => Effect<never, ServeError \| Error, Driver \| Store>`     | Hosts the server until interrupted.                                                         |
+| Export          | Signature                                                                                                | Meaning                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `Bind`          | `{ hostname, port, listen, cors, credentials }`                                                          | What the verb was asked to bind.                                                                   |
+| `defaultBind`   | `Bind`                                                                                                   | Loopback on 4096, the port the hosted app expects.                                                 |
+| `loopbackHosts` | `ReadonlyArray<string>`                                                                                  | The addresses that need no opt-in.                                                                 |
+| `refusal`       | `(bind: Bind) => string \| undefined`                                                                    | Why a bind is refused: a non-loopback host needs `listen` and credentials.                         |
+| `url`           | `(bind: Bind) => string`                                                                                 | The URL the app connects to.                                                                       |
+| `banner`        | `(bind: Bind, directory: string) => string`                                                              | The line printed once the server listens.                                                          |
+| `databasePath`  | `(directory: string) => string`                                                                          | `<directory>/.smithers/opencode.sqlite`.                                                           |
+| `Options`       | `{ directory, bind, version, seat, agent?, heartbeat?, evaluator?, environment?, maxFrames?, pricing? }` | How the server is assembled; the evaluator defaults to `Health.evaluatorLayer` over `environment`. |
+| `app`           | `(options) => Layer<never, never, HttpRouter \| Driver \| Store>`                                        | The routes behind CORS and auth over the hub and the turns, for an in-process handler.             |
+| `layer`         | `(options) => Layer<HttpServer, ServeError \| Error, Driver \| Store>`                                   | The application on a Node socket over the host's driver and store. Fails on a refused bind.        |
+| `host`          | `(options) => Effect<never, ServeError \| Error, Driver \| Store>`                                       | Hosts the server until interrupted.                                                                |
 
 ## `Routes`
 
@@ -66,47 +66,68 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 
 ## `Store`
 
-| Export                | Signature                                                      | Meaning                                                              |
-| --------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `StoreError`          | `TaggedError`                                                  | The database refused a statement.                                    |
-| `Grant`               | `{ sessionID, kind: always \| once \| reject, key }`           | A permission decision kept across restarts.                          |
-| `Turn`                | `{ sessionID, messageID, prompt, history?, agent?, model? }`   | A turn the engine driver has not seen settle.                        |
-| `Service`             | sessions, messages, parts, permissions, grants, turns, `apply` | What the store does; `apply` persists what an emitted event implies. |
-| `Store`               | `Context.Service`                                              | The store service.                                                   |
-| `migrations`          | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger. |
-| `make`                | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                        |
-| `layer`               | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                    |
-| `layerSqlite`         | `(filename: string) => Layer<Store, StoreError>`               | The store over its own file.                                         |
-| `defaultMessageLimit` | `number`                                                       | 20.                                                                  |
+| Export                    | Signature                                                      | Meaning                                                              |
+| ------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `StoreError`              | `TaggedError`                                                  | The database refused a statement.                                    |
+| `Grant`                   | `{ sessionID, kind: always \| once \| reject, key }`           | A permission decision kept across restarts.                          |
+| `Turn`                    | `{ sessionID, messageID, prompt, history?, agent?, model? }`   | A turn the engine driver has not seen settle.                        |
+| `Service`                 | sessions, messages, parts, permissions, grants, turns, `apply` | What the store does; `apply` persists what an emitted event implies. |
+| `Store`                   | `Context.Service`                                              | The store service.                                                   |
+| `putHealth`, `listHealth` | on `Service`                                                   | One `flows.opencode.health.v1` record per decision, per session.     |
+| `migrations`              | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger. |
+| `make`                    | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                        |
+| `layer`                   | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                    |
+| `layerSqlite`             | `(filename: string) => Layer<Store, StoreError>`               | The store over its own file.                                         |
+| `defaultMessageLimit`     | `number`                                                       | 20.                                                                  |
 
 ## `Projection`
 
-| Export                                             | Meaning                                                                                                                                                       |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Context`, `Opened`, `State`, `Step`, `Closing`    | What the fold needs, what opens a turn, its state, its answer, and how a turn ends without an event.                                                          |
-| `open`                                             | `(ctx, opened) => Step`: the user message, the session title, the assistant header, the busy status; `opened.createdAt` keeps a re-opened turn's header time. |
-| `fold`                                             | `(ctx, state, event: AgentEvent) => Step`: total; an unknown event changes nothing.                                                                           |
-| `close`                                            | `(ctx, state, closing) => Step`: ends a turn the stream did not end.                                                                                          |
-| `toolName`, `toolInput`, `toolTitle`, `toolOutput` | How a flow call becomes the card OpenCode renders.                                                                                                            |
-| `toolMetadata`, `permissionPatterns`               | The structured metadata beside a card, and the patterns of a permission card.                                                                                 |
-| `prose`, `answerText`, `chunks`                    | The model's prose outside code fences, the final answer, and its streamed deltas.                                                                             |
-| `slots`, `finalFrame`, `demandOrdinals`            | The sort keys parts are derived from.                                                                                                                         |
+| Export                                                                                | Meaning                                                                                                                                                       |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Context`, `Opened`, `State`, `Step`, `Closing`                                       | What the fold needs, what opens a turn, its state, its answer, and how a turn ends without an event.                                                          |
+| `open`                                                                                | `(ctx, opened) => Step`: the user message, the session title, the assistant header, the busy status; `opened.createdAt` keeps a re-opened turn's header time. |
+| `fold`                                                                                | `(ctx, state, event: AgentEvent) => Step`: total; an unknown event changes nothing.                                                                           |
+| `close`                                                                               | `(ctx, state, closing) => Step`: ends a turn the stream did not end.                                                                                          |
+| `toolName`, `toolInput`, `toolTitle`, `toolOutput`                                    | How a flow call becomes the card OpenCode renders.                                                                                                            |
+| `toolMetadata`, `permissionPatterns`                                                  | The structured metadata beside a card, and the patterns of a permission card.                                                                                 |
+| `prose`, `answerText`, `chunks`                                                       | The model's prose outside code fences, the final answer, and its streamed deltas.                                                                             |
+| `slots`, `finalFrame`, `summarySlot`, `demandOrdinals`                                | The sort keys parts are derived from.                                                                                                                         |
+| `isClassify`, `classifyEntries`, `classifyAnswers`, `classifyOutput`, `classifyTitle` | How a classify call becomes the `classify` card: one line per state, the full answers as metadata.                                                            |
+| `Step.health`                                                                         | The `Health.Facts` a folded event hands out when it triggers an evaluation: a settled cell, a park, an aborted close.                                         |
+| `decided`, `health`                                                                   | Fold a decision in: the dot on the title and a `health` card on a color change; `health` also counts the Jev call.                                            |
+| `Pricing`, `costOf`, `sessionNow`                                                     | Dollars per million tokens, the cost of a token count, and the session with this turn's tokens and cost.                                                      |
+| `Summary`, `summaryLine`                                                              | The run summary: frames, calls, classify calls, Jev calls, latency, and spend.                                                                                |
+| `defaultMaxFrames`, `lastCallsKept`, `healthTextCap`                                  | What the health facts carry.                                                                                                                                  |
+
+## `Health`
+
+| Export                                                                                 | Signature                                                           | Meaning                                                                                             |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `State`, `Facts`, `toState`                                                            | schema, `State & { demandThisFrame, capEnded }`, `(facts) => State` | What Jev is sent (design section 3.1), and the two server-only facts the rule also reads.           |
+| `classifier`                                                                           | `Classifier<"harness/health", State, questions>`                    | The curated health classifier: `progress` (score), `stuck`, `needsHuman` (boolean).                 |
+| `Answers`, `Color`, `Decision`                                                         | types                                                               | The typed answers, `green \| yellow \| red \| gray`, and a color with its reason.                   |
+| `decide`                                                                               | `(facts, answers \| undefined) => Decision`                         | The color rule, first match wins; no answers or none confident is gray.                             |
+| `dots`, `colorOf`, `strip`, `dotted`, `retitle`                                        | title helpers                                                       | The dot per color, and how a title carries, loses, and keeps one across a rename.                   |
+| `evaluate`                                                                             | `(facts, deadline?) => Effect<Evaluation, never, Evaluator>`        | One evaluation within the deadline; never fails.                                                    |
+| `Evaluation`, `Entry`, `recordType`                                                    | `{ decision, answers, latencyMs, usage, error }`, the stored record | What an evaluation produced, and the `flows.opencode.health.v1` record the store keeps.             |
+| `evaluatorLayer`, `ambientEnvironment`                                                 | `(environment) => Layer<Evaluator>`, `() => process.env`            | Jev through the Vercel gateway when `AI_GATEWAY_API_KEY` is set, else `Evaluator.layerUnavailable`. |
+| `jevCost`, `jevInputPricePerMillion`, `renderAnswers`, `confidenceFloor`, `deadlineMs` | constants and conversions                                           | Jev's price and the card's answer text.                                                             |
 
 ## `Turns`
 
-| Export                            | Signature                                                                                            | Meaning                                                      |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `PromptInput`                     | `{ sessionID, messageID?, agent?, model?, parts }`                                                   | What the app sends on `prompt_async`.                        |
-| `TurnsError`                      | `TaggedError` with `unknown_session`, `unknown_permission`, `empty_prompt`                           | The failures a turn request reports.                         |
-| `Options`                         | `{ directory, agent, model }`                                                                        | Defaults a prompt inherits.                                  |
-| `Service`                         | `{ prompt, abort, permission, status }`                                                              | The composition.                                             |
-| `Turns`                           | `Context.Service`                                                                                    | The service.                                                 |
-| `promptText`                      | `(parts) => string`                                                                                  | The text of a prompt's parts.                                |
-| `history`                         | `(messages, cap?) => string \| undefined`                                                            | The conversation tail a follow-up carries.                   |
-| `historyCap`                      | `number`                                                                                             | 4096 characters.                                             |
-| `isLocked`                        | `(error: StoreError) => boolean`                                                                     | Whether a store write found the database held by the engine. |
-| `storeRetryDelay`, `storeRetries` | `Duration.Input`, `number`                                                                           | How a locked write is retried.                               |
-| `make`, `layer`                   | constructors over `Driver`, `Store` and `Events`; `make` re-opens the turns the driver finds at boot |                                                              |
+| Export                            | Signature                                                                                                                                                   | Meaning                                                      |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `PromptInput`                     | `{ sessionID, messageID?, agent?, model?, parts }`                                                                                                          | What the app sends on `prompt_async`.                        |
+| `TurnsError`                      | `TaggedError` with `unknown_session`, `unknown_permission`, `empty_prompt`                                                                                  | The failures a turn request reports.                         |
+| `Options`                         | `{ directory, agent, model, maxFrames?, pricing? }`                                                                                                         | Defaults a prompt inherits.                                  |
+| `Service`                         | `{ prompt, abort, permission, status }`                                                                                                                     | The composition.                                             |
+| `Turns`                           | `Context.Service`                                                                                                                                           | The service.                                                 |
+| `promptText`                      | `(parts) => string`                                                                                                                                         | The text of a prompt's parts.                                |
+| `history`                         | `(messages, cap?) => string \| undefined`                                                                                                                   | The conversation tail a follow-up carries.                   |
+| `historyCap`                      | `number`                                                                                                                                                    | 4096 characters.                                             |
+| `isLocked`                        | `(error: StoreError) => boolean`                                                                                                                            | Whether a store write found the database held by the engine. |
+| `storeRetryDelay`, `storeRetries` | `Duration.Input`, `number`                                                                                                                                  | How a locked write is retried.                               |
+| `make`, `layer`                   | constructors over `Driver`, `Store`, `Events` and `Evaluator`; `make` re-opens the turns the driver finds at boot and forks a health evaluation per trigger |                                                              |
 
 ## `Driver`
 
@@ -122,31 +143,31 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 
 ## `EngineDriver`
 
-| Export                              | Signature                                                                                      | Meaning                                                                                  |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `Host`                              | `{ platform, seats, registry }`                                                                | What the host equips a turn with: the guarded platform, the seat resolver, the registry. |
-| `FlowServices`                      | `{ filesystem, shell, engine }`                                                                | The service slices the standard flows are built from.                                    |
-| `Options`                           | `{ directory, seat, host, maxFrames?, limits?, flows?, asks?, databaseFile?, attachTimeout? }` | How the driver is built.                                                                 |
-| `layer`                             | `(options) => Layer<Driver \| Store>`                                                          | The driver and the store over one engine database.                                       |
-| `turnFlow`                          | `Flow`                                                                                         | The one durable flow every prompt executes, `opencode/turn`.                             |
-| `task`                              | `(input: StartInput) => string`                                                                | The task the model is given: the prompt, behind the conversation tail when there is one. |
-| `requestID`                         | `(executionId, identity) => string`                                                            | The permission id of a call, stable across replay.                                       |
-| `standardFlows`                     | `(services) => ReadonlyArray<FlowBinding.Source>`                                              | Filesystem, shell, and clock.                                                            |
-| `refusing`                          | `(source, rejected) => FlowBinding.Source`                                                     | Settles a rejected call as `capability_refused` with a `permission_denied` message.      |
-| `envelope`                          | `ReadonlyArray<string>`                                                                        | `fs:read:/**`, `fs:write:/**`, `proc:spawn:*`.                                           |
-| `defaultLimits`, `defaultMaxFrames` | `Sandbox.Limits`, `number`                                                                     | The CLI's cell budget and one hundred frames.                                            |
-| `databasePath`                      | `(directory) => string`                                                                        | `<directory>/.smithers/opencode.sqlite`.                                                 |
-| `inertJj`                           | `{ snapshot, restore, diff }`                                                                  | The version control the engine is built over; a turn never calls it.                     |
+| Export                              | Signature                                                                                                                | Meaning                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `Host`                              | `{ platform, seats, registry }`                                                                                          | What the host equips a turn with: the guarded platform, the seat resolver, the registry.       |
+| `FlowServices`                      | `{ filesystem, shell, engine, evaluator }`                                                                               | The service slices the standard flows are built from.                                          |
+| `Options`                           | `{ directory, seat, host, maxFrames?, limits?, flows?, asks?, databaseFile?, attachTimeout?, evaluator?, environment? }` | How the driver is built; the evaluator defaults to `Health.evaluatorLayer` over `environment`. |
+| `layer`                             | `(options) => Layer<Driver \| Store>`                                                                                    | The driver and the store over one engine database.                                             |
+| `turnFlow`                          | `Flow`                                                                                                                   | The one durable flow every prompt executes, `opencode/turn`.                                   |
+| `task`                              | `(input: StartInput) => string`                                                                                          | The task the model is given: the prompt, behind the conversation tail when there is one.       |
+| `requestID`                         | `(executionId, identity) => string`                                                                                      | The permission id of a call, stable across replay.                                             |
+| `standardFlows`                     | `(services) => ReadonlyArray<FlowBinding.Source>`                                                                        | Filesystem, shell, clock, and classify with the three curated classifiers.                     |
+| `refusing`                          | `(source, rejected) => FlowBinding.Source`                                                                               | Settles a rejected call as `capability_refused` with a `permission_denied` message.            |
+| `envelope`                          | `ReadonlyArray<string>`                                                                                                  | `fs:read:/**`, `fs:write:/**`, `proc:spawn:*`, `model:call:*`.                                 |
+| `defaultLimits`, `defaultMaxFrames` | `Sandbox.Limits`, `number`                                                                                               | The CLI's cell budget and one hundred frames.                                                  |
+| `databasePath`                      | `(directory) => string`                                                                                                  | `<directory>/.smithers/opencode.sqlite`.                                                       |
+| `inertJj`                           | `{ snapshot, restore, diff }`                                                                                            | The version control the engine is built over; a turn never calls it.                           |
 
 ## `ScriptedDriver` and `DemoScript`
 
-| Export                         | Meaning                                                                                |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| `ScriptedDriver.Segment`       | A run of events, or a permission park with its `allowed` and `rejected` continuations. |
-| `ScriptedDriver.Script`        | `{ segments }`.                                                                        |
-| `ScriptedDriver.Options`       | `{ script, delay? }`: the turn to replay and the pause between events.                 |
-| `ScriptedDriver.make`, `layer` | Constructors.                                                                          |
-| `DemoScript.script`            | `(input: StartInput) => Script`: the recorded turn keyed by the session id.            |
+| Export                         | Meaning                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `ScriptedDriver.Segment`       | A run of events, or a permission park with its `allowed` and `rejected` continuations.            |
+| `ScriptedDriver.Script`        | `{ segments }`.                                                                                   |
+| `ScriptedDriver.Options`       | `{ script, delay? }`: the turn to replay and the pause between events.                            |
+| `ScriptedDriver.make`, `layer` | Constructors.                                                                                     |
+| `DemoScript.script`            | `(input: StartInput) => Script`: the recorded turn keyed by the session id, with a classify call. |
 
 ## `Ids`
 

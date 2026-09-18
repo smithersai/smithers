@@ -16,8 +16,14 @@
  *
  * The composition follows `docs/jev-harness/composition-brief.md`: the
  * engine is built over the host's guarded platform, the registration
- * context carries the agent, the seats, and the registry, and the body's
- * failure is projected through `settlementFailure` before it settles.
+ * context carries the agent, the seats, the registry, and the evaluator,
+ * and the body's failure is projected through `settlementFailure` before it
+ * settles.
+ *
+ * The cell's doors to Jev are the standard `classify` flows, bound over the
+ * evaluator the host installs: Jev through the Vercel gateway when
+ * `AI_GATEWAY_API_KEY` is set, else one that refuses every call as
+ * `unreachable`, which the cell reads as `{ ok: false }` and goes on.
  *
  * @since 1.0.0
  */
@@ -45,6 +51,7 @@ import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Jj from "@smthrs/jj"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
@@ -71,6 +78,7 @@ import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
 import { join, resolve } from "node:path"
 import * as Driver from "./Driver.ts"
+import * as Health from "./Health.ts"
 import * as Store from "./Store.ts"
 
 /**
@@ -101,6 +109,7 @@ export interface FlowServices {
   readonly filesystem: Context.Context<FileSystem.FileSystem | Path.Path>
   readonly shell: Context.Context<ChildProcessSpawner.ChildProcessSpawner | Path.Path>
   readonly engine: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+  readonly evaluator: Context.Context<Evaluator.Evaluator>
 }
 
 /**
@@ -119,8 +128,12 @@ export interface Options {
   readonly maxFrames?: number | undefined
   /** The sandbox budget per cell. The CLI's values by default. */
   readonly limits?: Sandbox.Limits | undefined
-  /** The flows a turn may call. The standard filesystem, shell, and clock flows by default. */
+  /** The flows a turn may call. The standard filesystem, shell, clock, and classify flows by default. */
   readonly flows?: ((services: FlowServices) => ReadonlyArray<FlowBinding.Source>) | undefined
+  /** The evaluator classify calls go through. `Health.evaluatorLayer` over `environment` by default. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /** Where `AI_GATEWAY_API_KEY` is read from when no evaluator is given. The process environment by default. */
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   /** The flows a call to which asks the person first. `bash` by default. */
   readonly asks?: ReadonlyArray<string> | undefined
   /** The engine database. `<directory>/.smithers/opencode.sqlite` by default. */
@@ -155,7 +168,7 @@ export const defaultMaxFrames = 100
  * @category constants
  * @since 1.0.0
  */
-export const envelope: ReadonlyArray<string> = ["fs:read:/**", "fs:write:/**", "proc:spawn:*"]
+export const envelope: ReadonlyArray<string> = ["fs:read:/**", "fs:write:/**", "proc:spawn:*", "model:call:*"]
 
 /**
  * The database file under the served directory.
@@ -236,7 +249,8 @@ export const requestID = (
   }_${identity.ordinal}`
 
 /**
- * The standard flows: filesystem, shell, and clock.
+ * The standard flows: filesystem, shell, clock, and classify with the three
+ * curated classifiers `@smthrs/std` ships.
  *
  * @category constructors
  * @since 1.0.0
@@ -244,7 +258,8 @@ export const requestID = (
 export const standardFlows = (services: FlowServices): ReadonlyArray<FlowBinding.Source> => [
   StandardFlows.filesystem(services.filesystem),
   StandardFlows.shell(services.shell),
-  StandardFlows.clock(services.engine)
+  StandardFlows.clock(services.engine),
+  StandardFlows.classify(services.evaluator)
 ]
 
 /**
@@ -317,6 +332,8 @@ export const layer = (options: Options) =>
     const maxFrames = options.maxFrames ?? defaultMaxFrames
     const limits = options.limits ?? defaultLimits
     const flowsOf = options.flows ?? standardFlows
+    const evaluator = options.evaluator ??
+      Health.evaluatorLayer(options.environment ?? Health.ambientEnvironment())
     const attachTimeout = options.attachTimeout ?? "30 seconds"
     const grants = { always: new Set<string>(), once: new Set<string>(), denied: new Set<string>() }
     const sessions = new Map<string, Running>()
@@ -423,7 +440,8 @@ export const layer = (options: Options) =>
             const services: FlowServices = {
               filesystem: yield* Effect.context<FileSystem.FileSystem | Path.Path>(),
               shell: yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner | Path.Path>(),
-              engine: yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>()
+              engine: yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>(),
+              evaluator: yield* Effect.context<Evaluator.Evaluator>()
             }
             const rejected = (call: Cell.Call) => grants.denied.has(requestID(instance.executionId, call.identity))
             let output = ""
@@ -482,6 +500,7 @@ export const layer = (options: Options) =>
         Agent.layer.pipe(Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({})))),
         options.host.seats,
         options.host.registry,
+        evaluator,
         NotificationQueue.layer
       ])
     )

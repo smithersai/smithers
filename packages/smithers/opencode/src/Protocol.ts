@@ -178,6 +178,8 @@ export interface PartBase {
 export interface TextPart extends PartBase {
   readonly type: "text"
   readonly text: string
+  /** Set on text the server wrote, such as the run summary, never the model. */
+  readonly synthetic?: boolean
   readonly time?: { readonly start: number; readonly end?: number }
 }
 

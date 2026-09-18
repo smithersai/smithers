@@ -35,6 +35,11 @@ export * as EngineDriver from "./EngineDriver.ts"
 export * as Events from "./Events.ts"
 
 /**
+ * @since 1.0.0 @category health
+ */
+export * as Health from "./Health.ts"
+
+/**
  * @since 1.0.0 @category ids
  */
 export * as Ids from "./Ids.ts"

@@ -12,6 +12,11 @@
  * emitted OpenCode event implies (a message header, a part, a delta, a
  * session, a permission) so the hub can publish exactly what was stored.
  *
+ * Health decisions are kept here too, as `flows.opencode.health.v1`
+ * records: the engine's journal is not reachable from the projection (the
+ * turns run outside the engine's context, and the scripted driver has no
+ * engine at all), so the store is where agreement is scored from.
+ *
  * @since 1.0.0
  */
 import * as Migrations from "@smthrs/database/Migrations"
@@ -20,6 +25,7 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { mkdirSync } from "node:fs"
 import { dirname } from "node:path"
+import type * as Health from "./Health.ts"
 import type * as Protocol from "./Protocol.ts"
 
 /**
@@ -116,6 +122,10 @@ export interface Service {
   readonly listTurns: () => Effect.Effect<Array<Turn>, StoreError>
   /** Forgets a turn once it settled. True when it was open. */
   readonly settleTurn: (messageID: string) => Effect.Effect<boolean, StoreError>
+  /** Records one health decision. */
+  readonly putHealth: (entry: Health.Entry) => Effect.Effect<void, StoreError>
+  /** Every health decision, or a session's, oldest first. */
+  readonly listHealth: (sessionID?: string) => Effect.Effect<Array<Health.Entry>, StoreError>
   /** Persists what one emitted event implies; events that imply nothing are ignored. */
   readonly apply: (event: Protocol.Emitted) => Effect.Effect<void, StoreError>
 }
@@ -180,6 +190,16 @@ export const migrations: Migrations.MigrationSet = {
         session_id TEXT NOT NULL,
         turn TEXT NOT NULL
       )`
+    }),
+    "0003_health": Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE opencode_health (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        record TEXT NOT NULL
+      )`
+      yield* sql`CREATE INDEX opencode_health_session ON opencode_health (session_id, seq)`
     })
   }
 }
@@ -231,6 +251,7 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
       yield* statement(sql`DELETE FROM opencode_permissions WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_grants WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_turns WHERE session_id = ${id}`)
+      yield* statement(sql`DELETE FROM opencode_health WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_sessions WHERE id = ${id}`)
       return true
     })
@@ -347,6 +368,21 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
       Effect.mapError(failure("The turn could not be settled"))
     )
 
+  const putHealth: Service["putHealth"] = (entry) =>
+    sql`INSERT INTO opencode_health (session_id, message_id, record)
+        VALUES (${entry.sessionID}, ${entry.messageID}, ${JSON.stringify(entry)})`.pipe(
+      Effect.asVoid,
+      Effect.mapError(failure("The health decision could not be stored"))
+    )
+
+  const listHealth: Service["listHealth"] = (sessionID) =>
+    (sessionID === undefined
+      ? sql`SELECT record FROM opencode_health ORDER BY seq ASC`
+      : sql`SELECT record FROM opencode_health WHERE session_id = ${sessionID} ORDER BY seq ASC`).pipe(
+        Effect.map((rows) => rows.map((row) => parse<Health.Entry>(row, "record"))),
+        Effect.mapError(failure("The health decisions could not be listed"))
+      )
+
   const apply: Service["apply"] = (event) =>
     Effect.gen(function*() {
       const properties = event.properties
@@ -399,6 +435,8 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
     putTurn,
     listTurns,
     settleTurn,
+    putHealth,
+    listHealth,
     apply
   }
 })

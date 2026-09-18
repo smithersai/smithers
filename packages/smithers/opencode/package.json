@@ -43,6 +43,7 @@
     "./Driver": "./src/Driver.ts",
     "./EngineDriver": "./src/EngineDriver.ts",
     "./Events": "./src/Events.ts",
+    "./Health": "./src/Health.ts",
     "./Ids": "./src/Ids.ts",
     "./Projection": "./src/Projection.ts",
     "./Protocol": "./src/Protocol.ts",
@@ -140,6 +141,16 @@
         "require": {
           "types": "./dist/cjs/Events.d.ts",
           "default": "./dist/cjs/Events.js"
+        }
+      },
+      "./Health": {
+        "import": {
+          "types": "./dist/esm/Health.d.ts",
+          "default": "./dist/esm/Health.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Health.d.ts",
+          "default": "./dist/cjs/Health.js"
         }
       },
       "./Ids": {

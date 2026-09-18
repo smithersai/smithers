@@ -7,6 +7,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
+import type * as Health from "../src/Health.ts"
+import * as Ids from "../src/Ids.ts"
 import * as Projection from "../src/Projection.ts"
 import * as Protocol from "../src/Protocol.ts"
 
@@ -97,8 +99,15 @@ describe("Projection", () => {
     const tools = parts
       .map((event) => event.properties["part"] as Protocol.Part)
       .filter((part): part is Protocol.ToolPart => part.type === "tool")
-    expect(ids.size).toBe(13 + 1)
-    expect([...new Set(tools.map((part) => part.tool))].sort()).toEqual(["bash", "cell", "demand", "list", "read"])
+    expect(ids.size).toBe(15 + 1)
+    expect([...new Set(tools.map((part) => part.tool))].sort()).toEqual([
+      "bash",
+      "cell",
+      "classify",
+      "demand",
+      "list",
+      "read"
+    ])
     const ordered = [...ids].sort()
     expect([...ids]).toEqual(expect.arrayContaining(ordered))
     const byMessage = parts.map((event) => (event.properties["part"] as Protocol.Part).id).filter((id) =>
@@ -159,7 +168,8 @@ describe("Projection", () => {
     expect(Projection.toolTitle("grep", {})).toBe("")
     expect(Projection.toolTitle("bash", { command: "ls" })).toBe("ls")
     expect(Projection.toolTitle("bash", {})).toBe("")
-    expect(Projection.toolTitle("classify", {})).toBe("classify")
+    expect(Projection.toolTitle("classify", {})).toBe("1 state")
+    expect(Projection.toolTitle("classify/edit/risk", { states: [1, 2] })).toBe("2 states")
 
     expect(Projection.toolOutput("read", { content: "c" })).toBe("c")
     expect(Projection.toolOutput("read", { other: 1 })).toBe(`{"other":1}`)
@@ -194,7 +204,7 @@ describe("Projection", () => {
     expect(Projection.permissionPatterns("bash", { command: "  " })).toEqual({ patterns: ["  "], always: ["*"] })
     expect(Projection.permissionPatterns("bash", {})).toEqual({ patterns: [""], always: ["*"] })
     expect(Projection.permissionPatterns("edit", { filePath: "/repo/f" })).toEqual({ patterns: ["f"], always: ["*"] })
-    expect(Projection.permissionPatterns("classify", {})).toEqual({ patterns: ["classify"], always: ["*"] })
+    expect(Projection.permissionPatterns("clock", {})).toEqual({ patterns: ["clock"], always: ["*"] })
     expect(Projection.permissionPatterns("edit", {})).toEqual({ patterns: ["*"], always: ["*"] })
 
     expect(Projection.prose(ModelRequest.Message.assistant("Hi\n```js\ncode\n```\nthere"))).toBe("Hi\n\nthere")
@@ -232,14 +242,24 @@ describe("Projection", () => {
     const ctx = { directory, now: clock().now }
     const start = Projection.open(ctx, opened())
     const interrupted = Projection.close(ctx, start.state, { _tag: "interrupted" })
+    // An interrupt turns the dot gray (a title and a health card), then the
+    // header, the run summary, the session, and the idle status follow.
     expect(interrupted.events.map((event) => event.type)).toEqual([
+      "session.updated",
+      "message.part.updated",
       "message.updated",
+      "message.part.updated",
       "session.updated",
       "session.status",
       "session.idle"
     ])
-    const header = interrupted.events[0]!.properties["info"] as Protocol.AssistantMessage
+    expect((interrupted.events[0]!.properties["info"] as Protocol.Session).title.startsWith("⚪ ")).toBe(true)
+    expect((interrupted.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
+      title: "interrupted"
+    })
+    const header = interrupted.events[2]!.properties["info"] as Protocol.AssistantMessage
     expect(header.error).toEqual({ name: "MessageAbortedError", data: { message: "The turn was interrupted" } })
+    expect(interrupted.events[3]!.properties["part"]).toMatchObject({ type: "text", synthetic: true })
     expect(Projection.close(ctx, interrupted.state, { _tag: "failed", message: "x" }).events).toEqual([])
     expect(Projection.fold(ctx, interrupted.state, scriptEvents()[0]!).events).toEqual([])
     const withReasoning = Projection.fold(
@@ -248,8 +268,13 @@ describe("Projection", () => {
       scriptEvents()[1]!
     )
     const failed = Projection.close(ctx, withReasoning.state, { _tag: "failed", message: "boom" })
-    expect(failed.events[0]!.type).toBe("message.part.updated")
-    expect((failed.events[1]!.properties["info"] as Protocol.AssistantMessage).error).toEqual({
+    expect(failed.events.map((event) => event.type).slice(0, 4)).toEqual([
+      "message.part.updated",
+      "session.updated",
+      "message.part.updated",
+      "message.updated"
+    ])
+    expect((failed.events[3]!.properties["info"] as Protocol.AssistantMessage).error).toEqual({
       name: "UnknownError",
       data: { message: "boom" }
     })
@@ -258,7 +283,22 @@ describe("Projection", () => {
       start.state,
       new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "quota" })
     )
-    expect((aborted.events[0]!.properties["info"] as Protocol.AssistantMessage).error?.data.message).toBe("quota")
+    expect(aborted.events.map((event) => event.type).slice(0, 3)).toEqual([
+      "session.updated",
+      "message.part.updated",
+      "message.updated"
+    ])
+    expect((aborted.events[2]!.properties["info"] as Protocol.AssistantMessage).error?.data.message).toBe("quota")
+    // A discipline cap that ended the run is red, with the reason on the card.
+    const capped = Projection.fold(
+      ctx,
+      start.state,
+      new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "The read-only cap ended the run" })
+    )
+    expect((capped.events[0]!.properties["info"] as Protocol.Session).title.startsWith("🔴 ")).toBe(true)
+    expect((capped.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
+      title: "stopped: The read-only cap ended the run"
+    })
   })
 
   it("handles the events outside the demo turn", () => {
@@ -301,7 +341,7 @@ describe("Projection", () => {
         durationMillis: 1
       })
     )
-    expect(settledWithoutProse.events).toEqual([])
+    expect(settledWithoutProse.events.map((event) => event.type)).toEqual(["session.updated"])
     const settledWithProse = Projection.fold(
       ctx,
       frame.state,
@@ -312,7 +352,7 @@ describe("Projection", () => {
         durationMillis: 1
       })
     )
-    expect((settledWithProse.events[0]!.properties["part"] as Protocol.ReasoningPart).text).toBe("Plain prose")
+    expect((settledWithProse.events[1]!.properties["part"] as Protocol.ReasoningPart).text).toBe("Plain prose")
 
     const source = Cell.source("throw new Error('x')")
     const produced = Projection.fold(
@@ -603,6 +643,7 @@ describe("Projection", () => {
     expect(thenClosed.events.map((event) => event.type)).toEqual([
       "message.part.updated",
       "message.updated",
+      "message.part.updated",
       "session.updated",
       "session.status",
       "session.idle"
@@ -642,9 +683,443 @@ describe("Projection", () => {
     expect(abortedClose.events.map((event) => event.type)).toEqual([
       "message.part.updated",
       "message.updated",
+      "message.part.updated",
       "session.updated",
       "session.status",
       "session.idle"
     ])
+  })
+})
+
+describe("Projection: classify, health, cost, and the run summary", () => {
+  const verdict = {
+    answers: {
+      relevant: { value: true, probability: 0.93 },
+      role: { value: "implementation", probabilities: { implementation: 0.81, fixture: 0.19 }, confidence: 0.81 },
+      risk: { value: 0.4, label: "none", probabilities: { none: 0.62, low: 0.38 }, confidence: 0.62 }
+    },
+    confidence: { relevant: 0.86, role: 0.81, risk: 0.62 },
+    latencyMs: 212
+  }
+
+  it("renders a classify verdict, a batch, and the odd shapes", () => {
+    expect(Projection.isClassify("classify")).toBe(true)
+    expect(Projection.isClassify("classify/edit/risk")).toBe(true)
+    expect(Projection.isClassify("read")).toBe(false)
+    expect(Projection.toolName("classify/triage/relevance")).toBe("classify")
+    expect(Projection.classifyOutput(verdict)).toBe(
+      "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
+    )
+    expect(Projection.classifyTitle({ task: "t" }, verdict, 5)).toBe("1 state · 3 questions · 212 ms")
+    expect(Projection.toolMetadata("classify", verdict)).toEqual({ answers: [verdict.answers], result: verdict })
+    const batch = {
+      results: [
+        { ok: true, state: 1, answers: { yes: { value: false, probability: 0.2 } }, confidence: { yes: 0.6 } },
+        { ok: false, state: 2, error: { code: "timeout", message: "slow" } },
+        "junk"
+      ]
+    }
+    expect(Projection.classifyOutput(batch)).toBe("1. yes: no (0.80)\n2. timeout: slow\n3. failed: ")
+    expect(Projection.classifyTitle({ states: [1, 2, 3], questions: { yes: {} } }, batch, 40)).toBe(
+      "3 states · 1 question · 40 ms"
+    )
+    // No answered state: the question count comes from the input.
+    const refused = { results: [{ ok: false, state: 1, error: { code: "unreachable", message: "no key" } }] }
+    expect(Projection.classifyTitle({ states: [1], questions: { a: {}, b: {} } }, refused, 7)).toBe(
+      "1 state · 2 questions · 7 ms"
+    )
+    expect(Projection.classifyTitle({}, refused, 7)).toBe("1 state · 0 questions · 7 ms")
+    expect(Projection.classifyTitle({}, "text", 3)).toBe("1 state · 0 questions · 3 ms")
+    expect(Projection.toolMetadata("classify", refused)).toEqual({
+      answers: [{ error: { code: "unreachable", message: "no key" } }],
+      result: refused
+    })
+    expect(Projection.classifyOutput({ answers: { b: { value: false } } })).toBe("1. b: no (1.00)")
+    expect(Projection.summaryLine({ frames: 1, calls: 1, classifyCalls: 0, jevCalls: 1, jevLatencyMs: 9, jevCost: 0 }))
+      .toBe("1 frame · 1 call · 0 classify · Jev 1 call · 9 ms · $0.0000")
+    expect(Projection.classifyOutput("text")).toBe("1. ")
+    expect(Projection.classifyOutput({ answers: { odd: "plain", choice: { value: "b" }, score: { value: 1 } } }))
+      .toBe("1. odd: plain · choice: b (0.00) · score: 1 (0.00)")
+    expect(Projection.classifyOutput({ results: [{ error: "x" }, { ok: false, error: {} }] })).toBe(
+      "1. failed: \n2. failed: "
+    )
+    expect(Projection.classifyOutput({ answers: { error: { value: true, probability: 1 } } })).toBe(
+      "1. error: yes (1.00)"
+    )
+    expect(Projection.classifyEntries({ results: [{ answers: { a: 1 } }, { error: { code: "empty" } }] })).toEqual([
+      { answers: { a: 1 } },
+      { error: { code: "empty" } }
+    ])
+    expect(Projection.toolOutput("classify", verdict)).toContain("relevant: yes")
+  })
+
+  it("folds a classify call into the card, the counters, and the health facts", () => {
+    const ctx = { directory, now: clock().now }
+    const { emitted, state } = foldAll(scriptEvents(), ctx)
+    const parts = emitted
+      .filter((event) => event.type === "message.part.updated")
+      .map((event) => event.properties["part"] as Protocol.Part)
+    const classify = parts.filter((part): part is Protocol.ToolPart => part.type === "tool" && part.tool === "classify")
+    const completed = classify.find((part) => part.state.status === "completed")!
+    expect(completed.state).toMatchObject({
+      title: "1 state · 3 questions · 212 ms",
+      output: "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
+    })
+    expect(completed.state.status === "completed" && completed.state.metadata["answers"]).toEqual([
+      completed.state.status === "completed" && (completed.state.metadata["result"] as { answers: unknown }).answers
+    ])
+    // Two frames ran twice (the park replays frame zero and one): the summary counts what the app saw.
+    expect(state.summary).toMatchObject({ frames: 4, classifyCalls: 2, jevCalls: 2, jevLatencyMs: 424, jevCost: 0 })
+    expect(state.summary.calls).toBe(7)
+    expect(state.facts.lastCalls.map((call) => call.flow)).toContain("classify/triage/relevance")
+    expect(state.facts.lastCalls.map((call) => call.ok)).toContain(true)
+    expect(state.facts.lastPrints).toContain("total 16")
+    expect(state.facts.demands).toEqual(["read-only", "read-only"])
+    expect(state.facts.lastTransition).toBe("complete")
+    const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.synthetic === true)!
+    expect(summary.text).toBe("4 frames · 7 calls · 2 classify · Jev 2 calls · 424 ms · $0.0000")
+    expect(summary.id).toBe(
+      Ids.part(assistantMessageID, { frame: Projection.finalFrame, slot: Projection.summarySlot, ordinal: 0 })
+    )
+  })
+
+  it("hands out health facts on a settled cell, a park, and a resume, and folds decisions in", () => {
+    const ctx = { directory, now: clock().now, maxFrames: 8 }
+    let step = Projection.open(ctx, opened())
+    expect(step.state.health).toBeUndefined()
+    const triggers: Array<Health.Facts> = []
+    for (const event of scriptEvents()) {
+      step = Projection.fold(ctx, step.state, event)
+      if (step.health !== undefined) triggers.push(step.health)
+    }
+    // Frame zero settled, frame one parked, then the replay: frame zero and frame one settled.
+    expect(triggers.map((facts) => [facts.frame, facts.parked, facts.demandThisFrame])).toEqual([
+      [1, "none", false],
+      [2, "permission", true],
+      [1, "none", false],
+      [2, "none", true]
+    ])
+    expect(triggers[0]).toMatchObject({
+      task: "Read package.json and tell me the name field.",
+      maxFrames: 8,
+      framesSinceEdit: 1
+    })
+    // The replayed frames read only, so the count keeps climbing.
+    expect(triggers[3]!.framesSinceEdit).toBe(3)
+    expect(triggers[3]!.lastCalls.length).toBeGreaterThan(0)
+
+    // A decision: the dot lands on the title, the card carries the reason and the answers.
+    const evaluation: Health.Evaluation = {
+      decision: { color: "yellow", reason: "read-only demanded" },
+      answers: undefined,
+      latencyMs: 30,
+      usage: { inputTokens: 1000, outputTokens: 0 },
+      error: undefined
+    }
+    const opened2 = Projection.open(ctx, opened())
+    const first = Projection.health(ctx, opened2.state, triggers[0]!, evaluation)
+    expect(first.events.map((event) => event.type)).toEqual(["session.updated", "message.part.updated"])
+    expect((first.events[0]!.properties["info"] as Protocol.Session).title).toBe(
+      "🟡 Read package.json and tell me the name field."
+    )
+    const card = first.events[1]!.properties["part"] as Protocol.ToolPart
+    expect(card).toMatchObject({ tool: "health", callID: "health_0" })
+    // The card sorts under the frame it judged, not the frame that was open when it landed.
+    expect(card.id).toBe(Ids.part(assistantMessageID, { frame: 0, slot: Projection.slots.health, ordinal: 0 }))
+    expect(card.state).toMatchObject({
+      status: "completed",
+      title: "read-only demanded",
+      output: "no answers",
+      input: { color: "yellow" }
+    })
+    expect(first.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 30 })
+    expect(first.state.summary.jevCost).toBeCloseTo(0.000042)
+    // The same color again: the reason is kept, nothing is emitted.
+    const same = Projection.health(ctx, first.state, triggers[0]!, {
+      ...evaluation,
+      decision: { color: "yellow", reason: "still" }
+    })
+    expect(same.events).toEqual([])
+    expect(same.state.health).toEqual({ color: "yellow", reason: "still" })
+    expect(same.state.healthCards).toBe(1)
+    // A new color: the title changes, a second card follows.
+    const green = Projection.health(ctx, same.state, triggers[3]!, {
+      ...evaluation,
+      decision: { color: "green", reason: "done" }
+    })
+    expect((green.events[0]!.properties["info"] as Protocol.Session).title.startsWith("🟢 ")).toBe(true)
+    expect((green.events[1]!.properties["part"] as Protocol.ToolPart).callID).toBe("health_1")
+    expect((green.events[1]!.properties["part"] as Protocol.ToolPart).id).toBe(
+      Ids.part(assistantMessageID, { frame: 1, slot: Projection.slots.health, ordinal: 1 })
+    )
+    // A decision that reaches a closed turn changes nothing.
+    const closed = Projection.close(ctx, green.state, { _tag: "interrupted" })
+    expect(Projection.health(ctx, closed.state, triggers[0]!, evaluation).events).toEqual([])
+    // A follow-up turn starts from the color the title carries.
+    const next = Projection.open(ctx, { ...opened(), session: { ...session, title: "🟢 Kept" } })
+    expect(next.state.health).toEqual({ color: "green", reason: "" })
+    expect((next.events[2]!.properties["info"] as Protocol.Session).title).toBe("🟢 Kept")
+  })
+
+  it("carries the seat's cost when a price is known, and the tokens either way", () => {
+    const pricing: Projection.Pricing = { inputPerMillion: 1, outputPerMillion: 2, cacheReadPerMillion: 0.5 }
+    expect(
+      Projection.costOf({
+        input: 1_000_000,
+        output: 500_000,
+        reasoning: 500_000,
+        cache: { read: 1_000_000, write: 1_000_000 }
+      }, pricing)
+    )
+      .toBeCloseTo(1 + 2 + 0.5 + 1)
+    expect(Projection.costOf(Protocol.noTokens, undefined)).toBe(0)
+    expect(
+      Projection.costOf({ input: 0, output: 0, reasoning: 0, cache: { read: 1_000_000, write: 1_000_000 } }, {
+        inputPerMillion: 3,
+        outputPerMillion: 1
+      })
+    ).toBeCloseTo(6)
+    const ctx = { directory, now: clock().now, pricing }
+    const { emitted, state } = foldAll(scriptEvents(), ctx)
+    expect(state.cost).toBeCloseTo(((812 + 1240) * 2 * 1 + (96 + 88) * 2 * 2) / 1_000_000)
+    const sessions = emitted.filter((event) => event.type === "session.updated")
+      .map((event) => event.properties["info"] as Protocol.Session)
+    // Every model settlement updates the session's tokens and cost.
+    expect(sessions.length).toBeGreaterThanOrEqual(5)
+    expect(sessions[sessions.length - 1]!.cost).toBeCloseTo(state.cost)
+    expect(sessions[sessions.length - 1]!.tokens.input).toBe((812 + 1240) * 2)
+    const header = emitted.filter((event) => event.type === "message.updated")
+      .map((event) => event.properties["info"] as Protocol.Message)
+      .find((info) => info.role === "assistant" && info.finish === "stop") as Protocol.AssistantMessage
+    expect(header.cost).toBeCloseTo(state.cost)
+    const finishes = emitted.map((event) => event.properties["part"] as Protocol.Part | undefined)
+      .filter((part): part is Protocol.StepFinishPart => part?.type === "step-finish")
+    expect(finishes[0]!.cost).toBeCloseTo((812 + 96 * 2) / 1_000_000)
+  })
+
+  it("reads the harness facts the demo turn lacks: mutations, transitions, and parks", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
+    const mutated = Projection.fold(
+      ctx,
+      { ...frame.state, facts: { ...frame.state.facts, framesSinceEdit: 3 } },
+      new AgentEvents.MutationObserved({
+        eventType: "flows.harness.mutation-observed.v1",
+        basis: "observed",
+        mutated: true,
+        digest: "d",
+        paths: 1,
+        declaredWrites: 1
+      })
+    )
+    expect(mutated.state.facts.framesSinceEdit).toBe(0)
+    expect(mutated.state.editedThisFrame).toBe(true)
+    const unmoved = Projection.fold(
+      ctx,
+      mutated.state,
+      new AgentEvents.MutationObserved({
+        eventType: "flows.harness.mutation-observed.v1",
+        basis: "observed",
+        mutated: false,
+        digest: "d",
+        paths: 1,
+        declaredWrites: 0
+      })
+    )
+    expect(unmoved.state).toBe(mutated.state)
+    const parkedTransition = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.TransitionApplied({
+        eventType: "flows.harness.transition-applied.v1",
+        transition: new Cell.Park({ reason: "waiting-input", message: "?" })
+      })
+    )
+    expect(parkedTransition.state.facts.lastTransition).toBe("park")
+    const suspendedOnInput = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.Suspended({
+        eventType: "flows.harness.suspended.v1",
+        reason: { code: "waiting-input", message: "?" } as never
+      })
+    )
+    expect(suspendedOnInput.health?.parked).toBe("question")
+    const suspendedOnQuota = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.Suspended({
+        eventType: "flows.harness.suspended.v1",
+        reason: { code: "waiting-quota", message: "?" } as never
+      })
+    )
+    expect(suspendedOnQuota.health?.parked).toBe("quota")
+    // A print outside a cell still feeds the health state.
+    const printed = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.CellPrinted({ eventType: "flows.harness.cell-printed.v1", cell: "c", text: "x".repeat(3000) })
+    )
+    expect(printed.state.facts.lastPrints.length).toBe(Projection.healthTextCap)
+    // An edit that succeeded counts as this frame's edit; a failed call is summarized by its code.
+    const source = Cell.source("edit")
+    const produced = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.CellProduced({ eventType: "flows.harness.cell-produced.v1", cell: source, blocks: 1 })
+    )
+    const identity = new Cell.CallIdentity({
+      session: sessionID,
+      frame: 0,
+      cell: source.digest,
+      ordinal: 0,
+      declaration: "d",
+      layers: []
+    })
+    const started = Projection.fold(
+      ctx,
+      produced.state,
+      new AgentEvents.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName: "edit",
+          input: { path: "f", oldString: "a", newString: "b" },
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+          placement: Option.none(),
+          identity
+        })
+      })
+    )
+    const edited = Projection.fold(
+      ctx,
+      started.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "edit",
+        identity,
+        result: new Cell.CallResult({ outcome: "success", value: { hunk: "@@" } })
+      })
+    )
+    expect(edited.state.editedThisFrame).toBe(true)
+    expect(edited.state.facts.lastCalls.at(-1)).toEqual({ flow: "edit", ok: true, summary: "f" })
+    // The frame that edited resets the count when its cell settles.
+    const settledAfterEdit = Projection.fold(
+      ctx,
+      { ...edited.state, facts: { ...edited.state.facts, framesSinceEdit: 5 } },
+      new AgentEvents.CellSettled({
+        eventType: "flows.harness.cell-settled.v1",
+        cell: source.digest,
+        outcome: new Cell.Settled({ transition: new Cell.Continue({}) })
+      })
+    )
+    expect(settledAfterEdit.health?.framesSinceEdit).toBe(0)
+    const failed = Projection.fold(
+      ctx,
+      started.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "edit",
+        identity,
+        result: new Cell.CallResult({ outcome: "failure", value: null, message: "no such file" })
+      })
+    )
+    expect(failed.state.editedThisFrame).toBe(false)
+    expect(failed.state.facts.lastCalls.at(-1)).toEqual({
+      flow: "edit",
+      ok: false,
+      summary: "flow_failed: no such file"
+    })
+    // A call whose title is empty is summarized by its output.
+    const bashIdentity = new Cell.CallIdentity({
+      session: sessionID,
+      frame: 0,
+      cell: source.digest,
+      ordinal: 1,
+      declaration: "d",
+      layers: []
+    })
+    const bashStarted = Projection.fold(
+      ctx,
+      produced.state,
+      new AgentEvents.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName: "bash",
+          input: {},
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+          placement: Option.none(),
+          identity: bashIdentity
+        })
+      })
+    )
+    const bashSettled = Projection.fold(
+      ctx,
+      bashStarted.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "bash",
+        identity: bashIdentity,
+        result: new Cell.CallResult({ outcome: "success", value: { stdout: "out", stderr: "", exitCode: 0 } })
+      })
+    )
+    expect(bashSettled.state.facts.lastCalls.at(-1)).toEqual({ flow: "bash", ok: true, summary: "out" })
+    // A classify call whose value carries no latency is timed by the card.
+    const classifyIdentity = new Cell.CallIdentity({
+      session: sessionID,
+      frame: 0,
+      cell: source.digest,
+      ordinal: 2,
+      declaration: "d",
+      layers: []
+    })
+    const classifyStarted = Projection.fold(
+      ctx,
+      produced.state,
+      new AgentEvents.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName: "classify",
+          input: { states: [1, 2], questions: { q: { type: "boolean", instructions: "?" } } },
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+          placement: Option.none(),
+          identity: classifyIdentity
+        })
+      })
+    )
+    expect((classifyStarted.events[0]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
+      title: "2 states"
+    })
+    const classifySettled = Projection.fold(
+      ctx,
+      classifyStarted.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "classify",
+        identity: classifyIdentity,
+        result: new Cell.CallResult({ outcome: "success", value: { results: [] } })
+      })
+    )
+    expect(classifySettled.state.summary.jevLatencyMs).toBeGreaterThan(0)
+    const classifyRefused = Projection.fold(
+      ctx,
+      classifyStarted.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "classify",
+        identity: classifyIdentity,
+        result: new Cell.CallResult({
+          outcome: "failure",
+          value: null,
+          message: "unreachable: no key",
+          code: "flow_failed"
+        })
+      })
+    )
+    expect(classifyRefused.state.summary.jevLatencyMs).toBe(0)
+    expect((classifyRefused.events[0]!.properties["part"] as Protocol.ToolPart).state.status).toBe("error")
   })
 })

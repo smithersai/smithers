@@ -21,6 +21,14 @@
  * changes nothing, because the stream consumer runs inside the frame and a
  * projection error would fail the run (composition brief, trap 7).
  *
+ * Beside the cards, the fold keeps the facts the health color reads
+ * (`Health.Facts`), hands them out on the events that trigger an
+ * evaluation, and folds the decision back in with `health`: the session
+ * title gets the dot, and a `health` card is emitted on a color change. It
+ * also counts the turn's frames, calls, classify calls, Jev latency and
+ * spend, which the run summary reports as a synthetic text part when the
+ * turn ends, and it carries the seat's cost when the host names a price.
+ *
  * @since 1.0.0
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -29,6 +37,7 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type { Schema } from "effect"
 import { basename, isAbsolute, join } from "node:path"
+import * as Health from "./Health.ts"
 import * as Ids from "./Ids.ts"
 import * as Protocol from "./Protocol.ts"
 
@@ -41,7 +50,38 @@ import * as Protocol from "./Protocol.ts"
 export interface Context {
   readonly directory: string
   readonly now: () => number
+  /** The frame budget the health state reports. One hundred by default. */
+  readonly maxFrames?: number | undefined
+  /** The seat's price, when the host knows it. Without one the seat costs zero. */
+  readonly pricing?: Pricing | undefined
 }
+
+/**
+ * Dollars per million tokens of a seat.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Pricing {
+  readonly inputPerMillion: number
+  readonly outputPerMillion: number
+  readonly cacheReadPerMillion?: number | undefined
+  readonly cacheWritePerMillion?: number | undefined
+}
+
+/**
+ * The dollars a token count costs at a price. Zero without a price.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const costOf = (tokens: Protocol.Tokens, pricing: Pricing | undefined): number =>
+  pricing === undefined
+    ? 0
+    : (tokens.input * pricing.inputPerMillion +
+      (tokens.output + tokens.reasoning) * pricing.outputPerMillion +
+      tokens.cache.read * (pricing.cacheReadPerMillion ?? pricing.inputPerMillion) +
+      tokens.cache.write * (pricing.cacheWritePerMillion ?? pricing.inputPerMillion)) / 1_000_000
 
 /**
  * What opens a turn.
@@ -114,6 +154,35 @@ export interface State {
   /** Whether the frame closed as resolved: the step is finished. */
   readonly resolving: boolean
   readonly closed: boolean
+  /** This turn's seat cost so far. */
+  readonly cost: number
+  /** What the health color reads. */
+  readonly facts: Health.Facts
+  /** Whether an edit landed since the frame opened. */
+  readonly editedThisFrame: boolean
+  /** The current color and why, or none before the first decision. */
+  readonly health: Health.Decision | undefined
+  /** How many health cards this turn has emitted. */
+  readonly healthCards: number
+  /** The run summary's counters. */
+  readonly summary: Summary
+}
+
+/**
+ * What the run summary reports at the end of a turn.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Summary {
+  readonly frames: number
+  readonly calls: number
+  readonly classifyCalls: number
+  /** Every Jev call: classify calls and health evaluations. */
+  readonly jevCalls: number
+  readonly jevLatencyMs: number
+  /** Dollars, from the usage the gateway reported. */
+  readonly jevCost: number
 }
 
 /**
@@ -126,6 +195,8 @@ export interface State {
 export interface Step {
   readonly state: State
   readonly events: ReadonlyArray<Protocol.Emitted>
+  /** The facts to evaluate, when the folded event triggers a health evaluation. */
+  readonly health?: Health.Facts | undefined
 }
 
 /**
@@ -140,8 +211,41 @@ export const slots = {
   cell: 0x02,
   call: 0x10,
   demand: 0xe0,
+  health: 0xf0,
   stepFinish: 0xff
 } as const
+
+/**
+ * The slot the run summary sorts under, after the final answer's text.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const summarySlot = 0x01
+
+/**
+ * The frames the health state counts as the budget when the host names none.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultMaxFrames = 100
+
+/**
+ * How many recent calls the health state carries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const lastCallsKept = 12
+
+/**
+ * How many characters of the task and of the prints the health state carries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const healthTextCap = 2048
 
 /**
  * The frame key the final answer sorts under: after every real frame.
@@ -159,7 +263,16 @@ export const finalFrame = 0xffff
  * @category conversions
  * @since 1.0.0
  */
-export const toolName = (flowName: string): string => flowName === "ls" ? "list" : flowName
+export const toolName = (flowName: string): string =>
+  flowName === "ls" ? "list" : isClassify(flowName) ? "classify" : flowName
+
+/**
+ * Whether a flow is the ad-hoc `classify` door or a curated `classify/<id>`.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const isClassify = (flowName: string): boolean => flowName === "classify" || flowName.startsWith("classify/")
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 
@@ -214,6 +327,105 @@ export const toolInput = (directory: string, flowName: string, input: Schema.Jso
   }
 }
 
+const asNumber = (value: unknown): number | undefined => typeof value === "number" ? value : undefined
+
+/** The states a classify input carries: one, or the batch. */
+const classifyStates = (input: Record<string, unknown>): number =>
+  Array.isArray(input["states"]) ? input["states"].length : 1
+
+const leading = (answer: Record<string, unknown>): string => {
+  const value = answer["value"]
+  const probabilities = isRecord(answer["probabilities"]) ? answer["probabilities"] : {}
+  if (typeof value === "boolean") {
+    const probability = asNumber(answer["probability"]) ?? 0
+    return `${value ? "yes" : "no"} (${(value ? probability : 1 - probability).toFixed(2)})`
+  }
+  const label = asString(answer["label"]) ?? asString(value) ?? String(value)
+  return `${label} (${(asNumber(probabilities[label]) ?? 0).toFixed(2)})`
+}
+
+const answersLine = (answers: Record<string, unknown>): string =>
+  Object.entries(answers)
+    .map(([id, answer]) => `${id}: ${isRecord(answer) ? leading(answer) : String(answer)}`)
+    .join(" · ")
+
+/**
+ * One state's entry in a classify result: its answers, or the failure that
+ * kept them from arriving.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ClassifyEntry =
+  | { readonly answers: Record<string, unknown>; readonly error?: undefined }
+  | { readonly answers?: undefined; readonly error: Record<string, unknown> }
+
+/**
+ * The entries of a classify result, one per state: the answers of a
+ * verdict, or each batch entry's answers or error.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyEntries = (value: Schema.Json): Array<ClassifyEntry> => {
+  const record: Record<string, unknown> = isRecord(value) ? value : {}
+  if (Array.isArray(record["results"])) {
+    return record["results"].map((entry): ClassifyEntry => {
+      const result: Record<string, unknown> = isRecord(entry) ? entry : {}
+      return isRecord(result["answers"])
+        ? { answers: result["answers"] }
+        : { error: isRecord(result["error"]) ? result["error"] : {} }
+    })
+  }
+  return [{ answers: isRecord(record["answers"]) ? record["answers"] : {} }]
+}
+
+/**
+ * The full answers of a classify result, one entry per state, for the
+ * card's structured metadata; a failed state carries its error instead.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyAnswers = (value: Schema.Json): Array<Record<string, unknown>> =>
+  classifyEntries(value).map((entry) => entry.answers ?? { error: entry.error })
+
+/**
+ * The output of a classify card: one line per state with the leading answer
+ * to every question and its probability, or the failure.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyOutput = (value: Schema.Json): string =>
+  classifyEntries(value)
+    .map((entry, index) =>
+      `${index + 1}. ${
+        entry.answers === undefined
+          ? `${asString(entry.error["code"]) ?? "failed"}: ${asString(entry.error["message"]) ?? ""}`
+          : answersLine(entry.answers)
+      }`
+    )
+    .join("\n")
+
+/**
+ * The title of a classify card: how many states and questions, and how long
+ * Jev took. `elapsed` stands in for the latency a batch does not report.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyTitle = (input: Record<string, unknown>, value: Schema.Json, elapsed: number): string => {
+  const states = classifyStates(input)
+  const answered = classifyEntries(value).find((entry) => entry.answers !== undefined)
+  const questions = answered === undefined
+    ? Object.keys(isRecord(input["questions"]) ? input["questions"] : {}).length
+    : Object.keys(answered.answers).length
+  const record: Record<string, unknown> = isRecord(value) ? value : {}
+  const ms = asNumber(record["latencyMs"]) ?? elapsed
+  return `${states} state${states === 1 ? "" : "s"} · ${questions} question${questions === 1 ? "" : "s"} · ${ms} ms`
+}
+
 /**
  * The title of a call card: the one thing the reader needs to tell this call
  * from the next.
@@ -222,6 +434,10 @@ export const toolInput = (directory: string, flowName: string, input: Schema.Jso
  * @since 1.0.0
  */
 export const toolTitle = (flowName: string, input: Record<string, unknown>): string => {
+  if (isClassify(flowName)) {
+    const states = classifyStates(input)
+    return `${states} state${states === 1 ? "" : "s"}`
+  }
   switch (flowName) {
     case "read":
     case "edit":
@@ -246,6 +462,7 @@ export const toolTitle = (flowName: string, input: Record<string, unknown>): str
  * @since 1.0.0
  */
 export const toolOutput = (flowName: string, value: Schema.Json): string => {
+  if (isClassify(flowName)) return classifyOutput(value)
   const record: Record<string, unknown> = isRecord(value) ? value : {}
   switch (flowName) {
     case "read":
@@ -279,6 +496,7 @@ export const toolOutput = (flowName: string, value: Schema.Json): string => {
  */
 export const toolMetadata = (flowName: string, value: Schema.Json): Record<string, unknown> => {
   const record: Record<string, unknown> = isRecord(value) ? value : {}
+  if (isClassify(flowName)) return { answers: classifyAnswers(value), result: value }
   if (flowName === "bash") {
     return {
       output: toolOutput(flowName, value),
@@ -400,9 +618,23 @@ const assistantHeader = (
   mode: state.agent,
   agent: state.agent,
   path: { cwd: ctx.directory, root: ctx.directory },
-  cost: 0,
+  cost: state.cost,
   tokens: state.tokens,
   ...extra
+})
+
+/**
+ * The session as it stands mid-turn: the stored session plus this turn's
+ * tokens and cost.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const sessionNow = (state: State, now: number): Protocol.Session => ({
+  ...state.session,
+  tokens: addTokens(state.session.tokens, state.tokens),
+  cost: state.session.cost + state.cost,
+  time: { ...state.session.time, updated: now }
 })
 
 const sessionEvent = (session: Protocol.Session): Protocol.Emitted => ({
@@ -439,11 +671,27 @@ const stepFinish = (state: State, ctx: Context, reason: string): Protocol.Emitte
       id: Ids.part(state.assistantMessageID, { frame: state.frame, slot: slots.stepFinish, ordinal: 0 }),
       type: "step-finish",
       reason,
-      cost: 0,
+      cost: costOf(state.frameTokens, ctx.pricing),
       tokens: state.frameTokens
     },
     ctx.now()
   )
+
+/**
+ * The run summary line: frames, calls, classify calls, Jev latency and spend.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const summaryLine = (summary: Summary): string =>
+  [
+    `${summary.frames} frame${summary.frames === 1 ? "" : "s"}`,
+    `${summary.calls} call${summary.calls === 1 ? "" : "s"}`,
+    `${summary.classifyCalls} classify`,
+    `Jev ${summary.jevCalls} call${summary.jevCalls === 1 ? "" : "s"} · ${summary.jevLatencyMs} ms · $${
+      summary.jevCost.toFixed(4)
+    }`
+  ].join(" · ")
 
 const endTurn = (
   state: State,
@@ -451,16 +699,21 @@ const endTurn = (
   header: Partial<Protocol.AssistantMessage>
 ): Step => {
   const now = ctx.now()
-  const session: Protocol.Session = {
-    ...state.session,
-    tokens: addTokens(state.session.tokens, state.tokens),
-    time: { ...state.session.time, updated: now }
-  }
+  const session = sessionNow(state, now)
   const next: State = { ...state, session, closed: true }
+  const summary: Protocol.TextPart = {
+    ...base(next),
+    id: Ids.part(next.assistantMessageID, { frame: finalFrame, slot: summarySlot, ordinal: 0 }),
+    type: "text",
+    text: summaryLine(next.summary),
+    synthetic: true,
+    time: { start: now, end: now }
+  }
   return {
     state: next,
     events: [
       { type: "message.updated", properties: { sessionID: session.id, info: assistantHeader(next, ctx, header) } },
+      partEvent(summary, now),
       sessionEvent(session),
       statusEvent(session.id, { type: "idle" }),
       { type: "session.idle", properties: { sessionID: session.id } }
@@ -507,6 +760,24 @@ export const demandOrdinals = {
   "narrow-only": 5
 } as const
 
+/** The decision a session title already carries, so a follow-up turn starts from the last color. */
+const colorOf = (title: string): Health.Decision | undefined => {
+  const color = Health.colorOf(title)
+  return color === undefined ? undefined : { color, reason: "" }
+}
+
+/** A demand issued: remembered for the health state, and pending for the next evaluation. */
+const demanded = (state: State, name: string): State => ({
+  ...state,
+  facts: { ...state.facts, demands: [...state.facts.demands, name].slice(-lastCallsKept), demandThisFrame: true }
+})
+
+/** The facts to evaluate at a trigger, and the state once they are handed out. */
+const trigger = (state: State): { readonly state: State; readonly health: Health.Facts } => ({
+  state: { ...state, facts: { ...state.facts, demandThisFrame: false } },
+  health: { ...state.facts, frame: state.frame + 1 }
+})
+
 /**
  * Opens a turn: the user message and its text part, the session with its
  * title set from the first prompt, the assistant header, and the busy
@@ -543,7 +814,25 @@ export const open = (ctx: Context, opened: Opened): Step => {
     demandText: {},
     answered: false,
     resolving: false,
-    closed: false
+    closed: false,
+    cost: 0,
+    facts: {
+      task: opened.prompt.slice(0, healthTextCap),
+      frame: 0,
+      maxFrames: ctx.maxFrames ?? defaultMaxFrames,
+      framesSinceEdit: 0,
+      demands: [],
+      lastCalls: [],
+      lastPrints: "",
+      parked: "none",
+      lastTransition: "continue",
+      demandThisFrame: false,
+      capEnded: undefined
+    },
+    editedThisFrame: false,
+    health: colorOf(session.title),
+    healthCards: 0,
+    summary: { frames: 0, calls: 0, classifyCalls: 0, jevCalls: 0, jevLatencyMs: 0, jevCost: 0 }
   }
   const user: Protocol.UserMessage = {
     id: opened.userMessageID,
@@ -583,7 +872,16 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
   switch (event._tag) {
     case "turn-opened": {
       const frame = state.frame + 1
-      const next: State = { ...state, frame, frameTokens: Protocol.noTokens, reasoning: undefined, cell: undefined }
+      const next: State = {
+        ...state,
+        frame,
+        frameTokens: Protocol.noTokens,
+        reasoning: undefined,
+        cell: undefined,
+        editedThisFrame: false,
+        facts: { ...state.facts, parked: "none" },
+        summary: { ...state.summary, frames: state.summary.frames + 1 }
+      }
       const part: Protocol.StepStartPart = {
         ...base(next),
         id: Ids.part(next.assistantMessageID, { frame, slot: slots.stepStart, ordinal: 0 }),
@@ -612,20 +910,28 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
     }
     case "model-settled": {
       const frameTokens = tokensOf(event.usage)
-      const next: State = { ...state, frameTokens, tokens: addTokens(state.tokens, frameTokens) }
+      const next: State = {
+        ...state,
+        frameTokens,
+        tokens: addTokens(state.tokens, frameTokens),
+        cost: state.cost + costOf(frameTokens, ctx.pricing)
+      }
+      const usage = sessionEvent(sessionNow(next, ctx.now()))
       const text = prose(event.message)
-      if (next.reasoning === undefined && text === "") return { state: next, events: [] }
+      if (next.reasoning === undefined && text === "") return { state: next, events: [usage] }
       if (next.reasoning === undefined) {
         const now = ctx.now()
         const partID = Ids.part(next.assistantMessageID, { frame: next.frame, slot: slots.reasoning, ordinal: 0 })
         return {
           state: next,
           events: [
+            usage,
             partEvent({ ...base(next), id: partID, type: "reasoning", text, time: { start: now, end: now } }, now)
           ]
         }
       }
-      return finishReasoning(next, ctx, text)
+      const finished = finishReasoning(next, ctx, text)
+      return { state: finished.state, events: [usage, ...finished.events] }
     }
     case "model-retried":
       return {
@@ -695,8 +1001,18 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         tool: card.tool,
         state: { status: "running", input, title: toolTitle(event.call.flowName, input), time: { start: now } }
       }
+      const classify = isClassify(event.call.flowName) ? 1 : 0
       return {
-        state: { ...state, cell, calls: { ...state.calls, [key]: card } },
+        state: {
+          ...state,
+          cell,
+          calls: { ...state.calls, [key]: card },
+          summary: {
+            ...state.summary,
+            calls: state.summary.calls + 1,
+            classifyCalls: state.summary.classifyCalls + classify
+          }
+        },
         events: [partEvent(part, ctx.now())]
       }
     }
@@ -706,18 +1022,31 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       if (card === undefined) return { state, events: [] }
       const now = ctx.now()
       const result = event.result
+      const ok = result.outcome === "success"
+      const classify = isClassify(event.flowName)
+      const latency = classify && isRecord(result.value) ? asNumber(result.value["latencyMs"]) ?? now - card.start : 0
+      const edited = ok && ["edit", "write", "apply_patch"].includes(event.flowName)
+      const summary = ok
+        ? toolTitle(event.flowName, card.input) || toolOutput(event.flowName, result.value).slice(0, 80)
+        : `${result.code ?? Cell.defaultCallFailureCode}: ${result.message ?? ""}`.slice(0, 80)
+      const facts: Health.Facts = {
+        ...state.facts,
+        lastCalls: [...state.facts.lastCalls, { flow: event.flowName, ok, summary }].slice(-lastCallsKept)
+      }
       const part: Protocol.ToolPart = {
         ...base(state),
         id: card.partID,
         type: "tool",
         callID: card.callID,
         tool: card.tool,
-        state: result.outcome === "success"
+        state: ok
           ? {
             status: "completed",
             input: card.input,
             output: toolOutput(event.flowName, result.value),
-            title: toolTitle(event.flowName, card.input),
+            title: classify
+              ? classifyTitle(card.input, result.value, now - card.start)
+              : toolTitle(event.flowName, card.input),
             metadata: toolMetadata(event.flowName, result.value),
             time: { start: card.start, end: now }
           }
@@ -732,12 +1061,35 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           }
       }
       const { [key]: _settled, ...calls } = state.calls
-      return { state: { ...state, calls }, events: [partEvent(part, now)] }
+      return {
+        state: {
+          ...state,
+          calls,
+          facts,
+          editedThisFrame: state.editedThisFrame || edited,
+          summary: classify
+            ? {
+              ...state.summary,
+              jevCalls: state.summary.jevCalls + 1,
+              jevLatencyMs: state.summary.jevLatencyMs + latency
+            }
+            : state.summary
+        },
+        events: [partEvent(part, now)]
+      }
     }
-    case "cell-printed":
+    case "cell-printed": {
+      const facts: Health.Facts = { ...state.facts, lastPrints: event.text.slice(-healthTextCap) }
       return state.cell === undefined
-        ? { state, events: [] }
-        : { state: { ...state, cell: { ...state.cell, prints: event.text } }, events: [] }
+        ? { state: { ...state, facts }, events: [] }
+        : { state: { ...state, facts, cell: { ...state.cell, prints: event.text } }, events: [] }
+    }
+    case "mutation-observed":
+      return event.mutated
+        ? { state: { ...state, editedThisFrame: true, facts: { ...state.facts, framesSinceEdit: 0 } }, events: [] }
+        : { state, events: [] }
+    case "transition-applied":
+      return { state: { ...state, facts: { ...state.facts, lastTransition: event.transition._tag } }, events: [] }
     case "cell-settled": {
       if (state.cell === undefined) return { state, events: [] }
       const now = ctx.now()
@@ -767,11 +1119,16 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
             time: { start: cell.start, end: now }
           }
       }
-      return { state: { ...state, cell: undefined }, events: [partEvent(part, now)] }
+      const settled = trigger({
+        ...state,
+        cell: undefined,
+        facts: { ...state.facts, framesSinceEdit: state.editedThisFrame ? 0 : state.facts.framesSinceEdit + 1 }
+      })
+      return { state: settled.state, events: [partEvent(part, now)], health: settled.health }
     }
     case "read-only-demand-issued":
       return demandCard(
-        state,
+        demanded(state, "read-only"),
         ctx,
         event.nextFrame,
         demandOrdinals["read-only"],
@@ -797,7 +1154,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
     }
     case "repeat-demanded":
       return demandCard(
-        state,
+        demanded(state, "repeat"),
         ctx,
         event.nextFrame,
         demandOrdinals.repeat,
@@ -806,7 +1163,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "narrowed-demanded":
       return demandCard(
-        state,
+        demanded(state, "narrowed"),
         ctx,
         event.nextFrame,
         demandOrdinals.narrowed,
@@ -815,7 +1172,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "unmoved-demanded":
       return demandCard(
-        state,
+        demanded(state, "unmoved"),
         ctx,
         event.nextFrame,
         demandOrdinals.unmoved,
@@ -826,7 +1183,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "unresolved-demanded":
       return demandCard(
-        state,
+        demanded(state, "unresolved"),
         ctx,
         event.nextFrame,
         demandOrdinals.unresolved,
@@ -835,7 +1192,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "narrow-only-demanded":
       return demandCard(
-        state,
+        demanded(state, "narrow-only"),
         ctx,
         event.nextFrame,
         demandOrdinals["narrow-only"],
@@ -896,13 +1253,24 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         tool: { messageID: state.assistantMessageID, callID: key }
       }
       events.push({ type: "permission.asked", properties: { ...permission } })
-      return { state: { ...state, calls }, events }
+      return { state: { ...state, calls, facts: { ...state.facts, parked: "permission" } }, events }
     }
-    case "suspended":
+    case "suspended": {
       // The engine re-drives the turn from frame zero after the park; the
       // journal replays what settled, and the derived part ids make the
       // replay an update of the same cards.
-      return { state: { ...state, frame: -1, reasoning: undefined, cell: undefined }, events: [] }
+      const parked: Health.Facts["parked"] = event.reason.code === "waiting-quota"
+        ? "quota"
+        : event.reason.code === "permission-required"
+        ? "permission"
+        : "question"
+      const suspended = trigger({ ...state, facts: { ...state.facts, parked } })
+      return {
+        state: { ...suspended.state, frame: -1, reasoning: undefined, cell: undefined },
+        events: [],
+        health: suspended.health
+      }
+    }
     case "resolved": {
       // The answer and the frame's close arrive in either order: the
       // recorded turn says the answer first, the engine says the close
@@ -952,6 +1320,74 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
 }
 
 /**
+ * Folds a decision in: the session title gets the dot, and a `health` card
+ * is emitted when the color changed, with the reason as its title and the
+ * answers as its output, sorted under the frame the decision judged. A
+ * decision that reached a closed turn changes nothing.
+ *
+ * @param answers what the evaluation answered, for the card
+ * @param frame the zero-based frame the card sorts under; the current one by default
+ * @category combinators
+ * @since 1.0.0
+ */
+export const decided = (
+  ctx: Context,
+  state: State,
+  decision: Health.Decision,
+  answers: Health.Answers | undefined,
+  frame: number = state.frame
+): Step => {
+  if (state.closed) return { state, events: [] }
+  if (state.health?.color === decision.color) return { state: { ...state, health: decision }, events: [] }
+  const now = ctx.now()
+  const session: Protocol.Session = {
+    ...state.session,
+    title: Health.dotted(state.session.title, decision.color)
+  }
+  const next: State = { ...state, session, health: decision, healthCards: state.healthCards + 1 }
+  const part: Protocol.ToolPart = {
+    ...base(next),
+    id: Ids.part(next.assistantMessageID, {
+      frame: Math.max(frame, 0),
+      slot: slots.health,
+      ordinal: state.healthCards
+    }),
+    type: "tool",
+    callID: `health_${state.healthCards}`,
+    tool: "health",
+    state: {
+      status: "completed",
+      input: { color: decision.color },
+      output: Health.renderAnswers(answers),
+      title: decision.reason,
+      metadata: { color: decision.color, reason: decision.reason, answers },
+      time: { start: now, end: now }
+    }
+  }
+  return { state: next, events: [sessionEvent(sessionNow(next, now)), partEvent(part, now)] }
+}
+
+/**
+ * Folds one health evaluation in: counts the Jev call, then `decided` under
+ * the frame the facts were about (`facts.frame` counts from one).
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const health = (ctx: Context, state: State, facts: Health.Facts, evaluation: Health.Evaluation): Step => {
+  const counted: State = {
+    ...state,
+    summary: {
+      ...state.summary,
+      jevCalls: state.summary.jevCalls + 1,
+      jevLatencyMs: state.summary.jevLatencyMs + evaluation.latencyMs,
+      jevCost: state.summary.jevCost + Health.jevCost(evaluation.usage)
+    }
+  }
+  return decided(ctx, counted, evaluation.decision, evaluation.answers, facts.frame - 1)
+}
+
+/**
  * Ends a turn the stream did not end: an interrupt takes the consumer down
  * with the frame and no `Aborted` reaches it (composition brief section 10),
  * and a failed body exits with a cause instead of an event.
@@ -965,10 +1401,19 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
   const error: Protocol.MessageError = closing._tag === "interrupted"
     ? { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
     : { name: "UnknownError", data: { message: closing.message } }
-  const ended = endTurn(finished.state, ctx, {
+  // A cap that ended the run is red; anything else that ended it without
+  // an answer leaves health unknown.
+  const capEnded = closing._tag === "failed" && /\bcap\b/i.test(closing.message) ? closing.message : undefined
+  const decision: Health.Decision = closing._tag === "interrupted"
+    ? { color: "gray", reason: "interrupted" }
+    : capEnded === undefined
+    ? { color: "gray", reason: "failed" }
+    : { color: "red", reason: `stopped: ${capEnded}` }
+  const marked = decided(ctx, { ...finished.state, facts: { ...finished.state.facts, capEnded } }, decision, undefined)
+  const ended = endTurn(marked.state, ctx, {
     finish: "error",
     time: { created: state.createdAt, completed: ctx.now() },
     error
   })
-  return { state: ended.state, events: [...finished.events, ...ended.events] }
+  return { state: ended.state, events: [...finished.events, ...marked.events, ...ended.events] }
 }

@@ -4,6 +4,21 @@
 
 ### Added
 
+- `Health`: the health color. After every frame the server asks Jev where
+  the run is, whether it is repeating itself, and whether it needs a person,
+  and prefixes the session title with 🟢, 🟡, 🔴, or ⚪. The rule is a pure
+  function; the evaluation runs on its own fiber with a 1.5 s deadline and
+  never touches the turn; a `health` card is emitted on every color change;
+  a rename keeps the dot and an archive drops it; every decision is kept in
+  the store as a `flows.opencode.health.v1` record.
+- The cell's `classify` flows, with the three curated classifiers of
+  `@smthrs/std`, bound over `Evaluator.layerVercelGateway` when
+  `AI_GATEWAY_API_KEY` is set and `Evaluator.layerUnavailable()` otherwise.
+  A classify call renders as a `classify` card.
+- Cost: `session.updated` carries tokens and cost on every model settlement,
+  the assistant header and the step-finish parts carry the seat's cost when
+  the host names a price, and every turn ends with a synthetic run summary
+  (frames, calls, classify calls, Jev calls, latency, spend).
 - `EngineDriver`: the driver over the durable flow engine. One `Agent.run`
   per prompt as one execution of the `opencode/turn` flow in
   `<directory>/.smithers/opencode.sqlite`, shared with the store. A `bash`

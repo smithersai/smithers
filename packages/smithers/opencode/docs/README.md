@@ -36,6 +36,37 @@ Part ids are derived from the assistant message and a sort key, so a frame
 replayed after a permission park names the same parts and the app updates the
 cards it already shows instead of drawing them twice.
 
+## Classify and the health dot
+
+The cell has a door to Jev: the `classify` flow and the curated
+`classify/triage/relevance`, `classify/check/verdict`, and
+`classify/edit/risk` flows of `@smthrs/std`, bound over the evaluator the
+host installs. A classify call renders as a `classify` card titled with the
+count of states and questions and the time Jev took, one line per state with
+the leading answer and its probability, and the full answers as the card's
+structured metadata.
+
+After every frame the server asks Jev three questions about the run and
+folds the answer into a dot in front of the session title: 🟢 progressing,
+🟡 repeating itself or exploring without an edit, 🔴 parked or in need of a
+person, ⚪ health unavailable. A `health` card appears on every color change
+with the reason as its title. The rule is a pure function in `Health.decide`;
+the evaluation runs on its own fiber with a deadline and never touches the
+turn. Each decision is recorded in the store as a `flows.opencode.health.v1`
+row.
+
+Without `AI_GATEWAY_API_KEY` the evaluator answers `unreachable`: classify
+calls resolve as `{ ok: false }` in the cell, the dot is gray, and the run
+goes on.
+
+## Cost
+
+Every model settlement updates the session's tokens and cost, and the
+assistant header carries the turn's. The seat's price is the host's to
+name (`Serve.Options.pricing`); without it the cost is zero. The turn ends
+with a synthetic text part summarizing frames, calls, classify calls, and
+the Jev calls with their latency and spend.
+
 ## Drivers
 
 The routes, the store, the hub and the projection never see an engine. They
@@ -47,4 +78,5 @@ recording; the durable engine driver implements the same service over
 
 ## Pages
 
+- [Quickstart](./quickstart.md)
 - [API reference](./api.md)

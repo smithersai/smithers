@@ -1,3 +1,4 @@
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { type Duration, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -30,6 +31,8 @@ export const serve = (
     readonly bind?: Partial<Serve.Bind> | undefined
     readonly driver?: Layer.Layer<Driver.Driver> | undefined
     readonly heartbeat?: Duration.Input | undefined
+    /** The evaluator health asks; unavailable by default, so the dot is gray. */
+    readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   } = {}
 ): Served => {
   const scratch = scratchDirectory()
@@ -40,7 +43,8 @@ export const serve = (
       bind: { ...Serve.defaultBind, ...options.bind },
       version: "test",
       seat: "scripted:demo",
-      heartbeat: options.heartbeat ?? "15 seconds"
+      heartbeat: options.heartbeat ?? "15 seconds",
+      evaluator: options.evaluator ?? Evaluator.layerUnavailable()
     }).pipe(Layer.provide(Layer.mergeAll(driver, Store.layerSqlite(Serve.databasePath(scratch.directory))))),
     { disableLogger: true }
   )

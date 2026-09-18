@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { afterAll, describe, expect, it } from "vitest"
+import type * as Health from "../src/Health.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
 import { run, scratchDirectory } from "./Harness.ts"
@@ -222,6 +223,53 @@ describe("Store", () => {
     expect(result.pending).toBe(1)
     expect(result.after).toEqual([])
     expect(result.gone).toBe(true)
+  })
+
+  it("keeps health decisions per session and drops them with it", async () => {
+    const entry = (sessionID: string, frame: number): Health.Entry => ({
+      type: "flows.opencode.health.v1",
+      sessionID,
+      messageID: "msg_h",
+      frame,
+      at: 7,
+      color: "gray",
+      reason: "health unavailable",
+      answers: undefined,
+      latencyMs: 3,
+      usage: undefined,
+      error: "unreachable: no key",
+      state: {
+        task: "t",
+        frame,
+        maxFrames: 100,
+        framesSinceEdit: 0,
+        demands: [],
+        lastCalls: [],
+        lastPrints: "",
+        parked: "none",
+        lastTransition: "continue"
+      }
+    })
+    const result = await withStore((store) =>
+      Effect.gen(function*() {
+        yield* store.putSession(session("ses_h", 9))
+        yield* store.putHealth(entry("ses_h", 1))
+        yield* store.putHealth(entry("ses_h", 2))
+        yield* store.putHealth(entry("ses_other_h", 1))
+        const mine = yield* store.listHealth("ses_h")
+        const all = yield* store.listHealth()
+        yield* store.deleteSession("ses_h")
+        return { mine, all, left: yield* store.listHealth() }
+      })
+    )
+    expect(result.mine.map((item) => item.frame)).toEqual([1, 2])
+    expect(result.mine[0]).toMatchObject({
+      type: "flows.opencode.health.v1",
+      color: "gray",
+      error: "unreachable: no key"
+    })
+    expect(result.all.length).toBe(3)
+    expect(result.left.map((item) => item.sessionID)).toEqual(["ses_other_h"])
   })
 
   it("reports a refused statement as a StoreError", async () => {

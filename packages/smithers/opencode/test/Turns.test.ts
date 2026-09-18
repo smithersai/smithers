@@ -1,10 +1,12 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as AgentEvents from "@smthrs/harness/AgentEvent"
-import { Effect, Layer } from "effect"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Effect, Layer, Option } from "effect"
 import { afterAll, describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
 import * as Driver from "../src/Driver.ts"
 import * as Events from "../src/Events.ts"
+import * as Health from "../src/Health.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as ScriptedDriver from "../src/ScriptedDriver.ts"
 import * as Store from "../src/Store.ts"
@@ -38,7 +40,9 @@ const options: Turns.Options = {
 const stack = (driver: Layer.Layer<Driver.Driver>, file: string) => {
   const store = Store.layerSqlite(`${scratch.directory}/${file}.sqlite`)
   const hub = Events.layer({ directory: scratch.directory, project: "p" })
-  return Layer.mergeAll(Turns.layer(options), store, hub).pipe(Layer.provideMerge(Layer.mergeAll(driver, store, hub)))
+  return Layer.mergeAll(Turns.layer(options), store, hub).pipe(
+    Layer.provideMerge(Layer.mergeAll(driver, store, hub, Evaluator.layerUnavailable()))
+  )
 }
 
 const scripted = ScriptedDriver.layer({ script: DemoScript.script, delay: 0 })
@@ -114,7 +118,7 @@ describe("Turns", () => {
     expect(result.pending.length).toBe(1)
     expect(result.wrongPermission).toMatchObject({ code: "unknown_permission" })
     expect(result.messages.map((message) => message.info.role)).toEqual(["user", "assistant", "user"])
-    expect(result.messages[1]!.parts.filter((part) => part.type === "tool").length).toBe(6)
+    expect(result.messages[1]!.parts.filter((part) => part.type === "tool").length).toBe(8)
     expect(result.idle).toEqual({})
     expect(result.replayed.map((envelope) => envelope.payload.type)).toContain("permission.replied")
     expect(result.aborted).toBe(false)
@@ -268,7 +272,7 @@ describe("Turns", () => {
     })
     const hub = Events.layer({ directory: scratch.directory, project: "p" })
     const flakyStack = Layer.mergeAll(Turns.layer(options), flaky, hub).pipe(
-      Layer.provideMerge(Layer.mergeAll(driver, flaky, hub))
+      Layer.provideMerge(Layer.mergeAll(driver, flaky, hub, Evaluator.layerUnavailable()))
     )
     const result = await run(
       Effect.gen(function*() {
@@ -304,6 +308,49 @@ describe("Turns", () => {
     expect(result.status).toEqual({})
     expect(result.aborted).toBe(true)
     expect(Turns.promptText([{ type: "text", text: "a" }, { type: "file" }, { type: "text", text: "b" }])).toBe("a\nb")
+  })
+
+  it("keeps the dot and the card when a health decision cannot be recorded", async () => {
+    const file = `${scratch.directory}/health-refused.sqlite`
+    const refusing: Layer.Layer<Store.Store, Store.StoreError> = Layer.effect(
+      Store.Store,
+      Effect.map(Store.make, (store) => ({
+        ...store,
+        putHealth: () => Effect.fail(new Store.StoreError({ message: "refused" }))
+      }))
+    ).pipe(Layer.provide((await import("@smthrs/database/node/NodeDatabase")).layer({ filename: file })))
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const evaluator = Evaluator.layerScripted(() => ({
+      progress: { score: 3 },
+      stuck: { probability: 0.05 },
+      needsHuman: { probability: 0.05 }
+    }))
+    const stackWithoutRecords = Layer.mergeAll(Turns.layer(options), refusing, hub).pipe(
+      Layer.provideMerge(Layer.mergeAll(scripted, refusing, hub, evaluator))
+    )
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_h"))
+        yield* turns.prompt({ sessionID: "ses_h", parts: [{ type: "text", text: "Read package.json" }] })
+        const cards = (messages: ReadonlyArray<Store.MessageWithParts>) =>
+          messages.flatMap((message) =>
+            message.parts.filter((part): part is Protocol.ToolPart => part.type === "tool" && part.tool === "health")
+          )
+        // Frame zero settles green, then the park turns the dot red; either
+        // way a card and a dot landed while every record was refused.
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listMessages("ses_h"), (list) => cards(list).length >= 1)))
+        )
+        const title = Option.getOrThrow(yield* store.getSession("ses_h")).title
+        return { title, cards: cards(yield* store.listMessages("ses_h")), records: yield* store.listHealth("ses_h") }
+      }).pipe(Effect.provide(stackWithoutRecords))
+    )
+    expect(result.title.endsWith(" Read package.json")).toBe(true)
+    expect(Health.colorOf(result.title)).toBeDefined()
+    expect(result.cards[0]!.state).toMatchObject({ title: "verifying" })
+    expect(result.records).toEqual([])
   })
 
   it("renders the conversation tail a follow-up carries, newest last and cut from the front", () => {
@@ -422,7 +469,7 @@ describe("Turns", () => {
         return { busy, reopened, fresh, named, sessions: yield* store.listSessions() }
       }).pipe(Effect.provide(
         Layer.mergeAll(Turns.layer(options), store, hub).pipe(
-          Layer.provideMerge(Layer.mergeAll(booting, store, hub))
+          Layer.provideMerge(Layer.mergeAll(booting, store, hub, Evaluator.layerUnavailable()))
         )
       ))
     )

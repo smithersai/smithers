@@ -14,12 +14,22 @@
  * when the process last stopped, and the projection of each is re-opened
  * so the replay updates the cards the app already shows.
  *
+ * Health runs beside the fold: when a folded event hands out facts, an
+ * evaluation is forked on its own fiber with the `Evaluator` the host
+ * installed, and its decision comes back through the same queue, so the
+ * title dot and the health card land in order with the cards. The decision
+ * is recorded in the store. A slow or failed evaluation never touches the
+ * turn: the deadline is inside `Health.evaluate`, and a decision that
+ * arrives after the turn ended is recorded and otherwise dropped.
+ *
  * @since 1.0.0
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import { Context, Deferred, Effect, Layer, Option, Queue, Schedule, Schema, type Scope } from "effect"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Context, Deferred, Effect, Layer, Option, Queue, Schedule, Schema, Scope } from "effect"
 import * as Driver from "./Driver.ts"
 import * as Events from "./Events.ts"
+import * as Health from "./Health.ts"
 import * as Ids from "./Ids.ts"
 import * as Projection from "./Projection.ts"
 import type * as Protocol from "./Protocol.ts"
@@ -62,6 +72,10 @@ export interface Options {
   readonly agent: string
   /** The model a turn runs on when the app names none. */
   readonly model: Protocol.ModelRef
+  /** The frame budget the health state reports. */
+  readonly maxFrames?: number | undefined
+  /** The seat's price, for the cost on the session and the message. */
+  readonly pricing?: Projection.Pricing | undefined
 }
 
 /**
@@ -132,12 +146,20 @@ export const promptText = (parts: PromptInput["parts"]): string =>
  */
 export const make = (
   options: Options
-): Effect.Effect<Service, never, Driver.Driver | Store.Store | Events.Events | Scope.Scope> =>
+): Effect.Effect<Service, never, Driver.Driver | Store.Store | Events.Events | Evaluator.Evaluator | Scope.Scope> =>
   Effect.gen(function*() {
     const driver = yield* Driver.Driver
     const store = yield* Store.Store
     const hub = yield* Events.Events
-    const ctx: Projection.Context = { directory: options.directory, now: () => Date.now() }
+    const evaluator = yield* Evaluator.Evaluator
+    /** Where health evaluations are forked: they end with the composition. */
+    const scope = yield* Scope.Scope
+    const ctx: Projection.Context = {
+      directory: options.directory,
+      now: () => Date.now(),
+      maxFrames: options.maxFrames,
+      pricing: options.pricing
+    }
     const states = new Map<string, Projection.State>()
 
     /**
@@ -164,7 +186,8 @@ export const make = (
 
     /**
      * Applies a step: keeps its state until the turn ends, then stores and
-     * publishes its events. A store failure is logged, never thrown.
+     * publishes its events, and forks a health evaluation when the step
+     * hands out facts. A store failure is logged, never thrown.
      */
     const apply = (sessionID: string, step: Projection.Step): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -173,7 +196,41 @@ export const make = (
         yield* emit(step.events).pipe(
           Effect.catchCause((cause) => Effect.logError({ message: "The turn could not be stored", cause }))
         )
+        if (step.health !== undefined && !step.state.closed) {
+          yield* Effect.forkIn(evaluateHealth(sessionID, step.state.assistantMessageID, step.health), scope)
+        }
       })
+
+    /**
+     * One health evaluation on its own fiber: the decision is queued behind
+     * whatever the fold is doing, so the title and the card land in order.
+     */
+    const evaluateHealth = (sessionID: string, messageID: string, facts: Health.Facts): Effect.Effect<void> =>
+      Health.evaluate(facts).pipe(
+        Effect.provideService(Evaluator.Evaluator, evaluator),
+        Effect.flatMap((evaluation) =>
+          Effect.asVoid(Queue.offer(jobs, { _tag: "health", sessionID, messageID, facts, evaluation }))
+        )
+      )
+
+    /** Records a decision, whether or not the turn is still open. */
+    const record = (job: HealthJob, at: number): Effect.Effect<void> =>
+      store.putHealth({
+        type: Health.recordType,
+        sessionID: job.sessionID,
+        messageID: job.messageID,
+        frame: job.facts.frame,
+        at,
+        color: job.evaluation.decision.color,
+        reason: job.evaluation.decision.reason,
+        answers: job.evaluation.answers,
+        latencyMs: job.evaluation.latencyMs,
+        usage: job.evaluation.usage,
+        error: job.evaluation.error,
+        state: Health.toState(job.facts)
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logError({ message: "The health decision could not be stored", cause }))
+      )
 
     /**
      * The projection runs on a fiber of its own, fed in order by a queue.
@@ -197,6 +254,11 @@ export const make = (
           yield* apply(job.sessionID, Projection.fold(ctx, state, job.event))
         } else if (state !== undefined && job._tag === "close") {
           yield* apply(job.sessionID, Projection.close(ctx, state, job.closing))
+        } else if (job._tag === "health") {
+          yield* record(job, ctx.now())
+          if (state !== undefined && state.assistantMessageID === job.messageID) {
+            yield* apply(job.sessionID, Projection.health(ctx, state, job.facts, job.evaluation))
+          }
         }
         if (job.done !== undefined) yield* Deferred.succeed(job.done, undefined)
       })
@@ -397,7 +459,9 @@ export const make = (
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: Options): Layer.Layer<Turns, never, Driver.Driver | Store.Store | Events.Events> =>
+export const layer = (
+  options: Options
+): Layer.Layer<Turns, never, Driver.Driver | Store.Store | Events.Events | Evaluator.Evaluator> =>
   Layer.effect(Turns, make(options))
 
 /**
@@ -447,7 +511,17 @@ interface Emit {
   readonly done?: Deferred.Deferred<void> | undefined
 }
 
-type Job = Open | Event | Close | Emit
+/** A health decision coming back from its fiber. */
+interface HealthJob {
+  readonly _tag: "health"
+  readonly sessionID: string
+  readonly messageID: string
+  readonly facts: Health.Facts
+  readonly evaluation: Health.Evaluation
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
+type Job = Open | Event | Close | Emit | HealthJob
 
 /**
  * Whether a store failure is the database being held by another writer,

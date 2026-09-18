@@ -1,7 +1,8 @@
 /**
  * The recorded turn the scripted driver replays: two frames that read
- * `package.json` and run a shell command behind a permission, a read-only
- * demand in between, and a final answer.
+ * `package.json`, ask Jev whether it matters to the task, and run a shell
+ * command behind a permission, a read-only demand in between, and a final
+ * answer.
  *
  * Hand-authored in the shape `Agent.run` emits, with the identities the
  * durable engine derives from the session, frame, cell digest and ordinal,
@@ -83,7 +84,7 @@ const closed = (outcome: "continue" | "resolved") =>
 
 const frameZero = (session: string): Array<AgentEvent.AgentEvent> => {
   const source = Cell.source(
-    `const pkg = await ctx.call("read", { path: "package.json" })\nconst root = await ctx.call("ls", { path: "." })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(" "))\nreturn ctx.continue()`
+    `const pkg = await ctx.call("read", { path: "package.json" })\nconst root = await ctx.call("ls", { path: "." })\nconst verdict = await ctx.call("classify/triage/relevance", { task: "Read package.json and tell me the name field.", file: "package.json", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(" "))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()`
   )
   const text = `I'll read package.json and list the directory first.\n\n\`\`\`javascript\n${source.text}\n\`\`\``
   return [
@@ -124,10 +125,45 @@ const frameZero = (session: string): Array<AgentEvent.AgentEvent> => {
         }
       })
     }),
+    new AgentEvent.CellCallStarted({
+      eventType: "flows.harness.cell-call-started.v1",
+      call: call(session, 0, source.digest, 2, "classify/triage/relevance", {
+        task: "Read package.json and tell me the name field.",
+        file: "package.json",
+        excerpt: `{"name":"demo-repo","version":"0.1.0"}\n`
+      })
+    }),
+    new AgentEvent.CellCallSettled({
+      eventType: "flows.harness.cell-call-settled.v1",
+      flowName: "classify/triage/relevance",
+      identity: identity(session, 0, source.digest, 2),
+      result: new Cell.CallResult({
+        outcome: "success",
+        value: {
+          answers: {
+            relevant: { value: true, probability: 0.93 },
+            role: {
+              value: "implementation",
+              probabilities: { implementation: 0.81, fixture: 0.14, unrelated: 0.05 },
+              confidence: 0.81
+            },
+            risk: {
+              value: 0.4,
+              label: "none",
+              probabilities: { none: 0.62, low: 0.3, medium: 0.06, high: 0.02 },
+              confidence: 0.62
+            }
+          },
+          confidence: { relevant: 0.86, role: 0.81, risk: 0.62 },
+          latencyMs: 212
+        }
+      })
+    }),
     new AgentEvent.CellPrinted({
       eventType: "flows.harness.cell-printed.v1",
       cell: source.digest,
-      text: `{"name":"demo-repo","version":"0.1.0"}\n\nREADME.md package.json src/\n`
+      text:
+        `{"name":"demo-repo","version":"0.1.0"}\n\nREADME.md package.json src/\n{"relevant":{"value":true,"probability":0.93},"role":{"value":"implementation"},"risk":{"label":"none"}}\n`
     }),
     new AgentEvent.CellSettled({
       eventType: "flows.harness.cell-settled.v1",

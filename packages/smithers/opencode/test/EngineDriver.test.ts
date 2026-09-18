@@ -3,6 +3,7 @@ import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
@@ -139,6 +140,7 @@ const options = (directory: string, extra: Partial<EngineDriver.Options> = {}): 
   seat: "scripted:test",
   host,
   maxFrames: 4,
+  evaluator: Evaluator.layerUnavailable(),
   ...extra
 })
 
@@ -598,7 +600,11 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         Events.layer({ directory, project: "p" })
       ).pipe(
         Layer.provideMerge(
-          Layer.mergeAll(Events.layer({ directory, project: "p" }), EngineDriver.layer(options(directory, extra)))
+          Layer.mergeAll(
+            Events.layer({ directory, project: "p" }),
+            EngineDriver.layer(options(directory, extra)),
+            Evaluator.layerUnavailable()
+          )
         )
       )
     const bashCards = (messages: ReadonlyArray<Store.MessageWithParts>) =>
@@ -640,5 +646,79 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(messages.list.map((message) => message.info.role)).toEqual(["user", "assistant"])
     expect(bashCards(messages.list).length).toBe(1)
     expect(script.calls).toBe(1)
+  })
+  it("binds classify to the host's evaluator: refused without one, answered with a scripted one", async () => {
+    const classifyCell =
+      `const r = await ctx.call("classify", { state: { a: 1 }, questions: { yes: { type: "boolean", instructions: "Is a one?" } } })
+const c = await ctx.call("classify/triage/relevance", { task: "t", file: "f", excerpt: "x" })
+console.log(JSON.stringify(r))
+ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers.yes.value + " " + c.answers.role.value)`
+    // No key: every call settles as a failure the cell reads, and the turn completes.
+    const refusedDirectory = scratch()
+    const refused = recorder()
+    script.replies = [classifyCell]
+    // No evaluator named: the driver reads the environment, which has no key here.
+    await process_(
+      refusedDirectory,
+      (driver) =>
+        Effect.gen(function*() {
+          yield* driver.start(input("ses_c", "msg_c"), refused.sink)
+          yield* wait(() => refused.outcomes.length === 1)
+        }),
+      { evaluator: undefined, environment: {} }
+    )
+    expect(refused.outcomes).toEqual([{ _tag: "completed" }])
+    const refusedCalls = settledCalls(refused.events, "classify")
+    expect(refusedCalls.length).toBe(1)
+    expect(refusedCalls[0]!.result.outcome).toBe("failure")
+    expect(refusedCalls[0]!.result.message).toContain("unreachable")
+    expect(answer(refused.events)).toContain("refused")
+    expect(answer(refused.events)).toContain("unreachable")
+
+    // Nothing named at all: the driver reads the process environment. The
+    // turn completes whatever that environment holds.
+    const ambientDirectory = scratch()
+    const ambient = recorder()
+    script.replies = [classifyCell]
+    await process_(
+      ambientDirectory,
+      (driver) =>
+        Effect.gen(function*() {
+          yield* driver.start(input("ses_e", "msg_e"), ambient.sink)
+          yield* wait(() => ambient.outcomes.length === 1)
+        }),
+      { evaluator: undefined }
+    )
+    expect(ambient.outcomes).toEqual([{ _tag: "completed" }])
+    expect(settledCalls(ambient.events, "classify").length).toBe(1)
+
+    // A scripted evaluator: the ad-hoc door and a curated door both answer.
+    const answeredDirectory = scratch()
+    const answered = recorder()
+    script.replies = [classifyCell]
+    await process_(
+      answeredDirectory,
+      (driver) =>
+        Effect.gen(function*() {
+          yield* driver.start(input("ses_d", "msg_d"), answered.sink)
+          yield* wait(() => answered.outcomes.length === 1)
+        }),
+      {
+        evaluator: Evaluator.layerScripted((request) =>
+          "yes" in request.questions
+            ? { yes: { probability: 0.9 } }
+            : {
+              relevant: { probability: 0.8 },
+              role: { choice: "fixture", probabilities: { implementation: 0.1, fixture: 0.8, unrelated: 0.1 } },
+              risk: { score: 1 }
+            }
+        )
+      }
+    )
+    expect(answered.outcomes).toEqual([{ _tag: "completed" }])
+    expect(settledCalls(answered.events, "classify")[0]!.result.outcome).toBe("success")
+    expect(settledCalls(answered.events, "classify/triage/relevance")[0]!.result.outcome).toBe("success")
+    expect(answer(answered.events)).toBe("answered true fixture")
+    expect(script.calls).toBe(3)
   })
 })
