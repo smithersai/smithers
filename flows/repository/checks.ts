@@ -318,7 +318,8 @@ export const assessSemantic = (comparison: typeof Comparison.Type, verdict: type
 
 /** A configured check that never ran is not a measured pass, so a repository
  * that defines none says so and names the locations the inspect probed. */
-export const checksSummary = (results: readonly (typeof CheckResult.Type)[], searched: readonly string[]): string => {
+export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (typeof CheckResult.Type)[]): string => {
+  const searched = plan.work.evidence.missing
   const blocking = results.filter(result => result.policy === "required" && (result.status === "failed" || result.status === "error"))
   if (blocking.length) return `${blocking.length} required checks blocked`
   const ran = results.filter(result => result.status !== "skipped")
@@ -367,7 +368,7 @@ export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
     const required = results.filter(result => result.policy === "required")
     const blocking = required.filter(result => result.status === "failed" || result.status === "error")
     return { stepId: plan.work.step.id, executionId, status: blocking.length ? "error" as const : "completed" as const,
-      summary: checksSummary(results, plan.work.evidence.missing),
+      summary: checksSummary(plan, results),
       evidence: [...new Set(results.flatMap(result => result.evidence))], output: json({ base: plan.comparison.base, candidate: plan.comparison.candidate,
         gate: blocking.length ? "blocked" : "passed", results } satisfies typeof CheckOutput.Type) }
   }))

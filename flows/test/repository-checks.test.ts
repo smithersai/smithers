@@ -8,7 +8,7 @@ import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, FileSystem, Layer } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { assessSemantic, captureChecks, checksSummary, diffPaths, executeCommand, materializeProposal, selectedComparison, type CheckResult, type Comparison } from "../repository/checks.ts"
+import { assessSemantic, captureChecks, checksSummary, diffPaths, executeCommand, materializeProposal, selectedComparison, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check } from "../repository/schema.ts"
 
@@ -107,16 +107,31 @@ test("semantic results cannot hide missing new handlers, fake source citations o
   assert.throws(() => diffPaths('diff --git "a/path with spaces" "b/path with spaces"'), /encoding/)
 })
 
+const checkResult = (values: Partial<typeof CheckResult.Type>): typeof CheckResult.Type => ({ checkId: "docs", policy: "report",
+  status: "skipped", summary: "No changed paths match this check", evidence: [], executionId: "execution-1", detail: null, ...values })
+/** The shape of the canary's failing eval: a PR job whose evidence was captured
+ * from the event payload, and one report-only AI check that matched no path. */
+const canaryPlan = (missing: readonly string[]): typeof CheckPlan.Type => ({
+  work: { repo: "codeplanesmithers/canary-sandbox", job: "ci", deadlineAt: Date.now() + 600_000,
+    step: { id: "checks", name: "Run repository checks", mode: "automatic", prompt: "Inventory the tree for CI workflow files, build/test manifests and runnable scripts" },
+    checks: [{ id: "docs", name: "Documentation stays grounded", kind: "ai", rule: "Report findings only", paths: ["**/*.md"], policy: "report" }],
+    landing: "ask", replies: "draft", executionMode: "live",
+    event: { source: "github", type: "pull_request", action: "opened", deliveryKey: "delivery-1",
+      payload: { pull_request: { base: { sha: "b".repeat(40) }, head: { sha: "f4d4814e64ec741c153a6163e6cac16c02691db6" } } } },
+    evidence: { repo: "codeplanesmithers/canary-sandbox", files: [], missing, history: [], records: [], sources: [],
+      source: { commitId: "f4d4814e64ec741c153a6163e6cac16c02691db6", treeId: "c".repeat(40), changeId: "d".repeat(32), operationId: "e".repeat(40), parentCommitIds: ["b".repeat(40)] } } },
+  comparison: { base: "b".repeat(40), candidate: "f4d4814e64ec741c153a6163e6cac16c02691db6", diff: "", paths: [], files: [], changes: [] },
+  contexts: []
+})
+
 test("a repository that configures no runnable check says so and names the locations that were searched", () => {
-  const result = (values: Partial<typeof CheckResult.Type>): typeof CheckResult.Type => ({ checkId: "docs", policy: "report",
-    status: "skipped", summary: "No changed paths match this check", evidence: [], executionId: "execution-1", detail: null, ...values })
-  const skipped = result({})
-  const searched = ["package.json", "tox.ini", "pyproject.toml"]
-  assert.equal(checksSummary([skipped], searched),
+  const skipped = checkResult({})
+  const searched = canaryPlan(["package.json", "tox.ini", "pyproject.toml"])
+  assert.equal(checksSummary(searched, [skipped]),
     "No checks are configured (searched package.json, tox.ini, pyproject.toml); nothing ran.")
-  assert.equal(checksSummary([skipped], []), "No checks are configured; nothing ran.")
-  const passed = result({ checkId: "verify", status: "passed", summary: "Exit 0" })
-  assert.equal(checksSummary([passed, skipped], searched), "1 of 1 checks passed", "a skipped check is not a measured pass or a measured failure")
-  assert.equal(checksSummary([passed, result({ checkId: "lint", status: "failed" })], searched), "1 of 2 checks passed")
-  assert.equal(checksSummary([passed, result({ checkId: "lint", status: "failed", policy: "required" })], searched), "1 required checks blocked")
+  assert.equal(checksSummary(canaryPlan([]), [skipped]), "No checks are configured; nothing ran.")
+  const passed = checkResult({ checkId: "verify", status: "passed", summary: "Exit 0" })
+  assert.equal(checksSummary(searched, [passed, skipped]), "1 of 1 checks passed", "a skipped check is not a measured pass or a measured failure")
+  assert.equal(checksSummary(searched, [passed, checkResult({ checkId: "lint", status: "failed" })]), "1 of 2 checks passed")
+  assert.equal(checksSummary(searched, [passed, checkResult({ checkId: "lint", status: "failed", policy: "required" })]), "1 required checks blocked")
 })
