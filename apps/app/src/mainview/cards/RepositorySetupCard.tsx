@@ -81,7 +81,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         </select></label>}
         {schedule && <div className="setup-field"><span>Next run</span><time dateTime={schedule.nextFireAt}>{new Date(schedule.nextFireAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" })}</time></div>}
       </div>
-      {state.sources.length > 0 && <details><summary>Repository evidence</summary><ul>{state.sources.map((source, index) => <li key={`${source.path}:${index}`}><code>{source.path}</code> · {source.status}<div>{source.summary}</div></li>)}</ul></details>}
+      {state.sources.length > 0 && <details><summary>Repository evidence</summary><ul>{state.sources.map((source, index) => <li key={`${source.path}:${index}`}><code>{source.path}</code> · {source.status === "missing" ? "not found" : source.status}{source.status !== "missing" && <div>{source.summary}</div>}</li>)}</ul></details>}
       {canRun && <div className="setup-actions"><button type="button" onClick={() => onRunCommand("setup.guide", card.id)}>Configure in Chat</button>
         <button type="button" disabled={pending} onClick={() => run("inspect")}>Inspect repository</button></div>}
       {!ciConfigured && (state.job === "issues" || state.job === "feature") && <div className="setup-actions"><button type="button" onClick={() => onRunCommand("ci.setup", state.repo)}>Set up CI</button></div>}

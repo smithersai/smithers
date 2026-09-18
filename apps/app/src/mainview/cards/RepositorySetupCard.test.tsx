@@ -365,3 +365,28 @@ test("a setup whose workspace is gone offers Retry with the typed refusal, never
     expect(t.calls).toEqual([["setup.retry", card.id]])
   } finally { t.close() }
 })
+
+/*
+ * The CI inspect of codeplanesmithers/canary-sandbox recorded four reads and
+ * three probes that found nothing (.artifacts/mvp-canary-walk-20260917/
+ * B-24-state-ci-terminal.json). A probe that found nothing is the evidence
+ * behind a default, so it is a row of its own in the fewest words that say it.
+ */
+test("a probe that found nothing is its own evidence row, in the words a person reads", () => {
+  const card = makeCard("ci")
+  card.payload.sources = [
+    { path: "README.md", status: "read", summary: "Read", revision: "a04cee586c1b0d7eca5fd03900638ec9e135daf3" },
+    { path: "package.json", status: "missing", summary: "Not present" },
+    { path: "tox.ini", status: "missing", summary: "Not present" },
+    { path: "pyproject.toml", status: "missing", summary: "Not present" },
+    { path: "github:/repos/codeplanesmithers/canary-sandbox/pulls?state=all&per_page=30", status: "read", summary: "1 records" }
+  ]
+  const t = mount(card)
+  try {
+    const rows = [...t.host.querySelectorAll("details li")].map(row => row.textContent)
+    expect(rows).toEqual(["README.md · readRead", "package.json · not found", "tox.ini · not found", "pyproject.toml · not found",
+      "github:/repos/codeplanesmithers/canary-sandbox/pulls?state=all&per_page=30 · read1 records"])
+    expect(t.host.textContent).not.toContain("Not present")
+    expect(t.host.textContent).not.toContain("· missing")
+  } finally { t.close() }
+})
