@@ -226,8 +226,18 @@ const clockName: Effect.Effect<string> = Effect.gen(function*() {
  */
 export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = action.toLayer((payload) =>
   Effect.gen(function*() {
-    const now = yield* Clock.currentTimeMillis
-    const wakeAt = yield* deadlineOf(payload, now)
+    // Whole milliseconds, both of them. A durable deadline lands in an INTEGER
+    // column whose CHECK constraint refuses anything else
+    // (`flows_runs.waiting_wake_at_ms`, `flows_clock_deadlines.due_at_ms`), and
+    // `Clock.currentTimeMillis` is not integral under every clock: a test clock
+    // advanced by a fractional-millisecond sleep reports a fractional now, and
+    // a fractional `millis` or `until` in the payload does the same. The
+    // unrounded deadline reached the park write as a raw SQL constraint
+    // failure, which killed the drive and left the run `running` with nothing
+    // left to wake it. `now` floors, and the deadline ceils so a rounded sleep
+    // never ends before the instant it was asked to wait for.
+    const now = Math.floor(yield* Clock.currentTimeMillis)
+    const wakeAt = Math.ceil(yield* deadlineOf(payload, now))
     const remaining = wakeAt - now
     // DECIDED: a deadline that has already passed
     // settles the node instead of parking it. A durable wait exists to survive

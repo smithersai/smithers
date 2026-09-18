@@ -246,6 +246,32 @@ describe("Sleep parks", () => {
       Effect.provide(wired())
     )
   })
+
+  effect("rounds a fractional clock and a fractional deadline to whole milliseconds", () => {
+    const relative = makeInstance(Host, "sleep-fractional-relative")
+    const absolute = makeInstance(Host, "sleep-fractional-absolute")
+    return Effect.gen(function*() {
+      // A durable driver writes `wakeAt` into an INTEGER column, and neither
+      // `Clock.currentTimeMillis` nor a payload's own deadline is integral by
+      // construction. A sub-millisecond clock is the cheapest way to prove it:
+      // unrounded, these two waits declare 5_001.5 and 5_000.5, and the park
+      // write fails its CHECK constraint instead of parking the run.
+      yield* TestClock.adjust("1500 micros")
+      expect(yield* Clock.currentTimeMillis).toBe(1.5)
+
+      const fromNow = yield* Flow.intoResult(Interpreter.interpret(Sleep.action.call({ millis: 5_000 }))).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, relative)
+      )
+      const fromDeadline = yield* Flow.intoResult(Interpreter.interpret(Sleep.action.call({ until: 5_000.5 }))).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, absolute)
+      )
+
+      expect(fromNow._tag).toBe("Suspended")
+      expect(fromDeadline._tag).toBe("Suspended")
+      expect(relative.waiting).toEqual({ reason: "timer", wakeAt: 5_001 })
+      expect(absolute.waiting).toEqual({ reason: "timer", wakeAt: 5_001 })
+    }).pipe(Effect.provide(wired()))
+  })
 })
 
 describe("Sleep replays", () => {
