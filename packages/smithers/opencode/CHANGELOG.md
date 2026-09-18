@@ -19,6 +19,15 @@
 
 ### Fixed
 
+- Aborting a turn that is parked on a permission card takes the card down and
+  leaves nothing spinning. `Turns.abort` now answers every pending request of
+  the session with `permission.replied` and the reply `reject`, which is what
+  the app reads to remove the card and what removes the row from the store,
+  and the projection keeps the parked frame's cell open across the park so the
+  close settles it as an error under the frame it opened in. Before this, an
+  abort on that path settled the turn server side but the app kept the card
+  and read the session as busy, and the cell part stayed `running` in the
+  history forever.
 - A gray health card names why and the way out: `health unavailable: set
   AI_GATEWAY_API_KEY to turn on health and classify` without a key, the
   transport's words or the deadline otherwise (`Health.unavailable`). The

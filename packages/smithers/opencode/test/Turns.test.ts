@@ -204,6 +204,63 @@ describe("Turns", () => {
     expect(result.status).toEqual({})
   })
 
+  it("aborts a parked turn: rejects the card, settles the cell, and goes idle on the stream", async () => {
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session("ses_park"))
+        yield* turns.prompt({ sessionID: "ses_park", parts: [{ type: "text", text: "run ls" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_park"), (list) => list.length === 1)))
+        )
+        const pending = yield* store.listPermissions("ses_park")
+        const before = (yield* hub.replay()).length
+        const aborted = yield* turns.abort("ses_park")
+        yield* Effect.promise(() =>
+          until(() =>
+            Effect.runPromise(
+              Effect.map(
+                store.listMessages("ses_park"),
+                (list) => list.some((message) => message.info.role === "assistant" && message.info.error !== undefined)
+              )
+            )
+          )
+        )
+        const list = yield* store.listMessages("ses_park")
+        return {
+          aborted,
+          request: pending[0]!,
+          left: yield* store.listPermissions("ses_park"),
+          status: yield* turns.status(),
+          error: (list[1]!.info as Protocol.AssistantMessage).error,
+          tools: list[1]!.parts.filter((part): part is Protocol.ToolPart => part.type === "tool"),
+          after: (yield* hub.replay()).slice(before).map((envelope) => envelope.payload)
+        }
+      }).pipe(Effect.provide(stack(scripted, "turns-park")))
+    )
+    expect(result.aborted).toBe(true)
+    expect(result.left).toEqual([])
+    expect(result.status).toEqual({})
+    expect(result.error?.name).toBe("MessageAbortedError")
+    // The stream says what takes the app's card down, then what ends the turn.
+    expect(result.after[0]).toMatchObject({
+      type: "permission.replied",
+      properties: { sessionID: "ses_park", requestID: result.request.id, reply: "reject" }
+    })
+    expect(result.after.some((event) => event.type === "session.idle")).toBe(true)
+    expect(result.after.find((event) => event.type === "session.status")?.properties["status"]).toEqual({
+      type: "idle"
+    })
+    // Nothing stays spinning: the parked frame's cell and its bash card settle.
+    expect(result.tools.every((part) => part.state.status !== "running")).toBe(true)
+    expect(result.tools.filter((part) => part.state.status === "error").map((part) => part.tool)).toEqual([
+      "cell",
+      "bash"
+    ])
+  })
+
   it("opens the next turn for a prompt the running turn could not take", async () => {
     const sinks: Array<Driver.Sink> = []
     const inputs: Array<Driver.StartInput> = []

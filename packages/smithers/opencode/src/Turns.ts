@@ -9,8 +9,9 @@
  * history route does not. A prompt on a busy session is stored as a user
  * message and steered into the running turn. A permission answer is
  * published as `permission.replied` and handed to the driver, which resumes
- * the parked execution. An abort interrupts the driver, whose exit closes
- * the projection. At boot the driver re-drives every turn that was open
+ * the parked execution. An abort answers every pending card `reject` on the
+ * stream, then interrupts the driver, whose exit closes the projection. At
+ * boot the driver re-drives every turn that was open
  * when the process last stopped, and the projection of each is re-opened
  * so the replay updates the cards the app already shows.
  *
@@ -455,9 +456,23 @@ export const make = (
      */
     const abort: Service["abort"] = (sessionID) =>
       Effect.gen(function*() {
-        // A card the person never answered is moot once the turn is over.
+        // A card the person never answered is moot once the turn is over, and
+        // the app takes a card down on `permission.replied` alone: every
+        // pending request is answered `reject` on the stream, which is also
+        // what removes it from the store. A parked turn has no body running,
+        // so without this the app kept the card and read the session as busy
+        // after the server had gone idle.
         const pending = yield* Effect.orDie(store.listPermissions(sessionID))
-        yield* Effect.orDie(Effect.forEach(pending, (request) => store.deletePermission(request.id), { discard: true }))
+        if (pending.length > 0) {
+          yield* commit({
+            _tag: "emit",
+            sessionID,
+            events: pending.map((request) => ({
+              type: "permission.replied",
+              properties: { sessionID, requestID: request.id, reply: "reject" }
+            }))
+          })
+        }
         if (yield* driver.interrupt(sessionID)) return true
         if (!states.has(sessionID)) return false
         yield* commit({ _tag: "close", sessionID, closing: { _tag: "interrupted" } })

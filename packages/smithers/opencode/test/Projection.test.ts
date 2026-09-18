@@ -446,6 +446,35 @@ describe("Projection", () => {
     })
   })
 
+  it("keeps the parked cell so an abort of a parked turn settles every open card", () => {
+    const ctx = { directory, now: clock().now }
+    const events = scriptEvents()
+    const parked = foldAll(events.slice(0, events.findIndex((event) => event._tag === "suspended") + 1), ctx)
+    // The park resets the frame counter for the replay and leaves the cell of
+    // the parked frame open, together with the call the person never answered.
+    expect(parked.state.frame).toBe(-1)
+    expect(parked.state.cell).toMatchObject({ frame: 1 })
+    expect(Object.keys(parked.state.calls).length).toBe(1)
+    const stopped = Projection.close(ctx, parked.state, { _tag: "interrupted" })
+    const cards = stopped.events
+      .map((event) => event.properties["part"] as Protocol.Part | undefined)
+      .filter((part): part is Protocol.ToolPart => part?.type === "tool")
+    expect(cards.map((part) => [part.tool, part.state.status])).toEqual([
+      ["cell", "error"],
+      ["bash", "error"],
+      ["health", "completed"]
+    ])
+    // The settled card is the parked frame's own, by id and by the frame it names.
+    expect(cards[0]!.id).toBe(Ids.part(assistantMessageID, { frame: 1, slot: Projection.slots.cell, ordinal: 0 }))
+    expect(cards[0]!.state).toMatchObject({ error: "interrupted", input: { frame: 2 } })
+    expect(stopped.state.cell).toBeUndefined()
+    expect(stopped.events.map((event) => event.type).slice(-2)).toEqual(["session.status", "session.idle"])
+    expect((stopped.events.at(-2)!.properties["status"] as Protocol.SessionStatus).type).toBe("idle")
+    // The replay after the park opens frame zero afresh: the kept cell is dropped.
+    const replayed = Projection.fold(ctx, parked.state, events.find((event) => event._tag === "turn-opened")!)
+    expect(replayed.state.cell).toBeUndefined()
+  })
+
   it("handles the events outside the demo turn", () => {
     const ctx = { directory, now: clock().now }
     const start = Projection.open(ctx, opened())

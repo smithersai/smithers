@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Driver from "../src/Driver.ts"
 import * as EngineDriver from "../src/EngineDriver.ts"
 import * as Events from "../src/Events.ts"
+import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
 import * as Turns from "../src/Turns.ts"
@@ -500,6 +501,106 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(result).toMatchObject({ interrupted: true, left: [] })
     expect(result.interruptMs).toBeLessThan(3000)
     expect(log.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "interrupted" }])
+  })
+
+  it("aborts a parked turn through the composition: card rejected, cell settled, no waiting row", async () => {
+    const directory = scratch()
+    const session: Protocol.Session = {
+      id: "ses_park",
+      slug: "quiet-harbor",
+      projectID: "p",
+      directory,
+      path: "",
+      title: "New session - now",
+      version: "test",
+      agent: "smithers",
+      model: { id: "test", providerID: "scripted" },
+      cost: 0,
+      tokens: Protocol.noTokens,
+      time: { created: 1, updated: 1 }
+    }
+    // One hub layer, shared by the composition and the test, so the test
+    // reads the stream the turn published on.
+    const hub = Events.layer({ directory, project: "p" })
+    const stack = Layer.mergeAll(
+      Turns.layer({ directory, agent: "smithers", model: { providerID: "scripted", modelID: "test" } }),
+      hub
+    ).pipe(
+      Layer.provideMerge(Layer.mergeAll(hub, EngineDriver.layer(options(directory, {})), Evaluator.layerUnavailable()))
+    )
+    const tools = (list: ReadonlyArray<Store.MessageWithParts>) =>
+      list.flatMap((message) => message.parts.filter((part): part is Protocol.ToolPart => part.type === "tool"))
+
+    script.replies = [bashCell("echo parked")]
+    const parked = await Effect.runPromise(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session)
+        yield* turns.prompt({ sessionID: "ses_park", parts: [{ type: "text", text: "echo parked" }] })
+        yield* Effect.promise(() =>
+          until(
+            () => Effect.runPromise(Effect.map(store.listPermissions("ses_park"), (list) => list.length === 1)),
+            30_000
+          )
+        )
+        const request = (yield* store.listPermissions("ses_park"))[0]!
+        const before = (yield* hub.replay()).length
+        const aborted = yield* turns.abort("ses_park")
+        yield* Effect.promise(() =>
+          until(
+            () =>
+              Effect.runPromise(
+                Effect.map(
+                  store.listMessages("ses_park"),
+                  (list) =>
+                    list.some((message) => message.info.role === "assistant" && message.info.finish !== undefined)
+                )
+              ),
+            30_000
+          )
+        )
+        const list = yield* store.listMessages("ses_park")
+        return {
+          aborted,
+          request,
+          list,
+          after: (yield* hub.replay()).slice(before).map((envelope) => envelope.payload),
+          pending: yield* store.listPermissions("ses_park"),
+          left: yield* store.listTurns(),
+          status: yield* turns.status(),
+          // The engine records the cancel on its own loop, so the row is
+          // polled rather than read once.
+          row: yield* Effect.gen(function*() {
+            const id = Ids.reply(list.find((message) => message.info.role === "user")!.info.id)
+            yield* Effect.promise(() => until(async () => engineRow(directory, id).waiting === null, 30_000))
+            return engineRow(directory, id)
+          })
+        }
+      }).pipe(Effect.provide(stack), Effect.scoped)
+    )
+    expect(parked.aborted).toBe(true)
+    // The card comes down on the stream before the turn ends there.
+    const replied = parked.after.findIndex((event) => event.type === "permission.replied")
+    expect(replied).toBeGreaterThanOrEqual(0)
+    expect(parked.after[replied]!.properties).toEqual({
+      sessionID: "ses_park",
+      requestID: parked.request.id,
+      reply: "reject"
+    })
+    expect(parked.after.findIndex((event) => event.type === "session.idle")).toBeGreaterThan(replied)
+    expect(parked.pending).toEqual([])
+    expect(parked.left).toEqual([])
+    expect(parked.status).toEqual({})
+    expect((parked.list[1]!.info as Protocol.AssistantMessage).error?.name).toBe("MessageAbortedError")
+    expect(tools(parked.list).every((part) => part.state.status !== "running")).toBe(true)
+    expect(tools(parked.list).filter((part) => part.state.status === "error").map((part) => part.tool)).toEqual([
+      "cell",
+      "bash"
+    ])
+    // The engine holds no row that would re-drive the turn after the abort.
+    expect(parked.row).toEqual({ status: "cancelled", waiting: null, token: null })
   })
 
   it("settles a turn the engine cannot resume instead of leaving the session busy", async () => {

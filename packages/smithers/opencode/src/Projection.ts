@@ -155,8 +155,14 @@ export interface State {
    */
   readonly context: Protocol.Tokens
   readonly reasoning: { readonly partID: string; readonly text: string; readonly start: number } | undefined
+  /**
+   * The open cell. It outlives a park, where the frame counter is reset for
+   * the replay, so an abort of a parked turn still settles its card.
+   */
   readonly cell:
     | {
+      /** The frame the cell opened in, zero-based. */
+      readonly frame: number
       readonly partID: string
       readonly callID: string
       readonly source: string
@@ -1033,6 +1039,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       const finished = finishReasoning(state, ctx)
       const now = ctx.now()
       const cell = {
+        frame: state.frame,
         partID: Ids.part(state.assistantMessageID, { frame: state.frame, slot: slots.cell, ordinal: 0 }),
         callID: `cell_${state.frame}_${event.cell.digest.slice(0, 8)}`,
         source: event.cell.text,
@@ -1374,7 +1381,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
     case "suspended": {
       // The engine re-drives the turn from frame zero after the park; the
       // journal replays what settled, and the derived part ids make the
-      // replay an update of the same cards.
+      // replay an update of the same cards. The parked frame's cell stays
+      // open until that replay's first `turn-opened`, so an abort of the
+      // parked turn finds it and settles its card.
       const parked: Health.Facts["parked"] = event.reason.code === "waiting-quota"
         ? "quota"
         : event.reason.code === "permission-required"
@@ -1382,7 +1391,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         : "question"
       const suspended = trigger({ ...state, facts: { ...state.facts, parked } }, false)
       return {
-        state: { ...suspended.state, frame: -1, reasoning: undefined, cell: undefined },
+        state: { ...suspended.state, frame: -1, reasoning: undefined },
         events: [],
         health: suspended.health
       }
@@ -1559,7 +1568,8 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
  * Ends the cards a turn leaves running when it ends without the event that
  * would settle them: the cell and every open call read as errors carrying
  * why the turn ended, so a Stop leaves no card spinning, in the stream or
- * after a reload.
+ * after a reload. The cell names the frame it opened in, which a park has
+ * since reset the counter away from.
  */
 const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => {
   const now = ctx.now()
@@ -1576,7 +1586,7 @@ const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => 
         tool: "cell",
         state: {
           status: "error",
-          input: { frame: state.frame + 1, source: cell.source },
+          input: { frame: cell.frame + 1, source: cell.source },
           error: reason,
           metadata: { outcome: closing._tag, output: cell.prints, calls: cell.calls, edits: cell.edits },
           time: { start: cell.start, end: now }
