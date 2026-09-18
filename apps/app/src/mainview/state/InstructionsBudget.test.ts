@@ -6,6 +6,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
+import { initialSetup, REPOSITORY_JOB_TITLES, type RepositoryJob } from "@smthrs/rpc/RepositorySetup"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, CODE_INTEL_LINE, INSTRUCTIONS_BUDGET_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf, smithersInstructions } from "./Instructions"
 import { WORLD_BODY_BUDGET, WORLD_BODY_PER_DOCUMENT } from "./WorldContext"
 
@@ -134,6 +135,60 @@ describe("the instructions budget", () => {
      */
     expect(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES - bytes(composed)).toBeLessThan(256)
     console.info(`instructions budget: World notes at budget land in stage ${instructionStageOf(instructions)} (${bytes(instructions)} prompt bytes, ${bytes(composed)} composed)`)
+  })
+
+  /*
+   * The open setups' drafts (controller/repositorySetup.ts setupContextSummary)
+   * are the last thing the cap cuts. Budgeting them by their JSON size instead
+   * admitted two drafts that the RENDERED turn had no room for: three setup
+   * cards behind ten file cards composed 17 292 bytes, past the seam's cap,
+   * which it answers with "instructions must be a string within the size
+   * limit". composeTurn now sheds them oldest first.
+   */
+  test("the open setups' drafts ride the turn while there is room and are shed before the cap is passed", async () => {
+    const setupCards = (store: Awaited<ReturnType<typeof createAppStore>>, jobs: ReadonlyArray<RepositoryJob>) => {
+      for (const job of jobs) {
+        store.dispatch({ type: "card.upsert", actor: "user", card: {
+          id: `setup:will:will%2Fcanary:${job}`, kind: "repository-setup", title: REPOSITORY_JOB_TITLES[job],
+          status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
+          payload: { ...initialSetup("will/canary", job, "will"), inspectedAt: 1234 }
+        } })
+      }
+    }
+    const drafted = (turn: { readonly context?: AgentRuntimeContext }) =>
+      (turn.context?.recentCards ?? []).filter((card) => card.setup !== undefined).map((card) => card.id)
+
+    const one = await capturedTurn((store) => setupCards(store, ["issues"]))
+    expect(bytes(one.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    expect(one.composed).toContain("- Research issue: automatic |")
+    expect(one.composed).toContain("Settings: replies draft, landing ask, time limit 10 minutes, apply to new and edited issues.")
+    console.info(`instructions budget: one open issues setup carries ${drafted(one).length} draft (${bytes(one.composed)} composed)`)
+
+    const open = await capturedTurn((store) => setupCards(store, ["issues", "review", "ci"]))
+    expect(bytes(open.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    // The newest card's draft is the one the person is looking at, so it is the last to go.
+    expect(drafted(open)).toEqual(["setup:will:will%2Fcanary:ci"])
+    expect(open.composed).toContain("- Run repository checks: automatic |")
+    console.info(`instructions budget: three open setups carry ${drafted(open).length} drafts (${bytes(open.composed)} composed)`)
+
+    const busy = await capturedTurn((store) => {
+      setupCards(store, ["issues", "review", "ci"])
+      for (let index = 0; index < 10; index += 1) {
+        store.dispatch({ type: "card.upsert", actor: "user", card: {
+          id: `run-trace-${index}`, kind: "file", title: `Run ${index} — a long-ish card title like the run cards carry`,
+          status: "active", createdAt: 2, ordinal: store.nextOrdinal(),
+          payload: { repo: "will/canary", path: `file-${index}.md`, content: "Source", truncated: false }
+        } })
+      }
+    })
+    /*
+     * Twelve card lines alone spend this fixture's headroom (16 062 bytes with
+     * no draft at all), so nothing is left to carry one and none is sent: the
+     * turn stays inside the seam's cap and setup.guide still reads the draft.
+     */
+    expect(bytes(busy.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES)
+    expect(drafted(busy)).toEqual([])
+    console.info(`instructions budget: the same setups behind ten cards carry ${drafted(busy).length} drafts (${bytes(busy.composed)} composed)`)
   })
 
   test("code intelligence is stated only where its flows are registered", async () => {

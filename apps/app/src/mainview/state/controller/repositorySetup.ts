@@ -1,3 +1,4 @@
+import type { AgentRuntimeSetupDraft } from "@smthrs/rpc/AgentContext"
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
   SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
@@ -44,6 +45,37 @@ export const setupGuidance = (card: SetupCard): string => JSON.stringify({
   active: card.payload.active, request: card.payload.request,
   ...repositorySetupGuide(card.payload)
 })
+
+/* A prompt's first sentence names the step; the rest of it stays behind setup.guide, because the turn pays for these bytes under the chat seam's cap. */
+const oneLine = (text: string): string => {
+  const flat = text.replace(/\s+/g, " ").trim()
+  return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
+}
+
+/**
+ * The open card's draft as the turn's runtime context carries it: the steps and
+ * their modes, one cut line of each prompt, what the job applies to, the time
+ * limit and the card's own gate. The held-out eval answers, the full prompts and
+ * the repository's source summaries stay behind setup.guide.
+ */
+export const setupContextSummary = (setup: RepositorySetup): AgentRuntimeSetupDraft => {
+  const { draft } = setup
+  const gate = setupActivationProblems(setup)[0]
+  return {
+    steps: draft.steps.map(step => ({ name: step.name, mode: step.mode, prompt: oneLine(step.prompt) })),
+    replies: draft.replies, landing: draft.landing, budgetMinutes: draft.budgetMinutes,
+    ...(setup.job === "issues"
+      ? { applyTo: draft.scope === "label" ? `issues labeled "${draft.label}"` : "new and edited issues" }
+      : {}),
+    ...(setup.job === "chores"
+      ? { trigger: `${draft.schedule === "" ? "no schedule" : `cron ${draft.schedule} UTC`}, ${
+        draft.choreEvent === "push" ? "on push to the default branch"
+          : draft.choreEvent === "labeled" ? `on issues labeled "${draft.label}"` : "no repository event"
+      }` }
+      : {}),
+    ...(gate === undefined ? {} : { gate })
+  }
+}
 
 const terminal = (phase: string | undefined) => phase !== undefined && ["completed", "failed", "stopped"].includes(phase)
 

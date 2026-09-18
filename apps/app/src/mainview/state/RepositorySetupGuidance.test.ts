@@ -11,7 +11,7 @@ import { setupQuestionCardId } from "./controller/repositorySetup"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf } from "./Instructions"
-import { memoryStorage, recordingAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { memoryStorage, recordingAgent, scriptedToolAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const id = "setup:maintainer:example%2Frepo:issues"
 const setupNames = ["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.retry"]
@@ -53,6 +53,26 @@ async function fixture(agent?: (requests: StartAgentTurnRequest[]) => AgentPort,
   const untouched = () => !fetches.some(({ url, method }) => url.includes("/repository-setup") && method !== "GET")
   return { store, storage, payload, controller, requests, fetches, call, close, guidance, setup, question, untouched }
 }
+
+/*
+ * A deterministic model that answers only from the turn it was given: it reads
+ * the automatic step names out of its own composed instructions, and says the
+ * production sentence when it finds none.
+ */
+const echoingAgent = (requests: StartAgentTurnRequest[]): AgentPort => scriptedToolAgent([request => {
+  requests.push(request)
+  const automatic = [...composeAgentInstructions(request.instructions, request.context).matchAll(/^ +- (.+?): automatic \|/gm)]
+  return [{ type: "delta" as const, kind: "text" as const, text: automatic.length === 0
+    ? "Nothing runs automatically—flows only start when you invoke them."
+    : `Automatic in this setup: ${automatic.map(match => match[1]).join(", ")}.` },
+    { type: "done" as const, reason: "stop" as const }]
+}]).agent
+
+const transcript = (store: Awaited<ReturnType<typeof createAppStore>>): string =>
+  [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal).map(message => message.text).join("\n")
+
+const conversationTurn = (requests: ReadonlyArray<StartAgentTurnRequest>) =>
+  requests.find(request => request.purpose === undefined || request.purpose === "conversation")!
 
 const askAndWait = async (t: Awaited<ReturnType<typeof fixture>>) => {
   await t.controller.commands.run("setup.guide", id)
@@ -487,5 +507,46 @@ test("setup authority refreshes after an edit and never includes another account
     expect(cards[0]).toMatchObject({ cardId: id, revision: 2, digest: setupCandidate(t.setup()) })
     expect(line).not.toContain("other/private")
     expect(await t.call({ action: "execute", name: "setup.guide", args: "foreign-setup" })).toContain("different account")
+  } finally { await t.close() }
+})
+
+/*
+ * The canary walk's Job 1 "Ordinary chat question": beside the open issues card
+ * with research, duplicates and reproduce all `automatic`, "what will run
+ * automatically?" was answered "Nothing runs automatically—flows only start
+ * when you invoke them.", then "Nothing runs on its own." The draft reached the
+ * model only through the setup.guide TOOL, which the prompt tells it to call for
+ * a setup guide request — so an ordinary question was answered about flows in
+ * general and contradicted the card beside it.
+ */
+test("a chat question beside the open setup carries that setup's real draft into the turn", async () => {
+  const t = await fixture()
+  try {
+    await t.controller.configureRepositorySetup(id, "cases", [{ id: "c1", name: "Opened issue asks what this repository is for",
+      input: "What is this repository for?", expected: "HELD-OUT-ANSWER-NEVER-IN-A-TURN", required: true }])
+    await t.controller.send("what will run automatically?")
+    await waitFor(() => t.requests.length > 0)
+    const request = conversationTurn(t.requests)
+    const seen = composeAgentInstructions(request.instructions, request.context)
+    for (const name of ["Research issue", "Find duplicates", "Reproduce bugs"]) expect(seen).toContain(`- ${name}: automatic`)
+    for (const name of ["Quick POC", "Fix for real", "Split issue"]) expect(seen).toContain(`- ${name}: manual`)
+    expect(seen).toContain("Classify the issue and inspect relevant source")
+    expect(seen).toContain("apply to new and edited issues")
+    expect(seen).toContain("landing ask")
+    expect(seen).toContain("time limit 10 minutes")
+    expect(seen).toContain("Run evals for this draft.")
+    // A held-out eval answer is never carried into a turn, at any window position.
+    expect(seen).not.toContain("HELD-OUT-ANSWER-NEVER-IN-A-TURN")
+    expect(new TextEncoder().encode(seen).length).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+  } finally { await t.close() }
+})
+
+test("a model answering only from that turn names the automatic steps instead of denying them", async () => {
+  const t = await fixture(echoingAgent)
+  try {
+    await t.controller.send("what will run automatically?")
+    await waitFor(() => transcript(t.store).includes("Automatic in this setup") || transcript(t.store).includes("Nothing runs automatically"))
+    expect(transcript(t.store)).toContain("Automatic in this setup: Research issue, Find duplicates, Reproduce bugs.")
+    expect(transcript(t.store)).not.toContain("Nothing runs automatically")
   } finally { await t.close() }
 })

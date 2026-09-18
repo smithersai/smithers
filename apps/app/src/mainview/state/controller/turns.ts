@@ -18,6 +18,7 @@ import type { ImpossibleAskClass,InstructionRole,InstructionStage } from "../Ins
 import { bytesOf,CHAT_INSTRUCTIONS_CAP_BYTES,INSTRUCTIONS_HEADROOM_BYTES,smithersInstructions } from "../Instructions"
 import { activeCatalogRepositoryId,activeRepositoryId } from "../RepoContext"
 import { currentRepositoryUpdate } from "../RepositoryContext"
+import { setupContextSummary } from "./repositorySetup"
 import {
 impossibleAskOf,
 renderedAskTurnText,
@@ -212,7 +213,10 @@ export const createTurnController = (
     }
   }
 
-  const agentRuntimeContext = (worldBodyBudget: number = WORLD_BODY_BUDGET): AgentRuntimeContext => {
+  const agentRuntimeContext = (
+    worldBodyBudget: number = WORLD_BODY_BUDGET,
+    setupDrafts: number = Number.POSITIVE_INFINITY
+  ): AgentRuntimeContext => {
     const snapshot = store.agentContextSnapshot()
     const current = store.session()
     const identity = store.collections.identitySessions.get("identity")
@@ -228,11 +232,22 @@ export const createTurnController = (
     const selected = ctx.services.features?.wiki !== true || current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
+    const recent = [...store.collections.cards.values()]
+      .filter(card => inConversation(card, conversationTabIdOf(current)) && knowledgeCardAvailable(card.kind, ctx.services.features))
+      .sort((a, b) => a.ordinal - b.ordinal).slice(-12)
+    /*
+     * The open setup's own draft. Asked "what will run automatically?" beside an
+     * issues card whose research, duplicates and reproduce steps were all
+     * automatic, the model answered "Nothing runs automatically": the draft
+     * reached it only through the setup.guide tool it had no reason to call for
+     * an ordinary question. `setupDrafts` is how many of them, newest card
+     * first, composeTurn can afford under the chat seam's cap.
+     */
+    const drafted = new Set([...recent].reverse()
+      .filter(card => card.kind === "repository-setup").slice(0, setupDrafts).map(card => card.id))
     return {
       repositoryUpdate: currentRepositoryUpdate(store),
-      recentCards: [...store.collections.cards.values()]
-        .filter(card => inConversation(card, conversationTabIdOf(current)) && knowledgeCardAvailable(card.kind, ctx.services.features))
-        .sort((a, b) => a.ordinal - b.ordinal).slice(-12)
+      recentCards: recent
         .map(card => ({
           id: card.id, kind: card.kind, title: card.title.replace(/[\r\n]/g, " ").slice(0, 250),
           status: card.status, maximized: current.maximizedCardId === card.id,
@@ -242,6 +257,7 @@ export const createTurnController = (
             facet: card.payload.facet ?? "terminal",
             streaming: readDesktopStream(card.payload.workspaceId) !== null,
           } } : {}),
+          ...(card.kind === "repository-setup" && drafted.has(card.id) ? { setup: setupContextSummary(card.payload) } : {}),
         })),
       version: AGENT_RUNTIME_CONTEXT_VERSION,
       product: "smithers",
@@ -442,14 +458,15 @@ export const createTurnController = (
    * still exceeds the cap, the World bodies give way (each cut note says so
    * in the context, and the pane still holds it); only when even bodiless
    * notes do not fit does the catalog fall to stage 3 (namespaces and
-   * counts, every name behind the list action). A turn fails on size only past that: a context
-   * whose tabs and repositories alone pass the cap, which no session has
-   * produced.
+   * counts, every name behind the list action). Under that floor the open
+   * setups' drafts give way, oldest card first. A turn fails on size only past
+   * that: a context whose tabs and repositories alone pass the cap, which no
+   * session has produced.
    */
   const composeTurn = (): { readonly context: AgentRuntimeContext; readonly instructions: string } => {
     const limit = CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES
-    const render = (worldBodyBudget: number, lastStage: InstructionStage = 2) => {
-      const context = agentRuntimeContext(worldBodyBudget)
+    const render = (worldBodyBudget: number, lastStage: InstructionStage = 2, setupDrafts?: number) => {
+      const context = agentRuntimeContext(worldBodyBudget, setupDrafts)
       const instructions = turnInstructions(context, lastStage)
       return { context, instructions, over: bytesOf(composeAgentInstructions(instructions, context)) - limit }
     }
@@ -464,19 +481,35 @@ export const createTurnController = (
      */
     let fit = render(0)
     const lastStage = fit.over > 0 ? 3 : 2
+    let setupDrafts: number | undefined
     if (lastStage === 3) {
       // The namespace-count floor frees room. Refill the note bodies under
       // that same cap instead of carrying the zero-budget probe into the turn.
       const floorWhole = render(WORLD_BODY_BUDGET, lastStage)
       if (floorWhole.over <= 0) return { context: floorWhole.context, instructions: floorWhole.instructions }
       fit = render(0, lastStage)
-      if (fit.over > 0) return { context: fit.context, instructions: fit.instructions }
+      if (fit.over > 0) {
+        /*
+         * The drafts are the last thing to give, and the newest card keeps its
+         * own longest: a native session at the namespace-count floor leaves
+         * about 1 300 bytes, which an issues draft (six steps and their cut
+         * prompts) does not fit, so that draft is left to setup.guide instead
+         * of failing the turn on size. Past even the bare turn the fewest
+         * bytes go, because the seam refuses it either way.
+         */
+        for (let keep = (fit.context.recentCards ?? []).filter(card => card.setup !== undefined).length - 1; keep >= 0; keep -= 1) {
+          setupDrafts = keep
+          fit = render(0, lastStage, keep)
+          if (fit.over <= 0) break
+        }
+        if (fit.over > 0) return { context: fit.context, instructions: fit.instructions }
+      }
     }
     let low = 0
     let high = WORLD_BODY_BUDGET
     for (let round = 0; round < 8 && high - low > 16; round += 1) {
       const middle = Math.floor((low + high) / 2)
-      const candidate = render(middle, lastStage)
+      const candidate = render(middle, lastStage, setupDrafts)
       if (candidate.over <= 0) {
         low = middle
         fit = candidate
