@@ -167,7 +167,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const evaluator = evaluatorLayer(process.env)
     const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
-        exporterPath: options.exporterPath, environment: options.checkEnvironment }), evaluationLayers,
+        exporterPath: options.exporterPath, environment: options.checkEnvironment, evaluator }), evaluationLayers,
       setupLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }), activationLayers, triggerLayers, replyLayers, deliveryLayers,
       repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath,
         environment: options.checkEnvironment, evaluator }),

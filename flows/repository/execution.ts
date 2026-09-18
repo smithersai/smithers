@@ -1,6 +1,7 @@
 /** Native step execution retains measured output and never promotes a proposal to a fact. */
 import * as Digest from "@smthrs/core/Digest"
 import * as Budget from "@smthrs/agent/Budget"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { FlowRuntime } from "@smthrs/flow"
 import { Effect, Layer, Option, Path, Schema } from "effect"
 import { contained, runSourceProcess, withImmutableSource, type ImmutableSourceOptions } from "../coding/immutable-source.ts"
@@ -8,9 +9,10 @@ import { normalizePath } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { captureCiPolicy, composeCiChecks, inheritsCiPolicy, revalidateCiPolicy } from "./ci-policy.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
-import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
+import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, JevDuplicates, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
 import { Event, StepResult, type IntakeScreening, type JobInput } from "./schema.ts"
 import { screenEvent } from "./intake.ts"
+import { jevDuplicates } from "./jev-duplicates.ts"
 import { CheckStep, reviewCheck } from "./checks.ts"
 import { ProposalStep } from "./changes.ts"
 import { RepositoryRemote } from "./remote.ts"
@@ -130,8 +132,13 @@ export const captureJobSource = (options: ImmutableSourceOptions, input: typeof 
     return { ...evidence, subject: screened.payload, intake: screened.screening }
   }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
     orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))
-export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
+/** `evaluator` is the duplicates step's whole model. A composition that names
+ * none keeps `layerUnavailable`, so every duplicates step fails as unavailable
+ * rather than reporting a history it never read. */
+export const executionLayers = (options: ImmutableSourceOptions & { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   CaptureJob.toLayer(input => captureJobSource(options, input)),
+  JevDuplicates.toLayer(({ work }) => jevDuplicates(work)).pipe(
+    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
   RetainObservation.toLayer(({ work, observation }) => Effect.gen(function*() {
     yield* Effect.try({ try: () => verifyObservation(work, observation), catch: error => error instanceof CodingError ? error : invalid("Invalid step evidence") })
     return result(work, observation, yield* currentExecutionId)

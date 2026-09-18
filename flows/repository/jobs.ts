@@ -87,9 +87,15 @@ const model = <const Name extends string>(name: Name, role: string) => AgentActi
   ]
 })
 export const Research = model("repository/research", "Classify and research the request using the current code and repository conventions.")
-export const Duplicates = model("repository/duplicates", "Find duplicate underlying defects. Similar components or wording alone do not establish a duplicate; keep distinct causes separate. Classification describes the original issue, not your confidence in a duplicate match. No matching history means duplicates:[], not classification unknown. Do not ask the author for duplicate history.")
 export const ProposeRepro = model("repository/propose-repro", "For bug reports, propose the smallest test that demonstrates the reported defect on this exact source. For questions, features or other non-bugs return reproduction null and question empty; no bug reproduction is needed, so never ask for a bug report. A failure string must identify the expected assertion, not an unrelated process failure.")
 export const Review = model("repository/review", "Review the actual proposed change against its base. If the evidence does not contain the candidate/base diff, state that limitation and ask the maintainer to supply it; do not conclude a clean working tree means a clean PR.")
+/** Finding a duplicate is a pairwise judgment over a closed candidate list,
+ * which is a decision, not text. Jev answers every pair and the host builds
+ * the whole observation from those answers, so no seat reads the repository's
+ * issue history and a Jev failure fails the step. */
+export const JevDuplicates = Action.make("repository/jev-duplicates", {
+  payload: { work: Work }, success: Observation, error: CodingError, nondeterministic: true
+})
 export const RetainObservation = Action.make("repository/retain-observation", {
   payload: { work: Work, observation: Observation }, success: StepResult, error: CodingError
 })
@@ -127,7 +133,7 @@ export const InvestigateStep = Flow.make("repository/InvestigateStep", {
   body: ({ work }) => AssertBudget.call({ deadlineAt: work.deadlineAt }).pipe(Node.andThen(
     Node.branch(Node.succeed(work.step), {
       if: step => step.id === "duplicates",
-      then: () => Duplicates.call(work),
+      then: () => JevDuplicates.call({ work }),
       else: () => Node.branch(Node.succeed(work.step), { if: step => step.id === "reproduce",
         then: () => ProposeRepro.call(work),
         else: () => Node.branch(Node.succeed(work.job), { if: job => job === "review",
@@ -198,8 +204,8 @@ export const jobFlows = Layer.mergeAll(Interpreter.layer(RepositoryJob), Interpr
     return yield* DurableDeferred.raceAll({ name: "author-or-deadline", success: Schema.Json, error: Schema.Never,
       effects: [DurableDeferred.await(deferred), DurableClock.sleep({ name: "author-deadline", duration: remaining, inMemoryThreshold: 0 }).pipe(Effect.as(null))] })
   })))
-export const modelLayers = Layer.mergeAll(Research.layer, Duplicates.layer, ProposeRepro.layer, Review.layer, JudgeReproduction.layer)
-export const modelNames = new Set([Research.name, Duplicates.name, ProposeRepro.name, Review.name, JudgeReproduction.name])
+export const modelLayers = Layer.mergeAll(Research.layer, ProposeRepro.layer, Review.layer, JudgeReproduction.layer)
+export const modelNames = new Set([Research.name, ProposeRepro.name, Review.name, JudgeReproduction.name])
 export const failureLayer = RetainFailure.toLayer(({ stepId, error }) => Effect.gen(function*() {
   const fields = error !== null && typeof error === "object" && !Array.isArray(error) ? error as { readonly message?: unknown } : {}
   const message = typeof fields.message === "string" ? fields.message : "This step failed. Review the execution error."
