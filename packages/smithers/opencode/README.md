@@ -31,6 +31,7 @@ Node 22.19.0 or later is required.
 | `EngineDriver`   | The driver over the durable flow engine: one `Agent.run` per prompt under `<directory>/.smithers/opencode.sqlite`, permission parks, steering, interrupts, resume.         |
 | `ScriptedDriver` | A driver that replays a recorded turn, with permission parks and their continuations.                                                                                      |
 | `DemoScript`     | The recorded turn the scripted driver ships with: a read, a list, a read-only demand, a shell call behind a permission, and a final answer.                                |
+| `Pricing`        | The published list prices of the starter seats, so the header's cost is a number.                                                                                          |
 | `Ids`            | OpenCode identifiers: prefixes, the time-ordered head, and derived part ids.                                                                                               |
 | `Cors`           | The allowed origins and the preflight answer.                                                                                                                              |
 | `Auth`           | Basic authentication from `OPENCODE_SERVER_PASSWORD`, with the health probes left open.                                                                                    |
