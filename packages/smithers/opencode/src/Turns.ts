@@ -112,7 +112,9 @@ export const historyCap = 4096
 export const history = (messages: ReadonlyArray<Store.MessageWithParts>, cap = historyCap): string | undefined => {
   const lines: Array<string> = []
   for (const message of messages) {
-    const text = message.parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("").trim()
+    // The run summary is a synthetic text part: the person never read it as an answer.
+    const text = message.parts.flatMap((part) => part.type === "text" && part.synthetic !== true ? [part.text] : [])
+      .join("").trim()
     if (text === "") continue
     lines.push(`${message.info.role === "user" ? "Person" : "Assistant"}: ${text}`)
   }
@@ -291,6 +293,61 @@ export const make = (
           )
     })
 
+    /**
+     * Opens a turn for a stored prompt: the projection writes the header and
+     * the busy status, and the driver is forked with a sink for the session.
+     */
+    const open = (
+      session: Protocol.Session,
+      userMessageID: string,
+      text: string,
+      agent: string,
+      model: Protocol.ModelRef
+    ): Effect.Effect<void, Store.StoreError> =>
+      Effect.gen(function*() {
+        const assistantMessageID = Ids.make("message")
+        // The tail is the conversation before this prompt: the prompt itself
+        // is the task, and a retried prompt is already stored.
+        const tail = history((yield* store.listMessages(session.id)).filter((m) => m.info.id !== userMessageID))
+        yield* commit({
+          _tag: "open",
+          sessionID: session.id,
+          step: Projection.open(ctx, { session, userMessageID, assistantMessageID, prompt: text, agent, model })
+        })
+        const sink = sinkFor(session.id)
+        yield* Effect.forkDetach(
+          driver.start(
+            { sessionID: session.id, messageID: assistantMessageID, prompt: text, history: tail, agent, model },
+            sink
+          ).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError({ message: "The turn could not start", cause }).pipe(
+                Effect.andThen(sink.closed({ _tag: "failed", message: "The turn could not start" }))
+              )
+            )
+          )
+        )
+      })
+
+    /**
+     * Steers a prompt into the running turn. When the driver has no turn to
+     * take it (the turn ended between the status check and the steer, as it
+     * does when the person types right after Stop), the prompt is not
+     * dropped: it opens the next turn once the projection has closed.
+     */
+    const steerOrOpen = (
+      session: Protocol.Session,
+      userMessageID: string,
+      text: string,
+      agent: string,
+      model: Protocol.ModelRef
+    ): Effect.Effect<void, Store.StoreError> =>
+      Effect.gen(function*() {
+        if (yield* driver.steer(session.id, text)) return
+        while (states.has(session.id)) yield* Effect.sleep(steerRetryDelay)
+        yield* open(session, userMessageID, text, agent, model)
+      })
+
     const prompt: Service["prompt"] = (input) =>
       Effect.gen(function*() {
         const session = yield* store.getSession(input.sessionID)
@@ -335,38 +392,18 @@ export const make = (
               }
             ]
           })
-          // Forked: the queue's write waits for the frame's own transaction,
-          // and the app expects the prompt route to answer at once.
-          yield* Effect.forkDetach(driver.steer(input.sessionID, text))
+          // Forked into the composition's scope: the queue's write waits for
+          // the frame's own transaction, and the app expects the prompt route
+          // to answer at once.
+          yield* Effect.forkIn(
+            steerOrOpen(session.value, userMessageID, text, agent, model).pipe(
+              Effect.catchCause((cause) => Effect.logError({ message: "The prompt could not open a turn", cause }))
+            ),
+            scope
+          )
           return
         }
-        const assistantMessageID = Ids.make("message")
-        const tail = history(yield* store.listMessages(input.sessionID))
-        yield* commit({
-          _tag: "open",
-          sessionID: input.sessionID,
-          step: Projection.open(ctx, {
-            session: session.value,
-            userMessageID,
-            assistantMessageID,
-            prompt: text,
-            agent,
-            model
-          })
-        })
-        const sink = sinkFor(input.sessionID)
-        yield* Effect.forkDetach(
-          driver.start(
-            { sessionID: input.sessionID, messageID: assistantMessageID, prompt: text, history: tail, agent, model },
-            sink
-          ).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError({ message: "The turn could not start", cause }).pipe(
-                Effect.andThen(sink.closed({ _tag: "failed", message: "The turn could not start" }))
-              )
-            )
-          )
-        )
+        yield* open(session.value, userMessageID, text, agent, model)
       })
 
     /**
@@ -481,6 +518,15 @@ export const storeRetryDelay = "20 millis"
  * @since 1.0.0
  */
 export const storeRetries = 6_000
+
+/**
+ * How long a prompt the running turn could not take waits between looks at
+ * whether the projection has closed, before it opens the next turn.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const steerRetryDelay = "25 millis"
 
 interface Open {
   readonly _tag: "open"

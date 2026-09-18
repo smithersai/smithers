@@ -182,6 +182,92 @@ describe("Turns", () => {
     expect(result.status).toEqual({})
   })
 
+  it("opens the next turn for a prompt the running turn could not take", async () => {
+    const sinks: Array<Driver.Sink> = []
+    const inputs: Array<Driver.StartInput> = []
+    // A turn that returns at once and stays open until its sink is closed,
+    // and a steer that always misses: the turn ended between the busy check
+    // and the steer, as it does when the person types right after Stop.
+    const late = Layer.succeed(Driver.Driver, {
+      start: (input, sink) =>
+        Effect.sync(() => {
+          inputs.push(input)
+          sinks.push(sink)
+        }),
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_late"))
+        yield* turns.prompt({ sessionID: "ses_late", parts: [{ type: "text", text: "first" }] })
+        yield* turns.prompt({ sessionID: "ses_late", parts: [{ type: "text", text: "second" }] })
+        yield* Effect.sleep("80 millis")
+        const waited = inputs.length
+        yield* sinks[0]!.closed({ _tag: "completed" })
+        yield* Effect.promise(() => until(async () => inputs.length === 2))
+        const list = yield* store.listMessages("ses_late")
+        return { waited, roles: list.map((message) => message.info.role), busy: yield* turns.status() }
+      }).pipe(Effect.provide(stack(late, "turns-late")))
+    )
+    // The second prompt waited for the first turn to close, then ran as its own turn.
+    expect(result.waited).toBe(1)
+    expect(inputs.map((input) => input.prompt)).toEqual(["first", "second"])
+    expect(inputs[1]!.history).toBe("Person: first")
+    expect(result.roles).toEqual(["user", "assistant", "user", "assistant"])
+    expect(result.busy).toEqual({ ses_late: { type: "busy" } })
+
+    // A store that refuses the history read while the next turn opens: the
+    // failure is logged and the session goes idle rather than wedging.
+    let reads = 0
+    const refusing: Layer.Layer<Store.Store, Store.StoreError> = Layer.effect(
+      Store.Store,
+      Effect.map(Store.make, (store) => ({
+        ...store,
+        listMessages: (sessionID, listOptions) =>
+          Effect.suspend(() => {
+            reads += 1
+            return reads === 2
+              ? Effect.fail(new Store.StoreError({ message: "refused" }))
+              : store.listMessages(sessionID, listOptions)
+          })
+      }))
+    ).pipe(
+      Layer.provide(
+        (await import("@smthrs/database/node/NodeDatabase")).layer({
+          filename: `${scratch.directory}/late-refused.sqlite`
+        })
+      )
+    )
+    inputs.length = 0
+    sinks.length = 0
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const refused = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_late2"))
+        yield* turns.prompt({ sessionID: "ses_late2", parts: [{ type: "text", text: "first" }] })
+        yield* turns.prompt({ sessionID: "ses_late2", parts: [{ type: "text", text: "second" }] })
+        yield* Effect.sleep("80 millis")
+        yield* sinks[0]!.closed({ _tag: "completed" })
+        yield* Effect.sleep("120 millis")
+        return { started: inputs.length, status: yield* turns.status() }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(Turns.layer(options), refusing, hub).pipe(
+            Layer.provideMerge(Layer.mergeAll(late, refusing, hub, Evaluator.layerUnavailable()))
+          )
+        )
+      )
+    )
+    expect(refused).toEqual({ started: 1, status: {} })
+  })
+
   it("closes an open turn on abort even when the driver has nothing to interrupt", async () => {
     const silent = Layer.succeed(Driver.Driver, {
       start: () => Effect.never,
@@ -461,6 +547,15 @@ describe("Turns", () => {
     expect(Turns.history([message("u1", "user", ["hi"]), message("a1", "assistant", ["hello", "x"])])).toBe(
       "Person: hi\n\nAssistant: hello"
     )
+    // The run summary is synthetic: it never reaches the model as an answer.
+    const summarized: Store.MessageWithParts = {
+      ...message("a2", "assistant", ["done"]),
+      parts: [
+        { id: "a2_0", sessionID: "s", messageID: "a2", type: "text", text: "done" },
+        { id: "a2_1", sessionID: "s", messageID: "a2", type: "text", text: "1 frame · 0 calls", synthetic: true }
+      ]
+    }
+    expect(Turns.history([message("u1", "user", ["hi"]), summarized])).toBe("Person: hi\n\nAssistant: done")
     const long = Turns.history([message("u1", "user", ["a".repeat(30)]), message("a1", "assistant", ["done"])], 20)
     expect(long?.startsWith("[earlier turns omitted]\n")).toBe(true)
     expect(long?.endsWith("Assistant: done")).toBe(true)
