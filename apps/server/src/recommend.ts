@@ -13,6 +13,12 @@ import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readBoundedJson, readJsonOrUndefined } from "./Http"
 import type { Transport } from "./Http"
+import {
+  AGENT_TURN_COMMAND_NAME_MAX_CHARS,
+  AGENT_TURN_COMMAND_SUMMARY_MAX_CHARS,
+  AGENT_TURN_COMMANDS_MAX
+} from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnCommand } from "@smthrs/rpc/NativeAgent"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
 /**
  * The command recommender: which `/command` should this user run next?
@@ -51,8 +57,8 @@ import type { TurnCeiling } from "./turnLimit"
 export const RECOMMEND_TAIL_MAX_ENTRIES = 12
 /** The most characters of tail text, summed over every entry. */
 export const RECOMMEND_TAIL_MAX_CHARS = 4000
-/** The most commands a request may offer. */
-export const RECOMMEND_COMMANDS_MAX = 300
+/** The most commands a request may offer; the turn body's catalog shares it. */
+export const RECOMMEND_COMMANDS_MAX = AGENT_TURN_COMMANDS_MAX
 /** The most names an answer carries. */
 export const RECOMMEND_ANSWER_MAX = 5
 /** Rows the log keeps: a ring of the newest. */
@@ -93,9 +99,9 @@ export const RECOMMEND_OUTCOME_BODY_MAX_BYTES = 4 * 1024
  */
 export const RECOMMEND_REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/
 /** The most characters a command name may carry, in a request and in an outcome. */
-export const RECOMMEND_COMMAND_NAME_MAX_CHARS = 100
+export const RECOMMEND_COMMAND_NAME_MAX_CHARS = AGENT_TURN_COMMAND_NAME_MAX_CHARS
 /** The most characters a command's one-line summary may carry. */
-export const RECOMMEND_COMMAND_SUMMARY_MAX_CHARS = 300
+export const RECOMMEND_COMMAND_SUMMARY_MAX_CHARS = AGENT_TURN_COMMAND_SUMMARY_MAX_CHARS
 
 /**
  * Recommendations one address, or one login, may ask for per day. A pill
@@ -130,10 +136,8 @@ export interface RecommendTailMessage {
   readonly text: string
 }
 
-export interface RecommendCommand {
-  readonly name: string
-  readonly summary: string
-}
+/** One offered command; the turn body's catalog and this request share the shape. */
+export type RecommendCommand = AgentTurnCommand
 
 export interface RecommendRequest {
   readonly repo: string | null
@@ -154,6 +158,21 @@ export interface RecommendLogRow {
   /** The answer, best first. */
   readonly commands: ReadonlyArray<string>
   readonly model: string
+  /**
+   * Present only on a FRONT-DOOR row (frontDoor.ts): the turn route's own Jev
+   * read, which decides whether the Worker answers a command-shaped message
+   * itself instead of paying for a concierge turn. A row without this field is
+   * a composer pill, as every row was before the front door existed, so one
+   * log scores both without a second store.
+   */
+  readonly frontDoor?: {
+    /** Jev's probability for the chosen command; the floor is FRONT_DOOR_CONFIDENCE_FLOOR. */
+    readonly confidence: number
+    /** The impossible-act class Jev read from the message. Logged only; the client's regexes still decide. */
+    readonly impossible: string
+    /** Whether the turn was answered here (true) or fell through to the chat upstream. */
+    readonly routed: boolean
+  }
   /** The command the user ran next, once the client reports it. */
   readonly outcome: { readonly command: string; readonly at: string } | null
 }

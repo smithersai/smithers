@@ -12,6 +12,7 @@ import { ExecutionContext, executionContextFrom } from "./Environment"
 import type { NativeExecutionContext } from "./Environment"
 import { StorageFailure } from "./Failures"
 import { transportLayer } from "./Http"
+import { recommendLogLayer } from "./recommend"
 import {
   CANCEL_MONITOR_MS,
   CANCEL_POLL_MAX_MS,
@@ -114,6 +115,10 @@ const layersFor = (
     transportLayer(async (input, init) => upstream(new Request(input, init))),
     testConfigLayer({ chatUrl: "https://upstream.test/chat", upstreamTimeoutMs: 5_000 }),
     turnCancelsLayer(cancels),
+    // The turn route reaches the recommend log for its front-door decisions
+    // (frontDoor.ts). No log is bound here, and none of these turns carries a
+    // command catalog, so nothing is asked and nothing is appended.
+    recommendLogLayer(undefined),
     Layer.succeed(ExecutionContext, executionContextFrom(ctx))
   )
 

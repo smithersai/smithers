@@ -10,10 +10,13 @@ import * as Stream from "effect/Stream"
 import * as Semaphore from "effect/Semaphore"
 import type * as Arr from "effect/Array"
 import { AgentRuntimeContextSchema, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
+import { readAgentTurnCommands } from "@smthrs/rpc/NativeAgent"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { runDurable } from "./Boundary"
 import { handleCloudRoleTurn, isCloudRoleTurn, turnHints } from "./cloudRoleTurn"
+import { handleFrontDoor } from "./frontDoor"
+import type { RecommendLogStore } from "./recommend"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
 import type { ServerConfigShape } from "./Config"
@@ -654,7 +657,11 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
       return refuse("request_invalid", "Body must be { runId, messages, instructions } with optional tools and context.")
     }
     // The hints (tier, purpose, role) are read leniently: an unknown value is
-    // dropped here, never refused (cloudRoleTurn.ts turnHints).
+    // dropped here, never refused (cloudRoleTurn.ts turnHints). The offered
+    // command catalog is read the same way (NativeAgent.ts
+    // readAgentTurnCommands): a client that sends a list this contract does
+    // not allow loses the front door, never its turn.
+    const commands = readAgentTurnCommands(body.commands)
     return {
       runId: body.runId,
       messages: body.messages,
@@ -662,11 +669,12 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
       ...(body.tools === undefined ? {} : { tools: body.tools }),
       ...(body.context === undefined ? {} : { context: body.context }),
       ...(body.journal === undefined ? {} : { journal: body.journal }),
+      ...(commands === undefined ? {} : { commands }),
       ...turnHints(body)
     } as const
   })
 
-export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext
+export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext | RecommendLogStore
 
 /**
  * One turn: registered under its runId, forwarded to the chat upstream with a
@@ -686,6 +694,18 @@ const handleTransientTurn = (
     if (body instanceof Response) return body
     // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.
     if (isCloudRoleTurn(body)) return yield* handleCloudRoleTurn(body, ISOLATION_HEADERS)
+    /*
+     * The front door (frontDoor.ts): Jev reads the message before the chat
+     * upstream is paid for it, and a message that IS one of the commands this
+     * client can run is answered here with the tool-call frames the concierge
+     * would have emitted. Like a cloud role turn it answers BEFORE the
+     * registry claims the runId — the routed leg is one complete NDJSON body
+     * with nothing to kill, and the continuation leg re-POSTs the same runId
+     * the instant the client reads the done frame, which a registration this
+     * leg never settled would refuse with 409.
+     */
+    const routed = yield* handleFrontDoor(body, ISOLATION_HEADERS)
+    if (routed !== undefined) return routed
     const cancels = yield* TurnCancels
     // The registry is the cross-isolate authority on duplicate turns.
     const registered = yield* Effect.result(cancels.register(body.runId, session?.login))
