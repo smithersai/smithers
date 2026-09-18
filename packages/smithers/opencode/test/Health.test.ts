@@ -146,7 +146,33 @@ describe("Health", () => {
     expect(Health.dotted("⚪ Fix it", "green")).toBe("🟢 Fix it")
     expect(Health.retitle("🟢 Old", "New")).toBe("🟢 New")
     expect(Health.retitle("Old", "New")).toBe("New")
-    expect(Health.retitle("🟢 Old", "🔴 Mine")).toBe("🔴 Mine")
+  })
+
+  it("normalises a rename that arrives with a dot: the session's own color leads, never the typed dot", () => {
+    // The hosted app echoes the dotted title back on a rename, with U+FE0F
+    // after the dot. Stored verbatim, the echo carried the app's dot, and the
+    // next color change put the server's dot in front of it.
+    expect(Health.retitle("⚪ Say B", "⚪\uFE0F Renamed")).toBe("⚪ Renamed")
+    expect(Health.retitle("⚪ Say B", "⚪ Renamed")).toBe("⚪ Renamed")
+    expect(Health.retitle("🟢 Old", "🔴 X")).toBe("🟢 X")
+    expect(Health.retitle("🟢 Old", "🔴\uFE0F X")).toBe("🟢 X")
+    // A session with no color yet stores the words alone: the dot is the
+    // server's to add when it has a decision.
+    expect(Health.retitle("Old", "🔴 X")).toBe("X")
+    expect(Health.retitle("Old", "🔴\uFE0F X")).toBe("X")
+    expect(Health.retitle("Old", "Plain")).toBe("Plain")
+    // A rename that is only a dot keeps the current title, like an empty one.
+    expect(Health.retitle("🟢 Old", "🔴")).toBe("🟢 Old")
+    expect(Health.retitle("Old", "⚪\uFE0F")).toBe("Old")
+    for (
+      const stored of [
+        Health.retitle("⚪ Say B", "⚪\uFE0F Renamed"),
+        Health.retitle("🟢 Old", "🔴 X"),
+        Health.retitle("Old", "🔴 X")
+      ]
+    ) {
+      expect(Health.dotted(stored, "red").match(/[🟢🟡🔴⚪]/gu)?.length).toBe(1)
+    }
   })
 
   it("strips the U+FE0F the app appends to the dot, and keeps the title on an empty rename", () => {
@@ -187,8 +213,23 @@ describe("Health", () => {
     const unavailable = await Effect.runPromise(
       Health.evaluate(facts()).pipe(Effect.provide(Evaluator.layerUnavailable()))
     )
-    expect(unavailable.decision).toEqual({ color: "gray", reason: "health unavailable" })
+    // The gray reason carries the transport's words, so the card says why
+    // and, without a key, the way out.
+    expect(unavailable.decision).toEqual({
+      color: "gray",
+      reason: "health unavailable: No evaluator is installed on this host"
+    })
     expect(unavailable.error).toContain("unreachable")
+    const noKey = await Effect.runPromise(Health.evaluate(facts()).pipe(Effect.provide(Health.evaluatorLayer({}))))
+    expect(noKey.decision).toEqual({ color: "gray", reason: Health.noGatewayKey })
+    expect(Health.unavailable("Health did not answer within 1500 ms")).toBe(
+      "health unavailable: Health did not answer within 1500 ms"
+    )
+    // A parked run is red whatever the transport said.
+    const parkedNoKey = await Effect.runPromise(
+      Health.evaluate(facts({ parked: "permission" })).pipe(Effect.provide(Health.evaluatorLayer({})))
+    )
+    expect(parkedNoKey.decision).toEqual({ color: "red", reason: "waiting for approval" })
     expect(unavailable.answers).toBeUndefined()
 
     const malformed = await Effect.runPromise(

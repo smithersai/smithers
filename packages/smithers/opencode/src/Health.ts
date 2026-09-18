@@ -246,16 +246,23 @@ export const dotted = (title: string, color: Color): string => `${dots[color]} $
 
 /**
  * The title a rename produces: the person's words, behind the dot the
- * session already carries unless the person typed one. An empty rename
- * keeps the current title: a session is never left without a name.
+ * session already carries. A dot at the front of the wanted title is
+ * dropped first, with the U+FE0F the hosted app writes after it: the app
+ * echoes the dotted title back on a rename, and stored verbatim the echo
+ * carried the app's dot in front of the words, so the next color change
+ * put a second dot in front of that. The stored title carries the server's
+ * dot alone, or none when the session has no color yet. A rename that is
+ * empty, or a dot alone, keeps the current title: a session is never left
+ * without a name.
  *
  * @category conversions
  * @since 1.0.0
  */
 export const retitle = (current: string, wanted: string): string => {
-  if (wanted.trim() === "") return current
+  const words = strip(wanted.trim()).trim()
+  if (words === "") return current
   const color = colorOf(current)
-  return color === undefined || colorOf(wanted) !== undefined ? wanted : dotted(wanted, color)
+  return color === undefined ? words : dotted(words, color)
 }
 
 /**
@@ -337,8 +344,11 @@ export const evaluate = (
     const outcome = yield* asked
     const latencyMs = (yield* Clock.currentTimeMillis) - started
     if (outcome._tag === "Failure") {
+      const decision = decide(facts, undefined)
       return {
-        decision: decide(facts, undefined),
+        decision: decision.color === "gray"
+          ? { color: "gray", reason: unavailable(outcome.failure.message) }
+          : decision,
         answers: undefined,
         latencyMs,
         usage: undefined,
@@ -353,6 +363,20 @@ export const evaluate = (
       error: undefined
     }
   })
+
+/**
+ * The reason a gray decision carries when the transport failed: the
+ * failure's own words behind `health unavailable`, so the card names why
+ * and the way out (`set AI_GATEWAY_API_KEY ...` from {@link noGatewayKey}
+ * when there is no key, the deadline when Jev was slow) instead of the
+ * bare `health unavailable` that said nothing a person could act on.
+ *
+ * @param message what the transport said
+ * @category conversions
+ * @since 1.0.0
+ */
+export const unavailable = (message: string): string =>
+  message.startsWith("health unavailable") ? message : `health unavailable: ${message}`
 
 /**
  * The process environment, named as the host default so a caller that

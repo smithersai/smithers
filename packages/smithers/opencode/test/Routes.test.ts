@@ -115,25 +115,42 @@ describe("Routes through the OpenCode SDK client", () => {
     const titled = (await (await served.handler(
       new Request("http://test/session", {
         method: "POST",
-        body: `{"title":"Given","agent":"other"}`,
+        body: `{"title":"🟢 Given","agent":"other"}`,
         headers: { "content-type": "application/json" }
       })
     )).json()) as Session
-    expect(titled).toMatchObject({ title: "Given", agent: "other" })
+    expect(titled).toMatchObject({ title: "🟢 Given", agent: "other" })
     const read = (await sdk.session.get({ path: { id: created.id } })).data!
     expect(read).toEqual(created)
     const renamed = (await sdk.session.update({ path: { id: created.id }, body: { title: "Renamed" } })).data!
     expect(renamed.title).toBe("Renamed")
     // A rename keeps the health dot the session carries; an archive drops it.
-    await served.handler(
-      new Request(`http://test/session/${titled.id}`, {
-        method: "PATCH",
-        body: `{"title":"🟢 Given"}`,
-        headers: { "content-type": "application/json" }
-      })
-    )
     const redotted = (await sdk.session.update({ path: { id: titled.id }, body: { title: "Mine" } })).data!
     expect(redotted.title).toBe("🟢 Mine")
+    // A rename that arrives with a dot (the app echoes the dotted title back,
+    // with U+FE0F after the dot) is stored behind the session's own dot, so
+    // the next color change replaces one dot instead of adding a second.
+    const dottedRenames: ReadonlyArray<readonly [string, string]> = [
+      ["⚪\uFE0F Renamed", "🟢 Renamed"],
+      ["🔴 X", "🟢 X"],
+      ["Plain", "🟢 Plain"]
+    ]
+    for (const [sent, stored] of dottedRenames) {
+      const renamedWithDot = (await sdk.session.update({ path: { id: titled.id }, body: { title: sent } })).data!
+      expect(renamedWithDot.title).toBe(stored)
+      expect((await sdk.session.get({ path: { id: titled.id } })).data!.title).toBe(stored)
+    }
+    const plainRenames: ReadonlyArray<readonly [string, string]> = [
+      ["⚪\uFE0F Renamed", "Renamed"],
+      ["🔴 X", "X"],
+      ["Plain", "Plain"],
+      ["Renamed", "Renamed"]
+    ]
+    for (const [sent, stored] of plainRenames) {
+      const undotted = (await sdk.session.update({ path: { id: created.id }, body: { title: sent } })).data!
+      expect(undotted.title).toBe(stored)
+    }
+    expect((await sdk.session.update({ path: { id: titled.id }, body: { title: "Mine" } })).data!.title).toBe("🟢 Mine")
     const archived = (await (await served.handler(
       new Request(`http://test/session/${titled.id}`, {
         method: "PATCH",
@@ -359,9 +376,9 @@ describe("Routes through the OpenCode SDK client", () => {
       .map((part) => part.state as Extract<Protocol.ToolState, { status: "completed" }>)
       .sort((a, b) => a.time.start - b.time.start)
     expect(healthCards.map((state) => state.title)).toEqual([
-      "health unavailable",
+      "health unavailable: No evaluator is installed on this host",
       "waiting for approval",
-      "health unavailable"
+      "health unavailable: No evaluator is installed on this host"
     ])
     const bash = tools.find((part) => part.tool === "bash")!
     expect(bash.state.status === "completed" && bash.state.metadata).toMatchObject({ exit: 0 })

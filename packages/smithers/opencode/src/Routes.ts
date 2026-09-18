@@ -500,7 +500,8 @@ export const layer = (
                 const time = isRecord(input["time"]) ? input["time"] : {}
                 const archived = typeof time["archived"] === "number" ? time["archived"] : undefined
                 // A rename keeps the health dot in front of the person's
-                // words; an archive drops it.
+                // words, and drops the dot the app echoes back at the front
+                // of them; an archive drops the dot.
                 const renamed = typeof input["title"] === "string"
                   ? Health.retitle(session.title, input["title"])
                   : session.title
