@@ -19,7 +19,6 @@
     "@smthrs/flow": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/harness": "workspace:*",
-    "@smthrs/jj": "workspace:*",
     "@smthrs/journal": "workspace:*",
     "@smthrs/kernel": "workspace:*",
     "@smthrs/keys": "workspace:*",

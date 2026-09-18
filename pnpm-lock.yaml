@@ -1807,9 +1807,6 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../packages/smithers/agent/harness
-      '@smthrs/jj':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/jj
       '@smthrs/journal':
         specifier: workspace:*
         version: link:../packages/smithers/flows/journal
@@ -1874,6 +1871,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.0)
+      '@smthrs/jj':
+        specifier: workspace:*
+        version: link:../packages/smithers/flows/jj
       '@smthrs/testing':
         specifier: workspace:*
         version: link:../packages/testing
