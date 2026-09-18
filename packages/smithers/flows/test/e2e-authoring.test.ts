@@ -171,6 +171,18 @@ const settledRow = (runId: string) =>
     return row
   })
 
+/** Waits for a round the engine opens asynchronously, and reports it if it never does. */
+const openedRound = (runId: string) =>
+  Effect.gen(function*() {
+    const store = yield* RunStore.RunStore
+    for (let attempt = 0; attempt < 2_000; attempt++) {
+      const row = yield* Effect.exit(store.get(runId))
+      if (Exit.isSuccess(row)) return row.value
+      yield* Effect.yieldNow
+    }
+    return yield* store.get(runId)
+  })
+
 /** The value a settled poll answered with, and `undefined` while it has none. */
 const completedValue = (result: Option.Option<Flow.Result<unknown, unknown>>): unknown =>
   Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)
@@ -383,16 +395,25 @@ describe("a lineage survives the process that was driving it", () => {
           flows: [StageOne, StageTwo],
           implementations: [staging(first)]
         })
-        yield* StageOne.execute({ value: 0 }, {
-          executionId: "crash-lineage",
-          discard: true
+        const stranded = yield* Effect.gen(function*() {
+          yield* StageOne.execute({ value: 0 }, {
+            executionId: "crash-lineage",
+            discard: true
+          })
+          // `discard: true` answers when round 0 is ADMITTED, and the engine
+          // follows the handoffs afterwards in the registration's scope
+          // (`engine/docs/concepts/trampoline-rounds.md`). So the registration
+          // has to stay open until this worker has run out of legs, and the
+          // round it could not drive is what says it did: wait for the row,
+          // rather than assume the lineage stopped the instant admission
+          // answered.
+          return yield* openedRound(roundId("crash-lineage", 2))
         }).pipe(Effect.provide(partial.wiring))
 
         const settled = yield* Effect.forEach(
           ["crash-lineage", roundId("crash-lineage", 1)],
           (runId) => store.get(runId)
         )
-        const stranded = yield* store.get(roundId("crash-lineage", 2))
 
         // The replacement knows every leg and picks the lineage up from its root.
         const whole = yield* incarnation({
