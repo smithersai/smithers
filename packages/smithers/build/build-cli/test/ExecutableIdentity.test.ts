@@ -196,9 +196,15 @@ if printf changed > '${installed}/value' 2>/dev/null; then exit 1; fi
     await write(
       "/tmp",
       name,
+      // The tool's own neighbours in the host temp root stay invisible: not
+      // readable, and not even named by a listing. Each mechanism denies them
+      // its own way, so the probe asks what both must answer rather than how
+      // either answers it. Seatbelt leaves `/tmp` a link it may not follow, so
+      // the listing fails outright; bubblewrap replaces `/tmp` with a private
+      // tmpfs holding this tool and nothing else of the host's.
       `#!/bin/sh
 if cat '${sibling}' >/dev/null 2>&1; then exit 41; fi
-if ls /tmp >/dev/null 2>&1; then exit 42; fi
+if ls /tmp 2>/dev/null | grep -q '${Path.basename(sibling)}'; then exit 42; fi
 mkdir -p dist
 printf compiled > dist/value
 `
