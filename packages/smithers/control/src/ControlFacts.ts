@@ -169,8 +169,6 @@ const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const string = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
 const key = (runId: string, requestId: string): string => JSON.stringify([runId, requestId])
-const targetKey = (target: ControlSchema.ApprovalTarget): string | undefined =>
-  target._tag === "Node" ? key(target.runId, target.requestId) : undefined
 const lifecycleKinds = new Set([
   "control.run.accepted",
   "control.run.running",
@@ -293,7 +291,7 @@ export const fold = (
           !Schema.is(ApprovalDecisionFact)(payload) || payload.approvalTarget._tag !== "Node" ||
           payload.approvalTarget.runId !== event.runId || payload.tokenId !== payload.approvalTarget.requestId
         ) continue
-        identity = targetKey(payload.approvalTarget)
+        identity = key(payload.approvalTarget.runId, payload.approvalTarget.requestId)
         digest = payload.approvalTarget.digest
       } else {
         const tokenId = string(payload.tokenId) ?? string(payload.requestId)

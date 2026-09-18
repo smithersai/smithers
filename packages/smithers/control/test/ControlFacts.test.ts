@@ -1,3 +1,5 @@
+import { Journal } from "@smthrs/journal"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Facts from "../src/ControlFacts.ts"
 import type { ControlEvent, RunSummary } from "../src/ControlSchema.ts"
@@ -188,5 +190,156 @@ describe("approval fact identities", () => {
         })
       ])
     ).not.toThrow()
+  })
+})
+
+describe("lifecycle kinds that do not name a status", () => {
+  it("admits the announcements whose kind is not the run status", () => {
+    expect(Facts.fold([event("control.run.pending", Facts.runFact(run, "created"))], run).provenance.control)
+      .toBe("events")
+    const running = { ...run, status: "running" as const, updatedAt: 2 }
+    for (const kind of ["control.run.resume", "control.run.claimed", "control.steer.woke"]) {
+      expect(Facts.fold([event(kind, Facts.runFact(running), 2)], running).provenance.control).toBe("events")
+    }
+  })
+  it("still requires a pending announcement to carry the accepted status", () => {
+    const running = { ...run, status: "running" as const, updatedAt: 2 }
+    expect(Facts.fold([event("control.run.pending", Facts.runFact(running), 2)], running).provenance.control)
+      .toBe("unverified-snapshot")
+  })
+  it("leaves a lifecycle event carrying no fact alone when nothing is covered yet", () => {
+    const result = Facts.fold([event("control.run.running", {}, 1)], run)
+    expect(result.run).toEqual(run)
+    expect(result.provenance).toEqual({ control: "legacy-snapshot", execution: "control" })
+  })
+  it("reports no run when an uncovered prefix has no snapshot to fall back on", () => {
+    const result = Facts.fold([
+      event("control.run.accepted", Facts.runFact(run, "created")),
+      event("control.run.running", {}, 2)
+    ])
+    expect(result.run).toBeUndefined()
+    expect(result.provenance.control).toBe("unverified-snapshot")
+  })
+})
+
+describe("approval request admission edges", () => {
+  const legacy = (payload: Record<string, unknown>, sequence = 1) =>
+    event("control.approval.requested", payload, sequence)
+  const submitted = (id: string) => ({ target: { ...target(id), envelope }, scope: "run", idempotencyKey: id })
+
+  it("attributes a request without its own run id to the run that emitted it", () => {
+    const rows = Facts.fold([legacy({ requestId: "one", payload: submitted("one"), at: 42 })]).approvals
+    expect(rows.map((row) => [row.runId, row.requestedAt])).toEqual([[run.runId, 42]])
+  })
+  it("falls back to the event time when the recorded time is not a finite number", () => {
+    for (const at of [Number.NaN, Number.POSITIVE_INFINITY, "5"]) {
+      const rows = Facts.fold([legacy({ requestId: "one", payload: submitted("one"), at }, 7)]).approvals
+      expect(rows[0]?.requestedAt).toBe(7)
+    }
+  })
+  it("skips a request with no payload, no request id, or another run's id", () => {
+    for (
+      const payload of [
+        { runId: run.runId, requestId: "one" },
+        { runId: run.runId, payload: submitted("one") },
+        { runId: "other-run", requestId: "one", payload: submitted("one") }
+      ]
+    ) {
+      expect(Facts.fold([legacy(payload)]).approvals).toEqual([])
+    }
+  })
+  it("skips a versioned request whose target names a different gate", () => {
+    for (const wrong of [target("other", run.runId), target("one", "other-run"), target("other", "other-run")]) {
+      expect(
+        Facts.fold([legacy({
+          factVersion: 1,
+          runId: run.runId,
+          requestId: "one",
+          question: "one",
+          payload: { target: { ...wrong, envelope }, scope: "run", idempotencyKey: "one" }
+        })]).approvals
+      ).toEqual([])
+    }
+  })
+  it("refuses a versioned decision that does not name its own target", () => {
+    const decided = (payload: Record<string, unknown>, sequence: number) =>
+      event("control.approval.approved", payload, sequence)
+    const rows = Facts.fold([
+      request("one"),
+      // The token and the target's request id have to be the same gate.
+      decided({ factVersion: 1, tokenId: "two", approvalTarget: { ...target("one"), envelope } }, 2),
+      // A decision belongs to the run that emitted it.
+      decided({ factVersion: 1, tokenId: "one", approvalTarget: { ...target("one", "other-run"), envelope } }, 3),
+      // A versioned decision without a target is not a decision.
+      decided({ factVersion: 1, tokenId: "one" }, 4)
+    ]).approvals
+    expect(rows.map((row) => [row.requestId, row.status])).toEqual([["one", "pending"]])
+  })
+})
+
+describe("observed approval seeding", () => {
+  const observedRow = (requestId: string, overrides: Record<string, unknown> = {}): Facts.Approval => ({
+    runId: run.runId,
+    requestId,
+    title: requestId,
+    request: {} as ControlEvent["payload"],
+    payload: { target: { ...target(requestId), envelope }, scope: "run", idempotencyKey: requestId },
+    requestedAt: 5,
+    status: "approved",
+    ...overrides
+  } as Facts.Approval)
+
+  it("seeds only the observed rows that name themselves in the folded run", () => {
+    const rows = Facts.fold([], run, [
+      observedRow("seeded"),
+      observedRow("foreign", { runId: "other-run" }),
+      observedRow("planned", {
+        payload: {
+          target: { _tag: "Plan", planId: "plan", digest: "digest", envelope },
+          scope: "run",
+          idempotencyKey: "planned"
+        }
+      }),
+      observedRow("mislabelled", {
+        payload: { target: { ...target("elsewhere"), envelope }, scope: "run", idempotencyKey: "mislabelled" }
+      })
+    ]).approvals
+    // A seeded row is displayed as pending until an admitted decision closes it.
+    expect(rows.map((row) => [row.requestId, row.status])).toEqual([["seeded", "pending"]])
+  })
+
+  it("keeps a seeded row's own run id honest even without a snapshot to compare", () => {
+    expect(Facts.fold([], undefined, [observedRow("seeded")]).approvals.map((row) => row.requestId))
+      .toEqual(["seeded"])
+    expect(Facts.fold([], undefined, [observedRow("seeded", { runId: "other-run" })]).approvals).toEqual([])
+  })
+})
+
+describe("approval request commit identity", () => {
+  it("refuses a request whose target does not name it, before any registration", () => {
+    const journal = Journal.makeNoop()
+    const runtime = {
+      registerApproval: () => Effect.die("identity must be checked before registration")
+    } as Parameters<typeof Facts.commitApprovalRequest>[1]
+    const input = (wrong: unknown) =>
+      ({
+        runId: run.runId,
+        requestId: "gate",
+        question: "Ship?",
+        payload: { target: wrong, scope: "run", idempotencyKey: "gate" }
+      }) as Parameters<typeof Facts.commitApprovalRequest>[2]
+    for (
+      const wrong of [
+        { _tag: "Plan", planId: "plan", digest: "digest", envelope },
+        { ...target("gate", "other-run"), envelope },
+        { ...target("other-gate"), envelope }
+      ]
+    ) {
+      const error = Effect.runSync(
+        Effect.flip(Facts.commitApprovalRequest(journal, runtime, input(wrong), "test/producer"))
+      )
+      expect(error.code).toBe("invalid_event")
+      expect(error.message).toBe("Approval request identity does not match its target")
+    }
   })
 })
