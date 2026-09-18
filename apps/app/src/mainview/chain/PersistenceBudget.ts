@@ -14,17 +14,30 @@
  * full recovery download; a fresh profile booted fine.
  *
  * Normalized loading reads metadata pages, then only values admitted by their
- * UTF-8 byte counts. App collections require complete admission: over-budget
+ * UTF-8 byte counts, newest row first. A collection's newest row is admitted
+ * alone whatever its size: the app's checkpoint is a single row holding every
+ * projection at once, so this per-collection bound cannot size it, and smithers.sh
+ * build 2027816e (2026-09-18 12:22Z) refused to start at all on a profile whose
+ * checkpoint had grown past it while no projected collection was near it. Past
+ * that first row, app collections require complete admission: over-budget
  * authority or snapshots refuse before repair, never become a partial baseline.
  * Generic disposable collections may leave older rows on disk with a report.
  *
- * Chain retention targets the same byte count with whole-lineage tombstones.
- * A live lineage can exceed it and must then refuse bounded boot. Application
- * event history has separate explicit verified checkpoint compaction; it has
- * no automatic timer. This is a per-collection load bound, not a promise of
- * bounded total browser memory or that every written store can reopen.
+ * Chain retention targets half this count with whole-lineage tombstones, so the
+ * one byte-bounded projection cannot claim the budget the checkpoint holding all
+ * of them is charged. A live lineage can exceed it and must then refuse bounded
+ * boot. Application event history has separate explicit verified checkpoint
+ * compaction; it has no automatic timer. This is a per-collection load bound,
+ * not a promise of bounded total browser memory or that every written store can
+ * reopen.
  */
 export const PERSISTED_COLLECTION_BUDGET_BYTES = 64 * 1024 * 1024
+
+/**
+ * The uncovered event suffix that schedules a checkpoint. Compaction otherwise
+ * waits for 64 events, which a run's transcripts reach the budget long before.
+ */
+export const PERSISTED_JOURNAL_COMPACTION_BYTES = PERSISTED_COLLECTION_BUDGET_BYTES / 2
 
 /** Rows per chunked read. One statement's result never holds the whole store. */
 export const PERSISTED_LOAD_CHUNK_ROWS = 512

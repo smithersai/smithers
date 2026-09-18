@@ -265,7 +265,10 @@ describe("normalized SQLite row storage", () => {
     try {
       const complete = [{ id: "notes", schema: NoteSchema, partialLoad: "refuse" as const }]
       const seeded = await openSqliteRowStorage(db.host, { collections: complete, schemaVersion: 13 })
-      seeded.applyRows("notes", [{ key: "s:private", versionKey: "v1", data: { id: "private", body: "😀".repeat(100) } }])
+      seeded.applyRows("notes", [
+        { key: "s:private", versionKey: "v1", data: { id: "private", body: "😀".repeat(100) } },
+        { key: "s:older", versionKey: "v1", data: { id: "older", body: "😀".repeat(100) } }
+      ])
       await seeded.flush()
       const before = db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()
       const reads: string[] = []
@@ -277,6 +280,20 @@ describe("normalized SQLite row storage", () => {
       expect(reads.at(-1)).toBe("ROLLBACK")
       expect(db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()).toEqual(before)
       expect(db.sqlite.query(`SELECT * FROM ${QUARANTINE_TABLE_NAME}`).all()).toEqual([])
+    } finally { db.sqlite.close() }
+  })
+
+  test("a collection whose one row is its whole state loads it whatever the budget", async () => {
+    const db = database()
+    try {
+      const complete = [{ id: "notes", schema: NoteSchema, partialLoad: "refuse" as const }]
+      const seeded = await openSqliteRowStorage(db.host, { collections: complete, schemaVersion: 13 })
+      seeded.applyRows("notes", [{ key: "s:whole", versionKey: "v1", data: { id: "whole", body: "😀".repeat(100) } }])
+      await seeded.flush()
+      const reopened = await openSqliteRowStorage(db.host, { collections: complete, schemaVersion: 13, budgetBytes: 100 })
+      expect(reopened.readRows("notes").get("s:whole")?.data).toEqual({ id: "whole", body: "😀".repeat(100) })
+      expect(reopened.loadReport).toMatchObject({ loaded: 1, skipped: 0 })
+      await reopened.close()
     } finally { db.sqlite.close() }
   })
 

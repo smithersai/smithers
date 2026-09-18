@@ -381,7 +381,11 @@ export const openSqliteRowStorage = async (
         presentRows.add(JSON.stringify([row.collection_id, row.row_key]))
         const size = row.key_bytes + row.value_bytes
         const account = accounting(row.collection_id)
-        if (account.loadedBytes + size > budget) {
+        // A collection's newest row is admitted alone, the way a page admits a
+        // value larger than its target. The app's checkpoint is one row holding
+        // every projection at once, so it is charged a bound sized for one
+        // collection; refusing it leaves the app no state to open at all.
+        if (account.loaded > 0 && account.loadedBytes + size > budget) {
           if (spec.partialLoad === "refuse" || spec.invalidRows === "refuse") throw new OversizedSqliteCollectionError(spec.id, budget)
           account.skipped += 1
           account.skippedBytes += size

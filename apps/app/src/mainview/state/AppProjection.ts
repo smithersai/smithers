@@ -998,7 +998,9 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
  * A refused transition returns the original snapshot; successful transitions
  * include their legacy bounded diagnostic row as a derived projection.
  */
-export const MAX_CHAIN_EVENT_BYTES = PERSISTED_COLLECTION_BUDGET_BYTES
+/** Half the load budget: the checkpoint carries this journal and every other
+ * projection in one row, and each event records the budget it retained under. */
+export const MAX_CHAIN_EVENT_BYTES = PERSISTED_COLLECTION_BUDGET_BYTES / 2
 
 /** The same UTF-8 key/value bytes admitted by the normalized row loader. */
 const chainEventBytes = (record: AppProjectionRow<"chainEvents">): number =>

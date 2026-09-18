@@ -7,7 +7,7 @@ import { createCollection,createTransaction } from "@tanstack/react-db"
 import type { CollectionPersistence,DurableRowSink } from "../chain/DurableCollection"
 import { createCollectionPersistence,durableCollectionOptions } from "../chain/DurableCollection"
 import type { PersistedLoadReport } from "../chain/PersistenceBudget"
-import { EMPTY_PERSISTED_LOAD,PERSISTED_LOAD_TOAST_KEY,PERSISTED_LOAD_TOAST_TITLE,persistedLoadNotice } from "../chain/PersistenceBudget"
+import { EMPTY_PERSISTED_LOAD,PERSISTED_JOURNAL_COMPACTION_BYTES,PERSISTED_LOAD_TOAST_KEY,PERSISTED_LOAD_TOAST_TITLE,persistedLoadNotice } from "../chain/PersistenceBudget"
 import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,retargetPrivacyRetirement,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
 import { createRemoteRetirementWorker } from "../chain/RemoteRetirement"
 import {
@@ -1257,6 +1257,9 @@ const initializeAppStore = async (
   let optimistic = committed
   let committedCheckpoint: AppEventCheckpoint = structuredClone(storedRow(collections.appEventCheckpoints.get("current")!))
   let committedEvents: AppEventRecord[] = [...collections.appEvents.values()].map(event => structuredClone(storedRow(event)))
+  /** The uncovered suffix's stored bytes, charged the way the bounded loader charges them. */
+  const eventBytes = (event: AppEventRecord): number => new TextEncoder().encode(JSON.stringify(event)).byteLength
+  let committedEventBytes = committedEvents.reduce((total, event) => total + eventBytes(event), 0)
   let generation = 0
   let privacyRejected = false
   const assertReadable = (): void => { assertOwned(); if (privacyRejected) throw new PrivacyRetirementError() }
@@ -1274,8 +1277,8 @@ const initializeAppStore = async (
       if (acceptedGeneration !== generation) throw new AppEventIntegrityError("conflict")
       await persist(transaction, write.state.head)
       committed = write.state
-      if (write.clearEvents) committedEvents = []
-      if (write.event !== undefined) committedEvents.push(write.event)
+      if (write.clearEvents) { committedEvents = []; committedEventBytes = 0 }
+      if (write.event !== undefined) { committedEvents.push(write.event); committedEventBytes += eventBytes(write.event) }
       if (write.checkpoint !== undefined) committedCheckpoint = write.checkpoint
       if (write.retirement !== undefined) await finishRetirement(write.retirement)
     } catch (error) {
@@ -1822,7 +1825,8 @@ const initializeAppStore = async (
   // draft or run. The existing atomic checkpoint path retains those rows and
   // refuses compaction while a prepared edit still needs the covered prefix.
   scheduleAutoCompaction = () => {
-    if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 || committedEvents.length < 64) return
+    if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 ||
+      (committedEvents.length < 64 && committedEventBytes < PERSISTED_JOURNAL_COMPACTION_BYTES)) return
     compactionTimer = setTimeout(() => {
       compactionTimer = undefined
       if (disposed || pendingWrites.size > 0) return
