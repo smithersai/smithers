@@ -165,6 +165,47 @@ describe("GatewayProjection.runSummary", () => {
     expect(unbound.executionProvenance).toBeUndefined()
   })
 
+  it("marks a running round waiting while a person holds a wait in its tree", () => {
+    const observed = (
+      status: "running" | "suspended",
+      executionId: string,
+      waiting: unknown = null
+    ) =>
+      Schema.decodeUnknownSync(ExecutionFact.Observation)({
+        executionId,
+        flowName: "agent/run",
+        status,
+        createdAtMs: 1,
+        startedAtMs: 1,
+        finishedAtMs: null,
+        parentRunId: null,
+        lineageId: executionId,
+        roundOrdinal: 0,
+        cancelRequestedAtMs: null,
+        waiting
+      })
+    const running = observed("running", "native")
+    const held = observed("suspended", "prepare-plan", {
+      reason: "approval",
+      wakeAtMs: null,
+      tokenDigest: "digest-of-wait"
+    })
+    const base = { ...run, executionObservation: "observed" as const }
+    const statusOf = (summary: ControlSchema.RunSummary) => GatewayProjection.runSummary(summary, []).status
+
+    // The round itself is running: only the tree says a person is holding it.
+    expect(statusOf({ ...base, executionView: { root: running, current: running, humanWaits: [held] } }))
+      .toBe("waiting-approval")
+    // A fold that covered no tree falls back to the plane's own pending waits.
+    expect(statusOf({
+      ...base,
+      executionView: { root: running, current: running },
+      pendingWaits: [{ runId: "prepare-plan", reason: "approval", token: "wait-token", createdAt: 1 }]
+    })).toBe("waiting-approval")
+    // Neither source names a wait, so a running round is reported as running.
+    expect(statusOf({ ...base, executionView: { root: running, current: running } })).toBe("running")
+  })
+
   it("carries only the optional fields the run actually has", () => {
     const row = GatewayProjection.runSummary(run, [])
     expect(row).toMatchObject({ runId: "run-1", flowId: "deploy", status: "running", createdAt: 10, updatedAt: 20 })
@@ -509,6 +550,115 @@ describe("GatewayProjection.approvals", () => {
     })
 
     expect(rows[0]?.requestId).toBe("opaque")
+  })
+
+  /**
+   * A wait the event fold verified carries the question the execution really
+   * asked, so the row states `events` and reads its request from the projected
+   * observation. A wait the fold covered but could not match is still shown,
+   * and still says so: its question is the plane's, not the journal's.
+   */
+  describe("over a verified execution tree", () => {
+    const rootObservation = Schema.decodeUnknownSync(ExecutionFact.Observation)({
+      executionId: "native",
+      flowName: "agent/run",
+      status: "running",
+      createdAtMs: 1,
+      startedAtMs: 1,
+      finishedAtMs: null,
+      parentRunId: null,
+      lineageId: "native",
+      roundOrdinal: 0,
+      cancelRequestedAtMs: null,
+      treeVersion: 1,
+      parentPolicy: "cancel",
+      waiting: null
+    })
+    const childObservation = Schema.decodeUnknownSync(ExecutionFact.Observation)({
+      executionId: "prepare-plan",
+      flowName: "coding/PreparePlan",
+      status: "suspended",
+      createdAtMs: 2,
+      startedAtMs: 2,
+      finishedAtMs: null,
+      parentRunId: "native",
+      lineageId: "prepare-plan",
+      roundOrdinal: 0,
+      cancelRequestedAtMs: null,
+      treeVersion: 1,
+      parentPolicy: "cancel",
+      waiting: {
+        reason: "approval",
+        wakeAtMs: null,
+        tokenDigest: "digest-of-wait",
+        point: "coding-clarification",
+        request: {
+          task: "human",
+          name: "coding-clarification",
+          kind: "ask",
+          prompt: "Which service owns the retry budget?",
+          attempt: 1,
+          maxAttempts: 3
+        }
+      }
+    })
+    const fact = (observation: ExecutionFact.Observation, sequence: number) =>
+      event("control.engine.event", {
+        version: 1,
+        executionId: observation.executionId,
+        generation: 0,
+        sequence,
+        eventType: "flows.engine.run-decision",
+        payload: { decision: "created", executionFact: { version: 1, baseline: "created", observation } }
+      })
+    const events = [
+      event("control.engine.bound", { version: 1, controlRunId: "run-1", executionId: "native" }),
+      fact(rootObservation, 0),
+      fact(childObservation, 0)
+    ]
+    const waiting = { ...run, status: "waiting-approval" as const }
+
+    it("reads a matched wait's question from the observation the events verified", () => {
+      const rows = GatewayProjection.approvals(events, {
+        ...waiting,
+        pendingWaits: [{
+          runId: "prepare-plan",
+          reason: "approval",
+          token: "wait-token",
+          tokenDigest: "digest-of-wait",
+          createdAt: 42
+        }]
+      })
+
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        questionProvenance: "events",
+        waitRunId: "prepare-plan",
+        requestId: "coding-clarification",
+        title: "Which service owns the retry budget?"
+      })
+      expect(rows[0]?.request).toMatchObject({ kind: "ask", waitFlowId: "coding/PreparePlan", maxAttempts: 3 })
+    })
+
+    it("still renders a wait the verified tree does not account for, and says so", () => {
+      const rows = GatewayProjection.approvals(events, {
+        ...waiting,
+        pendingWaits: [{
+          runId: "prepare-plan",
+          reason: "approval",
+          token: "wait-token",
+          tokenDigest: "digest-of-another-park",
+          name: "sign-off",
+          createdAt: 42
+        }]
+      })
+
+      expect(rows[0]).toMatchObject({
+        questionProvenance: "unverified-observation",
+        requestId: "sign-off",
+        title: "Answer needed \u2014 sign-off"
+      })
+    })
   })
 
   it("titles a request with its question and falls back to the request id", () => {

@@ -2251,3 +2251,89 @@ describe("Projections approvals inbox over nested human waits", () => {
       ])
     }))
 })
+
+/**
+ * What the bounded window does with a payload it cannot hold, a journal that
+ * moves backward, and a read that finds nothing at all. Each of these is a
+ * control plane behaving badly or a run behaving unusually, so none of them
+ * can be produced against the real plane beside this suite.
+ */
+describe("Projections window accounting", () => {
+  it.effect("reports position zero for a run whose journal is still empty", () =>
+    Effect.gen(function*() {
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.empty
+      }))
+
+      const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+      expect(page.rows).toEqual([])
+      // Nothing was read and no cursor was given, so the next page starts at
+      // the journal's beginning rather than at an invented position.
+      expect(page.cursor).toMatchObject({ value: 0, offset: 0 })
+    }))
+
+  it.effect("refuses a journal that moves backward on every selector, not only the page", () =>
+    Effect.gen(function*() {
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.fromIterable([event(2, "control.test", null), event(1, "control.test", null)])
+      }))
+
+      expect((yield* Effect.flip(projections.snapshot({ _tag: "run-summary", runId: run.runId }))).code)
+        .toBe("run_unavailable")
+    }))
+
+  it.effect("clips inside an array without changing the payload's shape", () =>
+    Effect.gen(function*() {
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () =>
+          Stream.succeed(event(1, "control.test", { lines: ["x".repeat(Projections.maxEventBytes * 2), "short"] }))
+      }))
+
+      const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+      const payload = (page.rows[0] as ControlEvent).payload as { readonly lines: ReadonlyArray<string> }
+      // An array keeps its length and a clipped string is still a string, so
+      // the retained payload is still decodable by every reader of it.
+      expect(payload.lines).toHaveLength(2)
+      expect(payload.lines[1]).toBe("short")
+      expect(payload.lines[0]!.endsWith("…")).toBe(true)
+      expect(new TextEncoder().encode(JSON.stringify(page.rows[0])).byteLength)
+        .toBeLessThanOrEqual(Projections.maxEventBytes)
+    }))
+
+  it.effect("replaces a payload whose size is in its shape instead of its text", () =>
+    Effect.gen(function*() {
+      const wide = Object.fromEntries(Array.from({ length: 4_000 }, (_, index) => [`key-${index}`, index]))
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.succeed(event(1, "control.test", wide))
+      }))
+
+      const page = yield* projections.snapshot({ _tag: "run-events", runId: run.runId })
+      // Clipping text cannot shrink tens of thousands of short keys, and no
+      // projection reads such a shape, so the payload is replaced outright.
+      expect((page.rows[0] as ControlEvent).payload).toMatchObject({ truncated: true })
+      expect(new TextEncoder().encode(JSON.stringify(page.rows[0])).byteLength)
+        .toBeLessThanOrEqual(Projections.maxEventBytes)
+    }))
+
+  it.effect("empties the window for one event larger than all of it, with exact byte accounting", () =>
+    Effect.gen(function*() {
+      // Clipping bounds a payload, not the envelope around it. A control plane
+      // that names a kind larger than the whole window still must not corrupt
+      // the accounting that decides what the next event evicts.
+      const colossal = event(1, `control.${"x".repeat(Projections.maxProjectionBytes)}`, null)
+      const projections = make(control({
+        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        watch: () => Stream.fromIterable([colossal, event(2, "control.agent.turn-opened", { seat: "opus" })])
+      }))
+
+      const summary = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
+      // The colossal event is folded into the carry and dropped; the ordinary
+      // event after it is retained, and the counters still describe both.
+      expect((summary.rows[0] as { readonly turns: number }).turns).toBe(1)
+      expect(summary.cursor.value).toBe(2)
+    }))
+})

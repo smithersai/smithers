@@ -398,6 +398,12 @@ const appendEvent = (
     } else if (state.compactHealth && event.kind === "control.monitor.beat") keep = false
     let encodedBytes = Math.max(2, state.encodedBytes - removedBytes) +
       (keep ? bytes + (state.events.length === 0 ? 0 : 1) : 0)
+    // Unreachable today: every term is a byte length, `state.encodedBytes` is
+    // bounded by `maxProjectionBytes` by the loop below, and one event is
+    // bounded by the string the control plane sent, so the sum is always a
+    // safe integer. The refusal stays because a later term need not be, and a
+    // window that cannot count its own bytes must refuse rather than report.
+    /* v8 ignore next 3 -- unreachable while every term above is a byte length. */
     if (!Number.isSafeInteger(encodedBytes)) {
       return Effect.fail(unavailable(message, undefined))
     }

@@ -326,3 +326,69 @@ describe("Diagnosis.render", () => {
     expect(card).not.toContain("Output")
   })
 })
+
+describe("Diagnosis.combine", () => {
+  /**
+   * A run whose journal outgrows one window folds the events it drops into a
+   * carry digest, so the counters a run card shows have to survive the fold:
+   * combining the carry with the window it kept must equal one fold over the
+   * concatenation.
+   */
+  it("adds counters, merges refusal counts, and keeps the latest reading", () => {
+    const earlier = Diagnosis.digest([
+      event("control.agent.turn-opened", { seat: "opus" }, 100),
+      event("control.agent.cell-call-started", { flowName: "write" }, 110),
+      event("control.agent.cell-call-settled", { flowName: "write", outcome: "failure", message: "denied" }, 120),
+      event("control.agent.cell-call-settled", { outcome: "failure", message: "denied" }, 130),
+      event("control.agent.cell-call-settled", { outcome: "failure", message: "timeout" }, 140),
+      event("control.agent.model-settled", { usage: { inputTokens: 10, outputTokens: 5 } }, 150)
+    ])
+    const later = Diagnosis.digest([
+      event("control.agent.turn-opened", { seat: "sonnet" }, 800),
+      event("control.agent.cell-call-settled", { outcome: "failure", message: "denied" }, 810),
+      event("control.agent.model-settled", { usage: { inputTokens: 1, outputTokens: 2 } }, 820),
+      event("control.agent.resolved", { text: "shipped" }, 830),
+      event("control.run.completed", {}, 900)
+    ])
+
+    const combined = Diagnosis.combine(earlier, later)
+    expect(combined).toMatchObject({
+      status: "completed",
+      seat: "sonnet",
+      turns: earlier.turns + later.turns,
+      calls: earlier.calls + later.calls,
+      callsFailed: earlier.callsFailed + later.callsFailed,
+      editsAttempted: earlier.editsAttempted + later.editsAttempted,
+      editsSucceeded: earlier.editsSucceeded + later.editsSucceeded,
+      inputTokens: 11,
+      outputTokens: 7,
+      finalOutput: "shipped"
+    })
+    // One message counted in both ranges is one refusal counted across them,
+    // and the aggregate is re-sorted most frequent first.
+    expect(combined.refusals).toEqual([
+      { message: "denied", count: 3 },
+      { message: "timeout", count: 1 }
+    ])
+    expect(combined.startedAt).toBe(100)
+    expect(combined.endedAt).toBe(900)
+  })
+
+  it("keeps the span of the only range that has one", () => {
+    const measured = Diagnosis.digest([
+      event("control.agent.turn-opened", { seat: "opus" }, 100),
+      event("control.run.completed", {}, 900)
+    ])
+    const unmeasured = Diagnosis.digest([])
+
+    // A window that measured nothing must not erase the span of the one that
+    // did, in either order.
+    expect(Diagnosis.combine(measured, unmeasured)).toMatchObject({ startedAt: 100, endedAt: 900 })
+    expect(Diagnosis.combine(unmeasured, measured)).toMatchObject({ startedAt: 100, endedAt: 900 })
+    expect(Diagnosis.combine(unmeasured, unmeasured)).toMatchObject({
+      startedAt: undefined,
+      endedAt: undefined,
+      refusals: []
+    })
+  })
+})
