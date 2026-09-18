@@ -119,9 +119,10 @@ const pinned = (rule: string) => {
   return policy
 }
 
-for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "push-chore", "push-chore-ci", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
+for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "foreign-suffix", "push-chore", "push-chore-ci", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
   test(`proposal flow preserves editor and binds final native source: ${mode}`, gate, async t => {
     const f = await fixture(t), calls: string[] = [], seenChecks: string[] = []
+    let appended: string[] = []
     const evidence = await Effect.runPromise(captureRepository(f.options, { repo: "example/repo", prompt: "code.txt", sourceRevision: f.head.commitId }, "immutable").pipe(Effect.provide(f.owned)))
     const command = `${JSON.stringify(process.execPath)} -e "const fs=require('node:fs');if(fs.readFileSync('code.txt','utf8')!=='checked implementation\\n')process.exit(7);console.log('measured checked bytes')"`
     // A push to the default branch is the first trigger that both names an
@@ -152,12 +153,19 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "p
           (mode === "delivery-main-moved" && calls.includes("create"))) ? "f".repeat(40) : f.base.commitId
       }),
       prepare: input => Effect.sync(() => { calls.push("prepare"); assert.equal(input.source_commit_id, f.child.commitId); assert.equal(input.source_base_commit_id, f.base.commitId)
-        return { ...input, status: "prepared" as const, changes: [{ change_id: f.child.changeId, commit_id: f.child.commitId }] } }),
+        // Plue anchors the suffix on the previous append's source, so main's own
+        // published tip leads every landing after a repository's first one.
+        const candidate = { change_id: f.child.changeId, commit_id: f.child.commitId }
+        return { ...input, status: "prepared" as const, changes: mode === "push-chore" ? [candidate]
+          : mode === "foreign-suffix" ? [{ change_id: f.head.changeId, commit_id: f.head.commitId }, candidate]
+          : [{ change_id: f.base.changeId, commit_id: f.base.commitId }, candidate] } }),
       create: requestId => Effect.sync(() => { calls.push("landing"); return { requestId, number: 1 } }),
-      queue: (identity, preparation, request) => Effect.sync(() => { calls.push("queue"); return { ...identity, taskId: 1, preparation, request } }),
-      observe: queued => Effect.succeed({ status: "landed", task_id: 1, request: { change_ids: [f.child.commitId], target_bookmark: "main", expected_commit_id: f.base.commitId,
+      queue: (identity, preparation, request) => Effect.sync(() => { calls.push("queue"); appended = preparation.changes.map(change => change.commit_id)
+        return { ...identity, taskId: 1, preparation, request } }),
+      observe: queued => Effect.succeed({ status: "landed", task_id: 1, request: { change_ids: queued.preparation.changes.map(change => change.commit_id),
+        target_bookmark: "main", expected_commit_id: f.base.commitId,
         operation_key: "fixture", append: { source_commit_id: f.child.commitId, source_base_commit_id: f.base.commitId, description: queued.request.description } },
-        result: { landed_count: 1, target_bookmark: "main", target_commit_id: f.child.commitId } }) }
+        result: { landed_count: queued.preparation.changes.length, target_bookmark: "main", target_commit_id: f.child.commitId } }) }
     let receipt!: typeof SourceCreation.Type
     const creationRequests: Array<typeof CreateSource.Type> = []
     const native: NativeCoding["Service"] = { ...f.native,
@@ -213,13 +221,16 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "p
       assert.match(output.summary, /receipt publisher/i)
       assert.deepEqual(calls, ["draft", "create", "publish", "prepare"], "a pinned policy with no receipt publisher opens no landing request")
     } else if (mode === "land") {
+      assert.equal((output.output as Record<string, Schema.Json>).deliveryError, undefined, "the landing gate delivers the candidate it checked")
       assert.deepEqual(calls, ["draft", "create", "publish", "prepare", "landing", "queue"])
+      assert.deepEqual(appended, [f.base.commitId, f.child.commitId], "only the checked candidate is appended, after main's own published tip")
       assert.equal((output.output as Record<string, Schema.Json>).landed, true)
       assert.ok(seenChecks.some(candidate => candidate.startsWith(f.base.commitId + "+")))
       assert.ok(seenChecks.includes(f.child.commitId), "fresh checks inspect the actual immutable result")
       assert.deepEqual(await runtime.runPromise(ProposalStep.execute({ work }, { executionId: "preserved-feature" })), output)
       assert.equal(calls.length, 6, "durable replay does not create or publish twice")
     } else if (mode === "ai-only-land") {
+      assert.equal((output.output as Record<string, Schema.Json>).deliveryError, undefined, "the landing gate delivers the candidate it checked")
       assert.deepEqual(calls, ["draft", "create", "publish", "prepare", "landing", "queue"], "a passed AI-only gate opens the same landing request a command-checked change opens")
       assert.equal(output.status, "completed")
       assert.equal((output.output as Record<string, Schema.Json>).landed, true)
@@ -232,6 +243,12 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "p
       assert.deepEqual(calls, ["draft"], "a failed required AI check holds landing before any native creation")
       const recorded = ((output.output as Record<string, Schema.Json>).checks as Array<Record<string, Schema.Json>>).at(-1)!
       assert.equal((recorded.output as Record<string, Schema.Json>).gate, "blocked")
+    } else if (mode === "foreign-suffix") {
+      assert.equal(output.status, "needs-maintainer")
+      assert.equal(output.summary, `Landing includes work outside this checked native change: ${f.head.changeId}@${f.head.commitId}`,
+        "the refusal names the retained configuration commit the checks never saw")
+      assert.equal((output.output as Record<string, Schema.Json>).landed, false)
+      assert.deepEqual(calls, ["draft", "create", "publish", "prepare"], "unchecked work in the suffix opens no landing request")
     } else if (mode === "ai-only-fix") {
       assert.equal(output.status, "needs-maintainer")
       assert.equal(output.summary, "A fix needs a required command check to establish its failing regression")

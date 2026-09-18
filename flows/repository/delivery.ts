@@ -66,7 +66,12 @@ export const deliveryLayers = Layer.mergeAll(Interpreter.layer(DeliverChange), I
       creation: { requestId: creation.value.requestId, requestDigest: creation.value.requestDigest } })
     const preparation = yield* landing.prepare({ target_bookmark: "main", expected_commit_id: main,
       source_commit_id: source.value.commitId, source_base_commit_id: work.evidence.source.commitId })
-    if (preparation.changes.length !== 1 || preparation.changes[0]!.change_id !== source.value.changeId || preparation.changes[0]!.commit_id !== source.value.commitId) return yield* invalid("Landing includes work outside this checked native change")
+    // Plue anchors the suffix on the previous append's source, so main's own
+    // published tip leads it on every landing after a repository's first one.
+    const delivered = preparation.changes.at(-1)!, outside = preparation.changes.filter(change => change !== delivered && change.commit_id !== main)
+    if (delivered.change_id !== source.value.changeId || delivered.commit_id !== source.value.commitId || outside.length !== 0) {
+      return yield* invalid(`Landing includes work outside this checked native change: ${(outside.length === 0 ? [delivered] : outside).map(change => `${change.change_id}@${change.commit_id}`).join(", ")}`)
+    }
     return { input, source: source.value, preparation }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("Checked source retention or landing preparation failed")))),
   Report.toLayer(prepared => Effect.gen(function*() {
@@ -99,7 +104,7 @@ export const deliveryLayers = Layer.mergeAll(Interpreter.layer(DeliverChange), I
   }).pipe(Effect.catch(error => Effect.succeed({ satisfied: Date.now() >= deadlineAt,
     output: { status: "unobserved" as const, reason: error instanceof CodingError ? error.message : "The landing receipt could not be read" } })))),
   Retain.toLayer(({ prepared, queued, observed }) => Effect.gen(function*() {
-    if (observed.status !== "landed" || observed.task_id !== queued.taskId || observed.result.landed_count !== 1) return yield* invalid(`Landing ${queued.number} has not completed successfully`)
+    if (observed.status !== "landed" || observed.task_id !== queued.taskId || observed.result.landed_count !== queued.preparation.changes.length) return yield* invalid(`Landing ${queued.number} has not completed successfully`)
     return { ...prepared.input.result, summary: "Landed", executionId: yield* currentExecutionId,
       evidence: [...prepared.input.result.evidence, `landing:${queued.number}`, `main:${observed.result.target_commit_id}`],
       output: JSON.parse(JSON.stringify({ ...object(prepared.input.result.output), landed: true, landing: queued.number,
