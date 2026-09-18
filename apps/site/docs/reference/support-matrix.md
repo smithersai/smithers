@@ -108,6 +108,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/model`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
 | `@smthrs/notifications`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
 | `@smthrs/observability`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
+| `@smthrs/opencode`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/package.json)               |
 | `@smthrs/patterns`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
 | `@smthrs/plan`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
 | `@smthrs/platform-browser` | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/package.json) |
