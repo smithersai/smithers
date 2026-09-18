@@ -75,6 +75,31 @@ describe("one turn request is bounded to the boundary's body limit", () => {
     expect(bounded.request).toBe(request)
   })
 
+  /*
+   * The offered command catalog is a routing hint for the serving side's
+   * front door, and the conversation is the answer. A turn that fits only
+   * because history went would be paying for the hint with the answer.
+   */
+  test("the command catalog gives way before a single message does, and is kept when the turn already fits", () => {
+    const commands = Array.from({ length: 300 }, (_, index) => ({
+      name: `namespace.command-${index}`,
+      summary: "x".repeat(60)
+    }))
+    const small = { ...turn([{ role: "user", content: "hello" }]), commands }
+    expect(boundTurnRequest(small).request.commands).toEqual(commands)
+
+    const long = "x".repeat(50_000)
+    const tight = {
+      ...turn([{ role: "user", content: long }, { role: "user", content: "and now say ok" }]),
+      commands
+    }
+    const bounded = boundTurnRequest(tight)
+    expect(bounded.request.commands).toBeUndefined()
+    expect(bounded.dropped).toBe(0)
+    expect(bounded.request.messages).toEqual(tight.messages)
+    expect(turnRequestBytes(bounded.request)).toBeLessThanOrEqual(MAX_TURN_REQUEST_BYTES)
+  })
+
   test("the oldest messages are dropped until the turn fits, and the newest survives", () => {
     const long = "x".repeat(20_000)
     const request = turn([

@@ -2,13 +2,13 @@ import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { setupCandidate } from "@smthrs/rpc/RepositorySetup"
-import type { AgentChatMessage,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
+import type { AgentChatMessage,AgentTurnCommand,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { CommandOutcome } from "../../flows/Commands"
 import { agentFailureText,agentVisibleCatalog } from "../../flows/agentTools"
-import { parseSubmit } from "../../flows/registry"
+import { parseSubmit, visible } from "../../flows/registry"
 import { boundToolResult,boundTurnRequest } from "../AgentTurnPolicy"
 import type { Card } from "../AppState"
 import { CardPatchSchema,CardSchema,conversationTabIdOf,inConversation,MAIN_TAB_ID } from "../AppState"
@@ -16,6 +16,7 @@ import { isCurrentApprovalAnswer,prepareApprovalAnswer } from "../ApprovalAnswer
 import { parseApprovalActionId } from "../ApprovalReference"
 import type { ImpossibleAskClass,InstructionRole,InstructionStage } from "../Instructions"
 import { bytesOf,CHAT_INSTRUCTIONS_CAP_BYTES,INSTRUCTIONS_HEADROOM_BYTES,smithersInstructions } from "../Instructions"
+import { COMMANDS_MAX } from "../Recommend"
 import { activeCatalogRepositoryId,activeRepositoryId } from "../RepoContext"
 import { currentRepositoryUpdate } from "../RepositoryContext"
 import { setupContextSummary } from "./repositorySetup"
@@ -463,7 +464,7 @@ export const createTurnController = (
    * that: a context whose tabs and repositories alone pass the cap, which no
    * session has produced.
    */
-  const composeTurn = (): { readonly context: AgentRuntimeContext; readonly instructions: string } => {
+  const composeInstructions = (): { readonly context: AgentRuntimeContext; readonly instructions: string } => {
     const limit = CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES
     const render = (worldBodyBudget: number, lastStage: InstructionStage = 2, setupDrafts?: number) => {
       const context = agentRuntimeContext(worldBodyBudget, setupDrafts)
@@ -519,6 +520,30 @@ export const createTurnController = (
     }
     return { context: fit.context, instructions: fit.instructions }
   }
+
+  /*
+   * The catalog as DATA, beside the prompt that renders it as prose.
+   *
+   * The serving side's front door (apps/server frontDoor.ts) asks a decision
+   * model whether this message simply IS one of the commands the app can run,
+   * and answers the turn itself when it is. It needs the options, and the
+   * prompt's catalog is not them: it degrades in stages to fit the
+   * instructions cap, and parsing it back would be a second contract that
+   * breaks the first time a stage drops. So every turn carries the same
+   * `{ name, summary }` list the recommender posts (state/Recommend.ts
+   * recommendRequest) — `visible(catalog)`, capped — and the front door reads
+   * data.
+   */
+  const turnCommands = (): ReadonlyArray<AgentTurnCommand> =>
+    visible(ctx.commands.all())
+      .slice(0, COMMANDS_MAX)
+      .map((command) => ({ name: command.name, summary: command.summary }))
+
+  const composeTurn = (): {
+    readonly context: AgentRuntimeContext
+    readonly instructions: string
+    readonly commands: ReadonlyArray<AgentTurnCommand>
+  } => ({ ...composeInstructions(), commands: turnCommands() })
 
   /*
    * The named roles the orchestrator may delegate to, with THIS host's
@@ -599,13 +624,14 @@ export const createTurnController = (
      * every later turn failed the same way, and /clear could not recover it
      * because /clear runs a model turn of its own into the same wall.
      */
-    const { context, instructions } = composeTurn()
+    const { commands, context, instructions } = composeTurn()
     const { request } = boundTurnRequest(
       {
         runId: turnId,
         messages,
         instructions,
         tools: ctx.commands.toolSpecs(),
+        commands,
         context
       },
       keepTail

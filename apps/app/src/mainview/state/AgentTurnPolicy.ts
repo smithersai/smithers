@@ -94,10 +94,23 @@ export interface BoundedTurnRequest {
  * pairs of a tool leg, which are meaningless split apart.
  */
 export const boundTurnRequest = (
-  request: StartAgentTurnRequest,
+  full: StartAgentTurnRequest,
   keepTail = 1,
   maxBytes = MAX_TURN_REQUEST_BYTES
 ): BoundedTurnRequest => {
+  /*
+   * The offered command catalog is the first thing to give.
+   *
+   * It is a few kilobytes of routing hint for the serving side's front door
+   * (apps/server frontDoor.ts) — worth carrying, worth nothing beside the
+   * conversation. A turn that fits only by dropping the user's own history
+   * would be paying for the hint with the answer, so the catalog leaves
+   * before a single message does: the turn then simply goes to the chat
+   * upstream, exactly as every turn did before the front door existed.
+   */
+  const request = full.commands === undefined || turnRequestBytes(full) <= maxBytes
+    ? full
+    : (({ commands: _dropped, ...rest }) => rest)(full)
   const messages = request.messages
   const floor = Math.min(Math.max(keepTail, 1), messages.length)
   if (messages.length <= floor) return { request, dropped: 0 }

@@ -13,7 +13,7 @@ interface Dependencies {
   readonly ownTurn: (turn: ActiveTurn) => ActiveTurn
   readonly isCurrentTurn: (turn: ActiveTurn) => boolean
   readonly contextMessages: () => ReadonlyArray<AgentChatMessage>
-  readonly composeTurn: () => Pick<StartAgentTurnRequest, "context" | "instructions">
+  readonly composeTurn: () => Pick<StartAgentTurnRequest, "commands" | "context" | "instructions">
   readonly settled: () => void
   readonly refused: (turnId: string, result: Extract<StartAgentTurnResult, { status: "error" }>) => void
 }
