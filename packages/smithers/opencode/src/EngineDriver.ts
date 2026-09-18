@@ -305,7 +305,7 @@ interface Running {
   driving: boolean
 }
 
-const grantKey = (sessionID: string, flow: string): string => `${sessionID} ${flow}`
+const grantKey = (sessionID: string, flow: string): string => `${sessionID}\u0000${flow}`
 
 /**
  * The message of a failure: an error's own, or the `message` of the JSON
