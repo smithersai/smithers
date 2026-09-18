@@ -1,7 +1,6 @@
 /** One private control/executor composition over existing native platform adapters.
  * @since 1.0.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -40,6 +39,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
+import type * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import type * as KernelJj from "@smthrs/kernel/Jj"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Workspace from "@smthrs/kernel/Workspace"
@@ -160,6 +160,14 @@ export interface Platform {
     spawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"]
   ) => Effect.Effect<FileSystem.FileSystem>
   readonly requestExecutor: Layer.Layer<RequestExecutor.RequestExecutor>
+  /**
+   * The plain HTTP client this platform speaks, for the calls that are not
+   * model requests: today, the Vercel gateway call behind the completion
+   * brake. It is separate from {@link Platform.requestExecutor} because that
+   * one owns a replaceable connection pool a run rebuilds, and undici's
+   * dispatcher does not run under Bun at all.
+   */
+  readonly httpClient: Layer.Layer<KernelHttpClient.HttpClient>
   readonly gateway: typeof NodeGateway.layer
   readonly bearerPrincipal: typeof NodeGateway.bearerPrincipal
 }
@@ -593,8 +601,9 @@ export const make = (
     // the completion brake, which never falls back, so a claim nothing could
     // judge fails the run instead of standing; and the `test` flow, which
     // attributes a non-zero exit with it. Without `AI_GATEWAY_API_KEY` this
-    // is `layerUnavailable()` and both say so.
-    const evaluator = Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
+    // is `layerUnavailable()` and both say so. The client is the platform's
+    // own, so the Bun host does not reach for undici.
+    const evaluator = Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(native.httpClient))
     // The dispatcher must live as long as the executor. A model captures this
     // service and uses it after seat resolution has returned.
     //

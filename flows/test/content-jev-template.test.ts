@@ -31,6 +31,14 @@ const answers = (template: ReleaseTemplate, confidence: number) => {
 const scriptedJev = (template: ReleaseTemplate, confidence: number) =>
   Evaluator.layerScripted(() => answers(template, confidence))
 
+/** The judge behind the harness completion brake, scripted to let a seat's
+ * completion stand, so these tests read the template decision and nothing
+ * else. */
+const scriptedCompletion = Evaluator.layerScripted(() => ({
+  complete: { probability: 0.99 },
+  overclaims: { probability: 0.01 }
+}))
+
 test("the classifier asks one closed question over the four narratives and nothing else", () => {
   assert.equal(templateClassifier.id, "release/template")
   assert.deepEqual(Object.keys(templateClassifier.questions), ["template"])
@@ -122,7 +130,11 @@ const runContent = async (t: TestContext, evaluator: Layer.Layer<Evaluator.Evalu
     owner: { hostId: "release-jev-template-test" }, signals: []
   }, Layer.mergeAll(
     actionLayers({ root: fixture.root, evaluator }),
-    agentLayers(scriptedSeats(counts, { prompts }), 250_000),
+    // The writer seat's own completion is judged by the harness brake, which
+    // never falls back. Its judge is a separate layer from the one under test
+    // here, so a scripted Jev that only answers `template` cannot be mistaken
+    // for a gateway outage at the seat.
+    agentLayers(scriptedSeats(counts, { prompts }), 250_000, scriptedCompletion),
     HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
   const exit = await Effect.runPromise(Effect.scoped(Effect.exit(

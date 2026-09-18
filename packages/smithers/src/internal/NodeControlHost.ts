@@ -102,6 +102,7 @@ export const platform: NativeControl.Platform = {
   runtime: NodeFlowsRuntime.layer,
   jj: NodeJj.layerAt,
   requestExecutor: layerRequestExecutor,
+  httpClient: NodeHttpClient.layerUndici,
   gateway: NodeGateway.layer,
   bearerPrincipal: NodeGateway.bearerPrincipal
 }
