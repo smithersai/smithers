@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `AtomicFileSystem.stat` now reports `birthtime` on Linux. CPython carries the
+  creation time on `os.stat_result` only on macOS and the BSDs, so the helper
+  answered `Option.none` on Linux while `@effect/platform-node` answered the
+  instant it read through `statx`. The helper now reads `statx` itself, through
+  the C library already mapped into the process, and still answers
+  `Option.none` on any host that has no creation time to give.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

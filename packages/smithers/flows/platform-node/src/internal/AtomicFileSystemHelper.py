@@ -71,6 +71,16 @@ OPEN_FLAGS = {
 }
 TRUNCATED_FLAGS = ("w", "w+")
 
+# statx(2), the only call that answers a creation time on Linux. The size is
+# the kernel's struct statx, checked before the call is ever made so a layout
+# this build got wrong refuses rather than writing past the buffer.
+STATX_BTIME = 0x800
+STATX_SIZE = 256
+AT_SYMLINK_NOFOLLOW = 0x100
+AT_EMPTY_PATH = 0x1000
+# The reader, built on first use and kept: a host answers the same way twice.
+BIRTH_TIME = []
+
 class BadArgument(Exception):
     """Caller input rejected before any operation runs. Node rejects an unknown
     open flag the same way, and Effect reports it as BadArgument rather than as
@@ -88,6 +98,83 @@ def file_type(mode):
     if stat.S_ISBLK(mode): return "BlockDevice"
     if stat.S_ISCHR(mode): return "CharacterDevice"
     return "Unknown"
+
+def load_birth_time():
+    """Builds the creation-time reader this host can answer with, or one that
+    answers nothing.
+
+    CPython puts the creation time on os.stat_result as st_birthtime on macOS
+    and the BSDs, and puts nothing at all there on Linux, where the field
+    lives behind statx(2) and has no wrapper in the standard library. Node's
+    own fs.stat reads it, so an adapter that skipped it would answer None to a
+    caller the native adapter answers with an instant. It is called through
+    ctypes against the C library already mapped into this process, never
+    through a binary found on PATH, so it widens no trust boundary.
+
+    Every unanswerable host yields None rather than a value: no ctypes, a C
+    library older than the statx wrapper, a struct this build does not lay out
+    the way the kernel does, a kernel that refuses the call, and a filesystem
+    that stores no creation time. None is the same answer a caller reading an
+    absent birthtime already handles; a fabricated instant is not."""
+    def absent(dir_fd, name, flags):
+        return None
+
+    if not sys.platform.startswith("linux"):
+        return absent
+    try:
+        import ctypes
+    except ImportError:
+        return absent
+
+    class Timestamp(ctypes.Structure):
+        _fields_ = [("sec", ctypes.c_int64), ("nsec", ctypes.c_uint32), ("reserved", ctypes.c_int32)]
+
+    class Answer(ctypes.Structure):
+        # The kernel's struct statx. Every field up to the timestamps is named
+        # so the offsets are the kernel's rather than a hand-counted padding
+        # guess; the tail is the reserved space the call still writes into.
+        _fields_ = [("mask", ctypes.c_uint32), ("blksize", ctypes.c_uint32),
+                    ("attributes", ctypes.c_uint64), ("nlink", ctypes.c_uint32),
+                    ("uid", ctypes.c_uint32), ("gid", ctypes.c_uint32),
+                    ("mode", ctypes.c_uint16), ("spare", ctypes.c_uint16),
+                    ("ino", ctypes.c_uint64), ("size", ctypes.c_uint64),
+                    ("blocks", ctypes.c_uint64), ("attributes_mask", ctypes.c_uint64),
+                    ("atime", Timestamp), ("btime", Timestamp),
+                    ("ctime", Timestamp), ("mtime", Timestamp),
+                    ("tail", ctypes.c_uint64 * 16)]
+
+    if ctypes.sizeof(Answer) != STATX_SIZE:
+        return absent
+    try:
+        call = ctypes.CDLL(None, use_errno=True).statx
+    except (AttributeError, OSError):
+        return absent
+    call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(Answer)]
+    call.restype = ctypes.c_int
+
+    def birth_time(dir_fd, name, flags):
+        answer = Answer()
+        if call(dir_fd, name, flags, STATX_BTIME, ctypes.byref(answer)) != 0:
+            return None
+        # The mask says what the kernel actually filled in. A filesystem with
+        # no creation time leaves the bit clear over a zeroed field, which
+        # would otherwise read as the epoch.
+        if not (answer.mask & STATX_BTIME):
+            return None
+        return answer.btime.sec * 1000 + answer.btime.nsec / 1000000
+
+    return birth_time
+
+def birth_ms(info, dir_fd, name, flags):
+    """The creation time of an entry in epoch milliseconds, or None where this
+    host keeps none. The record is asked first, because every platform that
+    carries the field on os.stat_result has already paid for it."""
+    seconds = getattr(info, "st_birthtime", None)
+    if seconds is not None:
+        return seconds * 1000
+    if not BIRTH_TIME:
+        BIRTH_TIME.append(load_birth_time())
+    return BIRTH_TIME[0](dir_fd, name, flags)
 
 def parts(path):
     if not os.path.isabs(path):
@@ -131,6 +218,17 @@ def entry_stat(root, path):
     directory, name = parent(root, path)
     try:
         return os.stat(name, dir_fd=directory, follow_symlinks=False)
+    finally:
+        os.close(directory)
+
+def entry_stat_with_birth(root, path):
+    """entry_stat, and the creation time read through the SAME pinned parent
+    descriptor. Asking twice would walk the path twice, and the two answers
+    could then describe two different entries."""
+    directory, name = parent(root, path)
+    try:
+        info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        return info, birth_ms(info, directory, os.fsencode(name), AT_SYMLINK_NOFOLLOW)
     finally:
         os.close(directory)
 
@@ -1085,16 +1183,16 @@ def main(request, content_limit, response_limit, pinned_root=None):
             path = confined(request["path"])
             if not parts(path):
                 info = os.fstat(root)
+                birthtime = birth_ms(info, root, b"", AT_EMPTY_PATH)
             else:
-                info = entry_stat(root, path)
+                info, birthtime = entry_stat_with_birth(root, path)
                 if stat.S_ISLNK(info.st_mode):
                     raise OSError(errno.ELOOP, "symbolic links are outside the atomic boundary", request["path"])
                 if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
                     raise OSError(errno.EPERM, "hard-linked files cannot be confined", request["path"])
-            birthtime = getattr(info, "st_birthtime", None)
             return {"type": file_type(info.st_mode),
                     "mtime": info.st_mtime * 1000, "atime": info.st_atime * 1000,
-                    "birthtime": None if birthtime is None else birthtime * 1000,
+                    "birthtime": birthtime,
                     # The RAW st_mode, file-type bits included, because that is
                     # what @effect/platform-node's stat returns and a caller
                     # testing "mode & S_IFMT" has to get the same answer from
