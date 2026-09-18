@@ -73,6 +73,15 @@ const capturedCause = (error: unknown): string => {
   const fields = error !== null && typeof error === "object" ? error as { readonly code?: unknown; readonly message?: unknown } : {}
   return typeof fields.code === "string" && typeof fields.message === "string" ? `: ${fields.code} — ${fields.message}` : "."
 }
+const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+/** The commit an event calls the work under review. `captureChecks` accepts no
+ * other source for such an event, so an evaluation of it captures this commit
+ * rather than substituting whatever source the current workspace holds. */
+export const eventCandidate = (event: typeof Event.Type): string | undefined => {
+  const payload = object(event.payload), pr = object(payload.pull_request)
+  const candidate = object(pr.head).sha ?? payload.head_commit_id ?? payload.candidateCommitId
+  return typeof candidate === "string" && /^(?!0{40}$)[0-9a-f]{40}$/.test(candidate) ? candidate : undefined
+}
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
   current !== null && typeof current === "object" ? (current as Record<string, unknown>)[token.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined, value)
 /** Why this step did not complete its evaluated work, or undefined when it did. */
@@ -133,13 +142,16 @@ export const evaluationLayers = (options: { readonly evaluator?: Layer.Layer<Eva
         results.push({ caseId: test.id, status: "review", observed: "Choose an executable event, immutable source revision, and expected assertions.", evidence: [], executionId: instance.executionId })
         continue
       }
-      const captured = decoded.value.sourceRevision === evidence.source.commitId ? Effect.succeed(evidence)
-        : runtime.execute(CaptureCase, { executionId: `${key}-source`, payload: { repo: setup.repo,
-          sourceRevision: decoded.value.sourceRevision, heldOut: true, prompt: JSON.stringify(decoded.value.event.payload) } })
+      const candidate = eventCandidate(decoded.value.event)
+      const wanted = candidate ?? decoded.value.sourceRevision
+      const captured = wanted === evidence.source.commitId ? Effect.succeed(evidence)
+        : runtime.execute(CaptureCase, { executionId: `${key}-source`, payload: { repo: setup.repo, sourceRevision: wanted,
+          ...(candidate === undefined ? { heldOut: true } : { event: decoded.value.event }), prompt: JSON.stringify(decoded.value.event.payload) } })
       const capturedResult = yield* captured.pipe(Effect.result)
       if (capturedResult._tag === "Failure") {
-        results.push({ caseId: test.id, status: "error", observed: `The held-out source commit could not be captured${capturedCause(capturedResult.failure)}`,
-          evidence: [`execution:${key}-source`], executionId: `${key}-source` })
+        results.push({ caseId: test.id, status: "error", executionId: `${key}-source`, evidence: [`execution:${key}-source`],
+          observed: candidate === undefined ? `The held-out source commit could not be captured${capturedCause(capturedResult.failure)}`
+            : `The event's candidate revision ${candidate.slice(0, 12)} could not be captured${capturedCause(capturedResult.failure)} Inspect again to re-pin this case.` })
         continue
       }
       const caseEvidence = capturedResult.success

@@ -60,11 +60,20 @@ export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["che
     Digest.canonical(value.paths) === Digest.canonical(check.paths))
   return { ...check, policy: prior.length === 1 ? prior[0]!.policy : "report" }
 })
+/** A pin outlives no workspace but its own, so every inspection re-pins the cases
+ * it wrote to the commit it just captured. Only the pin moves: the event, the
+ * assertions and the expected answer stay exactly as they were written, and a
+ * case the maintainer has touched is theirs, pin included. */
+const repinnedCase = (test: typeof EvalCase.Type, sourceRevision: string): typeof EvalCase.Type =>
+  Option.isNone(Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)) ? test
+    : { ...test, input: JSON.stringify({ ...JSON.parse(test.input) as Record<string, unknown>, sourceRevision }) }
 /** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text.
  * The held-out source is the commit this inspection actually captured, never a revision the model named. */
 export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type, sourceRevision: string): Draft => ({
   ...suggested, steps: suggestedSteps(existing.steps, suggested.steps), checks: suggestedChecks(existing.checks, suggested.checks),
-  cases: existing.cases.length ? existing.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify({ ...test.input, sourceRevision }) })),
+  cases: existing.cases.length
+    ? existing.cases.map(test => test.edited === true ? test : repinnedCase(test, sourceRevision))
+    : suggested.cases.map(test => ({ ...test, input: JSON.stringify({ ...test.input, sourceRevision }) })),
   replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
   schedule: existing.schedule, choreEvent: existing.choreEvent, connectIssues: existing.connectIssues,
   budgetMinutes: existing.budgetMinutes

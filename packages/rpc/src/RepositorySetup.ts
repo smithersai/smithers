@@ -118,6 +118,8 @@ export const SetupEvalCaseSchema = z.object({
   input: z.string().max(16000),
   expected: z.string().min(1).max(8000),
   source: z.string().max(1000).optional(),
+  /** Written or changed by the maintainer, so an inspection leaves its pin alone. */
+  edited: z.boolean().optional(),
   required: z.boolean()
 })
 /**

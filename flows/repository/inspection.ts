@@ -6,16 +6,16 @@ import { NativeCoding } from "../coding/native.ts"
 import { collectSources, extractPaths, normalizePath, reader, repositoryContextPaths, type SourceReader } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { RepositoryRemote } from "./remote.ts"
-import { heldSourceCommits } from "./retention.ts"
+import { ensureSource, heldSourceCommits } from "./retention.ts"
 import { withCapturedCommit } from "./source.ts"
 import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
-import { RepositoryEvidence } from "./schema.ts"
+import { Event, RepositoryEvidence } from "./schema.ts"
 
 export const deploymentMinutes = 120
 export const deploymentTokens = 200_000
 export const CaptureRepository = Action.make("repository/capture", {
   payload: { repo: Schema.NonEmptyString, prompt: Schema.String, sourceRevision: Schema.optionalKey(Schema.String),
-    heldOut: Schema.optionalKey(Schema.Boolean) }, success: RepositoryEvidence, error: CodingError,
+    heldOut: Schema.optionalKey(Schema.Boolean), event: Schema.optionalKey(Event) }, success: RepositoryEvidence, error: CodingError,
   nondeterministic: true
 })
 export interface InspectionOptions extends ImmutableSourceOptions {}
@@ -49,6 +49,11 @@ export const readRepositorySources = (options: InspectionOptions, root: string, 
 export const captureRepository = (options: InspectionOptions, input: typeof CaptureRepository.payloadSchema.Type, mode: "snapshot" | "immutable" = "snapshot") => Effect.gen(function*() {
   const remote = yield* Effect.serviceOption(RepositoryRemote)
   if (Option.isSome(remote) && remote.value.repo !== input.repo) return yield* unavailable("This host belongs to a different repository")
+  // A capture of the source an event names retains it from the repository first,
+  // exactly as the live job does, so a workspace that never fetched that commit
+  // reads it instead of scoring whatever source it happens to hold.
+  const execution = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+  if (input.event !== undefined && Option.isSome(execution)) yield* ensureSource(options, input.event, input.event.payload, execution.value.executionId)
   if (mode === "snapshot") yield* (yield* Jj.Jj).snapshot("repository automation inspection")
   const native = yield* NativeCoding, before = yield* native.read([], mode === "snapshot" ? 50 : undefined)
   if (before.head.kind !== "resolved") return yield* unavailable("Resolve native source conflicts before repository setup")
@@ -57,11 +62,16 @@ export const captureRepository = (options: InspectionOptions, input: typeof Capt
   // workspace never held that commit. Current source is what this host can capture,
   // and only a lookup that answered "absent" may substitute it: a refused or
   // unreachable lookup fails with its own code instead of scoring other source.
-  const pinned = input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId &&
+  // The working copy is this workspace's own commit and dies with it, so a case
+  // pinned to it is unevaluable anywhere else. An empty snapshot adds nothing to
+  // the commit it sits on, so that commit is the published source it read.
+  const canonical = before.head.empty === true && before.head.parentCommitIds.length === 1
+    ? before.head.parentCommitIds[0]! : before.head.commitId
+  const pinned = input.sourceRevision !== undefined && input.sourceRevision !== canonical &&
     (input.heldOut !== true || (yield* heldSourceCommits(options, [input.sourceRevision], before.operationId)))
     ? input.sourceRevision : undefined
-  const captured = mode === "immutable" || pinned !== undefined
-    ? yield* withCapturedCommit(options, pinned ?? before.head.commitId, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
+  const captured = mode === "immutable" || pinned !== undefined || canonical !== before.head.commitId
+    ? yield* withCapturedCommit(options, pinned ?? canonical, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
     : { files: yield* readFiles(yield* options.fs.realPath(options.repositoryPath)), source: before.head }
   const files = captured.files
   const history = Option.isSome(remote) ? yield* remote.value.history : {

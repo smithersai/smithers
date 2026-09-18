@@ -88,10 +88,14 @@ const setupFor = (job: "issues" | "review" | "ci", cases: readonly Case[]): Setu
 const json = (value: unknown) => value as Schema.Json
 const issueEvent = json({ source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: "seed", issueNumber: 53,
   payload: { issue: { title: "What is this repository for?", body: "The README is short. A cited answer is enough." } } })
-const reviewEvent = json({ source: "github", type: "pull_request", action: "opened", deliveryKey: "seed",
-  payload: { pull_request: { title: "Change the greeting", body: "Inspect README.md", base: { sha: "b".repeat(40) }, head: { sha: "c".repeat(40) } } } })
 const ciEvent = json({ source: "smithers-cloud", type: "manual", action: "manual:checks", manualStep: "checks", deliveryKey: "seed",
   payload: { prompt: "Run the repository checks" } })
+/** What the review and CI steps actually check: the commit the event calls the
+ * work under review. `checks.ts` refuses any other source for it. */
+const prEvent = (head: string, base: string) => json({ source: "github", type: "pull_request", action: "opened", deliveryKey: "seed",
+  payload: { pull_request: { number: 2, title: "Change the greeting", body: "Inspect README.md", base: { sha: base }, head: { sha: head } } } })
+const ciPrEvent = (head: string) => json({ source: "smithers-cloud", type: "manual", action: "manual:checks", manualStep: "checks",
+  deliveryKey: "seed", payload: { prompt: "Run the repository checks", candidateCommitId: head } })
 
 /** The production wiring is `"snapshot"`; `"immutable"` is the captured-source path. */
 async function harness(t: TestContext, mode: "snapshot" | "immutable") {
@@ -142,7 +146,9 @@ test(`a held-out case pinned to a commit this host never held still executes and
   assert.deepEqual(held[0]!.evidence, [`source:${f.pinned}`], "a pin this host still holds is captured and used")
   assert.equal(held[0]!.observed, judged, "a captured pin reports no substitution")
 
-  for (const [job, event] of [["review", reviewEvent], ["ci", ciEvent]] as const) {
+  // A real PR event names the source under review, so the inspected evidence is
+  // reused because it IS the candidate revision, never in spite of naming another.
+  for (const [job, event] of [["review", prEvent(evidence.source.commitId, f.pinned)], ["ci", ciEvent]] as const) {
     const current = await f.evaluate(job, [{ id: `${job}-case`, sourceRevision: evidence.source.commitId, event }], `${job}-current`)
     assert.equal(current[0]!.status, "passed", current[0]!.observed)
     assert.deepEqual(current[0]!.evidence, [`source:${evidence.source.commitId}`], `${job} reuses the inspected evidence`)
@@ -161,6 +167,33 @@ test(`a held-out case pinned to a commit this host never held still executes and
   const required = await f.capture({ repo: "example/repo", prompt: "README.md", sourceRevision: f.stranger })
   assert.equal(required._tag, "Failure", "a job's own source revision stays mandatory")
   assert.equal(required._tag === "Failure" ? required.failure.code : "", "invalid_receipt")
+})
+
+/*
+ * Canary walk run 3: the review and CI cases were pinned to a replaced
+ * workspace's commit, the substitution scored them against this workspace's
+ * source, and every run ended "step review error — The workspace source is not
+ * the event's candidate revision". An event that names its own candidate is the
+ * one source those steps accept, so an evaluation of it captures that commit.
+ */
+test(`a review or CI case is evaluated on its event's candidate revision, not on substituted source (${mode})`, gate, async t => {
+  const f = await harness(t, mode), source = f.evidence.source.commitId
+
+  for (const [job, event] of [["review", prEvent(f.pinned, source)], ["ci", ciPrEvent(f.pinned)]] as const) {
+    const scored = await f.evaluate(job, [{ id: `${job}-case`, sourceRevision: f.stranger, event }], `${job}-candidate`)
+    assert.equal(scored[0]!.status, "passed", scored[0]!.observed)
+    assert.deepEqual(scored[0]!.evidence, [`source:${f.pinned}`], `${job} runs on the commit its event names`)
+    assert.equal(f.executed.includes(f.pinned), true, `${job} hands the candidate revision to the production steps`)
+    assert.equal(f.executed.includes(source), false, "and never the workspace's own current source")
+    assert.equal(scored[0]!.observed, `${judged} (the case's pinned commit ${short(f.stranger)} was not held by this workspace; scored against ${short(f.pinned)})`)
+  }
+
+  const missing = "c".repeat(40)
+  const absent = await f.evaluate("review", [{ id: "review-case", sourceRevision: f.pinned, event: prEvent(missing, source) }], "review-candidate-absent")
+  assert.equal(absent[0]!.status, "error")
+  assert.match(absent[0]!.observed, /^The event's candidate revision cccccccccccc could not be captured: source_unavailable — /)
+  assert.match(absent[0]!.observed, /Inspect again to re-pin this case\.$/)
+  assert.equal(f.executed.includes(source), false, "a candidate this host cannot capture never scores other source")
 })
 
 test(`a source lookup that cannot answer keeps its own fault class instead of substituting source (${mode})`, gate, async t => {

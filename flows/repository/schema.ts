@@ -11,8 +11,11 @@ export const Step = Schema.Struct({ id: text(100), name: text(120),
   mode: Schema.Literals(["automatic", "manual", "off", "approved"]), prompt: text(16000) })
 export const Check = Schema.Struct({ id: text(100), name: text(120), kind: Schema.Literals(["command", "ai"]),
   rule: text(16000), paths: Schema.Array(text(500)).check(Schema.isMaxLength(100)), policy: Schema.Literals(["report", "required"]) })
+/** `edited` marks a case the maintainer wrote or changed, so its pin is theirs.
+ * Every other case belongs to the inspection that authored it, which re-pins it. */
 export const EvalCase = Schema.Struct({ id: text(100), name: text(160), input: text(16000),
-  expected: Schema.NonEmptyString.check(Schema.isMaxLength(8000)), source: Schema.optionalKey(text(1000)), required: Schema.Boolean })
+  expected: Schema.NonEmptyString.check(Schema.isMaxLength(8000)), source: Schema.optionalKey(text(1000)),
+  edited: Schema.optionalKey(Schema.Boolean), required: Schema.Boolean })
 export const Draft = Schema.Struct({
   steps: Schema.Array(Step).check(Schema.isMaxLength(30)), checks: Schema.Array(Check).check(Schema.isMaxLength(50)),
   cases: Schema.Array(EvalCase).check(Schema.isMaxLength(100)), replies: Schema.Literals(["draft", "automatic"]),

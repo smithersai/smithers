@@ -84,8 +84,31 @@ test("the held-out source of a suggested case is the commit the inspection captu
   const cases = suggestedSetupDraft(draft, suggestion(), captured).cases
   assert.equal(JSON.parse(cases[0]!.input).sourceRevision, captured)
   assert.notEqual(suggestedCase.input.sourceRevision, captured)
-  const authored: Draft = { ...draft, cases: [{ id: "mine", name: "Mine", input: JSON.stringify(suggestedCase.input), expected: "Answers.", required: true }] }
+  const authored: Draft = { ...draft, cases: [{ id: "mine", name: "Mine", input: JSON.stringify(suggestedCase.input),
+    expected: "Answers.", required: true, edited: true }] }
   assert.deepEqual(suggestedSetupDraft(authored, suggestion(), captured).cases, authored.cases, "the host never rewrites a case the user already has")
+})
+
+/** A workspace is replaced; the next inspection captures another commit. Every
+ * case that inspection wrote is its own, so its pin moves with it, and a case
+ * the maintainer wrote or edited keeps the commit they chose. */
+test("a fresh inspection re-pins the cases it authored and leaves an edited case alone", () => {
+  const authored = suggestedSetupDraft(draft, suggestion(), captured)
+  const replaced = "d".repeat(40)
+  const repinned = suggestedSetupDraft(authored, suggestion(), replaced)
+  assert.equal(JSON.parse(repinned.cases[0]!.input).sourceRevision, replaced)
+  assert.deepEqual({ ...JSON.parse(repinned.cases[0]!.input), sourceRevision: captured }, JSON.parse(authored.cases[0]!.input),
+    "only the pin moves; the event, assertions and expected answer are untouched")
+  assert.deepEqual({ ...repinned.cases[0]!, input: authored.cases[0]!.input }, authored.cases[0])
+
+  const edited = { ...authored, cases: [{ ...authored.cases[0]!, edited: true, expected: "The reply cites CONTRIBUTING.md." }] }
+  assert.deepEqual(suggestedSetupDraft(edited, suggestion(), replaced).cases, edited.cases, "an edited case keeps the commit it names")
+})
+
+test("a suggested case whose input the maintainer replaced with unreadable text is left as written", () => {
+  const authored = suggestedSetupDraft(draft, suggestion(), captured)
+  const opaque = { ...authored, cases: [{ ...authored.cases[0]!, input: "answer the question" }] }
+  assert.deepEqual(suggestedSetupDraft(opaque, suggestion(), "d".repeat(40)).cases, opaque.cases)
 })
 
 /** The event a chore runs on is the maintainer's decision, not a suggestion. */
