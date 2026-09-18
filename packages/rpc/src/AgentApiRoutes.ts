@@ -325,6 +325,19 @@ export const RECOMMEND_OUTCOME_PATH = "/api/recommend/outcome"
 export const ADMIN_RECOMMEND_LOG_PATH = "/api/admin/recommend/log"
 
 /*
+ * The Jev relay: the browser holds no gateway key, so it posts one decision
+ * (a state and the questions to answer about it) and reads Jev's typed
+ * answers back (apps/server/src/jevRelay.ts).
+ */
+/**
+ * The Jev evaluation relay shared by server and client.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const JEV_PATH = "/api/jev"
+
+/*
  * The local app's own chat boundary (apps/app/docs/LOCAL-APP.md): the Bun
  * main process serves these on http://127.0.0.1:<port> and the SPA streams
  * the same NDJSON AgentTurnFrames the native bridge used to carry.

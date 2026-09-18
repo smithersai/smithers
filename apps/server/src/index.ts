@@ -14,6 +14,7 @@ import {
   BILLING_ROUTE_PREFIX,
   CANCEL_PATH,
   IDENTITY_ROUTE_PREFIX,
+  JEV_PATH,
   MODEL_STREAM_PATH,
   RECOMMEND_OUTCOME_PATH,
   RECOMMEND_PATH,
@@ -54,6 +55,7 @@ import {
 import { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import { handlePublicRepoActivity, parsePublicRepoActivityPath } from "./publicRepoActivity"
 import { handlePublicRepos } from "./publicRepos"
+import { handleJev } from "./jevRelay"
 import { handleRecommend, handleRecommendOutcome, RecommendLog } from "./recommend"
 import {
   handleTriggerApproval,
@@ -326,6 +328,14 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
       const login = validation?.status === "valid" ? validation.identity.login : undefined
       return yield* handleRecommend(request, login, ISOLATION_HEADERS)
+    }
+    // The Jev relay (src/jevRelay.ts): the browser's one door to the decision
+    // model, on the recommender's posture and out of the recommender's
+    // ceiling — open to a visitor, a login when the session validates.
+    if (url.pathname === JEV_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
+      return yield* handleJev(request, validation?.status === "valid" ? validation.identity.login : undefined, ISOLATION_HEADERS)
     }
     if (url.pathname === INSTALLATIONS_PATH || url.pathname.startsWith(`${INSTALLATIONS_PATH}/`)) {
       if (request.method !== "GET") return methodNotAllowed()

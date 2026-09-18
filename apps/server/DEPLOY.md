@@ -216,7 +216,7 @@ bun x wrangler secret list                         # names only
 | `BILLING_ADMIN_TOKEN` | `POST /api/admin/grant` |
 | `ANONYMOUS_TURN_SALT` | the anonymous turn buckets |
 | `CEREBRAS_API_KEY` | the cloud roles (the Librarian, the Flows agent) |
-| `AI_GATEWAY_API_KEY` | Jev: `POST /api/recommend` and the turn route's front door |
+| `AI_GATEWAY_API_KEY` | Jev: `POST /api/recommend`, `POST /api/jev`, and the turn route's front door |
 | `SMITHERS_GITHUB_APP_ID` | the GitHub App JWT (`src/githubApp.ts`) |
 | `SMITHERS_GITHUB_APP_PRIVATE_KEY` | the GitHub App JWT (PEM, PKCS#1 or PKCS#8) |
 | `GITHUB_TOKEN` | optional override of the App for catalog stats |
@@ -374,6 +374,12 @@ signed-out visitors under their own daily ceilings (300 per address or login,
   rule governs the turn route's front door (`src/frontDoor.ts`), which
   refuses with the typed failures a cloud role turn uses for an unavailable
   model.
+- `POST /api/jev` is the same key's second door: the browser holds no gateway
+  key, so it posts one decision (`{ state, questions }`, at most 8 questions,
+  255 options per choice, 32 KiB of state, the 256 KiB body cap) and reads
+  Jev's typed answers back. It spends the recommendation ceilings under the
+  same buckets, refuses with the same typed 503s, and stores nothing. The
+  wiki's `recall` door ranks its keyword shortlist through it.
 - `CEREBRAS_API_KEY` is NOT spent here. It belongs to the cloud roles, the
   Librarian and the Flows agent (`src/cloudRoleTurn.ts`), and stays required
   for them.
