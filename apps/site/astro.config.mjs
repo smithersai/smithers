@@ -97,8 +97,11 @@ export default defineConfig({
       chunkSizeWarningLimit: 900,
       // The home page's stylesheet is about 7.5 kB, over Vite's 4 kB default;
       // raising the limit lets `build.inlineStylesheets: "auto"` inline it and
-      // removes the last render-blocking request on `/`.
-      assetsInlineLimit: 8192
+      // removes the last render-blocking request on `/`. Fonts never inline:
+      // @fontsource's non-latin subsets are under 8 kB each, and as files their
+      // unicode-range keeps a Latin visitor from downloading them at all,
+      // while inlined they add ~180 kB of base64 to every visitor's app CSS.
+      assetsInlineLimit: (filePath, content) => (/\.woff2?$/.test(filePath) ? false : content.byteLength < 8192)
     }
   },
   integrations: [
