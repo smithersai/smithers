@@ -25,6 +25,7 @@ import { Schema, SchemaRepresentation } from "effect"
 import type { JsonSchema } from "effect"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
+import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { runtimeRunKey } from "../RuntimeProjection"
 import { errorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
@@ -292,6 +293,14 @@ type Relayed =
 /**
  * One call to the workspace through the existing `/api/workflow/rpc` relay.
  *
+ * The call names the workspace the repository's reviewed jobs run on, because
+ * that box is the one holding the registrar: the workspace gateway runs the
+ * coding host, whose catalog carries `repository/setup`, `repository/trigger`
+ * and the five `repository-jobs/*` (flows/repository/registry.ts), while the
+ * repository's own gateway runs the product host and carries the two
+ * librarian flows. A relay call that names no workspace reaches the second
+ * one, which answers `flow_not_found` for the registrar on every repository.
+ *
  * A refusal keeps the refusing party's own words: the host's module-form
  * sentence and the control plane's `flow_not_found` listing reach the human
  * exactly as they were written, which is the only way a truthful refusal
@@ -303,12 +312,17 @@ const relay = async (
   procedure: string,
   payload: unknown
 ): Promise<Relayed> => {
+  const workspaceId = repositoryJobWorkspace(
+    ctx.store.collections.cards.values(),
+    repo,
+    ctx.store.collections.identitySessions.get("identity")?.login ?? null
+  )
   let response: Response
   try {
     response = await ctx.http(`${ctx.baseUrl}${WORKFLOW_RPC_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ repo, procedure, payload })
+      body: JSON.stringify({ repo, procedure, payload, ...(workspaceId === undefined ? {} : { workspaceId }) })
     })
   } catch (error) {
     return { ok: false, message: unreachableSentence("the workspace", error) }

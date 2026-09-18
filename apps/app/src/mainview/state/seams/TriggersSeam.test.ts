@@ -8,6 +8,7 @@ import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
+import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { NO_RULES_SENTENCE, registerUnavailableSentence } from "./TriggersSeam"
 
 const createAppController = scopedControllers()
@@ -315,6 +316,8 @@ const APPROVAL = "/api/workflow/trigger-approval"
 interface RelayCall {
   readonly procedure: string
   readonly payload: Record<string, unknown>
+  /** Which box the Worker was asked to relay to: the repository's own, or one workspace's. */
+  readonly workspaceId?: string
 }
 
 const PLAN_DIGEST = "d".repeat(64)
@@ -341,8 +344,8 @@ const relayRoute = (
   answers: Record<string, (payload: Record<string, unknown>) => unknown>
 ): Route =>
 async (request) => {
-  const frame = await request.json() as { procedure: string; payload: Record<string, unknown> }
-  calls.push({ procedure: frame.procedure, payload: frame.payload })
+  const frame = await request.json() as { procedure: string; payload: Record<string, unknown>; workspaceId?: string }
+  calls.push({ procedure: frame.procedure, payload: frame.payload, ...(frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId }) })
   const answer = answers[frame.procedure]
   /* A stub may answer late, or never: a launch a reload interrupts is a call the workspace never answers. */
   return json(200, answer === undefined ? { ok: false, error: { message: `no stub for ${frame.procedure}` } } : await answer(frame.payload))
@@ -441,6 +444,21 @@ const lastAction = (store: AppStore) =>
 
 const REQUEST = { operation: "register" as const, repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: '{"label":"nightly"}' }
 
+/** The workspace Smithers Cloud gave this repository's reviewed jobs. */
+const JOB_WORKSPACE = "b9275008-1c3e-4f2a-9a7d-0c2f5a6b1d84"
+
+/** One reviewed job already set up on `repo`, as its own card records the workspace it ran on. */
+const jobSetUp = async (store: AppStore, repo = "will/flows", workspaceId = JOB_WORKSPACE): Promise<void> => {
+  await store.dispatch({
+    type: "card.upsert",
+    actor: "system",
+    card: {
+      id: `setup-${repo}-issues`, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1,
+      payload: { ...initialSetup(repo, "issues", "will"), workspaceId }
+    }
+  }).isPersisted.promise
+}
+
 describe("triggers seam: registering a repository flow on a schedule", () => {
   test("a bad name or a schedule that is not five UTC cron fields is refused before anything is asked of the workspace", async () => {
     const seen: Array<string> = []
@@ -499,6 +517,37 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     /* The standing budget a person grants by approving is on the card they approve. */
     expect(preview).toContain("200000 tokens")
     expect(preview).toContain("30 min")
+  })
+
+  /*
+   * The registrar is a built-in of the workspace coding host (flows/coding
+   * host.ts, flows/repository/registry.ts). A relay call that names no
+   * workspace reaches the repository's own gateway instead, which runs the
+   * product host and holds the two librarian flows and no registrar at all —
+   * the canary's `No flow "repository/trigger" is registered on this
+   * workspace.` on every repository.
+   */
+  test("every relayed call names the workspace the repository's reviewed jobs run on", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    await jobSetUp(store)
+    expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+    expect(calls.map((call) => call.workspaceId)).toEqual([JOB_WORKSPACE, JOB_WORKSPACE])
+  })
+
+  test("a repository with no reviewed job set up has no recorded workspace to name", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) }),
+      { signedIn: true }
+    )
+    await jobSetUp(store, "will/other")
+    expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
+    expect(calls.map((call) => call.workspaceId)).toEqual([undefined, undefined])
   })
 
   test("correcting the input prepares a new plan instead of pinning the first one to the name forever", async () => {
