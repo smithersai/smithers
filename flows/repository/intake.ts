@@ -5,6 +5,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Effect, Option, Result, Schema } from "effect"
 import * as Journal from "../../packages/smithers/flows/journal/src/Journal.ts"
 import * as JournalEvent from "../../packages/smithers/flows/journal/src/JournalEvent.ts"
+import { CodingError } from "../coding/schema.ts"
 import { IntakeScreening, type Event } from "./schema.ts"
 
 /** The step whose decision the journal event records. It runs inside the
@@ -175,13 +176,17 @@ export interface ScreenedEvent {
  * event at {@link ignoreConfidence} or above is ignored, which ends the job
  * the way an already-ignored event ends it. A text whose injection
  * probability reaches {@link injectionProbability} is replaced by
- * {@link withheldPlaceholder} on its own. Anything else proceeds exactly as
- * before, with the answers carried along as data.
+ * {@link withheldPlaceholder} on its own. An answer below either threshold is
+ * Jev deciding, so the event proceeds and the answers ride along as data.
  *
- * An evaluator that is unconfigured, refused, or out of time is not a reason
- * to stop: the screen proceeds untouched and the journal names the failure.
+ * An evaluator that is unconfigured, refused, malformed or out of time is a
+ * reason to stop. A text nobody screened is a text no model may read, so the
+ * screen fails the job with a typed {@link CodingError} naming the
+ * evaluator's own error, and the journal records `failed` with that reason.
+ * One unanswered text of several is the same refusal: a partly screened event
+ * would carry unscreened text into every later prompt.
  */
-export const screenEvent = (input: { readonly repo: string; readonly event: typeof Event.Type; readonly payload: unknown }): Effect.Effect<ScreenedEvent> =>
+export const screenEvent = (input: { readonly repo: string; readonly event: typeof Event.Type; readonly payload: unknown }): Effect.Effect<ScreenedEvent, CodingError> =>
   Effect.gen(function*() {
     const texts = intakeTexts(input.payload)
     // Nothing to screen: a push, a schedule, or a manual dispatch carries no
@@ -199,7 +204,7 @@ export const screenEvent = (input: { readonly repo: string; readonly event: type
     let primary: typeof answers[number] | undefined
     for (const [index, text] of texts.entries()) {
       const result = results[index]!
-      if (Result.isFailure(result)) { failures.push(`${text.id}: ${result.failure.code}`); continue }
+      if (Result.isFailure(result)) { failures.push(`${text.id}: ${result.failure.code} — ${result.failure.message}`); continue }
       const answer = {
         id: text.id, kind: result.success.kind.value, kindConfidence: result.success.kind.confidence,
         urgency: result.success.urgency.label, urgencyConfidence: result.success.urgency.confidence,
@@ -213,9 +218,9 @@ export const screenEvent = (input: { readonly repo: string; readonly event: type
     // bug cannot drop the bug, and an unanswered subject never drops anything.
     const ignored = primary !== undefined && (primary.kind === "spam" || primary.kind === "irrelevant") &&
       primary.kindConfidence >= ignoreConfidence
-    const action = ignored ? "ignored" : withheld.size > 0 ? `withheld:${withheld.size}` : "proceed"
     const reason = failures.length === 0 ? undefined
       : `${results.length === failures.length ? "unanswered" : "partly unanswered"}; ${failures.join(", ")}`.slice(0, 400)
+    const action = reason !== undefined ? "failed" : ignored ? "ignored" : withheld.size > 0 ? `withheld:${withheld.size}` : "proceed"
     const screening = { action, answers, ...(primary === undefined ? {} : { kind: primary.kind, urgency: primary.urgency }),
       ...(reason === undefined ? {} : { reason }) }
     const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
@@ -225,5 +230,8 @@ export const screenEvent = (input: { readonly repo: string; readonly event: type
       thresholds: { ignoreConfidence, injectionProbability }, action, answers,
       ...(reason === undefined ? {} : { reason })
     })
+    if (reason !== undefined) {
+      return yield* Effect.fail(new CodingError({ code: "unavailable", message: `Jev could not screen this event: ${reason}` }))
+    }
     return { payload: ignored ? input.payload as Schema.Json : redactPayload(input.payload, withheld), screening }
   })

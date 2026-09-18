@@ -7,6 +7,7 @@ import { Effect, FileSystem, Layer, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import * as Journal from "../../packages/smithers/flows/journal/src/Journal.ts"
 import { initialSetup, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { CodingError } from "../coding/schema.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { executionLayers, selectedSteps } from "../repository/execution.ts"
 import { ignoreConfidence, injectionProbability, intakeScreenedEvent, intakeTexts, screenEvent, withheldPlaceholder } from "../repository/intake.ts"
@@ -141,16 +142,42 @@ test("an injected comment is withheld alone and the texts beside it reach the mo
   }
 })
 
-test("an unconfigured evaluator proceeds untouched and names the reason", async () => {
-  const screened = await screen({ issue }, Evaluator.layerUnavailable())
-  assert.equal(screened.screening.action, "proceed")
-  assert.deepEqual(screened.payload, { issue })
-  assert.deepEqual(screened.screening.answers, [])
-  assert.equal(screened.screening.kind, undefined)
-  assert.match(screened.screening.reason!, /unanswered; issue: unreachable/)
-  const ran = await runSteps(screened.payload, screened.screening)
-  assert.deepEqual(ran.seen.map(work => work.event.payload), ran.seen.map(() => ({ issue })))
-  assert.equal(ran.seen[0]!.intake, undefined)
+test("an unconfigured evaluator fails the job instead of letting the event through", async () => {
+  const failure = await Effect.runPromise(screenEvent({ repo, event: event({ issue }), payload: { issue } }).pipe(
+    Effect.provide(Evaluator.layerUnavailable()), Effect.flip))
+  assert.ok(failure instanceof CodingError, `expected a typed CodingError, got ${String(failure)}`)
+  assert.equal(failure.code, "unavailable")
+  assert.equal(failure.message,
+    "Jev could not screen this event: unanswered; issue: unreachable — No evaluator is installed on this host")
+})
+
+test("a partly unanswered screen fails too; no text reaches a model unscreened", async () => {
+  let call = 0
+  const flaky = Evaluator.layerScripted(() => {
+    if (call++ === 0) return { injection: { probability: 0.01 }, kind: { choice: "bug", probabilities: { bug: 0.8 } }, urgency: { score: 0 } }
+    return Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "the gateway did not answer" }))
+  })
+  const failure = await Effect.runPromise(screenEvent({ repo, event: event({ issue, comment: { body: "same here" } }),
+    payload: { issue, comment: { body: "same here" } } }).pipe(Effect.provide(flaky), Effect.flip))
+  assert.equal(failure.code, "unavailable")
+  assert.match(failure.message, /^Jev could not screen this event: partly unanswered; comment: timeout/)
+})
+
+test("the journal names the failure and the job ends there", async () => {
+  const emitted: Array<{ readonly eventType: string; readonly payload: Record<string, unknown> }> = []
+  const journal = Layer.succeed(Journal.Journal, { emitLossy: (input: any) => Effect.sync(() => {
+    emitted.push({ eventType: input.eventType, payload: input.payload })
+    return { _tag: "Accepted" }
+  }) } as never)
+  const failure = await Effect.runPromise(screenEvent({ repo, event: event({ issue }), payload: { issue } }).pipe(
+    Effect.provide(Evaluator.layerUnavailable()), Effect.provide(journal),
+    Effect.provideService(FlowRuntime.FlowInstance, { executionId: "job-root" } as never), Effect.flip))
+  assert.equal(failure.code, "unavailable")
+  assert.equal(emitted.length, 1)
+  assert.equal(emitted[0]!.eventType, intakeScreenedEvent)
+  assert.equal(emitted[0]!.payload.action, "failed")
+  assert.match(String(emitted[0]!.payload.reason), /^unanswered; issue: unreachable/)
+  assert.deepEqual(emitted[0]!.payload.answers, [])
 })
 
 test("the journal event carries the answers, both thresholds and the action taken", async () => {

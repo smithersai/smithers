@@ -16,7 +16,7 @@ import { composeCiChecks, inheritedCheckId, rawCheckId, readCiPolicy } from "../
 import { Landing } from "../coding/landing.ts"
 import { NativeCoding, NativeCodingError, SourceCreation, type CreateSource, type NativeRevision } from "../coding/native.ts"
 import { changeAdmission, changeLayers, DraftChange, ProposalStep, selectChangeSource } from "../repository/changes.ts"
-import { checkLayers, SemanticCheck } from "../repository/checks.ts"
+import { checkLayers, JevSemanticCheck } from "../repository/checks.ts"
 import { deliveryLayers } from "../repository/delivery.ts"
 import { captureJobSource } from "../repository/execution.ts"
 import { captureRepository } from "../repository/inspection.ts"
@@ -185,15 +185,20 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "f
         assert.deepEqual(request.creation, { requestId: receipt.requestId, requestDigest: receipt.requestDigest })
         return { status: "retained" as const, requestId: request.requestId, workspaceId: receipt.workspaceId, repositoryId: 3,
           ref: `refs/smithers/workspaces/${receipt.workspaceId}/sources/${f.child.commitId}`, source: f.child } }) }
-    const runtime = ManagedRuntime.make(Layer.mergeAll(changeLayers(f.options), checkLayers(f.options), deliveryLayers,
-      DraftChange.toLayer(author => Effect.sync(() => { calls.push("draft"); assert.equal(author.evidence.source.commitId, f.base.commitId)
-        return { summary: "Update the implementation", question: "", children: [], baseline: [], proposal: [{ path: "code.txt", beforeDigest: digest("original\n"), content: "checked implementation\n" }] } })),
-      SemanticCheck.toLayer(input => Effect.sync(() => { seenChecks.push(input.comparison.candidate)
-        if (input.check.id === advisory.id) return { verdict: "fail" as const, summary: "The change edits code.txt",
-          examinedPaths: input.comparison.paths, findings: input.comparison.paths.map(path => ({ path, line: 1, message: "Outside the requested scope" })) }
-        return { verdict: mode === "fresh-check-failed" && input.comparison.candidate === f.child.commitId ? "uncertain" as const : "pass" as const,
-          summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }))
-    ).pipe(Layer.provide(Layer.mergeAll(f.platform, Layer.succeed(NativeCoding, native), Layer.succeed(Landing, landing))),
+    // Jev is the only model an AI check asks, so this scripts Jev's verdict
+    // where the frontier seat's used to be scripted. `provideMerge` builds the
+    // host's own binding first, so this override is the registration that
+    // wins; the proposal/landing machinery under test is unchanged.
+    const scriptedJev = JevSemanticCheck.toLayer(input => Effect.sync(() => { seenChecks.push(input.comparison.candidate)
+      if (input.check.id === advisory.id) return { verdict: "fail" as const, summary: "The change edits code.txt",
+        examinedPaths: input.comparison.paths, findings: input.comparison.paths.map(path => ({ path, line: 1, message: "Outside the requested scope" })) }
+      return { verdict: mode === "fresh-check-failed" && input.comparison.candidate === f.child.commitId ? "uncertain" as const : "pass" as const,
+        summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }))
+    const runtime = ManagedRuntime.make(scriptedJev.pipe(
+      Layer.provideMerge(Layer.mergeAll(changeLayers(f.options), checkLayers(f.options), deliveryLayers,
+        DraftChange.toLayer(author => Effect.sync(() => { calls.push("draft"); assert.equal(author.evidence.source.commitId, f.base.commitId)
+          return { summary: "Update the implementation", question: "", children: [], baseline: [], proposal: [{ path: "code.txt", beforeDigest: digest("original\n"), content: "checked implementation\n" }] } })))),
+      Layer.provide(Layer.mergeAll(f.platform, Layer.succeed(NativeCoding, native), Layer.succeed(Landing, landing))),
       Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer)))
     t.after(() => runtime.dispose())
     const output = await runtime.runPromise(ProposalStep.execute({ work }, { executionId: chore ? "preserved-chore" : "preserved-feature" }))

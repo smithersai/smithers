@@ -3,12 +3,14 @@ import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Action } from "@smthrs/flow"
+import { Action, FlowRuntime } from "@smthrs/flow"
 import { FlowEngine } from "@smthrs/engine"
-import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
+import { Effect, FileSystem, Layer, ManagedRuntime, Result, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
-import { AICheck, checkLayers, SemanticCheck, verifyTrialChecks, type CheckOutput, type CheckPlan, type CheckResult, type Comparison, type SemanticVerdict } from "../repository/checks.ts"
-import { batches, evaluatorLayer, hunks, jevSemanticCheck, MAX_STATES } from "../repository/jev-checks.ts"
+import { CodingError } from "../coding/schema.ts"
+import * as Checks from "../repository/checks.ts"
+import { AICheck, checkLayers, inconclusiveCheck, RunChecks, verifyTrialChecks, type CheckOutput, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
+import { batches, evaluatorLayer, hunks, jevSemanticCheck, MAX_STATES, proposalHunks } from "../repository/jev-checks.ts"
 import type { CheckContext } from "../repository/check-context.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check, Draft, JobResult, StepResult } from "../repository/schema.ts"
@@ -76,6 +78,31 @@ test("hunk extraction reports every changed hunk and its first candidate line", 
   assert.deepEqual(hunks({ ...comparison, diff: "" }), [], "no diff is no hunk, never a silent clean sweep")
 })
 
+/** A proposal is checked before it is a commit, so `captureChecks` hands it no
+ * diff at all. With the frontier seat gone, a proposal with no state would
+ * make every produced change's required review uncertain. */
+test("a proposal with no diff is judged from its exact changes", async () => {
+  const proposal: typeof Comparison.Type = { base, candidate: `${base}+${"1".repeat(64)}`, diff: "", paths: ["src/a.ts"],
+    files: [{ path: "src/a.ts", text: "const width = 3\n", digest: Digest.digest("const width = 3\n"), truncated: false }],
+    changes: [{ path: "src/a.ts", before: "const w = 3\n", after: "const width = 3\n" }] }
+  assert.deepEqual(hunks(proposal), [], "the parser still reads only a real diff")
+  assert.deepEqual(proposalHunks(proposal), [{ path: "src/a.ts", line: 1, hunk: "@@ -1,1 +1,1 @@\n-const w = 3\n+const width = 3" }])
+  const asked: Array<string> = []
+  const verdict = await Effect.runPromise(jevSemanticCheck(proposal, check).pipe(
+    Effect.provide(Evaluator.layerScripted(request => {
+      asked.push((request.state as { hunk: string }).hunk)
+      return { violates: { probability: 0.95 } }
+    }))))
+  assert.equal(asked.length, 1, "the proposed change is one state Jev can actually judge")
+  assert.equal(verdict.verdict, "fail")
+  assert.deepEqual([...verdict.findings], [{ path: "src/a.ts", line: 1, message: rule }])
+})
+
+test("a deleted proposal path is judged as the removal it is", () => {
+  assert.deepEqual(proposalHunks({ ...comparison, diff: "", changes: [{ path: "src/gone.ts", before: "const a = 1\n", after: null }] }),
+    [{ path: "src/gone.ts", line: 1, hunk: "@@ -1,1 +0,0 @@\n-const a = 1" }])
+})
+
 test("a batch carries at most 64 states and keeps every one", () => {
   const seventy = Array.from({ length: 70 }, (_, index) => index)
   assert.equal(MAX_STATES, 64)
@@ -98,11 +125,12 @@ test("seventy hunks are judged in two batches and every one is answered", async 
   assert.deepEqual([...verdict.examinedPaths], ["src/a.ts"])
 })
 
-/** One AI check run end to end through the real `AICheck` flow, with a scripted
- * Jev and a scripted seat, so the branch under test is the deployed one. */
+/** One AI check run end to end through the real `AICheck` flow with a scripted
+ * Jev, so the branch under test is the deployed one. Jev is the only model in
+ * the flow: there is no seat to script, and an evaluator that cannot answer
+ * fails the flow rather than routing anywhere. */
 const runCheck = async (probability: (path: string, line: number) => number | undefined, evaluator?: Layer.Layer<Evaluator.Evaluator>) => {
   const asked: Array<string> = []
-  const seat: Array<string> = []
   const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
   const scripted = evaluator ?? Evaluator.layerScripted(request => {
     const state = request.state as { path: string; line: number; rule: string; hunk: string }
@@ -113,20 +141,27 @@ const runCheck = async (probability: (path: string, line: number) => number | un
     if (value === undefined) return Effect.fail(new Evaluator.EvaluatorError({ code: "refused", message: "scripted refusal" }))
     return { violates: { probability: value } }
   })
-  const runtime = ManagedRuntime.make(Layer.mergeAll(
-    checkLayers({ repositoryPath: "/nonexistent", fs, evaluator: scripted }),
-    SemanticCheck.toLayer(input => Effect.sync(() => {
-      seat.push(input.check.id)
-      return { verdict: "pass" as const, summary: "The seat read the whole comparison", examinedPaths: input.comparison.paths, findings: [] }
-    }))
-  ).pipe(Layer.provide(Jj.layerNoop({})), Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer)))
+  const runtime = ManagedRuntime.make(
+    checkLayers({ repositoryPath: "/nonexistent", fs, evaluator: scripted }).pipe(
+      Layer.provide(Jj.layerNoop({})), Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer)))
   try {
-    const result = await runtime.runPromise(AICheck.execute({ plan, check, comparison, context }, { executionId: "jev-check" }))
-    return { result, asked, seat }
+    const outcome = await runtime.runPromise(
+      AICheck.execute({ plan, check, comparison, context }, { executionId: "jev-check" }).pipe(Effect.result))
+    return { outcome, asked }
   } finally {
     await runtime.dispose()
   }
+}
+type Outcome = Result.Result<typeof CheckResult.Type, unknown>
+const retained = (outcome: Outcome): typeof CheckResult.Type => {
+  assert.ok(Result.isSuccess(outcome), `expected a retained check row, got ${JSON.stringify(outcome)}`)
+  return outcome.success
+}
+const refusal = (outcome: Outcome): CodingError => {
+  assert.ok(Result.isFailure(outcome), `expected a typed failure, got ${JSON.stringify(outcome)}`)
+  assert.ok(outcome.failure instanceof CodingError, `expected a CodingError, got ${String(outcome.failure)}`)
+  return outcome.failure
 }
 
 const verdictOf = (result: typeof CheckResult.Type) => Schema.decodeUnknownSync(Schema.Struct({
@@ -136,10 +171,10 @@ const verdictOf = (result: typeof CheckResult.Type) => Schema.decodeUnknownSync(
 }))(result.detail)
 
 test("every hunk decisively clean is a pass Jev decides on its own", async () => {
-  const { result, asked, seat } = await runCheck(() => 0.02)
+  const { outcome, asked } = await runCheck(() => 0.02)
+  const result = retained(outcome)
   assert.equal(result.status, "passed")
   assert.deepEqual(asked, ["src/a.ts:2", "src/a.ts:23", "src/b.ts:8"])
-  assert.deepEqual(seat, [], "a decisive pass spends no frontier call")
   const verdict = verdictOf(result)
   assert.equal(verdict.verdict, "pass")
   assert.equal(verdict.decidedBy, "jev")
@@ -149,9 +184,9 @@ test("every hunk decisively clean is a pass Jev decides on its own", async () =>
 })
 
 test("one decisively violating hunk is a fail whose finding is the rule itself", async () => {
-  const { result, seat } = await runCheck((path, line) => path === "src/a.ts" && line === 23 ? 0.95 : 0.02)
+  const { outcome } = await runCheck((path, line) => path === "src/a.ts" && line === 23 ? 0.95 : 0.02)
+  const result = retained(outcome)
   assert.equal(result.status, "failed")
-  assert.deepEqual(seat, [], "a decisive fail spends no frontier call")
   const verdict = verdictOf(result)
   assert.equal(verdict.verdict, "fail")
   assert.equal(verdict.decidedBy, "jev")
@@ -159,37 +194,90 @@ test("one decisively violating hunk is a fail whose finding is the rule itself",
   assert.equal(verdict.summary, "Jev flagged 1 of 3 hunks against Units")
 })
 
-test("an indecisive hunk is the only thing that spends the seat", async () => {
-  const { result, asked, seat } = await runCheck((path, line) => path === "src/b.ts" && line === 8 ? 0.5 : 0.02)
-  assert.equal(asked.length, 3, "Jev still judges every hunk before the seat is asked")
-  assert.deepEqual(seat, [check.id])
+test("an indecisive hunk is Jev's own uncertain verdict, retained as it stands", async () => {
+  const { outcome, asked } = await runCheck((path, line) => path === "src/b.ts" && line === 8 ? 0.5 : 0.02)
+  const result = retained(outcome)
+  assert.equal(asked.length, 3, "Jev judges every hunk and nothing else is asked")
+  assert.equal(result.status, "error", "an uncertain verdict is never a pass")
+  assert.equal(result.summary, inconclusiveCheck)
   const verdict = verdictOf(result)
-  assert.equal(result.status, "passed")
-  assert.equal(verdict.summary, "The seat read the whole comparison")
-  assert.equal(verdict.decidedBy, "seat")
+  assert.equal(verdict.verdict, "uncertain")
+  assert.equal(verdict.decidedBy, "jev", "the uncertainty is Jev's decision, not a missing one")
+  assert.equal(verdict.summary, "Jev was unsure about 1 of 3 hunks against Units")
 })
 
-test("a host with no gateway key asks the seat, exactly as before Jev", async () => {
-  const { result, asked, seat } = await runCheck(() => 0.02, evaluatorLayer({}))
-  assert.deepEqual(asked, [], "the scripted evaluator is not installed at all")
-  assert.deepEqual(seat, [check.id])
-  assert.equal(verdictOf(result).decidedBy, "seat")
-  assert.equal(result.status, "passed")
-})
-
-test("a refused evaluation is indecisive, never a verdict", async () => {
-  const { seat } = await runCheck(() => undefined)
-  assert.deepEqual(seat, [check.id])
-})
-
-test("a Jev verdict satisfies the trial verifier the seat's verdict satisfies", async () => {
-  const { result } = await runCheck(() => 0.02)
+test("a required rule Jev is unsure of cannot pass its trial gate", async () => {
+  const { outcome } = await runCheck((path, line) => path === "src/b.ts" && line === 8 ? 0.5 : 0.02)
+  const result = retained(outcome)
+  assert.equal(result.policy, "required")
+  assert.notEqual(result.status, "passed")
+  // Even a receipt that claims a passing gate is refused: the row itself says
+  // the required rule was never established on this source.
   const output: typeof CheckOutput.Type = { base, candidate, gate: "passed", results: [result] }
   const step: typeof StepResult.Type = { stepId: "checks", executionId: "step-checks", status: "completed",
     summary: "1 of 1 checks passed", evidence: [...result.evidence], output: JSON.parse(JSON.stringify(output)) }
   const configuration: Pick<typeof Draft.Type, "checks" | "steps"> = { checks: [check], steps: [work.step] }
   const job: typeof JobResult.Type = { repo: "example/repo", job: "ci", revision: 1, digest: "f".repeat(64),
     sourceRevision: candidate, eventKey: "event-1", publicActions: [], results: [step], status: "completed" }
-  verifyTrialChecks(configuration, job)
-  assert.equal(verdictOf(result).decidedBy, "jev", "the retained row records which model decided")
+  assert.throws(() => verifyTrialChecks(configuration, job),
+    /The trial recorded an unavailable check: units — The AI check did not establish complete scope coverage/)
+})
+
+test("a host with no gateway key fails the check with the evaluator's typed error", async () => {
+  const { outcome, asked } = await runCheck(() => 0.02, evaluatorLayer({}))
+  assert.deepEqual(asked, [], "the scripted evaluator is not installed at all")
+  const error = refusal(outcome)
+  assert.equal(error.code, "unavailable")
+  assert.equal(error.message, "Jev could not judge Units: unreachable — No evaluator is installed on this host")
+})
+
+test("an unavailable evaluator fails the check and reaches no other model", async () => {
+  const { outcome } = await runCheck(() => 0.02, Evaluator.layerUnavailable())
+  assert.equal(refusal(outcome).code, "unavailable")
+})
+
+test("a refused evaluation fails the check, never a verdict", async () => {
+  const { outcome } = await runCheck(() => undefined)
+  const error = refusal(outcome)
+  assert.equal(error.code, "unavailable")
+  assert.equal(error.message, "Jev could not judge Units: refused — scripted refusal")
+})
+
+test("the frontier checker seat is gone from the AI check surface", () => {
+  const surface = Checks as Record<string, unknown>
+  assert.equal(surface.SemanticCheck, undefined, "there is no seat action to fall back to")
+  assert.equal(surface.checkModelLayers, undefined, "and no model layer that only served it")
+  assert.equal(surface.checkModelNames, undefined)
+})
+
+/** The real `repository/run-checks` over one AI check whose flow failed the way
+ * an unreachable Jev fails it, so the recorded row is the deployed one. */
+const runChecksWith = (failure: CodingError) => Effect.gen(function*() {
+  const handlers = new Map<string, (payload: unknown) => { execute: Effect.Effect<unknown, unknown, never> }>()
+  const runtime = {
+    register: (declared: { _tag: string }, action: (payload: unknown) => { execute: Effect.Effect<unknown, unknown, never> }) =>
+      Effect.sync(() => handlers.set(declared._tag, action)),
+    execute: (flow: { _tag: string }) => flow._tag === "repository/AICheck" ? Effect.fail(failure)
+      : Effect.die(`unexpected child flow ${flow._tag}`)
+  }
+  const fs = yield* FileSystem.FileSystem
+  yield* Layer.build(checkLayers({ repositoryPath: "/nonexistent", fs, evaluator: Evaluator.layerUnavailable() }).pipe(
+    Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never), Action.layerImplementations])))
+  return (yield* handlers.get(RunChecks.name)!(Schema.decodeUnknownSync(RunChecks.payloadSchema)(plan)).execute.pipe(
+    Effect.provideService(FlowRuntime.FlowInstance, { executionId: "step-checks" } as never),
+    Effect.provideService(FlowRuntime.FlowRuntime, runtime as never))) as typeof StepResult.Type
+}).pipe(Effect.scoped, Effect.provide([Jj.layerNoop({}), NodeServices.layer]), Effect.runPromise)
+
+test("an evaluator failure is an errored row carrying its typed error, and blocks the gate", async () => {
+  const failure = new CodingError({ code: "unavailable", message: "Jev could not judge Units: unreachable — No evaluator is installed on this host" })
+  const step = await runChecksWith(failure)
+  assert.equal(step.status, "error")
+  const output = step.output as unknown as typeof CheckOutput.Type
+  assert.equal(output.gate, "blocked", "a required rule nobody could judge never passes")
+  assert.equal(output.results.length, 1)
+  const row = output.results[0]!
+  assert.equal(row.status, "error")
+  assert.equal(row.checkId, "units")
+  assert.deepEqual(row.detail, { _tag: "coding/Error", code: "unavailable",
+    message: "Jev could not judge Units: unreachable — No evaluator is installed on this host" })
 })

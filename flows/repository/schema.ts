@@ -67,10 +67,11 @@ export const IntakeAnswer = Schema.Struct({
   injection: unitInterval, withheld: Schema.Boolean
 })
 export const IntakeScreening = Schema.Struct({
-  /** `proceed`, `ignored`, or `withheld:<n>` for the number of texts replaced by the placeholder. */
+  /** `proceed`, `ignored`, `withheld:<n>` for the number of texts replaced by
+   * the placeholder, or `failed` when Jev could not answer and the job stops. */
   action: text(100), answers: Schema.Array(IntakeAnswer).check(Schema.isMaxLength(64)),
   kind: Schema.optionalKey(IntakeKind), urgency: Schema.optionalKey(IntakeUrgency),
-  /** Why an unanswered screen proceeded anyway: the evaluator's own failure code and message. */
+  /** Why the screen failed: the evaluator's own failure code and message, per unanswered text. */
   reason: Schema.optionalKey(text(400))
 })
 export const RepositoryEvidence = Schema.Struct({

@@ -46,7 +46,7 @@ import { bindRepositoryRegistry, provisionBuiltins, runningRepositoryPolicy, rep
 import type { RepositoryRemote } from "../repository/remote.ts"
 import { activationLayers } from "../repository/activation.ts"
 import { RunTrigger, triggerLayers } from "../repository/triggers.ts"
-import { checkLayers as repositoryCheckLayers, checkModelLayers, checkModelNames } from "../repository/checks.ts"
+import { checkLayers as repositoryCheckLayers } from "../repository/checks.ts"
 import { evaluatorLayer } from "../repository/jev-checks.ts"
 import { deliveryLayers } from "../repository/delivery.ts"
 import { replyLayers } from "../repository/replies.ts"
@@ -159,10 +159,11 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])
     )
     // Jev, the decision-only model the intake screen asks about every inbound
-    // event and the AI checks ask about every changed hunk. A host without a
-    // gateway key installs the unavailable transport, so the screen reports a
-    // missing evaluator, the seat decides every check, and the job proceeds
-    // untouched instead of hanging or inventing an answer.
+    // event and the AI checks ask about every changed hunk. It is the only
+    // model that answers either question. A host without AI_GATEWAY_API_KEY
+    // installs the unavailable transport, so every AI check errors and every
+    // event intake fails with that typed error, by design: nothing falls back
+    // to a frontier seat and no unscreened text reaches a model prompt.
     const evaluator = evaluatorLayer(process.env)
     const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
@@ -171,7 +172,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath,
         environment: options.checkEnvironment, evaluator }),
       changeLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
-      evidenceOnly(Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, checkModelLayers, changeModelLayers), new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...checkModelNames, ...changeModelNames])))
+      evidenceOnly(Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, changeModelLayers), new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...changeModelNames])))
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,
       checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }))
