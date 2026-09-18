@@ -158,24 +158,24 @@ describe("the client-side agent tool loop", () => {
     } finally { controller.dispose() }
   })
 
-  test("a pending delegation confirmation is described without claiming the agent launched", async () => {
+  test("a pending confirmation is described without claiming the flow ran", async () => {
     const store = await webStore()
     const { agent, requests } = scriptedToolAgent([
       () => [
-        { type: "tool_call" as const, call_id: "delegate", name: "commands", arguments: JSON.stringify({ action: "execute", name: "agent.delegate", args: "implementation review this" }) },
+        { type: "tool_call" as const, call_id: "clear", name: "commands", arguments: JSON.stringify({ action: "execute", name: "chat.clear" }) },
         { type: "done" as const, reason: "tool_call" as const }
       ],
       () => [{ type: "done" as const, reason: "stop" as const }]
     ])
     const controller = createAppController(store, unavailableRepositories, agent)
     try {
-      controller.send("delegate the review")
+      controller.send("start a fresh conversation")
       await settled(); await settled()
       expect(requests).toHaveLength(2)
       const acts = [...store.collections.messages.values()].filter((message) => message.act !== undefined)
-      expect(acts.map((message) => message.text)).toEqual(["Smithers asked for confirmation of /agent.delegate"])
-      expect([...store.collections.tabs.values()].some((tab) => tab.kind === "harness")).toBe(false)
-      expect([...store.collections.messages.values()].some((message) => message.action?.flow === "agent.delegate")).toBe(true)
+      expect(acts.map((message) => message.text)).toEqual(["Smithers asked for confirmation of /chat.clear"])
+      // The conversation is untouched until the human confirms: the ask is a message with the flow attached.
+      expect([...store.collections.messages.values()].some((message) => message.action?.flow === "chat.clear")).toBe(true)
     } finally { controller.dispose() }
   })
 

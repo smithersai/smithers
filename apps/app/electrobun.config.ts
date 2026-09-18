@@ -1,18 +1,4 @@
-import { existsSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import type { ElectrobunConfig } from "electrobun"
-
-/*
- * The portable smithers-build runtime a packaged bundle carries. Only the
- * packaging paths (scripts/build-native.ts, e2e/packaged/run.ts) prepare it,
- * through scripts/prepare-packaged-build-cli.ts, and both remove it again
- * afterwards. `electrobun dev` runs the checkout's packages/smithers/build/build-cli instead
- * (src/bun/Targets.ts resolveBuildCli), so a missing runtime must not fail the
- * dev bundle with CopySourceMissing: the copy applies only when the runtime is
- * on disk. A bare `electrobun build` without that preparation ships no loader.
- */
-const PACKAGED_BUILD_CLI = "packaged-runtime/build-cli"
-const packagedBuildCliPrepared = existsSync(fileURLToPath(new URL(PACKAGED_BUILD_CLI, import.meta.url)))
 
 export default {
   app: {
@@ -23,7 +9,7 @@ export default {
   build: {
     /*
      * The lowest-risk bridge from the 1.18 app: the main process stays on
-     * Bun, so src/bun keeps its Bun.serve server and Bun.spawn sandboxing.
+     * Bun, so src/bun keeps its Bun.serve local origin.
      */
     mainProcess: "bun",
     bun: {
@@ -33,8 +19,7 @@ export default {
     // serves that same dist/ over the local origin.
     copy: {
       "dist/index.html": "views/mainview/index.html",
-      "dist/assets": "views/mainview/assets",
-      ...(packagedBuildCliPrepared ? { [PACKAGED_BUILD_CLI]: "build-cli" } : {})
+      "dist/assets": "views/mainview/assets"
     },
     watchIgnore: ["dist/**"],
     mac: {

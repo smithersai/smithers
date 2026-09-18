@@ -1,7 +1,7 @@
 import { repositoryUpdateCardFamily } from "./RepositoryUpdateCard"
 import { repositorySetupCardFamily } from "./RepositorySetupCard"
 import { useLiveQuery } from "@tanstack/react-db"
-import { projectRepositoryUpdate, projectTargetStars } from "../state/CardProjection"
+import { projectRepositoryUpdate } from "../state/CardProjection"
 /*
  * The card renderer map: every card kind, from the family that owns it.
  *
@@ -14,7 +14,6 @@ import { projectRepositoryUpdate, projectTargetStars } from "../state/CardProjec
 import type { Card } from "../state/AppState"
 import { accountCardFamily } from "./AccountCard"
 import { adminCardFamily } from "./AdminCards"
-import { affectedCardFamily } from "./AffectedCard"
 import { agentCardFamily } from "./AgentCards"
 import { anonymousCeilingCardFamily } from "./AnonymousCeilingCard"
 import { approvalCardFamily } from "./ApprovalCard"
@@ -24,12 +23,10 @@ import type { CardActions, CardFamily, CardFamilyEntry, CardProjectionAuthority 
 import { changeCardFamily } from "./ChangeCards"
 import { commitPickCardFamily } from "./CommitPickCard"
 import { commitCardFamily } from "./CommitCards"
-import { ciMatrixCardFamily } from "./CiMatrixCard"
 import { conversationCardFamily } from "./ConversationCards"
 import { envCardFamily } from "./EnvCard"
 import { fileCardFamily } from "./FileCards"
 import { flowFormCardFamily } from "./FlowFormCards"
-import { graphCardFamily } from "./GraphCardLazy"
 import { historyCardFamily } from "./HistoryCard"
 import { issueCardFamily } from "./IssueCards"
 import { landingCardFamily } from "./LandingCards"
@@ -37,14 +34,11 @@ import { notificationsCardFamily } from "./NotificationsCard"
 import { LibrarianLibraryCard } from "../plugins/tutorial2-librarian-card"
 import { RepositoryChoiceCard } from "./RepositoryChoiceCard"
 import { repoImportCardFamily } from "./RepoImportCard"
-import { runHistoryCardFamily } from "./RunHistoryCard"
 import { runsCardFamily } from "./RunsCards"
-import { runTimelineCardFamily } from "./RunTimelineCard"
 import { searchResultsCardFamily } from "./SearchResultsCard"
 import { secretsCardFamily } from "./SecretsCard"
 import { serviceLogCardFamily } from "./ServiceLogCard"
 import { syncCardFamily } from "./SyncCards"
-import { targetCardFamily } from "./TargetCards"
 import { themePickerCardFamily } from "./ThemePickerCard"
 import { triggersCardFamily } from "./TriggersCard"
 import { turnCardFamily } from "./TurnCards"
@@ -69,10 +63,23 @@ const pluginLibraryCardFamily: CardFamily<"plugin-library"> = {
 
 const retiredCardFamily: CardFamily<"retired"> = { retired: { render: () => null, pill: () => "" } }
 
+/*
+ * The local backend's cards (docs/LOCAL-BACKEND-RETIREMENT.md). Their flows
+ * are gone, so nothing creates one any more — but a conversation saved before
+ * the cut still holds them, and a card the renderer cannot answer for is a
+ * crash. They render their title and nothing else.
+ */
+const LOCAL_BACKEND_KINDS = ["repo", "targets", "target-run", "graph", "run-timeline", "run-history", "affected", "ci-matrix"] as const
+type LocalBackendKind = (typeof LOCAL_BACKEND_KINDS)[number]
+const localBackendCardFamily = Object.fromEntries(
+  LOCAL_BACKEND_KINDS.map((kind) => [kind, { render: () => null, pill: () => "done" }])
+) as unknown as CardFamily<LocalBackendKind>
+
 /** The families in registration order; the test reads this list to prove the slices are disjoint. */
 export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   repositorySetupCardFamily,
   retiredCardFamily,
+  localBackendCardFamily,
   turnCardFamily,
   approvalCardFamily,
   billingCardFamily,
@@ -95,12 +102,6 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   branchesCardFamily,
   fileCardFamily,
   themePickerCardFamily,
-  targetCardFamily,
-  graphCardFamily,
-  runTimelineCardFamily,
-  runHistoryCardFamily,
-  affectedCardFamily,
-  ciMatrixCardFamily,
   agentCardFamily,
   flowFormCardFamily,
   workspaceCardFamily,
@@ -118,6 +119,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
 export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...repositorySetupCardFamily,
   ...retiredCardFamily,
+  ...localBackendCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,
   ...billingCardFamily,
@@ -142,12 +144,6 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...branchesCardFamily,
   ...fileCardFamily,
   ...themePickerCardFamily,
-  ...targetCardFamily,
-  ...graphCardFamily,
-  ...runTimelineCardFamily,
-  ...runHistoryCardFamily,
-  ...affectedCardFamily,
-  ...ciMatrixCardFamily,
   ...agentCardFamily,
   ...flowFormCardFamily,
   ...workspaceCardFamily,
@@ -172,20 +168,8 @@ export const pillStatus = (card: Card): string => {
 }
 
 /** The card's body, from the family that owns its kind. */
-const ProjectedTargetsBody = ({ card, actions, store }: {
-  readonly card: Extract<Card, { kind: "targets" }>
-  readonly actions: CardActions
-  readonly store: CardProjectionAuthority
-}) => {
-  const { data: repos } = useLiveQuery(store.collections.repos)
-  const { data: stars } = useLiveQuery(store.collections.starredTargets)
-  return cardRenderer("targets").render(projectTargetStars(card, repos, stars), actions)
-}
-
 export const renderCardBody = (card: Card, actions: CardActions) =>
-  card.kind === "targets" && actions.projectionStore !== undefined
-    ? <ProjectedTargetsBody card={card} actions={actions} store={actions.projectionStore} />
-    : card.kind === "repo-update" && actions.projectionStore !== undefined
+  card.kind === "repo-update" && actions.projectionStore !== undefined
     ? <ProjectedRepositoryUpdateBody card={card} actions={actions} store={actions.projectionStore} />
     : cardRenderer(card.kind).render(card, actions)
 

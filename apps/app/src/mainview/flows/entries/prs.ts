@@ -20,7 +20,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     hidden: true,
     grammar: args => payloadFor("prs.list", args),
     summary: "List a repository's pull requests",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     args: "[owner/repo]",
     requires: ["first-run-target"],
     input: RepoTarget,
@@ -30,7 +30,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "prs.list",
     summary: "List a repository's pull requests",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     args: "[owner/repo]",
     requires: ["first-run-target"],
     input: RepoTarget,

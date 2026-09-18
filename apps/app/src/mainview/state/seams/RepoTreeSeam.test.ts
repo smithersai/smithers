@@ -1,6 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { Repo } from "@smthrs/rpc/LocalApp"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
 import { scopedControllers } from "../ControllerTestScope"
@@ -13,9 +12,9 @@ const createAppController = scopedControllers()
 
 /*
  * The sidebar's file tree seam (RepoTreeSeam.ts) through the real command
- * path: /repo.tree <copyId>[#path] posts the SAME request the files flows
- * post (`POST /api/repo/files { repoId, path }`, the route contract in
- * @smthrs/rpc/LocalApp) and writes the app-repo-tree row for that
+ * path: /repo.tree <copyId>[#path] reads the SAME routes the files flows
+ * read — a box's `GET .../workspaces/{id}/files?path=`, the shared copy's
+ * `GET .../contents[/path]` — and writes the app-repo-tree row for that
  * directory: loaded with exactly the entries the route answered, or failed
  * with the route's error text verbatim. Toggling is collection state, never
  * a second request; the rows never survive a relaunch.
@@ -49,22 +48,6 @@ const unavailableRepositories: NativeRepositories = {
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-const localRepo = (id: string, name: string, path: string): Repo => ({
-  id,
-  path,
-  name,
-  git: { branch: "main", remote: `git@github.com:${name}.git` },
-  warnings: [],
-  smithers: { detected: true, workspaceFile: "WORKSPACE.ts", declarationFiles: [], reason: "1 workspace detected", workspaces: [{ path: ".", title: name }] }
-})
-const SMITHERS = localRepo("repo-smithers", "smithersai/smithers", "/Users/will/smithers")
-const COPY = repoKeyOf(SMITHERS.path)
-
-/*
- * The local app double, answering the route's own shapes: the root (dirs
- * first, a `.git` entry like any other), an empty directory, a truncated one,
- * a file, and two refusals in the route's error envelope.
- */
 /*
  * The Worker's forward of a box's files route
  * (`GET /api/repos/{o}/{r}/workspaces/{id}/files?path=`, the same route the
@@ -121,27 +104,14 @@ const sharedAnswers: Record<string, () => Response> = {
 }
 
 const treeBackend = () => {
-  const requests: Array<{ readonly repoId?: string; readonly path?: string }> = []
+  /** Every request this seam made that is neither of its two routes: the tree must make none. */
+  const requests: Array<string> = []
   /** Every box listing asked for, as `<workspaces path>?<query>`. */
   const boxRequests: Array<string> = []
   /** Every mirror contents read asked for, as its path. */
   const sharedRequests: Array<string> = []
-  const answers: Record<string, () => Response> = {
-    "": () =>
-      json(200, {
-        kind: "dir",
-        path: "",
-        entries: [{ name: ".git", kind: "dir" }, { name: "packages", kind: "dir" }, { name: "README.md", kind: "file" }, { name: "zeta.txt", kind: "file" }]
-      }),
-    "packages": () => json(200, { kind: "dir", path: "packages", entries: [{ name: "ui", kind: "dir" }, { name: "PACKAGE.ts", kind: "file" }] }),
-    "packages/smithers/ui": () => json(200, { kind: "dir", path: "packages/smithers/ui", entries: [] }),
-    ".git": () => json(200, { kind: "dir", path: ".git", entries: [{ name: "HEAD", kind: "file" }], truncated: true }),
-    "README.md": () => json(200, { kind: "file", path: "README.md", size: 14, content: "# Local — hi\n", truncated: false, binary: false }),
-    "secret": () => json(403, { error: { code: "path_outside_repository", message: "secret points outside the repository." } }),
-    "boom": () => json(500, { error: { code: "read_failed", message: "Could not list boom." } })
-  }
   const services: AppServices = {
-    fetchImpl: async (input, init) => {
+    fetchImpl: async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const parsed = new URL(url, "http://local.test")
       const path = parsed.pathname
@@ -158,19 +128,14 @@ const treeBackend = () => {
         const answer = boxAnswers[parsed.searchParams.get("path") ?? ""]
         return answer === undefined ? json(404, { status: "error", message: `no such path in ws-1: ${parsed.searchParams.get("path")}` }) : answer()
       }
-      if (path !== "/api/repo/files") return json(404, { status: "error", message: `no stub for ${url}` })
-      const body = JSON.parse(String(init?.body ?? "{}")) as { repoId?: string; path?: string }
-      requests.push(body)
-      const answer = answers[body.path ?? ""]
-      return answer === undefined
-        ? json(404, { error: { code: "path_not_found", message: `Path not found: ${body.path}` } })
-        : answer()
+      requests.push(path)
+      return json(404, { status: "error", message: `no stub for ${url}` })
     }
   }
   return { services, requests, boxRequests, sharedRequests }
 }
 
-const treeController = async (repos: ReadonlyArray<Repo> = [SMITHERS]) => {
+const treeController = async () => {
   const backend = treeBackend()
   const storage = memoryStorage()
   const { store, settle } = trackDispatchCommits(await createAppStore({ kind: "localStorage", storage }))
@@ -181,12 +146,11 @@ const treeController = async (repos: ReadonlyArray<Repo> = [SMITHERS]) => {
       host: "local",
       version: "test",
       buildSha: "test",
-      capabilities: ["local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+      capabilities: ["cloud"],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
     }
   })
-  await store.dispatch({ type: "repos.loaded", actor: "system", repos: [...repos] }).isPersisted.promise
   return { store, controller, storage, requests: backend.requests, boxRequests: backend.boxRequests, sharedRequests: backend.sharedRequests, settle }
 }
 
@@ -201,73 +165,15 @@ const boxCopy = (id: string, state: string, repoId = "will/flows") => ({
 })
 
 describe("repo tree seam — one directory per request, the route's answer verbatim", () => {
-  test("/repo.tree <copyId> lists the root through POST /api/repo/files and writes the loaded row, nothing filtered", async () => {
-    const { store, controller, requests } = await treeController()
-    const outcome = await controller.commands.run("repo.tree", COPY)
-    expect(outcome.status).toBe("executed")
-    expect(requests).toEqual([{ repoId: "repo-smithers", path: "" }])
-    const root = store.collections.repoTree.get(repoTreeRowId(COPY, ""))
-    expect(root).toMatchObject({
-      copyId: COPY,
-      path: "",
-      expanded: true,
-      state: "loaded",
-      entries: [{ name: ".git", kind: "dir" }, { name: "packages", kind: "dir" }, { name: "README.md", kind: "file" }, { name: "zeta.txt", kind: "file" }]
-    })
-    expect(root?.truncated).toBeUndefined()
-    expect(root?.error).toBeUndefined()
-  })
-
-  test("a nested path rides the `#` grammar; a second toggle collapses without a request, a third expands without one", async () => {
-    const { store, controller, requests } = await treeController()
-    expect((await controller.commands.run("repo.tree", `${COPY}#packages`)).status).toBe("executed")
-    expect(requests).toEqual([{ repoId: "repo-smithers", path: "packages" }])
-    const id = repoTreeRowId(COPY, "packages")
-    expect(store.collections.repoTree.get(id)?.entries).toEqual([{ name: "ui", kind: "dir" }, { name: "PACKAGE.ts", kind: "file" }])
-    expect((await controller.commands.run("repo.tree", `${COPY}#packages`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(id)?.expanded).toBe(false)
-    expect((await controller.commands.run("repo.tree", `${COPY}#packages/`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(id)?.expanded).toBe(true)
-    expect(requests).toHaveLength(1)
-    // An empty directory is a loaded row with no entries — the tree says "empty", never invents a child.
-    expect((await controller.commands.run("repo.tree", `${COPY}#packages/smithers/ui`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "packages/smithers/ui"))).toMatchObject({ state: "loaded", entries: [] })
-  })
-
-  test("a capped listing keeps the route's truncated flag", async () => {
-    const { store, controller } = await treeController()
-    expect((await controller.commands.run("repo.tree", `${COPY}#.git`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, ".git"))).toMatchObject({ state: "loaded", truncated: true, entries: [{ name: "HEAD", kind: "file" }] })
-  })
-
-  test("a refusal writes the failed row with the server's message verbatim, and the next toggle retries", async () => {
-    const { store, controller, requests } = await treeController()
-    expect((await controller.commands.run("repo.tree", `${COPY}#secret`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "secret"))).toMatchObject({
-      state: "failed",
-      expanded: true,
-      entries: [],
-      error: "secret points outside the repository."
-    })
-    expect((await controller.commands.run("repo.tree", `${COPY}#boom`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "boom"))?.error).toBe("Could not list boom.")
-    expect((await controller.commands.run("repo.tree", `${COPY}#missing`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "missing"))?.error).toBe("Path not found: missing")
-    // A file behind a caret cannot happen from the tree, but the row still says so honestly.
-    expect((await controller.commands.run("repo.tree", `${COPY}#README.md`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "README.md"))?.error).toBe("README.md in smithersai/smithers is a file — run /files.read README.md instead")
-    // A failed row collapses like any other; expanding it again is the retry.
-    const before = requests.length
-    expect((await controller.commands.run("repo.tree", `${COPY}#boom`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "boom"))?.expanded).toBe(false)
-    expect(requests.length).toBe(before)
-    expect((await controller.commands.run("repo.tree", `${COPY}#boom`)).status).toBe("executed")
-    expect(requests.length).toBe(before + 1)
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "boom"))).toMatchObject({ expanded: true, state: "failed", error: "Could not list boom." })
-  })
-
-  test("a copy that is not open on this machine, or not a checkout, fails in place; an unknown copy is a refusal", async () => {
-    const { store, controller, requests } = await treeController()
+  /*
+   * A checkout row can still reach the sidebar from a pin this app persisted
+   * before the local backend was retired (AppProjection's `repo.pinned`),
+   * and no route serves it any more: the row says so in place, and nothing
+   * is asked. An id no copy holds is a refusal from the controller, before
+   * the seam.
+   */
+  test("a checkout copy has no route left: the row is failed in place, and nothing is asked; an unknown copy is a refusal", async () => {
+    const { store, controller, requests, boxRequests, sharedRequests } = await treeController()
     const other = repoKeyOf("/Users/will/plue")
     await store.dispatch({
       type: "repo.pinned",
@@ -277,9 +183,13 @@ describe("repo tree seam — one directory per request, the route's answer verba
     expect((await controller.commands.run("repo.tree", other)).status).toBe("executed")
     expect(store.collections.repoTree.get(repoTreeRowId(other, ""))).toMatchObject({
       state: "failed",
-      error: "plue is pinned but not open on this machine — open it with /repo.open, then retry."
+      expanded: true,
+      entries: [],
+      error: "plue is a checkout of plue on this machine; this app reads files from Smithers Cloud only."
     })
-    expect(requests).toHaveLength(0)
+    expect(requests).toEqual([])
+    expect(boxRequests).toEqual([])
+    expect(sharedRequests).toEqual([])
     const unknown = await controller.commands.run("repo.tree", "local:/nowhere")
     expect(unknown.status).toBe("failed")
     expect(JSON.stringify(unknown)).toContain("There is no working copy with id local:/nowhere.")
@@ -290,7 +200,8 @@ describe("repo tree seam — one directory per request, the route's answer verba
 
   test("the rows are collection state for this launch only: a store reopened over the same storage starts collapsed", async () => {
     const { store, controller, storage, settle } = await treeController()
-    expect((await controller.commands.run("repo.tree", COPY)).status).toBe("executed")
+    await store.dispatch({ type: "workingcopies.workspaces.loaded", actor: "system", copies: [boxCopy("ws-1", "running")] }).isPersisted.promise
+    expect((await controller.commands.run("repo.tree", "ws-1")).status).toBe("executed")
     expect(store.collections.repoTree.size).toBe(1)
     expect([...store.collections.repoTree.values()][0]?.expanded).toBe(true)
     await controller.dispose()
@@ -299,33 +210,6 @@ describe("repo tree seam — one directory per request, the route's answer verba
     expect(reopened.collections.repoTree.size).toBe(0)
     // Nothing under the tree's id ever reached the shared storage.
     expect(storage.getItem("smithers-mvp.app-repo-tree")).toBeNull()
-  })
-
-  test("unpinning a checkout forgets its tree rows", async () => {
-    const { store, controller } = await treeController()
-    expect((await controller.commands.run("repo.tree", COPY)).status).toBe("executed")
-    expect((await controller.commands.run("repo.tree", `${COPY}#packages`)).status).toBe("executed")
-    expect(store.collections.repoTree.size).toBe(2)
-    expect((await controller.commands.run("repo.unpin", COPY)).status).toBe("executed")
-    expect(store.collections.repoTree.size).toBe(0)
-  })
-
-  /*
-   * The guard belongs to the seam, not to one route: every copy kind refuses
-   * a path that leaves the repository before it spends that path on a URL
-   * or a request body (FilesSeam.unsafePath, the wording the files flows
-   * answer with).
-   */
-  test("a path that leaves the repository fails the row in place, and the local app is never posted", async () => {
-    const { store, controller, requests } = await treeController()
-    expect((await controller.commands.run("repo.tree", `${COPY}#../../../../user/secrets`)).status).toBe("executed")
-    expect(store.collections.repoTree.get(repoTreeRowId(COPY, "../../../../user/secrets"))).toMatchObject({
-      state: "failed",
-      expanded: true,
-      entries: [],
-      error: "File paths must stay inside the repository."
-    })
-    expect(requests).toEqual([])
   })
 
   test("repo.tree is one flow with three doors: the caret, the slash, and the agent (the three-door law); the agent reads contents with files.list", async () => {
@@ -347,7 +231,7 @@ describe("repo tree seam — one directory per request, the route's answer verba
  */
 describe("repo tree seam: a cloud workspace copy reads the box's files route", () => {
   const loadBox = async (copies: ReadonlyArray<ReturnType<typeof boxCopy>>) => {
-    const scope = await treeController([])
+    const scope = await treeController()
     await scope.store.dispatch({ type: "workingcopies.workspaces.loaded", actor: "system", copies: [...copies] }).isPersisted.promise
     return scope
   }
@@ -440,7 +324,7 @@ describe("repo tree seam: a cloud workspace copy reads the box's files route", (
 describe("repo tree seam: the shared read-only copy reads the mirror's contents route", () => {
   const SHARED = "shared:smithersai/smithers"
   const loadShared = async () => {
-    const scope = await treeController([])
+    const scope = await treeController()
     await scope.store.dispatch({
       type: "repositories.loaded",
       actor: "system",
@@ -490,13 +374,21 @@ describe("repo tree seam: the shared read-only copy reads the mirror's contents 
   })
 
   test("a refusal writes the failed row with the mirror's message verbatim; a file path names the read that answers it", async () => {
-    const { store, controller } = await loadShared()
+    const { store, controller, sharedRequests } = await loadShared()
     expect((await controller.commands.run("repo.tree", `${SHARED}#boom`)).status).toBe("executed")
     expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "boom"))).toMatchObject({ state: "failed", expanded: true, entries: [], error: "the mirror is resyncing smithersai/smithers" })
     expect((await controller.commands.run("repo.tree", `${SHARED}#missing`)).status).toBe("executed")
     expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "missing"))?.error).toBe("smithersai/smithers has no missing")
     expect((await controller.commands.run("repo.tree", `${SHARED}#README.md`)).status).toBe("executed")
     expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "README.md"))?.error).toBe("README.md in smithersai/smithers is a file; run /files.read README.md instead")
+    // A failed row collapses like any other; expanding it again is the retry, and it reads once more.
+    const before = sharedRequests.length
+    expect((await controller.commands.run("repo.tree", `${SHARED}#boom`)).status).toBe("executed")
+    expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "boom"))?.expanded).toBe(false)
+    expect(sharedRequests).toHaveLength(before)
+    expect((await controller.commands.run("repo.tree", `${SHARED}#boom`)).status).toBe("executed")
+    expect(sharedRequests).toHaveLength(before + 1)
+    expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "boom"))).toMatchObject({ expanded: true, state: "failed", error: "the mirror is resyncing smithersai/smithers" })
   })
 
   /*
@@ -530,17 +422,11 @@ describe("repo tree seam: the shared read-only copy reads the mirror's contents 
     expect(sharedRequests).toEqual([`${SHARED_CONTENTS}/apps`])
   })
 
-  test("the shared copy is never a checkout on this machine: the local resolver says so in place", async () => {
-    const { store, controller } = await loadShared()
-    const { openRepoOfCopy } = await import("./RepoTreeSeam")
-    expect(openRepoOfCopy(store, SHARED)).toEqual({ error: "shared is the shared read-only copy of smithersai/smithers; its files are read from the public mirror, never from this machine." })
-    expect(controller.commands.find("repo.tree")).toBeDefined()
-  })
 })
 
 describe("the workspace name", () => {
   test("/workspace.rename writes the heading's name; a blank name renders the form; the pencil toggles the inline editor", async () => {
-    const { store, controller } = await treeController([])
+    const { store, controller } = await treeController()
     expect(store.session().workspaceName).toBeUndefined()
     expect((await controller.commands.run("workspace.rename", "  Force  ")).status).toBe("executed")
     expect(store.session().workspaceName).toBe("Force")

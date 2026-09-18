@@ -160,7 +160,6 @@ const PRESENTATION_ONLY = [
   "onRemove(", // delegated: PluginsSurface.tsx binds it to runCommand("plugins.remove", ...)
   "onOpen(", // delegated: the plugin rail's binding sites bind it to runCommand(<the entry's own flow>)
   "onConnectGitHub(", // delegated: App.tsx binds it to auth.sign-in
-  "onConnectLocal(", // delegated: App.tsx binds it to runCommand("connector.add", ...)
   "onRunWorkflow(", // delegated: App.tsx binds it to runCommand("flow.run", ...)
   "onStopRun(", // delegated: App.tsx binds it to runCommand("flow.run.stop", ...)
   "onRetryRun(", // delegated: App.tsx binds it to runCommand("flow.run.retry", ...)
@@ -297,9 +296,13 @@ describe("launch-law parity: every affordance is a command", () => {
       "../plugins/PluginsSurface.tsx": 1,
       /* 11 = 10 + the origin chip's "rev N exists · view" (lane change step 4; renders only when both seqs are known). */
       "../Composer.tsx": 9,
-      // 6 = 5 + the empty state's own import affordance (§11.6): with nothing
-      // connected the pane stated a fact and offered no move.
-      "../ConnectorsSurface.tsx": 6,
+      /*
+       * 3 — the GitHub connect / disconnect pair and the empty state's own
+       * import affordance (§11.6). The local-repository row, the connected
+       * list and the disconnect dialog went with the local backend
+       * (docs/LOCAL-BACKEND-RETIREMENT.md).
+       */
+      "../ConnectorsSurface.tsx": 3,
       /*
        * The card shell: the maximize backdrop, the frame back / forward /
        * fork, the maximized card's "Open in tab" (docs/LOCAL-APP.md "Cards"),
@@ -368,15 +371,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * onto a wall.
        */
       "../cards/WorkspaceCard.tsx": 16,
-      /*
-       * The target-graph cards: the graph drawer's close/copy/open/run acts
-       * (4), the timeline row's log toggle (1), the history row's replay
-       * select and the affected row's show-in-graph (1 each, both
-       * onRunCommand).
-       */
-      "../cards/GraphCard.tsx": 4,
       "../cards/HistoryCard.tsx": 2,
-      "../cards/RunTimelineCard.tsx": 1,
       /*
        * The run trace: the live return, the two presentation switches (Turns
        * and Timeline), the filters, the turn rows, the engine rows, the
@@ -392,11 +387,8 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/RunsCards.tsx": 10,
       "../cards/SearchResultsCard.tsx": 2,
-      "../cards/RunHistoryCard.tsx": 1,
-      "../cards/AffectedCard.tsx": 1,
-      // Agents as data (custom-agents.md): Launch, Edit, Remove, New agent.
-      /* 6 = the Agents card's Launch / Edit / Remove and New agent, the subagent card's Open tab, + the cloud session card's Stop (agent.session.stop). */
-      "../cards/AgentCards.tsx": 3,
+      /* 2 = the Agents card's New agent and the cloud session card's Stop (agent.session.stop); the role launch went with agent.role. */
+      "../cards/AgentCards.tsx": 2,
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,
@@ -443,15 +435,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
        * Open page, and Refresh (wiki.sync) — all through onRunCommand.
        */
-      "../cards/ConversationCards.tsx": 12, // The empty Wiki now offers wiki.create.
-      /*
-       * The targets table: History in the toolbar, the view, kind and state
-       * chips (target.filter), each row's star (target.star / unstar),
-       * select / Run / Timeline, the drawer's
-       * close, Open source, Replay, Run, Graph, Explain, and the target-run
-       * card's Explain — all through onRunCommand.
-       */
-      "../cards/TargetCards.tsx": 26,
+      "../cards/ConversationCards.tsx": 11, // The empty Wiki now offers wiki.create.
       /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
       /*
        * The dispatcher card's Register door, the button door of
@@ -463,14 +447,15 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/WikiCards.tsx": 3,
       /*
        * The dock (ChromeDock.tsx): the chrome as a vertical icon rail on the
-       * left edge, always on screen — the `+` (trigger, backdrop,
-       * Terminal, one role map, the available and unavailable harness maps),
-       * Download the app (cloud host, while a native release exists), Wiki,
-       * Dispatcher, Flows, Secrets, History, Account, the admin reset, and
-       * the theme toggle. Each is the button door of one registered flow and
-       * renders exactly where that flow registers.
+       * left edge, always on screen — Download the app (cloud host, while a
+       * native release exists), Wiki, Dispatcher, Flows, Secrets, History,
+       * Account, the admin reset, and the theme toggle. Each is the button
+       * door of one registered flow and renders exactly where that flow
+       * registers. The `+` menu's local acts (Terminal, the role maps, the
+       * harness maps) went with the local backend
+       * (docs/LOCAL-BACKEND-RETIREMENT.md).
        */
-      "../ChromeDock.tsx": 15,
+      "../ChromeDock.tsx": 9,
       /* The live-process close question: confirm through tab.close.confirm. */
       "../tabs/TabBodies.tsx": 1
     })
@@ -485,9 +470,6 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(message).toContain("runCommand(\"chat.retry\"")
     expect(message).toMatch(/runCommand\(\s*"agent\.explain"/)
     expect(app).toContain("runCommand(\"toast.dismiss\"")
-    const connectors = files["../ConnectorsSurface.tsx"]
-    expect(connectors).toContain("runCommand(\"connector.downgrade\"")
-    expect(connectors).toContain("runCommand(\"connector.remove\"")
   })
 
 
@@ -511,7 +493,6 @@ describe("launch-law parity: every affordance is a command", () => {
     expect(actions).toContain("runCommand(\"frame.fork\"")
     expect(actions).toContain("runCommand(\"tab.card\"")
     expect(actions).toContain("runCommand(\"auth.sign-in\"")
-    expect(actions).toContain("runCommand(\"connector.add\"")
     expect(actions).toContain("runCommand(\"flow.run\"")
     expect(actions).toContain("runCommand(\"flow.run.stop\"")
     expect(actions).toContain("runCommand(\"flow.run.retry\"")
@@ -600,6 +581,13 @@ describe("launch-law parity: every affordance is a command", () => {
         if (!/^\s*<(?:button|Button)\b/.test(lines[start] ?? "")) return
         const chunk = lines.slice(start, Math.min(lines.length, index + 12)).join("\n")
         if (chunk.includes("data-flow")) return
+        /*
+         * A component that takes its caller's binding spreads a
+         * FlowBindingProps prop (`{...dismissBinding}`, HelpBubble.tsx): the
+         * attributes are there at runtime, just not as a literal here. The
+         * prop's type is the binding, so this is a bound button.
+         */
+        if (/\{\.\.\.[A-Za-z]*[Bb]inding\b/.test(chunk)) return
         if (!resolves(label)) {
           violations.push(`${file}: button "${label}" has no data-flow and resolves to no registered command`)
         }

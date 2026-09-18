@@ -7,13 +7,7 @@ import { settledPill } from "./CardFamily"
 
 type AgentsCard = Extract<Card, { kind: "agents" }>
 
-export const AgentsCardBody = ({
-  card,
-  onRunCommand
-}: {
-  readonly card: AgentsCard
-  readonly onRunCommand: RunCommand
-}) => {
+export const AgentsCardBody = ({ card }: { readonly card: AgentsCard }) => {
   const { native, agents, error } = card.payload
   if (!native) return <p className="smithers-card-note">Agents run on the native app's harnesses.</p>
   return (
@@ -26,21 +20,6 @@ export const AgentsCardBody = ({
               <span title={agent.purpose}>
                 {agent.harnessName} · {agent.model.id} · {agent.available ? `● ${agent.account === "" ? "signed in" : agent.account}` : `○ ${agent.reason}`}
               </span>
-            </span>
-            <span className="flow-run-actions">
-              {agent.available ?
-                (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid={`agents-launch-${agent.id}`}
-                    title={agent.purpose}
-                    {...flowAction(onRunCommand, "agent.role", agent.id)}
-                  >
-                    Launch
-                  </Button>
-                ) :
-                null}
             </span>
           </li>
         ))}
@@ -224,7 +203,7 @@ export const agentCardFamily: CardFamily<"agent" | "explain" | "agents"> = {
   },
   /* Agents as data: the listings settle when they render. */
   agents: {
-    render: (card, actions) => <AgentsCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card) => <AgentsCardBody card={card} />,
     pill: settledPill
   },
 

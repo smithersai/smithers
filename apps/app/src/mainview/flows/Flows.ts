@@ -42,13 +42,13 @@ import { cardFlows } from "./entries/card"
 import { changeFlows, changeOpenFlows } from "./entries/change"
 import { chatCopyFlows, chatFlows, chatReloadFlows, chatSurfacesFlows } from "./entries/chat"
 import { cloudFlows } from "./entries/cloud"
-import { codeFlows } from "./entries/code"
 import { composerFlows } from "./entries/composer"
-import { connectSurfaceFlows, connectorFlows } from "./entries/connector"
+import { connectSurfaceFlows } from "./entries/connector"
 import { debugFlows, debugVerboseFlows } from "./entries/debug"
 import { egressFlows } from "./entries/egress"
 import { envFlows } from "./entries/env"
 import { featureFlows } from "./entries/feature"
+import { codeFlows } from "./entries/code"
 import { filesAddFlows, filesFlows } from "./entries/files"
 import { findingsFlows } from "./entries/findings"
 import { flowFlows, flowRunStopAllFlows, flowsSurfaceFlows } from "./entries/flow"
@@ -61,7 +61,7 @@ import { notificationsFlows } from "./entries/notifications"
 import { paletteFlows } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON, pluginsFlows, pluginsSurfaceFlows } from "./entries/plugins"
 import { prsFlows } from "./entries/prs"
-import { repoFlows, repoOpenFlows, tutorialRepositoryFlows } from "./entries/repo"
+import { repoFlows, tutorialRepositoryFlows } from "./entries/repo"
 import { reposImportFlows, reposImportRetryFlows } from "./entries/repos"
 import { reviewFlows } from "./entries/review"
 import { runsFlows } from "./entries/runs"
@@ -73,7 +73,6 @@ import { storageFlows } from "./entries/storage"
 import { syncFlows } from "./entries/sync"
 import { systemFlows } from "./entries/system"
 import { tabFlows, tabHarnessFlows } from "./entries/tab"
-import { targetFlows } from "./entries/target"
 import { toastFlows } from "./entries/toast"
 import { triggersFlows } from "./entries/triggers"
 import { wikiFlows, wikiSurfaceFlows } from "./entries/wiki"
@@ -134,7 +133,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...frameFlows(actions),
   ...chatCopyFlows(actions),
   ...approvalFlows(actions),
-  ...connectorFlows(actions),
   ...(actions.snapshot?.()?.wiki === true ? wikiFlows(actions) : []),
   ...(actions.snapshot?.()?.wiki === true ? worldFlows(actions) : []),
   ...authFlows(actions),
@@ -180,8 +178,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...workspaceRenameFlows(actions),
   ...composerFlows(actions),
   ...filesAddFlows(actions),
-  ...repoOpenFlows(actions),
-  ...targetFlows(actions),
   ...smithersFlows(actions),
   ...searchFlows(actions),
   ...paletteFlows(actions),

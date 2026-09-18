@@ -4,7 +4,6 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
-import { isAgentRoleId } from "@smthrs/rpc/AgentRoles"
 import { flag, line, text } from "../FlowForms"
 import { flow, NoPayload } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
@@ -29,43 +28,6 @@ export const agentFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     handler: ({ what }: { readonly what: string }) => actions.explain(what)
   }
   return [
-  flow({
-    /*
-     * A named role (AgentRoles.ts) from the `+` menus: the role's harness and
-     * model launch in a tab, and the conversation gets the subagent card.
-     * The same launch as tab.harness, so the same confirm.
-     */
-    name: "agent.role",
-    form: { fields: { roleId: { optionsFrom: "agents" } } },
-    summary: "Launch a named agent (built-in) as a session",
-    runtime: ["local.harnesses"],
-    confirm: "launch an agent role as a session",
-    args: "<roleId>",
-    input: Schema.Struct({ roleId: Schema.String }),
-    // A well-formed id resolves against the agents store in the controller; the store's list names the rest.
-    handler: ({ roleId }) =>
-      isAgentRoleId(roleId)
-        ? actions.openHarnessTab("", { roleId })
-        : `${roleId} is not an agent id (lowercase letters, digits and dashes). agent.list shows the agents.`
-  }),
-  flow({
-    /*
-     * The orchestrator's delegation: a role launches in its own tab with the
-     * task as its first prompt, recorded as a subagent card here. The model
-     * reads the result back with tab.read.
-     */
-    name: "agent.delegate",
-    confirm: "delegate a task to an agent session",
-    form: { fields: { roleId: { optionsFrom: "agents" } } },
-    summary: "Delegate a task to an agent (built-in; agent.list shows them)",
-    runtime: ["local.harnesses"],
-    args: "<role> <task>",
-    input: Schema.Struct({ roleId: Schema.String, task: Schema.String }),
-    handler: ({ roleId, task }) =>
-      isAgentRoleId(roleId)
-        ? actions.openHarnessTab("", { roleId, task })
-        : `${roleId} is not an agent id (lowercase letters, digits and dashes). agent.list shows the agents.`
-  }),
   flow(EXPLAIN),
   flow({
     name: "agent.list",

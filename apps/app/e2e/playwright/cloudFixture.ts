@@ -53,7 +53,7 @@ export const installCloudFixture = async (page: Page, options: CloudFixtureOptio
     version: "test",
     buildSha: "test",
     capabilities: [...options.capabilities ?? [
-      "agent", "identity", "cloud", "local.repositories", "local.targets", "local.terminal", "local.harnesses"
+      "agent", "identity", "cloud"
     ]],
     authFlow: "none",
     sandbox: { platform: "darwin", mode: "trusted-only" }

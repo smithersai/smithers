@@ -60,7 +60,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
   let planned: { flowId: string; input: unknown } | undefined
   /** The engine's own accounting: a steer the gateway took is pending until the next turn. */
   let steeringPending = 0
-  await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat", "local.repositories"] })
+  await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   await page.route("**/api/workflow/provision", (route) =>
     route.fulfill(json({ status: "ready", repo: REPO, gatewayId: "gw-1" })))
   await page.route("**/api/workflow/rpc", async (route) => {

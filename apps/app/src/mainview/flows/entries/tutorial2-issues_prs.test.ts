@@ -9,7 +9,7 @@ for (const [name, entries] of [["issues", issuesFlows], ["prs", prsFlows]] as co
   const entry = entries({} as CommandActions).find(row => row.declaredName === name)!
   expect(entry.binding.descriptor.modelInvocable).toBe(true)
   // "practice": the bundled practice repository answers on every host (state/practice).
-  expect(entry.metadata.runtimeAny).toEqual(["cloud", "local.repositories", "practice"])
+  expect(entry.metadata.runtimeAny).toEqual(["cloud", "practice"])
   expect(payloadFor(name, "", entry.metadata.grammar)).toEqual({ payload: name === "issues" ? { filter: "open" } : {} })
   expect(payloadFor(name, "will/repo", entry.metadata.grammar)).toEqual({ payload: name === "issues" ? { filter: "open", repo: "will/repo" } : { repo: "will/repo" } })
 })

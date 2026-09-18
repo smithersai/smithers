@@ -1,30 +1,30 @@
 /*
  * The sidebar's file tree seam (docs/workbench-lanes/sidebar-tree.md): one
  * directory of a working copy, written to the `app-repo-tree` row for that
- * directory. A LOCAL checkout reads through the same route the files flows
- * use (`POST /api/repo/files { repoId, path }`, FilesSeam's
- * requestLocalFiles). A cloud WORKSPACE copy (a box) reads through the route
- * its Files facet uses (`GET /api/repos/{o}/{r}/workspaces/{id}/files?path=`,
+ * directory. A cloud WORKSPACE copy (a box) reads through the route its
+ * Files facet uses (`GET /api/repos/{o}/{r}/workspaces/{id}/files?path=`,
  * WorkspaceSeam.loadFiles). The SHARED copy of a public repository (the
  * read-only virtual box every reader shares, lane plan B2) reads
  * through the public contents route the files flows read
  * (`GET /api/repos/{o}/{r}/contents[/path]`, forwarded to the Smithers Cloud
- * mirror with no credentials: apps/server publicRepositoryReads.ts). The row
- * is what the sidebar renders: `loaded` with exactly the entries the route
- * returned (no filtering, nothing invented), or `failed` with the route's
- * error text verbatim, shown in place. Every row holds its directory in the
- * one order a listing reads in (`FilesSeam.sortEntries`: directories first,
- * then by name), because the three routes do not agree on one — the mirror
- * answers a git tree's byte order — and the sidebar reads the same for a
- * checkout, a box, and the shared copy. A path that leaves the repository
- * is refused before any route is asked (FilesSeam.unsafePath), because
- * the encodings these three URLs use leave `..` alone. Never throws.
+ * mirror with no credentials: apps/server publicRepositoryReads.ts). Those
+ * are the only two routes: the app offers the web app's feature set, so a
+ * copy that is neither is refused in place (apps/app/docs/
+ * LOCAL-BACKEND-RETIREMENT.md). The row is what the sidebar renders:
+ * `loaded` with exactly the entries the route returned (no filtering,
+ * nothing invented), or `failed` with the route's error text verbatim, shown
+ * in place. Every row holds its directory in the one order a listing reads
+ * in (`FilesSeam.sortEntries`: directories first, then by name), because the
+ * two routes do not agree on one — the mirror answers a git tree's byte
+ * order — and the sidebar reads the same for a box and the shared copy. A
+ * path that leaves the repository is refused before any route is asked
+ * (FilesSeam.unsafePath), because the encodings these URLs use leave `..`
+ * alone. Never throws.
  */
 import { isRecord } from "@smthrs/canonical/Record"
-import type { Repo } from "@smthrs/rpc/LocalApp"
 import type { RepoTreeEntry, WorkingCopy } from "../AppState"
 import { createCloudClient } from "./CloudClient"
-import { encodeRepoPath, parseEntry, requestLocalFiles, sortEntries, unsafePath } from "./FilesSeam"
+import { encodeRepoPath, parseEntry, sortEntries, unsafePath } from "./FilesSeam"
 import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
@@ -36,31 +36,13 @@ export interface RepoTreeSeam {
 /** A relative directory path with no leading, trailing, or doubled slashes. */
 export const normalizeTreePath = (path: string): string => path.split("/").filter((segment) => segment !== "").join("/")
 
-/*
- * The open repository behind a working copy. A local copy's id is its pin
- * key (`local:<path>`), and the server mints a fresh opaque `repoId` per
- * open, so the copy resolves to the repos row whose path it names. A copy
- * the server does not hold this launch answers the same honest string the
- * files flows answer for a pinned-but-unopened checkout.
+/**
+ * Why a copy the two cloud routes do not serve cannot list files. A
+ * checkout row can still sit in the sidebar from a pin this app persisted
+ * before the local backend was retired, and it has no route left.
  */
-export const openRepoOfCopy = (
-  store: SeamContext["store"],
-  copyId: string
-): { readonly repo: Repo } | { readonly error: string } => {
-  const copy = store.collections.workingCopies.get(copyId)
-  const path = copy?.path ?? (copyId.startsWith("local:") ? copyId.slice("local:".length) : undefined)
-  const name = store.collections.pinnedRepos.get(copyId)?.name ?? copy?.label ?? copyId
-  if (path === undefined) {
-    return {
-      error: copy?.kind === "shared"
-        ? `${name} is the shared read-only copy of ${copy.repoId}; its files are read from the public mirror, never from this machine.`
-        : `${name} is a cloud workspace; only a checkout on this machine lists its files here.`
-    }
-  }
-  const repo = [...store.collections.repos.values()].find((candidate) => candidate.path === path)
-  if (repo === undefined) return { error: `${name} is pinned but not open on this machine — open it with /repo.open, then retry.` }
-  return { repo }
-}
+export const unservedCopyRefusal = (copy: WorkingCopy): string =>
+  `${copy.label} is a checkout of ${copy.repoId} on this machine; this app reads files from Smithers Cloud only.`
 
 /**
  * Why a box cannot list files right now, in the state the inventory holds
@@ -178,7 +160,7 @@ export const createRepoTreeSeam = (ctx: SeamContext): RepoTreeSeam => {
   const loadDirectory: RepoTreeSeam["loadDirectory"] = async (copyId, pathArg) => {
     const path = normalizeTreePath(pathArg)
     /*
-     * The one guard the three routes share (FilesSeam.unsafePath, the same
+     * The one guard both routes share (FilesSeam.unsafePath, the same
      * refusal the files flows answer). `normalizeTreePath` drops empty
      * segments and nothing else, and per-segment encoding leaves `..`
      * alone, so a caller's `..` would collapse in the URL and address a
@@ -190,38 +172,20 @@ export const createRepoTreeSeam = (ctx: SeamContext): RepoTreeSeam => {
       return
     }
     const copy = ctx.store.collections.workingCopies.get(copyId)
-    if (copy?.kind === "workspace") {
+    if (copy === undefined) {
+      failed(copyId, path, `There is no working copy with id ${copyId}.`)
+      return
+    }
+    if (copy.kind === "workspace") {
       await loadWorkspaceDirectory(copy, path)
       return
     }
-    if (copy?.kind === "shared") {
+    if (copy.kind === "shared") {
       await loadSharedDirectory(copy, path)
       return
     }
-    const resolved = openRepoOfCopy(ctx.store, copyId)
-    if ("error" in resolved) {
-      failed(copyId, path, resolved.error)
-      return
-    }
-    const label = path === "" ? "/" : path
-    const answer = await requestLocalFiles(ctx, resolved.repo, path, label, "list")
-    if ("error" in answer) {
-      failed(copyId, path, answer.error)
-      return
-    }
-    if (answer.body.kind === "file") {
-      failed(copyId, path, `${label} in ${resolved.repo.name} is a file — run /files.read ${label} instead`)
-      return
-    }
-    // A row the user collapsed (or unpinned) while the request was out is still the answer's home; the reducer keeps its caret.
-    ctx.dispatch({
-      type: "repo-tree.loaded",
-      actor: "system",
-      copyId,
-      path,
-      entries: sortEntries(answer.body.entries),
-      truncated: answer.body.truncated === true
-    })
+    // A checkout has no route left: the local backend is retired, so the row says so in place.
+    failed(copyId, path, unservedCopyRefusal(copy))
   }
   return { loadDirectory }
 }

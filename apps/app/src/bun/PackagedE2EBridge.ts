@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "node:crypto"
-import { isAbsolute } from "node:path"
 import { deflateSync } from "node:zlib"
 
 const MAX_BODY_BYTES = 1024 * 1024
@@ -9,7 +8,6 @@ export interface PackagedE2EBridgeOptions {
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly state: () => unknown | Promise<unknown>
   readonly evaluate: (script: string) => unknown | Promise<unknown>
-  readonly queueRepositorySelection: (path: string | null) => void | Promise<void>
   readonly screenshot: () => Uint8Array | null | Promise<Uint8Array | null>
   readonly quit: () => void | Promise<void>
 }
@@ -68,20 +66,6 @@ const readEvalScript = async (request: Request): Promise<string> => {
   return script
 }
 
-const readRepositorySelection = async (request: Request): Promise<string | null> => {
-  const body = await readJsonBody(request)
-  if (typeof body !== "object" || body === null || Array.isArray(body) ||
-      Object.keys(body).length !== 1 || !("path" in body)) {
-    throw new BridgeRequestError(400, "invalid_request", "Body must be exactly { path: absolutePath | null }.")
-  }
-  const path = (body as { readonly path?: unknown }).path
-  if (path === null) return null
-  if (typeof path !== "string" || path.trim() === "" || path.length > 32_768 || !isAbsolute(path)) {
-    throw new BridgeRequestError(400, "invalid_request", "Repository path must be null or a non-empty absolute path.")
-  }
-  return path
-}
-
 class BridgeRequestError extends Error {
   constructor(
     readonly status: number,
@@ -130,10 +114,6 @@ export const startPackagedE2EBridge = (
         if (url.pathname === "/window/eval" && request.method === "POST") {
           const result = await options.evaluate(await readEvalScript(request))
           return json(200, result === undefined ? { result: null, valueUndefined: true } : { result })
-        }
-        if (url.pathname === "/window/repository-picker" && request.method === "POST") {
-          await options.queueRepositorySelection(await readRepositorySelection(request))
-          return json(202, { ok: true })
         }
         if (url.pathname === "/window/screenshot" && request.method === "GET") {
           const screenshot = await options.screenshot()

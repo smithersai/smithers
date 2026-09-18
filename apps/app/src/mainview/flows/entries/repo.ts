@@ -10,7 +10,7 @@ import type { FlowEntry, FlowRequirement, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
 /** The `repo` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
-export const namespace: Namespace = { id: "repo", label: "Repository", summary: "Open and inspect local repositories" }
+export const namespace: Namespace = { id: "repo", label: "Repository", summary: "Inspect and select repositories" }
 
 /**
  * First run picks the starting repository itself, after identity answers. A
@@ -35,24 +35,13 @@ export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "repo.select",
     summary: "Make a pinned repository the active one",
-    runtimeAny: ["local.repositories", "cloud"],
+    runtime: ["cloud"],
     hidden: true,
     userOnly: true,
-    userOnlyReason:
-      "which pinned repository is active is the human's selection; an act names its working copy instead (tab.terminal [cwd])",
+    userOnlyReason: "which pinned repository is active is the human's selection",
     args: "<repoKey>",
     input: Schema.Struct({ repo: Schema.String }),
     handler: ({ repo }) => actions.selectRepo(repo)
-  }),
-  flow({
-    /* Forgets a repository: the agent asks, the human confirms. */
-    name: "repo.unpin",
-    summary: "Unpin a repository",
-    runtime: ["local.repositories"],
-    confirm: "unpin the repository",
-    args: "<repoKey>",
-    input: Schema.Struct({ repo: Schema.String }),
-    handler: ({ repo }) => actions.unpinRepo(repo)
   }),
   /*
    * The sidebar's file tree (docs/workbench-lanes/sidebar-tree.md): a repo
@@ -64,30 +53,11 @@ export const repoFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     name: "repo.tree",
     form: { args: (payload) => text(payload, "path") === undefined ? text(payload, "copy") ?? "" : `${text(payload, "copy")}#${text(payload, "path")}` },
     summary: "Expand or collapse a directory of a working copy (a local checkout or a cloud workspace)",
-    /* A local checkout lists through the local app; a cloud workspace copy lists through Smithers Cloud (RepoTreeSeam). */
-    runtimeAny: ["local.repositories", "cloud"],
+    /* A workspace copy lists through Smithers Cloud (RepoTreeSeam). */
+    runtime: ["cloud"],
     args: "<copyId>[#path]",
     input: Schema.Struct({ copy: Schema.String, path: Schema.optional(Schema.String) }),
     handler: ({ copy, path }) => actions.toggleRepoTree(copy, path)
-  })
-]
-
-/** `repo.open`, registered last before the target flows. */
-export const repoOpenFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({
-    /*
-     * The chrome's "Open repository": the native folder dialog, or a typed
-     * path. Granting the agent a directory is consequential, so a path it
-     * names confirms; the dialog itself is the human's gesture, so without a
-     * path the agent is told to name one (controller/tabs.ts openLocalRepo).
-     */
-    name: "repo.open",
-    summary: "Open a local repository (a path, or the folder dialog)",
-    runtime: ["local.repositories"],
-    args: "[path]",
-    confirm: ({ path }) => typeof path === "string" && path.trim() !== "" ? `open the local repository at ${path}` : undefined,
-    input: Schema.Struct({ path: Schema.optional(Schema.String) }),
-    handler: ({ path }) => actions.openLocalRepo(path)
   })
 ]
 

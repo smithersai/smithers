@@ -47,8 +47,6 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "frame.back": "frame navigation is the human's browser gesture",
   "frame.forward": "frame navigation is the human's browser gesture",
   "frame.fork": "forking a frame is the human's browser gesture",
-  "connector.remove.ask": "opens the human's confirm dialog; the act itself is connector.remove",
-  "connector.remove.cancel": "a confirm-dialog answer is the human's",
   "wiki.delete.confirm": "a confirm-dialog answer is the human's",
   "wiki.delete.cancel": "a confirm-dialog answer is the human's",
   "wiki.heading": WIKI_HEADING_USER_ONLY_REASON,
@@ -65,7 +63,7 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "tab.close.confirm": "a confirm-dialog answer is the human's",
   "tab.close.cancel": "a confirm-dialog answer is the human's",
   "tab.menu": "opening a menu is the human's gesture",
-  "repo.select": "which pinned repository is active is the human's selection; an act names its working copy instead (tab.terminal [cwd])",
+  "repo.select": "which pinned repository is active is the human's selection",
   "workspace.rename.edit": "opening the inline editor is the human's gesture; the agent names the workspace with workspace.rename",
   "composer.add": "opening the composer's menu is the human's gesture",
   "chat.open": "opening Chat and starting the selected microphone mode is the human's gesture",
@@ -73,17 +71,6 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "palette.open": PALETTE_OPEN_REASON,
   "plugins": PLUGINS_USER_ONLY_REASON,
   "palette.actions": PALETTE_ACTIONS_REASON,
-  "target.filter": "the targets table's filter is the human's control; the agent lists targets with target.list",
-  "target.select": "the targets table's row drawer is the human's control; the agent shows a target with target.open",
-  "target.star": "starring is the human's own ranking of the table",
-  "target.unstar": "starring is the human's own ranking of the table",
-  "target.expand": "the targets table's grouped rows are the human's control",
-  "target.pick": "picking a grouped row's members is the human's control",
-  "target.run.set": "runs the members the human picked in the table; the agent runs a target by label with target.run",
-  "target.graph.focus": "the graph drawer's own selection; the agent opens the graph focused with target.graph [label]",
-  "target.graph.filter": "the graph canvas' own toolbar; the agent opens the graph focused with target.graph [label]",
-  "target.run.scrub": "the replay slider is the human's gesture (time travel)",
-  "target.source.open": "opens the declaration in the human's editor — a handoff off the app",
   "admin.reset": "destroys the whole store with no undo; the confirm dialog is the only door",
   "admin.reset.ask": "opens the human's confirm dialog for the reset",
   "admin.reset.cancel": "a confirm-dialog answer is the human's",
@@ -107,18 +94,10 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "runs.trace.live", args: "run-1", confirm: false },
   { name: "runs.coding.select", args: "run-1 storage", confirm: false },
   { name: "chat.clear", confirm: true },
-  { name: "tab.terminal", confirm: false },
-  { name: "tab.harness", args: "claude", confirm: true },
-  { name: "agent.role", args: "implementation", confirm: true },
   { name: "tab.card", args: "card-1", confirm: false },
   { name: "tab.close", args: "t1", confirm: true },
-  { name: "repo.open", args: "/Users/will/force", confirm: true },
-  { name: "repo.unpin", args: "local:/Users/will/smithers", confirm: true },
   { name: "repo.tree", args: "local:/Users/will/smithers", confirm: false },
   { name: "workspace.rename", args: "Force", confirm: false },
-  { name: "target.run", args: "r1 //src:lint", confirm: true },
-  { name: "target.run.pattern", args: "r1 ci //packages/...", confirm: true },
-  { name: "target.open", args: "r1 //src:lint", confirm: false },
   { name: "change.pins", args: "c1 parent current", confirm: false },
   { name: "change.checks", args: "c1 1", confirm: false },
   { name: "workspace.facet", args: "ws-1 files", confirm: false },
@@ -137,7 +116,7 @@ const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string;
   { name: "agent.session.view", args: "sess-1", confirm: false },
   { name: "agent.session.say", args: "sess-1 hello there", confirm: true },
   { name: "agent.session.stop", args: "sess-1", confirm: true },
-  /* Code intelligence (docs/code-intel/PLAN.md §4): reads against the local language server; none confirms. */
+  /* Code intelligence (docs/code-intel/PLAN.md §4): reads over the workspace LSP tunnel; none confirms. */
   { name: "code.hover", args: "src/index.ts:3:7", confirm: false },
   { name: "code.definition", args: "src/index.ts:3:17", confirm: false },
   { name: "code.diagnostics", args: "src/index.ts", confirm: false }
@@ -326,47 +305,14 @@ describe("the three-door law", () => {
       expect(`${row.name} confirmation`).toBe(`${row.name} ${confirmation === undefined ? "missing" : "confirmation"}`)
       expect(confirmation?.action?.args).toBe(row.args)
     }
-    // A confirm row performed nothing: no harness or target launched, no tab closed, no pin dropped.
-    expect(ptyBodies.filter((body) => body.kind === "harness")).toEqual([])
+    // A confirm row performed nothing: no tab closed.
     expect(store.collections.tabs.get("t1")).toBeDefined()
-    expect(store.collections.pinnedRepos.get("local:/Users/will/smithers")).toBeDefined()
-    // The no-confirm rows acted: a terminal opened in the active working copy, the card is a tab, the workspace is named.
-    expect(ptyBodies.filter((body) => body.kind === "terminal")).toHaveLength(1)
-    expect(store.collections.tabs.size).toBe(tabsBefore + 2)
+    // No surviving row opens a PTY: the local terminals and harnesses went with the local backend.
+    expect(ptyBodies).toEqual([])
+    // The no-confirm rows acted: the card is a tab, the workspace is named.
+    expect(store.collections.tabs.size).toBe(tabsBefore + 1)
     expect(store.collections.tabs.get("card-card-1")?.kind).toBe("card")
     expect(store.session().workspaceName).toBe("Force")
-  })
-
-  test("tab.terminal [cwd] opens in the named open working copy; an unknown cwd is refused with the open ones listed", async () => {
-    const { store, controller, ptyBodies } = await boot()
-    expect(await execute(controller, "tab.terminal", "/Users/will/force")).toBe("executed /tab.terminal")
-    expect(ptyBodies.at(-1)).toMatchObject({ kind: "terminal", repoId: "r2" })
-    expect(store.collections.tabs.get("pty-1")).toMatchObject({ kind: "terminal", cwd: "/Users/will/force", title: "Terminal · force" })
-    // The id and the name resolve the same copy.
-    expect(await execute(controller, "tab.terminal", "r1")).toBe("executed /tab.terminal")
-    expect(ptyBodies.at(-1)).toMatchObject({ repoId: "r1" })
-    const refused = await execute(controller, "tab.terminal", "/nope")
-    expect(refused).toStartWith("failed: ")
-    expect(refused).toContain("/nope")
-    expect(refused).toContain("/Users/will/smithers")
-    expect(refused).toContain("/Users/will/force")
-    expect(ptyBodies).toHaveLength(2)
-  })
-
-  test("repo.open without a path refuses the agent by name — the folder dialog stays the human's", async () => {
-    const { store, controller, picks } = await boot()
-    const result = await execute(controller, "repo.open")
-    expect(result).toStartWith("failed: ")
-    expect(result).toContain("path")
-    expect(confirmationFor(store, "repo.open")).toBeUndefined()
-    expect(picks()).toBe(0)
-    // The human's door still opens the dialog.
-    expect((await controller.commands.run("repo.open")).status).toBe("executed")
-    expect(picks()).toBe(1)
-    // With a path the agent's ask becomes the confirm card, and nothing opens until the click.
-    expect(await execute(controller, "repo.open", "/Users/will/plue")).toContain("asked the user to confirm")
-    expect(confirmationFor(store, "repo.open")?.action).toEqual({ flow: "repo.open", args: "/Users/will/plue", label: "Confirm: open the local repository at /Users/will/plue" })
-    expect(picks()).toBe(1)
   })
 
   /*
@@ -460,15 +406,15 @@ describe("the three-door law", () => {
     expect(typed).toEqual({ status: "failed", error: `failed: /auth.sign-in is user-only — ${USER_ONLY_ALLOWLIST["auth.sign-in"]} — invoke auth.prompt, which renders that button in the chat` })
   })
 
-  test("the + menu's flows are the agent's flows: tab.terminal, agent.role and tab.harness are callable", async () => {
+  test("the + menu's flows are the agent's flows: files.add and flow.create are callable", async () => {
     const { controller } = await boot()
     const callable = new Set(controller.commands.callable().map(nameOf))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "tab.card", "agent.list", "form.set", "form.submit", "card.dismiss"]) {
+    for (const name of ["files.add", "flow.create", "tab.card", "agent.list", "form.set", "form.submit", "card.dismiss"]) {
       expect(callable.has(name)).toBe(true)
     }
     // And listed: the slash menu and the prompt's catalog show them.
     const disclosed = new Set(controller.commands.disclosed().map((descriptor) => descriptor.name))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness", "repo.open", "cloud.prompt", "agent.list"]) {
+    for (const name of ["files.add", "flow.create", "cloud.prompt", "agent.list"]) {
       expect(disclosed.has(name)).toBe(true)
     }
     expect(disclosed.has("flow.run.retry")).toBe(false)

@@ -281,8 +281,7 @@
 
 @media (max-width: 600px) {
 	.palette-foot { flex-wrap: wrap; }
-	.palette-hint-end { margin-left: 0; }
-}
+	.palette-hint-end { margin-left: 0; }}
 
 .palette-group {
 	padding: var(--sp-2) var(--sp-3) var(--sp-1);
@@ -413,8 +412,7 @@
 	.message-actions {
 		opacity: 1;
 		pointer-events: auto;
-	}
-}
+	}}
 
 .message-actions .message-action {
 	width: 22px;
@@ -437,8 +435,7 @@
 	.smithers-card,
 	.message-actions {
 		transition: none;
-	}
-}
+	}}
 
 .smithers-balance-intro {
 	margin: 0 0 6px;
@@ -525,8 +522,7 @@
 	@keyframes card-backdrop-in {
 		from { opacity: 0; }
 		to { opacity: 1; }
-	}
-}
+	}}
 @media (prefers-reduced-motion: reduce) {
 	.smithers-card[data-maximized="true"] {
 		animation: card-maximize-fade 120ms linear;
@@ -534,8 +530,7 @@
 	@keyframes card-maximize-fade {
 		from { opacity: 0; }
 		to { opacity: 1; }
-	}
-}
+	}}
 .card-maximize-btn {
 	margin-left: auto;
 }
@@ -670,8 +665,7 @@
 	@keyframes control-focus-dim-in {
 		from { opacity: 0; }
 		to { opacity: 1; }
-	}
-}
+	}}
 
 /* Wave 10 — the connect store rows (§2e), shared by the pane and the embedded card. */
 .connect-store-list {
@@ -947,421 +941,6 @@
 .smithers-card[data-maximized="true"] .workspace-desktop-frame {
 	height: auto;
 }
-/* The workspace outro must not paint or catch wheel events over an explicit
- * maximize. Keep the footer's Chat door, and fill its remaining content area. */
-/* Lane L3 — the repository, targets, html panel and target-run cards. */
-.repo-card,
-.targets-card,
-.target-run-card {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-}
-.repo-card p,
-.target-run-meta {
-	margin: 0;
-	font-size: var(--fs-small);
-	word-break: break-all;
-}
-.repo-card-git,
-.repo-card-detection,
-.targets-card-type {
-	color: var(--muted-foreground);
-}
-.targets-card-summary {
-	display: block;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-	word-break: break-word;
-}
-.targets-card-warnings {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-}
-.targets-card-warnings li {
-	font-size: var(--fs-small);
-	color: var(--danger);
-}
-.targets-card-label {
-	font-family: var(--font-mono);
-	flex: 1;
-	min-width: 0;
-	word-break: break-all;
-}
-.targets-card-kinds {
-	display: flex;
-	gap: 0.25rem;
-	flex-wrap: wrap;
-}
-/*
- * The targets table (docs/LOCAL-APP.md "Cards"): the toolbar and chips stay
- * put, the table scrolls INSIDE the card at a bounded height (the whole
- * column when maximized), and the drawer sits beside it.
- */
-.targets-skeleton {
-	height: 1.25rem;
-	margin-bottom: 0.375rem;
-}
-.targets-toolbar {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	flex-wrap: wrap;
-}
-.targets-search {
-	flex: 1;
-	min-width: 12rem;
-}
-.targets-workspace {
-	font: inherit;
-	font-size: var(--fs-small);
-	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: var(--surface);
-	color: inherit;
-}
-.targets-count {
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-	white-space: nowrap;
-}
-.targets-chips {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	flex-wrap: wrap;
-}
-.targets-chips-divider {
-	width: 1px;
-	height: 1rem;
-	margin: 0 0.25rem;
-	background: var(--border);
-}
-.targets-chip {
-	font: inherit;
-	font-size: var(--fs-small);
-	padding: 2px var(--sp-2);
-	border: 1px solid var(--border);
-	border-radius: var(--r-full);
-	background: transparent;
-	color: inherit;
-	cursor: pointer;
-}
-.targets-chip:hover,
-.targets-chip:focus-visible {
-	background: var(--hover);
-}
-.targets-chip[aria-pressed="true"] {
-	background: color-mix(in srgb, var(--brand) 18%, var(--surface));
-	border-color: var(--brand);
-	font-weight: 600;
-}
-.targets-mode[aria-pressed="true"] {
-	background: var(--brand);
-	border-color: var(--brand);
-	color: var(--inverse-text);
-}
-.targets-table-star-head,
-.targets-table-star {
-	width: 1.75rem;
-	padding-right: 0;
-}
-.targets-star {
-	font: inherit;
-	font-size: var(--fs-body);
-	line-height: 1;
-	padding: 0.125rem 0.25rem;
-	border: 0;
-	border-radius: 6px;
-	background: transparent;
-	color: var(--muted-foreground);
-	cursor: pointer;
-}
-.targets-star[aria-pressed="true"] {
-	color: var(--warning);
-}
-.targets-star:hover,
-.targets-star:focus-visible {
-	background: var(--hover);
-	outline: none;
-}
-.targets-group-chevron {
-	display: inline-block;
-	width: 0.875rem;
-	color: var(--muted-foreground);
-}
-.targets-card-label [data-badge="members"] {
-	margin-left: 0.375rem;
-	font-size: var(--fs-caption);
-	vertical-align: middle;
-}
-.targets-table-member td {
-	background: var(--surface-2);
-}
-.targets-table-member-label {
-	display: flex;
-	align-items: flex-start;
-	gap: 0.5rem;
-	padding-left: 1.5rem;
-}
-.targets-pick-box {
-	margin-top: 0.2rem;
-}
-.targets-pick {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.375rem;
-	padding-left: 1rem;
-}
-.targets-card-label [data-badge="featured"] {
-	margin-left: 0.375rem;
-	font-size: var(--fs-caption);
-	vertical-align: middle;
-}
-.targets-body {
-	display: flex;
-	gap: 0.5rem;
-	min-height: 0;
-	align-items: stretch;
-}
-.targets-scroll {
-	flex: 1;
-	min-width: 0;
-	max-height: 22.5rem;
-	overflow: auto;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-}
-.smithers-card[data-maximized="true"] .targets-card {
-	height: calc(100% - 2.5rem);
-}
-.smithers-card[data-maximized="true"] .targets-body {
-	flex: 1;
-}
-.smithers-card[data-maximized="true"] .targets-scroll {
-	max-height: none;
-}
-.targets-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: var(--fs-small);
-}
-.targets-table th {
-	position: sticky;
-	top: 0;
-	z-index: 1;
-	text-align: left;
-	font-size: var(--fs-caption);
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--muted-foreground);
-	background: var(--surface);
-	padding: 0.375rem 0.5rem;
-	border-bottom: 1px solid var(--border);
-}
-.targets-table td {
-	padding: 0.25rem 0.5rem;
-	border-bottom: 1px solid var(--border);
-	vertical-align: middle;
-}
-.targets-table-row:hover,
-.targets-table-row:focus-visible {
-	background: var(--hover);
-	outline: none;
-}
-.targets-table-row[data-selected="true"] {
-	background: var(--brand-soft);
-	box-shadow: inset 2px 0 0 var(--brand);
-}
-.targets-table-row[data-highlighted="true"] {
-	outline: 1px solid var(--ring);
-	outline-offset: -1px;
-}
-.targets-table-select {
-	font: inherit;
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 0.125rem;
-	padding: 0;
-	border: 0;
-	background: transparent;
-	color: inherit;
-	text-align: left;
-	cursor: pointer;
-}
-.targets-table-select .targets-card-type {
-	font-size: var(--fs-caption);
-}
-.targets-table-workspace,
-.targets-table-cache {
-	color: var(--muted-foreground);
-	white-space: nowrap;
-}
-.targets-table-never,
-.targets-table-when {
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-	white-space: nowrap;
-}
-.targets-table-lastrun {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.375rem;
-}
-.targets-table-actions {
-	white-space: nowrap;
-	text-align: right;
-}
-.targets-table-empty {
-	text-align: center;
-	color: var(--muted-foreground);
-	padding: 1rem;
-}
-.targets-drawer {
-	width: 19rem;
-	flex-shrink: 0;
-	max-height: 22.5rem;
-	overflow-y: auto;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	padding: 0.625rem;
-	font-size: var(--fs-small);
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-	background: var(--surface);
-}
-.smithers-card[data-maximized="true"] .targets-drawer {
-	max-height: none;
-}
-.targets-drawer-skeleton {
-	height: 3rem;
-}
-.targets-drawer-heading {
-	margin: 0.375rem 0 0;
-	font-size: var(--fs-caption);
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--muted-foreground);
-}
-.targets-drawer-run-list {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
-}
-.targets-drawer-run {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
-	flex-wrap: wrap;
-}
-@media (max-width: 900px) {
-	.targets-body {
-		flex-direction: column;
-	}
-	.targets-drawer {
-		width: auto;
-	}
-}
-.target-run-meta {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-.target-run-elapsed {
-	font-family: var(--font-mono);
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-}
-.target-run-kpis {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 0.5rem;
-}
-.target-run-kpis [data-alert="true"] {
-	color: var(--danger);
-}
-.target-run-scroll {
-	max-height: 22.5rem;
-	overflow: auto;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-}
-.smithers-card[data-maximized="true"] .target-run-scroll {
-	max-height: none;
-	flex: 1 1 auto;
-}
-.target-run-table thead th {
-	position: sticky;
-	top: 0;
-	background: var(--card);
-}
-.target-run-failure > summary {
-	cursor: pointer;
-	list-style: revert;
-}
-.target-run-failure-output {
-	margin-top: 0.375rem;
-	max-height: 12rem;
-	overflow: auto;
-}
-.target-run-failure-acts {
-	display: inline-flex;
-	gap: 0.25rem;
-	margin-top: 0.25rem;
-}
-.target-run-raw > summary {
-	cursor: pointer;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-}
-.target-run-raw .target-run-output {
-	margin-top: 0.375rem;
-	max-height: 18rem;
-	overflow: auto;
-}
-.targets-pattern-runs {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
-}
-.targets-pattern-run {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.5rem;
-	padding: 0.375rem 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-}
-.targets-pattern-run-text {
-	display: flex;
-	flex-direction: column;
-	gap: 0.125rem;
-	min-width: 0;
-	font-size: var(--fs-small);
-}
-.target-run-output {
-	font-family: var(--font-mono);
-	font-size: var(--fs-small);
-	white-space: pre-wrap;
-	word-break: break-word;
-	min-height: 1.5rem;
-	padding: 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-}
 .browser-card-blocked {
 	padding: 1rem;
 	border: 1px dashed var(--border);
@@ -1419,8 +998,7 @@
 		white-space: normal;
 		text-overflow: clip;
 		overflow-wrap: anywhere;
-	}
-}
+	}}
 
 /* Wave 12 — the quiet run's two acts, and the which-watched-repo question. */
 .flow-run-actions {
@@ -1584,445 +1162,6 @@
 .smithers-card[data-maximized="true"] .world-card-panel {
 	max-height: none;
 	overflow: visible;
-}
-
-/* The target-graph cards (docs/LOCAL-APP.md "Cards: target graph"). */
-.graph-card,
-.run-timeline-card,
-.affected-card,
-.ci-matrix-card {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-}
-.graph-card-toolbar {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	font-size: var(--fs-small);
-}
-.graph-card-search {
-	flex: 1;
-	min-width: 8rem;
-	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: var(--surface);
-	color: var(--text, inherit);
-	font: inherit;
-}
-.graph-card-private-toggle {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	color: var(--muted-foreground);
-	white-space: nowrap;
-}
-.graph-card-counts {
-	color: var(--muted-foreground);
-	white-space: nowrap;
-}
-.graph-card-legend {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 0.75rem;
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-}
-.graph-card-legend li {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-}
-.graph-card-canvas-row {
-	display: flex;
-	gap: 0.5rem;
-	min-height: 22rem;
-}
-/*
- * The canvas is the graph's whole stage, so it names its own height ahead of
- * the shared .sui-canvas default (hence the .graph-card prefix: one more
- * class, so the cascade order between the two stylesheets cannot decide it).
- */
-.graph-card .graph-card-canvas {
-	position: relative;
-	flex: 1;
-	min-width: 0;
-	height: 26rem;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	overflow: hidden;
-}
-/*
- * React Flow lays its panes out absolutely and asks for `height: 100%`, which
- * resolves to ZERO whenever the canvas's own height is indefinite — the graph
- * then renders 82 invisible nodes in a 0px pane. Filling the (relative)
- * canvas by inset makes the pane's box independent of how the canvas got its
- * height. e2e/playwright/target-graph.spec.ts guards this.
- */
-.graph-card .graph-card-canvas .react-flow {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-}
-.smithers-card[data-maximized="true"] .graph-card-canvas-row,
-.smithers-card[data-maximized="true"] .graph-card-canvas {
-	flex: 1;
-	height: auto;
-	min-height: 0;
-}
-.smithers-card[data-maximized="true"] .graph-card {
-	height: calc(100% - 0.5rem);
-}
-/*
- * Every node carries the family/status stripe, not just the families named
- * below: the run overlay repaints `border-left-color`, and a colour alone
- * paints nothing on a node whose border-left has no width. The workspace has
- * far more rule families (Suite, Alias, Filegroup, Generate, ...) than the
- * handful worth their own hue, and all of them must show a run status.
- */
-.graph-node {
-	width: 240px;
-	height: 84px;
-	font-size: var(--fs-small);
-	border-left: 3px solid var(--border);
-}
-.graph-node-handle {
-	opacity: 0;
-	width: 6px;
-	height: 6px;
-}
-.graph-node-footer {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	flex-wrap: wrap;
-	padding: 0 0.5rem 0.375rem;
-}
-.graph-node-run {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.25rem;
-}
-.graph-node-duration {
-	font-family: var(--font-mono);
-	color: var(--muted-foreground);
-}
-/* Node color by rule family (data-rule-family) and run status (data-run-status). */
-.graph-node[data-rule-family="Shell"] {
-	border-left: 3px solid var(--success);
-}
-.graph-node[data-rule-family="Agent"] {
-	border-left: 3px solid var(--confluence);
-}
-.graph-node[data-rule-family="Go"] {
-	border-left: 3px solid var(--info);
-}
-.graph-node[data-rule-family="Docker"] {
-	border-left: 3px solid var(--warning);
-}
-.graph-node[data-rule-family="Github"] {
-	border-left: 3px solid var(--muted-foreground);
-}
-.graph-node[data-private="true"] {
-	opacity: 0.45;
-}
-.graph-node[data-focus="faded"] {
-	opacity: 0.25;
-}
-.graph-node[data-focus="highlighted"] {
-	outline: 2px solid var(--confluence);
-	border-radius: 10px;
-}
-.graph-node[data-focus="root"] {
-	outline: 2px solid var(--ring);
-	border-radius: 10px;
-}
-.graph-node[data-run-status="failed"],
-.graph-node[data-run-status="refused"] {
-	border-left-color: var(--danger);
-}
-.graph-node[data-run-status="hit"],
-.graph-node[data-run-status="ran"] {
-	border-left-color: var(--success);
-}
-.graph-node[data-run-status="running"] {
-	border-left-color: var(--warning);
-}
-.graph-node[data-critical="true"] {
-	box-shadow: 0 0 0 2px var(--warning-border);
-}
-.graph-edge[data-critical="true"],
-.react-flow__edge:has(.graph-edge) {
-	stroke-linecap: round;
-}
-.graph-card-minimap {
-	border: 1px solid var(--border);
-	border-radius: 8px;
-}
-.graph-drawer {
-	width: 19rem;
-	flex-shrink: 0;
-	overflow-y: auto;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	padding: 0.625rem;
-	font-size: var(--fs-small);
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-	background: var(--surface);
-}
-.graph-drawer-header {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 0.5rem;
-}
-.graph-drawer-label {
-	font-family: var(--font-mono);
-	font-weight: 600;
-	word-break: break-all;
-}
-.graph-drawer-fact {
-	display: flex;
-	gap: 0.5rem;
-	align-items: baseline;
-}
-.graph-drawer-fact-name {
-	flex-shrink: 0;
-	width: 4.5rem;
-	color: var(--muted-foreground);
-	font-size: var(--fs-small);
-}
-.graph-drawer-fact-value {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
-	flex-wrap: wrap;
-	min-width: 0;
-}
-.graph-drawer-mono {
-	font-family: var(--font-mono);
-	font-size: var(--fs-small);
-	word-break: break-all;
-}
-.graph-drawer-argv {
-	display: block;
-	max-height: 5rem;
-	overflow-y: auto;
-}
-.graph-drawer-refusal {
-	margin: 0;
-	padding: 0.375rem 0.5rem;
-	border-radius: 8px;
-	background: var(--danger-soft);
-	color: var(--danger);
-}
-.graph-drawer-actions {
-	margin-top: auto;
-	display: flex;
-	gap: 0.5rem;
-}
-/* The run timeline (Gantt). */
-.run-timeline-meta {
-	margin: 0;
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: var(--fs-small);
-}
-.run-timeline-totals {
-	display: flex;
-	gap: 0.75rem;
-	flex-wrap: wrap;
-}
-.run-timeline-rows {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-}
-.run-timeline-row {
-	display: flex;
-	align-items: center;
-	gap: var(--sp-2);
-	width: 100%;
-	padding: 2px var(--sp-1);
-	font-size: var(--fs-small);
-	border-radius: var(--r-sm);
-}
-.run-timeline-row[data-critical="true"] {
-	background: var(--warning-soft);
-}
-.run-timeline-row[data-open="true"] {
-	outline: 1px solid var(--ring);
-}
-.run-timeline-row-label {
-	font-family: var(--font-mono);
-	width: 16rem;
-	flex-shrink: 0;
-	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.run-timeline-track {
-	position: relative;
-	flex: 1;
-	height: 0.625rem;
-	background: var(--brand-soft);
-	border-radius: 4px;
-}
-.run-timeline-bar {
-	position: absolute;
-	top: 0;
-	bottom: 0;
-	border-radius: 4px;
-	background: var(--success);
-	min-width: 0;
-}
-.run-timeline-row[data-status="running"] .run-timeline-bar {
-	background: var(--warning);
-}
-.run-timeline-row[data-status="failed"] .run-timeline-bar,
-.run-timeline-row[data-status="refused"] .run-timeline-bar {
-	background: var(--danger);
-}
-.run-timeline-row[data-status="pending"] .run-timeline-bar,
-.run-timeline-row[data-status="skipped"] .run-timeline-bar,
-.run-timeline-row[data-status="cancelled"] .run-timeline-bar {
-	background: var(--muted-foreground);
-}
-.run-timeline-bar[data-zero-width="true"] {
-	width: 2px !important;
-	border-radius: 1px;
-}
-.run-timeline-duration {
-	width: 3.5rem;
-	flex-shrink: 0;
-	text-align: right;
-	font-family: var(--font-mono);
-	color: var(--muted-foreground);
-}
-.run-timeline-scrubber {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-}
-.run-timeline-scrubber input {
-	flex: 1;
-}
-.run-timeline-log {
-	margin: 0;
-	max-height: 12rem;
-	overflow-y: auto;
-	padding: var(--sp-2);
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-	font-family: var(--font-mono);
-	font-size: var(--fs-small);
-	white-space: pre-wrap;
-}
-/* The run history table. */
-.run-history-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: var(--fs-small);
-}
-.run-history-table th {
-	text-align: left;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-	font-weight: 600;
-	padding: 0.25rem 0.5rem 0.25rem 0;
-}
-.run-history-table td {
-	padding: 0.25rem 0.5rem 0.25rem 0;
-	border-top: 1px solid var(--border);
-}
-.run-history-table tr[data-selected="true"] td {
-	background: var(--brand-soft);
-}
-.run-history-select {
-	font-family: var(--font-mono);
-}
-/* The affected card. */
-.affected-card-files,
-.affected-card-labels {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
-	font-size: var(--fs-small);
-}
-.affected-card-row {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-.affected-card-reason {
-	flex: 1;
-	min-width: 0;
-	color: var(--muted-foreground);
-	font-size: var(--fs-small);
-}
-/* The CI matrix card. */
-.ci-matrix-workflow {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-	margin-bottom: 0.75rem;
-}
-.ci-matrix-workflow-name {
-	margin: 0;
-	font-size: var(--fs-small);
-	display: flex;
-	gap: 0.5rem;
-	align-items: baseline;
-}
-.ci-matrix-jobs {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: var(--fs-small);
-}
-.ci-matrix-jobs th {
-	text-align: left;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-	font-weight: 600;
-	padding: 0.25rem 0.5rem 0.25rem 0;
-}
-.ci-matrix-jobs td {
-	padding: 0.25rem 0.5rem 0.25rem 0;
-	border-top: 1px solid var(--border);
-	vertical-align: top;
-}
-.ci-matrix-target {
-	display: block;
-}
-.ci-matrix-yaml summary {
-	cursor: pointer;
-	font-size: var(--fs-small);
-	color: var(--muted-foreground);
-}
-.ci-matrix-yaml pre {
-	margin: 0.25rem 0 0;
-	max-height: 14rem;
-	overflow: auto;
-	padding: 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	font-size: var(--fs-small);
 }
 
 /* Lane L1 — the change card: the revision pickers read in mono; a finding with recorded feedback dims and reads the word. */
@@ -2254,8 +1393,7 @@
 	50% { opacity: 0.35; }
 }
 @media (prefers-reduced-motion: reduce) {
-	.run-outcome-dot, .run-trace-dot { animation: none; }
-}
+	.run-outcome-dot, .run-trace-dot { animation: none; }}
 .run-result { margin: 0; }
 .run-result > :first-child { margin-top: 0; }
 .run-result > :last-child { margin-bottom: 0; }
@@ -2466,8 +1604,7 @@
 @container (max-width: 40rem) {
 	.run-trace-body { grid-template-columns: minmax(0, 1fr); }
 	.run-trace-tree { max-height: 12rem; }
-	.run-turn-detail { padding-left: var(--sp-3); }
-}
+	.run-turn-detail { padding-left: var(--sp-3); }}
 .run-trace-detail { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .run-trace-waterfall {
 	list-style: none;
@@ -2583,8 +1720,7 @@
 .flow-run-transcript-text { overflow-wrap: anywhere; white-space: pre-wrap; }
 .flow-run-events code { font-size: var(--fs-caption); overflow-wrap: anywhere; }
 @container (max-width: 40rem) {
-	.flow-run-transcript > li { grid-template-columns: minmax(0, 1fr); gap: 0; }
-}
+	.flow-run-transcript > li { grid-template-columns: minmax(0, 1fr); gap: 0; }}
 
 /* Librarian L5: the Wiki's link rail and graph as cards. */
 .wiki-links-group {
@@ -2643,7 +1779,7 @@
 .coding-plan-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .coding-plan-paths ul, .coding-plan-checks { list-style: none; padding: 0; }
 .coding-plan-checks li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
-@media (max-width: 640px) { .coding-plan-paths { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .coding-plan-paths { grid-template-columns: minmax(0, 1fr); }}
 
 .coding-poc { overflow-wrap: anywhere; }
 .coding-poc .run-trace-code { max-height: 10rem; }
@@ -2758,8 +1894,7 @@
 .branches-row-open:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 1px; }
 @media (max-width: 480px) {
 	.commit-row { flex-wrap: wrap; gap: 0.375rem; }
-	.commit-row-side { width: 100%; justify-content: flex-end; }
-}
+	.commit-row-side { width: 100%; justify-content: flex-end; }}
 
 .card-local-history { display: flex; gap: 4px; flex-shrink: 0; }
 .card-local-history button { display: grid; place-items: center; min-width: 32px; min-height: 32px; border-radius: 6px; }
@@ -2807,15 +1942,14 @@
 .live-tutorial-error, .live-tutorial-events [data-status="failed"] .live-event-mark { color: var(--danger); }
 
 @media (pointer: coarse) {
-	.palette-foot { display: none; }
-}
+	.palette-foot { display: none; }}
 
 .view-skeleton { display: grid; gap: 14px; padding: 12px 0; min-height: 140px; }
 .view-skeleton > span { display: block; height: 14px; border-radius: 4px; background: var(--paper-300); animation: view-loading 1.2s ease-in-out infinite alternate; }
 .view-skeleton > span:first-child { width: 60%; height: 20px; }
 .view-skeleton > span:last-child { width: 80%; }
 @keyframes view-loading { to { opacity: .45; } }
-@media (prefers-reduced-motion: reduce) { .view-skeleton > span { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .view-skeleton > span { animation: none; }}
 
 /* Independent account tables use the same label column. */
 .smithers-card[data-kind="account"] .secrets-table { table-layout: fixed; }

@@ -60,7 +60,7 @@ export type CommandOutcome =
   /**
    * A declared flow this host lacks the door for (`explainAbsent`): `reason`
    * is the one sentence every trigger says. When the native app is the answer
-   * (`door` local or cloud.pat) the registry has already rendered the refusal
+   * (`door` cloud.pat) the registry has already rendered the refusal
    * card through the named action; for the other doors nothing is rendered
    * and the sentence is the whole answer.
    */
@@ -93,13 +93,11 @@ export interface AbsentExplanation {
 }
 
 /** Whether the native app is the answer to a miss of this door: the refusal card carries the download. */
-export const downloadAnswers = (door: AbsentDoor): boolean => door === "local" || door === "cloud.pat"
+export const downloadAnswers = (door: AbsentDoor): boolean => door === "cloud.pat"
 
 /** The sentence a miss of each door gets, after the flow it names. */
 export const absentReason = (name: string, door: AbsentDoor): string => {
   switch (door) {
-    case "local":
-      return `/${name} is not in the web app — it needs the native app.`
     case "cloud.pat":
       return `/${name} is not in the web app — it needs the native app's Smithers Cloud session.`
     case "cloud.session":
@@ -144,7 +142,7 @@ export interface CommandRegistry {
   /**
    * Why an exact name is absent from THIS host, classified against the
    * unfiltered catalog by the door the host lacks (registry.ts `absentDoor`):
-   * the native app (`local`, `cloud.pat`), the session flows the GitHub
+   * the native app (`cloud.pat`), the session flows the GitHub
    * sign-in already answers on the web (`cloud.session`), or a door this
    * origin could grow (`origin`). Undefined for a present flow, for a name no
    * host has, and for a flow about the other host. A prerequisite (sign-in)

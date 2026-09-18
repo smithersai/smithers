@@ -50,7 +50,6 @@ export const cardActions = (controller: AppController): CardBindings => {
     onForkFrame: () => controller.runCommand("frame.fork"),
     onOpenInTab: (id) => controller.runCommand("tab.card", id),
     onConnectGitHub: () => controller.runCommand("auth.sign-in"),
-    onConnectLocal: () => controller.runCommand("connector.add", "read"),
     onRunWorkflow: (name) => controller.runCommand("flow.run", name),
     onStopRun: (id) => controller.runCommand("flow.run.stop", id),
     onRetryRun: (id) => controller.runCommand("flow.run.retry", id),

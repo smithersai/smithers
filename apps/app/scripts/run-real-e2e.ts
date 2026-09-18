@@ -35,7 +35,6 @@ const serve = async (): Promise<never> => {
       distDir: join(appDir, "dist"),
       home,
       stateDir: join(root, "state"),
-      allowManualRepositoryPaths: true,
       chatStub: false,
       cloudMode: "hybrid"
     })

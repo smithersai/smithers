@@ -3,9 +3,9 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
 import { identityMessage, INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion, SMITHERS_HELPERS } from "../Onboarding"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
@@ -19,10 +19,11 @@ const createAppController = scopedControllers()
  *
  * A native session's first message says "Smithers initialized successfully" and reads back
  * what the host registered (bootstrap, capabilities, flows, harnesses,
- * repositories). Its one next step is "Select a repo": the native folder
- * picker (`repo.open`, the IDE's open-folder). The pill under the composer
- * names the same step. Cloud repository pages open with useful Welcome actions
- * and omit the redundant successful host initialization entry.
+ * repositories). It asks for nothing: the folder picker retired with the
+ * local backend (docs/LOCAL-BACKEND-RETIREMENT.md), so no host can open a
+ * repository from this machine and the opening entry carries no next step.
+ * Cloud repository pages open with useful Welcome actions and omit the
+ * redundant successful host initialization entry.
  */
 
 GlobalRegistrator.register()
@@ -58,22 +59,14 @@ const mount = (controller: AppControllerType): HTMLElement => {
   return host
 }
 
-const nativeRepositories = (picks: Array<string>): NativeRepositories => ({
-  available: true,
-  pickLocalRepository: async (access) => {
-    picks.push(access)
-    return { status: "cancelled" }
-  }
-})
-
 const localBootstrap: AppBootstrap = {
   apiVersion: 1,
   host: "local",
   version: "1.0.0",
   buildSha: "abcdef1234567890",
-  capabilities: ["local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+  capabilities: localCapabilities({ agent: true, identity: true, cloud: true }),
   authFlow: "none",
-  sandbox: { platform: "darwin", mode: "enforced" }
+  sandbox: null
 }
 
 const SMITHERS_MESSAGES = "[data-slot=\"chat-message\"][data-role=\"assistant\"]"
@@ -81,28 +74,13 @@ const SMITHERS_MESSAGES = "[data-slot=\"chat-message\"][data-role=\"assistant\"]
 const text = (node: Element | null): string => (node?.textContent ?? "").replace(/\s+/g, " ").trim()
 
 describe("onboarding — the opening entry", () => {
-  test("local host, fresh session: init read first, then Select a repo through the native picker", async () => {
+  test("local host, fresh session: the init read is the whole opening — no repo step, no picker", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const picks: Array<string> = []
-    const controller = createAppController(store, nativeRepositories(picks), silentAgent, {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: localBootstrap,
       features: { suggestionPills: true },
-      ...backend({
-        "/api/harnesses": json(200, {
-          harnesses: [{
-            id: "claude",
-            displayName: "Claude Code",
-            binary: "/usr/local/bin/claude",
-            version: "2.0.0",
-            status: "signed-in",
-            account: { email: "will@example.com" },
-            launch: { argv: ["claude"] }
-          }]
-        }),
-        "/api/repos": json(200, { repos: [] })
-      })
+      ...backend({})
     })
-    await controller.loadHarnesses()
     await settled()
 
     const host = mount(controller)
@@ -116,84 +94,37 @@ describe("onboarding — the opening entry", () => {
     expect(init?.querySelector(".message-init-check")).not.toBeNull()
     expect(text(init?.querySelector(".message-init-greeting") ?? null)).toBe("Smithers here.")
     const title = init?.querySelector(".message-init-title") ?? null
-    const prompt = init?.querySelector(".message-init-prompt") ?? null
     const details = init?.querySelector<HTMLDetailsElement>("details.message-init-details") ?? null
     const summary = details?.querySelector("summary") ?? null
     const detailContent = details?.querySelector(".message-init-details-content") ?? null
 
-    // Native details owns disclosure state: closed by default, with the title and prompt outside it.
+    // Native details owns disclosure state: closed by default, with the title outside it.
     expect(details?.open).toBe(false)
     expect(details?.hasAttribute("open")).toBe(false)
     expect(text(summary)).toBe("Details")
     expect(text(title)).toBe("Smithers initialized successfully")
-    expect(text(prompt)).toBe("Select a repo to get started.")
     expect(details?.contains(title)).toBe(false)
-    expect(details?.contains(prompt)).toBe(false)
-    const cta = host.querySelector<HTMLElement>(".message-cta")
-    expect(text(cta)).toBe("Select a repo")
-    expect(cta?.dataset.flow).toBe("repo.open")
-    expect(details?.contains(cta)).toBe(false)
 
     summary?.click()
     expect(details?.open).toBe(true)
     expect(details?.hasAttribute("open")).toBe(true)
-    expect(text(detailContent)).toContain("Host: local (1.0.0 abcdef1), sandbox enforced on darwin")
-    expect(text(detailContent)).toContain(
-      "Capabilities: local.repositories, local.targets, local.terminal, local.harnesses"
-    )
+    expect(text(detailContent)).toContain("Host: local (1.0.0 abcdef1)")
+    // The surviving vocabulary: the rows this host and the Worker both emit.
+    expect(text(detailContent)).toContain("Capabilities: agent, identity, cloud, cloud.terminal, cloud.pat")
     expect(text(detailContent)).toContain(`Flows registered: ${controller.commands.all().length}`)
-    expect(text(detailContent)).toContain("Harnesses: Claude Code (signed-in, will@example.com)")
+    expect(text(detailContent)).toContain("Harnesses: none detected")
     expect(text(detailContent)).toContain("Repositories: none open")
-    expect(text(title)).toBe("Smithers initialized successfully")
-    expect(text(prompt)).toBe("Select a repo to get started.")
 
-    // The one next step rides the message AND the pill, both bound to repo.open.
-    const pills = [...host.querySelectorAll<HTMLElement>(".smithers-suggestion")]
-    expect(pills.map((pill) => text(pill))).toEqual(["Select a repo"])
-    expect(pills[0]?.dataset.flow).toBe("repo.open")
-    expect(pills[0]?.dataset.gold).toBe("true")
-    expect(host.innerHTML).not.toContain("Choose repos to watch")
-
-    // Clicking it is the IDE's open-folder: the native picker, read-write.
-    pills[0]?.click()
-    await settled()
-    expect(picks).toEqual(["read-write"])
-  })
-
-  test("once a repository is open, Select a repo leaves the message and the pills", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, nativeRepositories([]), silentAgent, {
-      bootstrap: localBootstrap,
-      features: { suggestionPills: true },
-      recommender: { debounceMs: 0 },
-      ...backend({ "/api/harnesses": json(200, { harnesses: [] }), "/api/repos": json(200, { repos: [] }) })
-    })
-    const host = mount(controller)
-    expect([...host.querySelectorAll<HTMLElement>(".smithers-suggestion")].map(text)).toEqual(["Select a repo"])
-
-    store.dispatch({
-      type: "repos.loaded",
-      actor: "system",
-      repos: [{
-        id: "repo-1",
-        name: "smithers",
-        path: "/Users/will/smithers",
-        git: { branch: "main", remote: null },
-        warnings: [],
-        smithers: { detected: false, workspaceFile: null, declarationFiles: [], reason: "none", workspaces: [] }
-      }]
-    })
-    await settled()
-    await settled()
-    flushSync(() => {})
-
-    const pills = [...host.querySelectorAll<HTMLElement>(".smithers-suggestion")].map(text)
-    expect(pills).not.toContain("Select a repo")
-    expect(pills.length).toBeGreaterThan(0)
-    const opening = [...host.querySelectorAll(SMITHERS_MESSAGES)].map(text)[0] ?? ""
-    expect(opening).toContain("Repositories: smithers")
-    expect(opening).not.toContain("Select a repo")
+    /*
+     * Nothing is asked of the reader. The folder picker retired with the local
+     * backend, so `repo.open` is registered nowhere and the opening entry
+     * carries neither the prompt, the message action, nor the pill.
+     */
+    expect(controller.commands.find("repo.open")).toBeUndefined()
+    expect(init?.querySelector(".message-init-prompt")).toBeNull()
     expect(host.querySelector(".message-cta")).toBeNull()
+    expect(host.querySelectorAll(".smithers-suggestion")).toHaveLength(0)
+    expect(text(host)).not.toContain("Select a repo to get started.")
   })
 
   test("cloud host, signed in: with no local picker there is no repo step and no pill", async () => {
@@ -237,8 +168,8 @@ describe("onboarding — the opening entry", () => {
 
   test("local host, signed out: sign-in is an option, so the init read still opens the session", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, nativeRepositories([]), silentAgent, {
-      bootstrap: { ...localBootstrap, capabilities: [...localBootstrap.capabilities, "identity"], authFlow: "both" },
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      bootstrap: { ...localBootstrap, authFlow: "both" },
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
         "/api/auth/scopes": json(200, { scopes: [] }),
@@ -253,7 +184,9 @@ describe("onboarding — the opening entry", () => {
     expect(messages).toHaveLength(1)
     expect((messages[0] ?? "").startsWith("Smithers here.")).toBe(true)
     expect(messages[0] ?? "").toContain("Smithers initialized successfully")
-    expect(host.querySelector("[data-flow=\"repo.open\"]")).not.toBeNull()
+    // Signed out changes what the entry reads, not what it asks: still nothing.
+    expect(host.querySelector(".message-cta")).toBeNull()
+    expect(host.querySelector("[data-flow=\"repo.open\"]")).toBeNull()
   })
 
   test("cloud: signed out, the auth state still shows only itself — no init read, no pill", async () => {
@@ -274,9 +207,9 @@ describe("onboarding — the opening entry", () => {
 })
 
 describe("onboarding — the pill feature flag", () => {
-  test("off by default: no pill row in the DOM, the message action still names the repo step", async () => {
+  test("off by default: no pill row in the DOM, and the entry names no step either", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, nativeRepositories([]), silentAgent, {
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: localBootstrap,
       ...backend({ "/api/repos": json(200, { repos: [] }) })
     })
@@ -284,7 +217,8 @@ describe("onboarding — the pill feature flag", () => {
     const host = mount(controller)
     expect(host.querySelector(".smithers-suggestions")).toBeNull()
     expect(host.querySelectorAll(".smithers-suggestion")).toHaveLength(0)
-    expect(host.querySelector("[data-flow=\"repo.open\"]")).not.toBeNull()
+    expect(host.querySelector(".message-cta")).toBeNull()
+    expect(host.querySelector("[data-flow=\"repo.open\"]")).toBeNull()
   })
 })
 

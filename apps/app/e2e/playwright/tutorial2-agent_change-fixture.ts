@@ -54,7 +54,7 @@ export const serve = async (page: Page, journal: ReadonlyArray<Record<string, un
     host: "local",
     version: "test",
     buildSha: "test",
-    capabilities: ["agent", "identity", "cloud", "local.repositories"],
+    capabilities: ["agent", "identity", "cloud"],
     authFlow: "none",
     sandbox: { platform: "darwin", mode: "trusted-only" }
   })))

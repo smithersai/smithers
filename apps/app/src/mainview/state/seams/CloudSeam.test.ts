@@ -195,8 +195,14 @@ for (const state of ["signed-in", "signed-out", "degraded"] as const) {
         ? json(401, {}) : json(200, { login: "will", allowlisted: true, admin: false })
       if (path === "/api/identity/cloud-token") return json(200, { found: true, token: TOKEN })
       if (path === "/api/repos/will/smithers/workspaces" && request.method === "POST") return json(409, { message: "fixture desktop create reached Cloud" })
+      /*
+       * plue serializes its verdict first (pkg/errors/errors.go APIError), and
+       * the Worker only publishes a degraded session for that envelope
+       * (apps/server cloudSession.ts isCloudScopeRefusal): the scope gate's
+       * own `forbidden` + "insufficient token scope", never English alone.
+       */
       if (path === "/api/user/workspaces") return state === "degraded"
-        ? json(403, { message: "Insufficient scope: read:workspace" }) : json(200, [])
+        ? json(403, { code: "forbidden", fault: "user", message: "insufficient token scope" }) : json(200, [])
       return json(404, {})
     })
     const { store, seam, ctx, requests } = await harness((path, init) => Effect.runPromise(

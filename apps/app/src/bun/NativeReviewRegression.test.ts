@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test"
-import { createHash } from "node:crypto"
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,11 +6,7 @@ import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { createCloudAuth } from "./CloudAuth"
 import type { CloudKeychain } from "./CloudAuth"
 import { createNativeShutdown } from "./NativeShutdown"
-import { childEnv } from "./Pty"
-import { createTargetRunHistory } from "./TargetRunHistory"
 import { startLocalServer } from "./server"
-import { createLspSession } from "./lsp/LspSession"
-import { TYPESCRIPT_SERVER } from "./lsp/LanguageServers"
 
 const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => { for (const stop of cleanup.splice(0).reverse()) await stop() })
@@ -27,6 +22,12 @@ const keychain = () => {
   return { api, value: () => value }
 }
 const credentials = { token: "review-test-token", username: "test", email: null, expiresAt: "2099-01-01T00:00:00Z" }
+/*
+ * Cloud's scope refusal in its own wire shape: the typed `forbidden` verdict
+ * first, then plue's pinned sentence (`isCloudScopeRefusal`). A bare sentence
+ * with no plue code degrades nothing, by design.
+ */
+const SCOPE_REFUSAL = JSON.stringify({ code: "forbidden", fault: "user", message: "insufficient token scope" })
 
 test("a duplicate active chat request preserves the first response stream", async () => {
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined
@@ -36,7 +37,7 @@ test("a duplicate active chat request preserves the first response stream", asyn
     controller.enqueue(encoder.encode(`${JSON.stringify({ type: "delta", kind: "text", text: "first" })}\n`))
   } })) })
   cleanup.push(() => { upstream.stop(true) })
-  const server = await startLocalServer({ distDir: await directory(), node: null, cloudMode: "hybrid", cloudApi: null, identityUpstream: null,
+  const server = await startLocalServer({ distDir: await directory(), cloudMode: "hybrid", cloudApi: null, identityUpstream: null,
     chat: { chatUrl: `http://127.0.0.1:${upstream.port}` }, log: () => {} })
   cleanup.push(() => server.stop())
   const headers = { [LOCAL_SESSION_HEADER]: server.sessionToken, "content-type": "application/json" }
@@ -52,7 +53,7 @@ test("a duplicate active chat request preserves the first response stream", asyn
 
 test("the native browser route is session-gated and enabled only in hybrid mode", async () => {
   for (const cloudMode of ["offline", "hybrid"] as const) {
-    const server = await startLocalServer({ distDir: await directory(), node: null, cloudMode, cloudApi: null, identityUpstream: null, log: () => {} })
+    const server = await startLocalServer({ distDir: await directory(), cloudMode, cloudApi: null, identityUpstream: null, log: () => {} })
     cleanup.push(() => server.stop())
     const path = `${server.origin}/api/tools/browser-fetch`
     const body = JSON.stringify({ url: "https://127.0.0.1/" })
@@ -85,41 +86,12 @@ test("expired credentials allow a fresh login and valid restores recheck scope",
     await saved.api.write("", "", JSON.stringify({ ...credentials, expiresAt: expired ? "2000-01-01T00:00:00Z" : credentials.expiresAt }))
     let probes = 0
     const auth = await createCloudAuth({ api: "https://cloud.test", keychain: saved.api,
-      fetchImpl: async () => { probes++; return new Response("insufficient token scope", { status: 403 }) } })
+      fetchImpl: async () => { probes++; return new Response(SCOPE_REFUSAL, { status: 403 }) } })
     cleanup.push(() => auth.stop())
     expect(auth.session().state).toBe(expired ? "signed-out" : "signed-in"); expect(probes).toBe(expired ? 0 : 1)
     if (expired) { expect(saved.value()).toBeNull(); expect(await auth.start()).toHaveProperty("url") }
     else expect(auth.session().scopes).toBe("degraded")
   }
-})
-
-test("starting a new run first retains the previous launch's history", async () => {
-  const repo = await directory()
-  const run = (runId: string) => ({ runId, repoId: "review-repo", repo, workspace: ".", label: "//:test", labels: ["//:test"], startedAt: Date.now(), status: "pending" as const, exitCode: null })
-  const old = createTargetRunHistory(); await old.start(run("old")); old.event(run("old"), { type: "exit", code: 0 }); await old.list("review-repo", repo)
-  const current = createTargetRunHistory(); await current.start(run("new"))
-  expect((await current.list("review-repo", repo)).map((row) => row.runId).sort()).toEqual(["new", "old"]); expect(await current.replay("old")).toBeDefined()
-})
-
-test("run events arriving during journal initialization are retained", async () => {
-  const repo = await directory()
-  const run = { runId: "early-event", repoId: "review-repo", repo, workspace: ".", label: "//:test", labels: ["//:test"], startedAt: Date.now(), status: "pending" as const, exitCode: null }
-  const history = createTargetRunHistory()
-  const started = history.start(run)
-  const committed = history.event(run, { type: "exit", code: 0 })
-  await started
-  const receipt = await committed
-  if (receipt === null) throw new Error("The early exit frame was not committed")
-  const at = receipt?.type === "exit" ? receipt.at : undefined
-  expect(receipt).toMatchObject({ type: "exit", code: 0 })
-  expect(typeof at).toBe("number")
-  expect(at as number).toBeGreaterThanOrEqual(run.startedAt)
-  const replay = await history.replay(run.runId)
-  expect(replay?.run.status).toBe("done")
-  expect(replay?.events).toContainEqual(receipt)
-  const reopened = await createTargetRunHistory().replay(run.runId, [{ id: run.repoId, path: repo }])
-  expect(reopened?.run.status).toBe("done")
-  expect(reopened?.events).toContainEqual(receipt)
 })
 
 test("native quit waits for cleanup once then allows Electrobun's final quit", async () => {
@@ -131,21 +103,4 @@ test("native quit waits for cleanup once then allows Electrobun's final quit", a
   release(); await shutdown()
   const final: { response?: { allow: boolean } } = {}; beforeQuit(final)
   expect(final.response).toBeUndefined(); expect(quits).toEqual([0])
-})
-
-test("the Cerebras credential detected by the harness table reaches its child", () => {
-  expect(childEnv({ CEREBRAS_API_KEY: "test-key", PATH: "" }, "/fake", []).CEREBRAS_API_KEY).toBe("test-key")
-})
-
-test("native LSP ignores old diagnostics after syncing version two", async () => {
-  const dir = await directory(); const script = join(dir, "lsp.mjs")
-  await writeFile(script, `let b=Buffer.alloc(0);function send(m){const p=Buffer.from(JSON.stringify({jsonrpc:'2.0',...m}));process.stdout.write('Content-Length: '+p.length+'\\r\\n\\r\\n');process.stdout.write(p)}
-process.stdin.on('data',chunk=>{b=Buffer.concat([b,chunk]);for(;;){const h=b.indexOf('\\r\\n\\r\\n');if(h<0)return;const n=Number(/Content-Length: (\\d+)/i.exec(b.subarray(0,h).toString())[1]);if(b.length<h+4+n)return;const m=JSON.parse(b.subarray(h+4,h+4+n));b=b.subarray(h+4+n);if(m.method==='initialize')send({id:m.id,result:{capabilities:{}}});if(m.method==='textDocument/hover')send({id:m.id,result:{contents:'number'}});if(m.method==='textDocument/didChange'){const publish=(version,message)=>send({method:'textDocument/publishDiagnostics',params:{uri:m.params.textDocument.uri,version,diagnostics:[{range:{start:{line:0,character:0},end:{line:0,character:1}},message,severity:1}]}});setTimeout(()=>publish(1,'old'),10);setTimeout(()=>publish(2,'current'),30)}if(m.method==='shutdown')send({id:m.id,result:null});if(m.method==='exit')process.exit(0)}})`)
-  await writeFile(join(dir, "a.ts"), 'const a: number = "old"')
-  const session = createLspSession({ repoId: "review-repo", repoRoot: dir, spec: TYPESCRIPT_SERVER, argv: [process.execPath, script], env: {}, publish: () => {}, log: () => {}, requestTimeoutMs: 2000, killGraceMs: 100 })
-  cleanup.push(() => session.shutdown()); await session.hover("a.ts", { line: 1, character: 1 })
-  const current = "const a: number = 1"; await writeFile(join(dir, "a.ts"), current)
-  const response = await session.diagnostics("a.ts", 1000)
-  expect(response.version).toBe(2); expect(response.items?.map((item) => item.message)).toEqual(["current"])
-  expect(response.digest).toBe(createHash("sha256").update(current).digest("hex"))
 })

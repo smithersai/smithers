@@ -9,17 +9,24 @@ origin; it is not a separate application or state model.
 | Host | Server | Native privileges | Typical capabilities |
 | --- | --- | --- | --- |
 | Smithers Cloud | `apps/server` Cloudflare Worker | none | agent, identity, Smithers Cloud, checkout when configured |
-| Local browser/headless | `apps/app/src/bun/serve.ts` | explicit development path entry | repositories, targets, terminal, harnesses; agent/identity only in hybrid mode |
-| Local native | `apps/app/src/bun/index.ts` + Electrobun | folder picker and system-browser handoff | same local services; no renderer-supplied filesystem paths |
+| Local browser/headless | `apps/app/src/bun/serve.ts` | none | agent/identity/cloud only in hybrid mode |
+| Local native | `apps/app/src/bun/index.ts` + Electrobun | system-browser handoff | the same rows; the Bun-held Smithers Cloud bearer adds `cloud.terminal` and `cloud.pat` |
+
+The desktop app offers exactly the web app's feature set. The local backend —
+targets, in-process language servers, terminals, local repositories and
+harness detection — retired; see `LOCAL-BACKEND-RETIREMENT.md` for what each
+one became. Code intelligence stayed, re-doored on `cloud.terminal`: plue's
+language server in the workspace VM, over the tunnel this origin serves.
 
 The client first loads `GET /api/bootstrap` and validates it with
 `AppBootstrapSchema`. Commands declare required runtime capabilities; the
 registry omits unavailable commands. Components render from that registry,
 so disabled hosts do not expose controls that can only fail.
 
-Supported capabilities are `agent`, `identity`, `cloud`, `billing.checkout`,
-`keys.byok`, `local.repositories`, `local.repository-path-entry`,
-`local.targets`, `local.terminal`, and `local.harnesses`.
+Supported capabilities are `agent`, `browser.read`, `identity`, `cloud`,
+`billing.checkout`, `keys.byok`, `cloud.terminal`, and `cloud.pat`. No
+capability is local-only: a door no host can open is a flow that should not
+exist.
 
 ## Local modes
 
@@ -28,18 +35,10 @@ Cloud requests. `hybrid` enables the configured chat and identity upstreams.
 `SMITHERS_CHAT_STUB=1` supplies a deterministic in-process agent for tests and
 also disables the identity proxy.
 
-The native launcher attaches to a detached Bun session owner, then opens the
-window. Quitting the app, closing the window or reloading the renderer detaches;
-the same local server, repository authority, live terminals, agent CLIs and
-target processes keep running. The owner uses the app's bundled Bun and main
-bundle in both packaged and development launches. It does not load Electrobun.
-Reopening attaches to the existing owner, retaining its origin and session
-capability. Concurrent first launches converge on one saved origin and owner.
-There is no PID-based reattachment and no automatic command restart.
-One kernel `flock` lease per state directory prevents concurrent owners even
-with conflicting port overrides. Its private file is never unlinked, and the
-kernel releases the lease on a crash. The host uses Bun FFI against macOS's
-libSystem or Linux's glibc; there is no tmux or auxiliary daemon dependency.
+The native launcher starts the local origin in its own process, then opens the
+window at it. There is no detached session owner: quitting the app stops the
+server with it, because nothing long-running lives on this machine any more.
+Long-running work lives in a plue workspace, which survives on its own.
 
 The native launcher defaults to hybrid unless explicitly set to offline. The
 packaged app serves its built SPA from `127.0.0.1` on a port chosen at first
@@ -53,8 +52,7 @@ is ready.
 
 ## Local-origin security
 
-Each session-owner launch creates a fresh 256-bit token. Renderer and native
-relaunches reuse the running owner. The token is placed in the
+Each launch creates a fresh 256-bit token. The token is placed in the
 served document's `smithers-local-session` meta tag. The client sends it in
 the `x-smithers-local-session` header and in the WebSocket subprotocol.
 
@@ -63,33 +61,16 @@ unexpected `Host`/`Origin` values, non-JSON mutation bodies, oversized HTTP
 bodies and WebSocket frames, excessive subscriptions, and unknown client
 message types. It binds loopback only.
 
-The native RPC surface has exactly two privileged operations:
+The native RPC surface has exactly one privileged operation:
 
-- `pickLocalRepository({ access })`, which returns a short-lived, one-shot
-  authorization id for the selected directory;
 - `openExternal({ url })`, which accepts only HTTP(S) URLs and opens the
   system browser.
 
-Neither operation has an HTTP fallback in the packaged app.
+It has no HTTP fallback in the packaged app.
 
-The picker sends its selection to the owner through a private Unix socket.
-Its separate random capability and generation descriptor live in a 0700
-`local-daemon` directory (descriptor 0600); the socket is 0600 inside its own
-0700 directory. Links, shared state permissions, foreign ownership, invalid
-authentication and browser Origin requests fail closed. The renderer never
-receives this capability. An unresponsive owner is left running. A different
-bundle/configuration or protocol refuses attachment instead of terminating
-sessions or silently serving a different build.
-
-To explicitly stop the owner and all its processes before changing builds,
-run `pnpm --filter smithers-app local:stop` from the checkout. For an installed
-macOS app, run
-`SMITHERS_LOCAL_DAEMON_ACTION=stop /Applications/Smithers.app/Contents/MacOS/launcher`.
-This maintenance command uses the private control channel and works even when
-the new build cannot attach. Then reopen the app. Normal Quit does not invoke
-it. Daemon lifecycle and ordinary host diagnostics go to
-`local-daemon/daemon.log`, redacted, capped at about 2 MiB plus one rotated file;
-PTY output and native control secrets are never logged there.
+The chat turn journal's SQLite file is owned by one process at a time
+(`TurnJournalLease.ts`): a pid file beside the database, taken over when its
+owner is dead, so a crash never leaves the journal locked.
 
 The identity proxy re-scopes the seam's session cookie to the local origin
 before the WebView sees it: `Domain` goes because the cookie belongs to this
@@ -113,7 +94,7 @@ loads the repository inventory (the composer's repository menu reads it)
 through the proxy; the bootstrap advertises the `cloud` capability when
 the proxy is enabled.
 
-## Repository and process authority
+## Repository resolution
 
 Repo-scoped slash commands treat a trailing `owner/repo` in argument text as
 an explicit target only when it names a loaded repository or the active working
@@ -122,177 +103,12 @@ src/index.ts` keeps the full title and uses the active repository, or the sole
 loaded repository when none is selected. Repository-only commands such as
 `/repos.import acme/new` can name a repository that is not loaded yet.
 
-Native repository opening is a two-step grant flow: the picker authorizes a
-canonical path for 60 seconds, then `/api/repo/open` consumes the authorization
-exactly once. Both repository and connector pickers wait for adoption before
-publishing inspection metadata; capabilities never enter the transition journal
-or verbose trace. Headless development explicitly advertises
-`local.repository-path-entry` and may instead send `{ path }`.
+A repository is a Smithers Cloud workspace, never a directory on this machine.
+The picker grant flow, the open-repository set, per-repository access levels,
+the local file route and the local language servers all retired with the local
+backend (`LOCAL-BACKEND-RETIREMENT.md`).
 
-Open repositories receive opaque `repoId` values and a read-only or read-write
-access level. Process APIs accept `repoId`, never a renderer-controlled `cwd`.
-Terminals and target execution require read-write access. Target queries mint
-opaque target ids; a run resolves the command label server-side and rechecks
-the current graph before spawning it.
-
-Make read-only sends `POST /api/repo/access { repoId, access: "read" }`.
-Disconnect sends `POST /api/repo/close { repoId }`. The controller resolves the
-connector's canonical root against `/api/repos`, waits for host success, then
-refreshes open repositories and commits the connector transition. A failed
-request leaves the connector unchanged and reports the error.
-
-Both host actions deny new writes, cancel pending target runs, terminate running
-target children and repository PTYs, and wait for in-flight PTY creation to
-settle and terminate. Requests preparing a target recheck authorization before
-starting it. Home-directory PTYs are independent. Close also ends language
-servers and removes the repository from the open set. Reduced grants and
-removals are saved atomically to `repositories.json` before success; a failed
-save leaves host writes denied and the repository addressable for retry.
-The access endpoint cannot upgrade a grant. Upgrading requires a fresh picker
-authorization (or a new explicit path open on a development host).
-
-Language servers (`apps/app/src/bun/lsp/`) read: `/api/lsp/*` requires read
-access. One `typescript-language-server --stdio` runs per (repository,
-language), started on the first request from a static registry that names
-the binary, its argv and its install line (the renderer names none of them).
-The binary is found on the HOST (the harness candidate dirs and PATH) and
-never inside the repository: a `node_modules/.bin/typescript-language-server`
-a repository ships is a program the repository chose, and opening a
-repository (read-only or not) runs nothing it ships. The server runs under
-the `lsp` sandbox policy (no network, scratch-only writes) with an
-environment of its own (`HOME`, `PATH`, `TMPDIR`, locale, zone, and none of the
-provider keys, SSH agent or config dirs the PTY allowlist hands a harness).
-At most four run; the least recently used makes room; ten idle minutes with
-no request in flight, `POST /api/repo/close` and shutdown end them (LSP
-`shutdown`/`exit`, SIGKILL after two seconds). Repository close cancels pending
-session acquisitions before resolving, including waits for Node discovery or
-server retirement. Requests during close are refused; a later request may
-start a fresh session after the repository is reopened. Host shutdown cancels
-all pending acquisitions and permanently refuses new ones. Cancelled
-acquisitions return `503 language_server_failed`. Request bodies are capped at
-64 KiB, with 8 RPCs in flight per server. Deadline budgets are separate:
-
-- Initialization allows 15 s (`LSP_STARTUP_TIMEOUT_MS` in
-  [`LspSession.ts`](../src/bun/lsp/LspSession.ts)).
-- After initialization, the first hover or definition starts a shared 15 s
-  project-load deadline (`LSP_STARTUP_TIMEOUT_MS`). Concurrent cold queries
-  use its remaining time; they do not extend it. A successful positioned
-  response ends the cold window. Queries sent after success or deadline
-  expiry use the steady-state budget.
-- Steady-state RPCs allow 5 s (`LSP_REQUEST_TIMEOUT_MS` in
-  [`LocalApp.ts`](../../../packages/rpc/src/LocalApp.ts)).
-- Diagnostics wait up to 5 s for a publication (`LSP_REQUEST_TIMEOUT_MS`,
-  passed by [`routes/lsp.ts`](../src/bun/routes/lsp.ts)), after initialization
-  and document sync. A cached current publication returns immediately.
-
-These are stage budgets, not a five-second end-to-end request limit. The
-[`LspSession.startup.test.ts`](../src/bun/lsp/LspSession.startup.test.ts)
-example exercises bounded initialization, concurrent cold queries and the
-return to steady-state deadlines.
-
-What the server writes in free text
-(hover markdown, diagnostic messages, its last stderr line) has the host's
-absolute paths made repository-relative, or cut to their last segment
-outside the repository, before it reaches the renderer, the model or `/ws`;
-the type of a symbol imported from outside the repository is still the type
-tsserver computed for it. Every answer names the digest
-(`RepoFilesResponse.digest`, SHA-256 of the bytes) of the file text it was
-about, and every cap says it cut (`total`, `omitted`, `truncated`).
-
-PTY admission defaults to eight slots, including launches still resolving
-their setup and children still terminating after a tab closes. Exited display
-records do not consume a process slot. The internal PTY owner has an idempotent,
-permanent `dispose()` (replacing `killAll()`): pending create calls settle as
-`manager_closed`, late setup cannot spawn, and new creates are refused (HTTP
-503 while the route is still reachable). Injected setup work itself has no
-abort contract. Termination failures reject shutdown; they never report a
-clean stop or release the still-owned child's capacity. Independent local
-listener, auth and LSP finalizers are attempted even if PTY disposal fails.
-
-Closing a local terminal or harness tab removes it only after the session
-DELETE succeeds or returns 404. Other HTTP responses and transport failures
-surface a termination error and keep the tab. A pending close confirmation
-stays open so Close session retries; exited tabs retry through close directly.
-Closing a cloud workspace terminal still detaches without deleting its session.
-
-PTY scrollback retains at most 64 KiB of raw UTF-8 output per session.
-At most 25 exited records retain output; live sessions are never evicted.
-Process tabs survive boot, reconcile with the owner's session inventory, and
-recover creates whose response was lost before the renderer persisted a tab.
-A missing session is shown as unavailable and never restarted. Fresh viewers
-replay retained raw output; reconnecting viewers subscribe with their last
-absolute UTF-16 output cursor. Subscription, replay and acknowledgement are
-ordered before live delivery. Gaps caused by retention are explicit in the
-terminal. Input is never replayed after a socket disconnect; the user must
-intentionally type again. Replay preserves terminal escape sequences but does
-not reconstruct a full screen whose setup has fallen outside the retained tail.
-`GET /api/pty/:id/output?tail=<bytes>` strips ANSI escapes and returns a suffix
-within the requested non-negative safe-integer byte limit. It drops a partial
-code point at the cut, so a result can be shorter than the requested limit;
-`truncated` reports either scrollback or requested-tail loss. This is text
-capture, not a reconstruction of the terminal screen.
-
-Target-run count, input bytes, retained history and WebSocket subscriptions
-also have limits. Target cancellation and host shutdown signal each target's
-process group with SIGTERM, allow two seconds to exit, then send SIGKILL if
-the run or its group remains. They cancel output readers after escalation so
-inherited pipes cannot hold shutdown open, and await the direct child's exit.
-After SIGKILL, the host allows two seconds for the process group to disappear;
-a surviving group rejects shutdown.
-Descendants that leave the process group are outside this signal boundary.
-Shutdown closes target admission before waiting and cancels armed pending runs.
-The cancel response and route shutdown wait for terminal history appends;
-explicit owner shutdown awaits the route shutdown. Native Quit only detaches.
-
-Target run requests reserve an inert run and write its initial journal record
-before enabling attachment or the one-second auto-start timer. If journal
-initialization fails, the request returns HTTP 500, releases the reservation,
-and never starts the target. Reservations count toward the active-run limit.
-
-Target history acknowledges frames only after their journal append succeeds.
-On the first append failure, list/replay return `run.journal` (or the listed
-record's `journal`) with `state: "degraded"` and `error`; later frames for that
-run are not appended or acknowledged. An unsettled history record becomes
-`failed` without an exit code. The host logs the first error once per run.
-`history.flush()` waits for queued appends and rejects on any append failure;
-server shutdown awaits it after target termination, alongside independent
-finalizers. It does not provide an fsync guarantee.
-Target history memory is bounded independently of journal size. Loading a
-repository streams at most four journals at a time line by line and keeps only
-each run's record. A run's resident stdout/stderr tail is capped at 1,000,000
-characters, dropping the oldest log frames and never a structured frame. At
-most 16 settled runs keep their event tail resident, in last-use order; a
-replay of an evicted run re-reads its journal with the same cap. Live and
-degraded runs are never evicted. A run's unwritten log backlog is capped at
-4,000,000 characters: `history.event()` resolves once the backlog is under
-the cap, and the runner reads the next chunk of child output only after the
-previous frame's consumer resolved. Output the child has already written to
-its pipe is buffered by the runtime and is outside this bound.
-After restart, a journal missing its terminal record reports degraded history
-with a generic interruption error. The original filesystem error is available
-only in the failing process and its log, since a failed disk cannot reliably
-persist its own failure. Successfully appended stdout/stderr remains subject
-to the in-memory tail cap.
-
-## Multi-workspace repositories and plugins
-
-Repository detection records the root and child Smithers workspaces (up to two
-levels deep) as paths relative to the opened repository. Target discovery runs
-the CLI once per detected workspace. Each opaque target grant binds its
-workspace and label on the server; extra renderer-supplied fields cannot move a
-process to another directory or change the command. A grant id stays stable
-across re-queries while its target (workspace and label) survives, so one
-client's query never invalidates another's cards. A grant is retired when the
-target disappears from the query snapshot or the repository's authority closes.
-
-A target's presentation is part of its declaration, never a separate
-manifest: a PACKAGE.ts target may carry `summary: "..."` (one line, shown
-under the label in the targets card) and `featured: true` (the target leads
-the card's Featured view beside the user's stars). The label is inferred from
-the package path and export name; the loader listing carries `summary` and
-`featured` beside `label`, `target`, and `kinds`. "Run everything" is not a
-declaration either: the Featured view's run strip is derived from the CLI's
-verbs over `//...` for the kinds the repository actually has.
+Closing a cloud workspace terminal detaches without deleting its session.
 
 ## HTTP and WebSocket surface
 
@@ -328,62 +144,25 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/bootstrap` | Versioned host/capability contract |
-| GET | `/api/health` | Local process, Node, and sandbox status |
+| GET | `/api/health` | Local process status |
 | POST | `/api/agent/turn` | NDJSON agent stream (`/api/chat/turn` is a compatibility alias) |
 | POST | `/api/agent/turn/replay` | Read committed batches from a persisted leg cursor; never start inference |
 | POST | `/api/agent/turn/retire` | Retire a leg using its private replay capability |
 | POST | `/api/agent/turn/erase` | Delete-only proof, including fencing a not-yet-accepted leg |
 | POST | `/api/agent/turn/cancel` | Cancel a turn (`/api/chat/cancel` is an alias) |
-| GET | `/api/harnesses` | Installed harness snapshot (each row states its verified model suggestions and whether it has a list command) |
-| GET | `/api/agents` | The built-in agent roles |
-| POST | `/api/repo/open` | Consume `{ authorizationId }`, or dev-only `{ path }` |
-| GET | `/api/repos` | Open repository snapshot |
-| POST | `/api/repo/access` | Downgrade `{ repoId, access: "read" }`, stop repository processes and save the reduced grant |
-| POST | `/api/repo/close` | Revoke and forget `{ repoId }`, stopping repository processes |
-| POST | `/api/repo/files` | `{ repoId, path? }`: a directory's entries or one file's text with its `digest` (read access; bounded; binary stated) |
-| POST | `/api/lsp/hover` | `{ repoId, path, line, character }` (1-based): the language server's hover at the position, `{ hover: { contents, truncated, range? } \| null, digest }`, text cut at 4 KiB and `truncated` when it was (read access) |
-| POST | `/api/lsp/definition` | Same body: `{ locations, total, omitted, digest }`, repository-relative, at most 20; targets outside the repository are counted in `omitted`, never listed |
-| POST | `/api/lsp/diagnostics` | `{ repoId, path }`: the server's publication for the file, `{ path, version, items, total, digest }` (at most 50 items of `total`; `items: null` when none arrived within 5 s) |
-| GET | `/api/lsp/servers` | `{ servers: [{ repoId, language, state }] }`: the language servers running, `starting \| ready \| exited` |
-| POST | `/api/targets/query` | Query `{ repoId }` and mint target ids |
-| POST | `/api/targets/run` | Run `{ repoId, targetId }` |
-| POST | `/api/targets/cancel` | Cancel `{ runId }` |
-| POST | `/api/targets/{graph,runs,runs/replay,affected,ci,open-source}` | Local target graph/history tools |
-| GET/POST | `/api/pty` | List/create PTYs; create accepts `repoId`, never `cwd` |
-| POST | `/api/pty/:id/resize` | Resize a PTY |
-| DELETE | `/api/pty/:id` | Stop a PTY |
+| POST | `/api/tutorial/change/{plan,preflight,receipt}` | The tutorial change agent; 501 on a host that configured none |
+| POST | `/api/tools/browser-fetch` | Guarded, pinned HTTPS page read (501 offline) |
+| POST | `/api/client-errors` | Renderer error ingest; logged, never persisted |
 | ANY | `/api/cloud/*` | Cloud proxy to `SMITHERS_CLOUD_API` (Bearer from the Bun credential; 501 offline) |
 | POST | `/api/cloud-auth/start` | Begin the browser login; answers `{ url }` |
 | GET | `/api/cloud-auth/session` | `{ state, username, expiresAt }`, never the token |
 | POST | `/api/cloud-auth/sign-out` | Delete the keychain credential and the in-memory token |
 
-`POST /api/targets/affected` requests CLI plan inputs and uses static declaration
-inputs when a target has no plan input list. An empty plan list is authoritative.
-The fallback recognizes exported or indented const bindings, the imported
-`Smithers` alias, and literal `file("path")`, `glob("pattern")`, and
-`glob(["pattern"])` calls. Package declaration edits remain inputs for their
-targets. The declaration files are rescanned per request, by the same walk the
-graph digest does, so a PACKAGE.ts written after the repository was opened
-counts; `/api/targets/ci` renders its preview from that same fresh list. Globstar matches zero or more path segments; each unique pattern compiles
-once per request. The response names the available input sources in `signal` and
-propagates matches through reverse graph reachability.
+WebSocket subscriptions are the renderer's own bus (`/ws`, subscribe and
+unsubscribe by topic) and the two cloud tunnels under `/api/cloud-ws/`.
 
-WebSocket subscriptions carry target-run and PTY output and, on
-`lsp:<repoId>`, every diagnostics publication a language server makes for a
-file the renderer asked about (`{ type: "lsp.diagnostics", repoId, path,
-version, items, total, digest }`).
-Client messages are limited to subscription control, `target-run.attach`, and
-`pty.input`.
-
-`/api/lsp/*` refusals are typed: `409 language_server_missing` carries the
-install line verbatim in `error.install` (nothing installs it),
-`400 language_unsupported` names the extension no row of the registry
-handles, `504 language_server_timeout` and `502 language_server_failed` name
-a server that did not answer or left, and path refusals reuse the files
-route's codes.
-
-A file card of a CLOUD repository asks the language server plue runs inside
-the repository's running workspace instead (lane L6, plue#505): the renderer's
+A file card asks the language server plue runs inside the repository's running
+workspace (lane L6, plue#505): the renderer's
 `CloudLspClient` creates the session (`POST …/workspace/sessions
 { workspace_id, kind: "lsp", language }` through `/api/cloud/`), opens
 `/api/cloud-ws/repos/{o}/{r}/workspace/sessions/{id}/lsp`, the same tunnel
@@ -403,33 +182,16 @@ close reason reaches the card verbatim. A cloud repository without a running
 workspace is told which act opens or resumes one; a file no relayed language
 handles is told the DTO's `lsp.languages`.
 
-## Target presentation
+## Model-authored cards
 
-Opening a repository renders nothing in the transcript; the composer's
-selector names it. Target discovery is the explicit
-`/target.list` act (the model has the same flow): it appends the trusted typed
-React card, and a repository with no Smithers workspace answers the reason as
-text.
 Models can provide explanatory text but cannot author markup, scripts, command
 labels, bridge messages, or action handlers. Historical HTML cards remain
 decodable for migration and render in a CSP-restricted inert iframe with
 scripts and network access denied.
 
-Target-run Timeline controls invoke `/target.timeline <repoId> <runId>`.
-Replay scrubs share a cursor index per recording and coalesce pending values to the latest cursor.
-Each node projects at most 200,000 log characters. Replay indexes and completed live folds each
-retain at most 16 runs and an estimated 16 MiB of payload plus index metadata, in last-use order.
-Entries without a graph or timeline card are released; controller disposal clears both caches.
-Evicted recordings are fetched again when a timeline or scrub needs them. Oversize recordings
-can be projected but are not retained in the replay cache.
-Run and failed-node Explain controls send `agent.explain` a JSON envelope with
-`kind: "target-failure"`, a fixed `request`, and `evidence` containing `repoId`,
-`runId`, `target`, `exitCode`, and the last 4,000 characters of captured output.
-The explainer keeps the request separate from a delimited JSON evidence
-message. Target metadata and output are untrusted data; higher-priority
-instructions forbid following instructions embedded in them. JSON escapes
-angle brackets so captured text cannot close the evidence delimiter.
-Ordinary `/agent.explain <what>` questions remain plain text.
+Build targets, their runs, the target graph and its replay retired with the
+local backend (`LOCAL-BACKEND-RETIREMENT.md`); nothing replaced them, because
+the web app never had them.
 
 ## Cards
 
@@ -634,59 +396,39 @@ pnpm --filter smithers-app test:e2e
 bun run test:e2e
 ```
 
-The web build is the Cloud Worker asset and the local server asset. Heavy graph
-and markdown-editor modules are dynamic chunks, so they are absent from the
-initial application chunk.
-
-`bun test src` does not infer permission to inspect or build a developer's
-personal checkouts. The host-workspace cases in `TargetGraph.integration.test.ts`
-skip by default. To run them deliberately, set `SMITHERS_HOST_WORKSPACE_TESTS=1`
-and an absolute `SMITHERS_GRAPH_READ_WORKSPACE` and/or
-`SMITHERS_GRAPH_RUN_WORKSPACE`. These fixtures expect `//src:typeCheck` and
-`//src:srcs`; the run workspace must be a disposable clone because its build
-commands execute there. The suite retains generated run histories and never
-removes a host checkout's existing history directory. Only its own temporary
-server directories are automatically cleaned up.
+The web build is the Cloud Worker asset and the local server asset. The heavy
+knowledge-graph, code-view and markdown-editor modules are dynamic chunks, so
+they are absent from the initial application chunk.
 
 The piper, runs, citc, change and sync browser specs install common routes with
 `e2e/playwright/cloudFixture.ts`. Local bootstrap, repository and cloud-session
 responses use the shared RPC contracts. Cloud inventory lists use bare arrays;
 bookmarks use `{ items, next_cursor }`. Repository loading reads that cursor
 envelope when resolving the default bookmark head. Fixture options override
-capabilities, local repositories, cloud inventory, per-repository bookmarks,
-workspaces and degraded sessions. Register scenario routes after the installer
+capabilities, cloud inventory, per-repository bookmarks, workspaces and
+degraded sessions. Register scenario routes after the installer
 to override its defaults. Route matching uses exact pathnames and accepts query
 strings. `cloudFixture.spec.ts` checks these contracts and override isolation.
 
 The default Playwright host also owns a temporary home/state directory and
-does not discover installed harnesses, inspect their account files, or pass
-ambient credentials to test terminal sessions. Its harness table reports the
-normal contract entries as unavailable. `SMITHERS_E2E_HOST_HARNESSES=1`
-explicitly enables real-host detection and the installed-harness browser tests;
-those tests can read local account state and launch installed CLIs. This flag
-does not enable cloud identity or real chat. `SMITHERS_CHAT_STUB=0` is a separate
-explicit real-chat request. A successful server shutdown removes only its
-owned temporary directory; failed startup/shutdown retains it for inspection.
+reads no host credentials. `SMITHERS_CHAT_STUB=0` is an explicit real-chat
+request. A successful server shutdown removes only its owned temporary
+directory; failed startup/shutdown retains it for inspection.
 
 The root `test:e2e` command packages the stable macOS app with Electrobun's
 native renderer, launches the actual bundle, and drives it through a loopback
 bridge that exists only when `SMITHERS_E2E_BRIDGE=1` and requires a random
 bearer token. The runner redirects application state to a temporary home,
-keeps the local origin fixed across relaunch, fetches the pinned public
-`codeplanesmithers/canary-sandbox` fixture into an isolated clone, and
-preserves failure artifacts under `apps/app/test-results/electrobun-packaged/`.
-It covers the stable renderer, bridge security, native repository picker and
-authorization, repository failure recovery, real target execution, chat and
-repository persistence, card tabs, and a real PTY/WebSocket lifecycle.
+keeps the local origin fixed across relaunch, and preserves failure artifacts
+under `apps/app/test-results/electrobun-packaged/`. It covers the stable
+renderer, bridge security, and chat persistence across relaunch.
 
 `PackagedApp.quit()` drains only the native process group recorded at launch,
 including descendants remaining after the launcher exits. It never discovers
 cleanup targets by executable path, so another instance of the same bundle
-keeps running. The independent session owner survives quit/relaunch; final
-fixture cleanup explicitly stops it via its private capability before removing
-the isolated home. The native PTY scenario checks PID continuity, replay into
-the reopened emulator, new input, and explicit close. Bridge deadlines cover headers, the complete response body,
-and decoding, including error responses and screenshots.
+keeps running. Quitting the app ends its local origin with it. Bridge
+deadlines cover headers, the complete response body, and decoding, including
+error responses and screenshots.
 
 `PackagedApp.eval(script)` sends potentially mutating scripts once. A failed
 reply reports an unknown outcome and does not retry, because renderer execution

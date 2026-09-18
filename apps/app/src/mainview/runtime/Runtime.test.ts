@@ -38,7 +38,7 @@ describe("runtime composition", () => {
       bootstrap: {
         ...cloud,
         host: "local",
-        capabilities: ["local.repositories", "local.targets"],
+        capabilities: [],
         authFlow: "none",
         sandbox: { platform: "linux", mode: "trusted-only" }
       },

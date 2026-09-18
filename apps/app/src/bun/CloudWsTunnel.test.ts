@@ -124,9 +124,7 @@ const startLocal = async (
           stop: async () => {}
         }
       }),
-    node: { path: "/fake/node", version: "v22.19.0" },
     home: "/fake/home",
-    harnesses: async () => [],
     log: () => {}
   })
 

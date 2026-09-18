@@ -314,9 +314,9 @@ export const FileCardBody = ({
   const language = languageWord(card.payload.path)
   /*
    * The gestures follow the catalog (THE THREE-DOOR LAW): the surface binds
-   * code.hover / code.definition only where this host registers them. The
-   * web host lacks the `local.lsp` door, so no gesture is armed there and
-   * an absent capability renders nothing. Without a controller (a
+   * code.hover / code.definition only where this host registers them. A host
+   * without the workspace language-server tunnel (`cloud.terminal`) arms no
+   * gesture and an absent capability renders nothing. Without a controller (a
    * component test) the caller's onRunCommand is the whole door.
    */
   const controller = useContext(ControllerContext)

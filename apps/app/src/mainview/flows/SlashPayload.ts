@@ -214,43 +214,6 @@ const positioned = (name: string, args: string | undefined): Parsed => {
   return ok({ path, line, column, ...(repo === undefined ? {} : { repo }) })
 }
 
-/**
- * A repository id followed by an optional workspace and a target label
- * (`//pkg:name`). A label never holds whitespace, so the LAST token is the
- * label and everything between it and the repo id is the workspace path — a
- * detected workspace whose directory name has a space still runs where it
- * was declared. The plugin and targets cards dispatch `repoId workspace
- * label`; the html panel's bridge sends only `repoId label` and runs at the
- * root.
- */
-/** `<repoId> <//...:name>`: a grouped row of one open repository. */
-const groupRef = (name: string, args: string | undefined) => {
-  const [repoId, ...rest] = tokensOf(args)
-  if (repoId === undefined) return no(`${name} needs a repository id`)
-  const group = rest.join(" ").trim()
-  if (group === "") return no(`${name} needs a group label`)
-  return ok({ repoId, group })
-}
-
-/** `<repoId> <label>`: a star names one target of one open repository. */
-const starRef = (name: string, args: string | undefined) => {
-  const [repoId, ...rest] = tokensOf(args)
-  if (repoId === undefined) return no(`${name} needs a repository id`)
-  const label = rest.join(" ").trim()
-  if (label === "") return no(`${name} needs a target label`)
-  return ok({ repoId, label })
-}
-
-const targetRef = (name: string, args: string | undefined): Parsed => {
-  const [repoId, ...rest] = tokensOf(args)
-  if (repoId === undefined || repoId === "" || rest.length === 0) {
-    return no(`${name} needs a repository id and a target label`)
-  }
-  const label = rest[rest.length - 1] ?? ""
-  if (rest.length === 1) return ok({ repoId, label })
-  return ok({ repoId, workspace: rest.slice(0, -1).join(" "), label })
-}
-
 /*
  * The grammar, one entry per flow that accepts arguments. A flow absent from
  * this table takes the empty payload — which is also what a flow with no args
@@ -449,16 +412,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "chat.copy-message": (args) => (args ?? "") === "" ? no("copy-message needs the text to copy") : ok({ text: args ?? "" }),
   "approval.approve": (args) => required("cardId", args, "approval.approve needs the card id"),
   "approval.deny": (args) => required("cardId", args, "approval.deny needs the card id"),
-  "connector.add": (args) => {
-    const access = trimmed(args)
-    if (access !== "read" && access !== "read-write") {
-      return no("connector.add needs an access level: read or read-write")
-    }
-    return ok({ access })
-  },
-  "connector.downgrade": (args) => required("connectorId", args, "connector.downgrade needs the connector id"),
-  "connector.remove.ask": (args) => required("connectorId", args, "connector.remove.ask needs the connector id"),
-  "connector.remove": (args) => required("connectorId", args, "connector.remove needs the connector id"),
   "wiki.select": (args) => required("documentId", args, "wiki.select needs the document id"),
   "wiki.cloud": (args) => {
     const [repo, page] = tokensOf(args)
@@ -917,7 +870,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     const [path, repo] = tokens
     if (path === undefined) return no("code.diagnostics needs a file path: /code.diagnostics <path> [owner/repo]")
     if (tokens.length > 2) return no("code.diagnostics takes a path and optionally an owner/repo")
-    return ok(repo === undefined ? { path } : { path, repo })
+    return ok({ path, ...(repo === undefined ? {} : { repo }) })
   },
   "repos.app": (args) => repoOnly("repos.app", args),
   
@@ -958,17 +911,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "admin.grant.cancel": (args) => required("cardId", args, "admin.grant.cancel needs the card id"),
   "admin.queue.approve": (args) => required("login", args, "admin.queue.approve needs a login"),
   /* `[cwd]`: an OPEN working copy by path, id, name, or key; blank means the active one (the server never takes a bare path). */
-  "tab.terminal": (args) => optional("cwd", args),
-  "tab.harness": (args) => required("harnessId", args, "tab.harness needs a harness id"),
-  "agent.role": (args) => required("roleId", args, "agent.role needs a role id"),
-  "agent.delegate": (args) => {
-    const [roleId, ...rest] = tokensOf(args)
-    const task = trimmed(args).slice(roleId?.length ?? 0).trim()
-    if (roleId === undefined || rest.length === 0) {
-      return no("agent.delegate needs a role and a task: /agent.delegate implementation add a retry to the fetch")
-    }
-    return ok({ roleId, task })
-  },
   /* `[repo] [feature...]` or `--feature <text>`; blank renders the form. */
   "agent.change": (args) => {
     const value = trimmed(args)
@@ -1041,7 +983,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "tab.close": (args) => optional("tabId", args),
   "tab.menu": (args) => optional("repo", args),
   "repo.select": (args) => required("repo", args, "repo.select needs a pinned repository key"),
-  "repo.unpin": (args) => required("repo", args, "repo.unpin needs a pinned repository key"),
   /* `<copyId>[#path]`: the tree row's own id, split at the first `#` (a copy id never carries one; a path may have spaces). */
   "repo.tree": (args) => {
     const text = trimmed(args)
@@ -1055,126 +996,18 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "workspace.rename": (args) => required("name", args, "workspace.rename needs a name: /workspace.rename <name>"),
   /* `[path]`: a typed path opens directly (where the host allows one); blank is the folder dialog, the human's door alone. */
-  "repo.open": (args) => optional("path", args),
   /* Tutorial stage 2: blank choose opens the ranked card; blank create asks for the name. */
   "repo.choose": (args) => optional("repo", args),
   "repo.create": (args) => optional("name", args),
-  "target.run": (args) => targetRef("target.run", args),
-  "target.open": (args) => targetRef("target.open", args),
   /* `<repoId> [workspace] <verb> <pattern>`: the last two tokens are the run; anything between is the workspace path. */
-  "target.run.pattern": (args) => {
-    const tokens = tokensOf(args)
-    const [repoId] = tokens
-    if (repoId === undefined || tokens.length < 3) {
-      return no("target.run.pattern needs a repository id, a verb, and a pattern")
-    }
-    const pattern = tokens[tokens.length - 1]!
-    const verb = tokens[tokens.length - 2]!
-    const workspace = tokens.slice(1, -2).join(" ")
-    return ok(workspace === "" ? { repoId, verb, pattern } : { repoId, workspace, verb, pattern })
-  },
   /* `<repoId> key=value…`: every facet is optional; a bare value with no `=` is the query. */
-  "target.filter": (args) => {
-    const [repoId, ...rest] = tokensOf(args)
-    if (repoId === undefined) return no("target.filter needs a repository id")
-    const payload: Record<string, string> = { repoId }
-    const query: Array<string> = []
-    for (const token of rest) {
-      const split = /^(mode|query|kind|state|workspace)=(.*)$/.exec(token)
-      if (split === null) query.push(token)
-      else payload[split[1]!] = split[2]!
-    }
-    if (query.length > 0) payload["query"] = [payload["query"] ?? "", ...query].join(" ").trim()
-    return ok(payload)
-  },
-  "target.select": (args) => {
-    const [repoId, ...rest] = tokensOf(args)
-    if (repoId === undefined) return no("target.select needs a repository id")
-    return ok(rest.length === 0 ? { repoId } : { repoId, label: rest.join(" ") })
-  },
-  "target.star": (args) => starRef("target.star", args),
-  "target.unstar": (args) => starRef("target.unstar", args),
-  "target.expand": (args) => groupRef("target.expand", args),
-  "target.run.set": (args) => groupRef("target.run.set", args),
-  "target.pick": (args) => {
-    const [repoId, group, ...rest] = tokensOf(args)
-    if (repoId === undefined) return no("target.pick needs a repository id")
-    if (group === undefined) return no("target.pick needs a group label")
-    const member = rest.join(" ").trim()
-    if (member === "") return no("target.pick needs a member label, all, or none")
-    return ok({ repoId, group, member })
-  },
   /*
    * The target-graph commands (docs/LOCAL-APP.md "Cards: target graph"). The
    * repo id may go unnamed — the controller resolves the one open repository
    * — so a lone `//…` token is the LABEL, anything else the repo id.
    */
-  "target.graph": (args) => {
-    const tokens = tokensOf(args)
-    if (tokens.length === 0) return ok({})
-    if (tokens.length === 1) {
-      const [only] = tokens
-      return only !== undefined && only.startsWith("//") ? ok({ label: only }) : ok({ repoId: only })
-    }
-    const [repoId, ...rest] = tokens
-    return ok({ repoId, label: rest.join(" ") })
-  },
   /* Same shape as target.graph: a lone `//…` token is the label to pin, none clears the focus. */
-  "target.graph.focus": (args) => {
-    const tokens = tokensOf(args)
-    if (tokens.length === 0) return ok({})
-    if (tokens.length === 1) {
-      const [only] = tokens
-      return only !== undefined && only.startsWith("//") ? ok({ label: only }) : ok({ repoId: only })
-    }
-    const [repoId, ...rest] = tokens
-    return ok({ repoId, label: rest.join(" ") })
-  },
   /* `<repoId> [query=…] [private=on|off]`: a bare token with no `=` is the query. */
-  "target.graph.filter": (args) => {
-    const [repoId, ...rest] = tokensOf(args)
-    if (repoId === undefined) return no("target.graph.filter needs a repository id")
-    const payload: Record<string, string> = { repoId }
-    const query: Array<string> = []
-    for (const token of rest) {
-      const split = /^(query|private)=(.*)$/.exec(token)
-      if (split === null) query.push(token)
-      else payload[split[1]!] = split[2]!
-    }
-    if (query.length > 0) payload["query"] = [payload["query"] ?? "", ...query].join(" ").trim()
-    return ok(payload)
-  },
-  "target.timeline": (args) => {
-    const tokens = tokensOf(args)
-    if (tokens.length > 2) return no("target.timeline takes a run id and optionally a repository id")
-    const [first, second] = tokens
-    if (first === undefined) return ok({})
-    return second === undefined ? ok({ runId: first }) : ok({ repoId: first, runId: second })
-  },
-  "target.list": (args) => optional("repoId", args),
-  "target.history": (args) => optional("repoId", args),
-  "target.affected": (args) => optional("repoId", args),
-  "target.ci": (args) => optional("repoId", args),
-  "target.runs.select": (args) => {
-    const tokens = tokensOf(args)
-    if (tokens.length > 2) return no("target.runs.select takes a run id and optionally a repository id")
-    const [first, second] = tokens
-    if (first === undefined) return no("target.runs.select needs a run id")
-    return second === undefined ? ok({ runId: first }) : ok({ repoId: first, runId: second })
-  },
-  "target.run.scrub": (args) => {
-    const [runId, cursorRaw] = tokensOf(args)
-    const cursor = Number(cursorRaw)
-    if (runId === undefined || cursorRaw === undefined || !Number.isFinite(cursor)) {
-      return no("target.run.scrub needs a run id and a cursor (epoch ms)")
-    }
-    return ok({ runId, cursor })
-  },
-  "target.source.open": (args) => {
-    const [repoId, file] = tokensOf(args)
-    if (repoId === undefined || file === undefined) return no("target.source.open needs a repository id and a file")
-    return ok({ repoId, file })
-  }
 }
 
 /**

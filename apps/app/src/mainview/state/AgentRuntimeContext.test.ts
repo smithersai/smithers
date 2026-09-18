@@ -144,7 +144,7 @@ describe("per-turn runtime context", () => {
         host: "local",
         version: "test",
         buildSha: "test",
-        capabilities: ["local.terminal", "local.harnesses"],
+        capabilities: [],
         authFlow: "none",
         sandbox: { platform: "darwin", mode: "enforced" }
       }
@@ -274,7 +274,7 @@ describe("per-turn runtime context", () => {
         host: "local",
         version: "test",
         buildSha: "test",
-        capabilities: ["local.terminal"],
+        capabilities: [],
         authFlow: "none",
         sandbox: { platform: "darwin", mode: "enforced" }
       }

@@ -34,7 +34,7 @@ const NATIVE_EVERYTHING = {
   host: "local" as const,
   version: "0",
   buildSha: "x",
-  capabilities: ["agent", "identity", "cloud", "local.repositories", "local.repository-path-entry", "local.targets", "local.terminal", "local.harnesses", "local.lsp"] as const,
+  capabilities: ["agent", "identity", "cloud"] as const,
   authFlow: "both" as const,
   sandbox: null
 }
@@ -104,7 +104,7 @@ describe("the instructions budget", () => {
    * now give way before the cap does, each cut note saying so, and only
    * with none left does the catalog fall to stage 3.
    */
-  test("a session with World notes at the body budget and roles present composes under the cap, and the notes are cut before the turn is", async () => {
+  test("a session with World notes at the body budget composes under the cap, and the notes are cut before the turn is", async () => {
     const { instructions, context, composed } = await capturedTurn((store) => {
       for (const index of [1, 2, 3]) {
         store.dispatch({
@@ -126,11 +126,14 @@ describe("the instructions budget", () => {
     })
     if (context === undefined) throw new Error("no context captured")
     expect(bytes(composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
-    // The live registry now needs the namespace-count floor beside the roles.
-    // That floor must spend its recovered room on the notes, not leave them empty.
-    expect(instructions).toContain("You are the ORCHESTRATOR role")
-    expect(instructionStageOf(instructions)).toBe(3)
-    expect(instructions).toContain('call the "commands" tool with action "list"')
+    /*
+     * The catalog degrades only as far as it must. Since the local backend
+     * retired (docs/LOCAL-BACKEND-RETIREMENT.md) the registry is smaller, so
+     * the namespace list at stage 2 leaves room the notes then spend — the
+     * assertions below are what proves that room went to the notes.
+     */
+    expect(instructionStageOf(instructions)).toBe(2)
+    expect(instructions).toContain("Commands, by namespace")
     // Every note is still listed with its body (the head of it) and says when it was cut; none silently vanished.
     const notes = context.worldState.documents.filter((document) => document.path.startsWith("notes/"))
     expect(notes).toHaveLength(3)
@@ -178,8 +181,12 @@ describe("the instructions budget", () => {
 
     const open = await capturedTurn((store) => setupCards(store, ["issues", "review", "ci"]))
     expect(bytes(open.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
-    // The newest card's draft is the one the person is looking at, so it is the last to go.
-    expect(drafted(open)).toEqual(["setup:will:will%2Fcanary:ci"])
+    // Three drafts and nothing else still fit: a draft is shed only under pressure.
+    expect(drafted(open)).toEqual([
+      "setup:will:will%2Fcanary:issues",
+      "setup:will:will%2Fcanary:review",
+      "setup:will:will%2Fcanary:ci"
+    ])
     expect(open.composed).toContain("- Run repository checks: automatic |")
     console.info(`instructions budget: three open setups carry ${drafted(open).length} drafts (${bytes(open.composed)} composed)`)
 
@@ -195,13 +202,13 @@ describe("the instructions budget", () => {
     })
     /*
      * Twelve card lines alone spent this fixture's headroom (16 062 bytes with
-     * no draft at all, and past the limit the composer then sent anyway), so
-     * the ten plain card lines are what gives way now: the oldest leave, the
-     * setup cards keep their place, and the drafts that fit in the room they
-     * free ride the turn.
+     * no draft at all, and past the limit the composer then sent anyway). The
+     * card window holds twelve of the thirteen cards; the drafts are what
+     * gives way, oldest first, and the newest one the person is looking at
+     * still rides the turn.
      */
     expect(bytes(busy.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
-    expect((busy.context?.recentCards ?? []).length).toBeLessThan(12)
+    expect((busy.context?.recentCards ?? []).length).toBe(12)
     expect(drafted(busy)).toEqual(["setup:will:will%2Fcanary:review", "setup:will:will%2Fcanary:ci"])
     console.info(`instructions budget: the same setups behind ten cards carry ${drafted(busy).length} drafts in ${(busy.context?.recentCards ?? []).length} card lines (${bytes(busy.composed)} composed)`)
   })

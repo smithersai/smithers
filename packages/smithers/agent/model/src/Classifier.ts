@@ -55,42 +55,55 @@ export const Question = Evaluator.Question
 export type Question = Evaluator.Question
 
 /**
- * A yes/no question. `criteria`, when present, says what each side means.
+ * A yes/no question. `criteria`, when present, says what each side means. The
+ * same class as `Evaluator.BooleanQuestion`.
  *
- * @category models
+ * @category schemas
  * @since 1.0.0-rc.0
  */
-export interface BooleanQuestion {
-  readonly type: "boolean"
-  readonly instructions: string
-  readonly criteria?: { readonly true: string; readonly false: string }
-}
+export const BooleanQuestion = Evaluator.BooleanQuestion
 
 /**
- * A question answered with one of the named options in `criteria`; the keys
- * are the answer's literal union.
+ * The decoded form of {@link BooleanQuestion}.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface ChoiceQuestion<Key extends string = string> {
-  readonly type: "choice"
-  readonly instructions: string
-  readonly criteria: Readonly<Record<Key, string>>
-}
+export type BooleanQuestion = Evaluator.BooleanQuestion
 
 /**
- * A question answered along the ordered rubric in `criteria`; the rungs are
- * the answer's label union.
+ * A question answered with one of the named options in `criteria`. The same
+ * class as `Evaluator.ChoiceQuestion`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const ChoiceQuestion = Evaluator.ChoiceQuestion
+
+/**
+ * The decoded form of {@link ChoiceQuestion}.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface ScoreQuestion<Label extends string = string> {
-  readonly type: "score"
-  readonly instructions: string
-  readonly criteria: ReadonlyArray<Label>
-}
+export type ChoiceQuestion = Evaluator.ChoiceQuestion
+
+/**
+ * A question answered along the ordered rubric in `criteria`. The same class
+ * as `Evaluator.ScoreQuestion`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const ScoreQuestion = Evaluator.ScoreQuestion
+
+/**
+ * The decoded form of {@link ScoreQuestion}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ScoreQuestion = Evaluator.ScoreQuestion
 
 /**
  * The map of questions a classifier declares, keyed by question id.
@@ -106,53 +119,28 @@ export type Questions = Readonly<Record<string, BooleanQuestion | ChoiceQuestion
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const boolean = (options: {
-  readonly instructions: string
-  readonly criteria?: { readonly true: string; readonly false: string }
-}): BooleanQuestion =>
-  options.criteria === undefined
-    ? { type: "boolean", instructions: options.instructions }
-    : { type: "boolean", instructions: options.instructions, criteria: options.criteria }
+export const boolean = Evaluator.BooleanQuestion.of
 
 /**
- * Builds a question answered with one of the named options. Between 2 and 255
- * options; fewer or more is a declaration defect and throws a `TypeError` at
- * construction, the same moment a malformed schema would.
+ * Builds a question answered with one of the named options, keeping the
+ * literal option keys so the answer's `value` is their union. Between 2 and
+ * 255 options; fewer or more is a declaration defect and fails the field's
+ * schema check at construction, the same moment a malformed schema would.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const choice = <const Criteria extends Readonly<Record<string, string>>>(options: {
-  readonly instructions: string
-  readonly criteria: Criteria
-}): ChoiceQuestion<Extract<keyof Criteria, string>> => {
-  const count = Object.keys(options.criteria).length
-  if (count < 2 || count > 255) {
-    throw new TypeError(`A choice question offers between 2 and 255 options, not ${count}`)
-  }
-  return { type: "choice", instructions: options.instructions, criteria: options.criteria }
-}
+export const choice = Evaluator.ChoiceQuestion.of
 
 /**
- * Builds a question answered along an ordered rubric. At least 2 distinct
- * rungs; fewer, or a repeated label, is a declaration defect and throws a
- * `TypeError` at construction.
+ * Builds a question answered along an ordered rubric, keeping the literal rung
+ * labels. At least 2 distinct rungs; fewer, or a repeated label, is a
+ * declaration defect and fails the field's schema check at construction.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const score = <const Criteria extends ReadonlyArray<string>>(options: {
-  readonly instructions: string
-  readonly criteria: Criteria
-}): ScoreQuestion<Criteria[number]> => {
-  if (options.criteria.length < 2) {
-    throw new TypeError(`A score question orders at least 2 rungs, not ${options.criteria.length}`)
-  }
-  if (new Set(options.criteria).size !== options.criteria.length) {
-    throw new TypeError("A score question's rungs are distinct")
-  }
-  return { type: "score", instructions: options.instructions, criteria: options.criteria }
-}
+export const score = Evaluator.ScoreQuestion.of
 
 /**
  * The answer to a {@link BooleanQuestion}: the value, and the probability the
@@ -199,12 +187,20 @@ export interface ScoreAnswer<Label extends string = string> {
 /**
  * The typed answer a question infers.
  *
+ * A `Schema.Class` instance type is not generic, so this reads the option keys
+ * and rung labels off `criteria` structurally rather than off a class type
+ * parameter. {@link choice} and {@link score} keep those literals on their
+ * return types, so `answers.role.value` stays the option union and
+ * `answers.risk.label` stays the rung union.
+ *
  * @category models
  * @since 1.0.0-rc.0
  */
-export type AnswerOf<Q> = Q extends BooleanQuestion ? BooleanAnswer
-  : Q extends ChoiceQuestion<infer Key> ? ChoiceAnswer<Key>
-  : Q extends ScoreQuestion<infer Label> ? ScoreAnswer<Label>
+export type AnswerOf<Q> = Q extends { readonly type: "boolean" } ? BooleanAnswer
+  : Q extends { readonly type: "choice"; readonly criteria: infer Criteria extends Readonly<Record<string, string>> }
+    ? ChoiceAnswer<keyof Criteria & string>
+  : Q extends { readonly type: "score"; readonly criteria: ReadonlyArray<infer Label extends string> }
+    ? ScoreAnswer<Label>
   : never
 
 /**
@@ -453,7 +449,10 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   options: MakeOptions<State, Qs>
 ): Classifier<Id, State, Qs> => {
   const { description, questions, state } = options
-  const digest = Digest.digest(CanonicalJson.stringify({ id, questions }))
+  // The encoded questions, not the questions: a class instance is not JSON,
+  // and hashing the wire form is what keeps a digest — and every durable call
+  // key and sealed-key preimage that folds it in — where it already is.
+  const digest = Digest.digest(CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) }))
   const encodeState = Schema.encodeEffect(state)
 
   const evaluate = Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>

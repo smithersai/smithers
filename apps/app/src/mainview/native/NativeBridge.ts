@@ -1,7 +1,6 @@
 import { Electroview } from "electrobun/view"
 import type { PickLocalRepositoryResult, RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
-import { pickLocalRepositoryVia } from "./PickerRequest"
 
 const rpc = (() => {
   if (typeof window === "undefined" || window.__electrobun === undefined) return undefined
@@ -31,14 +30,16 @@ export interface NativeRepositories {
   ) => Promise<PickLocalRepositoryResult>
 }
 
+/*
+ * The folder picker retired with the local backend
+ * (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md): no host opens a repository on
+ * the reader's disk, so every caller gets the refusal the web always got.
+ */
 export const nativeRepositories: NativeRepositories = {
-  available: rpc !== undefined,
-  pickLocalRepository: (access) =>
-    rpc === undefined
-      ? Promise.resolve({
-        status: "error",
-        code: "native-required",
-        message: "Local repositories can only be connected from the Smithers native app."
-      })
-      : pickLocalRepositoryVia((params, options) => rpc.proxy.request.pickLocalRepository(params, options), access)
+  available: false,
+  pickLocalRepository: async () => ({
+    status: "error",
+    code: "native-required",
+    message: "Repositories are opened as Smithers Cloud workspaces, not from this machine."
+  })
 }

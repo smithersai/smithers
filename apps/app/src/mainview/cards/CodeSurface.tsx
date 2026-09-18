@@ -1,4 +1,3 @@
-import { fileArgs } from "../flows/FileArgs"
 /*
  * The highlighted file body (docs/code-intel/PLAN.md §1, §5): `@pierre/diffs`
  * `File` through `@smthrs/ui/adapters/code-view`, Shiki underneath. The
@@ -14,11 +13,12 @@ import { fileArgs } from "../flows/FileArgs"
  * `code.definition` with the same position — the same door every row in
  * FileCards.tsx uses, so the slash and the agent tool run the identical act.
  * The gestures bind only where those flows exist (`codeIntel`, the card's
- * reading of the catalog): a host without `local.lsp` renders the same
- * highlighted file with no dead gesture. Nothing here is component state;
- * the one ref is the position last asked, so a pointer that stays put asks
- * once.
+ * reading of the catalog): a host without the workspace language-server
+ * tunnel (`cloud.terminal`) renders the same highlighted file with no dead
+ * gesture. Nothing here is component state; the one ref is the position last
+ * asked, so a pointer that stays put asks once.
  */
+import { fileArgs } from "../flows/FileArgs"
 import { LSP_HOVER_CAP_CHARS } from "@smthrs/rpc/LocalApp"
 import { Markdown } from "@smthrs/ui"
 import { CodeFileView, languageForFile } from "@smthrs/ui/adapters/code-view"

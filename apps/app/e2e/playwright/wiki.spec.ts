@@ -46,7 +46,7 @@ test("collaborative Wiki stays embedded, edits through the flow, and restores th
           host: "local",
           version: "test",
           buildSha: "test",
-          capabilities: ["agent", "identity", "cloud", "local.repositories"],
+          capabilities: ["agent", "identity", "cloud"],
           authFlow: "none",
           sandbox: { platform: "darwin", mode: "trusted-only" }
         })

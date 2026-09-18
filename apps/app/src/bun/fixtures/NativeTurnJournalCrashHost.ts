@@ -9,7 +9,7 @@ if (!root || !modelUrl || (boundary !== "acceptance" && boundary !== "batch")) t
 const host = await startLocalServer({
   port: 0, distDir: root, home: root, stateDir: `${root}/state`,
   cloudMode: "hybrid", cloudApi: null, identityUpstream: null,
-  chat: { chatUrl: modelUrl }, node: null, harnesses: async () => [], log: () => {}
+  chat: { chatUrl: modelUrl }, log: () => {}
 })
 const never = new Promise<never>(() => {})
 const gate = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 0, async fetch(request) {

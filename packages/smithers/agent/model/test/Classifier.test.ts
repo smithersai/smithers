@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
+import * as SchemaIssue from "effect/SchemaIssue"
 import { describe, expect, it } from "vitest"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
 import * as Classifier from "../src/Classifier.ts"
@@ -60,6 +61,23 @@ const success = <A, E>(result: Result.Result<A, E>): A => {
   return result.success
 }
 
+const formatIssue = SchemaIssue.makeFormatterDefault()
+
+/**
+ * The schema message behind a construction a field's check refused. A class
+ * constructor throws a plain `Error` reading "Schema validation failed" and
+ * carries the issue in `cause`, so the limit's own words live there.
+ */
+const refusal = (build: () => unknown): string => {
+  try {
+    build()
+  } catch (error) {
+    const cause = (error as { readonly cause?: unknown }).cause
+    return SchemaIssue.isIssue(cause) ? formatIssue(cause) : String(error)
+  }
+  throw new Error("Expected the construction to fail")
+}
+
 describe("Classifier question constructors", () => {
   it("builds a boolean with or without criteria", () => {
     expect(Classifier.boolean({ instructions: "Is it?" })).toEqual({ type: "boolean", instructions: "Is it?" })
@@ -68,17 +86,21 @@ describe("Classifier question constructors", () => {
       instructions: "Is it?",
       criteria: { true: "yes", false: "no" }
     })
+    // `criteria` is an optional key, so an omitted one is absent rather than
+    // present and undefined: canonical JSON rejects an undefined member, and a
+    // digest is taken over exactly these keys.
+    expect(Object.keys(Classifier.boolean({ instructions: "Is it?" }))).toEqual(["type", "instructions"])
   })
 
   it("accepts a choice of 2 and of 255 options and refuses 1 and 256", () => {
     const options = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, "d"]))
     expect(Object.keys(Classifier.choice({ instructions: "?", criteria: options(2) }).criteria)).toHaveLength(2)
     expect(Object.keys(Classifier.choice({ instructions: "?", criteria: options(255) }).criteria)).toHaveLength(255)
-    expect(() => Classifier.choice({ instructions: "?", criteria: options(1) })).toThrow(
-      new TypeError("A choice question offers between 2 and 255 options, not 1")
+    expect(refusal(() => Classifier.choice({ instructions: "?", criteria: options(1) }))).toContain(
+      "A choice question offers between 2 and 255 options, not 1"
     )
-    expect(() => Classifier.choice({ instructions: "?", criteria: options(256) })).toThrow(
-      new TypeError("A choice question offers between 2 and 255 options, not 256")
+    expect(refusal(() => Classifier.choice({ instructions: "?", criteria: options(256) }))).toContain(
+      "A choice question offers between 2 and 255 options, not 256"
     )
   })
 
@@ -88,16 +110,72 @@ describe("Classifier question constructors", () => {
       instructions: "?",
       criteria: ["low", "high"]
     })
-    expect(() => Classifier.score({ instructions: "?", criteria: ["only"] })).toThrow(
-      new TypeError("A score question orders at least 2 rungs, not 1")
+    expect(refusal(() => Classifier.score({ instructions: "?", criteria: ["only"] }))).toContain(
+      "A score question orders at least 2 rungs, not 1"
     )
-    expect(() => Classifier.score({ instructions: "?", criteria: ["low", "low"] })).toThrow(
-      new TypeError("A score question's rungs are distinct")
+    expect(refusal(() => Classifier.score({ instructions: "?", criteria: ["low", "low"] }))).toContain(
+      "A score question's rungs are distinct"
     )
+  })
+
+  it("builds instances of the one class per shape the evaluator declares", () => {
+    expect(Classifier.BooleanQuestion).toBe(Evaluator.BooleanQuestion)
+    expect(Classifier.ChoiceQuestion).toBe(Evaluator.ChoiceQuestion)
+    expect(Classifier.ScoreQuestion).toBe(Evaluator.ScoreQuestion)
+    expect(Relevance.questions.relevant).toBeInstanceOf(Evaluator.BooleanQuestion)
+    expect(Relevance.questions.role).toBeInstanceOf(Evaluator.ChoiceQuestion)
+    expect(Relevance.questions.risk).toBeInstanceOf(Evaluator.ScoreQuestion)
+    // `new` needs no `type`: the discriminant field carries a constructor
+    // default, and it is still a plain `type` on the wire, not a `_tag`.
+    expect(new Evaluator.ChoiceQuestion({ instructions: "?", criteria: { a: "A", b: "B" } }).type).toBe("choice")
   })
 
   it("shares the wire question schema with the evaluator", () => {
     expect(Classifier.Question).toBe(Evaluator.Question)
+  })
+})
+
+describe("Classifier question inference", () => {
+  it("keeps the literal option keys and rung labels through the class factories", () => {
+    const role = Classifier.choice({
+      instructions: "?",
+      criteria: { implementation: "i", fixture: "f", unrelated: "u" }
+    })
+    const risk = Classifier.score({ instructions: "?", criteria: ["none", "low", "medium", "high"] })
+
+    // Assigned both ways, so a collapse to `string` fails to compile whichever
+    // direction it collapsed in. This is the inference a `Schema.Class`
+    // instance type cannot carry on its own.
+    type Role = Classifier.AnswerOf<typeof role>["value"]
+    type Rung = Classifier.AnswerOf<typeof risk>["label"]
+    const widened: "implementation" | "fixture" | "unrelated" = null as unknown as Role
+    const narrowed: Role = "fixture"
+    const widenedRung: "none" | "low" | "medium" | "high" = null as unknown as Rung
+    const narrowedRung: Rung = "medium"
+    // @ts-expect-error "reviewer" is not one of the declared options
+    const notAnOption: Role = "reviewer"
+    // @ts-expect-error "critical" is not one of the declared rungs
+    const notARung: Rung = "critical"
+    const yesNo: Classifier.AnswerOf<typeof Relevance.questions.relevant> = { value: true, probability: 1 }
+    const questions: Classifier.Questions = { role, risk, relevant: Relevance.questions.relevant }
+
+    expect([widened, narrowed, widenedRung, narrowedRung, notAnOption, notARung]).toHaveLength(6)
+    expect(yesNo.value).toBe(true)
+    expect(Object.keys(questions).sort()).toEqual(["relevant", "risk", "role"])
+  })
+
+  it("reads the same shapes off a question written as an object literal", () => {
+    // A host that declared its questions before the classes landed still holds
+    // structurally valid ones, and they still infer and still evaluate.
+    const literal = {
+      type: "choice",
+      instructions: "Which?",
+      criteria: { a: "A", b: "B" }
+    } as const satisfies Classifier.ChoiceQuestion
+    const value: Classifier.AnswerOf<typeof literal>["value"] = "b"
+
+    expect(value).toBe("b")
+    expect(Evaluator.encodeQuestions({ literal })).toEqual({ literal })
   })
 })
 
@@ -107,9 +185,30 @@ describe("Classifier.make", () => {
     expect(Relevance.description).toBe("Whether a file must change for the task, and its role.")
     expect(Object.keys(Relevance.questions)).toEqual(["relevant", "role", "risk"])
     expect(Relevance.digest).toBe(
-      digestSync(CanonicalJson.stringify({ id: "triage/relevance", questions: Relevance.questions }))
+      digestSync(
+        CanonicalJson.stringify({
+          id: "triage/relevance",
+          questions: Evaluator.encodeQuestions(Relevance.questions)
+        })
+      )
     )
     expect(Relevance.digest).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it("digests to the value it digested to before the question shapes became classes", () => {
+    // Pinned, not derived: a digest feeds durable call keys and the harness's
+    // sealed-key preimage, so a moved one silently invalidates journaled
+    // replays. Both values were read off main before this refactor - the
+    // three-shape declaration above, and a boolean whose optional `criteria`
+    // is absent.
+    const noCriteria = Classifier.make("minimal", {
+      description: "d",
+      state: Schema.Struct({ a: Schema.String }),
+      questions: { ok: Classifier.boolean({ instructions: "Is it?" }) }
+    })
+
+    expect(Relevance.digest).toBe("c4e6361b9c49993f905ccb5dc1131683eab50c1c8dc88d567e728b40b9bb3c71")
+    expect(noCriteria.digest).toBe("f05c15d970fb96731ff7261652c597ea0784b39a30638d0f0fe7417177ca9615")
   })
 
   it("digests the same declaration in another key order to the same value, and a changed question to another", () => {

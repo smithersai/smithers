@@ -145,18 +145,18 @@ describe("THE FORM LAW — filling and submitting", () => {
 
   test("the agent may submit its own form, and a refusal lands on the card and in its result", async () => {
     const { store, controller } = await boot()
-    await execute(controller, "tab.harness")
-    const id = "form-tab.harness"
-    expect(await execute(controller, "form.submit", id)).toBe("failed: The form still needs: Harness id.")
-    expect(formOf(store, "tab.harness")?.payload.error).toBe("The form still needs: Harness id.")
-    expect(formOf(store, "tab.harness")?.status).toBe("error")
-    await execute(controller, "form.set", `${id} harnessId claude`)
+    await execute(controller, "runs.resume")
+    const id = "form-runs.resume"
+    expect(await execute(controller, "form.submit", id)).toBe("failed: The form still needs: Run id.")
+    expect(formOf(store, "runs.resume")?.payload.error).toBe("The form still needs: Run id.")
+    expect(formOf(store, "runs.resume")?.status).toBe("error")
+    await execute(controller, "form.set", `${id} runId run-9`)
     // A field commit clears the refusal.
-    expect(formOf(store, "tab.harness")?.payload.error).toBeUndefined()
-    expect(formOf(store, "tab.harness")?.status).toBe("active")
+    expect(formOf(store, "runs.resume")?.payload.error).toBeUndefined()
+    expect(formOf(store, "runs.resume")?.status).toBe("active")
     const submitted = await execute(controller, "form.submit", id)
     expect(submitted).toContain("asked the user to confirm")
-    expect(messages(store).find((message) => message.action?.flow === "tab.harness")?.action?.args).toBe("claude")
+    expect(messages(store).find((message) => message.action?.flow === "runs.resume")?.action?.args).toBe("run-9")
   })
 })
 

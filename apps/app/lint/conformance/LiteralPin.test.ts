@@ -90,11 +90,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "CSS selector for the Astro landing's main.home in apps/site/src/pages/index.astro, outside the app vocabulary; the browser assertion requires the element to be visible"
   },
   {
-    literal: "fixture.semantic",
-    file: "scripts/browser-test-host.ts",
-    reason: "test-owned semantic health checker id bound to the browser fixture policy"
-  },
-  {
     literal: "demo.v2",
     file: "e2e/playwright/cloudFixture.spec.ts",
     reason: "test repository basename containing a dot; the fixture preserves its full identity"
@@ -135,24 +130,9 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "a flow name this unit test invents to exercise the unnamed-affordance rule, never sent to the app"
   },
   {
-    literal: "launch-",
-    file: "e2e/packaged/PackagedApp.ts",
-    reason: "the screenshot filename this harness numbers its own launches with, written under test-results, not an id the app renders"
-  },
-  {
     literal: "promotional",
     file: "scripts/launch-checklist/Rows.ts",
     reason: "the billing grant kind the checklist reads back from its own /api/billing audit row; it is an upstream grant kind, never a card kind"
-  },
-  {
-    literal: "launch-checklist-d2-",
-    file: "scripts/launch-checklist/Rows.ts",
-    reason: "a run id the checklist coins for its own /api/agent/turn probe; the server echoes it back and no card is ever built from it"
-  },
-  {
-    literal: "launch-checklist-d4-",
-    file: "scripts/launch-checklist/Rows.ts",
-    reason: "a run id the checklist coins for its own zero-balance turn probe; the server echoes it back and no card is ever built from it"
   },
   {
     literal: "plan-",
@@ -163,16 +143,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "librarian-run-",
     file: "e2e/playwright/tutorial-stubs.ts",
     reason: "the workflow gateway double's run id for the beat 12 launches; the app wraps it as flow-run-<runId>, so the bare prefix is never a card id"
-  },
-  {
-    literal: "data-char",
-    file: "e2e/playwright/code-intel.spec.ts",
-    reason: "stamped per token by the pierre renderer inside @smthrs/ui's code view, not by app JSX, so the derivation cannot see it; src/mainview/cards/FileCards.test.tsx pins the same attribute against the real renderer"
-  },
-  {
-    literal: "data-selected-line",
-    file: "e2e/playwright/code-intel.spec.ts",
-    reason: "stamped on the anchored line by the pierre renderer inside @smthrs/ui's code view, not by app JSX; src/mainview/cards/FileCards.test.tsx pins the same attribute against the real renderer"
   },
   {
     literal: "data-selected-line",

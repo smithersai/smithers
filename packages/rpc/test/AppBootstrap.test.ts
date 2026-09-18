@@ -8,11 +8,11 @@ describe("app bootstrap contract", () => {
       host: "local",
       version: "1.0.0",
       buildSha: "abc",
-      capabilities: ["local.repositories", "local.targets"],
+      capabilities: [],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
     })
-    expect(hasCapability(bootstrap, "local.targets")).toBe(true)
+    expect(hasCapability(bootstrap, "cloud")).toBe(false)
     expect(hasCapability(bootstrap, "agent")).toBe(false)
   })
 
@@ -28,7 +28,9 @@ describe("runtime capabilities", () => {
     expect(RuntimeCapabilitySchema.safeParse("cloud.unknown").success).toBe(false)
   })
 
-  test("names the code-intelligence door under local.*, so the web refusal names the native app", () => {
-    expect(RuntimeCapabilitySchema.parse("local.lsp")).toBe("local.lsp")
+  test("the retired local backend's doors are no longer capabilities any host can name", () => {
+    for (const retired of ["local.lsp", "local.targets", "local.terminal", "local.harnesses", "local.repositories"]) {
+      expect(RuntimeCapabilitySchema.safeParse(retired).success).toBe(false)
+    }
   })
 })

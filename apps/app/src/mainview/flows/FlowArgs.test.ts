@@ -20,22 +20,6 @@ const roundTrip = <N extends FlowWithInput>(name: N, input: FlowInput[N], line: 
 }
 
 describe("flowArgs — one serialisation, and the grammar gives the values back", () => {
-  test("target.select carries a label that holds a space", () => {
-    roundTrip("target.select", { repoId: "repo-1", label: "//pkg:a b" }, "repo-1 //pkg:a b", { repoId: "repo-1", label: "//pkg:a b" })
-  })
-
-  test("target.select without a label selects the repository's table", () => {
-    roundTrip("target.select", { repoId: "repo-1" }, "repo-1", { repoId: "repo-1" })
-  })
-
-  test("target.filter carries a query that holds a space", () => {
-    roundTrip("target.filter", { repoId: "repo-1", query: "app tests" }, "repo-1 query=app tests", { repoId: "repo-1", query: "app tests" })
-  })
-
-  test("target.filter clears a facet given blank rather than dropping it", () => {
-    roundTrip("target.filter", { repoId: "repo-1", query: "" }, "repo-1 query=", { repoId: "repo-1", query: "" })
-  })
-
   test("runs.steer carries a message that holds spaces", () => {
     roundTrip("runs.steer", { runId: "run-1", body: "focus on the failing test" }, "run-1 focus on the failing test", {
       runId: "run-1",
@@ -95,17 +79,15 @@ describe("FlowName — the seam's names are the registry's names", () => {
       "change.resolve",
       "form.set",
       "runs.steer",
-      "target.filter",
-      "target.select",
     ]
     expect(named.filter((name) => !declared.has(name))).toEqual([])
   })
 
   test("a misspelled flow name is not a FlowName", () => {
-    const good: FlowName = "target.select"
+    const good: FlowName = "repo.select"
     // @ts-expect-error the plural is not a flow: this is the mistake the union exists to refuse.
-    const bad: FlowName = "targets.select"
-    expect([good, bad] as ReadonlyArray<string>).toEqual(["target.select", "targets.select"])
+    const bad: FlowName = "repos.select"
+    expect([good, bad] as ReadonlyArray<string>).toEqual(["repo.select", "repos.select"])
   })
 
   test("a flow's input is not another flow's input", () => {

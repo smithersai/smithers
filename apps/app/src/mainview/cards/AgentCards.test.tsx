@@ -59,13 +59,13 @@ const click = (host: HTMLElement, selector: string): void => {
 
 describe("the Agents card", () => {
   test("on the web host it lists nothing local and says where agents run", () => {
-    const host = mount(<AgentsCardBody card={agentsCard({ native: false, agents: [] })} onRunCommand={() => {}} />)
+    const host = mount(<AgentsCardBody card={agentsCard({ native: false, agents: [] })} />)
     expect(host.textContent).toBe("Agents run on the native app's harnesses.")
     expect(host.querySelector("[data-flow]")).toBeNull()
   })
 
   test("the last act's refusal stays on the card", () => {
-    const host = mount(<AgentsCardBody card={agentsCard({ native: true, agents: [orchestrator], error: "The server answered 500" })} onRunCommand={() => {}} />)
+    const host = mount(<AgentsCardBody card={agentsCard({ native: true, agents: [orchestrator], error: "The server answered 500" })} />)
     expect(host.querySelector("[role=alert]")?.textContent).toBe("The server answered 500")
   })
 })

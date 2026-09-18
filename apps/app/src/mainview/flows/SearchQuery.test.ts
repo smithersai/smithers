@@ -175,12 +175,6 @@ describe("§2 actions: every action is a registered flow whose input the ref fil
     expect(run.find((action) => action.role === "primary")).toMatchObject({ flow: "runs.resume", args: "run-9" })
   })
 
-  test("a target carries its repository and label into target.open and target.run", () => {
-    const actions = actionsFor({ kind: "target", ref: "r1 //src:lint", title: "//src:lint" }, entries)
-    expect(actions.find((action) => action.role === "open")).toMatchObject({ flow: "target.open", args: "r1 //src:lint" })
-    expect(actions.find((action) => action.role === "primary")).toMatchObject({ flow: "target.run", args: "r1 //src:lint" })
-  })
-
   test("a flow item's one action is the flow itself; a secret name opens the secrets list and nothing more", () => {
     expect(actionsFor({ kind: "flow", ref: "flow.list", title: "flow.list" }, entries)).toEqual([
       { flow: "flow.list", label: "List the flows on your workspace", role: "open" }

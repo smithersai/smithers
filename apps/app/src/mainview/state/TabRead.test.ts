@@ -36,7 +36,7 @@ const harness = async (answer: (url: string) => Response) => {
       host: "local",
       version: "test",
       buildSha: "test",
-      capabilities: ["local.terminal", "local.harnesses"],
+      capabilities: [],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
     },

@@ -48,9 +48,7 @@ const cloudHost = (upstreamOrigin: string): Promise<LocalServer> =>
       signOut: async () => {},
       stop: async () => {}
     },
-    node: { path: "/fake/node", version: "v22.19.0" },
     home: "/fake/home",
-    harnesses: async () => [],
     log: () => {}
   })
 
@@ -63,9 +61,7 @@ const identityHost = (upstreamOrigin: string): Promise<LocalServer> =>
     identityUpstream: upstreamOrigin,
     cloudApi: null,
     upstreamTimeoutMs: DEADLINE_MS,
-    node: { path: "/fake/node", version: "v22.19.0" },
     home: "/fake/home",
-    harnesses: async () => [],
     log: () => {}
   })
 

@@ -28,7 +28,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "files.list",
     form: { args: (payload) => fileArgs(text(payload, "path") ?? "/", text(payload, "repo")) },
     summary: "List a repository directory",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     args: "[path] [owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
@@ -49,7 +49,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
       args: (payload) => fileArgs([text(payload, "path"), text(payload, "line"), text(payload, "column")].filter((part) => part !== undefined).join(":"), text(payload, "repo"))
     },
     summary: "Read a file from a repository",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     /* `:line[:col]` (docs/code-intel/PLAN.md §1): the card scrolls to and marks the line; the parser strips it off the path token. */
     args: "<path>[:<line>[:<col>]] [owner/repo]",
     requires: ["first-run-target", "repo-source"],

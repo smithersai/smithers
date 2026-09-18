@@ -1,23 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { detectHarnessesWith } from "@smthrs/harness-detect"
-import { createPtyManager } from "../src/bun/Pty"
 import { startLocalServer } from "../src/bun/server"
 import type { LocalServerOptions } from "../src/bun/server"
-import { Effect } from "effect"
-import type { HealthConfig } from "@smthrs/control/Health"
-
-/** Opt-in semantic fixture: only a complete explicit output record is evidence of activity. */
-const fixtureHealth: HealthConfig = {
-  checkers: [{ id: "fixture.semantic", probe: (context) => {
-    const marker = [...(context.session?.outputTail ?? "").matchAll(/^SMITHERS_TEST_HEALTH:(working|idle|needs-input)$/gm)].at(-1)?.[1]
-    const activity = marker === "working" || marker === "idle" || marker === "needs-input" ? marker : "unknown"
-    return Effect.succeed({ activity, reason: activity === "needs-input" ? "awaiting-reply" : "ok" })
-  } }],
-  bindings: { terminal: { checkerId: "fixture.semantic", exposeOutput: true,
-    policy: { intervalMs: 100, timeoutMs: 50, ttlMs: 2_000 } } }
-}
 
 /** Test-only composition. A stubbed model is not permission to inspect host credentials. */
 export const browserTestOptions = (
@@ -27,7 +12,6 @@ export const browserTestOptions = (
 ): LocalServerOptions => {
   const port = Number(env.SMITHERS_LOCAL_PORT ?? "0")
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid browser-test server port")
-  const hostHarnesses = env.SMITHERS_E2E_HOST_HARNESSES === "1"
   const realChat = env.SMITHERS_CHAT_STUB === "0"
   return {
     port,
@@ -36,23 +20,8 @@ export const browserTestOptions = (
     cloudMode: realChat ? "hybrid" : "offline",
     cloudApi: null,
     identityUpstream: null,
-    stateDir: join(root, "state"),
-    allowManualRepositoryPaths: true,
-    ...(env.SMITHERS_E2E_HEALTH === "1" ? { health: fixtureHealth } : {}),
-    ...(hostHarnesses ? {} : {
-      home: root,
-      harnesses: () =>
-        detectHarnessesWith({
-          home: root,
-          env: {},
-          platform: process.platform,
-          listDir: () => [],
-          isFile: () => false,
-          readText: () => null,
-          version: async () => null
-        }),
-      pty: (deps) => createPtyManager({ ...deps, home: root, tmpdir: root, env: {}, shell: "/bin/sh" })
-    })
+    home: root,
+    stateDir: join(root, "state")
   }
 }
 

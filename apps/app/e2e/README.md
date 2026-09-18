@@ -20,11 +20,8 @@ against the real origin.
 T2 builds the stable Electrobun package and launches its real executable with
 the production native renderer. A test-only, bearer-authenticated HTTP bridge
 binds `127.0.0.1` only when the runner supplies `SMITHERS_E2E_BRIDGE=1`; DOM
-evaluation and one-shot folder-picker answers cross Electrobun's own WebView
-RPC. Repository authorization, inspection, HTTP routes, targets, PTYs, and the
-native renderer are production implementations. The account-owned
-`codeplanesmithers/canary-sandbox` remote is fetched at a pinned revision, then
-Smithers declarations are added only to the isolated clone.
+evaluation crosses Electrobun's own WebView RPC. The local origin, its HTTP
+routes and the native renderer are production implementations.
 
 Every test gets a temporary home and uses the app's persisted local origin, so
 relaunch tests exercise production origin selection without touching the user's profile. An atomic suite lease
@@ -37,9 +34,6 @@ network access to the public fixture remote.
 
 `contracts/` holds the assertion contracts both tiers share: pure predicates
 that decide what counts as evidence, each with its own Bun test.
-`terminalExecutionProbe.ts` builds a shell command that prints its marker from
-two quoted halves, so the marker is absent from the typed bytes and
-line-discipline echo cannot satisfy the execution check.
 `assistantReplyEvidence.ts` requires a completed assistant bubble rendered
 after the user turn a send appended, so the bubbles the app renders at boot
 never read as a reply to it. `//apps/app:unitTests` runs `contracts/` alongside

@@ -55,7 +55,7 @@ const serve = async (
   page: Page,
   options: { readonly degraded?: boolean } = {}
 ): Promise<void> => {
-  await installCloudFixture(page, { ...options, capabilities: ["agent", "identity", "cloud", "cloud.pat", "local.repositories"] })
+  await installCloudFixture(page, { ...options, capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   /* The change's own routes. */
   await page.route(`**/api/cloud/api/repos/${REPO}/changes/qupxosqw`, (route) => route.fulfill(json(CHANGE)))
   await page.route(`**/api/cloud/api/repos/${REPO}/changes/qupxosqw/conflicts`, (route) => route.fulfill(json([])))

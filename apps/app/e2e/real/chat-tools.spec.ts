@@ -64,7 +64,7 @@ chatTest("a grounded answer arrives as multiple real stream frames and completes
 })
 
 test("the model invokes files.read against an owned repository and grounds its answer in disk bytes", scenario("chat.tool-files-read", {
-  capabilities: ["agent", "local.repositories"],
+  capabilities: ["agent"],
   coverage: ["action:chat.send", "action:repo.open", "action:files.read", "host:local", "path:success", "door:slash", "door:agent", "dimension:tool-loop", "dimension:grounding", "evidence:tool-call-and-repo-read"],
   description: "Open a disposable jj repository through the UI, require the agent to read a real file, and verify both tool traffic and filesystem truth."
 }), async ({ page }, testInfo) => {
@@ -272,7 +272,7 @@ test("Copy message writes the complete rendered catalog to the real browser clip
 })
 
 test("repository switching routes successive model reads to the selected filesystem", scenario("chat.repository-tool-context", {
-  capabilities: ["agent", "local.repositories"],
+  capabilities: ["agent"],
   coverage: ["action:repo.open", "action:repo.select", "action:files.read", "action:chat.send", "host:local", "path:success", "door:slash", "door:agent", "dimension:repository-context", "evidence:disk-and-model-tool-context"],
   description: "Read distinct same-named files through the real model after each UI repository selection, requiring both answers and tool calls to agree with the selected filesystem."
 }), async ({ page }, testInfo) => {
@@ -309,7 +309,7 @@ test("repository switching routes successive model reads to the selected filesys
 })
 
 test("repository selection reads each filesystem and preserves both cards after reload", scenario("chat.repository-selection-persistence", {
-  capabilities: ["local.repositories"],
+  capabilities: [],
   coverage: ["action:repo.open", "action:repo.select", "action:files.read", "host:local", "path:success", "path:persistence", "door:slash", "door:user-only", "dimension:repository-context", "evidence:disk-api-and-persisted-repository-cards"],
   description: "Independently verify repository selection and shared card persistence without allowing a model-context failure to block these UI and filesystem assertions."
 }), async ({ page, request }, testInfo) => {

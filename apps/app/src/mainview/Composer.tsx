@@ -2,12 +2,10 @@ import { Button,ChatComposer } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import {
 BookOpen,
-Bot,
 ChevronDown,
 Cloud,
 FolderGit2,
 GitPullRequest,
-HardDrive,
 Laptop,
 Library,
 MessageSquare,
@@ -19,7 +17,6 @@ Workflow
 } from "lucide-react"
 import type { KeyboardEvent,ReactNode,RefObject } from "react"
 import { useId,useRef,useState } from "react"
-import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
 import { dynamicFlowProps, flowAction, flowProps } from "./flows/FlowAction"
 import { actionForKey } from "./flows/SearchQuery"
@@ -237,9 +234,10 @@ interface MenuEntry {
 }
 
 /*
- * The composer's `+` (bottom-left): add files first, then a connector, a flow,
- * an agent. The open state is the session's (/composer.add), reached through
- * the dispatcher like the connect and surfaces menus.
+ * The composer's `+` (bottom-left): add files, then a flow. The open state is
+ * the session's (/composer.add), reached through the dispatcher like the
+ * connect and surfaces menus. Local connectors and locally launched agents
+ * retired with the local backend (docs/LOCAL-BACKEND-RETIREMENT.md).
  */
 function ComposerAdd({
   open,
@@ -249,17 +247,9 @@ function ComposerAdd({
   readonly triggerRef: RefObject<HTMLButtonElement | null>
 }) {
   const controller = useController()
-  const { collections } = controller.store
-  const { data: harnessRows } = useLiveQuery(collections.harnesses)
-  const { data: agentRows } = useLiveQuery(collections.agents)
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const canAddFiles = controller.commands.find("files.add") !== undefined
-  const canAddConnector = controller.nativeRepositoriesAvailable &&
-    controller.commands.find("connector.add") !== undefined
   const canCreateFlow = controller.commands.find("flow.create") !== undefined
-  const canOpenHarness = controller.commands.find("tab.harness") !== undefined
-  const availableHarness = harnessRows.find((harness) => harness.status !== "unavailable")
-  const firstHarness = harnessRows[0]
 
   const entries: ReadonlyArray<MenuEntry> = [
     ...(canAddFiles
@@ -271,20 +261,6 @@ function ComposerAdd({
           <>
             <Paperclip size={14} aria-hidden="true" />
             Add files…
-          </>
-        )
-      }]
-      : []),
-    ...(canAddConnector
-      ? [{
-        key: "connector.add",
-        flow: "connector.add",
-        args: "read",
-        testId: "composer-add-connector",
-        content: (
-          <>
-            <HardDrive size={14} aria-hidden="true" />
-            New connector…
           </>
         )
       }]
@@ -302,46 +278,6 @@ function ComposerAdd({
         ),
         /* flow.create needs a description: the entry starts the invocation in the composer. */
         onChoose: () => controller.changeDraft("/flow.create ")
-      }]
-      : []),
-    /* The agents (AgentRoles.ts + the app-agents mirror), one model each; a raw harness follows for everything else. */
-    ...(canOpenHarness
-      ? roleMenuEntries(harnessRows, agentRows).map((entry): MenuEntry => ({
-        key: `agent.role:${entry.role.id}`,
-        flow: "agent.role",
-        args: entry.role.id,
-        testId: `composer-add-role-${entry.role.id}`,
-        disabled: !entry.available,
-        content: (
-          <>
-            <Bot size={14} aria-hidden="true" />
-            {entry.title}
-            <span className="composer-connect-branch">{entry.available ? entry.account : entry.reason}</span>
-          </>
-        )
-      }))
-      : []),
-    ...(canOpenHarness
-      ? [{
-        key: "tab.harness",
-        flow: "tab.harness",
-        testId: "composer-add-agent",
-        disabled: availableHarness === undefined,
-        ...(availableHarness === undefined ? {} : { args: availableHarness.id }),
-        /* The raw harness session: the harness, then its account or status. */
-        content: (
-          <>
-            <Bot size={14} aria-hidden="true" />
-            {availableHarness?.displayName ?? firstHarness?.displayName ?? "Harness"}
-            {availableHarness === undefined
-              ? (
-                <span className="composer-connect-branch">
-                  {firstHarness === undefined ? "no harness detected" : firstHarness.status}
-                </span>
-              )
-              : <span className="composer-connect-branch">{availableHarness.account?.email ?? availableHarness.account?.label ?? ""}</span>}
-          </>
-        )
       }]
       : []),
   ]
@@ -442,11 +378,12 @@ function ComposerAdd({
 /*
  * The repository selector, at the top of the composer: the selected
  * repository's name as the trigger ("Select a repo" until there is one), the
- * repository origins as its menu. Every entry is a command binding: the
- * native folder dialog through repo.open, capability-scoped local
- * repositories through connector.add, GitHub through auth.sign-in,
- * cloud import through repos.import, and full management
- * through /connect.
+ * repository origins as its menu. Every entry is a command binding: cloud
+ * repositories and their working copies through repo.select, GitHub through
+ * auth.sign-in, cloud import through repos.import, and full management
+ * through /connect. Nothing here opens a directory on this machine: local
+ * repositories retired with the local backend
+ * (docs/LOCAL-BACKEND-RETIREMENT.md).
  */
 function ComposerConnect({
   open,
@@ -463,7 +400,6 @@ function ComposerConnect({
   const { collections } = controller.store
   const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: repoRows } = useLiveQuery(collections.repos)
-  const { data: operationRows } = useLiveQuery(collections.connectorOperations)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: copyRows } = useLiveQuery(collections.workingCopies)
@@ -485,9 +421,6 @@ function ComposerConnect({
 
   const connectors = [...connectorRows].sort((left, right) => left.name.localeCompare(right.name))
   const repos = [...repoRows].sort((left, right) => left.name.localeCompare(right.name))
-  const operation = operationRows.find((candidate) => candidate.id === "connector-operation") ??
-    collections.connectorOperations.get("connector-operation")
-  const selecting = operation?.phase === "selecting-local-repository"
   const identity = identityRows[0]
   const signedIn = identity?.state === "signed-in"
   const activeRepo = activeRepoOf(activeRows[0] ?? { activeRepoKey: null }, repos)
@@ -505,9 +438,6 @@ function ComposerConnect({
     ? selectedCopy !== undefined ? `${selection.repoId} · ${selectedCopy.label}` : selection.repoId
     : activeRepo?.name ?? connectors[0]?.name
   const connected = selected !== undefined
-  const canOpenRepo = controller.commands.find("repo.open") !== undefined
-  const canAddConnector = controller.nativeRepositoriesAvailable &&
-    controller.commands.find("connector.add") !== undefined
   const cloudSignedIn = cloudSessionRows[0]?.state === "signed-in"
   // One label rule for every copy row (WorkspaceViews.ts): this menu says the same line.
   const copyLabel = workingCopyLabel
@@ -585,33 +515,6 @@ function ComposerConnect({
         )
       }]
       : []),
-    ...(canOpenRepo
-      ? [{
-        key: "repo.open",
-        flow: "repo.open",
-        testId: "chrome-open-repo",
-        content: (
-          <>
-            <Laptop size={14} aria-hidden="true" />
-            Open local repository…
-          </>
-        )
-      }]
-      : []),
-    ...(canAddConnector
-      ? [{
-        key: "connector.add",
-        flow: "connector.add",
-        disabled: selecting,
-        content: (
-          <>
-            <HardDrive size={14} aria-hidden="true" />
-            {selecting ? "Choosing a repository…" : "Add local repository…"}
-          </>
-        ),
-        args: "read"
-      }]
-      : []),
     ...(!signedIn && controller.commands.find("auth.sign-in") !== undefined
       ? [{
         key: "auth.sign-in",
@@ -657,7 +560,7 @@ function ComposerConnect({
   ]
 
   const entries = repositoriesOnly
-    ? connectionEntries.filter((entry) => entry.flow === "repo.select" || entry.flow === "repo.open")
+    ? connectionEntries.filter((entry) => entry.flow === "repo.select")
     : connectionEntries
 
   /* The entry indices a keyboard can land on; a disabled entry is skipped. */

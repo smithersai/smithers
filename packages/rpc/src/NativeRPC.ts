@@ -3,10 +3,8 @@
  *
  * @since 1.0.0
  */
-import type { PickLocalRepositoryResult, RepositoryAccess } from "./NativeRepository.ts"
-
 /*
- * The two native doors the local app keeps on Electrobun RPC (LOCAL-APP.md,
+ * The one native door the local app keeps on Electrobun RPC (LOCAL-APP.md,
  * "Runtime topology"). Chat rides the local HTTP origin (/api/chat/*), so the
  * agent requests and the agentFrame message are gone. Privileged native
  * operations deliberately have no renderer-controlled HTTP fallback.
@@ -26,10 +24,6 @@ import type { PickLocalRepositoryResult, RepositoryAccess } from "./NativeReposi
 export interface SmithersNativeRPC {
   readonly bun: {
     readonly requests: {
-      readonly pickLocalRepository: {
-        readonly params: { readonly access: RepositoryAccess }
-        readonly response: PickLocalRepositoryResult
-      }
       /**
        * Open a URL in the SYSTEM browser (never the webview). The native
        * sign-in handoff runs GitHub OAuth there because an embedded webview

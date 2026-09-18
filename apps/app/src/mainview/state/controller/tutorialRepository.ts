@@ -1,8 +1,4 @@
-import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import type { AuthorizedLocalRepositoryInspection } from "@smthrs/rpc/NativeRepository"
-import { repoKeyOf } from "../AppState"
-import { rankTutorialRepositories,type RepositoryRanking } from "../seams/RepositoriesSeam"
-import { adoptLocalRepository } from "./adoptLocalRepository"
+import { rankTutorialRepositories, type RepositoryRanking } from "../seams/RepositoriesSeam"
 import type { ControllerContext } from "./context"
 
 export interface RepositoryChoicePayload extends RepositoryRanking {
@@ -11,6 +7,7 @@ export interface RepositoryChoicePayload extends RepositoryRanking {
 }
 export interface TutorialRepositoryActions {
   readonly chooseTutorialRepository: (repo?: string) => Promise<string | void>
+  /** No host creates a repository on the reader's disk any more (docs/LOCAL-BACKEND-RETIREMENT.md): the handoff names what does. */
   readonly createTutorialRepository: (name: string) => Promise<string | void>
 }
 export interface TutorialRepositoryPorts {
@@ -46,20 +43,6 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: repo }).isPersisted.promise
       await ports.publish({ ...ranking, selected: repo, created: null })
     },
-    createTutorialRepository: async (name) => {
-      if (!ctx.services.bootstrap || !hasCapability(ctx.services.bootstrap, "local.repositories")) return ports.localHandoff()
-      const before = scope()
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/repo/create`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) })
-      if (!response.ok) return ctx.errorMessageOf(response, "Could not create the local repository.")
-      const answer = await response.json() as { status?: string; repository?: AuthorizedLocalRepositoryInspection }
-      const picked = answer.repository
-      if (answer.status !== "connected" || !picked || !picked.root.startsWith("/") || !picked.authorizationId || picked.remoteUrl !== null) return "The host did not return a new local repository."
-      if (!current(before)) return `Created ${picked.name} at ${picked.root}. The account or tutorial changed; open it again to continue.`
-      const refusal = await adoptLocalRepository(ctx, picked, "read-write")
-      if (refusal !== undefined) return refusal
-      const key = repoKeyOf(picked.root)
-      await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: key }).isPersisted.promise
-      await ports.publish({ cutoff: new Date().toISOString(), repositories: [], partial: false, error: null, selected: key, created: { name: picked.name, path: picked.root } })
-    }
+    createTutorialRepository: async () => ports.localHandoff()
   }
 }

@@ -12,7 +12,7 @@ const json = (body: unknown, status = 200) => ({
 
 
 const serve = async (page: Page): Promise<void> => {
-  await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat", "local.repositories", "local.targets", "local.terminal", "local.harnesses"] })
+  await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
 
   /* The import seam: the job starts cloning, then answers ready with its workspace. */
   let importPolls = 0

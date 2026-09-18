@@ -9,27 +9,10 @@ import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
 /** The `tab` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
-export const namespace: Namespace = { id: "tab", label: "Sessions", summary: "Terminals, agents, and card tabs" }
+export const namespace: Namespace = { id: "tab", label: "Sessions", summary: "Card tabs" }
 
-/** The terminal, read and harness tabs, registered after `chat.reload`. */
+/** `tab.read`, registered after `chat.reload`. */
 export const tabHarnessFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  /*
-   * The local-app tabs (docs/LOCAL-APP.md "Tabs"): the strip, the `+` menu,
-   * a maximized card's "Open in tab", and Cmd+T / Cmd+W / Cmd+1..9 all
-   * invoke these — and so does the agent (the three-door law, AGENTS.md).
-   * Opening a terminal or launching a harness is the product's main act,
-   * not browser mechanics: the launches confirm (they spend and act on the
-   * repository), the gestures (focus, the menu, a confirm answer) stay the
-   * human's and say why.
-   */
-  flow({
-    name: "tab.terminal",
-    summary: "Open a terminal session (in an open working copy; the active one by default)",
-    runtime: ["local.terminal"],
-    args: "[cwd]",
-    input: Schema.Struct({ cwd: Schema.optional(Schema.String) }),
-    handler: ({ cwd }) => actions.openTerminalTab(cwd)
-  }),
   flow({
     /*
      * Smithers is the first tab and reads every other one: the model (and a
@@ -42,17 +25,6 @@ export const tabHarnessFlows = (actions: CommandActions): ReadonlyArray<FlowEntr
     args: "<tabId>",
     input: Schema.Struct({ tab: Schema.String }),
     handler: ({ tab }) => actions.readTab(tab)
-  }),
-  flow({
-    /* Launching Claude Code / Codex / Gemini / OpenCode spends money and acts on the repo: the agent asks, the human confirms. */
-    name: "tab.harness",
-    form: { fields: { harnessId: { optionsFrom: "harnesses" } } },
-    summary: "Open a harness session (Claude Code, Codex, Gemini, OpenCode)",
-    runtime: ["local.harnesses"],
-    confirm: "launch a harness as a session",
-    args: "<harnessId>",
-    input: Schema.Struct({ harnessId: Schema.String }),
-    handler: ({ harnessId }) => actions.openHarnessTab(harnessId)
   })
 ]
 

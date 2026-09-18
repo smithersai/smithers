@@ -35,7 +35,6 @@ reports/playwright/
 .hutch/
 
 # Portable Node runtime copied into production Electrobun packages.
-packaged-runtime/
 
 # Cottontail scratch left by the electrobun bootstrap
 .cottontail-tmp/

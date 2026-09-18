@@ -36,15 +36,7 @@ export const RuntimeCapabilitySchema = z.enum([
   // Cloud doors a host serves itself, declared by the host that opens them
   // (packages/rpc/src/HostCapabilities.ts holds the per-host tables).
   "cloud.terminal", // this origin tunnels workspace terminals (/api/cloud-ws/*)
-  "cloud.pat", // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)
-  "local.repositories",
-  "local.repository-path-entry",
-  "local.targets",
-  "local.terminal",
-  "local.harnesses",
-  // The code-intelligence routes (/api/lsp/*, apps/app/docs/code-intel/PLAN.md §3): a
-  // local.* door, so `code.*` flows hide on the web and the refusal names the native app.
-  "local.lsp"
+  "cloud.pat" // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)
 ])
 /**
  * The decoded value accepted by {@link RuntimeCapabilitySchema}.

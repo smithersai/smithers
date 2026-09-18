@@ -11,7 +11,7 @@ const noop = () => {}
 const handlers: Omit<CardViewProps, "card"> = {
   maximized: false, onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop,
   onQueueApprove: noop, onMaximize: noop, onMinimize: noop, onOpenInTab: noop,
-  onConnectGitHub: noop, onConnectLocal: noop, onRunWorkflow: noop, onStopRun: noop,
+  onConnectGitHub: noop, onRunWorkflow: noop, onStopRun: noop,
   onRetryRun: noop, onChooseWorkflowRepo: noop, worldDocuments: [], onChangeWorldDocument: noop,
   onRunCommand: noop
 }

@@ -10,7 +10,7 @@ import type { NativeNamespace, NativeStorage } from "smithers-server/DurableStor
 import { ExecutionContext, executionContextFrom } from "smithers-server/Environment"
 import { createTurnJournalClient } from "smithers-server/TurnJournalClient"
 import { TurnCancelRegistry } from "smithers-server/turns"
-import { acquireDaemonLease } from "./LocalDaemonLease"
+import { acquireTurnJournalLease } from "./TurnJournalLease"
 
 const unavailable = (): Response => Response.json({ status: "error", code: "storage_failed", message: "Recorded chat storage is unavailable on this host." }, { status: 503 })
 
@@ -39,7 +39,7 @@ export const createNativeTurnJournal = (stateDir: string | undefined) => {
     if (!stat.isDirectory() || stat.uid !== process.getuid!() || (stat.mode & 0o077) !== 0) {
       throw new Error("Turn storage must be private and owned by the current user.")
     }
-    const release = acquireDaemonLease(directory)
+    const release = acquireTurnJournalLease(directory)
     let candidate: Database | undefined
     try {
       const path = join(directory, "turns.sqlite")

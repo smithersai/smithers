@@ -55,36 +55,6 @@ describe("slash payload argument counts", () => {
 })
 
 /*
- * The target reference (docs/LOCAL-APP.md "Cards"): `target.run` takes
- * `<repoId> [workspace] <label>`. A label is `//pkg:name` and never holds
- * whitespace, so the LAST token is the label and everything between it and
- * the repo id is the workspace path — a detected workspace whose directory
- * name has a space still runs where it was declared.
- */
-describe("the target reference", () => {
-  test("two tokens are the repo id and the label; the workspace stays absent", () => {
-    expect(payloadFor("target.run", "r1 //src:lint")).toEqual({ payload: { repoId: "r1", label: "//src:lint" } })
-    expect(payloadFor("target.open", "r1 //src:lint")).toEqual({ payload: { repoId: "r1", label: "//src:lint" } })
-  })
-
-  test("three tokens carry the workspace between the repo id and the label", () => {
-    expect(payloadFor("target.run", "r1 aomi-sdk //:clippyFix")).toEqual({
-      payload: { repoId: "r1", workspace: "aomi-sdk", label: "//:clippyFix" }
-    })
-  })
-
-  test("a workspace path with a space keeps the last token as the label", () => {
-    expect(payloadFor("target.run", "r1 my tools //:polish")).toEqual({
-      payload: { repoId: "r1", workspace: "my tools", label: "//:polish" }
-    })
-  })
-
-  test("a lone repo id is refused", () => {
-    expect(payloadFor("target.run", "r1")).toEqual({ error: "target.run needs a repository id and a target label" })
-  })
-})
-
-/*
  * Lane runs — the run inbox and its acts. The filters take any order, the
  * signal's JSON keeps its spacing, and every id-scoped act refuses a blank.
  */

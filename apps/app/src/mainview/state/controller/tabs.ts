@@ -7,9 +7,7 @@ import {
 } from "@smthrs/rpc/LocalApp"
 import { agentRoleTitle, findAgentRole } from "@smthrs/rpc/AgentRoles"
 import type { AgentRoleId } from "@smthrs/rpc/AgentRoles"
-import { adoptLocalRepository } from "./adoptLocalRepository"
 import { currentAgentRoles, loadAgents } from "./agents"
-import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { activeRepoOf, MAIN_TAB_ID, parseRepoSelection, repoKeyOf } from "../AppState"
 import type { PinnedRepo, Repo, TabRow } from "../AppState"
 import type { CommandResult } from "../../flows/Flows"
@@ -487,10 +485,8 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
     if (pin === undefined) return `There is no pinned repository with key ${repoKey}.`
     const open = [...collections.repos.values()].some((repo) => repoKeyOf(repo.path) === repoKey)
     if (!open) {
-      // A pinned repository the server no longer holds: open it again, by path where the host allows one.
-      const pathEntry = ctx.services.bootstrap !== undefined &&
-        hasCapability(ctx.services.bootstrap, "local.repository-path-entry")
-      const refusal = pathEntry ? await ctx.openRepo({ path: pin.path }) : await openLocalRepo()
+      // A pinned repository the host no longer holds: open it again.
+      const refusal = await openLocalRepo()
       if (refusal !== undefined) return refusal
       if (![...collections.repos.values()].some((repo) => repoKeyOf(repo.path) === repoKey)) {
         return `${pin.name} was not reopened.`
@@ -505,14 +501,8 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
   }
 
   const openLocalRepo: TabsController["openLocalRepo"] = async (path) => {
-    const pathEntry = ctx.services.bootstrap !== undefined &&
-      hasCapability(ctx.services.bootstrap, "local.repository-path-entry")
     const named = path?.trim() ?? ""
-    if (named !== "") {
-      /* A typed path is one door on every host that allows one: the composer's, the pin's reopen, the agent's confirmed ask. */
-      if (!pathEntry) return "Opening a repository by path is not allowed here — use the folder dialog."
-      return ctx.openRepo({ path: named })
-    }
+    if (named !== "") return "Opening a repository by path is not allowed here — use the folder dialog."
     /*
      * The folder dialog is the human's gesture: the agent's bare `repo.open`
      * never opens it (the three-door law's `userOnly` would refuse the whole
@@ -534,22 +524,14 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
           store.dispatch({ type: "connector.local.failed", actor: "system", message: result.message })
           return result.message
         }
-        return await adoptLocalRepository(ctx, result.repository, "read-write")
+        return "Repositories are opened as Smithers Cloud workspaces, not from this machine."
       } catch {
         const message = "The native repository picker stopped responding. Try again."
         store.dispatch({ type: "connector.local.failed", actor: "system", message })
         return message
       }
     }
-    if (!pathEntry) {
-      return "Opening a repository needs the Smithers native app."
-    }
-    if (typeof window === "undefined" || typeof window.prompt !== "function") {
-      return "Opening a repository needs the Smithers app."
-    }
-    const typed = (window.prompt("Repository path") ?? "").trim()
-    if (typed === "") return
-    return ctx.openRepo({ path: typed })
+    return "Opening a repository needs the Smithers native app."
   }
 
   const notePtyExit: TabsController["notePtyExit"] = (sessionId, code) => {

@@ -61,7 +61,7 @@ test("saved Activity rows recover GitHub identity from older notification receip
   const noop = () => {}
   const actions: CardActions = {
     onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop, onQueueApprove: noop,
-    onConnectGitHub: noop, onConnectLocal: noop, onRunWorkflow: noop, onStopRun: noop, onRetryRun: noop,
+    onConnectGitHub: noop, onRunWorkflow: noop, onStopRun: noop, onRetryRun: noop,
     onChooseWorkflowRepo: noop, onChangeWorldDocument: noop, worldDocuments: [],
     onRunCommand: (name, args) => { commands.push([name, args]) }
   }

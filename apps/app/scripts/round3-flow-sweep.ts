@@ -24,9 +24,6 @@ const validArgs: Record<string, string> = {
   "copy-message": "hello",
   "approval.approve": "missing-card",
   "approval.deny": "missing-card",
-  "connector.add": "read",
-  "connector.downgrade": "missing-connector",
-  "connector.remove": "missing-connector",
   "world.select": "missing-document",
   "world.delete": "missing-document",
   "toast.dismiss": "missing-toast",
@@ -60,7 +57,6 @@ const validArgs: Record<string, string> = {
 const invalidArgs: Record<string, string> = {
   theme: "not-a-theme",
   browser: "not-a-url",
-  "connector.add": "invalid",
   "issues.list": "invalid-state",
   "issues.view": "nope",
   "issues.close": "nope",

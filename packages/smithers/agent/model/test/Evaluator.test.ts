@@ -135,6 +135,72 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(modelCall).toBe("typesafe-ai/jev")
   })
 
+  /**
+   * The exact body main sent for this three-question classifier before the
+   * question shapes became classes, read off `JSON.stringify` over the objects
+   * the smart constructors returned. The gateway reads this body and a durable
+   * call key is taken over it, so a class must not move one byte of it: not
+   * the key order inside a question, not the order of the questions, and not
+   * the absence of an optional `criteria`.
+   */
+  const recordedBody =
+    `{"state":{"task":"fix the parser","file":"src/Parser.ts","excerpt":"export const parse = ..."},` +
+    `"questions":{"relevant":{"type":"boolean","instructions":"Does this file need to change for the task?",` +
+    `"criteria":{"true":"the fix or its test lives here","false":"unrelated or only imported"}},` +
+    `"role":{"type":"choice","instructions":"What is this file's role?","criteria":{"implementation":"code under test",` +
+    `"fixture":"test data or setup","unrelated":"nothing to do with the task"}},` +
+    `"risk":{"type":"score","instructions":"How risky is editing this file?",` +
+    `"criteria":["none","low","medium","high"]}},"providerOptions":{"gateway":{"zeroDataRetention":true}}}`
+
+  it.each([
+    ["questions written as object literals", questions],
+    ["questions built as class instances", {
+      relevant: Evaluator.BooleanQuestion.of({
+        instructions: "Does this file need to change for the task?",
+        criteria: { true: "the fix or its test lives here", false: "unrelated or only imported" }
+      }),
+      role: Evaluator.ChoiceQuestion.of({
+        instructions: "What is this file's role?",
+        criteria: {
+          implementation: "code under test",
+          fixture: "test data or setup",
+          unrelated: "nothing to do with the task"
+        }
+      }),
+      risk: Evaluator.ScoreQuestion.of({
+        instructions: "How risky is editing this file?",
+        criteria: ["none", "low", "medium", "high"]
+      })
+    }]
+  ])("sends the byte-identical recorded body for %s", async (_, asked) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+
+    success(await evaluate(layer, { state, questions: asked }))
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.body).toBe(recordedBody)
+  })
+
+  it("fails a question no shape accepts as invalid_question, without reaching the network", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+
+    const error = failure(
+      await evaluate(layer, {
+        state,
+        questions: { rank: { type: "rank", instructions: "?" } as unknown as Evaluator.Question }
+      })
+    )
+
+    expect(error.code).toBe("invalid_question")
+    expect(sent).toHaveLength(0)
+  })
+
   it("carries the provider's own per-question confidence", async () => {
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
       Layer.provide(
@@ -424,8 +490,8 @@ describe("Evaluator.Question", () => {
       },
       "between 2 and 255"
     ],
-    ["one rung", { type: "score", instructions: "?", criteria: ["only"] }, "at least 2 distinct"],
-    ["repeated rungs", { type: "score", instructions: "?", criteria: ["low", "low"] }, "at least 2 distinct"],
+    ["one rung", { type: "score", instructions: "?", criteria: ["only"] }, "orders at least 2 rungs, not 1"],
+    ["repeated rungs", { type: "score", instructions: "?", criteria: ["low", "low"] }, "rungs are distinct"],
     ["an unknown type", { type: "rank", instructions: "?" }, "Expected"]
   ])("rejects %s", (_, question, message) => {
     expect(failure(decode(question)).message).toContain(message)

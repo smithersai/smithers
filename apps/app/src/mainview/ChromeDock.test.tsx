@@ -71,7 +71,7 @@ const localHarness = async (services: AppServices = {}): Promise<{ store: AppSto
       host: "local",
       version: "test",
       buildSha: "test",
-      capabilities: ["local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+      capabilities: [],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
     },
@@ -159,78 +159,6 @@ const signedOut = async (store: AppStore): Promise<void> => {
 }
 
 describe("the dock", () => {
-  test("the + menu opens outside the bar: Terminal first, then the agents", async () => {
-    const { store, controller } = await localHarness()
-    await persisted(store, {
-      type: "harnesses.loaded",
-      actor: "system",
-      harnesses: [
-        {
-          id: "claude",
-          displayName: "Claude Code",
-          binary: "/opt/homebrew/bin/claude",
-          version: "2.1.0",
-          status: "signed-in",
-          account: { email: "will@codeplane.app" },
-          launch: { argv: ["claude"] }
-        },
-        {
-          id: "gemini",
-          displayName: "Gemini",
-          binary: null,
-          version: null,
-          status: "unavailable",
-          account: null,
-          launch: { argv: ["gemini"] }
-        }
-      ]
-    })
-    const { host, act } = mount(controller)
-    const trigger = host.querySelector<HTMLButtonElement>("[data-testid=dock-add]")
-    expect(trigger).not.toBeNull()
-    expect(trigger?.closest(".chrome-dock")).not.toBeNull()
-    await act(() => trigger?.click())
-    const menu = host.querySelector<HTMLElement>("[data-testid=dock-add-menu]")
-    expect(menu).not.toBeNull()
-    expect(trigger?.getAttribute("aria-expanded")).toBe("true")
-    const items = [...(menu?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])]
-    expect(items.map((item) => item.getAttribute("data-flow"))).toEqual([
-      "tab.terminal",
-      // The six named roles (AgentRoles.ts) lead the Agents section, then the raw harnesses.
-      "agent.role",
-      "agent.role",
-      "agent.role",
-      "agent.role",
-      "agent.role",
-      "agent.role",
-      "tab.harness",
-      "tab.harness",
-    ])
-    expect(items[0]?.textContent).toBe("Terminal")
-    expect(host.querySelector("[data-testid=dock-add-agents]")?.textContent).toBe("Agents")
-    // Six role rows sit between Terminal and the first raw harness.
-    expect(items[1]?.textContent).toContain("Orchestrator · Fable 5")
-    expect(items[7]?.textContent).toContain("Claude Code")
-    // The explainer's harness (OpenCode · Kimi) is absent from this fixture: disabled, with the reason.
-    expect(items[2]?.disabled).toBe(true)
-    expect(items[2]?.textContent).toContain("not installed")
-    // The unavailable raw harness stays last and disabled.
-    expect(items[8]?.disabled).toBe(true)
-    // One Smithers: the menu offers no second conversation, and no tab.chat flow exists to open one.
-    expect(host.querySelector("[data-testid=dock-add-chat]")).toBeNull()
-    expect(controller.commands.find("tab.chat")).toBeUndefined()
-    // The three-door law: every flow this menu binds is the agent's too (the launches confirm).
-    const callable = new Set(controller.commands.callable().map((entry) => entry.binding.descriptor.name))
-    for (const name of ["tab.terminal", "agent.role", "tab.harness"]) expect(callable.has(name)).toBe(true)
-    expect(controller.commands.find("tab.terminal")?.metadata.confirm).toBeUndefined()
-    expect(controller.commands.find("agent.role")?.metadata.confirm).toBeDefined()
-    expect(controller.commands.find("tab.harness")?.metadata.confirm).toBeDefined()
-    // The backdrop press closes the menu.
-    await act(() => host.querySelector<HTMLElement>(".dock-add-backdrop")?.click())
-    expect(host.querySelector("[data-testid=dock-add-menu]")).toBeNull()
-    expect(trigger?.getAttribute("aria-expanded")).toBe("false")
-  })
-
   test("host cloud, signed out: all six render in the fixed order, each bound to a registered flow, before the theme toggle", async () => {
     const { store, controller } = await cloudHarness()
     await signedOut(store)

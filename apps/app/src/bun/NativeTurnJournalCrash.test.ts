@@ -78,7 +78,7 @@ describe("native HTTP journal survives an actual killed writer", () => {
 
       reopened = await startLocalServer({ port: 0, distDir: root, home: root, stateDir: join(root, "state"),
         cloudMode: "hybrid", cloudApi: null, identityUpstream: null,
-        chat: { chatUrl: `http://127.0.0.1:${model.port}/chat` }, node: null, harnesses: async () => [], log: () => {} })
+        chat: { chatUrl: `http://127.0.0.1:${model.port}/chat` }, log: () => {} })
       expect((await post(reopened.origin, ready.token, TURN_REPLAY_PATH, { runId: turn.runId, journal })).status).toBe(401)
       const replay = await post(reopened.origin, reopened.sessionToken, TURN_REPLAY_PATH, { runId: turn.runId, journal, after: accepted.cursor })
       expect(replay.status).toBe(200)

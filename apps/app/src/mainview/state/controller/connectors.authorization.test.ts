@@ -15,26 +15,6 @@ const setup = async () => {
   return { store, data }
 }
 
-test("connector picker consumes the capability before publishing inspection metadata", async () => {
-  const { store, data } = await setup()
-  let finish!: (value: string | undefined) => void
-  const opening = new Promise<string | undefined>((resolve) => { finish = resolve })
-  const adopted: unknown[] = []
-  const ctx = { store, repositories: { pickLocalRepository: async () => ({ status: "connected", repository }) },
-    openRepo: async (request: unknown) => { adopted.push(request); return opening }
-  } as unknown as ControllerContext
-  const running = createConnectorController(ctx).connectLocalRepository("read-write")
-  await Promise.resolve()
-  expect(adopted).toEqual([{ authorizationId: repository.authorizationId, displayName: "repo" }])
-  expect(store.collections.connectors.size).toBe(0)
-  finish(undefined)
-  await running
-  expect(store.collections.connectors.size).toBe(1)
-  expect(JSON.stringify([...store.collections.transitions.values()])).not.toContain(repository.authorizationId)
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  expect(JSON.stringify([...data.values()])).not.toContain(repository.authorizationId)
-})
-
 test("journal and verbose output strip an accidentally supplied capability", async () => {
   const { store, data } = await setup()
   const transition = { type: "connector.local.connected", actor: "system", access: "read-write", repository } as const

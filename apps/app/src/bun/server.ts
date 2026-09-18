@@ -27,10 +27,6 @@ import {
   TURN_ERASE_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
 import * as Redaction from "@smthrs/journal/Redaction"
-import * as Health from "@smthrs/control/Health"
-import { createSessionMonitor, type SessionMonitor } from "./SessionMonitor"
-import { AGENT_ROLE_IDS } from "@smthrs/rpc/AgentRoles"
-import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
 import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
@@ -44,7 +40,6 @@ import {
   CLOUD_WS_NOT_READY_CLOSE_CODE,
   CLOUD_WS_PENDING_CLOSE_CODE,
   CLOUD_WS_ROUTE_PREFIX,
-  HARNESS_IDS,
   withRetryAfter
 } from "@smthrs/rpc/LocalApp"
 import type { CloudWsSessionKind } from "@smthrs/rpc/LocalApp"
@@ -63,28 +58,10 @@ import { createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
 import { createCloudAuth } from "./CloudAuth"
 import type { CloudAuth, CloudKeychain } from "./CloudAuth"
-import { detectHarnesses } from "./Harnesses"
-import { findNode } from "./Node"
-import type { NodeSidecar } from "./Node"
-import { binDirOf, createPtyManager } from "./Pty"
-import type { PtyManager } from "./Pty"
-import { createRepositoryAuthority } from "./RepositoryAuthority"
-import type { RepositoryAuthority } from "./RepositoryAuthority"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
 import type { RouteHandler } from "./routes"
-import { registerAgentRoutes } from "./routes/agents"
 import { tutorialChangeRoute, type TutorialChangeHost } from "./routes/tutorial2-agent_change"
-import { registerTutorialRepositoryRoutes } from "./routes/tutorialRepository"
-import { registerRepoTargetRoutes } from "./routes/repoTargets"
-import { registerTargetGraphRoutes } from "./routes/targetGraph"
-import { registerHarnessRoutes } from "./routes/harnesses"
-import type { HarnessDetector } from "./routes/harnesses"
-import { registerLspRoutes } from "./routes/lsp"
-import { registerPtyRoutes } from "./routes/pty"
-import { createLspHost } from "./lsp/LspHost"
-import type { LspHost, LspHostOptions } from "./lsp/LspHost"
-import { currentSandboxHost, sandboxEnforced, type SandboxHost } from "./Sandbox"
 
 /** chat.smithers.sh accepts this origin anonymously (verified 2026-08-26). */
 export const DEFAULT_CHAT_ORIGIN = "https://canary.smithers.sh"
@@ -179,37 +156,14 @@ export interface LocalServerOptions {
   readonly cloudKeychain?: CloudKeychain
   readonly version?: string
   readonly buildSha?: string
-  /** Headless/dev-only escape hatch. Native production accepts picker grants only. */
-  readonly allowManualRepositoryPaths?: boolean
-  /** A pre-resolved Node sidecar; the default probes once at startup. */
-  readonly node?: NodeSidecar | null
   /**
-   * Where the host remembers state across launches (open repositories). The
+   * Where the host remembers state across launches (the turn journal). The
    * native launcher passes the platform's application-support directory; a
    * test passes a temp dir or nothing.
    */
   readonly stateDir?: string
-  /** Trusted Effect checks selected by role or harness; never accepted from renderer requests. */
-  readonly health?: Health.HealthConfig
-  /** The smithers-build build-cli entry for the targets lane; the default resolves it from the checkout (or SMITHERS_BUILD_CLI). */
-  readonly buildCli?: string
-  /** The home directory used for PTYs without a repoId and reported by `/api/health`. */
+  /** The home directory reported by `/api/health`. */
   readonly home?: string
-  /** The harness table behind `GET /api/harnesses` and harness tabs; default `detectHarnesses`. */
-  readonly harnesses?: HarnessDetector
-  /** The PTY manager behind `/api/pty*`; the default spawns real sessions. `roles` is the agents store (custom-agents.md). */
-  /** The sandbox this host reports and wraps with; defaults to currentSandboxHost(). */
-  readonly sandboxHost?: SandboxHost
-  readonly pty?: (deps: {
-    readonly publish: LocalServer["publish"]
-    readonly harnesses: HarnessDetector
-    readonly roles: () => Promise<ReadonlyArray<AgentRole>>
-    readonly home: string
-    readonly pathPrepend: () => Promise<ReadonlyArray<string>>
-    readonly log: (line: string) => void
-  }) => PtyManager
-  /** The language-server host behind `/api/lsp/*`; the default spawns real servers (lsp/LspHost.ts). */
-  readonly lsp?: (deps: Pick<LspHostOptions, "publish" | "node" | "home" | "sandbox" | "log">) => LspHost
   readonly log?: (line: string) => void
   /** Test/replay override; production generates 256 fresh random bits. */
   readonly sessionToken?: string
@@ -378,8 +332,6 @@ export interface LocalServer {
   readonly publish: (topic: string, message: unknown) => void
   /** Registers the handler for one client frame type (e.g. "pty.input"). Returns the unregister. */
   readonly onMessage: (type: string, handler: WsMessageHandler) => () => void
-  /** Native-only door: inspect a picked path and mint a one-shot HTTP grant. */
-  readonly authorizeRepository: RepositoryAuthority["authorize"]
   readonly stop: () => Promise<void>
 }
 
@@ -690,41 +642,11 @@ const proxyCloud = async (
   return new Response(response.body, { status: response.status, headers: out })
 }
 
-/** Bind `jev.session` for this host's session subjects when a gateway key is set.
- *
- * `jev.session` is registered in every host and bound by none, so a binding is
- * the whole opt-in (HEALTH.md, "Local session evidence"). `SessionMonitor`
- * resolves a subject by `roleId ?? harnessId ?? "terminal"`, which is exactly
- * the agent roles, the harnesses, and a plain terminal, so naming those keys
- * covers every session this host can observe. `exposeOutput: true` is what
- * gives the checker the 4 KiB tail it reads; without it the probe answers
- * unknown. A caller that already bound a subject keeps its own checker, and
- * without `AI_GATEWAY_API_KEY` the configuration is returned untouched.
- */
-export const withJevSessionBindings = (
-  health: Health.HealthConfig | undefined,
-  env: Readonly<Record<string, string | undefined>> = process.env
-): Health.HealthConfig | undefined => {
-  if ((env.AI_GATEWAY_API_KEY ?? "") === "") return health
-  const jev: Health.HealthBinding = { checkerId: "jev.session", exposeOutput: true }
-  const subjects = ["terminal", ...HARNESS_IDS, ...AGENT_ROLE_IDS]
-  return {
-    ...health,
-    bindings: { ...Object.fromEntries(subjects.map((subject) => [subject, jev])), ...health?.bindings }
-  }
-}
-
 export const startLocalServer = async (options: LocalServerOptions): Promise<LocalServer> => {
-  const health = withJevSessionBindings(options.health)
-  // Invalid trusted configuration fails before listeners or child owners exist.
-  Health.makeRegistry(health, "session")
-  let sessionMonitor: SessionMonitor | undefined
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
-  const sandboxHost = options.sandboxHost ?? currentSandboxHost()
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
-  const nodeProbe: Promise<NodeSidecar | null> = options.node === undefined ? findNode() : Promise.resolve(options.node)
   const remoteEnabled = options.cloudMode === "hybrid"
   const identityUpstream = options.chatStub === true || !remoteEnabled
     ? null
@@ -750,11 +672,9 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       log
     })
   const home = options.home ?? homedir()
-  const harnesses: HarnessDetector = options.harnesses ?? (() => detectHarnesses())
   const sessionToken = options.sessionToken ?? randomBytes(32).toString("base64url")
   if (!isLocalSessionToken(sessionToken)) throw new Error("Local server session token must be 256-bit base64url.")
   const websocketProtocol = localSessionProtocol(sessionToken)
-  const repositoryAuthority = createRepositoryAuthority()
 
   const writers = new Map<string, TurnWriter>()
   const turnJournal = createNativeTurnJournal(options.stateDir)
@@ -784,9 +704,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     // so it refuses in the Worker's vocabulary.
     : refuse("feature_unavailable_here", "The browser reader is disabled in offline mode."))
 
-  router.add("GET", APP_BOOTSTRAP_PATH, () => {
-    const enforced = sandboxEnforced(sandboxHost)
-    return json({
+  router.add("GET", APP_BOOTSTRAP_PATH, () =>
+    json({
       apiVersion: APP_API_VERSION,
       host: "local",
       version,
@@ -797,27 +716,17 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         agent: agent !== undefined,
         identity: identityUpstream !== null,
         cloud: cloudUpstream !== null,
-        browser: remoteEnabled,
-        pathEntry: options.allowManualRepositoryPaths === true
+        browser: remoteEnabled
       }),
-      authFlow: identityUpstream === null ? "none" : "both",
-      sandbox: {
-        platform: process.platform,
-        mode: enforced ? "enforced" : sandboxHost.disabled ? "unavailable" : "trusted-only",
-        // The loader profile exists only where seatbelt does; a target run is never wrapped.
-        policies: { loader: enforced ? "enforced" : "unenforced", targetRun: "unenforced" }
-      }
-    })
-  })
+      authFlow: identityUpstream === null ? "none" : "both"
+    }))
 
-  router.add("GET", HEALTH_PATH, async () =>
+  router.add("GET", HEALTH_PATH, () =>
     json({
       ok: true,
       version,
       pid: process.pid,
-      home,
-      node: await nodeProbe,
-      sandbox: { platform: process.platform, enforced: sandboxEnforced(sandboxHost) }
+      home
     }))
 
   const startChatTurn = (body: StartAgentTurnRequest): Response => {
@@ -1302,31 +1211,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
             return
           }
           if (message.type === "subscribe") {
-            if (topic.startsWith("pty:") && message.cursor !== undefined &&
-              (typeof message.cursor !== "number" || !Number.isSafeInteger(message.cursor) || message.cursor < 0)) {
-              socket.send(JSON.stringify({ type: "error", message: "A PTY cursor must be a non-negative safe integer." }))
-              return
-            }
             if (!socket.data.topics.has(topic) && socket.data.topics.size >= MAX_WS_SUBSCRIPTIONS) {
               socket.send(JSON.stringify({ type: "error", message: `At most ${MAX_WS_SUBSCRIPTIONS} topics may be subscribed.` }))
               return
             }
             socket.subscribe(topic)
             socket.data.topics.add(topic)
-            if (topic.startsWith("pty:") && message.cursor !== undefined) {
-              const sessionId = topic.slice(4)
-              // Subscription, snapshot and sends are synchronous: output can
-              // only land before the snapshot or after the replay/ack, never between.
-              const replay = pty.replay(sessionId, message.cursor as number)
-              socket.send(JSON.stringify(replay === undefined
-                ? { type: "pty.missing", sessionId }
-                : { type: "pty.replay", sessionId, ...replay }))
-            }
-            if (topic.startsWith("pty:")) {
-              const sessionId = topic.slice(4)
-              const status = sessionMonitor?.status(sessionId)
-              if (status !== undefined) socket.send(JSON.stringify({ type: "pty.status", sessionId, status }))
-            }
           } else {
             socket.unsubscribe(topic)
             socket.data.topics.delete(topic)
@@ -1374,55 +1264,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     server.publish(topic, JSON.stringify(message))
   }
 
-  // Code intel (code-intel PLAN.md §3): one language server per (repository,
-  // language), started on first use, ended with the repository and with the server.
-  const lspDeps = { publish, node: nodeProbe, home, sandbox: sandboxHost, log }
-  const lsp = options.lsp === undefined ? createLspHost(lspDeps) : options.lsp(lspDeps)
-
-  // L3: one repository authority feeds targets and every child-process cwd.
-  const routeHost = { router, publish, onMessage }
-  const repoTargets = registerRepoTargetRoutes(routeHost, {
-    node: nodeProbe,
-    authority: repositoryAuthority,
-    allowManualRepositoryPaths: options.allowManualRepositoryPaths,
-    onRepoClosed: (repoId) => lsp.closeRepo(repoId),
-    onRepoAccessRevoked: (repoId) => ptyRoutes.revokeRepo(repoId),
-    log,
-    ...(options.buildCli === undefined ? {} : { cli: options.buildCli }),
-    ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir })
-  })
-  await repoTargets.restored
-  registerTutorialRepositoryRoutes(router, repositoryAuthority, home)
-
-  // L4: the harness table and PTY sessions. Browser input carries a repo id,
-  // never a filesystem path; the server resolves the authorized cwd here.
-  registerHarnessRoutes(router, harnesses)
-  // Agents as data (custom-agents.md): the store under stateDir seeds from the built-ins; a role launch resolves against it.
-  const agents = registerAgentRoutes(router, {
-    harnesses,
-    log,
-    ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir })
-  })
-  const ptyDeps = {
-    publish,
-    harnesses,
-    roles: () => agents.store.list(),
-    home,
-    pathPrepend: async () => binDirOf((await nodeProbe)?.path),
-    log
-  }
-  const pty = options.pty === undefined ? createPtyManager(ptyDeps) : options.pty(ptyDeps)
-  sessionMonitor = await createSessionMonitor({
-    manager: pty, configuration: health, stateDir: options.stateDir, publish, log
-  })
-  const ptyRoutes = registerPtyRoutes(routeHost, pty, {
-    resolveRepo: (repoId) => repoTargets.resolveRepo(repoId, "read-write")
-  }, sessionMonitor)
-  // A language server reads: read access suffices.
-  registerLspRoutes(routeHost, lsp, {
-    resolveRepo: (repoId) => repoTargets.resolveRepo(repoId, "read")
-  })
-
   const local: LocalServer = {
     origin,
     port,
@@ -1432,11 +1273,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     server,
     publish,
     onMessage,
-    authorizeRepository: repositoryAuthority.authorize,
     stop: async () => {
-      // Close PTY admission synchronously, before any asynchronous host cleanup.
-      let ptyStopped: Promise<void>
-      try { ptyStopped = pty.dispose() } catch (error) { ptyStopped = Promise.reject(error) }
       const writerCleanup = [...writers].flatMap(([runId, writer]) => [() => agent?.cancel(runId), () => writer.end()])
       writers.clear()
       // Stop accepting traffic before waiting on independent resources. A
@@ -1445,14 +1282,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         ...writerCleanup,
         () => closeCloudBridges(1001, "the local app is shutting down"),
         () => server.stop(true),
-        () => cloudAuth?.stop(),
-        () => ptyStopped,
-        () => sessionMonitor?.stop(),
-        () => lsp.killAll(),
-        // Target children are reaped before the journal flushes, so their
-        // exit frames land on disk instead of in a queue nobody awaits.
-        () => repoTargets.stop(),
-        () => repositoryAuthority.clear()
+        () => cloudAuth?.stop()
       ].map(async (cleanup) => cleanup()))
       // Producer cancellation runs before the journal closes. Await stream
       // finalizers so their terminal observations survive this host restart.
@@ -1461,14 +1291,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       if (errors.length > 0) throw new AggregateError(errors, "Local server shutdown failed.")
     }
   }
-  registerTargetGraphRoutes(local, { repos: repoTargets.repos, history: repoTargets.history, node: nodeProbe, ...(options.buildCli === undefined ? {} : { cli: options.buildCli }) })
   let stopPromise: Promise<void> | undefined
-  return {
-    ...local,
-    stop: () => stopPromise ??= (async () => {
-      // Close run admission synchronously; local.stop awaits the reaping.
-      void repoTargets.stop()
-      await local.stop()
-    })()
-  }
+  return { ...local, stop: () => stopPromise ??= local.stop() }
 }

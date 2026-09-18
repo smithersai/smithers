@@ -56,8 +56,7 @@
 	.chat-frame[data-pane] .embedded-pane {
 		border-top: 1px solid var(--border);
 		border-left: 0;
-	}
-}
+	}}
 
 .app-shell .smithers-transcript .sui-chat-messages {
 	width: min(100%, var(--chat-max-width));
@@ -309,8 +308,7 @@
 @media (prefers-reduced-motion: reduce) {
 	.composer-overlay .composer-wrap {
 		animation: none;
-	}
-}
+	}}
 
 .app-shell .smithers-suggestions {
 	margin-top: 8px;
@@ -873,8 +871,7 @@
 		grid-column: 2;
 		flex-direction: row;
 		align-items: center;
-	}
-}
+	}}
 
 .connectors-content {
 	display: flex;
@@ -910,29 +907,6 @@
 	margin-top: 5px;
 	color: var(--text-muted);
 	font-size: var(--fs-small);
-}
-
-.connected-repository-card {
-	min-width: 0;
-	border-color: var(--border);
-	background: var(--surface-glass-strong);
-}
-
-.connected-repository-card > [data-slot="card-header"] {
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
-	align-items: start;
-	gap: 10px;
-}
-
-.connected-repository-card [data-slot="card-title"] {
-	font-size: var(--fs-small);
-}
-
-.connected-repository-card [data-slot="card-description"] {
-	margin-top: 3px;
-	font-size: var(--fs-caption);
-	line-height: 1.45;
 }
 
 .connected-repositories {
@@ -972,19 +946,6 @@
 .connector-empty div > button {
 	align-self: flex-start;
 	margin-top: var(--sp-2);
-}
-
-.connected-repository-list {
-	display: flex;
-	flex-direction: column;
-	gap: var(--sp-3);
-}
-
-.repository-path {
-	overflow: hidden;
-	font-family: var(--font-mono);
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .world-document-meta,
@@ -1120,8 +1081,7 @@
 
 	.connectors-content {
 		padding: 26px 14px 80px;
-	}
-}
+	}}
 
 /* Wave 10 — the composer's surfaces dropdown (§2c′). */
 .composer-menu {

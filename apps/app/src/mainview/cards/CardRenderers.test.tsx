@@ -29,7 +29,6 @@ const handlers = {
   onMinimize: () => {},
   onOpenInTab: () => {},
   onConnectGitHub: () => {},
-  onConnectLocal: () => {},
   onRunWorkflow: () => {},
   onStopRun: () => {},
   onRetryRun: () => {},

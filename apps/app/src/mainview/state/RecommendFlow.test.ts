@@ -5,7 +5,6 @@ import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { describe,expect,test } from "bun:test"
 import type { AppServices } from "./AppController"
-import type { Repo } from "./AppState"
 import { RECOMMENDATION_ID } from "./AppState"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
@@ -36,24 +35,9 @@ const localBootstrap: AppBootstrap = {
   host: "local",
   version: "1.0.0",
   buildSha: "abcdef1234567890",
-  capabilities: ["agent", "local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+  capabilities: ["agent"],
   authFlow: "none",
   sandbox: { platform: "darwin", mode: "enforced" }
-}
-
-const repo: Repo = {
-  id: "repo-1",
-  name: "smithers",
-  path: "/Users/will/smithers",
-  git: { branch: "main", remote: null },
-  warnings: [],
-  smithers: {
-    detected: true,
-    workspaceFile: "smithers.workspace.ts",
-    declarationFiles: ["legacy declaration"],
-    reason: "workspace file present",
-    workspaces: [{ path: ".", title: "smithers" }]
-  }
 }
 
 const settle = async (ticks = 6) => {
@@ -520,19 +504,6 @@ describe("recommend: the flow", () => {
     expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).toEqual(["connect"])
   })
 
-  test("the local host: opening a repository retires 'Select a repo' at once through the rule", async () => {
-    // No key on this origin: every request is a 503, so the rule alone writes the row.
-    const worker = recorder()
-    const { store, controller } = await boot(
-      { bootstrap: localBootstrap, fetchImpl: worker.fetchImpl, features: { suggestionPills: true } },
-      nativeRepositories
-    )
-    await controller.recommend()
-    expect(row(store)?.suggestions[0]?.flow).toBe("repo.open")
-    store.dispatch({ type: "repos.loaded", actor: "system", repos: [repo] })
-    await settle()
-    expect(row(store)?.suggestions.map((suggestion) => suggestion.flow)).not.toContain("repo.open")
-  })
 })
 
 

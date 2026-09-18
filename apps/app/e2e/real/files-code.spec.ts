@@ -11,7 +11,7 @@ const boot = async (page: import("@playwright/test").Page): Promise<void> => {
 }
 
 test("real repository listings open files and switch the active repository", scenario("local-files-browse-switch", {
-  capabilities: ["local.repositories"],
+  capabilities: [],
   description: "Browses two disposable repositories through the real filesystem host and selects the intended repository.",
   coverage: ["action:repo.open", "action:repo.select", "action:files.list", "action:files.read", "host:local", "path:success", "path:keyboard", "door:slash", "door:button", "dimension:keyboard", "dimension:filesystem-browse", "dimension:repository-switch", "evidence:file-card-readback"]
 }), async ({ page, request }) => {
@@ -37,7 +37,7 @@ test("real repository listings open files and switch the active repository", sce
 })
 
 test("real file reads bound large text, suppress binary bytes, and report invalid paths", scenario("local-files-boundaries-errors", {
-  capabilities: ["local.repositories"],
+  capabilities: [],
   coverage: ["action:repo.open", "action:files.read", "host:local", "path:error", "door:slash", "dimension:large-file", "dimension:binary-file", "dimension:not-found", "evidence:visible-file-errors"]
 }), async ({ page, request }) => {
   const repo = await createOwnedLocalRepo({ name: "files-boundaries", fixture: "none" })
@@ -60,7 +60,7 @@ test("real file reads bound large text, suppress binary bytes, and report invali
 })
 
 test("line anchors survive a real file revision and page reload", scenario("local-files-anchor-revision", {
-  capabilities: ["local.repositories"],
+  capabilities: [],
   coverage: ["action:repo.open", "action:files.read", "host:local", "path:success", "path:persistence", "door:slash", "dimension:line-anchor", "dimension:page-reload", "dimension:working-copy-revision", "evidence:filesystem-mutation-readback"]
 }), async ({ page, request }) => {
   const repo = await createOwnedLocalRepo({ name: "files-revision", fixture: "none", files: { "src/revision.ts": "export const first = 1\nexport const second = 2\nexport const third = 3\n" } })
@@ -83,7 +83,7 @@ test("line anchors survive a real file revision and page reload", scenario("loca
 })
 
 test("installed TypeScript language server powers hover, diagnostics, and definition navigation", scenario("local-code-intelligence-typescript", {
-  capabilities: ["local.repositories", "local.lsp"],
+  capabilities: [],
   coverage: ["action:repo.open", "action:files.read", "action:code.hover", "action:code.diagnostics", "action:code.definition", "host:local", "path:success", "door:slash", "dimension:real-language-server", "dimension:hover", "dimension:diagnostics", "dimension:definition", "evidence:lsp-card-annotations"]
 }), async ({ page, request }) => {
   const repo = await createOwnedLocalRepo({ name: "code-intelligence", fixture: "none", files: {

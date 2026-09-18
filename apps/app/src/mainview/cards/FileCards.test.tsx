@@ -376,11 +376,12 @@ describe("the file card's code intelligence", () => {
 
 /*
  * THE THREE-DOOR LAW meets the host matrix: the gestures are bindings to
- * code.hover / code.definition, and those flows carry `runtime: ["local.lsp"]`,
- * a door the web host lacks. A card that bound them there would be a dead
- * control (the pointer path drops an unregistered name silently), so the
- * card reads the catalog: bound where the flows exist, and absent otherwise.
- * Opening a file on the web adds no capability-gap copy.
+ * code.hover / code.definition, which a host registers only where it can
+ * reach a language server — the workspace tunnel, `cloud.terminal`. A card
+ * that bound them without it would be a dead control (the pointer path drops
+ * an unregistered name silently), so the card reads the catalog: bound where
+ * the flows exist, and absent otherwise, with no capability-gap copy either
+ * way.
  */
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -389,8 +390,9 @@ const memoryStorage = (): StorageApi => {
 const unavailableAgent: AgentPort = { available: false, startTurn: async () => ({ status: "error", message: "unavailable" }), cancelTurn: async () => {}, subscribe: () => () => {} }
 const unavailableRepositories: NativeRepositories = {
   available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "Local repositories can only be connected from the Smithers native app." })
+  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "Repositories are opened as Smithers Cloud workspaces, not from this machine." })
 }
+/** The web host with the workspace terminal tunnel: the language server is in reach. */
 const WEB: AppBootstrap = {
   apiVersion: 1,
   host: "cloud",
@@ -400,12 +402,18 @@ const WEB: AppBootstrap = {
   authFlow: "redirect",
   sandbox: null
 }
+
+/** The same host without the tunnel: no language server, so no gesture. */
+const WEB_NO_TUNNEL: AppBootstrap = {
+  ...WEB,
+  capabilities: cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: false })
+}
 const NATIVE: AppBootstrap = {
   apiVersion: 1,
   host: "local",
   version: "test",
   buildSha: "local",
-  capabilities: localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true }),
+  capabilities: localCapabilities({ agent: true, identity: true, cloud: true }),
   authFlow: "native-handoff",
   sandbox: null
 }
@@ -429,8 +437,8 @@ const renderOn = async (bootstrap: AppBootstrap, card: Extract<Card, { kind: "fi
 }
 
 describe("the file card's gestures follow the host's catalog", () => {
-  test("on the web host a TypeScript card binds no code.* gesture and adds no capability-gap copy", async () => {
-    const { host, calls } = await renderOn(WEB, fileCard("src/app.ts", "export const answer: number = 42\n"))
+  test("without the workspace tunnel a TypeScript card binds no code.* gesture and adds no capability-gap copy", async () => {
+    const { host, calls } = await renderOn(WEB_NO_TUNNEL, fileCard("src/app.ts", "export const answer: number = 42\n"))
     await highlighted(host)
     expect(host.querySelector('[data-flow="code.hover"]')).toBeNull()
     expect(host.querySelector("[data-flow-activate]")).toBeNull()
@@ -447,15 +455,16 @@ describe("the file card's gestures follow the host's catalog", () => {
     expect(calls).toEqual([])
   }, 30_000)
 
-  test("on the web host a file no language server would serve carries no note, and a card the seam already annotated keeps its own state", async () => {
-    const json = await renderOn(WEB, fileCard("package.json", "{ \"name\": \"x\" }\n"))
+  test("a file no language server would serve carries no note, and a card the seam already annotated keeps its own state", async () => {
+    const json = await renderOn(WEB_NO_TUNNEL, fileCard("package.json", "{ \"name\": \"x\" }\n"))
     expect(json.host.querySelector("[data-intel]")).toBeNull()
-    const cloud = await renderOn(WEB, fileCard("src/app.ts", "export {}\n", { intel: { state: "unavailable", note: "Hover and definitions need a workspace language server; Smithers Cloud does not relay one yet." } }))
+    const cloud = await renderOn(WEB_NO_TUNNEL, fileCard("src/app.ts", "export {}\n", { intel: { state: "unavailable", note: "Hover and definitions need a workspace language server; Smithers Cloud does not relay one yet." } }))
     expect(cloud.host.querySelector('[data-intel="unavailable"]')?.textContent).toContain("Smithers Cloud does not relay one yet")
   })
 
-  test("on the native host with local.lsp the same card binds both gestures and states nothing", async () => {
-    const { host, calls } = await renderOn(NATIVE, fileCard("src/app.ts", "export const answer: number = 42\n"))
+
+  test("with cloud.terminal the same card binds both gestures and states nothing", async () => {
+    const { host, calls } = await renderOn(WEB, fileCard("src/app.ts", "export const answer: number = 42\n"))
     await highlighted(host)
     expect(host.querySelector('[data-flow="code.hover"]')?.getAttribute("data-flow-activate")).toBe("code.definition")
     expect(host.querySelector("[data-intel]")).toBeNull()

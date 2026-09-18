@@ -8,17 +8,15 @@
  * (e2e/native/MainProcess.ts) and reports what the entrypoint did.
  *
  * Nothing the product decides is faked. The fake supplies only what a
- * headless machine lacks (the window, the directory dialog and the system
- * browser); the local server the entrypoint starts is the real one.
+ * headless machine lacks (the window and the system browser); the local
+ * server the entrypoint starts is the real one.
  */
 import { afterAll, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, realpathSync } from "node:fs"
-import { mkdtemp, realpath, rm } from "node:fs/promises"
+import { mkdtempSync, realpathSync } from "node:fs"
+import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, join } from "node:path"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { readDaemonDescriptor } from "./LocalDaemonProtocol"
-import { shutdownLocalDaemon } from "./LocalDaemonStop"
 import { PROBE_MARKER } from "../../e2e/native/Probe.ts"
 import type { NativeProbeReport, ProbeScenario } from "../../e2e/native/Probe.ts"
 
@@ -30,80 +28,9 @@ interface ProbeOptions {
   readonly scenario?: ProbeScenario
 }
 
-/*
- * What a scenario leaves running.
- *
- * The entrypoint attaches to a local session owner and spawns it when none is
- * running; by product design that daemon outlives the window, so a probe that
- * only ends its own process leaks one owner per scenario. Each scenario gets
- * its own faked home, so its owner is stopped and its state removed here and
- * nowhere near the user's real session owner.
- */
-interface ProbeDaemon {
-  readonly home: string
-  readonly stateDir: string
-  /** The owner process, as its own /api/health reported it. */
-  pid: number | null
-}
-
-/** Mirrors NativeState.nativeStateDirectory() under the home the driver fakes. */
-const stateDirectoryOf = (home: string): string => process.platform === "darwin"
-  ? join(home, "Library", "Application Support", "Smithers")
-  : join(home, ".local", "share", "smithers")
-
-const reportedPid = (health: unknown): number | null => {
-  if (typeof health !== "object" || health === null || !("pid" in health)) return null
-  const pid = (health as { readonly pid: unknown }).pid
-  return typeof pid === "number" ? pid : null
-}
-
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Only a pid whose command is still this checkout's driver may be signalled. */
-const isProbeProcess = (pid: number): boolean =>
-  new TextDecoder().decode(Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)]).stdout).includes(DRIVER)
-
-const exited = async (pid: number): Promise<boolean> => {
-  const deadline = Date.now() + 3_000
-  while (alive(pid) && Date.now() < deadline) await Bun.sleep(50)
-  return !alive(pid)
-}
-
-/*
- * The belt: the driver stops its own owner, but a probe killed on the deadline
- * never reaches that line. The descriptor in the scenario's own state directory
- * is the only owner this may touch, and its pid is signalled only after the
- * documented shutdown failed to end it.
- */
-const stopSessionOwner = async (daemon: ProbeDaemon): Promise<void> => {
-  const descriptor = await readDaemonDescriptor(daemon.stateDir).catch(() => undefined)
-  if (descriptor !== undefined && daemon.pid === null) {
-    daemon.pid = reportedPid(await fetch(`${descriptor.origin}/api/health`).then((response) => response.json()).catch(() => null))
-  }
-  await shutdownLocalDaemon(daemon.stateDir).catch(() => {})
-  const pid = daemon.pid
-  if (pid !== null && !(await exited(pid)) && isProbeProcess(pid)) {
-    process.kill(pid, "SIGTERM")
-    await exited(pid)
-  }
-  await rm(daemon.home, { recursive: true, force: true })
-}
-
 const cache = new Map<string, Promise<NativeProbeReport>>()
-const daemons = new Map<string, ProbeDaemon>()
-
-const sessionOwner = (options: ProbeOptions): ProbeDaemon => {
-  const daemon = daemons.get(JSON.stringify(options))
-  if (daemon === undefined) throw new Error("no probe has run for these options")
-  return daemon
-}
+/* Each scenario gets its own faked home, removed once its subprocess exits. */
+const homes = new Set<string>()
 
 /*
  * What one probe may take.
@@ -120,14 +47,14 @@ const sessionOwner = (options: ProbeOptions): ProbeDaemon => {
 const PROBE_BUDGET_MS = 60_000
 const PROBE_KILL_MS = PROBE_BUDGET_MS - 5_000
 
-const spawnProbe = async (options: ProbeOptions, daemon: ProbeDaemon): Promise<NativeProbeReport> => {
+const spawnProbe = async (options: ProbeOptions, home: string): Promise<NativeProbeReport> => {
   const child = Bun.spawn([process.execPath, DRIVER], {
     cwd: UI_DIR,
     env: {
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       SMITHERS_NATIVE_PROBE: JSON.stringify(options.scenario ?? {}),
-      SMITHERS_NATIVE_PROBE_HOME: daemon.home,
+      SMITHERS_NATIVE_PROBE_HOME: home,
       SMITHERS_LOCAL_PORT: "0",
       SMITHERS_CHAT_STUB: "1",
       SMITHERS_LOCAL_MODE: "offline",
@@ -149,11 +76,9 @@ const spawnProbe = async (options: ProbeOptions, daemon: ProbeDaemon): Promise<N
         `the native main process printed no report (exit ${exitCode}).\nstdout:\n${stdout}\nstderr:\n${stderr}`
       )
     }
-    const report = JSON.parse(line.slice(PROBE_MARKER.length)) as NativeProbeReport
-    daemon.pid = reportedPid(report.health)
-    return report
+    return JSON.parse(line.slice(PROBE_MARKER.length)) as NativeProbeReport
   } finally {
-    await stopSessionOwner(daemon)
+    await rm(home, { recursive: true, force: true })
   }
 }
 
@@ -163,56 +88,16 @@ const probe = (options: ProbeOptions): Promise<NativeProbeReport> => {
   const existing = cache.get(key)
   if (existing !== undefined) return existing
   const home = mkdtempSync(join(tmpdir(), "smithers-native-probe-home-"))
-  const daemon: ProbeDaemon = { home, stateDir: stateDirectoryOf(home), pid: null }
-  daemons.set(key, daemon)
-  const started = spawnProbe(options, daemon)
+  homes.add(home)
+  const started = spawnProbe(options, home)
   cache.set(key, started)
   return started
 }
 
 const temporaryDirectories: Array<string> = []
 
-const git = async (cwd: string, args: ReadonlyArray<string>): Promise<void> => {
-  const child = Bun.spawn(["git", "-C", cwd, ...args], {
-    env: {
-      ...(Bun.env as Record<string, string | undefined>),
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_CONFIG_SYSTEM: "/dev/null"
-    },
-    stdout: "pipe",
-    stderr: "pipe"
-  })
-  const [exitCode, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stderr).text()
-  ])
-  if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`)
-}
-
-/** A throwaway repository, never the working copy this test runs inside. */
-const makeRepository = async (): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), "smithers-main-"))
-  temporaryDirectories.push(directory)
-  await git(directory, ["init", "-b", "main"])
-  await git(directory, [
-    "-c",
-    "user.email=e2e@smithers.test",
-    "-c",
-    "user.name=E2E",
-    "commit",
-    "--allow-empty",
-    "-m",
-    "root"
-  ])
-  return directory
-}
-
 afterAll(async () => {
-  for (const daemon of daemons.values()) {
-    await stopSessionOwner(daemon)
-  }
-  for (const directory of temporaryDirectories) {
+  for (const directory of [...homes, ...temporaryDirectories]) {
     await rm(directory, { recursive: true, force: true })
   }
 })
@@ -221,7 +106,11 @@ describe("the native main process starts the local origin", () => {
   test("prints SMITHERS_LOCAL_ORIGIN on 127.0.0.1 and the origin answers /api/health", async () => {
     const report = await probe({})
     expect(report.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-    expect(report.health).toMatchObject({ ok: true, sandbox: { platform: process.platform } })
+    expect(report.health).toMatchObject({
+      ok: true,
+      pid: expect.any(Number),
+      home: expect.stringContaining("smithers-native-probe-home-")
+    })
     expect(report.logs).toContain("Smithers app started!")
   }, PROBE_BUDGET_MS)
 
@@ -232,7 +121,7 @@ describe("the native main process starts the local origin", () => {
     expect(report.windows[0]?.title).toBe("Smithers")
     expect(report.windows[0]?.frame).toEqual({ width: 1180, height: 800, x: 100, y: 60 })
     // The seams bind to the window: an unbound rpc is a window whose
-    // repository picker and sign-in door are dead.
+    // sign-in door is dead.
     expect(report.windows[0]?.rpcBound).toBe(true)
   }, PROBE_BUDGET_MS)
 
@@ -246,59 +135,10 @@ describe("the native main process starts the local origin", () => {
 })
 
 describe("the native RPC surface", () => {
-  test("exactly the two native doors are bound: the folder dialog and the system browser", async () => {
+  test("exactly one native door is bound: the system browser", async () => {
     const report = await probe({})
-    expect([...report.requestNames].sort()).toEqual(["openExternal", "pickLocalRepository"])
+    expect([...report.requestNames].sort()).toEqual(["openExternal"])
     expect(report.messageNames).toEqual([])
-  }, PROBE_BUDGET_MS)
-
-  test("the repository picker asks the host for a directory, not a file", async () => {
-    const report = await probe({
-      scenario: {
-        dialogPaths: ["/nonexistent-smithers-probe"],
-        exercises: [
-          { label: "pick", request: "pickLocalRepository", params: { access: "read" } }
-        ]
-      }
-    })
-    expect(report.dialogOptions).toEqual([
-      { canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false }
-    ])
-  }, PROBE_BUDGET_MS)
-
-  test("a dismissed directory dialog answers cancelled", async () => {
-    for (const dialogPaths of [[], [""], ["   "]]) {
-      const report = await probe({
-        scenario: {
-          dialogPaths,
-          exercises: [
-            { label: "pick", request: "pickLocalRepository", params: { access: "read" } }
-          ]
-        }
-      })
-      expect(report.results.pick).toEqual({ status: "cancelled" })
-      expect(report.dialogOptions).toHaveLength(1)
-    }
-  }, PROBE_BUDGET_MS)
-
-  test("a chosen directory is inspected for real and reports its head and branch", async () => {
-    const repository = await makeRepository()
-    const report = await probe({
-      scenario: {
-        dialogPaths: [repository],
-        exercises: [
-          { label: "pick", request: "pickLocalRepository", params: { access: "read-write" } }
-        ]
-      }
-    })
-    const root = await realpath(repository)
-    expect(report.results.pick).toMatchObject({
-      status: "connected",
-      repository: { root, name: basename(root), branch: "main", remoteUrl: null }
-    })
-    const picked = report.results.pick as { repository: { head: string; authorizationId: string } }
-    expect(picked.repository.head).toMatch(/^[0-9a-f]{40}$/)
-    expect(picked.repository.authorizationId).toMatch(/^[A-Za-z0-9_-]{43}$/)
   }, PROBE_BUDGET_MS)
 
   test("openExternal refuses every scheme but http and https", async () => {
@@ -350,16 +190,5 @@ describe("the native RPC surface", () => {
       }
     })
     expect(report.results.denied).toEqual({ opened: false })
-  }, PROBE_BUDGET_MS)
-})
-
-describe("a probe owns the session it starts", () => {
-  test("the session owner a scenario spawned is stopped and its state is gone", async () => {
-    await probe({})
-    const daemon = sessionOwner({})
-    expect(daemon.pid).not.toBeNull()
-    expect(alive(daemon.pid!)).toBe(false)
-    expect(existsSync(daemon.stateDir)).toBe(false)
-    expect(existsSync(daemon.home)).toBe(false)
   }, PROBE_BUDGET_MS)
 })

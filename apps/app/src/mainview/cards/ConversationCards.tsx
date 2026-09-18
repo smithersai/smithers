@@ -3,7 +3,7 @@ import { MarkdownEditorSurface } from "../ViewModules"
 import { flowArgs } from "../flows/FlowArgs"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { Badge, Button, FileTree } from "@smthrs/ui"
-import { ExternalLink, GitPullRequest, HardDrive, Server } from "lucide-react"
+import { ExternalLink, GitPullRequest, Server } from "lucide-react"
 import { Suspense, useId, useContext } from "react"
 import { parseOutline } from "@smthrs/ui/vault"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
@@ -25,12 +25,10 @@ import { settledPill } from "./CardFamily"
 export const ConnectCardBody = ({
   card,
   onConnectGitHub,
-  onConnectLocal,
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "connect" }>
   readonly onConnectGitHub: () => void
-  readonly onConnectLocal: () => void
   readonly onRunCommand: RunCommand
 }) => (
   <ul className="connect-store-list">
@@ -50,22 +48,6 @@ export const ConnectCardBody = ({
           </Button>
         )}
     </li>
-    {card.payload.nativeAvailable ?
-      (
-        <li className="connect-store-row">
-          <span className="connect-store-icon">
-            <HardDrive size={16} aria-hidden="true" />
-          </span>
-          <span className="connect-store-text">
-            <strong>Local repository</strong>
-            <span>A repository on this machine, read directly.</span>
-          </span>
-          <Button size="sm" variant="outline" {...flowProps("connector.add")} onClick={() => onConnectLocal()}>
-            Connect
-          </Button>
-        </li>
-      ) :
-      null}
     <li className="connect-store-row">
       <span className="connect-store-icon">
         <Server size={16} aria-hidden="true" />
@@ -246,7 +228,6 @@ export const conversationCardFamily: CardFamily<"connect" | "world" | "browser">
       <ConnectCardBody
         card={card}
         onConnectGitHub={actions.onConnectGitHub}
-        onConnectLocal={actions.onConnectLocal}
         onRunCommand={actions.onRunCommand}
       />
     ),

@@ -24,7 +24,6 @@ const availablePort = (): Promise<number> =>
 const callbacks = (overrides: Partial<PackagedE2EBridgeOptions> = {}): PackagedE2EBridgeOptions => ({
   state: () => ({ window: "real" }),
   evaluate: (script) => ({ script }),
-  queueRepositorySelection: () => undefined,
   screenshot: () => new Uint8Array([137, 80, 78, 71]),
   quit: () => undefined,
   ...overrides
@@ -115,27 +114,6 @@ describe("the packaged E2E bridge", () => {
     })
     expect(failed.status).toBe(500)
     expect(await failed.json()).toEqual({ error: "bridge_error", message: "renderer exploded" })
-  })
-
-  test("strictly validates and queues one native repository-picker answer", async () => {
-    const selections: Array<string | null> = []
-    const bridge = await start({
-      queueRepositorySelection: (path) => {
-        selections.push(path)
-      }
-    })
-    const post = (body: unknown): Promise<Response> => request(bridge, "/window/repository-picker", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    })
-
-    expect((await post({ path: "relative" })).status).toBe(400)
-    expect((await post({ path: "/tmp/repo", extra: true })).status).toBe(400)
-    expect((await post({ nope: "/tmp/repo" })).status).toBe(400)
-    expect((await post({ path: null })).status).toBe(202)
-    expect((await post({ path: "/tmp/repo with spaces" })).status).toBe(202)
-    expect(selections).toEqual([null, "/tmp/repo with spaces"])
   })
 
   test("bounds request bodies, serves PNG bytes, and schedules quit", async () => {

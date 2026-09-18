@@ -12,12 +12,11 @@ import { memoryStorage } from "./TestFixtures"
 const createAppController = scopedControllers()
 
 /*
- * The named roles end to end: the `+` flows launch a role's harness through
- * the one PTY request (role id + task, never argv), the conversation records
- * the subagent with its role, `agent.explain` answers as a card on the
- * explainer role, and the orchestrator's instructions name only what this
- * host can launch. No real process or model is touched: the server and the
- * agent are recorders.
+ * The named roles end to end. Launching one as a local CLI retired with the
+ * local backend (docs/LOCAL-BACKEND-RETIREMENT.md), so what is left is the
+ * side turn: `agent.explain` answers as a card on the explainer role, and the
+ * orchestrator's instructions name only what this host can reach. No real
+ * model is touched: the agent is a recorder.
  */
 
 const repositories: NativeRepositories = {
@@ -30,7 +29,7 @@ const bootstrap: AppBootstrap = {
   host: "local",
   version: "1.0.0",
   buildSha: "abcdef1234567890",
-  capabilities: ["agent", "local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+  capabilities: ["agent"],
   authFlow: "none",
   sandbox: { platform: "darwin", mode: "enforced" }
 }
@@ -79,77 +78,18 @@ const settle = async (ticks = 4) => {
 const boot = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const recorder = recordingAgent()
-  const bodies: Array<Record<string, unknown>> = []
-  let next = 0
   const controller = createAppController(store, repositories, recorder.agent, {
     bootstrap,
     socketUrl: () => undefined,
-    fetchImpl: async (input, init) => {
+    fetchImpl: async (input) => {
       const url = String(input)
       if (url.endsWith("/api/harnesses")) return new Response(JSON.stringify({ harnesses: HARNESSES }), { status: 200 })
-      if (url.endsWith("/api/pty") && init?.method === "POST") {
-        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
-        next += 1
-        return new Response(JSON.stringify({ sessionId: `pty-${next}` }), { status: 200 })
-      }
       return new Response(JSON.stringify({ error: { code: "absent", message: "no seam" } }), { status: 404 })
     }
   })
   store.dispatch({ type: "harnesses.loaded", actor: "system", harnesses: [...HARNESSES] })
-  return { store, controller, recorder, bodies }
+  return { store, controller, recorder }
 }
-
-describe("agent roles — launching", () => {
-  test("agent.role launches the role's harness by role id and records the subagent with its role", async () => {
-    const { store, controller, bodies } = await boot()
-    controller.runCommand("agent.role", "implementation")
-    await settle()
-    expect(bodies.at(-1)).toMatchObject({ kind: "harness", harnessId: "codex", roleId: "implementation" })
-    expect(bodies.at(-1)?.task).toBeUndefined()
-    expect(store.collections.tabs.get("pty-1")).toMatchObject({
-      kind: "harness",
-      harnessId: "codex",
-      roleId: "implementation",
-      title: "Implementation · GPT-5.6 Sol · ~"
-    })
-    expect(store.collections.cards.get("agent-pty-1")).toMatchObject({
-      kind: "agent",
-      title: "Implementation · GPT-5.6 Sol",
-      payload: { harnessId: "codex", roleId: "implementation", phase: "running" }
-    })
-  })
-
-  test("agent.delegate hands the task to the role's CLI and the card names the task", async () => {
-    const { store, controller, bodies } = await boot()
-    controller.runCommand("agent.delegate", "trivial-implementation rename the flag to verbose")
-    await settle()
-    expect(bodies.at(-1)).toMatchObject({ roleId: "trivial-implementation", task: "rename the flag to verbose" })
-    expect(store.collections.cards.get("agent-pty-1")?.payload).toMatchObject({
-      roleId: "trivial-implementation",
-      task: "rename the flag to verbose"
-    })
-    // The model may delegate, and may ask for a plain role launch: agent.role confirms (the three-door law).
-    expect(controller.commands.find("agent.delegate")?.binding.descriptor.modelInvocable).toBe(true)
-    expect(controller.commands.find("agent.role")?.binding.descriptor.modelInvocable).toBe(true)
-    expect(controller.commands.find("agent.role")?.metadata.confirm).toBeDefined()
-  })
-
-  test("a role whose harness lacks a credential refuses with the reason, and an unknown role lists the roles", async () => {
-    const { store, controller, bodies } = await boot()
-    controller.runCommand("agent.role", "fast-ui")
-    await settle()
-    expect(bodies).toHaveLength(0)
-    expect(store.collections.tabs.size).toBe(1)
-    // A refused flow states its reason as a failed toast (ComposerRefusals.test.ts).
-    const failed = () => [...store.collections.toasts.values()].filter((toast) => toast.status === "failed")
-    expect(failed().at(-1)?.detail).toContain("Fast UI · Cerebras gpt-oss-120b is not available")
-    controller.runCommand("agent.delegate", "poet write a haiku")
-    await settle()
-    // A well-formed id the agents store lacks is refused by the store's list (custom-agents.md), never by an enum.
-    expect(failed().some((toast) => (toast.detail ?? "").includes("There is no agent named poet"))).toBe(true)
-    expect(bodies).toHaveLength(0)
-  })
-})
 
 describe("agent roles — the explainer", () => {
   test("agent.explain runs one side turn on the explainer role and streams into an embedded card", async () => {

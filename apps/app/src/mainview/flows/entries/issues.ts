@@ -22,7 +22,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     hidden: true,
     grammar: args => payloadFor("issues.list", args),
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     args: "[open|closed|all] [owner/repo]",
     requires: ["first-run-target"],
     input: Schema.Struct({
@@ -35,7 +35,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.list",
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "local.repositories", "practice"],
+    runtimeAny: ["cloud", "practice"],
     args: "[open|closed|all] [owner/repo]",
     requires: ["first-run-target"],
     input: Schema.Struct({

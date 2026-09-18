@@ -69,18 +69,54 @@ export class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/
 const criteriaKeyCount = Schema.makeFilter(
   (criteria: Readonly<Record<string, string>>) => {
     const count = Object.keys(criteria).length
-    return count >= 2 && count <= 255 ? undefined : "a choice question offers between 2 and 255 options"
+    return count >= 2 && count <= 255
+      ? undefined
+      : `A choice question offers between 2 and 255 options, not ${count}`
   },
   { identifier: "choiceCriteria" }
 )
 
 const rungCount = Schema.makeFilter(
   (rungs: ReadonlyArray<string>) =>
-    rungs.length >= 2 && new Set(rungs).size === rungs.length
-      ? undefined
-      : "a score question orders at least 2 distinct rungs",
-  { identifier: "scoreCriteria" }
+    rungs.length >= 2 ? undefined : `A score question orders at least 2 rungs, not ${rungs.length}`,
+  { identifier: "scoreRungCount" }
 )
+
+const distinctRungs = Schema.makeFilter(
+  (rungs: ReadonlyArray<string>) =>
+    new Set(rungs).size === rungs.length ? undefined : "A score question's rungs are distinct",
+  { identifier: "scoreRungsDistinct" }
+)
+
+/**
+ * The fields of each question shape, declared once. The classes below are the
+ * one definition a host builds and narrows on; {@link encodeQuestions} rebuilds
+ * the same fields as plain structs so the wire form is written from the field
+ * declarations rather than from whatever order an object literal happened to
+ * carry.
+ *
+ * `type` is the discriminant the gateway reads, so it is a plain literal field
+ * and not a `_tag`: a `_tag` would have to be renamed at the transport and
+ * would change the request body. `Schema.tag` gives it a constructor default,
+ * so `new ChoiceQuestion({ instructions, criteria })` does not repeat it.
+ */
+const booleanFields = {
+  type: Schema.tag("boolean"),
+  instructions: Schema.String,
+  criteria: Schema.optionalKey(Schema.Struct({ true: Schema.String, false: Schema.String }))
+}
+
+const choiceFields = {
+  type: Schema.tag("choice"),
+  instructions: Schema.String,
+  criteria: Schema.Record(Schema.String, Schema.String).pipe(Schema.check(criteriaKeyCount))
+}
+
+const scoreFields = {
+  type: Schema.tag("score"),
+  instructions: Schema.String,
+  criteria: Schema.Array(Schema.String).pipe(Schema.check(rungCount, distinctRungs))
+}
 
 /**
  * A yes/no question, with optional prose for what each side means.
@@ -88,36 +124,70 @@ const rungCount = Schema.makeFilter(
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const BooleanQuestion = Schema.Struct({
-  type: Schema.Literal("boolean"),
-  instructions: Schema.String,
-  criteria: Schema.optionalKey(Schema.Struct({ true: Schema.String, false: Schema.String }))
-})
+export class BooleanQuestion extends Schema.Class<BooleanQuestion>("flows/model/BooleanQuestion")(booleanFields) {
+  /**
+   * Builds a yes/no question. `Classifier.boolean` is this factory.
+   *
+   * @category constructors
+   * @since 1.0.0-rc.0
+   */
+  static readonly of = (options: {
+    readonly instructions: string
+    readonly criteria?: { readonly true: string; readonly false: string }
+  }): BooleanQuestion =>
+    options.criteria === undefined
+      ? new BooleanQuestion({ instructions: options.instructions })
+      : new BooleanQuestion({ instructions: options.instructions, criteria: options.criteria })
+}
 
 /**
  * A question answered with one of a named set of options. Between 2 and 255
- * options, each described.
+ * options, each described; fewer or more is a declaration defect and fails the
+ * field's schema check at construction.
  *
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const ChoiceQuestion = Schema.Struct({
-  type: Schema.Literal("choice"),
-  instructions: Schema.String,
-  criteria: Schema.Record(Schema.String, Schema.String).pipe(Schema.check(criteriaKeyCount))
-})
+export class ChoiceQuestion extends Schema.Class<ChoiceQuestion>("flows/model/ChoiceQuestion")(choiceFields) {
+  /**
+   * Builds a question answered with one of the named options, keeping the
+   * literal option keys so the answer's `value` is their union rather than
+   * `string`. A class instance type is not generic, so the keys ride on the
+   * factory's return type and {@link Classifier.AnswerOf} reads them back off
+   * `criteria` structurally. `Classifier.choice` is this factory.
+   *
+   * @category constructors
+   * @since 1.0.0-rc.0
+   */
+  static readonly of = <const Criteria extends Readonly<Record<string, string>>>(options: {
+    readonly instructions: string
+    readonly criteria: Criteria
+  }): Omit<ChoiceQuestion, "criteria"> & { readonly criteria: Criteria } =>
+    new ChoiceQuestion(options) as Omit<ChoiceQuestion, "criteria"> & { readonly criteria: Criteria }
+}
 
 /**
  * A question answered along an ordered rubric of at least two distinct rungs.
+ * Fewer, or a repeated rung, fails the field's schema check at construction.
  *
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const ScoreQuestion = Schema.Struct({
-  type: Schema.Literal("score"),
-  instructions: Schema.String,
-  criteria: Schema.Array(Schema.String).pipe(Schema.check(rungCount))
-})
+export class ScoreQuestion extends Schema.Class<ScoreQuestion>("flows/model/ScoreQuestion")(scoreFields) {
+  /**
+   * Builds a question answered along an ordered rubric, keeping the literal
+   * rung labels the same way {@link ChoiceQuestion.of} keeps its option keys.
+   * `Classifier.score` is this factory.
+   *
+   * @category constructors
+   * @since 1.0.0-rc.0
+   */
+  static readonly of = <const Rungs extends ReadonlyArray<string>>(options: {
+    readonly instructions: string
+    readonly criteria: Rungs
+  }): Omit<ScoreQuestion, "criteria"> & { readonly criteria: Rungs } =>
+    new ScoreQuestion(options) as Omit<ScoreQuestion, "criteria"> & { readonly criteria: Rungs }
+}
 
 /**
  * One question as it crosses the wire. A model-authored question is decoded
@@ -137,6 +207,36 @@ export const Question = Schema.Union([BooleanQuestion, ChoiceQuestion, ScoreQues
  * @since 1.0.0-rc.0
  */
 export type Question = typeof Question.Type
+
+/**
+ * The same three shapes as plain structs. A class schema's encoder accepts
+ * only its own instances, and both a host that declared its questions before
+ * this module grew classes and a test that writes one as an object literal
+ * hold structurally valid questions; encoding through the structs takes both
+ * and writes the same bytes for either.
+ */
+const WireQuestions = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.Struct(booleanFields), Schema.Struct(choiceFields), Schema.Struct(scoreFields)])
+)
+
+const encodeWireQuestions = Schema.encodeUnknownEffect(WireQuestions)
+
+/**
+ * The wire form of a map of questions: plain JSON, with each question's keys
+ * in the order its fields are declared rather than the order the object
+ * literal that built it happened to carry.
+ *
+ * The transport stringifies this instead of the questions themselves, and
+ * `Classifier.make` digests it, so neither the request body nor a durable call
+ * key moves when a question becomes a class. It throws on a question no shape
+ * accepts, the same moment a malformed schema would.
+ *
+ * @category encoding
+ * @since 1.0.0-rc.0
+ */
+export const encodeQuestions: (questions: Readonly<Record<string, Question>>) => Readonly<Record<string, unknown>> =
+  Schema.encodeUnknownSync(WireQuestions)
 
 /**
  * Jev's answer to a boolean question: the probability that the answer is yes.
@@ -429,6 +529,13 @@ export function layerVercelGateway(
       const evaluate = (request: Request): Effect.Effect<Response, EvaluatorError> =>
         Effect.gen(function*() {
           const started = yield* Clock.currentTimeMillis
+          // The questions are encoded through their schema rather than handed
+          // to `JSON.stringify` as they stand: a question is a class instance
+          // on the typed path and an object literal on the ad-hoc one, and the
+          // body has to read the same either way.
+          const encodedQuestions = yield* encodeWireQuestions(request.questions).pipe(
+            Effect.mapError((error) => new EvaluatorError({ code: "invalid_question", message: error.message }))
+          )
           const wire = HttpClientRequest.post(baseUrl, {
             headers: {
               authorization: `Bearer ${Redacted.value(apiKey)}`,
@@ -441,7 +548,7 @@ export function layerVercelGateway(
             body: HttpBody.text(
               JSON.stringify({
                 state: request.state,
-                questions: request.questions,
+                questions: encodedQuestions,
                 providerOptions: { gateway: { zeroDataRetention } }
               }),
               "application/json"

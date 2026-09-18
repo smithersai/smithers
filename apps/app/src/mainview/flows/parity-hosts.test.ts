@@ -165,7 +165,7 @@ const localBootstrap = (capabilities: ReadonlyArray<RuntimeCapability>): AppBoot
 /** The Worker with every supported capability, including the W4 terminal relay. */
 const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }))
 /** The Bun server with a cloud upstream, the agent, identity and manual paths. */
-const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true, browser: true }))
+const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, browser: true }))
 
 /** Every command state the recommendation rule distinguishes. */
 const STATES: ReadonlyArray<CommandState> = (["chat", "world", "connectors", "flows"] as const).flatMap((surface) =>
@@ -342,9 +342,6 @@ describe("host parity — the web and native catalogs against the servers' own c
     const { web } = await registries
     const entries = await declared()
     const nativeOnlyNames = entries.filter((entry) => nativeOnly(entry.metadata)).map(nameOf)
-    expect(nativeOnlyNames).toContain("repo.open")
-    expect(nativeOnlyNames).toContain("target.run")
-    expect(nativeOnlyNames).toContain("tab.terminal")
     expect(nativeOnlyNames).toContain("cloud.sign-in")
     const webNames = new Set(web.commands.all().map((command) => command.name))
     const slashNames = new Set<string>()
@@ -485,7 +482,7 @@ describe("host parity — the web and native catalogs against the servers' own c
     )
     const nativeOnline = await controllerFor(NATIVE)
     const nativeOffline = await controllerFor(
-      localBootstrap(localCapabilities({ agent: true, identity: false, cloud: false, pathEntry: false }))
+      localBootstrap(localCapabilities({ agent: true, identity: false, cloud: false }))
     )
     const has = (controller: AppController): boolean => controller.commands.find("workspace.terminal") !== undefined
     expect(has(withRelay)).toBe(true)
@@ -516,7 +513,7 @@ describe("host parity — the web and native catalogs against the servers' own c
   test("drift: every capability the schema knows has a host row", () => {
     const everything = new Set<RuntimeCapability>([
       ...cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }),
-      ...localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true, browser: true })
+      ...localCapabilities({ agent: true, identity: true, cloud: true, browser: true })
     ])
     /*
      * Pinned orphans: capabilities the schema names that NO host emits today.
@@ -585,9 +582,11 @@ describe("host parity — the web and native catalogs against the servers' own c
     })
     /*
      * The file card's pointer gestures are bindings to code.hover /
-     * code.definition (`runtime: ["local.lsp"]`, a native door): a TypeScript
-     * card is in the sweep so a binding rendered on the web fails here. The
-     * surface is a lazy chunk, so the sweep waits for it.
+     * code.definition, whose door is the workspace LSP tunnel
+     * (`runtime: ["cloud.terminal"]`, which this bootstrap holds): a
+     * TypeScript card is in the sweep so every binding it renders is checked
+     * against the web catalog. The surface is a lazy chunk, so the sweep
+     * waits for it.
      */
     store.dispatch({
       type: "card.upsert",
@@ -624,12 +623,9 @@ describe("host parity — the web and native catalogs against the servers' own c
       expect(host.querySelector('[data-kind="file"]')).not.toBeNull()
       expect(rendered).toContain("workspace.session.destroy")
       expect(rendered.filter((name) => !webNames.has(name))).toEqual([])
-      // An absent capability adds neither a gesture nor developer copy on the web.
+      // The tunnel is open here, so the code-intel gesture is a live web binding — never developer copy about a missing host.
       const file = host.querySelector('[data-kind="file"]')!
-      expect(file.querySelector('[data-flow="code.hover"]')).toBeNull()
-      expect(file.querySelector("[data-flow-activate]")).toBeNull()
-      expect(file.querySelector("[data-intel]")).toBeNull()
-      expect(file.textContent).not.toContain("/code.hover")
+      expect(webNames.has("code.hover")).toBe(true)
       expect(file.textContent).not.toContain("needs the native app")
     } finally {
       flushSync(() => root.unmount())

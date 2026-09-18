@@ -2,9 +2,7 @@ import {
   AGENT_ROLES
 } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
-import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { Harness } from "@smthrs/rpc/LocalApp"
-import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { Card } from "../AppState"
 import type { AppStore } from "../AppStore"
 import type { ControllerContext } from "./context"
@@ -27,7 +25,6 @@ export interface AgentsController {
 
 export interface AgentsControllerDependencies {
   readonly nextOrdinal: () => number
-  readonly loadHarnesses: () => Promise<void>
 }
 
 /** The agents in menu order from the store's mirror; the built-ins while it is empty. */
@@ -43,43 +40,21 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
   const { store } = ctx
   const { collections } = store
 
-  const native = (): boolean => {
-    const bootstrap = ctx.services.bootstrap
-    return bootstrap !== undefined && hasCapability(bootstrap, "local.harnesses")
-  }
-
   const agentRoles: AgentsController["agentRoles"] = () => currentAgentRoles(store)
 
   const load: AgentsController["loadAgents"] = () => loadAgents(ctx)
-
-  const refresh = (): Promise<void> => Promise.all([deps.loadHarnesses(), load()]).then(() => undefined)
-
-  const harnesses = (): ReadonlyArray<Harness> => [...collections.harnesses.values()]
 
   const agentsCard = (): AgentsCard | undefined => {
     const card = collections.cards.get(AGENTS_CARD_ID)
     return card?.kind === "agents" ? card : undefined
   }
 
-  const agentsPayload = (): AgentsCard["payload"] => {
-    if (!native()) return { native: false, agents: [] }
-    const rows = harnesses()
-    return {
-      native: true,
-      agents: roleMenuEntries(rows, agentRoles()).map((entry) => ({
-        id: entry.role.id,
-        label: entry.role.label,
-        purpose: entry.role.purpose,
-        harness: entry.role.harness,
-        harnessName: rows.find((harness) => harness.id === entry.role.harness)?.displayName ?? entry.role.harness,
-        model: entry.role.model,
-        builtin: entry.role.builtin,
-        available: entry.available,
-        reason: entry.reason,
-        account: entry.account
-      }))
-    }
-  }
+  /*
+   * The agent roles launch only through a harness session, which retired with
+   * the local backend (docs/LOCAL-BACKEND-RETIREMENT.md). The card states
+   * that the way the web host always has.
+   */
+  const agentsPayload = (): AgentsCard["payload"] => ({ native: false, agents: [] })
 
   /** The Agents card: at the tail when the human (or the model) asked for it, in place when a mutation refreshes it. */
   const renderAgentsCard = (toTail: boolean, error?: string): void => {
@@ -101,7 +76,6 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
   }
 
   const listAgents: AgentsController["listAgents"] = async () => {
-    if (native()) await refresh()
     renderAgentsCard(true)
   }
 

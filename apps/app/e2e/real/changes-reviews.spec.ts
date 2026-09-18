@@ -65,7 +65,7 @@ const currentPublicChange = async (page: Parameters<typeof realApi>[0], request:
 }
 
 test("change.open refuses an owned real jj stack without mutating its history or files", scenario("changes.local-open-unwired-no-mutation", {
-  capabilities: ["local.repositories", "local.repository-path-entry"],
+  capabilities: [],
   coverage: [
     "action:repo.open", "action:repo.select", "action:change.open", "host:local",
     "path:error", "path:keyboard", "path:persistence", "door:slash",
@@ -92,7 +92,7 @@ test("change.open refuses an owned real jj stack without mutating its history or
 })
 
 test("the derived change.open form reaches the same real jj no-mutation boundary by keyboard", scenario("changes.local-open-form-keyboard-refusal", {
-  capabilities: ["local.repositories", "local.repository-path-entry"],
+  capabilities: [],
   coverage: [
     "action:repo.open", "action:repo.select", "action:change.open", "action:form.set", "action:form.submit",
     "host:local", "path:error", "path:keyboard", "door:slash", "door:button",

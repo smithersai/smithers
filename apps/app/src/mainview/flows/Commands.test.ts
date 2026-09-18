@@ -73,7 +73,7 @@ const NATIVE: AppBootstrap = {
   host: "local",
   version: "test",
   buildSha: "local",
-  capabilities: localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true }),
+  capabilities: localCapabilities({ agent: true, identity: true, cloud: true }),
   authFlow: "native-handoff",
   sandbox: { platform: "darwin", mode: "enforced" }
 }
@@ -128,9 +128,8 @@ const signOut = (store: AppStore): void => {
 const messages = (store: AppStore) =>
   [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal)
 
-const REFUSAL = "/repo.open is not in the web app — it needs the native app."
 const CARD_TEXT =
-  "/repo.open is not in the web app. Local repositories, terminals, build targets and local agents need the native app."
+  "That is not in the web app. Local repositories, terminals, build targets and local agents need the native app."
 const CARD_ACTION = { flow: "app.download", label: "Download the app" }
 const SESSION_REFUSAL =
   "/cloud.sign-in is not in the web app — on the web your GitHub sign-in is your Smithers Cloud sign-in."
@@ -191,10 +190,9 @@ test("opaque flow failures use the human command name", async () => {
 })
 
 describe("nativeOnly — the flows the web host can never have", () => {
-  test("a local.* or cloud.pat requirement is native-only; a cloud door alone is not", () => {
-    expect(nativeOnly({ summary: "", runtime: ["local.repositories"] })).toBe(true)
+  test("a cloud.pat requirement is native-only; a cloud door alone is not", () => {
+    expect(nativeOnly({ summary: "", runtime: ["cloud.pat"] })).toBe(true)
     expect(nativeOnly({ summary: "", runtime: ["cloud", "cloud.pat"] })).toBe(true)
-    expect(nativeOnly({ summary: "", runtime: ["local.targets", "local.repositories"] })).toBe(true)
     expect(nativeOnly({ summary: "", runtime: ["cloud"] })).toBe(false)
     expect(nativeOnly({ summary: "", runtime: ["cloud", "cloud.terminal"] })).toBe(false)
     expect(nativeOnly({ summary: "", runtime: ["identity"] })).toBe(false)
@@ -202,11 +200,11 @@ describe("nativeOnly — the flows the web host can never have", () => {
   })
 
   test("an either/or flow is native-only only when EVERY alternative is a native door", () => {
-    // files.list serves a Cloud repository OR a local one: the web has the first.
-    expect(nativeOnly({ summary: "", runtimeAny: ["cloud", "local.repositories"] })).toBe(false)
-    expect(nativeOnly({ summary: "", runtimeAny: ["local.repositories", "local.targets"] })).toBe(true)
+    // files.list serves a Cloud repository OR the bundled practice one: the web has both.
+    expect(nativeOnly({ summary: "", runtimeAny: ["cloud", "practice"] })).toBe(false)
+    expect(nativeOnly({ summary: "", runtimeAny: ["cloud.pat"] })).toBe(true)
     // A native `runtime` beside a cloud `runtimeAny` still needs the native door.
-    expect(nativeOnly({ summary: "", runtime: ["local.harnesses"], runtimeAny: ["cloud", "local.repositories"] })).toBe(
+    expect(nativeOnly({ summary: "", runtime: ["cloud.pat"], runtimeAny: ["cloud"] })).toBe(
       true
     )
   })
@@ -258,13 +256,8 @@ describe("hosts — the download flows exist only on the web", () => {
 })
 
 describe("explainAbsent — an exact miss classified against the unfiltered catalog, by the door this host lacks", () => {
-  test("on the web a local door gets the native-app sentence; anything present or nowhere gets nothing", async () => {
+  test("on the web anything present or nowhere gets nothing", async () => {
     const { controller } = await freshController(WEB)
-    expect(controller.commands.explainAbsent("repo.open")).toEqual({ door: "local", reason: REFUSAL })
-    expect(controller.commands.explainAbsent("tab.terminal")).toEqual({
-      door: "local",
-      reason: "/tab.terminal is not in the web app — it needs the native app."
-    })
     // Present flows explain nothing, even ones with an unmet prerequisite.
     expect(controller.commands.explainAbsent("issues.list")).toBeUndefined()
     expect(controller.commands.explainAbsent("auth.sign-out")).toBeUndefined()
@@ -297,66 +290,18 @@ describe("explainAbsent — an exact miss classified against the unfiltered cata
 
   test("on the native host nothing is native-only-absent; a missing upstream is still an origin miss", async () => {
     const { controller } = await freshController(NATIVE)
-    expect(controller.commands.explainAbsent("repo.open")).toBeUndefined()
     expect(controller.commands.explainAbsent("does-not-exist")).toBeUndefined()
     // The web-only flows are about the other host, not a door this one lacks.
     expect(controller.commands.explainAbsent("app.download")).toBeUndefined()
     const offline = await freshController({
       ...NATIVE,
-      capabilities: localCapabilities({ agent: true, identity: false, cloud: false, pathEntry: false })
+      capabilities: localCapabilities({ agent: true, identity: false, cloud: false })
     })
     expect(offline.controller.commands.explainAbsent("workspace.terminal")).toEqual({ door: "origin", reason: ORIGIN_REFUSAL })
-    expect(offline.controller.commands.explainAbsent("repo.open")).toBeUndefined()
   })
 })
 
 describe("the unavailable outcome — one answer for slash, button and agent", () => {
-  test("a button (the pointer path) gets the outcome and the card, no toast", async () => {
-    const { store, controller } = await freshController(WEB)
-    signIn(store)
-    const outcome = await controller.commands.run("repo.open")
-    expect(outcome).toEqual({ status: "unavailable", door: "local", reason: REFUSAL, action: "app.download.prompt" })
-    const cards = downloadCards(store)
-    expect(cards).toHaveLength(1)
-    expect(cards[0]?.text).toBe(CARD_TEXT)
-    expect(cards[0]?.action).toEqual(CARD_ACTION)
-    expect([...store.collections.toasts.values()]).toHaveLength(0)
-    // The refusal did not enter the recency ranking as a flow the human ran.
-    expect(store.session().recentCommands ?? []).not.toContain("app.download.prompt")
-  })
-
-  test("a typed /repo.open (the composer path) renders the same card and clears the draft", async () => {
-    const { store, controller } = await freshController(WEB)
-    signIn(store)
-    store.dispatch({ type: "composer.changed", actor: "user", draft: "/repo.open" })
-    controller.send("/repo.open")
-    await settle()
-    const cards = downloadCards(store)
-    expect(cards).toHaveLength(1)
-    expect(cards[0]?.text).toBe(CARD_TEXT)
-    expect(store.session().draft).toBe("")
-    // Not the generic "There is no /x flow" toast: the app knows exactly why it is absent.
-    expect([...store.collections.toasts.values()]).toHaveLength(0)
-    // And no prose reached the model: nothing was sent as a prompt.
-    expect(messages(store).filter((message) => message.role === "user")).toHaveLength(0)
-  })
-
-  test("the agent's tool call gets the sentence back and the card rendered once", async () => {
-    const { store, controller } = await freshController(WEB)
-    signIn(store)
-    const result = await executeAgentToolCall(controller.commands, {
-      name: "commands",
-      arguments: JSON.stringify({ action: "execute", name: "repo.open" })
-    })
-    expect(result).toStartWith(`failed: ${REFUSAL}`)
-    expect(result).toContain("already rendered in the chat")
-    expect(downloadCards(store)).toHaveLength(1)
-    // The typed agent door answers the same outcome, never a sniffed string.
-    const typed = await controller.commands.runForAgent("/tab.terminal")
-    expect(typed.status).toBe("unavailable")
-    expect(downloadCards(store)).toHaveLength(2)
-  })
-
   test("the cloud session flows are answered by the GitHub sign-in: no card, no download, one honest line", async () => {
     const { store, controller } = await freshController(WEB)
     signIn(store)
@@ -433,13 +378,6 @@ describe("the unavailable outcome — one answer for slash, button and agent", (
     expect(downloadCards(store)).toHaveLength(0)
   })
 
-  test("on the native host the same names run (or fail on their own terms)", async () => {
-    const { store, controller } = await freshController(NATIVE)
-    const outcome = await controller.commands.run("repo.open")
-    expect(outcome.status).not.toBe("unavailable")
-    expect(outcome.status).not.toBe("unknown-command")
-    expect(downloadCards(store)).toHaveLength(0)
-  })
 })
 
 describe("app.download and app.download.prompt", () => {
@@ -480,10 +418,10 @@ describe("app.download and app.download.prompt", () => {
       else globals.window = previous
     }
     expect(opened).toEqual([])
-    // The refusal is still rendered — honestly, without a button the world cannot honour.
+    // The offer is still rendered — honestly, without a button the world cannot honour.
     signIn(store)
-    expect((await controller.commands.run("repo.open")).status).toBe("unavailable")
-    const refusals = messages(store).filter((message) => message.text.startsWith("/repo.open is not in the web app"))
+    expect((await controller.commands.runForAgent("app.download.prompt")).status).toBe("executed")
+    const refusals = messages(store).filter((message) => message.text.startsWith("That is not in the web app"))
     expect(refusals).toHaveLength(1)
     expect(refusals[0]?.text).toBe(`${CARD_TEXT} ${NOT_DOWNLOADABLE_TEXT}`)
     expect(refusals[0]?.action).toBeUndefined()
@@ -512,15 +450,12 @@ describe("app.download and app.download.prompt", () => {
     expect(result).toContain("app.download.prompt")
   })
 
-  test("app.download.prompt renders the card, naming a native-only flow when given one", async () => {
+  test("app.download.prompt renders the generic card; a name no host has claims nothing about the catalog", async () => {
     const { store, controller } = await freshController(WEB)
     expect((await controller.commands.runForAgent("app.download.prompt")).status).toBe("executed")
-    expect((await controller.commands.runForAgent("app.download.prompt", "tab.terminal")).status).toBe("executed")
+    expect((await controller.commands.runForAgent("app.download.prompt", "does-not-exist")).status).toBe("executed")
     const cards = downloadCards(store)
-    expect(cards.map((card) => card.text)).toEqual([
-      "That is not in the web app. Local repositories, terminals, build targets and local agents need the native app.",
-      "/tab.terminal is not in the web app. Local repositories, terminals, build targets and local agents need the native app.",
-    ])
+    expect(cards.map((card) => card.text)).toEqual([CARD_TEXT, CARD_TEXT])
     for (const card of cards) expect(card.action).toEqual(CARD_ACTION)
   })
 

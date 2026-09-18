@@ -16,8 +16,6 @@ export interface ProbeExercise {
 }
 
 export interface ProbeScenario {
-  /** What the host directory dialog returns. [] and [""] are both a cancel. */
-  readonly dialogPaths?: ReadonlyArray<string>
   /** What the host says when asked to open a URL in the system browser. */
   readonly openExternalAnswer?: boolean
   readonly exercises?: ReadonlyArray<ProbeExercise>
@@ -36,7 +34,6 @@ export interface NativeProbeReport {
   readonly windows: ReadonlyArray<RecordedWindow>
   readonly requestNames: ReadonlyArray<string>
   readonly messageNames: ReadonlyArray<string>
-  readonly dialogOptions: ReadonlyArray<unknown>
   readonly openedExternally: ReadonlyArray<string>
   /** The origin the entrypoint printed, and what its /api/health answered. */
   readonly origin: string | null

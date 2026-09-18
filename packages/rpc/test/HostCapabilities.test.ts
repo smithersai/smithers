@@ -6,7 +6,7 @@ const booleans = [false, true] as const
 
 test("browser.read requires an explicitly configured pinned transport on either host", () => {
   const cloud = { identity: true, cloud: true, agent: true, checkout: false, terminal: false }
-  const local = { identity: true, cloud: true, agent: true, pathEntry: false }
+  const local = { identity: true, cloud: true, agent: true }
   expect(cloudCapabilities(cloud)).not.toContain("browser.read")
   expect(localCapabilities(local)).not.toContain("browser.read")
   expect(cloudCapabilities({ ...cloud, browser: true })).toContain("browser.read")
@@ -46,7 +46,6 @@ describe("cloudCapabilities (the Worker, host cloud)", () => {
             for (const terminal of booleans) {
               const emitted = cloudCapabilities({ identity, cloud, agent, checkout, terminal })
               expect(emitted).not.toContain("cloud.pat")
-              expect(emitted).not.toContain("local.lsp")
               expect(emitted.includes("cloud.terminal")).toBe(terminal)
               expect(new Set(emitted).size).toBe(emitted.length)
               for (const capability of emitted) expect(RuntimeCapabilitySchema.safeParse(capability).success).toBe(true)
@@ -59,47 +58,32 @@ describe("cloudCapabilities (the Worker, host cloud)", () => {
 })
 
 describe("localCapabilities (the Bun server, host local)", () => {
-  test("a hybrid launch with manual paths emits what the Bun server emits today plus both cloud doors", () => {
-    expect(localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true })).toEqual([
+  test("a hybrid launch emits what the Bun server emits today: both cloud doors and no local backend", () => {
+    expect(localCapabilities({ agent: true, identity: true, cloud: true })).toEqual([
       "agent",
       "identity",
       "cloud",
       "cloud.terminal",
-      "cloud.pat",
-      "local.repositories",
-      "local.repository-path-entry",
-      "local.targets",
-      "local.terminal",
-      "local.harnesses",
-      "local.lsp"
+      "cloud.pat"
     ])
   })
 
-  test("an offline launch emits only the five unconditional local capabilities", () => {
-    expect(localCapabilities({ agent: false, identity: false, cloud: false, pathEntry: false })).toEqual([
-      "local.repositories",
-      "local.targets",
-      "local.terminal",
-      "local.harnesses",
-      "local.lsp"
-    ])
+  test("an offline launch emits nothing: the desktop app offers only what the web offers", () => {
+    expect(localCapabilities({ agent: false, identity: false, cloud: false })).toEqual([])
   })
 
   test("the chat stub is an agent without identity or Smithers Cloud", () => {
-    expect(localCapabilities({ agent: true, identity: false, cloud: false, pathEntry: false })).toEqual([
-      "agent",
-      "local.repositories",
-      "local.targets",
-      "local.terminal",
-      "local.harnesses",
-      "local.lsp"
-    ])
+    expect(localCapabilities({ agent: true, identity: false, cloud: false })).toEqual(["agent"])
   })
 
-  test("the code-intelligence door is open on every Bun launch: a missing language server is stated per file, never a closed door", () => {
+  test("no launch claims a local backend door: the local backend retired (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md)", () => {
     for (const agent of booleans) {
-      for (const cloud of booleans) {
-        expect(localCapabilities({ agent, identity: false, cloud, pathEntry: false }).at(-1)).toBe("local.lsp")
+      for (const identity of booleans) {
+        for (const cloud of booleans) {
+          for (const capability of localCapabilities({ agent, identity, cloud })) {
+            expect(capability.startsWith("local.")).toBe(false)
+          }
+        }
       }
     }
   })
@@ -108,15 +92,12 @@ describe("localCapabilities (the Bun server, host local)", () => {
     for (const agent of booleans) {
       for (const identity of booleans) {
         for (const cloud of booleans) {
-          for (const pathEntry of booleans) {
-            const emitted = localCapabilities({ agent, identity, cloud, pathEntry })
-            expect(emitted.includes("cloud")).toBe(cloud)
-            expect(emitted.includes("cloud.terminal")).toBe(cloud)
-            expect(emitted.includes("cloud.pat")).toBe(cloud)
-            expect(emitted.includes("local.repository-path-entry")).toBe(pathEntry)
-            expect(new Set(emitted).size).toBe(emitted.length)
-            for (const capability of emitted) expect(RuntimeCapabilitySchema.safeParse(capability).success).toBe(true)
-          }
+          const emitted = localCapabilities({ agent, identity, cloud })
+          expect(emitted.includes("cloud")).toBe(cloud)
+          expect(emitted.includes("cloud.terminal")).toBe(cloud)
+          expect(emitted.includes("cloud.pat")).toBe(cloud)
+          expect(new Set(emitted).size).toBe(emitted.length)
+          for (const capability of emitted) expect(RuntimeCapabilitySchema.safeParse(capability).success).toBe(true)
         }
       }
     }

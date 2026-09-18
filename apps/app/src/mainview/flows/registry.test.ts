@@ -517,20 +517,17 @@ describe("billing plans are available to every signed-in account", () => {
 })
 
 describe("command registry bindings", () => {
-  test("bootstrap capabilities are the single registration gate for local and cloud flows", async () => {
+  test("bootstrap capabilities are the single registration gate", async () => {
     const local = await freshController({
       apiVersion: 1,
       host: "local",
       version: "test",
       buildSha: "local",
-      capabilities: ["local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+      capabilities: [],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
     })
     const localNames = local.controller.commands.all().map((command) => command.name)
-    expect(localNames).toContain("repo.open")
-    expect(localNames).toContain("target.run")
-    expect(localNames).toContain("tab.terminal")
     expect(localNames).not.toContain("auth.sign-in")
     /* issues.list also reads an adopted local repository (tutorial stage 3), so it registers here. */
     expect(localNames).toContain("issues.list")
@@ -551,9 +548,6 @@ describe("command registry bindings", () => {
     expect(cloudNames).toContain("issues.list")
     expect(cloudNames).toContain("flow.run")
     expect(cloudNames).toContain("browser.open")
-    expect(cloudNames).not.toContain("repo.open")
-    expect(cloudNames).not.toContain("target.run")
-    expect(cloudNames).not.toContain("tab.terminal")
     const withoutBrowser = await freshController({
       apiVersion: 1, host: "cloud", version: "test", buildSha: "cloud",
       capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null

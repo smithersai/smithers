@@ -10,7 +10,6 @@
     "dev": "node scripts/ensure-devkit.mjs && vite build --configLoader runner && electrobun dev --watch",
     "build:web": "node scripts/ensure-devkit.mjs && vite build --configLoader runner",
     "build:native": "bun scripts/build-native.ts",
-    "local:stop": "bun src/bun/LocalDaemonStop.ts",
     "build": "pnpm run build:native",
     "typecheck": "node scripts/ensure-devkit.mjs && tsc --noEmit",
     "check": "node scripts/ensure-devkit.mjs && tsc --noEmit",

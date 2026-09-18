@@ -1,6 +1,5 @@
 import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { ReposResponseSchema } from "@smthrs/rpc/LocalApp"
-import { adoptLocalRepository } from "./adoptLocalRepository"
 import type { ControllerContext } from "./context"
 
 export interface ConnectorController {
@@ -23,9 +22,9 @@ export const createConnectorController = (
     try {
       const result = await repositories.pickLocalRepository(access)
       switch (result.status) {
+        // No host opens a repository on this machine any more
+        // (docs/LOCAL-BACKEND-RETIREMENT.md); the picker only ever refuses.
         case "connected":
-          await adoptLocalRepository(ctx, result.repository, access)
-          break
         case "cancelled":
           store.dispatch({ type: "connector.local.cancelled", actor: "user" })
           break

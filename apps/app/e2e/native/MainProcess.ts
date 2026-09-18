@@ -14,8 +14,8 @@
  * JSON report on stdout. src/bun/Main.test.ts spawns it once per scenario.
  *
  * Nothing here fakes the product. The fake stands in for the HOST: the
- * window, the file dialog and the system browser, exactly the parts a
- * headless machine does not have. The local server is the real one.
+ * window and the system browser, exactly the parts a headless machine does
+ * not have. The local server is the real one.
  */
 import { mock } from "bun:test"
 import * as os from "node:os"
@@ -25,12 +25,10 @@ import { PROBE_MARKER } from "./Probe.ts"
 import type { NativeProbeReport, ProbeScenario, RecordedWindow } from "./Probe.ts"
 
 const scenario: ProbeScenario = JSON.parse(process.env.SMITHERS_NATIVE_PROBE ?? "{}") as ProbeScenario
-const dialogPaths = scenario.dialogPaths ?? []
 const openExternalAnswer = scenario.openExternalAnswer ?? true
 
 const logs: Array<string> = []
 const windows: Array<RecordedWindow> = []
-const dialogOptions: Array<unknown> = []
 const openedExternally: Array<string> = []
 const results: Record<string, unknown> = {}
 let requestNames: ReadonlyArray<string> = []
@@ -82,10 +80,6 @@ const fakeSdk = {
     captureRegion: () => null
   },
   Utils: {
-    openFileDialog: async (options: unknown): Promise<ReadonlyArray<string>> => {
-      dialogOptions.push(options)
-      return [...dialogPaths]
-    },
     openExternal: (url: string): boolean => {
       openedExternally.push(url)
       return openExternalAnswer
@@ -124,7 +118,6 @@ const report: NativeProbeReport = {
   windows,
   requestNames,
   messageNames,
-  dialogOptions,
   openedExternally,
   origin,
   health,
@@ -132,19 +125,5 @@ const report: NativeProbeReport = {
 }
 await Bun.write(Bun.stdout, `${PROBE_MARKER}${JSON.stringify(report)}\n`)
 
-/*
- * The session owner the entrypoint attached to outlives the window by product
- * design, so the probe stops the one it caused; a probe that IS that owner has
- * nothing to stop and must not recreate the state its caller is removing. Both
- * imports stay dynamic: a static one would read the real home directory before
- * the mock above lands, and the state directory is checked to be the faked one
- * before anything is asked to stop.
- */
-if (process.env.SMITHERS_LOCAL_DAEMON !== "1") {
-  const { nativeStateDirectory } = await import("../../src/bun/NativeState.ts")
-  const { shutdownLocalDaemon } = await import("../../src/bun/LocalDaemonStop.ts")
-  const stateDir = nativeStateDirectory()
-  if (stateDir.startsWith(probeHome)) await shutdownLocalDaemon(stateDir)
-}
 if (givenHome === undefined) await rm(probeHome, { recursive: true, force: true })
 process.exit(0)

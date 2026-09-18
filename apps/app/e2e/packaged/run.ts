@@ -58,7 +58,7 @@ export const stagePackageProject = async (): Promise<{
     const workspace = join(root, "workspace")
     const ui = join(workspace, "apps", "ui")
     await mkdir(join(workspace, "apps"), { recursive: true })
-    const excluded = new Set([".hutch", "artifacts", "build", "node_modules", "packaged-runtime", "test-results"])
+    const excluded = new Set([".hutch", "artifacts", "build", "node_modules", "test-results"])
     await cp(UI_DIRECTORY, ui, {
       recursive: true,
       mode: constants.COPYFILE_FICLONE,
@@ -67,11 +67,6 @@ export const stagePackageProject = async (): Promise<{
         const top = path.split(sep)[0]
         return path === "" || top === undefined || !excluded.has(top)
       }
-    })
-    await cp(join(UI_DIRECTORY, "packaged-runtime"), join(ui, "packaged-runtime"), {
-      recursive: true,
-      mode: constants.COPYFILE_FICLONE,
-      verbatimSymlinks: true
     })
     await symlink(join(UI_DIRECTORY, "node_modules"), join(ui, "node_modules"), "dir")
 
@@ -157,23 +152,15 @@ const main = async (): Promise<void> => {
   let stage: Awaited<ReturnType<typeof stagePackageProject>> | undefined
   let mountedVolume: string | undefined
   let installedExecutable: string | undefined
-  let portableRuntimePrepared = false
   let operationError: unknown
   try {
     let packageDirectory = UI_DIRECTORY
     if (suppliedExecutable === undefined && process.env.SMITHERS_E2E_SKIP_BUILD !== "1") {
       await run("project devkit", [process.execPath, "scripts/ensure-devkit.mjs"])
       await run("production web bundle", ["pnpm", "exec", "vite", "build", "--configLoader", "runner"])
-      await run("portable smithers-build runtime", [process.execPath, "scripts/prepare-packaged-build-cli.ts"])
-      portableRuntimePrepared = true
       stage = await stagePackageProject()
       packageDirectory = stage.ui
       console.log(`[packaged-e2e] isolated package project: ${packageDirectory}`)
-      await run(
-        "portable runtime source cleanup",
-        [process.execPath, "scripts/prepare-packaged-build-cli.ts", "--clean"]
-      )
-      portableRuntimePrepared = false
       await run(
         "stable Electrobun package",
         ["pnpm", "exec", "electrobun", "build", "--env=stable"],
@@ -247,18 +234,6 @@ const main = async (): Promise<void> => {
   }
 
   const cleanupErrors: Array<unknown> = []
-  if (portableRuntimePrepared) {
-    try {
-      await run("portable runtime source cleanup", [
-        process.execPath,
-        "scripts/prepare-packaged-build-cli.ts",
-        "--clean"
-      ])
-      portableRuntimePrepared = false
-    } catch (error) {
-      cleanupErrors.push(error)
-    }
-  }
   try {
     if (mountedVolume !== undefined) {
       await run("detach stable Electrobun disk image", ["/usr/bin/hdiutil", "detach", mountedVolume])

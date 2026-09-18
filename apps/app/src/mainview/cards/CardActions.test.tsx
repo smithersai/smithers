@@ -151,7 +151,6 @@ describe("card bindings are built once per controller", () => {
         "onForkFrame",
         "onOpenInTab",
         "onConnectGitHub",
-        "onConnectLocal",
         "onRunWorkflow",
         "onStopRun",
         "onRetryRun",

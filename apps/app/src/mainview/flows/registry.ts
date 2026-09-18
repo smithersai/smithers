@@ -65,7 +65,6 @@ import * as secrets from "./entries/secrets"
 import * as sync from "./entries/sync"
 import * as system from "./entries/system"
 import * as tab from "./entries/tab"
-import * as target from "./entries/target"
 import * as toast from "./entries/toast"
 import * as wiki from "./entries/wiki"
 import * as workspace from "./entries/workspace"
@@ -236,9 +235,15 @@ export type FlowCapability = RuntimeCapability | "practice"
 export const flowCapabilityHeld = (bootstrap: Pick<AppBootstrap, "capabilities">, capability: FlowCapability): boolean =>
   capability === "practice" || bootstrap.capabilities.includes(capability)
 
-/** A door only the native host opens: a local service, or the host-held Smithers Cloud PAT session. */
-const nativeDoor = (capability: FlowCapability): boolean =>
-  capability.startsWith("local.") || capability === "cloud.pat"
+/**
+ * A door only the native host opens: the host-held Smithers Cloud PAT session.
+ *
+ * The local services (`local.*`) were retired with the local backend
+ * (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md): no host emits one and
+ * `RuntimeCapabilitySchema` no longer accepts one, so the PAT session is the
+ * last native-only door.
+ */
+const nativeDoor = (capability: FlowCapability): boolean => capability === "cloud.pat"
 
 /**
  * Whether a flow can exist only in the native app — the classification behind
@@ -246,8 +251,9 @@ const nativeDoor = (capability: FlowCapability): boolean =>
  *
  * A `runtime` entry that is a native door settles it. An either/or flow
  * (`runtimeAny`) is native-only only when EVERY alternative is a native door:
- * `files.list` names Smithers Cloud OR a local repository, and the web has Smithers Cloud. A
- * flow that names its `hosts` without the cloud is native-only by declaration.
+ * `files.list` names Smithers Cloud OR the bundled practice repository, and
+ * the web has both. A flow that names its `hosts` without the cloud is
+ * native-only by declaration.
  */
 export const nativeOnly = (metadata: FlowMetadata): boolean =>
   (metadata.runtime ?? []).some(nativeDoor) ||
@@ -255,19 +261,19 @@ export const nativeOnly = (metadata: FlowMetadata): boolean =>
   (metadata.hosts !== undefined && !metadata.hosts.includes("cloud"))
 
 /**
- * The door a host lacks for a declared flow: a `local.*` service (only the
- * native app has one), the host-held PAT session (`cloud.pat`, the native
- * app's Smithers Cloud session), or a door this origin could grow (`origin`:
- * the terminal relay, the Smithers Cloud upstream, keys).
+ * The door a host lacks for a declared flow: the host-held PAT session
+ * (`cloud.pat`, the native app's Smithers Cloud session), or a door this
+ * origin could grow (`origin`: the terminal relay, the Smithers Cloud
+ * upstream, keys).
  */
-export type MissingDoor = "local" | "cloud.pat" | "origin"
+export type MissingDoor = "cloud.pat" | "origin"
 
 /**
  * Why a declared flow is absent from THIS bootstrap, by door — the
  * classification behind every honest refusal (docs/web-mode/PLAN.md §1).
  * Undefined when nothing is missing, and for a host-scoped flow on the other
  * host: that flow is about the other host, not a door this one lacks. The
- * native doors are named only on the cloud host; on the native host a
+ * native door is named only on the cloud host; on the native host a
  * missing door is always one the launch could grow.
  */
 export const absentDoor = (metadata: FlowMetadata, bootstrap: AppBootstrap): MissingDoor | undefined => {
@@ -278,8 +284,6 @@ export const absentDoor = (metadata: FlowMetadata, bootstrap: AppBootstrap): Mis
   const alternatives = runtimeAny !== undefined && runtimeAny.length > 0 && !runtimeAny.some(has) ? runtimeAny : []
   if (missing.length === 0 && alternatives.length === 0) return undefined
   if (bootstrap.host !== "cloud") return "origin"
-  const local = (capability: FlowCapability): boolean => capability.startsWith("local.")
-  if (missing.some(local) || (alternatives.length > 0 && alternatives.every(local))) return "local"
   if (missing.includes("cloud.pat") || (alternatives.length > 0 && alternatives.every(nativeDoor))) return "cloud.pat"
   return "origin"
 }
@@ -452,7 +456,6 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   connector.namespace,
   wiki.namespace,
   tab.namespace,
-  target.namespace,
   flow.namespace,
   runs.namespace,
   approvals.namespace,

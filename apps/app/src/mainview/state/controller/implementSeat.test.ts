@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { agentRole, AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
-import { payloadFor } from "../../flows/SlashPayload"
 
 /*
  * The implement seat, pinned (factory-spec review RULINGS 42, Will,
@@ -15,12 +14,13 @@ import { payloadFor } from "../../flows/SlashPayload"
  * (packages/smithers/flows/core/src/Markdown.ts), and the host's
  * `SeatResolver` turns that declared string into a live model.
  *
- * Two things in this app do name a model, so they are the two that could
+ * One thing in this app still names a model, so it is the one that could
  * quietly cheapen an implement run: the built-in role table
- * (packages/rpc/src/AgentRoles.ts), where each role binds one model, and
- * `agent.delegate`, the door the orchestrator hands a frame through. Both are
+ * (packages/rpc/src/AgentRoles.ts), where each role binds one model. It is
  * pinned here, so a change to a cheaper implementer fails a test rather than
- * shipping.
+ * shipping. `agent.delegate` used to be pinned beside it; that flow launched
+ * a harness session on this machine and retired with the local backend
+ * (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md).
  */
 
 /** The fast rows: a person's explicit pick for a mechanical edit, never an implement-shaped run's. */
@@ -51,14 +51,5 @@ describe("the implement seat (RULINGS 42)", () => {
       expect(purpose).not.toContain("non-trivial")
     }
     expect(agentRole("implementation").purpose.toLowerCase()).toContain("non-trivial")
-  })
-
-  test("agent.delegate has no default role, so an implement-shaped delegation can never fall to a fast seat by omission", () => {
-    // Both halves are required: the caller names the role, and this boundary never picks one.
-    expect(payloadFor("agent.delegate", "")).toHaveProperty("error")
-    expect(payloadFor("agent.delegate", "implementation")).toHaveProperty("error")
-    expect(payloadFor("agent.delegate", "implementation add a retry to the fetch")).toEqual({
-      payload: { roleId: "implementation", task: "add a retry to the fetch" }
-    })
   })
 })

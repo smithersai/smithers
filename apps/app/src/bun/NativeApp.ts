@@ -9,9 +9,7 @@ import type { BrowserWindow as NativeBrowserWindow } from "electrobun/main"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
 import { createNativeShutdown } from "./NativeShutdown"
-import { defaultDistDir } from "./server"
-import { attachLocalDaemon } from "./LocalDaemonClient"
-import { daemonBuild } from "./LocalDaemonProtocol"
+import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
 
 // This must stay dynamic: Bun hoists external static imports even from lazy
@@ -36,25 +34,21 @@ const openExternal = async (url: string): Promise<boolean> => {
 /** Application state that outlives a launch: macOS Application Support, else XDG data. */
 const stateDir = nativeStateDirectory()
 
-const entrypoint = process.argv[1]!
-const server = await attachLocalDaemon({
-  port,
+const server = await startLocalServer({
+  ...(port === undefined ? {} : { port }),
   distDir: defaultDistDir(import.meta.dir),
   stateDir,
   chatStub: Bun.env.SMITHERS_CHAT_STUB === "1",
-  cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "offline" ? "offline" : "hybrid",
-  allowManualRepositoryPaths: headless,
-  build: await daemonBuild(entrypoint)
-}, { entrypoint })
+  cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "offline" ? "offline" : "hybrid"
+})
 console.log(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)
 
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
-const queuedRepositorySelections: Array<{ readonly path: string | null }> = []
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
-    await server.detach()
+    await server.stop()
   },
   quit: (code) => process.exit(code),
   onBeforeQuit: (handler) => { Electrobun.events.on("before-quit", handler) },
@@ -67,18 +61,6 @@ if (headless) {
   const rpc = BrowserView.defineRPC<SmithersNativeRPC>({
     handlers: {
       requests: {
-        pickLocalRepository: async ({ access }) => {
-          const queued = queuedRepositorySelections.shift()
-          const selectedPath = queued === undefined
-            ? (await Utils.openFileDialog({
-              canChooseFiles: false,
-              canChooseDirectory: true,
-              allowsMultipleSelection: false
-            })).find((path) => path.trim() !== "")
-            : queued.path ?? undefined
-          if (selectedPath === undefined) return { status: "cancelled" } as const
-          return server.authorizeRepository(selectedPath, access)
-        },
         openExternal: async ({ url }) => ({ opened: await openExternal(url) })
       },
       messages: {}
@@ -175,12 +157,6 @@ bridge = startPackagedE2EBridge({
     }
   },
   evaluate: evaluateInMainWindow,
-  queueRepositorySelection: (path) => {
-    if (queuedRepositorySelections.length > 0) {
-      throw new Error("A repository picker answer is already queued.")
-    }
-    queuedRepositorySelections.push({ path })
-  },
   screenshot: async () => {
     const window = mainWindow
     if (window === undefined) return null

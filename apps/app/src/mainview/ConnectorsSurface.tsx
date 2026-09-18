@@ -1,13 +1,11 @@
 import { dynamicFlowProps, flowAction } from "./flows/FlowAction"
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Separator } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { FolderGit2, GitPullRequest, HardDrive, Plug, Server, Trash2 } from "lucide-react"
+import { FolderGit2, GitPullRequest, HardDrive, Plug, Server } from "lucide-react"
 import type { KeyboardEvent } from "react"
 import { useController } from "./ControllerContext"
 import { rovingKeyDown } from "./RovingKeyDown"
-import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
-
-const shortHead = (head: string | null): string => head?.slice(0, 8) ?? "No commits yet"
+import { SurfaceHeader } from "./SurfaceChrome"
 
 /*
  * The connect surface (Wave 10, §2e): extension-store grammar — a compact
@@ -19,17 +17,9 @@ const shortHead = (head: string | null): string => head?.slice(0, 8) ?? "No comm
 export function ConnectorsSurface() {
   const controller = useController()
   const { collections } = controller.store
-  const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: operationRows } = useLiveQuery(collections.connectorOperations)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
-  const { data: sessionRows } = useLiveQuery((q) =>
-    q.from({ session: collections.sessions }).select(({ session }) => ({
-      id: session.id,
-      pendingConnectorRemovalId: session.pendingConnectorRemovalId
-    }))
-  )
-  const connectors = [...connectorRows].sort((left, right) => left.name.localeCompare(right.name))
-  
+
   const { data: gitHubAppStatusRows } = useLiveQuery(collections.githubAppStatuses)
   const installedRepositories = gitHubAppStatusRows.filter((row) => row.installed && row.configured).length
   const operation = operationRows.find((candidate) => candidate.id === "connector-operation") ??
@@ -38,20 +28,12 @@ export function ConnectorsSurface() {
   const identity = identityRows[0]
   const signedIn = identity?.state === "signed-in"
   const githubAvailable = controller.commands.find(signedIn ? "auth.sign-out" : "auth.sign-in") !== undefined
-  const localAvailable = controller.nativeRepositoriesAvailable &&
-    controller.commands.find("connector.add") !== undefined
   const cloudAvailable = controller.commands.find("repos.import") !== undefined
   const emptyGuidance = cloudAvailable
     ? signedIn
       ? "Import a GitHub repository into Smithers Cloud and it appears here."
       : "Connecting GitHub above is the first step; imported repositories appear here."
-    : localAvailable
-    ? "Choose Local repository above to connect work from this machine."
-    : controller.commands.find("repo.open") !== undefined
-    ? "Choose Open local repository… from the repository menu above the composer to inspect work on this machine."
     : "No repository service is available in this runtime."
-  const pendingRemovalId = sessionRows[0]?.pendingConnectorRemovalId ?? null
-  const pendingRemoval = connectors.find((candidate) => candidate.id === pendingRemovalId)
 
   interface StoreRow {
     readonly key: string
@@ -70,23 +52,6 @@ export function ConnectorsSurface() {
   }
 
   const rows: ReadonlyArray<StoreRow> = [
-    ...(localAvailable
-      ? [
-        {
-          key: "local",
-          icon: "local",
-          name: "Local repository",
-          description: "A repository on this machine, read directly.",
-          action: {
-            kind: "button",
-            label: "Connect",
-            flow: "connector.add",
-            args: "read",
-            disabled: selecting
-          }
-        } satisfies StoreRow
-      ]
-      : []),
     ...(githubAvailable ? [{
       /*
        * Lane sync: signed in, the row's act is github.app — the App status
@@ -218,91 +183,32 @@ export function ConnectorsSurface() {
             </div>
           </div>
 
-          {connectors.length === 0 ?
-            (
-              /*
-               * §11.6: the zero case told the reader a fact and gave them no
-               * move. It matters most here: on the web the one way to add a
-               * repository is the import row above, and connector.add answers
-               * "native app only", so a reader who is not pointed at import has
-               * nowhere obvious to look. Signed out there is exactly one door
-               * and it is the GitHub row (§1.1), so no second one is offered.
-               */
-              <div className="connector-empty">
-                <FolderGit2 size={20} />
-                <div>
-                  <strong>No repositories connected</strong>
-                  <span>{emptyGuidance}</span>
-                  {signedIn && cloudAvailable ?
-                    (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        {...flowAction(controller.runCommand, "repos.import")}
-                      >
-                        Import a repository
-                      </Button>
-                    ) :
-                    null}
-                </div>
-              </div>
-            ) :
-            (
-              <div className="connected-repository-list">
-                {connectors.map((connector) => (
-                  <div className="connected-repository-card" key={connector.id}>
-                    <div className="connected-repository-row">
-                      <span className="connect-store-icon">
-                        <FolderGit2 size={16} aria-hidden="true" />
-                      </span>
-                      <span className="connect-store-text">
-                        <strong>{connector.name}</strong>
-                        <span className="repository-path">
-                          {connector.branch ?? "Detached"} · <code>{shortHead(connector.head)}</code>
-                        </span>
-                      </span>
-                      <Badge variant={connector.access === "read-write" ? "warning" : "outline"}>
-                        {connector.access === "read-write" ? "Read & write" : "Read-only"}
-                      </Badge>
-                      {connector.access === "read-write" ?
-                        (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            {...flowAction(controller.runCommand, "connector.downgrade", connector.id)}
-                          >
-                            Make read-only
-                          </Button>
-                        ) :
-                        null}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove ${connector.name}`}
-                        title={`Remove ${connector.name}`}
-                        {...flowAction(controller.runCommand, "connector.remove.ask", connector.id)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/*
+           * §11.6: the zero case told the reader a fact and gave them no
+           * move. Since the local backend retired there is one door, import,
+           * and signed out there is exactly one before it, the GitHub row.
+           */}
+          <div className="connector-empty">
+            <FolderGit2 size={20} />
+            <div>
+              <strong>No repositories connected</strong>
+              <span>{emptyGuidance}</span>
+              {signedIn && cloudAvailable ?
+                (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    {...flowAction(controller.runCommand, "repos.import")}
+                  >
+                    Import a repository
+                  </Button>
+                ) :
+                null}
+            </div>
+          </div>
         </section>
       </main>
 
-      <ConfirmDialog
-        open={pendingRemoval !== undefined}
-        title={pendingRemoval ? `Disconnect ${pendingRemoval.name}?` : "Disconnect repository?"}
-        body="Smithers will stop watching this repository. You can reconnect it any time."
-        confirmLabel="Disconnect"
-        destructive
-        onConfirm={() => {
-          if (pendingRemoval !== undefined) controller.runCommand("connector.remove", pendingRemoval.id)
-        }}
-        onCancel={() => controller.runCommand("connector.remove.cancel")}
-      />
     </section>
   )
 }

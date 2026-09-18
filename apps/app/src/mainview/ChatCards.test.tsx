@@ -16,7 +16,7 @@ const noop = () => {}
 const issue = CardSchema.parse({ id: "issue", kind: "issue", title: "Issue", status: "active", ordinal: 1, createdAt: 1, payload: practiceIssue(3) })
 const props: CardViewProps = { card: issue, maximized: false, onMaximize: noop, onMinimize: noop, onOpenInTab: noop,
   onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop, onQueueApprove: noop, onConnectGitHub: noop,
-  onConnectLocal: noop, onRunWorkflow: noop, onStopRun: noop, onRetryRun: noop, onChooseWorkflowRepo: noop,
+  onRunWorkflow: noop, onStopRun: noop, onRetryRun: noop, onChooseWorkflowRepo: noop,
   worldDocuments: [], onChangeWorldDocument: noop, onRunCommand: noop }
 const mount = (overrides: Partial<CardViewProps> = {}, onKeyDown = noop) => {
   const host = document.createElement("div")
@@ -80,47 +80,6 @@ test("an Open issue has no internal DONE details; completed runs retain their De
   render({ card: run })
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Status")
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Created")
-})
-
-test("mounted target frames derive star changes from the live store without replacing their saved cards", async () => {
-  const rows = new Map<string, string>()
-  const store = await createAppStore({ kind: "localStorage", storage: {
-    getItem: key => rows.get(key) ?? null, setItem: (key, value) => { rows.set(key, value) }, removeItem: key => { rows.delete(key) }
-  } })
-  const reactEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-  const previousActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT
-  reactEnvironment.IS_REACT_ACT_ENVIRONMENT = true
-  const card = CardSchema.parse({ id: "targets-live", kind: "targets", title: "Targets", status: "active", ordinal: 1, createdAt: 1,
-    payload: { repoId: "old-host", repoKey: "local:/project", repoName: "Project", status: "done", warnings: [],
-      targets: [{ id: "test", label: "//:test", target: "Shell.Test", kinds: ["test"], package: "//", name: "test", workspace: "." }],
-      view: { mode: "all" }, starred: [] } })
-  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
-  const saved = store.collections.cards.get(card.id)!
-  const current = mount({ card: saved, projectionStore: store })
-  // A detached historical card is rendered by the same body and live decoration join.
-  const historical = mount({ card: structuredClone(saved), projectionStore: store, maximized: true })
-  const pressed = () => [current, historical].map(({ host }) => host.querySelector('[data-testid="targets-star-//:test"]')?.getAttribute("aria-pressed"))
-  try {
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
-    expect(pressed()).toEqual(["false", "false"])
-    await act(async () => {
-      await store.dispatch({ type: "target.starred", actor: "user", repoId: "replacement-host", star: {
-        id: "local:/project:://:test", repoKey: "local:/project", label: "//:test", starredAt: 2
-      } }).isPersisted.promise
-    })
-    expect(pressed()).toEqual(["true", "true"])
-    expect(store.collections.cards.get(card.id)).toEqual(saved)
-    await act(async () => {
-      await store.dispatch({ type: "target.unstarred", actor: "user", repoId: "replacement-host", id: "local:/project:://:test" }).isPersisted.promise
-    })
-    expect(pressed()).toEqual(["false", "false"])
-    expect((await store.verifyState()).valid).toBe(true)
-  } finally {
-    while (cleanups.length) cleanups.pop()!()
-    await store.dispose?.()
-    if (previousActEnvironment === undefined) delete reactEnvironment.IS_REACT_ACT_ENVIRONMENT
-    else reactEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment
-  }
 })
 
 test("mounted repository updates derive versioned reads and current tags for saved and historical cards", async () => {

@@ -96,7 +96,7 @@ const bootstrapFor = (host: AppBootstrap["host"]): AppBootstrap =>
       host,
       version: "test",
       buildSha: "local",
-      capabilities: localCapabilities({ agent: true, identity: true, cloud: true, pathEntry: true }),
+      capabilities: localCapabilities({ agent: true, identity: true, cloud: true }),
       authFlow: "native-handoff",
       sandbox: { platform: "darwin", mode: "enforced" }
     }

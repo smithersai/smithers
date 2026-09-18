@@ -1,6 +1,5 @@
 import { useLiveQuery } from "@tanstack/react-db"
-import { BookOpen,Download,History,KeyRound,Moon,Plus,RotateCcw,Sun,Timer,UserRound,Workflow } from "lucide-react"
-import { roleMenuEntries } from "./AgentRoleMenu"
+import { BookOpen,Download,History,KeyRound,Moon,RotateCcw,Sun,Timer,UserRound,Workflow } from "lucide-react"
 import { useController } from "./ControllerContext"
 import { FirstSightHint } from "./FirstSightHint"
 import { flowAction } from "./flows/FlowAction"
@@ -18,20 +17,10 @@ export function ChromeDock() {
   const { data: sessionRows } = useLiveQuery((q) =>
     q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({
       id: session.id,
-      theme: session.theme,
-      tabMenuOpen: session.tabMenuOpen
+      theme: session.theme
     }))
   )
-  const { data: harnessRows } = useLiveQuery(controller.store.collections.harnesses)
-  const { data: agentRows } = useLiveQuery(controller.store.collections.agents)
   const dark = sessionRows[0]?.theme === "dark"
-  const menuOpen = sessionRows[0]?.tabMenuOpen === true
-  const available = harnessRows.filter((harness) => harness.status !== "unavailable")
-  const unavailable = harnessRows.filter((harness) => harness.status === "unavailable")
-  const roleEntries = roleMenuEntries(harnessRows, agentRows)
-  const canOpenTerminal = controller.commands.find("tab.terminal") !== undefined
-  const canOpenHarnesses = controller.commands.find("tab.harness") !== undefined
-  const canAddSession = canOpenTerminal || canOpenHarnesses
   // The web app's door to the native app (docs/web-mode/PLAN.md §3): registered on the cloud host only, and
   // rendered only while a native release exists to download (AppLinks.ts — null until one carries an asset).
   const canDownload = controller.commands.find("app.download") !== undefined && controller.downloadUrl !== null
@@ -52,96 +41,6 @@ export function ChromeDock() {
 
   return (
     <nav className="chrome-dock" aria-label="Chrome" data-testid="chrome-actions">
-      {/* New session: the `+` at the rail's head — a terminal, or an agent in its own tab. The menu opens right. */}
-      {canAddSession ?
-        (
-          <div className="dock-add">
-            <button
-              type="button"
-              className="chrome-icon-action"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label="New session"
-              title="New session"
-              data-testid="dock-add"
-              {...flowAction(controller.runCommand, "tab.menu")}
-            >
-              <Plus size={14} aria-hidden="true" />
-            </button>
-            {menuOpen ?
-              (
-                <>
-                  {/* A press anywhere else closes the menu; the backdrop is the outside. */}
-                  <div
-                    className="dock-add-backdrop"
-                    aria-hidden="true"
-                    {...flowAction(controller.runCommand, "tab.menu")}
-                  />
-                  <div className="dock-add-menu" role="menu" aria-label="New session" data-testid="dock-add-menu">
-                    {canOpenTerminal ? <button
-                      type="button"
-                      role="menuitem"
-                      className="dock-add-item"
-                      data-testid="dock-add-terminal"
-                      {...flowAction(controller.runCommand, "tab.terminal")}
-                    >
-                      <span>Terminal</span>
-                    </button> : null}
-                    {/* Agents: each configured harness launches as a subagent of this conversation, in its own session. */}
-                    {canOpenHarnesses && harnessRows.length > 0 ?
-                      <div className="dock-add-group" role="presentation" data-testid="dock-add-agents">Agents</div> :
-                      null}
-                    {/* The named roles first (AgentRoles.ts): one model each, disabled with the reason when their harness cannot run it. */}
-                    {canOpenHarnesses && harnessRows.length > 0 ? roleEntries.map((entry) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        key={entry.role.id}
-                        className="dock-add-item"
-                        disabled={!entry.available}
-                        title={entry.available ? entry.role.purpose : entry.reason}
-                        data-role={entry.role.id}
-                        data-testid={`dock-add-role-${entry.role.id}`}
-                        {...flowAction(controller.runCommand, "agent.role", entry.role.id)}
-                      >
-                        <span>{entry.title}</span>
-                        <span className="dock-add-account">{entry.available ? entry.account : entry.reason}</span>
-                      </button>
-                    )) : null}
-                    {canOpenHarnesses ? available.map((harness) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        key={harness.id}
-                        className="dock-add-item"
-                        data-testid={`dock-add-harness-${harness.id}`}
-                        {...flowAction(controller.runCommand, "tab.harness", harness.id)}
-                      >
-                        <span>{harness.displayName}</span>
-                        <span className="dock-add-account">{harness.account?.email ?? harness.account?.label ?? ""}</span>
-                      </button>
-                    )) : null}
-                    {canOpenHarnesses ? unavailable.map((harness) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        key={harness.id}
-                        className="dock-add-item"
-                        disabled
-                        data-testid={`dock-add-harness-${harness.id}`}
-                        {...flowAction(controller.runCommand, "tab.harness", harness.id)}
-                      >
-                        <span>{harness.displayName}</span>
-                        <span className="dock-add-account">{harness.status}</span>
-                      </button>
-                    )) : null}
-                  </div>
-                </>
-              ) :
-              null}
-          </div>
-        ) :
-        null}
       {/* The click is the human's gesture window.open needs; the model renders the card (app.download.prompt) instead. */}
       {canDownload ?
         (

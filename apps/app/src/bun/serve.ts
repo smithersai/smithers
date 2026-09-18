@@ -22,10 +22,7 @@ const server = await startLocalServer({
     ? resolve(Bun.env.SMITHERS_LOCAL_STATE_DIR)
     : join(nativeStateDirectory(), "headless"),
   chatStub: Bun.env.SMITHERS_CHAT_STUB === "1",
-  cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "hybrid" ? "hybrid" : "offline",
-  // This process has no native picker. Manual path entry is an explicit
-  // development/test capability, never the packaged app's default.
-  allowManualRepositoryPaths: true
+  cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "hybrid" ? "hybrid" : "offline"
 })
 
 let shuttingDown = false

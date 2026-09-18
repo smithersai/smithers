@@ -58,7 +58,6 @@ export interface CardActions {
   readonly onGrantCancel: (id: string) => void
   readonly onQueueApprove: (login: string) => void
   readonly onConnectGitHub: () => void
-  readonly onConnectLocal: () => void
   readonly onRunWorkflow: (name: string) => void
   /* Wave 12 — the run card's quiet-state acts and the which-repo answer. */
   readonly onStopRun: (cardId: string) => void

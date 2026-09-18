@@ -27,7 +27,7 @@ const fixture = async (upstream: () => Response) => {
     const host = await startLocalServer({
       port: 0, distDir: root, home: root, ...(persist ? { stateDir: join(root, "state") } : {}),
       cloudMode: "hybrid", cloudApi: null, identityUpstream: null,
-      chat: { chatUrl: `http://127.0.0.1:${model.port}/chat` }, node: null, harnesses: async () => [], log: () => {}
+      chat: { chatUrl: `http://127.0.0.1:${model.port}/chat` }, log: () => {}
     })
     hosts.push(host)
     return host

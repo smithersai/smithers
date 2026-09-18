@@ -37,7 +37,6 @@ export interface LocalCapabilityOptions {
   readonly agent: boolean
   readonly identity: boolean
   readonly cloud: boolean
-  readonly pathEntry: boolean
 }
 
 const present = (rows: ReadonlyArray<readonly [RuntimeCapability, boolean]>): Array<RuntimeCapability> =>
@@ -71,13 +70,5 @@ export const localCapabilities = (opts: LocalCapabilityOptions): Array<RuntimeCa
     ["identity", opts.identity],
     ["cloud", opts.cloud],
     ["cloud.terminal", opts.cloud],
-    ["cloud.pat", opts.cloud],
-    ["local.repositories", true],
-    ["local.repository-path-entry", opts.pathEntry],
-    ["local.targets", true],
-    ["local.terminal", true],
-    ["local.harnesses", true],
-    // The door is the routes, which every Bun launch serves; a missing language
-    // server is stated per file with its install line, never as a closed door.
-    ["local.lsp", true]
+    ["cloud.pat", opts.cloud]
   ])

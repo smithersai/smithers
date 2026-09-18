@@ -67,17 +67,6 @@ export interface FlowInput {
   readonly "form.set": { readonly cardId: string; readonly field: string; readonly value: string }
   /** `<runId> <body>` — the body is the rest of the line. */
   readonly "runs.steer": { readonly runId: string; readonly body: string }
-  /** `<repoId> [key=value…]` — a facet given as an empty value clears it. */
-  readonly "target.filter": {
-    readonly repoId: string
-    readonly mode?: string
-    readonly query?: string
-    readonly kind?: string
-    readonly state?: string
-    readonly workspace?: string
-  }
-  /** `<repoId> [label]` — no label selects the repository's table itself. */
-  readonly "target.select": { readonly repoId: string; readonly label?: string }
 
 }
 
@@ -143,16 +132,6 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "change.resolve": (payload) => line(token(payload, "changeId"), token(payload, "path")),
   "form.set": (payload) => line(token(payload, "cardId"), token(payload, "field"), token(payload, "value")),
   "runs.steer": (payload) => line(token(payload, "runId"), token(payload, "body")),
-  "target.filter": (payload) =>
-    line(
-      token(payload, "repoId"),
-      keyed(payload, "mode"),
-      keyed(payload, "kind"),
-      keyed(payload, "state"),
-      keyed(payload, "workspace"),
-      keyed(payload, "query")
-    ),
-  "target.select": (payload) => line(token(payload, "repoId"), token(payload, "label")),
   "triggers.run": (payload) => line(token(payload, "slug"), token(payload, "repo")),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),
   "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),

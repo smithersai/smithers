@@ -1,17 +1,14 @@
-import { createHash } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { REPO_FILE_READ_CAP_BYTES, REPO_LISTING_CAP_ENTRIES } from "@smthrs/rpc/LocalApp"
 import { decodeAgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { LOCAL_SESSION_HEADER, LOCAL_SESSION_META } from "@smthrs/rpc/LocalSession"
-import * as Health from "@smthrs/control/Health"
-import { Effect } from "effect"
-import { createPtyManager } from "./Pty"
-import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer, withJevSessionBindings } from "./server"
+import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer } from "./server"
 import type { LocalServer } from "./server"
 
 let dist = ""
@@ -33,32 +30,8 @@ beforeAll(async () => {
     port: 0,
     distDir: dist,
     chatStub: true,
-    node: { path: "/fake/node", version: "v22.19.0" },
     home: "/fake/home",
-    harnesses: async () => [
-      {
-        id: "claude",
-        displayName: "Claude Code",
-        binary: "/opt/homebrew/bin/claude",
-        version: "2.1.0",
-        status: "signed-in",
-        account: { email: "will@codeplane.app" },
-        launch: { argv: ["claude"] }
-      }
-    ],
-    pty: (deps) =>
-      createPtyManager({
-        ...deps,
-        // A plain shell with the sandbox off: the seatbelt profile is Sandbox.test.ts's subject.
-        shell: "/bin/sh",
-        home: dist,
-        env: {},
-        sandboxHost: { platform: "linux", disabled: true, log: () => {} },
-        killGraceMs: 300,
-        log: () => {}
-      }),
-    log: (line) => logs.push(line),
-    allowManualRepositoryPaths: true
+    log: (line) => logs.push(line)
   })
 })
 
@@ -81,46 +54,6 @@ describe("the local origin", () => {
   test("prints SMITHERS_LOCAL_ORIGIN when listening and binds 127.0.0.1", () => {
     expect(server.origin).toBe(`http://127.0.0.1:${server.port}`)
     expect(logs).toContain(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)
-  })
-
-  test("GET /api/health reports node and sandbox", async () => {
-    const response = await fetch(`${server.origin}/api/health`)
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as Record<string, unknown>
-    expect(body.ok).toBe(true)
-    expect(body.pid).toBe(process.pid)
-    expect(body.node).toEqual({ path: "/fake/node", version: "v22.19.0" })
-    expect(body.home).toBe("/fake/home")
-    expect(body.sandbox).toEqual({
-      platform: process.platform,
-      enforced: process.platform === "darwin" && Bun.env.SMITHERS_SANDBOX !== "off"
-    })
-  })
-
-  test("the bootstrap reports per-policy enforcement: a non-darwin host enforces neither the loader nor target runs", async () => {
-    /* ui-bun-host/security/4: "trusted-only" alone read as if the loader policy applied. */
-    const linux = await startLocalServer({
-      port: 0,
-      distDir: dist,
-      chatStub: true,
-      node: { path: "/fake/node", version: "v22.19.0" },
-      home: "/fake/home",
-      harnesses: async () => [],
-      sandboxHost: { platform: "linux", disabled: false, log: () => {} },
-      log: () => {}
-    })
-    try {
-      const bootstrap = (await (await fetch(`${linux.origin}/api/bootstrap`, {
-        headers: { [LOCAL_SESSION_HEADER]: linux.sessionToken }
-      })).json()) as { sandbox: unknown }
-      expect(bootstrap.sandbox).toEqual({
-        platform: process.platform,
-        mode: "trusted-only",
-        policies: { loader: "unenforced", targetRun: "unenforced" }
-      })
-    } finally {
-      await linux.stop()
-    }
   })
 
   test("serves the SPA with an index.html fallback and hashed assets", async () => {
@@ -161,11 +94,11 @@ describe("the local origin", () => {
       origin: "local"
     })
     const before = logs.length
-    const routed = await apiFetch("/api/pty/%E0%A4%A/output")
-    expect(routed.status).toBe(400)
-    expect(((await routed.json()) as { error: { code: string } }).error.code).toBe("invalid_path")
+    const routed = await apiFetch("/api/agent/%E0%A4%A/turn")
+    expect(routed.status).toBe(404)
+    expect(((await routed.json()) as { error: { code: string } }).error.code).toBe("not_found")
     // A path that never reaches a handler still leaves its line.
-    expect(logs.slice(before).some((line) => /^GET \/api\/pty\/%E0%A4%A\/output -> 400 in \d+ms$/.test(line))).toBe(true)
+    expect(logs.slice(before).some((line) => /^GET \/api\/agent\/%E0%A4%A\/turn -> 404 in \d+ms$/.test(line))).toBe(true)
     // `Bun.file(<directory>)` throws EISDIR, and a dotted name looks like a file.
     await mkdir(join(dist, "docs.d"), { recursive: true })
     const dotted = await fetch(`${server.origin}/docs.d/`)
@@ -186,13 +119,13 @@ describe("the local origin", () => {
   })
 
   test("privileged HTTP rejects missing capabilities, foreign origins, bad hosts, and non-JSON writes", async () => {
-    expect((await fetch(`${server.origin}/api/repos`)).status).toBe(401)
-    expect((await apiFetch("/api/repos", { headers: { origin: "https://evil.test" } })).status).toBe(403)
+    expect((await fetch(`${server.origin}${APP_BOOTSTRAP_PATH}`)).status).toBe(401)
+    expect((await apiFetch(APP_BOOTSTRAP_PATH, { headers: { origin: "https://evil.test" } })).status).toBe(403)
     expect((await fetch(`${server.origin}/`, { headers: { host: "evil.test" } })).status).toBe(421)
-    const plain = await apiFetch("/api/repo/open", {
+    const plain = await apiFetch(TURN_PATH, {
       method: "POST",
       headers: { "content-type": "text/plain" },
-      body: JSON.stringify({ path: "/tmp" })
+      body: JSON.stringify({ runId: "plain", messages: [], instructions: "" })
     })
     expect(plain.status).toBe(415)
   })
@@ -225,99 +158,10 @@ describe("the local origin", () => {
     expect(line).toContain("Bearer [REDACTED_TOKEN]")
   })
 
-  test("GET /api/harnesses answers the detector's table", async () => {
-    const body = (await (await apiFetch("/api/harnesses")).json()) as { harnesses: Array<{ id: string; status: string }> }
-    expect(body.harnesses).toHaveLength(1)
-    expect(body.harnesses[0]).toMatchObject({ id: "claude", status: "signed-in", account: { email: "will@codeplane.app" } })
-  })
-
-  test("both lanes' real routes replaced every placeholder: repos answers its empty state", async () => {
-    expect(await (await apiFetch("/api/repos")).json()).toEqual({ repos: [] })
-  })
-
   test("a lane replaces a placeholder by registering the same route", async () => {
     server.router.add("GET", "/api/repos", () => Response.json({ repos: [{ id: "force" }] }))
     expect(await (await apiFetch("/api/repos")).json()).toEqual({ repos: [{ id: "force" }] })
     server.router.add("GET", "/api/repos", () => Response.json({ repos: [] }))
-  })
-
-  test("the PTY routes open, list, resize, echo over /ws, and delete a session", async () => {
-    const bad = await apiFetch("/api/pty", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "terminal" }) })
-    expect(bad.status).toBe(400)
-    const missingHarness = await apiFetch("/api/pty", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "harness", cols: 80, rows: 24 })
-    })
-    expect(missingHarness.status).toBe(400)
-
-    const created = await apiFetch("/api/pty", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "terminal", cols: 80, rows: 24 })
-    })
-    expect(created.status).toBe(201)
-    const { sessionId } = (await created.json()) as { sessionId: string }
-    expect(sessionId).toMatch(/^pty-/)
-    const listed = (await (await apiFetch("/api/pty")).json()) as { sessions: Array<Record<string, unknown>> }
-    expect(listed.sessions.map((session) => session.sessionId)).toEqual([sessionId])
-    expect(listed.sessions[0]).toMatchObject({ kind: "terminal", alive: true, cwd: dist })
-
-    const socket = new WebSocket(`${server.origin.replace("http", "ws")}/ws`, server.websocketProtocol)
-    await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => resolve()
-      socket.onerror = () => reject(new Error("ws failed"))
-    })
-    const output: Array<string> = []
-    let exit: unknown
-    socket.onmessage = (event) => {
-      const frame = JSON.parse(String(event.data)) as { type: string; data?: string }
-      if (frame.type === "pty.output") output.push(frame.data ?? "")
-      if (frame.type === "pty.exit") exit = frame
-    }
-    socket.send(JSON.stringify({ type: "subscribe", topic: `pty:${sessionId}` }))
-    socket.send(JSON.stringify({ type: "pty.input", sessionId, data: "echo hi-from-pty\n" }))
-    const deadline = Date.now() + 5000
-    while (!/hi-from-pty\r?\n/.test(output.join("").replace(/echo hi-from-pty/g, ""))) {
-      if (Date.now() > deadline) throw new Error(`no echo: ${JSON.stringify(output)}`)
-      await Bun.sleep(25)
-    }
-
-    // tab.read's seam: the tail of the session's scrollback as plain text.
-    const read = await apiFetch(`/api/pty/${sessionId}/output?tail=4096`)
-    expect(read.status).toBe(200)
-    const tail = (await read.json()) as { sessionId: string; alive: boolean; output: string; truncated: boolean }
-    expect(tail.sessionId).toBe(sessionId)
-    expect(tail.alive).toBe(true)
-    expect(tail.output).toContain("hi-from-pty")
-    expect(tail.output).not.toContain("\u001b")
-    expect((await apiFetch(`/api/pty/${sessionId}/output?tail=-1`)).status).toBe(400)
-    expect((await apiFetch(`/api/pty/${sessionId}/output?tail=9007199254740992`)).status).toBe(400)
-    expect((await apiFetch("/api/pty/nope/output")).status).toBe(404)
-
-    const resized = await apiFetch(`/api/pty/${sessionId}/resize`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cols: 120, rows: 40 })
-    })
-    expect(await resized.json()).toEqual({ ok: true })
-    expect((await apiFetch("/api/pty/nope/resize", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cols: 1, rows: 1 })
-    })).status).toBe(404)
-
-    const deleted = await apiFetch(`/api/pty/${sessionId}`, { method: "DELETE" })
-    expect(await deleted.json()).toEqual({ ok: true })
-    const exitDeadline = Date.now() + 5000
-    while (exit === undefined) {
-      if (Date.now() > exitDeadline) throw new Error("no exit frame")
-      await Bun.sleep(25)
-    }
-    expect(exit).toMatchObject({ type: "pty.exit", sessionId })
-    expect(((await (await apiFetch("/api/pty")).json()) as { sessions: Array<unknown> }).sessions).toEqual([])
-    expect((await apiFetch(`/api/pty/${sessionId}`, { method: "DELETE" })).status).toBe(404)
-    socket.close()
   })
 
   test("the OAuth legs are navigations: no session header, yet never 401", async () => {
@@ -355,9 +199,7 @@ describe("the local origin", () => {
       distDir: dist,
       cloudMode: "hybrid",
       identityUpstream: `http://127.0.0.1:${upstream.port}`,
-      node: { path: "/fake/node", version: "v22.19.0" },
       home: "/fake/home",
-      harnesses: async () => [],
       log: (line) => proxyLogs.push(line)
     })
     try {
@@ -414,85 +256,6 @@ describe("the local origin", () => {
     expect(logs.slice(before).some((line) => /^GET \/api\/health -> 200 in \d+ms$/.test(line))).toBe(true)
   })
 
-  test("an opened repository is remembered and reopened by the next launch with the same access; closing forgets it", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "smithers-state-"))
-    const repoDir = await mkdtemp(join(tmpdir(), "smithers-remembered-repo-"))
-    await writeFile(join(repoDir, "README.md"), "# remembered\n")
-    const boot = () =>
-      startLocalServer({
-        port: 0,
-        distDir: dist,
-        chatStub: true,
-        stateDir,
-        node: { path: "/fake/node", version: "v22.19.0" },
-        home: "/fake/home",
-        harnesses: async () => [],
-        log: () => {},
-        allowManualRepositoryPaths: true
-      })
-    const first = await boot()
-    let second: LocalServer | undefined
-    try {
-      const opened = await fetch(`${first.origin}/api/repo/open`, {
-        method: "POST",
-        headers: { [LOCAL_SESSION_HEADER]: first.sessionToken, "content-type": "application/json" },
-        body: JSON.stringify({ path: repoDir })
-      })
-      expect(opened.status).toBe(200)
-      const { repo } = (await opened.json()) as { repo: { id: string; path: string } }
-      await first.stop()
-      // The next launch lists it before it serves anything.
-      second = await boot()
-      const listed = (await (await fetch(`${second.origin}/api/repos`, { headers: { [LOCAL_SESSION_HEADER]: second.sessionToken } })).json()) as { repos: Array<{ id: string; path: string }> }
-      expect(listed.repos.map((entry) => entry.path)).toEqual([repo.path])
-      // The remembered grant carries its access: a read of the reopened repository works.
-      const files = await fetch(`${second.origin}/api/repo/files`, {
-        method: "POST",
-        headers: { [LOCAL_SESSION_HEADER]: second.sessionToken, "content-type": "application/json" },
-        body: JSON.stringify({ repoId: listed.repos[0]!.id, path: "README.md" })
-      })
-      expect(files.status).toBe(200)
-      // Closing forgets it for the launch after.
-      const closed = await fetch(`${second.origin}/api/repo/close`, {
-        method: "POST",
-        headers: { [LOCAL_SESSION_HEADER]: second.sessionToken, "content-type": "application/json" },
-        body: JSON.stringify({ repoId: listed.repos[0]!.id })
-      })
-      expect(closed.status).toBe(200)
-      await second.stop()
-      second = await boot()
-      const after = (await (await fetch(`${second.origin}/api/repos`, { headers: { [LOCAL_SESSION_HEADER]: second.sessionToken } })).json()) as { repos: Array<unknown> }
-      expect(after.repos).toEqual([])
-    } finally {
-      await second?.stop()
-      await rm(stateDir, { recursive: true, force: true })
-      await rm(repoDir, { recursive: true, force: true })
-    }
-  })
-
-  test("a remembered path that no longer exists is dropped, not an error", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "smithers-state-"))
-    await writeFile(join(stateDir, "repositories.json"), JSON.stringify({ repositories: [{ path: join(stateDir, "gone"), access: "read-write" }] }))
-    const booted = await startLocalServer({
-      port: 0,
-      distDir: dist,
-      chatStub: true,
-      stateDir,
-      node: { path: "/fake/node", version: "v22.19.0" },
-      home: "/fake/home",
-      harnesses: async () => [],
-      log: () => {}
-    })
-    try {
-      const listed = (await (await fetch(`${booted.origin}/api/repos`, { headers: { [LOCAL_SESSION_HEADER]: booted.sessionToken } })).json()) as { repos: Array<unknown> }
-      expect(listed.repos).toEqual([])
-      expect(JSON.parse(await Bun.file(join(stateDir, "repositories.json")).text())).toEqual({ repositories: [] })
-    } finally {
-      await booted.stop()
-      await rm(stateDir, { recursive: true, force: true })
-    }
-  })
-
   test("the product-API families forward to the Worker with the session cookie; unknown /api paths still 404 locally", async () => {
     const seen: Array<{ path: string; cookie: string | null; origin: string | null }> = []
     const upstream = Bun.serve({
@@ -508,9 +271,7 @@ describe("the local origin", () => {
       distDir: dist,
       cloudMode: "hybrid",
       identityUpstream: `http://127.0.0.1:${upstream.port}`,
-      node: { path: "/fake/node", version: "v22.19.0" },
       home: "/fake/home",
-      harnesses: async () => [],
       log: () => {}
     })
     try {
@@ -559,7 +320,7 @@ describe("the Smithers Cloud seam", () => {
     // table (@smthrs/rpc/HostCapabilities) for a launch with no Smithers Cloud upstream.
     const bootstrap = (await (await apiFetch("/api/bootstrap")).json()) as { capabilities: Array<string> }
     expect(bootstrap.capabilities).toEqual(
-      localCapabilities({ agent: true, identity: false, cloud: false, pathEntry: true })
+      localCapabilities({ agent: true, identity: false, cloud: false })
     )
     expect((await apiFetch("/api/cloud/api/user/repos")).status).toBe(501)
     expect((await apiFetch("/api/cloud-auth/start", {
@@ -599,9 +360,7 @@ describe("the Smithers Cloud seam", () => {
         signOut: async () => {},
         stop: async () => {}
       },
-      node: { path: "/fake/node", version: "v22.19.0" },
       home: "/fake/home",
-      harnesses: async () => [],
       log: () => {}
     })
     try {
@@ -663,9 +422,7 @@ describe("the Smithers Cloud seam", () => {
         signOut: async () => {},
         stop: async () => {}
       },
-      node: { path: "/fake/node", version: "v22.19.0" },
       home: "/fake/home",
-      harnesses: async () => [],
       log: (line) => cloudLogs.push(line)
     })
     try {
@@ -674,7 +431,7 @@ describe("the Smithers Cloud seam", () => {
       })).json()) as { capabilities: Array<string> }
       // The same table the parity matrix reads: a Smithers Cloud upstream opens both cloud doors.
       expect(bootstrap.capabilities).toEqual(
-        localCapabilities({ agent: true, identity: false, cloud: true, browser: true, pathEntry: false })
+        localCapabilities({ agent: true, identity: false, cloud: true, browser: true })
       )
 
       const response = await fetch(`${proxied.origin}/api/cloud/api/user/repos?per_page=1`, {
@@ -725,130 +482,6 @@ describe("the Smithers Cloud seam", () => {
   })
 })
 
-describe("POST /api/repo/files", () => {
-  let repoDir = ""
-  let outside = ""
-  let repoId = ""
-  const files = (body: unknown) =>
-    apiFetch("/api/repo/files", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-
-  beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "smithers-repo-files-"))
-    outside = await mkdtemp(join(tmpdir(), "smithers-repo-outside-"))
-    await mkdir(join(repoDir, "src"))
-    await writeFile(join(repoDir, "README.md"), "# Smithers — files\n")
-    await writeFile(join(repoDir, "src", "app.ts"), "export const x = 1\n")
-    await writeFile(join(repoDir, "logo.bin"), Buffer.from([0x89, 0x50, 0x00, 0x4e, 0x47]))
-    await writeFile(join(repoDir, "big.txt"), "x".repeat(REPO_FILE_READ_CAP_BYTES + 10))
-    await writeFile(join(outside, "secret.txt"), "top secret")
-    await symlink(join(outside, "secret.txt"), join(repoDir, "escape.txt"))
-    const opened = await apiFetch("/api/repo/open", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: repoDir })
-    })
-    expect(opened.status).toBe(200)
-    repoId = ((await opened.json()) as { repo: { id: string } }).repo.id
-  })
-
-  afterAll(async () => {
-    await apiFetch("/api/repo/close", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ repoId }) })
-    await rm(repoDir, { recursive: true, force: true })
-    await rm(outside, { recursive: true, force: true })
-  })
-
-  test("lists a directory dirs-first then by name; a symlink lists as what it points at", async () => {
-    const root = await files({ repoId })
-    expect(root.status).toBe(200)
-    expect(await root.json()).toEqual({
-      kind: "dir",
-      path: "",
-      entries: [
-        { name: "src", kind: "dir" },
-        { name: "big.txt", kind: "file" },
-        { name: "escape.txt", kind: "file" },
-        { name: "logo.bin", kind: "file" },
-        { name: "README.md", kind: "file" }
-      ]
-    })
-    const src = await files({ repoId, path: "/src/" })
-    expect(await src.json()).toEqual({ kind: "dir", path: "src", entries: [{ name: "app.ts", kind: "file" }] })
-  })
-
-  test("reads a text file whole, states its size, and keeps UTF-8 intact", async () => {
-    const response = await files({ repoId, path: "README.md" })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      kind: "file",
-      path: "README.md",
-      size: Buffer.byteLength("# Smithers — files\n"),
-      content: "# Smithers — files\n",
-      truncated: false,
-      binary: false,
-      // The digest of the bytes carried, so a language server's answer can say whether it is about this text.
-      digest: createHash("sha256").update("# Smithers — files\n").digest("hex")
-    })
-  })
-
-  test("bounds a large file at the read cap and says so", async () => {
-    const body = (await (await files({ repoId, path: "big.txt" })).json()) as { content: string; truncated: boolean; size: number }
-    expect(body.truncated).toBe(true)
-    expect(body.content.length).toBe(REPO_FILE_READ_CAP_BYTES)
-    expect(body.size).toBe(REPO_FILE_READ_CAP_BYTES + 10)
-  })
-
-  test("states a binary file instead of printing it", async () => {
-    expect(await (await files({ repoId, path: "logo.bin" })).json()).toEqual({
-      kind: "file",
-      path: "logo.bin",
-      size: 5,
-      content: "",
-      truncated: false,
-      binary: true,
-      digest: createHash("sha256").update(Buffer.from([0x89, 0x50, 0x00, 0x4e, 0x47])).digest("hex")
-    })
-  })
-
-  test("refuses traversal, refuses a symlink out of the repository, and 404s a missing path", async () => {
-    for (const path of ["../secret.txt", "src/../../x", String.raw`src\..\..\x`, "a/./b"]) {
-      const refused = await files({ repoId, path })
-      expect(refused.status).toBe(400)
-      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("invalid_path")
-    }
-    const escape = await files({ repoId, path: "escape.txt" })
-    expect(escape.status).toBe(403)
-    expect(((await escape.json()) as { error: { code: string } }).error.code).toBe("path_outside_repository")
-    // An absolute path is read relative to the root, never from the filesystem root.
-    const absolute = await files({ repoId, path: "/etc/passwd" })
-    expect(absolute.status).toBe(404)
-    const missing = await files({ repoId, path: "missing.txt" })
-    expect(missing.status).toBe(404)
-    expect(((await missing.json()) as { error: { message: string } }).error.message).toBe("Path not found: missing.txt")
-  })
-
-  test("a directory past the listing cap answers its first page by name and says so", async () => {
-    const crowded = join(repoDir, "crowded")
-    await mkdir(crowded)
-    await Promise.all(
-      Array.from({ length: REPO_LISTING_CAP_ENTRIES + 3 }, (_entry, index) =>
-        writeFile(join(crowded, `f${String(index).padStart(5, "0")}.txt`), "")
-      )
-    )
-    const body = (await (await files({ repoId, path: "crowded" })).json()) as { entries: Array<{ name: string }>; truncated?: boolean }
-    expect(body.truncated).toBe(true)
-    expect(body.entries).toHaveLength(REPO_LISTING_CAP_ENTRIES)
-    expect(body.entries[0]?.name).toBe("f00000.txt")
-    // Errors never carry the checkout's absolute path.
-    const missing = (await (await files({ repoId, path: "crowded/nope" })).json()) as { error: { message: string } }
-    expect(missing.error.message).not.toContain(repoDir)
-  })
-
-  test("404s an unknown repository and 400s a malformed body", async () => {
-    expect((await files({ repoId: "nope" })).status).toBe(404)
-    expect((await files({ repoId, path: 3 })).status).toBe(400)
-    expect((await files({ repoId, cwd: "/" })).status).toBe(400)
-  })
-})
 
 describe("POST /api/chat/turn", () => {
   test("streams the stub's frames as NDJSON and ends on done", async () => {
@@ -976,54 +609,6 @@ describe("/ws", () => {
     socket.send(JSON.stringify({ type: "probe.ping", data: "x" }))
     expect(await error).toEqual({ type: "error", message: "No handler for probe.ping." })
     socket.close()
-  })
-
-  test("pty.input for an unknown session answers an error frame", async () => {
-    const socket = await connect()
-    const error = nextMessage(socket)
-    socket.send(JSON.stringify({ type: "pty.input", sessionId: "nope", data: "x" }))
-    expect(await error).toEqual({ type: "error", message: "No live PTY session nope." })
-    socket.close()
-  })
-})
-
-describe("withJevSessionBindings", () => {
-  const jev = { checkerId: "jev.session", exposeOutput: true }
-  const key = { AI_GATEWAY_API_KEY: "sk-test" }
-
-  test("a gateway key binds every session subject this host resolves", () => {
-    const health = withJevSessionBindings(undefined, key)
-    const registry = Health.makeRegistry(health, "session")
-    // `terminal`, a harness id and an agent role id are the three shapes of
-    // `session.roleId ?? session.harnessId ?? "terminal"`.
-    for (const subject of ["terminal", "claude", "codex", "orchestrator", "fast-ui"]) {
-      expect(health?.bindings?.[subject]).toEqual(jev)
-      const resolved = registry.resolve(subject)
-      expect(resolved.checker.id).toBe("jev.session")
-      expect(resolved.exposeOutput).toBe(true)
-    }
-  })
-
-  test("no key, or an empty one, leaves the host configuration exactly as it was", () => {
-    const configured = { bindings: { terminal: { checkerId: "fixture.semantic" } } }
-    expect(withJevSessionBindings(configured, {})).toBe(configured)
-    expect(withJevSessionBindings(configured, { AI_GATEWAY_API_KEY: "" })).toBe(configured)
-    expect(withJevSessionBindings(undefined, {})).toBeUndefined()
-    expect(Health.makeRegistry(withJevSessionBindings(undefined, {}), "session").resolve("claude").checker.id)
-      .toBe("lifecycle.session")
-  })
-
-  test("a caller that named its own checker for a subject keeps it", () => {
-    const health = withJevSessionBindings({
-      checkers: [{ id: "fixture.semantic", probe: () => Effect.succeed({ activity: "working" as const }) }],
-      bindings: { terminal: { checkerId: "fixture.semantic" } },
-      limits: { maxSubjects: 4 }
-    }, key)
-    const registry = Health.makeRegistry(health, "session")
-    expect(registry.resolve("terminal").checker.id).toBe("fixture.semantic")
-    expect(registry.resolve("terminal").exposeOutput).toBe(false)
-    expect(registry.resolve("claude").checker.id).toBe("jev.session")
-    expect(health?.limits?.maxSubjects).toBe(4)
   })
 })
 

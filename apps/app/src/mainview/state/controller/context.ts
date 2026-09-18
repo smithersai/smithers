@@ -9,7 +9,6 @@ import type { AppServices } from "../AppController"
 import type { AppStore } from "../AppStore"
 import type { ImpossibleAskClass } from "../Instructions"
 import type { GatewaySeam } from "./gateway"
-import type { RepositoryOpenRequest } from "./targets"
 
 export interface PendingToolCall {
   readonly callId: string
@@ -100,7 +99,6 @@ export interface ControllerContext {
   stopWorkflowPumps: () => void
   contextMessages: () => ReadonlyArray<AgentChatMessage>
   /** Open a repository through a native grant or explicit headless path. */
-  openRepo: (request: RepositoryOpenRequest) => Promise<string | void>
   /**
    * The workspace gateway, as this app calls it. Allocated once the transport
    * exists, because it is built over `boundedFetch`.
@@ -191,7 +189,6 @@ export const createControllerContext = (
     settleFirstRunTarget: () => {},
     stopWorkflowPumps: () => {},
     contextMessages: () => [],
-    openRepo: async () => "Opening a repository is not wired.",
     gateway: undefined as unknown as GatewaySeam,
     commands: undefined as unknown as CommandRegistry,
     withToast: undefined as unknown as ControllerContext["withToast"],

@@ -6,7 +6,6 @@ import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import { repoStep } from "../Onboarding"
-import { createTargetGraphDevFixtures } from "../dev/fixtureRunStream"
 import type { CatalogItem,CommandRegistry } from "../flows/Commands"
 import { createCommandRegistry } from "../flows/Commands"
 import { bindFlowPreloading } from "../flows/FlowAction"
@@ -76,10 +75,6 @@ import { createSidebarController } from "./controller/sidebar"
 import { createStorageRecoveryController } from "./controller/storage-recovery"
 import type { TabsController } from "./controller/tabs"
 import { createTabsController } from "./controller/tabs"
-import type { TargetGraphController } from "./controller/targetGraph"
-import { createTargetGraphController } from "./controller/targetGraph"
-import type { TargetsController } from "./controller/targets"
-import { createTargetsController } from "./controller/targets"
 import { createTurnController, type TurnController } from "./controller/turns"
 import { createTutorialChangeController,type TutorialChangeController } from "./controller/tutorialChange"
 import { createTutorialRepositoryController,type TutorialRepositoryActions } from "./controller/tutorialRepository"
@@ -327,29 +322,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly pty: PtyClient
   /** Lane citc: the cloud-workspace terminal transport (one socket per workspace session). */
   readonly cloudTerminal: CloudTerminalClient
-  /* Lane L3 (docs/LOCAL-APP.md "Target presentation"); see controller/targets.ts. */
-  readonly openRepo: TargetsController["openRepo"]
-  readonly listTargets: TargetsController["listTargets"]
-  readonly runTarget: TargetsController["runTarget"]
-  readonly runPattern: TargetsController["runPattern"]
-  readonly openTarget: TargetsController["openTarget"]
-  readonly filterTargets: TargetsController["filterTargets"]
-  readonly selectTarget: TargetsController["selectTarget"]
-  readonly starTarget: TargetsController["starTarget"]
-  readonly expandTargetGroup: TargetsController["expandTargetGroup"]
-  readonly pickTargets: TargetsController["pickTargets"]
-  readonly runTargetSet: TargetsController["runTargetSet"]
-  /* The target-graph cards (docs/LOCAL-APP.md "Cards: target graph"); see controller/targetGraph.ts. */
-  readonly showGraph: TargetGraphController["showGraph"]
-  readonly focusGraphNode: TargetGraphController["focusGraph"]
-  readonly filterGraph: TargetGraphController["filterGraph"]
-  readonly showRunTimeline: TargetGraphController["showTimeline"]
-  readonly showRunHistory: TargetGraphController["showHistory"]
-  readonly selectRunReplay: TargetGraphController["selectRun"]
-  readonly scrubRunReplay: TargetGraphController["scrubRun"]
-  readonly showAffected: TargetGraphController["showAffected"]
-  readonly showCiMatrix: TargetGraphController["showCi"]
-  readonly openTargetSource: TargetGraphController["openSource"]
   /* The admin dev-tools panel + debug reads (§2b/§2d; admin registry only). */
   readonly toggleDevtools: () => void
   /** Report what drives a turn (admin /debug.backend; DESIGN.md §14). */
@@ -974,7 +946,7 @@ export const createAppController = (
   const {
     loadAgents,
     listAgents,
-  } = actors.pair(ctx, (context, select) => createAgentsController(context, { nextOrdinal: store.nextOrdinal, loadHarnesses: select(loadHarnesses) }))
+  } = actors.pair(ctx, (context) => createAgentsController(context, { nextOrdinal: store.nextOrdinal }))
   const { toggleRepoTree, renameWorkspace, toggleWorkspaceRename } = actors.pair(ctx, (context, select) => createSidebarController(context, select(repoTreeSeam)))
   /*
    * "Open in tab" is offered on the maximized card, so opening the tab also
@@ -1041,20 +1013,6 @@ export const createAppController = (
         withToast("code.diagnostics", `Asking the language server about ${path}…`, "Language server answered", () => seam.diagnostics(path, repo))
     }
   })
-  const targetGraph = actors.pair(ctx, (context) => createTargetGraphController(context, {
-    nextOrdinal: store.nextOrdinal,
-    runs: targetRuns,
-    devFixtures: createTargetGraphDevFixtures()
-  }))
-  const { openRepo, listTargets, runTarget, runPattern, openTarget, filterTargets, selectTarget, starTarget, expandTargetGroup, pickTargets, runTargetSet } =
-    actors.pair(ctx, (context, select) => createTargetsController(context, {
-    nextOrdinal: store.nextOrdinal,
-    loadRepos: select(loadRepos),
-    runs: targetRuns,
-    onRunStarted: select(targetGraph.noteRunStarted)
-  }))
-  ctx.openRepo = openRepo
-
   const {
     pumpWorkflowRun,
     stopWatchingRun,
@@ -1644,27 +1602,6 @@ export const createAppController = (
     notePtyExit,
     pty,
     cloudTerminal,
-    openRepo,
-    listTargets,
-    runTarget,
-    runPattern,
-    openTarget,
-    filterTargets,
-    selectTarget,
-    starTarget,
-    expandTargetGroup,
-    pickTargets,
-    runTargetSet,
-    showGraph: targetGraph.showGraph,
-    focusGraphNode: targetGraph.focusGraph,
-    filterGraph: targetGraph.filterGraph,
-    showRunTimeline: targetGraph.showTimeline,
-    showRunHistory: targetGraph.showHistory,
-    selectRunReplay: targetGraph.selectRun,
-    scrubRunReplay: targetGraph.scrubRun,
-    showAffected: targetGraph.showAffected,
-    showCiMatrix: targetGraph.showCi,
-    openTargetSource: targetGraph.openSource,
     toggleDevtools,
     toggleSurfacesMenu,
     moveCardHistory: (id, delta) => { store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id, delta }) },

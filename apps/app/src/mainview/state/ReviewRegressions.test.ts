@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { StorageApi } from "@tanstack/db"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
-import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
-import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
+import type { Repo } from "@smthrs/rpc/LocalApp"
 import { fileArgs } from "../flows/FileArgs"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController, AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { repoKeyOf } from "./AppState"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -27,10 +25,6 @@ const until = async (ready: () => boolean) => {
   for (let tick = 0; tick < 200 && !ready(); tick += 1) await new Promise((resolve) => setTimeout(resolve, 5))
   expect(ready()).toBe(true)
 }
-const harness: Harness = {
-  id: "codex", displayName: "Codex", binary: "/bin/codex", version: "1", status: "signed-in",
-  account: null, launch: { argv: ["codex"] }, models: { suggestions: ["model-1"], listable: false }
-}
 const repo = (id: string, path: string): Repo => ({
   id, path, name: "acme/project", git: { branch: id, remote: "https://github.com/acme/project.git" }, warnings: [],
   smithers: { detected: true, workspaceFile: null, declarationFiles: [], reason: "", workspaces: [] }
@@ -44,15 +38,9 @@ const boot = async (fetchImpl?: AppServices["fetchImpl"]) => {
     {
       bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: [...RuntimeCapabilitySchema.options], authFlow: "none", sandbox: { platform: "darwin", mode: "enforced" } },
       socketUrl: () => undefined,
-      fetchImpl: async (input, init) => {
-        const path = new URL(String(input), "http://local").pathname
-        if (path === "/api/agents") return json({ agents: AGENT_ROLES })
-        if (path.endsWith("/models")) return json({ harnessId: "codex", models: [], source: "suggestions" })
-        return fetchImpl === undefined ? json({}, 404) : fetchImpl(input, init)
-      }
+      fetchImpl: async (input, init) => (fetchImpl === undefined ? json({}, 404) : fetchImpl(input, init))
     })
   controllers.push(controller)
-  store.dispatch({ type: "harnesses.loaded", actor: "system", harnesses: [harness] })
   return { store, controller }
 }
 
@@ -61,40 +49,44 @@ describe("review regressions: concurrent commands and working-copy identity", ()
     const { store, controller } = await boot()
     const menuTypes = ["tab.menu.toggled", "add-menu.toggled", "connect-menu.toggled", "surfaces-menu.toggled"] as const
     for (const type of menuTypes) store.dispatch({ type, actor: "user", open: true })
-    expect((await controller.commands.run("tab.harness")).status).toBe("form")
+    expect((await controller.commands.run("browser.open")).status).toBe("form")
     expect(store.session()).toMatchObject({ tabMenuOpen: false, addMenuOpen: false, connectMenuOpen: false, surfacesMenuOpen: false })
     const closed = [...store.collections.transitions.values()].filter((row) => menuTypes.includes(row.type as typeof menuTypes[number]) && JSON.parse(row.payload).open === false)
     expect(closed).toHaveLength(4)
     expect(closed.every((row) => row.actor === "user")).toBe(true)
 
     store.dispatch({ type: "tab.menu.toggled", actor: "user", open: true })
-    expect((await controller.commands.runForAgent("tab.harness")).status).toBe("form")
+    expect((await controller.commands.runForAgent("browser.open")).status).toBe("form")
     expect(store.session().tabMenuOpen).toBe(true)
   })
 
   test("a form claims its submission before the first await and releases it on failure", async () => {
     const gate = deferred()
-    let creates = 0
+    let reads = 0
     const { store, controller } = await boot(async (_input, init) => {
-      if (init?.method === "POST") { creates += 1; await gate.promise; return json({ sessionId: "pty-1" }) }
+      if (init?.method === "POST") {
+        reads += 1
+        await gate.promise
+        return reads === 1 ? json({ status: 200, text: "read" }) : json({ message: "That page couldn't be read." }, 500)
+      }
       return json({}, 404)
     })
-    expect((await controller.commands.run("tab.harness")).status).toBe("form")
-    await controller.commands.run("form.set", "form-tab.harness harnessId codex")
-    const first = controller.commands.run("form.submit", "form-tab.harness")
-    await until(() => creates === 1)
-    const card = store.collections.cards.get("form-tab.harness")
+    expect((await controller.commands.run("browser.open")).status).toBe("form")
+    await controller.commands.run("form.set", "form-browser.open url https://example.test/one")
+    const first = controller.commands.run("form.submit", "form-browser.open")
+    await until(() => reads === 1)
+    const card = store.collections.cards.get("form-browser.open")
     expect(card?.kind === "flow-form" && card.payload.submitting).toBe(true)
-    expect(await controller.commands.run("form.submit", "form-tab.harness")).toMatchObject({ status: "failed", error: expect.stringContaining("being submitted") })
-    expect(await controller.commands.run("form.set", "form-tab.harness harnessId codex")).toMatchObject({ status: "failed" })
+    expect(await controller.commands.run("form.submit", "form-browser.open")).toMatchObject({ status: "failed", error: expect.stringContaining("being submitted") })
+    expect(await controller.commands.run("form.set", "form-browser.open url https://example.test/two")).toMatchObject({ status: "failed" })
     gate.resolve()
     expect((await first).status).toBe("executed")
-    expect(creates).toBe(1)
-    expect(store.collections.cards.get("form-tab.harness")?.status).toBe("acted")
+    expect(reads).toBe(1)
+    expect(store.collections.cards.get("form-browser.open")?.status).toBe("acted")
 
-    controller.renderFlowForm({ name: "tab.harness", args: "missing-harness", via: "user" })
-    await controller.commands.run("form.submit", "form-tab.harness")
-    const failed = store.collections.cards.get("form-tab.harness")
+    controller.renderFlowForm({ name: "browser.open", args: "https://example.test/refused", via: "user" })
+    await controller.commands.run("form.submit", "form-browser.open")
+    const failed = store.collections.cards.get("form-browser.open")
     expect(failed?.kind === "flow-form" && failed.payload.submitting).toBe(false)
     expect(failed?.status).toBe("error")
   })
@@ -102,11 +94,11 @@ describe("review regressions: concurrent commands and working-copy identity", ()
   test("human presentation remains human while an agent read awaits, and its eventual card remains attributed to the agent", async () => {
     const gate = deferred()
     let reading = false
-    const { store, controller } = await boot(async (input) => {
-      if (String(input).endsWith("/api/harnesses")) { reading = true; await gate.promise; return json({ harnesses: [harness] }) }
+    const { store, controller } = await boot(async (_input, init) => {
+      if (init?.method === "POST") { reading = true; await gate.promise; return json({ status: 200, text: "read" }) }
       return json({}, 404)
     })
-    const read = controller.commands.runForAgent("agent.list")
+    const read = controller.commands.runForAgent("browser.open", "https://example.test")
     await until(() => reading)
     await controller.commands.run("world")
     expect(store.session().surface).toBe("chat")
@@ -118,23 +110,6 @@ describe("review regressions: concurrent commands and working-copy identity", ()
     await controller.commands.runForAgent("world")
     expect(store.collections.cards.has("world-embedded")).toBe(true)
     expect(store.session().surface).toBe("chat")
-  })
-
-  test("a delayed harness launch stays attached to its captured working copy", async () => {
-    const gate = deferred()
-    const bodies: Array<Record<string, unknown>> = []
-    const { store, controller } = await boot(async (_input, init) => {
-      bodies.push(JSON.parse(String(init?.body))); await gate.promise; return json({ sessionId: "pty-1" })
-    })
-    const first = repo("repo-a", "/work/a"), second = repo("repo-b", "/work/b")
-    store.dispatch({ type: "repos.loaded", actor: "system", repos: [first, second] })
-    store.dispatch({ type: "repo.selected", actor: "user", id: repoKeyOf(first.path) })
-    const launch = controller.commands.run("tab.harness", "codex")
-    await until(() => bodies.length === 1)
-    store.dispatch({ type: "repo.selected", actor: "user", id: repoKeyOf(second.path) })
-    gate.resolve(); await launch
-    expect(bodies[0]?.repoId).toBe(first.id)
-    expect(store.collections.tabs.get("pty-1")).toMatchObject({ cwd: first.path, repoKey: repoKeyOf(first.path) })
   })
 
   test("same-remote copies have separate file cards and a spaced path round-trips through commands and forms", async () => {

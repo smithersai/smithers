@@ -41,7 +41,7 @@ const localBootstrap: AppBootstrap = {
   host: "local",
   version: "1.0.0",
   buildSha: "abcdef1234567890",
-  capabilities: ["local.repositories", "local.targets", "local.terminal", "local.harnesses"],
+  capabilities: [],
   authFlow: "none",
   sandbox: { platform: "darwin", mode: "enforced" }
 }
@@ -139,13 +139,18 @@ describe("the optional full composer header: the repository selector and where i
     // The composer header holds the selector; there is no second repository chrome.
     expect(byTestId(view.host, "composer-header")?.contains(trigger)).toBe(true)
 
-    // Its menu offers the IDE's open-folder, through the registered flow.
+    /*
+     * Its menu opens, and offers no directory on this machine: the folder
+     * picker and the local connector retired with the local backend
+     * (docs/LOCAL-BACKEND-RETIREMENT.md).
+     */
     await view.act(() => trigger?.click())
     expect(controller.store.session().connectMenuOpen).toBe(true)
-    const open = byTestId(view.host, "chrome-open-repo")
-    expect(text(open)).toBe("Open local repository…")
-    expect(open?.dataset.flow).toBe("repo.open")
-    expect(controller.commands.find("repo.open")).toBeDefined()
+    expect(byTestId(view.host, "chrome-open-repo")).toBeNull()
+    for (const gone of ["repo.open", "connector.add"]) {
+      expect(controller.commands.find(gone)).toBeUndefined()
+      expect(view.host.querySelector(`[data-flow="${gone}"]`)).toBeNull()
+    }
   })
 
   test("a local repository: the selector names it and the origin chip shows the local path and branch", async () => {
@@ -352,16 +357,8 @@ describe("the optional full composer header: the repository selector and where i
 })
 
 describe("the optional full composer's + menu and surface pill", () => {
-  test("+ opens a store-owned menu: Add files first, then a connector and an agent; the pill names the surface", async () => {
-    const { store, controller } = await localController([{
-      id: "claude",
-      displayName: "Claude Code",
-      binary: "/usr/local/bin/claude",
-      version: "2.0.0",
-      status: "signed-in",
-      account: { email: "will@example.com" },
-      launch: { argv: ["claude"] }
-    }])
+  test("+ opens a store-owned menu: Add files, and nothing this host cannot do; the pill names the surface", async () => {
+    const { store, controller } = await localController()
     const view = mount(controller)
 
     const add = byTestId(view.host, "composer-add")
@@ -377,29 +374,18 @@ describe("the optional full composer's + menu and surface pill", () => {
     await view.act(() => add?.click())
     expect(store.session().addMenuOpen).toBe(true)
     const items = [...view.host.querySelectorAll<HTMLElement>("[data-testid=\"composer-add-menu\"] [role=\"menuitem\"]")]
-    expect(items.map((item) => text(item))).toEqual([
-      "Add files…",
-      "New connector…",
-      // The named roles (AgentRoles.ts): only the orchestrator's harness is installed in this fixture.
-      "Orchestrator · Fable 5will@example.com",
-      "Explainer · Kimi K3opencode-kimi is not installed",
-      "Implementation · GPT-5.6 Solcodex is not installed",
-      "Trivial implementation · GPT-5.6 Lunacodex is not installed",
-      "UI · Kimi K3opencode-kimi is not installed",
-      "Fast UI · Cerebras gpt-oss-120bopencode-cerebras is not installed",
-      // The raw harness session uses the same name as the sidebar.
-      "Claude Codewill@example.com",
-    ])
-    // The orchestrator's harness is installed, so its role row is enabled; the explainer's is not.
-    expect(items[2]?.hasAttribute("disabled")).toBe(false)
-    expect(items[3]?.hasAttribute("disabled")).toBe(true)
-    expect(items[8]?.hasAttribute("disabled")).toBe(false)
-    expect(items.map((item) => item.dataset.flow)).toEqual([
-      "files.add",
-      "connector.add",
-      ...Array<string>(6).fill("agent.role"),
-      "tab.harness",
-    ])
+    /*
+     * One entry. The local connector and the locally launched agents retired
+     * with the local backend (docs/LOCAL-BACKEND-RETIREMENT.md), and the menu
+     * offers no door to a flow that no longer exists.
+     */
+    expect(items.map((item) => text(item))).toEqual(["Add files…"])
+    expect(items.map((item) => item.dataset.flow)).toEqual(["files.add"])
+    expect(items[0]?.hasAttribute("disabled")).toBe(false)
+    for (const gone of ["connector.add", "agent.role", "tab.harness"]) {
+      expect(controller.commands.find(gone)).toBeUndefined()
+      expect(view.host.querySelector(`[data-flow="${gone}"]`)).toBeNull()
+    }
     // No Smithers Cloud on the local host: no flow.create, so no "New flow…" is offered.
     expect(controller.commands.find("flow.create")).toBeUndefined()
 
