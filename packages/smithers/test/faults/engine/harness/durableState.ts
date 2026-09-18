@@ -32,6 +32,38 @@ export const pendingClocks = (
     }).pipe(Effect.provide(storage(filename)), Effect.scoped, Effect.orDie)
   )
 
+/**
+ * Every committed entry of one run, page by page.
+ *
+ * A single page is the wrong read for the evidence a case asserts on. The
+ * records a timer case checks, the deferred completion and each host's
+ * schedule, are the LAST things written for the run, while a parked run that
+ * several hosts resume writes one ownership decision per re-drive ahead of
+ * them. A fixed first page therefore reported "no completion" for a run that
+ * plainly completed, as a function of how often the hosts happened to re-drive
+ * it. The cursor walks to the end instead, so the evidence belongs to the run
+ * rather than to the page.
+ */
+const allEntries = (
+  journal: Journal.Journal["Service"],
+  runId: JournalEvent.RunId
+) =>
+  Effect.gen(function*() {
+    const collected: Array<JournalEvent.Entry> = []
+    let after: JournalEvent.Seq | undefined
+    while (true) {
+      const page = yield* journal.entries({
+        runId,
+        limit: 1_000,
+        ...(after === undefined ? {} : { after })
+      })
+      collected.push(...page.entries)
+      const last = page.entries.at(-1)
+      if (!page.hasMore || last === undefined) return collected
+      after = last.seq
+    }
+  })
+
 /** Reads committed timer identity, its first completion, and the full host records. */
 export const timerEvidence = (filename: string, address: DurableEngineState.ClockRow) =>
   Effect.runPromise(
@@ -40,11 +72,11 @@ export const timerEvidence = (filename: string, address: DurableEngineState.Cloc
       const journal = yield* Journal.Journal
       const clock = yield* state.clock(address)
       const deferred = yield* state.deferred(address)
-      const page = yield* journal.entries({ runId: address.executionId as JournalEvent.RunId, limit: 1_000 })
+      const entries = yield* allEntries(journal, address.executionId as JournalEvent.RunId)
       return {
         clock: Option.getOrUndefined(clock),
         deferred: Option.getOrUndefined(deferred),
-        entries: page.entries
+        entries
       }
     }).pipe(Effect.provide(storage(filename)), Effect.scoped, Effect.orDie)
   )
