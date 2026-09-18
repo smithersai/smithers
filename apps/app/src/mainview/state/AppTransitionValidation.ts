@@ -139,7 +139,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "toast.resolved": z.object({ "type": z.literal("toast.resolved"), "actor": z.literal("system"), "key": z.string(), "status": z.enum(["ok", "failed"]), "title": z.string().optional(), "detail": z.string(), "action": ToastSchema.shape["action"].optional() }).strict(),
   "toast.dismissed": z.object({ "type": z.literal("toast.dismissed"), "actor": z.enum(["user", "system"]), "id": z.string() }).strict(),
   "card.removed": z.object({ "type": z.literal("card.removed"), "actor": ActorSchema, "id": z.string() }).strict(),
-  "message.tool.executed": z.object({ "type": z.literal("message.tool.executed"), "actor": z.literal("smithers"), "turnId": z.string(), "text": z.string() }).strict(),
+  "message.tool.executed": z.object({ "type": z.literal("message.tool.executed"), "actor": z.literal("smithers"), "turnId": z.string(), "text": z.string(), "answersTurn": MessageSchema.shape["answersTurn"] }).strict(),
   "message.steered": z.object({ "type": z.literal("message.steered"), "actor": z.literal("user"), "turnId": z.string(), "text": z.string() }).strict(),
   "message.claim.substituted": z.object({ "type": z.literal("message.claim.substituted"), "actor": z.literal("system"), "turnId": z.string(), "text": z.string() }).strict(),
   "message.appended": z.object({ "type": z.literal("message.appended"), "actor": z.enum(["system", "user", "smithers"]), "text": z.string(), "action": MessageSchema.shape["action"].optional() }).strict(),

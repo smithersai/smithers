@@ -41,6 +41,9 @@ const fixture = async (options: {
   })
   // Exercise the turn boundary independently of the app's startup flows.
   ctx.commands = { all: () => [], callable: () => [], find: () => undefined, toolSpecs: () => [],
+    // The turn's command catalog is filtered against this state (turns.ts
+    // turnCommands), so the double answers it rather than leaving it undefined.
+    state: () => ({ surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut: false }),
     executeForAgent: options.tool ?? (async () => "done") } as unknown as CommandRegistry
   ctx.withToast = async (_key, _title, _doneTitle, work) => work()
   const auth = createAuthBillingController(ctx, store.nextOrdinal)

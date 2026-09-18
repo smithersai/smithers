@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage, AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
@@ -33,16 +34,18 @@ import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
  * function_call / function_call_output pair.
  *
  * That continuation is the one place the protocol forces a choice: the client
- * MUST post it, and a turn that ends with no text renders as "Smithers Cloud
- * returned an empty response". So the call id this module mints is prefixed
- * (`frontdoor-`), the prefix round-trips through the client untouched, and a
- * continuation whose trailing call carries it is answered here too — one
- * deterministic text delta naming the command, and nothing else. No claim
- * about run state is invented: the transcript's own act line (rendered from
- * the registry's honest result string) is what says what happened, and the
- * deterministic claim surface (RunClaims.ts) still owns a launch turn's prose.
- * A client that forges the prefix buys itself an echo of a command name, no
- * model call and no ceiling it had not already spent.
+ * MUST post it. So the call id this module mints is prefixed (`frontdoor-`,
+ * spelled in @smthrs/rpc NativeAgent so both halves read one constant), the
+ * prefix round-trips through the client untouched, and a continuation whose
+ * trailing call carries it is answered here too — with `done` and nothing
+ * else. The answer is the act: the client records the registry's own honest
+ * result line ("Smithers ran /runs.list", or the refusal it really got) as
+ * this turn's assistant words, so the transcript keeps one line that is both
+ * what the user reads and what every later turn's model reads. No claim about
+ * run state is invented, and the deterministic claim surface (RunClaims.ts)
+ * still owns a launch turn's prose. A client that forges the prefix buys
+ * itself a turn that says nothing, no model call and no ceiling it had not
+ * already spent.
  *
  * Privacy: the tail already goes to Jev for the composer's pills under zero
  * data retention, and it rides the same way here. The turn's hidden runtime
@@ -80,18 +83,30 @@ export const FRONT_DOOR_NONE = "none"
 /**
  * The prefix on a call id this Worker minted. It round-trips through the
  * client's tool loop, so the continuation leg is recognisable without any
- * server-side state.
+ * server-side state — and the client reads the same prefix to know that
+ * leg's act is the turn's answer. Spelled once in the contract package both
+ * halves share.
  */
-export const FRONT_DOOR_CALL_PREFIX = "frontdoor-"
+export const FRONT_DOOR_CALL_PREFIX = AGENT_TURN_FRONT_DOOR_CALL_PREFIX
 
 /** The one tool the chat model has (apps/app flows/agentTools.ts commandsToolSpec). */
 export const FRONT_DOOR_TOOL = "commands"
 
-/** What Jev decides about the message, in the words the question offers. */
+/**
+ * What Jev decides about the message, in the words the question offers.
+ *
+ * The decision is about `message` — the one the user just sent — and nothing
+ * else. `conversation` is there to disambiguate it, never to be decided
+ * about: reading the tail as one blob routed a plain question ("In one
+ * sentence, what is a durable flow?") to the command an EARLIER, unanswered
+ * message had asked for, and kept routing it turn after turn.
+ */
 export const FRONT_DOOR_CHOICE_INSTRUCTIONS =
-  "The user just sent this message to Smithers, a product where a coding agent works on a repository. " +
-  "Choose the command the message asks the app to run, or `none` when it asks for no command at all. " +
-  "Choose a command only when running it is plainly what the message wants; a question about a command is not a request to run it."
+  "The user just sent `message` to Smithers, a product where a coding agent works on a repository. " +
+  "Choose the command `message` asks the app to run, or `none` when it asks for no command at all. " +
+  "Decide about `message` alone: `conversation` is the earlier conversation, given only to make `message` clear, " +
+  "and a request in it is not a request now. " +
+  "Choose a command only when running it is plainly what `message` wants; a question about a command is not a request to run it."
 
 /**
  * The impossible-act classes, in the same words the client's own detector
@@ -181,12 +196,21 @@ export const askFrontDoor = (
     // One extra option (`none`) rides beside the commands, so the list must
     // leave room for it under the choice question's own cap.
     if (commands.length === 0 || commands.length >= RECOMMEND_JEV_COMMANDS_MAX) return undefined
+    /*
+     * The turn's own message is the decision; the rest of the tail is context
+     * under its own key. `isFrontDoorTurn` has already held the last message
+     * to be the user's own non-empty text, so it is the last tail entry.
+     */
     const tail = frontDoorTail(body)
+    const message = tail[tail.length - 1]
+    if (message === undefined) return undefined
+    const earlier = tail.slice(0, -1)
     const answer = yield* jevEvaluate({
       model: JEV_DEFAULT_MODEL,
       state: {
         repository: frontDoorRepo(body) ?? "(none selected)",
-        conversation: tail.length === 0 ? "(no messages yet)" : tailText(tail)
+        conversation: earlier.length === 0 ? "(no earlier messages)" : tailText(earlier),
+        message: message.text
       },
       questions: {
         command: {
@@ -275,15 +299,18 @@ export const frontDoorContinuation = (body: TurnRequest): string | undefined => 
 }
 
 /**
- * The continuation leg's answer: the command's name, and nothing else.
+ * The continuation leg's answer: `stop`, and not one word.
  *
  * The transcript already carries the registry's own honest act line for this
- * call, so the assistant's words have no work left to do — and anything more
- * than the name would be this Worker inventing a report about a run it never
- * watched. One delta so the turn is not an empty response, then `stop`.
+ * call, and the client keeps that line as the turn's assistant words, so the
+ * assistant has nothing left to say. This leg used to echo `/<command>` as a
+ * text delta, because a turn with no text renders as "Smithers Cloud returned
+ * an empty response" — and that echo became a second bubble under every act
+ * line, saying again what the line already said and reading as success even
+ * when the act had failed. The client now reads the minted call id and takes
+ * this leg's silence for what it is: the act was the answer.
  */
-export const frontDoorContinuationFrames = (runId: string, command: string): ReadonlyArray<AgentTurnFrame> => [
-  { runId, type: "delta", kind: "text", text: `/${command}` },
+export const frontDoorContinuationFrames = (runId: string): ReadonlyArray<AgentTurnFrame> => [
   { runId, type: "done", reason: "stop" }
 ]
 
@@ -323,7 +350,7 @@ export const handleFrontDoor = (
   Effect.gen(function*() {
     // A leg answering this Worker's own tool call: deterministic, no model.
     const continued = frontDoorContinuation(body)
-    if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId, continued), headers)
+    if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId), headers)
     const commands = body.commands
     if (commands === undefined || !isFrontDoorTurn(body)) return undefined
     const decision = yield* askFrontDoor(body, commands)

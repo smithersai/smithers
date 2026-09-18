@@ -312,6 +312,44 @@ describe("the live store's authoritative event path", () => {
     expect(restored.session()).not.toHaveProperty("sidebarOpen")
   })
 
+  test("version 9 upgrade rotates a store whose journal holds a front-door turn", async () => {
+    /*
+     * A front-door leg (apps/server frontDoor.ts) now projects differently:
+     * the minted call id marks the turn as worked (`receivedText`) and its
+     * act row as the turn's answer. Version 9 wrote those same events the
+     * other way, so replaying them under this build would mismatch the saved
+     * state hash and refuse the boot. The version moves instead, and the
+     * rotation re-seeds from the rows already on disk.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    const token = "b".repeat(64)
+    await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "show me my runs", retry: false,
+      journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+    await store.dispatch({ type: "message.tool.executed", actor: "smithers", turnId: "turn", text: "Smithers ran /runs.list", answersTurn: true }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const snapshot = structuredClone(old.checkpoint.snapshot)
+    // What version 9 wrote for that leg: a worked turn read as an empty one.
+    Object.assign(snapshot.httpTurns![0]!, { receivedText: false })
+    const stateHash = appProjectionHash(snapshot as unknown as Parameters<typeof appProjectionHash>[0])
+    const head = { ...old.head, projectorVersion: 9, stateHash }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 9, snapshot, stateHash }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    // The routed turn's one line survives the rotation, answer mark and all.
+    const act = [...restored.collections.messages.values()].find(message => message.act !== undefined)
+    expect(act).toMatchObject({ text: "Smithers ran /runs.list", answersTurn: true })
+  })
+
   test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
     const storage = memoryStorage()
     const store = await open(storage)

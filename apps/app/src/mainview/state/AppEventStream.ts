@@ -20,7 +20,7 @@ export const APP_EVENT_FORMAT_VERSION = 1
  * added OPTIONAL field owes none — every stored row still parses to the same
  * bytes and the same hash, which AppStore.events.test.ts pins per field.
  */
-export const APP_PROJECTOR_VERSION = 9
+export const APP_PROJECTOR_VERSION = 10
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

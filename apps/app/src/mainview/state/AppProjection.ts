@@ -1,5 +1,6 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
+import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import { z } from "zod"
 import { approvalQuestionKey } from "../cards/ApprovalQuestion"
 import { retiredLineageKey } from "../chain/LineageRetirement"
@@ -1282,11 +1283,18 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           const turn = collections.httpTurns.get(transition.attemptId), leg = collections.httpTurnLegs.get(transition.legId)
           if (turn?.status !== "active" || current.phase !== "responding" || current.turnId !== turn.turnId || turn.legId !== leg?.id ||
             leg.attemptId !== turn.id || leg.status !== "tool-executing" || !leg.call) return
+          /*
+           * A call the front door minted (apps/server frontDoor.ts) is the
+           * whole turn: its act line is the answer, and no model prose
+           * follows it, so the claim surface has nothing to police.
+           */
+          const answersTurn = leg.call.callId.startsWith(AGENT_TURN_FRONT_DOOR_CALL_PREFIX)
           const launched = runLaunchCommandOf(leg.call.name, leg.call.args)
-          if (launched !== undefined && toolResultLaunchedRun(transition.result)) collections.httpTurns.update(turn.id, draft => { draft.runLaunch = launched; draft.revision = revision })
+          if (!answersTurn && launched !== undefined && toolResultLaunchedRun(transition.result)) collections.httpTurns.update(turn.id, draft => { draft.runLaunch = launched; draft.revision = revision })
           collections.httpTurnLegs.update(leg.id, draft => { draft.status = "tool-settled"; draft.result = transition.result })
           reduce({ type: "toolcall.recorded", actor: "smithers", turnId: turn.turnId, name: leg.call.name, arguments: leg.call.args, result: transition.result }, 0)
-          reduce({ type: "message.tool.executed", actor: "smithers", turnId: turn.turnId, text: toolActLine(leg.call, transition.result) }, 1)
+          reduce({ type: "message.tool.executed", actor: "smithers", turnId: turn.turnId, text: toolActLine(leg.call, transition.result),
+            ...(answersTurn ? { answersTurn: true as const } : {}) }, 1)
           break
         }
         case "http.turn.interrupted": {
@@ -2610,6 +2618,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             role: "smithers",
             text: transition.text,
             act: transition.text,
+            ...(transition.answersTurn === undefined ? {} : { answersTurn: transition.answersTurn }),
             status: "complete",
             createdAt,
             ordinal: nextOrdinal(collections)

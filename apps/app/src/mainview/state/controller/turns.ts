@@ -2,13 +2,14 @@ import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage,AgentTurnCommand,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
 import { agentRefusalText } from "@smthrs/rpc/RefusalCopy"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { CommandOutcome } from "../../flows/Commands"
 import { agentFailureText,agentVisibleCatalog } from "../../flows/agentTools"
-import { parseSubmit, visible } from "../../flows/registry"
+import { itemOf, parseSubmit, unmetRequirements, visible } from "../../flows/registry"
 import { boundToolResult,boundTurnRequest } from "../AgentTurnPolicy"
 import type { Card } from "../AppState"
 import { CardPatchSchema,CardSchema,conversationTabIdOf,inConversation,MAIN_TAB_ID } from "../AppState"
@@ -167,12 +168,24 @@ export const createTurnController = (
     store.dispatch({ type: "card.updated", actor: "smithers", id: frame.id, patch: CardPatchSchema.parse(merged.data) })
   }
 
-  /** The transcript as the chat contract reads it: no tool-act lines, no empty bubbles. */
+  /**
+   * The transcript as the chat contract reads it: no tool-act lines, no empty
+   * bubbles.
+   *
+   * With one exception, and it is not an exception to the rule. An ordinary
+   * act line is a step inside a turn the model then answers in its own words,
+   * so repeating it would say the same thing twice. A front-door route
+   * (apps/server frontDoor.ts) has no such words: the act IS the answer, and
+   * that row is marked `answersTurn`. Dropping it left a routed turn with no
+   * trace at all, so the next turn's model read the user's question as
+   * unanswered and re-routed it — seven legs of the same command against one
+   * question, live, 2026-09-18.
+   */
   const contextMessages = (): ReadonlyArray<AgentChatMessage> => {
     const practice = practiceContextMessage(store)
     return [...(practice === undefined ? [] : [{ role: "assistant" as const, content: practice }]), ...store
       .agentContextSnapshot()
-      .messages.filter((message) => message.act === undefined && message.text.trim() !== "")
+      .messages.filter((message) => (message.act === undefined || message.answersTurn === true) && message.text.trim() !== "")
       .map((message) => ({
         role: message.role === "user" ? ("user" as const) : ("assistant" as const),
         content: message.text
@@ -533,11 +546,26 @@ export const createTurnController = (
    * `{ name, summary }` list the recommender posts (state/Recommend.ts
    * recommendRequest) — `visible(catalog)`, capped — and the front door reads
    * data.
+   *
+   * With one narrowing the recommender does not make. Choosing a command here
+   * RUNS it, so an option this client would refuse is not an option: the
+   * catalog is the model-invocable set (`callable()` — the human's own
+   * browser mechanics, chat.stop and sign-in among them, are refused with
+   * userOnlyError) and, of those, the ones whose requirements are met right
+   * now (`unmetRequirements`, which at the agent boundary is an honest
+   * failure and never a deferral: Commands.ts runAs). The live front door
+   * offered all 208 visible commands and routed "show me my runs" to one that
+   * answered with a refusal. The pills keep the wider list on purpose: a
+   * recommendation is a suggestion the human clicks, and that click is what
+   * renders the sign-in step or the first-run choice.
    */
-  const turnCommands = (): ReadonlyArray<AgentTurnCommand> =>
-    visible(ctx.commands.all())
+  const turnCommands = (): ReadonlyArray<AgentTurnCommand> => {
+    const state = ctx.commands.state()
+    return visible(ctx.commands.callable().map(itemOf))
+      .filter((command) => unmetRequirements(command, state).length === 0)
       .slice(0, COMMANDS_MAX)
       .map((command) => ({ name: command.name, summary: command.summary }))
+  }
 
   const composeTurn = (): {
     readonly context: AgentRuntimeContext
@@ -718,8 +746,16 @@ export const createTurnController = (
      * rest of this turn. A refusal or a chooser route launched nothing, so
      * there is no run for the model to misdescribe and its prose stands.
      */
+    /*
+     * A call the front door minted (apps/server frontDoor.ts) is the whole
+     * turn: its act line is the answer — the registry's own honest result,
+     * success or refusal — and the continuation leg carries no prose, so the
+     * claim surface has nothing to police and this row is what every later
+     * turn reads (contextMessages above).
+     */
+    const answersTurn = call.callId.startsWith(AGENT_TURN_FRONT_DOOR_CALL_PREFIX)
     const launched = runLaunchCommandOf(call.name, call.args)
-    if (launched !== undefined && toolResultLaunchedRun(result)) turn.runLaunch = launched
+    if (!answersTurn && launched !== undefined && toolResultLaunchedRun(result)) turn.runLaunch = launched
     store.dispatch({
       type: "toolcall.recorded",
       actor: "smithers",
@@ -732,7 +768,8 @@ export const createTurnController = (
       type: "message.tool.executed",
       actor: "smithers",
       turnId: turn.id,
-      text: toolActLine(call, result)
+      text: toolActLine(call, result),
+      ...(answersTurn ? { answersTurn: true as const } : {})
     })
     /*
      * The record above keeps the whole result; the model gets it bounded, so
@@ -808,6 +845,11 @@ export const createTurnController = (
         // The model asked for a command; the done frame right after it ends
         // this leg, and the continuation is driven from there.
         ctx.activeTurn.pendingCall = { callId: frame.call_id, name: frame.name, args: frame.arguments }
+        // A call the front door minted (apps/server frontDoor.ts) IS the
+        // turn's answer: the act line this call renders says what happened,
+        // so its continuation leg carries no text, and a silent leg there is
+        // the ordinary end of a worked turn, not an empty response.
+        if (frame.call_id.startsWith(AGENT_TURN_FRONT_DOOR_CALL_PREFIX)) ctx.activeTurn.receivedText = true
         return
       }
       if (frame.type === "delta") {

@@ -79,6 +79,22 @@ export interface AgentToolSpec {
 export const AGENT_TURN_COMMANDS_MAX = 300
 
 /**
+ * The prefix on the tool-call id the serving side's front door
+ * (apps/server frontDoor.ts) mints when it answers a turn by running a
+ * command instead of spending the chat upstream.
+ *
+ * It rides through the client's tool loop untouched, which is how the Worker
+ * recognises the continuation leg as its own without any server-side state —
+ * and how the client knows that leg's act line is the turn's whole answer,
+ * so a `done` with no text is the ordinary end of a worked turn rather than
+ * an empty response. Spelled here so both halves read the same constant.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const AGENT_TURN_FRONT_DOOR_CALL_PREFIX = "frontdoor-"
+
+/**
  * The most characters a command name may carry.
  *
  * @since 1.0.0
