@@ -9,6 +9,7 @@ import { createWorkflowPumpController } from "./workflow-pump"
 import type { StatusRollup } from "@smthrs/rpc/Health"
 
 const event = (sequence: number) => ({ kind: "control.signal.delivered", sequence, occurredAt: sequence, payload: {} })
+const failed = (sequence: number, cause: string) => ({ kind: "control.run.failed", sequence, occurredAt: sequence, payload: { cause } })
 const summary = {
   runId: "run-1", flowId: "test", status: "running", createdAt: 1, updatedAt: 100,
   turns: 1, calls: 1, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0,
@@ -23,10 +24,12 @@ const poll = async (cycles: Cycle[], options: {
   inspectAt?: number
   cloneStored?: boolean
   pageSize?: number
+  flowId?: string
 } = {}) => {
+  const flowId = options.flowId ?? summary.flowId
   let card: Extract<Card, { kind: "run-trace" }> = {
     id: "run-card", kind: "run-trace", title: "test", status: "active", createdAt: 1, ordinal: 1,
-    payload: { repo: "o/r", runId: "run-1", workflow: "test", phase: "running", steps: [], result: null, lastSeq: 0, events: options.initialEvents }
+    payload: { repo: "o/r", runId: "run-1", workflow: flowId, phase: "running", steps: [], result: null, lastSeq: 0, events: options.initialEvents }
   }
   const cards = new Map([[card.id, card]])
   const scope = { repo: "o/r", runId: "run-1" }, key = runtimeRunKey(scope)
@@ -50,7 +53,7 @@ const poll = async (cycles: Cycle[], options: {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
-      let rows: unknown[] = [{ ...summary, updatedAt: cycle.status === undefined ? summary.updatedAt : summary.updatedAt + iteration + 1, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
+      let rows: unknown[] = [{ ...summary, flowId, updatedAt: cycle.status === undefined ? summary.updatedAt : summary.updatedAt + iteration + 1, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
       if (projection === "run-events") {
         journalRequests.push(payload.after)
         let offset = 0
@@ -112,6 +115,22 @@ test("a failed run keeps raw evidence on its card and announces only typed human
   expect(result.card.payload.error).toBe(raw)
   expect(result.messages.join(" ")).toContain("Not your fault")
   expect(result.messages.join(" ")).not.toContain(raw)
+})
+
+test("a settled registrar refusal is transcribed as the sentence the card leads with", async () => {
+  const refusal = 'Add a model to "nightly-lint" to schedule it.'
+  const verdict = `failed — invalid_receipt: ${refusal}`
+  const cause = `invalid_receipt: ${refusal}\n    at repository/trigger (flows/repository/triggers.ts:20:11)`
+  const result = await poll([{ events: [failed(1, cause)], revision: 1, status: "failed", verdict }], { flowId: "repository/trigger" })
+  expect(result.card.payload.error).toBe(verdict)
+  expect(result.messages).toEqual([`The run failed: ${refusal}`])
+})
+
+test("another flow's invalid_receipt is still Smithers' in the transcript", async () => {
+  const verdict = "failed — invalid_receipt: Native source creation returned an invalid receipt"
+  const result = await poll([{ events: [failed(1, verdict.slice("failed — ".length))], revision: 1, status: "failed", verdict }], { flowId: "coding/request" })
+  expect(result.card.payload.error).toBe(verdict)
+  expect(result.messages.join(" ")).toContain("Not your fault")
 })
 
 test("four unchanged iterations read and dispatch a 20,000-row journal only once", async () => {

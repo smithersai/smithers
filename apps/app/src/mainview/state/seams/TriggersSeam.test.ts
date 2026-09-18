@@ -711,7 +711,7 @@ describe("triggers seam: watching the registration run", () => {
     run.cause = journalCause(MODEL_REFUSAL)
     run.status = "failed"
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
-    expect(registrationRun(store, requestId)?.payload.error).toContain(MODEL_REFUSAL)
+    expect(registrationRun(store, requestId)?.payload.error).toBe('failed — invalid_receipt: Add a model to "nightly-lint" to schedule it.')
     await waitFor(() => registrationToast(store)?.status === "failed")
     /* The host's own sentence, with no `failed — invalid_receipt:` in front of it. */
     expect(registrationToast(store)?.detail).toBe(MODEL_REFUSAL)

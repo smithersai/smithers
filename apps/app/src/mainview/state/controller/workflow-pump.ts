@@ -6,7 +6,7 @@ import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
 import { questionOf } from "../../cards/ApprovalQuestion"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
-import { runFailure } from "../RunFailure"
+import { runFailureOf } from "../RunFailure"
 import { AppEventIntegrityError } from "../AppEventStream"
 import { changedRuntimeRunObservation, RuntimeProjectionIntegrityError, runtimeRunKey, runtimeScopeOf } from "../RuntimeProjection"
 import type { RuntimeRun, RuntimeRunObservation } from "../RuntimeProjection"
@@ -448,8 +448,11 @@ export const createWorkflowPumpController = (
           })
           if (phase === "completed") await ctx.finishTutorialChange(cardId)
           if (ctx.disposed || pump.stopped || ctx.runPumps.get(cardId) !== pump) return
+          // A transcript line is a committed transition, so it frames the
+          // failure from the same flow id and journalled code the card renders
+          // from, read back from the evidence this cycle just persisted.
           if (!alreadyTerminal && !(phase === "completed" && row.flowId === "repository/setup")) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
-            ? "The run was cancelled." : `The run failed: ${runFailure(row.verdict).message}` })
+            ? "The run was cancelled." : `The run failed: ${runFailureOf({ workflow: row.flowId, error: row.verdict, events: store.committedRuntimeRun(runtimeRunKey(card.payload))?.events }).message}` })
           if (eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
             previous = row
             await pokeableWait(cardId, RUN_POLL_MS)
