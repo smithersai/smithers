@@ -763,7 +763,14 @@ test("registration failure and invalid legacy state stay independent; foreign ac
   expect((await t.send("GET", "state?repo=org%2Frepo&job=issues", "")).status).toBe(401)
 })
 
-test.each(["expired", "missing", "sleeping", "401", "502"])("recovered observation with %s gateway never wakes, renews or starts a workspace", async kind => {
+/*
+ * A recorded run is read through a relay record that ages out in half a token
+ * lifetime and a VM that idle-suspends under it, so an observation whose read
+ * fails for either reason renews the record and resumes the box: the run is
+ * the person's own, already on it. What the recovered observer still may not
+ * do is allocate a workspace or replay Plan, Approval or Run.
+ */
+test.each(["expired", "missing", "sleeping"])("recovered observation with %s gateway renews its record without starting a workspace or replaying admission", async kind => {
   const t = await fixture()
   await t.send("POST", "apply", "alice", t.input); await t.settle()
   const before = { capabilities: t.capabilityCalls.length, workspace: t.workspaceCalls.length, writes: t.calls.filter(call => call.tag !== "Projection.Snapshot").length }
@@ -771,14 +778,28 @@ test.each(["expired", "missing", "sleeping", "401", "502"])("recovered observati
   const rows = t.durable.gatewayRows("alice")
   if (kind === "expired") rows.set(key, { ...rows.get(key) as object, renewAfter: 0 })
   else if (kind === "missing") rows.delete(key)
-  else if (kind === "sleeping") t.options.sleepBefore = "Projection.Snapshot"
-  else t.options.relayStatus = Number(kind)
-  expect((await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)).status).toBe(503)
+  else t.options.sleepBefore = "Projection.Snapshot"
+  const response = await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)
+  expect(response.status).toBe(202)
+  expect((await response.json() as { receipt: { phase: string } }).receipt.phase).toBe("running")
   await t.settle()
-  expect(t.capabilityCalls).toHaveLength(before.capabilities)
+  expect(t.capabilityCalls).toHaveLength(before.capabilities + 1)
   expect(t.workspaceCalls).toHaveLength(before.workspace)
   expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(before.writes)
   expect(t.launched.size).toBe(1)
+})
+
+test.each(["401", "502"])("a relay that refuses the renewed read with %s is a failed read, never a phase", async kind => {
+  const t = await fixture()
+  await t.send("POST", "apply", "alice", t.input); await t.settle()
+  const before = { workspace: t.workspaceCalls.length, writes: t.calls.filter(call => call.tag !== "Projection.Snapshot").length }
+  t.options.relayStatus = Number(kind)
+  expect((await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)).status).toBe(503)
+  await t.settle()
+  expect(t.workspaceCalls).toHaveLength(before.workspace)
+  expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(before.writes)
+  expect(t.launched.size).toBe(1)
+  expect((t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as SetupRecord).receipt.phase).toBe("running")
 })
 
 test.each(["source_revision", "flow_id", "mode", "digest", "workspace_id"])("registration recovery refuses inconsistent inner %s proof", async field => {
@@ -987,4 +1008,28 @@ test("reconnecting a run-less setup states whether its workspace is gone or stil
   expect((await alive.json() as { message: string }).message).toBe("The previous setup has no recorded run to reconnect. Its execution state is unknown.")
   expect((rows.get("repository-setup:request:setup-alive") as SetupRecord).receipt.phase).toBe("queued")
   await t.settle()
+})
+
+/*
+ * Canary walk run 3, step B3-10: a reload while a trial ran left the card on
+ * "No live workspace holds an answer for this read." with a Reconnect control.
+ * The recovered watch reads through the read-only relay, and that relay record
+ * had passed its renewal half-life while the run continued.
+ */
+test("a reload mid-run reads its recorded run through a renewed relay instead of asking the person to reconnect", async () => {
+  const t = await fixture()
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  const before = { workspace: t.workspaceCalls.length, writes: t.calls.filter(call => call.tag !== "Projection.Snapshot").length }
+  const key = `gateway:org/repo\u0000${t.workspaceIds.alice}`
+  const rows = t.durable.gatewayRows("alice")
+  rows.set(key, { ...rows.get(key) as object, renewAfter: 0 })
+  t.options.runState = "completed"
+  const response = await t.send("GET", `observe?repo=org%2Frepo&job=issues&requestId=${t.input.requestId}`)
+  expect(response.status).toBe(200)
+  expect((await response.json() as { receipt: { phase: string } }).receipt.phase).toBe("completed")
+  await t.settle()
+  // Nothing was admitted: no workspace allocated, no Plan, Approval or Run frame.
+  expect(t.workspaceCalls).toHaveLength(before.workspace)
+  expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(before.writes)
+  expect(t.launched.size).toBe(1)
 })

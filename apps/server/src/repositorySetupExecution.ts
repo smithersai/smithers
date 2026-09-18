@@ -149,7 +149,16 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
       receipt: { ...record.receipt, runId: started.runId, phase: "queued", updatedAt: Date.now(), evidence: [`run:${started.runId}`] } })
   }
   if (!record.runId) return
-  const snapshot = recordOf(yield* rpc(login, record, "Projection.Snapshot", { selector: { _tag: "run-summary", runId: record.runId } }, observeOnly))
+  /*
+   * A recorded run is work the person already started on that box, and Plan,
+   * Approval and Run are all behind `!observeOnly` above, so reading its
+   * projection cannot admit anything. The read therefore renews its own relay
+   * record — and resumes a VM that idle-suspended under the run — instead of
+   * answering a reloaded page "No live workspace holds an answer for this
+   * read." for the rest of the run's life, which no Reconnect press could
+   * change either: that press repeats this same read.
+   */
+  const snapshot = recordOf(yield* rpc(login, record, "Projection.Snapshot", { selector: { _tag: "run-summary", runId: record.runId } }))
   const rows = snapshot.rows
   if (!Array.isArray(rows)) return yield* Effect.fail(failure("The workspace did not return the setup run projection"))
   const run = rows.map(recordOf).find(row => row.runId === record!.runId)
