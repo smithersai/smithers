@@ -453,7 +453,7 @@
             "file": "package.json",
             "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
           },
-          "title": "1 state",
+          "title": "triage/relevance · 1 state",
           "time": {
             "start": 1014
           }
@@ -481,7 +481,7 @@
             "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
           },
           "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
-          "title": "1 state · 3 questions · 212 ms",
+          "title": "triage/relevance · 1 state · 3 questions · 212 ms",
           "metadata": {
             "answers": [
               {
@@ -1318,7 +1318,7 @@
             "file": "package.json",
             "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
           },
-          "title": "1 state",
+          "title": "triage/relevance · 1 state",
           "time": {
             "start": 1040
           }
@@ -1346,7 +1346,7 @@
             "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
           },
           "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
-          "title": "1 state · 3 questions · 212 ms",
+          "title": "triage/relevance · 1 state · 3 questions · 212 ms",
           "metadata": {
             "answers": [
               {

@@ -116,7 +116,7 @@ describe("Health over the server", () => {
     const classify = tools.find((part) => part.tool === "classify")!
     expect(classify.state).toMatchObject({
       status: "completed",
-      title: "1 state · 3 questions · 212 ms",
+      title: "triage/relevance · 1 state · 3 questions · 212 ms",
       output: "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
     })
     const summary = assistant.parts.find((part): part is Protocol.TextPart =>

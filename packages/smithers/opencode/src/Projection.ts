@@ -420,13 +420,31 @@ export const classifyOutput = (value: Schema.Json): string =>
     .join("\n")
 
 /**
- * The title of a classify card: how many states and questions, and how long
- * Jev took. `elapsed` stands in for the latency a batch does not report.
+ * The door a classify call went through, as its card names it: the curated
+ * id (`triage/relevance` for `classify/triage/relevance`) or `ad hoc` for
+ * the bare `classify` door, so a check/verdict card is told from an
+ * edit/risk card without opening it.
  *
  * @category conversions
  * @since 1.0.0
  */
-export const classifyTitle = (input: Record<string, unknown>, value: Schema.Json, elapsed: number): string => {
+export const classifyDoor = (flowName: string): string =>
+  flowName === "classify" ? "ad hoc" : flowName.slice("classify/".length)
+
+/**
+ * The title of a classify card: the door, how many states and questions,
+ * and how long Jev took. `elapsed` stands in for the latency a batch does
+ * not report.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyTitle = (
+  flowName: string,
+  input: Record<string, unknown>,
+  value: Schema.Json,
+  elapsed: number
+): string => {
   const states = classifyStates(input)
   const answered = classifyEntries(value).find((entry) => entry.answers !== undefined)
   const questions = answered === undefined
@@ -434,7 +452,9 @@ export const classifyTitle = (input: Record<string, unknown>, value: Schema.Json
     : Object.keys(answered.answers).length
   const record: Record<string, unknown> = isRecord(value) ? value : {}
   const ms = asNumber(record["latencyMs"]) ?? elapsed
-  return `${states} state${states === 1 ? "" : "s"} · ${questions} question${questions === 1 ? "" : "s"} · ${ms} ms`
+  return `${classifyDoor(flowName)} · ${states} state${states === 1 ? "" : "s"} · ${questions} question${
+    questions === 1 ? "" : "s"
+  } · ${ms} ms`
 }
 
 /**
@@ -447,7 +467,7 @@ export const classifyTitle = (input: Record<string, unknown>, value: Schema.Json
 export const toolTitle = (flowName: string, input: Record<string, unknown>): string => {
   if (isClassify(flowName)) {
     const states = classifyStates(input)
-    return `${states} state${states === 1 ? "" : "s"}`
+    return `${classifyDoor(flowName)} · ${states} state${states === 1 ? "" : "s"}`
   }
   switch (flowName) {
     case "read":
@@ -1068,7 +1088,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
             input: card.input,
             output: toolOutput(event.flowName, result.value),
             title: classify
-              ? classifyTitle(card.input, result.value, now - card.start)
+              ? classifyTitle(event.flowName, card.input, result.value, now - card.start)
               : toolTitle(event.flowName, card.input),
             metadata: toolMetadata(event.flowName, result.value),
             time: { start: card.start, end: now }

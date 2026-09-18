@@ -3,7 +3,7 @@ import * as AgentEvents from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Option } from "effect"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
@@ -86,7 +86,9 @@ describe("Projection", () => {
     const { emitted, state } = foldAll(scriptEvents(), ctx)
     const goldenPath = join(import.meta.dirname, "fixtures", "projection.golden.json")
     const rendered = JSON.stringify(emitted, null, 2)
-    if (process.env["UPDATE_GOLDEN"] === "1" || !existsSync(goldenPath)) writeFileSync(goldenPath, `${rendered}\n`)
+    // UPDATE_GOLDEN=1 re-pins the fixture on purpose; a missing fixture fails,
+    // so a deleted golden never passes with whatever the code emits.
+    if (process.env["UPDATE_GOLDEN"] === "1") writeFileSync(goldenPath, `${rendered}\n`)
     expect(rendered).toBe(readFileSync(goldenPath, "utf8").trimEnd())
     expect(state.closed).toBe(true)
     expect(state.session.tokens.input).toBe(812 + 1240 + 812 + 1240)
@@ -169,8 +171,10 @@ describe("Projection", () => {
     expect(Projection.toolTitle("grep", {})).toBe("")
     expect(Projection.toolTitle("bash", { command: "ls" })).toBe("ls")
     expect(Projection.toolTitle("bash", {})).toBe("")
-    expect(Projection.toolTitle("classify", {})).toBe("1 state")
-    expect(Projection.toolTitle("classify/edit/risk", { states: [1, 2] })).toBe("2 states")
+    expect(Projection.toolTitle("classify", {})).toBe("ad hoc · 1 state")
+    expect(Projection.toolTitle("classify/edit/risk", { states: [1, 2] })).toBe("edit/risk · 2 states")
+    expect(Projection.classifyDoor("classify")).toBe("ad hoc")
+    expect(Projection.classifyDoor("classify/check/verdict")).toBe("check/verdict")
 
     expect(Projection.toolOutput("read", { content: "c" })).toBe("c")
     expect(Projection.toolOutput("read", { other: 1 })).toBe(`{"other":1}`)
@@ -849,7 +853,9 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(Projection.classifyOutput(verdict)).toBe(
       "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
     )
-    expect(Projection.classifyTitle({ task: "t" }, verdict, 5)).toBe("1 state · 3 questions · 212 ms")
+    expect(Projection.classifyTitle("classify/triage/relevance", { task: "t" }, verdict, 5)).toBe(
+      "triage/relevance · 1 state · 3 questions · 212 ms"
+    )
     expect(Projection.toolMetadata("classify", verdict)).toEqual({ answers: [verdict.answers], result: verdict })
     const batch = {
       results: [
@@ -859,16 +865,16 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       ]
     }
     expect(Projection.classifyOutput(batch)).toBe("1. yes: no (0.80)\n2. timeout: slow\n3. failed: ")
-    expect(Projection.classifyTitle({ states: [1, 2, 3], questions: { yes: {} } }, batch, 40)).toBe(
-      "3 states · 1 question · 40 ms"
+    expect(Projection.classifyTitle("classify", { states: [1, 2, 3], questions: { yes: {} } }, batch, 40)).toBe(
+      "ad hoc · 3 states · 1 question · 40 ms"
     )
     // No answered state: the question count comes from the input.
     const refused = { results: [{ ok: false, state: 1, error: { code: "unreachable", message: "no key" } }] }
-    expect(Projection.classifyTitle({ states: [1], questions: { a: {}, b: {} } }, refused, 7)).toBe(
-      "1 state · 2 questions · 7 ms"
+    expect(Projection.classifyTitle("classify", { states: [1], questions: { a: {}, b: {} } }, refused, 7)).toBe(
+      "ad hoc · 1 state · 2 questions · 7 ms"
     )
-    expect(Projection.classifyTitle({}, refused, 7)).toBe("1 state · 0 questions · 7 ms")
-    expect(Projection.classifyTitle({}, "text", 3)).toBe("1 state · 0 questions · 3 ms")
+    expect(Projection.classifyTitle("classify", {}, refused, 7)).toBe("ad hoc · 1 state · 0 questions · 7 ms")
+    expect(Projection.classifyTitle("classify", {}, "text", 3)).toBe("ad hoc · 1 state · 0 questions · 3 ms")
     expect(Projection.toolMetadata("classify", refused)).toEqual({
       answers: [{ error: { code: "unreachable", message: "no key" } }],
       result: refused
@@ -901,7 +907,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     const classify = parts.filter((part): part is Protocol.ToolPart => part.type === "tool" && part.tool === "classify")
     const completed = classify.find((part) => part.state.status === "completed")!
     expect(completed.state).toMatchObject({
-      title: "1 state · 3 questions · 212 ms",
+      title: "triage/relevance · 1 state · 3 questions · 212 ms",
       output: "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
     })
     expect(completed.state.status === "completed" && completed.state.metadata["answers"]).toEqual([
@@ -1264,7 +1270,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       })
     )
     expect((classifyStarted.events[0]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
-      title: "2 states"
+      title: "ad hoc · 2 states"
     })
     const classifySettled = Projection.fold(
       ctx,
