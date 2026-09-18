@@ -51,7 +51,7 @@ import * as Protocol from "./Protocol.ts"
 export interface Context {
   readonly directory: string
   readonly now: () => number
-  /** The frame budget the health state reports. One hundred by default. */
+  /** The frame budget the health state reports until the engine arms one. One hundred by default. */
   readonly maxFrames?: number | undefined
   /** The seat's price, when the host knows it. Without one the seat costs zero. */
   readonly pricing?: Pricing | undefined
@@ -171,6 +171,12 @@ export interface State {
   readonly healthCards: number
   /** The run summary's counters. */
   readonly summary: Summary
+  /**
+   * The call starts and settles already counted, by identity: a frame the
+   * engine replays after a park re-emits them, and the summary counts each
+   * once.
+   */
+  readonly counted: Readonly<Record<string, true>>
 }
 
 /**
@@ -837,7 +843,8 @@ export const open = (ctx: Context, opened: Opened): Step => {
     editedThisFrame: false,
     health: colorOf(session.title),
     healthCards: 0,
-    summary: { frames: 0, calls: 0, classifyCalls: 0, jevCalls: 0, jevLatencyMs: 0, jevCost: 0 }
+    summary: { frames: 0, calls: 0, classifyCalls: 0, jevCalls: 0, jevLatencyMs: 0, jevCost: 0 },
+    counted: {}
   }
   const user: Protocol.UserMessage = {
     id: opened.userMessageID,
@@ -885,7 +892,8 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         cell: undefined,
         editedThisFrame: false,
         facts: { ...state.facts, parked: "none" },
-        summary: { ...state.summary, frames: state.summary.frames + 1 }
+        // Frames are counted by index, so a replay from frame zero after a park counts nothing twice.
+        summary: { ...state.summary, frames: Math.max(state.summary.frames, frame + 1) }
       }
       const part: Protocol.StepStartPart = {
         ...base(next),
@@ -1007,16 +1015,18 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         state: { status: "running", input, title: toolTitle(event.call.flowName, input), time: { start: now } }
       }
       const classify = isClassify(event.call.flowName) ? 1 : 0
+      const counted = `start:${key}` in state.counted
       return {
         state: {
           ...state,
           cell,
           calls: { ...state.calls, [key]: card },
-          summary: {
+          summary: counted ? state.summary : {
             ...state.summary,
             calls: state.summary.calls + 1,
             classifyCalls: state.summary.classifyCalls + classify
-          }
+          },
+          counted: { ...state.counted, [`start:${key}`]: true }
         },
         events: [partEvent(part, ctx.now())]
       }
@@ -1066,19 +1076,20 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           }
       }
       const { [key]: _settled, ...calls } = state.calls
+      // A replayed classify settle is the journal's answer, not a second Jev call.
+      const counted = !classify || `settle:${key}` in state.counted
       return {
         state: {
           ...state,
           calls,
           facts,
           editedThisFrame: state.editedThisFrame || edited,
-          summary: classify
-            ? {
-              ...state.summary,
-              jevCalls: state.summary.jevCalls + 1,
-              jevLatencyMs: state.summary.jevLatencyMs + latency
-            }
-            : state.summary
+          summary: counted ? state.summary : {
+            ...state.summary,
+            jevCalls: state.summary.jevCalls + 1,
+            jevLatencyMs: state.summary.jevLatencyMs + latency
+          },
+          counted: classify ? { ...state.counted, [`settle:${key}`]: true } : state.counted
         },
         events: [partEvent(part, now)]
       }
@@ -1089,6 +1100,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         ? { state: { ...state, facts }, events: [] }
         : { state: { ...state, facts, cell: { ...state.cell, prints: event.text } }, events: [] }
     }
+    case "discipline-armed":
+      // The budget the engine armed is the budget health reports, whatever the host was told.
+      return { state: { ...state, facts: { ...state.facts, maxFrames: event.maxFrames } }, events: [] }
     case "mutation-observed":
       return event.mutated
         ? { state: { ...state, editedThisFrame: true, facts: { ...state.facts, framesSinceEdit: 0 } }, events: [] }

@@ -822,16 +822,16 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(completed.state.status === "completed" && completed.state.metadata["answers"]).toEqual([
       completed.state.status === "completed" && (completed.state.metadata["result"] as { answers: unknown }).answers
     ])
-    // Two frames ran twice (the park replays frame zero and one): the summary counts what the app saw.
-    expect(state.summary).toMatchObject({ frames: 4, classifyCalls: 2, jevCalls: 2, jevLatencyMs: 424, jevCost: 0 })
-    expect(state.summary.calls).toBe(7)
+    // Two frames ran twice (the park replays frame zero and one): the summary counts each once.
+    expect(state.summary).toMatchObject({ frames: 2, classifyCalls: 1, jevCalls: 1, jevLatencyMs: 212, jevCost: 0 })
+    expect(state.summary.calls).toBe(4)
     expect(state.facts.lastCalls.map((call) => call.flow)).toContain("classify/triage/relevance")
     expect(state.facts.lastCalls.map((call) => call.ok)).toContain(true)
     expect(state.facts.lastPrints).toContain("total 16")
     expect(state.facts.demands).toEqual(["read-only", "read-only"])
     expect(state.facts.lastTransition).toBe("complete")
     const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.synthetic === true)!
-    expect(summary.text).toBe("4 frames · 7 calls · 2 classify · Jev 2 calls · 424 ms · $0.0000")
+    expect(summary.text).toBe("2 frames · 4 calls · 1 classify · Jev 1 call · 212 ms · $0.0000")
     expect(summary.id).toBe(
       Ids.part(assistantMessageID, { frame: Projection.finalFrame, slot: Projection.summarySlot, ordinal: 0 })
     )
@@ -841,6 +841,26 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     const ctx = { directory, now: clock().now, maxFrames: 8 }
     let step = Projection.open(ctx, opened())
     expect(step.state.health).toBeUndefined()
+    // The budget the engine arms replaces the one the host was told.
+    expect(step.state.facts.maxFrames).toBe(8)
+    const armed = Projection.fold(
+      ctx,
+      step.state,
+      new AgentEvents.DisciplineArmed({
+        eventType: "flows.harness.discipline-armed.v1",
+        readOnlyCap: 3,
+        maxFrames: 7,
+        approvalChannel: true,
+        modelCallMs: 1000,
+        repeatCap: 3,
+        narrowingCap: 3,
+        unmovedCap: 0,
+        revalidations: 1,
+        unresolvedCap: 3
+      })
+    )
+    expect(armed.events).toEqual([])
+    expect(armed.state.facts.maxFrames).toBe(7)
     const triggers: Array<Health.Facts> = []
     for (const event of scriptEvents()) {
       step = Projection.fold(ctx, step.state, event)

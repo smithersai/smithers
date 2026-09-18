@@ -161,7 +161,13 @@ export const host = async (
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
       yield* Globals.guard(globals)
-      return yield* Serve.host({ directory, bind: requested, version: packageVersion, seat })
+      return yield* Serve.host({
+        directory,
+        bind: requested,
+        version: packageVersion,
+        seat,
+        maxFrames: options.maxFrames
+      })
     }).pipe(
       Effect.provide(driver),
       Effect.provide(RedactedLogger.layer()),

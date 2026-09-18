@@ -21,6 +21,7 @@ const ports = vi.hoisted(() => ({
   update: vi.fn(),
   bug: vi.fn(),
   opencode: vi.fn(),
+  serveHost: vi.fn(),
   initialize: vi.fn(),
   suggest: vi.fn(),
   isDirectory: vi.fn()
@@ -48,6 +49,10 @@ vi.mock("../src/commands/Bug.ts", () => ({ submit: ports.bug }))
 vi.mock("../src/commands/OpenCode.ts", async (load) => ({
   ...await load<typeof import("../src/commands/OpenCode.ts")>(),
   host: ports.opencode
+}))
+vi.mock("@smthrs/opencode/Serve", async (load) => ({
+  ...await load<typeof import("@smthrs/opencode/Serve")>(),
+  host: ports.serveHost
 }))
 vi.mock("../src/cli/Generate.ts", async (load) => ({
   ...await load<typeof import("../src/cli/Generate.ts")>(),
@@ -309,6 +314,26 @@ describe("unified root command dispatch", () => {
         { quiet: true }
       )
     ).rejects.toMatchObject({ message: expect.stringContaining("--listen") })
+  })
+
+  it("hands the frame budget to the server as well as the engine", async () => {
+    ports.opencode.mockRestore()
+    const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
+    const directory = mkdtempSync(join(tmpdir(), "smithers-opencode-cli-"))
+    const before = process.cwd()
+    ports.serveHost.mockImplementation(() => Effect.void)
+    try {
+      await host(
+        { directory, port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 7, scripted: true },
+        { credential: undefined, environment: {} },
+        { quiet: true }
+      )
+    } finally {
+      process.chdir(before)
+      rmSync(directory, { recursive: true, force: true })
+    }
+    expect(ports.serveHost).toHaveBeenCalledOnce()
+    expect(ports.serveHost.mock.calls[0]![0]).toMatchObject({ directory, seat: "scripted:demo", maxFrames: 7 })
   })
 
   it.each(["-1", "65536", "1.5"])("rejects invalid port %s before acquiring a host", async (port) => {

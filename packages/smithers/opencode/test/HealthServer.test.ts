@@ -122,7 +122,8 @@ describe("Health over the server", () => {
     const summary = assistant.parts.find((part): part is Protocol.TextPart =>
       part.type === "text" && part.synthetic === true
     )!
-    expect(summary.text).toMatch(/^4 frames · 7 calls · 2 classify · Jev \d+ calls · \d+ ms · \$0\.0000$/)
+    // The park replays frame zero and one; each frame, call and classify call counts once.
+    expect(summary.text).toMatch(/^2 frames · 4 calls · 1 classify · Jev \d+ calls · \d+ ms · \$0\.0000$/)
     const final = (await get(`/session/${session.id}`)) as Protocol.Session
     expect(final.tokens.input).toBeGreaterThan(0)
     expect(final.cost).toBe(0)

@@ -155,14 +155,6 @@ export interface Options {
 export const defaultLimits: Sandbox.Limits = { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 }
 
 /**
- * The frame budget when the host names none.
- *
- * @category constants
- * @since 1.0.0
- */
-export const defaultMaxFrames = 100
-
-/**
  * The capability envelope every turn runs under: the standard flows over
  * the served directory and the shell.
  *
@@ -387,7 +379,7 @@ export const layer = (options: Options) =>
     const directory = resolve(options.directory)
     const databaseFile = options.databaseFile ?? databasePath(directory)
     const asks = new Set(options.asks ?? ["bash"])
-    const maxFrames = options.maxFrames ?? defaultMaxFrames
+    const maxFrames = options.maxFrames ?? Projection.defaultMaxFrames
     const limits = options.limits ?? defaultLimits
     const flowsOf = options.flows ?? standardFlows
     const evaluator = options.evaluator ??

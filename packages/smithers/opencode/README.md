@@ -47,13 +47,16 @@ import * as Serve from "@smthrs/opencode/Serve"
 import { Effect } from "effect"
 
 const directory = process.cwd()
-const program = Serve.host({
-  directory,
-  bind: Serve.defaultBind,
-  version: "1.0.0-rc.0",
-  seat: "cerebras:gpt-oss-120b"
-}).pipe(Effect.provide(EngineDriver.layer({ directory, seat: "cerebras:gpt-oss-120b", host })))
+const seat = "cerebras:gpt-oss-120b"
+const maxFrames = 100
+const program = Serve.host({ directory, bind: Serve.defaultBind, version: "1.0.0-rc.0", seat, maxFrames }).pipe(
+  Effect.provide(EngineDriver.layer({ directory, seat, maxFrames, host }))
+)
 ```
+
+The frame budget goes to both: the engine enforces it, and the projection
+reports it to health until the engine's own `discipline-armed` event says
+what was armed.
 
 `host` is an `EngineDriver.Host`: the platform a flow body reaches the
 world through, a seat resolver, and a flow registry. `smithers opencode`
