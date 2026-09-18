@@ -25,6 +25,11 @@ export * as DemoScript from "./DemoScript.ts"
 export * as Driver from "./Driver.ts"
 
 /**
+ * @since 1.0.0 @category driver
+ */
+export * as EngineDriver from "./EngineDriver.ts"
+
+/**
  * @since 1.0.0 @category events
  */
 export * as Events from "./Events.ts"

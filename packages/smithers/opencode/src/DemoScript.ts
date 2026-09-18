@@ -7,7 +7,8 @@
  * durable engine derives from the session, frame, cell digest and ordinal,
  * so the projection is exercised the way the engine driver will exercise it.
  * The permission park is followed by the replay of frame zero, which is what
- * a resumed execution produces (composition brief section 8).
+ * a resumed execution produces (composition brief section 8). The frame
+ * closes before the answer is reported, the order the engine emits.
  *
  * @since 1.0.0
  */
@@ -212,14 +213,14 @@ const bashSettled = (session: string): Array<AgentEvent.AgentEvent> => [
       output: "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/."
     })
   }),
+  closed("resolved"),
   new AgentEvent.Resolved({
     eventType: "flows.harness.resolved.v1",
     message: ModelRequest.Message.assistant(
       "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.",
       { stopReason: "stop" }
     )
-  }),
-  closed("resolved")
+  })
 ]
 
 const bashRefused = (session: string): Array<AgentEvent.AgentEvent> => [
@@ -248,14 +249,14 @@ const bashRefused = (session: string): Array<AgentEvent.AgentEvent> => [
       })
     })
   }),
+  closed("resolved"),
   new AgentEvent.Resolved({
     eventType: "flows.harness.resolved.v1",
     message: ModelRequest.Message.assistant(
       "The shell call was refused, so I answered from the read: demo-repo 0.1.0.",
       { stopReason: "stop" }
     )
-  }),
-  closed("resolved")
+  })
 ]
 
 /**

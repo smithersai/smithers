@@ -25,7 +25,14 @@ import type * as Protocol from "./Protocol.ts"
 export interface StartInput {
   readonly sessionID: string
   readonly messageID: string
+  /** The text the person sent. */
   readonly prompt: string
+  /**
+   * The conversation before this prompt, rendered for the model, when the
+   * session already had turns. The driver carries it in the task; the
+   * projection never shows it.
+   */
+  readonly history?: string | undefined
   readonly agent?: string | undefined
   readonly model?: Protocol.ModelRef | undefined
 }
@@ -103,10 +110,11 @@ export interface Service {
   readonly steer: (sessionID: string, text: string) => Effect.Effect<boolean>
   /**
    * Re-drives every execution that was running or parked when the process
-   * last stopped, opening a sink per session through `open`.
+   * last stopped, opening a sink per session through `open`. A sink that
+   * cannot be opened is a defect of the boot, not of the driver.
    */
   readonly resumeOnBoot: (
-    open: (input: StartInput) => Effect.Effect<Sink>
+    open: (input: StartInput) => Effect.Effect<Sink, unknown>
   ) => Effect.Effect<void, DriverError>
 }
 

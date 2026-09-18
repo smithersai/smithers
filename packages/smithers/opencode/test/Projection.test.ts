@@ -580,6 +580,38 @@ describe("Projection", () => {
     )
     expect(noMeta.events[0]!.properties["permission"]).toBe("proc:spawn")
 
+    // The answer may arrive before the frame's close (the recorded turn once
+    // did) or after it (the engine): the turn ends once both have.
+    const answer = new AgentEvents.Resolved({
+      eventType: "flows.harness.resolved.v1",
+      message: ModelRequest.Message.assistant("early", { stopReason: "stop" })
+    })
+    const closeResolved = new AgentEvents.TurnClosed({
+      eventType: "flows.harness.turn-closed.v1",
+      stopReason: "stop",
+      outcome: "resolved"
+    })
+    const answeredFirst = Projection.fold(ctx, frame.state, answer)
+    expect(answeredFirst.state.closed).toBe(false)
+    expect(answeredFirst.events.map((event) => event.type)).toEqual([
+      "message.part.updated",
+      "message.part.delta",
+      "message.part.updated"
+    ])
+    const thenClosed = Projection.fold(ctx, answeredFirst.state, closeResolved)
+    expect(thenClosed.state.closed).toBe(true)
+    expect(thenClosed.events.map((event) => event.type)).toEqual([
+      "message.part.updated",
+      "message.updated",
+      "session.updated",
+      "session.status",
+      "session.idle"
+    ])
+    const closedFirst = Projection.fold(ctx, frame.state, closeResolved)
+    expect(closedFirst.state.closed).toBe(false)
+    expect(closedFirst.events.map((event) => event.type)).toEqual(["message.part.updated"])
+    expect(Projection.fold(ctx, closedFirst.state, answer).state.closed).toBe(true)
+
     // Steering and the unknown are no-ops; a suspended close is a no-op.
     expect(
       Projection.fold(

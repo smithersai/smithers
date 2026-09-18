@@ -1,7 +1,7 @@
 /**
- * The session store: sessions, message headers, parts, and pending
- * permissions in SQLite, so a history read is a read and a reload after a
- * restart shows what the app showed before.
+ * The session store: sessions, message headers, parts, pending permissions,
+ * permission grants, and open turns in SQLite, so a history read is a read
+ * and a reload after a restart shows what the app showed before.
  *
  * The file is `<directory>/.smithers/opencode.sqlite`, opened through
  * `@smthrs/database`'s Node driver. The tables carry one JSON column each:
@@ -53,6 +53,37 @@ export interface MessageWithParts {
 }
 
 /**
+ * A permission decision the operator made for a session: `always` for a
+ * flow name, `once` or `reject` for one request id. Kept so a decision made
+ * before a restart still answers the call the resumed turn asks about.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Grant {
+  readonly sessionID: string
+  readonly kind: "always" | "once" | "reject"
+  /** The flow name for `always`, the request id otherwise. */
+  readonly key: string
+}
+
+/**
+ * A turn the engine driver started and has not seen settle: what re-drives
+ * it after a restart.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Turn {
+  readonly sessionID: string
+  readonly messageID: string
+  readonly prompt: string
+  readonly history?: string | undefined
+  readonly agent?: string | undefined
+  readonly model?: Protocol.ModelRef | undefined
+}
+
+/**
  * What the store does.
  *
  * @category models
@@ -76,6 +107,15 @@ export interface Service {
   readonly putPermission: (request: Protocol.PermissionRequest) => Effect.Effect<void, StoreError>
   readonly listPermissions: (sessionID?: string) => Effect.Effect<Array<Protocol.PermissionRequest>, StoreError>
   readonly deletePermission: (id: string) => Effect.Effect<boolean, StoreError>
+  readonly putGrant: (grant: Grant) => Effect.Effect<void, StoreError>
+  /** Every grant, or a session's, in insertion order. */
+  readonly listGrants: (sessionID?: string) => Effect.Effect<Array<Grant>, StoreError>
+  /** Records a turn as open; storing the same message id again updates it. */
+  readonly putTurn: (turn: Turn) => Effect.Effect<void, StoreError>
+  /** Every turn recorded as open, oldest first. */
+  readonly listTurns: () => Effect.Effect<Array<Turn>, StoreError>
+  /** Forgets a turn once it settled. True when it was open. */
+  readonly settleTurn: (messageID: string) => Effect.Effect<boolean, StoreError>
   /** Persists what one emitted event implies; events that imply nothing are ignored. */
   readonly apply: (event: Protocol.Emitted) => Effect.Effect<void, StoreError>
 }
@@ -124,6 +164,21 @@ export const migrations: Migrations.MigrationSet = {
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         request TEXT NOT NULL
+      )`
+    }),
+    "0002_grants_and_turns": Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE opencode_grants (
+        session_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        key TEXT NOT NULL,
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        UNIQUE (session_id, kind, key)
+      )`
+      yield* sql`CREATE TABLE opencode_turns (
+        message_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn TEXT NOT NULL
       )`
     })
   }
@@ -174,6 +229,8 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
       yield* statement(sql`DELETE FROM opencode_parts WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_messages WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_permissions WHERE session_id = ${id}`)
+      yield* statement(sql`DELETE FROM opencode_grants WHERE session_id = ${id}`)
+      yield* statement(sql`DELETE FROM opencode_turns WHERE session_id = ${id}`)
       yield* statement(sql`DELETE FROM opencode_sessions WHERE id = ${id}`)
       return true
     })
@@ -248,6 +305,48 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
       Effect.mapError(failure("The permission could not be deleted"))
     )
 
+  const putGrant: Service["putGrant"] = (grant) =>
+    sql`INSERT INTO opencode_grants (session_id, kind, key)
+        VALUES (${grant.sessionID}, ${grant.kind}, ${grant.key})
+        ON CONFLICT (session_id, kind, key) DO NOTHING`.pipe(
+      Effect.asVoid,
+      Effect.mapError(failure("The grant could not be stored"))
+    )
+
+  const listGrants: Service["listGrants"] = (sessionID) =>
+    (sessionID === undefined
+      ? sql`SELECT session_id, kind, key FROM opencode_grants ORDER BY seq ASC`
+      : sql`SELECT session_id, kind, key FROM opencode_grants WHERE session_id = ${sessionID} ORDER BY seq ASC`).pipe(
+        Effect.map((rows) =>
+          rows.map((row): Grant => ({
+            sessionID: String(row["session_id"]),
+            kind: String(row["kind"]) as Grant["kind"],
+            key: String(row["key"])
+          }))
+        ),
+        Effect.mapError(failure("The grants could not be listed"))
+      )
+
+  const putTurn: Service["putTurn"] = (turn) =>
+    sql`INSERT INTO opencode_turns (message_id, session_id, turn)
+        VALUES (${turn.messageID}, ${turn.sessionID}, ${JSON.stringify(turn)})
+        ON CONFLICT (message_id) DO UPDATE SET turn = excluded.turn`.pipe(
+      Effect.asVoid,
+      Effect.mapError(failure("The turn could not be stored"))
+    )
+
+  const listTurns: Service["listTurns"] = () =>
+    sql`SELECT turn FROM opencode_turns ORDER BY message_id ASC`.pipe(
+      Effect.map((rows) => rows.map((row) => parse<Turn>(row, "turn"))),
+      Effect.mapError(failure("The turns could not be listed"))
+    )
+
+  const settleTurn: Service["settleTurn"] = (messageID) =>
+    sql`DELETE FROM opencode_turns WHERE message_id = ${messageID} RETURNING message_id`.pipe(
+      Effect.map((rows) => rows.length > 0),
+      Effect.mapError(failure("The turn could not be settled"))
+    )
+
   const apply: Service["apply"] = (event) =>
     Effect.gen(function*() {
       const properties = event.properties
@@ -295,6 +394,11 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
     putPermission,
     listPermissions,
     deletePermission,
+    putGrant,
+    listGrants,
+    putTurn,
+    listTurns,
+    settleTurn,
     apply
   }
 })

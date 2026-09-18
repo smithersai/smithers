@@ -16,8 +16,18 @@
   "bugs": {
     "url": "https://github.com/smithersai/smithers/issues"
   },
-  "tags": ["typescript", "effect", "opencode", "agent"],
-  "keywords": ["typescript", "effect", "opencode", "agent"],
+  "tags": [
+    "typescript",
+    "effect",
+    "opencode",
+    "agent"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "opencode",
+    "agent"
+  ],
   "engines": {
     "node": ">=22.19.0"
   },
@@ -31,6 +41,7 @@
     "./Cors": "./src/Cors.ts",
     "./DemoScript": "./src/DemoScript.ts",
     "./Driver": "./src/Driver.ts",
+    "./EngineDriver": "./src/EngineDriver.ts",
     "./Events": "./src/Events.ts",
     "./Ids": "./src/Ids.ts",
     "./Projection": "./src/Projection.ts",
@@ -60,66 +71,166 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "import": { "types": "./dist/esm/index.d.ts", "default": "./dist/esm/index.js" },
-        "require": { "types": "./dist/cjs/index.d.ts", "default": "./dist/cjs/index.js" }
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       },
       "./internal/*": null,
       "./*/index": null,
       "./Auth": {
-        "import": { "types": "./dist/esm/Auth.d.ts", "default": "./dist/esm/Auth.js" },
-        "require": { "types": "./dist/cjs/Auth.d.ts", "default": "./dist/cjs/Auth.js" }
+        "import": {
+          "types": "./dist/esm/Auth.d.ts",
+          "default": "./dist/esm/Auth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Auth.d.ts",
+          "default": "./dist/cjs/Auth.js"
+        }
       },
       "./Cors": {
-        "import": { "types": "./dist/esm/Cors.d.ts", "default": "./dist/esm/Cors.js" },
-        "require": { "types": "./dist/cjs/Cors.d.ts", "default": "./dist/cjs/Cors.js" }
+        "import": {
+          "types": "./dist/esm/Cors.d.ts",
+          "default": "./dist/esm/Cors.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cors.d.ts",
+          "default": "./dist/cjs/Cors.js"
+        }
       },
       "./DemoScript": {
-        "import": { "types": "./dist/esm/DemoScript.d.ts", "default": "./dist/esm/DemoScript.js" },
-        "require": { "types": "./dist/cjs/DemoScript.d.ts", "default": "./dist/cjs/DemoScript.js" }
+        "import": {
+          "types": "./dist/esm/DemoScript.d.ts",
+          "default": "./dist/esm/DemoScript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DemoScript.d.ts",
+          "default": "./dist/cjs/DemoScript.js"
+        }
       },
       "./Driver": {
-        "import": { "types": "./dist/esm/Driver.d.ts", "default": "./dist/esm/Driver.js" },
-        "require": { "types": "./dist/cjs/Driver.d.ts", "default": "./dist/cjs/Driver.js" }
+        "import": {
+          "types": "./dist/esm/Driver.d.ts",
+          "default": "./dist/esm/Driver.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Driver.d.ts",
+          "default": "./dist/cjs/Driver.js"
+        }
+      },
+      "./EngineDriver": {
+        "import": {
+          "types": "./dist/esm/EngineDriver.d.ts",
+          "default": "./dist/esm/EngineDriver.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineDriver.d.ts",
+          "default": "./dist/cjs/EngineDriver.js"
+        }
       },
       "./Events": {
-        "import": { "types": "./dist/esm/Events.d.ts", "default": "./dist/esm/Events.js" },
-        "require": { "types": "./dist/cjs/Events.d.ts", "default": "./dist/cjs/Events.js" }
+        "import": {
+          "types": "./dist/esm/Events.d.ts",
+          "default": "./dist/esm/Events.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Events.d.ts",
+          "default": "./dist/cjs/Events.js"
+        }
       },
       "./Ids": {
-        "import": { "types": "./dist/esm/Ids.d.ts", "default": "./dist/esm/Ids.js" },
-        "require": { "types": "./dist/cjs/Ids.d.ts", "default": "./dist/cjs/Ids.js" }
+        "import": {
+          "types": "./dist/esm/Ids.d.ts",
+          "default": "./dist/esm/Ids.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ids.d.ts",
+          "default": "./dist/cjs/Ids.js"
+        }
       },
       "./Projection": {
-        "import": { "types": "./dist/esm/Projection.d.ts", "default": "./dist/esm/Projection.js" },
-        "require": { "types": "./dist/cjs/Projection.d.ts", "default": "./dist/cjs/Projection.js" }
+        "import": {
+          "types": "./dist/esm/Projection.d.ts",
+          "default": "./dist/esm/Projection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projection.d.ts",
+          "default": "./dist/cjs/Projection.js"
+        }
       },
       "./Protocol": {
-        "import": { "types": "./dist/esm/Protocol.d.ts", "default": "./dist/esm/Protocol.js" },
-        "require": { "types": "./dist/cjs/Protocol.d.ts", "default": "./dist/cjs/Protocol.js" }
+        "import": {
+          "types": "./dist/esm/Protocol.d.ts",
+          "default": "./dist/esm/Protocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Protocol.d.ts",
+          "default": "./dist/cjs/Protocol.js"
+        }
       },
       "./Routes": {
-        "import": { "types": "./dist/esm/Routes.d.ts", "default": "./dist/esm/Routes.js" },
-        "require": { "types": "./dist/cjs/Routes.d.ts", "default": "./dist/cjs/Routes.js" }
+        "import": {
+          "types": "./dist/esm/Routes.d.ts",
+          "default": "./dist/esm/Routes.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Routes.d.ts",
+          "default": "./dist/cjs/Routes.js"
+        }
       },
       "./ScriptedDriver": {
-        "import": { "types": "./dist/esm/ScriptedDriver.d.ts", "default": "./dist/esm/ScriptedDriver.js" },
-        "require": { "types": "./dist/cjs/ScriptedDriver.d.ts", "default": "./dist/cjs/ScriptedDriver.js" }
+        "import": {
+          "types": "./dist/esm/ScriptedDriver.d.ts",
+          "default": "./dist/esm/ScriptedDriver.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScriptedDriver.d.ts",
+          "default": "./dist/cjs/ScriptedDriver.js"
+        }
       },
       "./Serve": {
-        "import": { "types": "./dist/esm/Serve.d.ts", "default": "./dist/esm/Serve.js" },
-        "require": { "types": "./dist/cjs/Serve.d.ts", "default": "./dist/cjs/Serve.js" }
+        "import": {
+          "types": "./dist/esm/Serve.d.ts",
+          "default": "./dist/esm/Serve.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Serve.d.ts",
+          "default": "./dist/cjs/Serve.js"
+        }
       },
       "./Store": {
-        "import": { "types": "./dist/esm/Store.d.ts", "default": "./dist/esm/Store.js" },
-        "require": { "types": "./dist/cjs/Store.d.ts", "default": "./dist/cjs/Store.js" }
+        "import": {
+          "types": "./dist/esm/Store.d.ts",
+          "default": "./dist/esm/Store.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Store.d.ts",
+          "default": "./dist/cjs/Store.js"
+        }
       },
       "./Turns": {
-        "import": { "types": "./dist/esm/Turns.d.ts", "default": "./dist/esm/Turns.js" },
-        "require": { "types": "./dist/cjs/Turns.d.ts", "default": "./dist/cjs/Turns.js" }
+        "import": {
+          "types": "./dist/esm/Turns.d.ts",
+          "default": "./dist/esm/Turns.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Turns.d.ts",
+          "default": "./dist/cjs/Turns.js"
+        }
       },
       "./index": {
-        "import": { "types": "./dist/esm/index.d.ts", "default": "./dist/esm/index.js" },
-        "require": { "types": "./dist/cjs/index.d.ts", "default": "./dist/cjs/index.js" }
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
       }
     }
   },
@@ -133,10 +244,20 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/agent": "1.0.0-rc.0",
     "@smthrs/capability": "1.0.0-rc.0",
     "@smthrs/database": "1.0.0-rc.0",
+    "@smthrs/engine-store": "1.0.0-rc.0",
+    "@smthrs/flow": "1.0.0-rc.0",
+    "@smthrs/flows": "1.0.0-rc.0",
     "@smthrs/harness": "1.0.0-rc.0",
-    "@smthrs/model": "1.0.0-rc.0"
+    "@smthrs/jj": "1.0.0-rc.0",
+    "@smthrs/kernel": "1.0.0-rc.0",
+    "@smthrs/model": "1.0.0-rc.0",
+    "@smthrs/notifications": "1.0.0-rc.0",
+    "@smthrs/plan": "1.0.0-rc.0",
+    "@smthrs/registry": "1.0.0-rc.0",
+    "@smthrs/run-store": "1.0.0-rc.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

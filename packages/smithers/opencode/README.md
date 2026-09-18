@@ -23,10 +23,11 @@ Node 22.19.0 or later is required.
 | `Serve`          | The bind and its admission rule, the banner, `app` (the whole application as a router layer) and `layer` (the same on a Node socket with its own SQLite store).    |
 | `Routes`         | Every v1 route the hosted app calls, with the 1.18.31 response shapes, plus the three v2 routes it calls in v1 mode.                                               |
 | `Events`         | The server-sent event hub: `server.connected`, live events in the `{directory, project, payload}` envelope, heartbeats, and a bounded replay for reconnects.       |
-| `Store`          | Sessions, message headers, parts, and pending permissions in `<directory>/.smithers/opencode.sqlite`, so history is a read.                                        |
+| `Store`          | Sessions, message headers, parts, pending permissions, grants, and open turns in `<directory>/.smithers/opencode.sqlite`, so history is a read.                    |
 | `Projection`     | The pure fold from harness `AgentEvent`s to OpenCode v1 events and parts, with part ids derived from the message and a sort key so a replayed frame updates cards. |
-| `Turns`          | One turn per prompt: opens the projection, forks the driver, stores then publishes every event, answers permissions, aborts.                                       |
+| `Turns`          | One turn per prompt: opens the projection, forks the driver, stores then publishes every event, answers permissions, aborts, re-opens what a restart finds.        |
 | `Driver`         | The seam a turn runner implements: `start`, `interrupt`, `permission`, `steer`, `resumeOnBoot`.                                                                    |
+| `EngineDriver`   | The driver over the durable flow engine: one `Agent.run` per prompt under `<directory>/.smithers/opencode.sqlite`, permission parks, steering, interrupts, resume. |
 | `ScriptedDriver` | A driver that replays a recorded turn, with permission parks and their continuations.                                                                              |
 | `DemoScript`     | The recorded turn the scripted driver ships with: a read, a list, a read-only demand, a shell call behind a permission, and a final answer.                        |
 | `Ids`            | OpenCode identifiers: prefixes, the time-ordered head, and derived part ids.                                                                                       |
@@ -36,18 +37,48 @@ Node 22.19.0 or later is required.
 
 ## Hosting the server
 
+The server needs a driver and a store. The engine driver brings its own
+store over the engine database; the scripted driver is paired with one.
+
+```ts
+import * as EngineDriver from "@smthrs/opencode/EngineDriver"
+import * as Serve from "@smthrs/opencode/Serve"
+import { Effect } from "effect"
+
+const directory = process.cwd()
+const program = Serve.host({
+  directory,
+  bind: Serve.defaultBind,
+  version: "1.0.0-rc.0",
+  seat: "cerebras:gpt-oss-120b"
+}).pipe(Effect.provide(EngineDriver.layer({ directory, seat: "cerebras:gpt-oss-120b", host })))
+```
+
+`host` is an `EngineDriver.Host`: the platform a flow body reaches the
+world through, a seat resolver, and a flow registry. `smithers opencode`
+builds it from `NodeControl`; a test builds it from the Node platform and a
+scripted seat.
+
 ```ts
 import * as DemoScript from "@smthrs/opencode/DemoScript"
 import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
-import { Effect } from "effect"
+import * as Store from "@smthrs/opencode/Store"
+import { Effect, Layer } from "effect"
 
-const program = Serve.host({
+const scripted = Serve.host({
   directory: process.cwd(),
   bind: Serve.defaultBind,
   version: "1.0.0-rc.0",
-  seat: "cerebras:gpt-oss-120b"
-}).pipe(Effect.provide(ScriptedDriver.layer({ script: DemoScript.script })))
+  seat: "scripted:demo"
+}).pipe(
+  Effect.provide(
+    Layer.mergeAll(
+      ScriptedDriver.layer({ script: DemoScript.script }),
+      Store.layerSqlite(Serve.databasePath(process.cwd()))
+    )
+  )
+)
 ```
 
 The contract this server answers is recorded in `docs/jev-harness/trace/summary.md` in the repository: the routes per step, the events per step, and the envelope, traced from the hosted app against OpenCode 1.18.31.

@@ -10,11 +10,14 @@
  * message and steered into the running turn. A permission answer is
  * published as `permission.replied` and handed to the driver, which resumes
  * the parked execution. An abort interrupts the driver, whose exit closes
- * the projection.
+ * the projection. At boot the driver re-drives every turn that was open
+ * when the process last stopped, and the projection of each is re-opened
+ * so the replay updates the cards the app already shows.
  *
  * @since 1.0.0
  */
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { Context, Deferred, Effect, Layer, Option, Queue, Schedule, Schema, type Scope } from "effect"
 import * as Driver from "./Driver.ts"
 import * as Events from "./Events.ts"
 import * as Ids from "./Ids.ts"
@@ -76,6 +79,35 @@ export interface Service {
 }
 
 /**
+ * How much of the conversation a follow-up carries into its turn, in
+ * characters.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const historyCap = 4096
+
+/**
+ * The conversation tail a follow-up prompt carries: every user prompt and
+ * every final answer so far, oldest first, cut from the front to
+ * `historyCap` characters. `undefined` when the session has no history.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const history = (messages: ReadonlyArray<Store.MessageWithParts>, cap = historyCap): string | undefined => {
+  const lines: Array<string> = []
+  for (const message of messages) {
+    const text = message.parts.flatMap((part) => part.type === "text" ? [part.text] : []).join("").trim()
+    if (text === "") continue
+    lines.push(`${message.info.role === "user" ? "Person" : "Assistant"}: ${text}`)
+  }
+  if (lines.length === 0) return undefined
+  const joined = lines.join("\n\n")
+  return joined.length <= cap ? joined : `[earlier turns omitted]\n${joined.slice(joined.length - cap)}`
+}
+
+/**
  * The turns service.
  *
  * @category services
@@ -100,7 +132,7 @@ export const promptText = (parts: PromptInput["parts"]): string =>
  */
 export const make = (
   options: Options
-): Effect.Effect<Service, never, Driver.Driver | Store.Store | Events.Events> =>
+): Effect.Effect<Service, never, Driver.Driver | Store.Store | Events.Events | Scope.Scope> =>
   Effect.gen(function*() {
     const driver = yield* Driver.Driver
     const store = yield* Store.Store
@@ -108,14 +140,33 @@ export const make = (
     const ctx: Projection.Context = { directory: options.directory, now: () => Date.now() }
     const states = new Map<string, Projection.State>()
 
+    /**
+     * One event, stored then published. The engine holds a write transaction
+     * for the length of a step, and a store write that lands inside it finds
+     * the database locked, so the write waits and retries until the step
+     * commits; only then is the event published, so the stream never says
+     * something the history route does not.
+     */
     const emit = (events: ReadonlyArray<Protocol.Emitted>) =>
-      Effect.forEach(events, (event) => Effect.andThen(store.apply(event), hub.publish(event)), { discard: true })
+      Effect.forEach(
+        events,
+        (event) =>
+          Effect.andThen(
+            Effect.retry(store.apply(event), {
+              while: isLocked,
+              schedule: Schedule.spaced(storeRetryDelay),
+              times: storeRetries
+            }),
+            hub.publish(event)
+          ),
+        { discard: true }
+      )
 
     /**
-     * Stores and publishes a step, and keeps its state until the turn ends.
-     * A store failure is logged, never thrown into the run.
+     * Applies a step: keeps its state until the turn ends, then stores and
+     * publishes its events. A store failure is logged, never thrown.
      */
-    const commit = (sessionID: string, step: Projection.Step): Effect.Effect<void> =>
+    const apply = (sessionID: string, step: Projection.Step): Effect.Effect<void> =>
       Effect.gen(function*() {
         if (step.state.closed) states.delete(sessionID)
         else states.set(sessionID, step.state)
@@ -124,23 +175,58 @@ export const make = (
         )
       })
 
+    /**
+     * The projection runs on a fiber of its own, fed in order by a queue.
+     * The driver's sink runs inside the engine's frame, which holds the
+     * write transaction the store needs, so a write from there would either
+     * find the database locked or wait on a step that is waiting on it.
+     */
+    const jobs = yield* Queue.make<Job>()
+    /** The sink of a turn the app already has the answer of: nothing to fold. */
+    const inert: Driver.Sink = { event: () => Effect.void, closed: () => Effect.void }
+    const pump = Effect.forever(
+      Effect.gen(function*() {
+        const job = yield* Queue.take(jobs)
+        const state = states.get(job.sessionID)
+        if (job._tag === "open") yield* apply(job.sessionID, job.step)
+        else if (job._tag === "emit") {
+          yield* emit(job.events).pipe(
+            Effect.catchCause((cause) => Effect.logError({ message: "The event could not be stored", cause }))
+          )
+        } else if (state !== undefined && job._tag === "event") {
+          yield* apply(job.sessionID, Projection.fold(ctx, state, job.event))
+        } else if (state !== undefined && job._tag === "close") {
+          yield* apply(job.sessionID, Projection.close(ctx, state, job.closing))
+        }
+        if (job.done !== undefined) yield* Deferred.succeed(job.done, undefined)
+      })
+    )
+    yield* Effect.forkScoped(pump)
+
+    /** Queues a job and waits until the pump has applied it. */
+    const commit = (job: Job): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const done = yield* Deferred.make<void>()
+        yield* Queue.offer(jobs, { ...job, done })
+        yield* Deferred.await(done)
+      })
+
     const sinkFor = (sessionID: string): Driver.Sink => ({
-      event: (event) =>
-        Effect.suspend(() => {
-          const state = states.get(sessionID)
-          return state === undefined ? Effect.void : commit(sessionID, Projection.fold(ctx, state, event))
-        }),
+      event: (event) => Effect.asVoid(Queue.offer(jobs, { _tag: "event", sessionID, event })),
       closed: (outcome) =>
-        Effect.suspend(() => {
-          const state = states.get(sessionID)
-          if (state === undefined || outcome._tag === "suspended") return Effect.void
-          const closing: Projection.Closing = outcome._tag === "interrupted"
-            ? { _tag: "interrupted" }
-            : outcome._tag === "failed"
-            ? { _tag: "failed", message: outcome.message }
-            : { _tag: "failed", message: "The turn ended without an answer" }
-          return commit(sessionID, Projection.close(ctx, state, closing))
-        })
+        outcome._tag === "suspended"
+          ? Effect.void
+          : Effect.asVoid(
+            Queue.offer(jobs, {
+              _tag: "close",
+              sessionID,
+              closing: outcome._tag === "interrupted"
+                ? { _tag: "interrupted" }
+                : outcome._tag === "failed"
+                ? { _tag: "failed", message: outcome.message }
+                : { _tag: "failed", message: "The turn ended without an answer" }
+            })
+          )
     })
 
     const prompt: Service["prompt"] = (input) =>
@@ -166,30 +252,38 @@ export const make = (
             agent,
             model
           }
-          yield* emit([
-            { type: "message.updated", properties: { sessionID: input.sessionID, info: user } },
-            {
-              type: "message.part.updated",
-              properties: {
-                sessionID: input.sessionID,
-                part: {
-                  id: Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 }),
+          yield* commit({
+            _tag: "emit",
+            sessionID: input.sessionID,
+            events: [
+              { type: "message.updated", properties: { sessionID: input.sessionID, info: user } },
+              {
+                type: "message.part.updated",
+                properties: {
                   sessionID: input.sessionID,
-                  messageID: userMessageID,
-                  type: "text",
-                  text
-                },
-                time: now
+                  part: {
+                    id: Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 }),
+                    sessionID: input.sessionID,
+                    messageID: userMessageID,
+                    type: "text",
+                    text
+                  },
+                  time: now
+                }
               }
-            }
-          ])
-          yield* driver.steer(input.sessionID, text)
+            ]
+          })
+          // Forked: the queue's write waits for the frame's own transaction,
+          // and the app expects the prompt route to answer at once.
+          yield* Effect.forkDetach(driver.steer(input.sessionID, text))
           return
         }
         const assistantMessageID = Ids.make("message")
-        yield* commit(
-          input.sessionID,
-          Projection.open(ctx, {
+        const tail = history(yield* store.listMessages(input.sessionID))
+        yield* commit({
+          _tag: "open",
+          sessionID: input.sessionID,
+          step: Projection.open(ctx, {
             session: session.value,
             userMessageID,
             assistantMessageID,
@@ -197,11 +291,11 @@ export const make = (
             agent,
             model
           })
-        )
+        })
         const sink = sinkFor(input.sessionID)
         yield* Effect.forkDetach(
           driver.start(
-            { sessionID: input.sessionID, messageID: assistantMessageID, prompt: text, agent, model },
+            { sessionID: input.sessionID, messageID: assistantMessageID, prompt: text, history: tail, agent, model },
             sink
           ).pipe(
             Effect.catchCause((cause) =>
@@ -220,10 +314,12 @@ export const make = (
      */
     const abort: Service["abort"] = (sessionID) =>
       Effect.gen(function*() {
+        // A card the person never answered is moot once the turn is over.
+        const pending = yield* Effect.orDie(store.listPermissions(sessionID))
+        yield* Effect.orDie(Effect.forEach(pending, (request) => store.deletePermission(request.id), { discard: true }))
         if (yield* driver.interrupt(sessionID)) return true
-        const state = states.get(sessionID)
-        if (state === undefined) return false
-        yield* commit(sessionID, Projection.close(ctx, state, { _tag: "interrupted" }))
+        if (!states.has(sessionID)) return false
+        yield* commit({ _tag: "close", sessionID, closing: { _tag: "interrupted" } })
         return true
       })
 
@@ -236,10 +332,14 @@ export const make = (
             message: `Permission ${input.permissionID} is not pending`
           })
         }
-        yield* emit([{
-          type: "permission.replied",
-          properties: { sessionID: input.sessionID, requestID: input.permissionID, reply: input.response }
-        }])
+        yield* commit({
+          _tag: "emit",
+          sessionID: input.sessionID,
+          events: [{
+            type: "permission.replied",
+            properties: { sessionID: input.sessionID, requestID: input.permissionID, reply: input.response }
+          }]
+        })
         yield* Effect.forkDetach(
           driver.permission(input).pipe(
             Effect.catchCause((cause) => Effect.logError({ message: "The permission could not be answered", cause }))
@@ -254,6 +354,40 @@ export const make = (
         return out
       })
 
+    /**
+     * Re-opens the projection of a turn the driver found open at boot. A
+     * turn whose answer was already stored is left alone: its sink ignores
+     * everything.
+     */
+    const reopen = (input: Driver.StartInput): Effect.Effect<Driver.Sink, Store.StoreError> =>
+      Effect.gen(function*() {
+        const session = yield* store.getSession(input.sessionID)
+        if (Option.isNone(session)) return inert
+        const header = yield* store.getMessage(input.messageID)
+        const assistant = Option.isSome(header) && header.value.role === "assistant" ? header.value : undefined
+        if (assistant?.finish !== undefined) return inert
+        if (!states.has(input.sessionID)) {
+          yield* commit({
+            _tag: "open",
+            sessionID: input.sessionID,
+            step: Projection.open(ctx, {
+              session: session.value,
+              userMessageID: assistant?.parentID ?? Ids.make("message"),
+              assistantMessageID: input.messageID,
+              prompt: input.prompt,
+              agent: input.agent ?? options.agent,
+              model: input.model ?? options.model,
+              createdAt: assistant?.time.created
+            })
+          })
+        }
+        return sinkFor(input.sessionID)
+      })
+
+    yield* driver.resumeOnBoot(reopen).pipe(
+      Effect.catchCause((cause) => Effect.logError({ message: "Open turns could not be resumed", cause }))
+    )
+
     return { prompt, abort, permission, status }
   })
 
@@ -265,3 +399,62 @@ export const make = (
  */
 export const layer = (options: Options): Layer.Layer<Turns, never, Driver.Driver | Store.Store | Events.Events> =>
   Layer.effect(Turns, make(options))
+
+/**
+ * How long a store write waits between attempts while the engine holds the
+ * database, and how many times it tries: a step's transaction spans a model
+ * call, so the wait covers one.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const storeRetryDelay = "20 millis"
+
+/**
+ * How many times a store write is retried while the database is locked.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const storeRetries = 6_000
+
+interface Open {
+  readonly _tag: "open"
+  readonly sessionID: string
+  readonly step: Projection.Step
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
+interface Event {
+  readonly _tag: "event"
+  readonly sessionID: string
+  readonly event: AgentEvent.AgentEvent
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
+interface Close {
+  readonly _tag: "close"
+  readonly sessionID: string
+  readonly closing: Projection.Closing
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
+/** Events that belong to no projection state: a steered prompt, a permission answer. */
+interface Emit {
+  readonly _tag: "emit"
+  readonly sessionID: string
+  readonly events: ReadonlyArray<Protocol.Emitted>
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
+type Job = Open | Event | Close | Emit
+
+/**
+ * Whether a store failure is the database being held by another writer,
+ * which is the one failure a later attempt can succeed at.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const isLocked = (error: Store.StoreError): boolean =>
+  /database is locked|LockTimeoutError/.test(String(error.cause))

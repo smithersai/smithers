@@ -5902,18 +5902,48 @@ importers:
 
   packages/smithers/opencode:
     dependencies:
+      '@smthrs/agent':
+        specifier: 1.0.0-rc.0
+        version: link:../agent
       '@smthrs/capability':
         specifier: 1.0.0-rc.0
         version: link:../flows/capability
       '@smthrs/database':
         specifier: 1.0.0-rc.0
         version: link:../flows/database
+      '@smthrs/engine-store':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/engine-store
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/flow
+      '@smthrs/flows':
+        specifier: 1.0.0-rc.0
+        version: link:../flows
       '@smthrs/harness':
         specifier: 1.0.0-rc.0
         version: link:../agent/harness
+      '@smthrs/jj':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/jj
+      '@smthrs/kernel':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/kernel
       '@smthrs/model':
         specifier: 1.0.0-rc.0
         version: link:../agent/model
+      '@smthrs/notifications':
+        specifier: 1.0.0-rc.0
+        version: link:../notifications
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/plan
+      '@smthrs/registry':
+        specifier: 1.0.0-rc.0
+        version: link:../agent/registry
+      '@smthrs/run-store':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/run-store
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

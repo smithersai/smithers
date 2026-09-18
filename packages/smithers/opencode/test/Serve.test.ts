@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
 import * as ScriptedDriver from "../src/ScriptedDriver.ts"
 import * as Serve from "../src/Serve.ts"
+import * as Store from "../src/Store.ts"
 import { run, scratchDirectory } from "./Harness.ts"
 
 describe("Serve", () => {
@@ -49,7 +50,14 @@ describe("Serve", () => {
               bind: { ...Serve.defaultBind, port: 0 },
               version: "test",
               seat: "scripted:demo"
-            }).pipe(Layer.provide(ScriptedDriver.layer({ script: DemoScript.script, delay: 0 })))
+            }).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  ScriptedDriver.layer({ script: DemoScript.script, delay: 0 }),
+                  Store.layerSqlite(Serve.databasePath(scratch.directory))
+                )
+              )
+            )
           ),
           Effect.scoped
         )
@@ -70,7 +78,15 @@ describe("Serve", () => {
             bind: { ...Serve.defaultBind, hostname: "0.0.0.0" },
             version: "test",
             seat: "scripted:demo"
-          }).pipe(Effect.provide(ScriptedDriver.layer({ script: DemoScript.script, delay: 0 })), Effect.scoped)
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                ScriptedDriver.layer({ script: DemoScript.script, delay: 0 }),
+                Store.layerSqlite(Serve.databasePath(scratch.directory))
+              )
+            ),
+            Effect.scoped
+          )
         )
       )
       expect(String(error)).toContain("--listen")

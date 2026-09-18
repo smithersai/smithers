@@ -134,7 +134,17 @@ describe("Turns", () => {
             )
           )
         )
+        yield* store.putPermission({
+          id: "per_slow",
+          sessionID: "ses_slow",
+          permission: "bash",
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: "m", callID: "c" }
+        })
         const aborted = yield* turns.abort("ses_slow")
+        const pending = yield* store.listPermissions("ses_slow")
         yield* Effect.promise(() =>
           until(() =>
             Effect.runPromise(
@@ -146,12 +156,18 @@ describe("Turns", () => {
           )
         )
         const list = yield* store.listMessages("ses_slow")
-        return { aborted, error: (list[1]!.info as Protocol.AssistantMessage).error, status: yield* turns.status() }
+        return {
+          aborted,
+          pending,
+          error: (list[1]!.info as Protocol.AssistantMessage).error,
+          status: yield* turns.status()
+        }
       }).pipe(
         Effect.provide(stack(ScriptedDriver.layer({ script: DemoScript.script, delay: "20 millis" }), "turns-slow"))
       )
     )
     expect(result.aborted).toBe(true)
+    expect(result.pending).toEqual([])
     expect(result.error?.name).toBe("MessageAbortedError")
     expect(result.status).toEqual({})
   })
@@ -269,6 +285,17 @@ describe("Turns", () => {
           tool: { messageID: "m", callID: "c" }
         })
         yield* turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
+        yield* store.putPermission({
+          id: "per_3",
+          sessionID: "ses_3",
+          permission: "bash",
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: "m", callID: "c" }
+        })
+        refuse = true
+        yield* turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
         yield* turns.prompt({ sessionID: "ses_3", parts: [{ type: "text", text: "go" }] })
         yield* Effect.sleep("50 millis")
         return { status: yield* turns.status(), aborted: yield* turns.abort("ses_3") }
@@ -277,5 +304,151 @@ describe("Turns", () => {
     expect(result.status).toEqual({})
     expect(result.aborted).toBe(true)
     expect(Turns.promptText([{ type: "text", text: "a" }, { type: "file" }, { type: "text", text: "b" }])).toBe("a\nb")
+  })
+
+  it("renders the conversation tail a follow-up carries, newest last and cut from the front", () => {
+    const message = (id: string, role: "user" | "assistant", texts: ReadonlyArray<string>): Store.MessageWithParts => ({
+      info: role === "user"
+        ? { id, sessionID: "s", role, time: { created: 1 }, agent: "a", model: { providerID: "p", modelID: "m" } }
+        : {
+          id,
+          sessionID: "s",
+          role,
+          time: { created: 1 },
+          parentID: "u",
+          modelID: "m",
+          providerID: "p",
+          mode: "a",
+          agent: "a",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: Protocol.noTokens
+        },
+      parts: texts.map((text, index): Protocol.Part =>
+        index === 0
+          ? { id: `${id}_${index}`, sessionID: "s", messageID: id, type: "text", text }
+          : { id: `${id}_${index}`, sessionID: "s", messageID: id, type: "step-start" }
+      )
+    })
+    expect(Turns.history([])).toBeUndefined()
+    expect(Turns.history([message("u1", "user", ["  "]), message("a1", "assistant", [])])).toBeUndefined()
+    expect(Turns.history([message("u1", "user", ["hi"]), message("a1", "assistant", ["hello", "x"])])).toBe(
+      "Person: hi\n\nAssistant: hello"
+    )
+    const long = Turns.history([message("u1", "user", ["a".repeat(30)]), message("a1", "assistant", ["done"])], 20)
+    expect(long?.startsWith("[earlier turns omitted]\n")).toBe(true)
+    expect(long?.endsWith("Assistant: done")).toBe(true)
+  })
+
+  it("re-opens the turns the driver finds at boot, and leaves finished ones alone", async () => {
+    const file = `${scratch.directory}/turns-boot.sqlite`
+    // The rows a previous process left behind: a session with an answered
+    // turn and one that was still running, and an empty session.
+    await run(
+      Effect.gen(function*() {
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_r"))
+        yield* store.putSession(session("ses_s"))
+        yield* store.putSession(session("ses_t"))
+        const header = (id: string, extra: Partial<Protocol.AssistantMessage>): Protocol.AssistantMessage => ({
+          id,
+          sessionID: "ses_r",
+          role: "assistant",
+          time: { created: 5 },
+          parentID: "msg_user",
+          modelID: "demo",
+          providerID: "scripted",
+          mode: "smithers",
+          agent: "smithers",
+          path: { cwd: scratch.directory, root: scratch.directory },
+          cost: 0,
+          tokens: Protocol.noTokens,
+          ...extra
+        })
+        yield* store.putMessage(header("msg_done", { finish: "stop" }))
+        yield* store.putMessage(header("msg_open", {}))
+      }).pipe(Effect.provide(Store.layerSqlite(file)))
+    )
+    const sinks: Array<Driver.Sink> = []
+    const booting = Layer.succeed(Driver.Driver, {
+      start: () => Effect.never,
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: (open) =>
+        Effect.gen(function*() {
+          for (
+            const turn of [
+              { sessionID: "ses_missing", messageID: "msg_x", prompt: "x" },
+              { sessionID: "ses_r", messageID: "msg_done", prompt: "answered" },
+              { sessionID: "ses_r", messageID: "msg_open", prompt: "still running" },
+              { sessionID: "ses_s", messageID: "msg_fresh", prompt: "no header" },
+              {
+                sessionID: "ses_t",
+                messageID: "msg_named",
+                prompt: "named",
+                agent: "other",
+                model: { providerID: "p", modelID: "m" }
+              },
+              // A second open turn of a session already re-opened joins it.
+              { sessionID: "ses_r", messageID: "msg_second", prompt: "second" }
+            ]
+          ) {
+            const sink = yield* Effect.orDie(open(turn))
+            sinks.push(sink)
+            // An inert sink swallows everything; a live one folds it.
+            yield* sink.event(
+              new AgentEvents.CellPrinted({ eventType: "flows.harness.cell-printed.v1", cell: "c", text: "noted" })
+            )
+            yield* sink.closed({ _tag: "suspended" })
+          }
+        })
+    })
+    const store = Store.layerSqlite(file)
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const busy = yield* turns.status()
+        yield* sinks[2]!.closed({ _tag: "interrupted" })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(turns.status(), (status) => status["ses_r"] === undefined)))
+        )
+        const reopened = (yield* store.listMessages("ses_r")).find((message) => message.info.id === "msg_open")!
+          .info as Protocol.AssistantMessage
+        const fresh = (yield* store.listMessages("ses_s")).map((message) => message.info)
+        const named = (yield* store.listMessages("ses_t")).map((message) => message.info)
+        return { busy, reopened, fresh, named, sessions: yield* store.listSessions() }
+      }).pipe(Effect.provide(
+        Layer.mergeAll(Turns.layer(options), store, hub).pipe(
+          Layer.provideMerge(Layer.mergeAll(booting, store, hub))
+        )
+      ))
+    )
+    expect(sinks.length).toBe(6)
+    expect(Object.keys(result.busy).sort()).toEqual(["ses_r", "ses_s", "ses_t"])
+    // The re-opened turn kept its header and closed the way the driver said; the finished one stayed.
+    expect(result.reopened.time.created).toBe(5)
+    expect(result.reopened.parentID).toBe("msg_user")
+    expect(result.reopened.error?.name).toBe("MessageAbortedError")
+    expect(result.fresh.map((info) => info.role)).toEqual(["user", "assistant"])
+    expect(result.fresh[0]!.agent).toBe("smithers")
+    expect(result.named[0]!.agent).toBe("other")
+    expect((result.named[0] as Protocol.UserMessage).model).toEqual({ providerID: "p", modelID: "m" })
+  })
+
+  it("boots even when the driver cannot resume what it finds", async () => {
+    const failing = Layer.succeed(Driver.Driver, {
+      start: () => Effect.never,
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.fail(new Driver.DriverError({ code: "engine_failed", message: "no engine" }))
+    })
+    const status = await run(
+      Effect.flatMap(Turns.Turns, (turns) => turns.status()).pipe(Effect.provide(stack(failing, "turns-failing-boot")))
+    )
+    expect(status).toEqual({})
   })
 })

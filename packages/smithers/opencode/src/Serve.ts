@@ -8,7 +8,7 @@
  * from another machine without a credential, is a remote execution service.
  *
  * The application is the routes behind the CORS and basic-auth middleware,
- * over the store, the hub, the turns, and whichever driver the host
+ * over the hub and the turns, and whichever driver and store the host
  * supplies. `layer` binds it to a Node socket; `app` is the same assembly
  * without the socket, for an in-process handler in tests.
  *
@@ -26,7 +26,7 @@ import * as Cors from "./Cors.ts"
 import type * as Driver from "./Driver.ts"
 import * as Events from "./Events.ts"
 import * as Routes from "./Routes.ts"
-import * as Store from "./Store.ts"
+import type * as Store from "./Store.ts"
 import * as Turns from "./Turns.ts"
 
 /**
@@ -149,22 +149,23 @@ export const app = (
 }
 
 /**
- * The server on a Node socket, with its own SQLite store. The layer fails
- * when the bind is refused or the socket cannot be bound.
+ * The server on a Node socket. Needs a driver and a store: the engine
+ * driver brings its own store over the engine database, and the scripted
+ * driver is paired with `Store.layerSqlite(databasePath(directory))`. The
+ * layer fails when the bind is refused or the socket cannot be bound.
  *
  * @category layers
  * @since 1.0.0
  */
 export const layer = (
   options: Options
-): Layer.Layer<HttpServer, ServeError | Store.StoreError | Error, Driver.Driver> =>
+): Layer.Layer<HttpServer, ServeError | Error, Driver.Driver | Store.Store> =>
   Layer.unwrap(
     Effect.suspend(() => {
       const refused = refusal(options.bind)
       if (refused !== undefined) return Effect.fail(new Error(refused))
       return Effect.succeed(
         HttpRouter.serve(app(options), { disableListenLog: true, disableLogger: true }).pipe(
-          Layer.provide(Store.layerSqlite(databasePath(options.directory))),
           Layer.provideMerge(
             NodeHttpServer.layer(createServer, { host: options.bind.hostname, port: options.bind.port })
           )
@@ -179,5 +180,5 @@ export const layer = (
  * @category constructors
  * @since 1.0.0
  */
-export const host = (options: Options): Effect.Effect<never, ServeError | Store.StoreError | Error, Driver.Driver> =>
+export const host = (options: Options): Effect.Effect<never, ServeError | Error, Driver.Driver | Store.Store> =>
   Layer.launch(layer(options))

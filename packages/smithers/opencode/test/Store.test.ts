@@ -49,6 +49,47 @@ const withStore = <A>(body: (store: Store.Service) => Effect.Effect<A, Store.Sto
   )
 
 describe("Store", () => {
+  it("keeps grants and open turns, and drops them with the session", async () => {
+    const turn = { sessionID: "ses_g", messageID: "msg_g", prompt: "go", history: "Person: hi" }
+    const result = await withStore((store) =>
+      Effect.gen(function*() {
+        yield* store.putSession(session("ses_g", 3))
+        yield* store.putGrant({ sessionID: "ses_g", kind: "always", key: "bash" })
+        yield* store.putGrant({ sessionID: "ses_g", kind: "always", key: "bash" })
+        yield* store.putGrant({ sessionID: "ses_g", kind: "once", key: "per_1" })
+        yield* store.putGrant({ sessionID: "ses_other", kind: "reject", key: "per_2" })
+        yield* store.putTurn(turn)
+        yield* store.putTurn({ ...turn, prompt: "again" })
+        const grants = yield* store.listGrants("ses_g")
+        const all = yield* store.listGrants()
+        const turns = yield* store.listTurns()
+        const settled = yield* store.settleTurn("msg_g")
+        const settledAgain = yield* store.settleTurn("msg_g")
+        yield* store.putTurn(turn)
+        yield* store.deleteSession("ses_g")
+        return {
+          grants,
+          all,
+          turns,
+          settled,
+          settledAgain,
+          after: yield* store.listGrants(),
+          left: yield* store.listTurns()
+        }
+      })
+    )
+    expect(result.grants).toEqual([
+      { sessionID: "ses_g", kind: "always", key: "bash" },
+      { sessionID: "ses_g", kind: "once", key: "per_1" }
+    ])
+    expect(result.all.length).toBe(3)
+    expect(result.turns).toEqual([{ ...turn, prompt: "again" }])
+    expect(result.settled).toBe(true)
+    expect(result.settledAgain).toBe(false)
+    expect(result.after).toEqual([{ sessionID: "ses_other", kind: "reject", key: "per_2" }])
+    expect(result.left).toEqual([])
+  })
+
   it("round-trips sessions newest first and deletes them with their rows", async () => {
     const listed = await withStore((store) =>
       Effect.gen(function*() {

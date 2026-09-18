@@ -56,6 +56,8 @@ export interface Opened {
   readonly prompt: string
   readonly agent: string
   readonly model: Protocol.ModelRef
+  /** When the assistant message was first created; now, unless a re-opened turn says otherwise. */
+  readonly createdAt?: number | undefined
 }
 
 /**
@@ -107,6 +109,10 @@ export interface State {
     | undefined
   readonly calls: Readonly<Record<string, CallCard>>
   readonly demandText: Readonly<Record<string, string>>
+  /** Whether `resolved` has been folded: the answer is in the timeline. */
+  readonly answered: boolean
+  /** Whether the frame closed as resolved: the step is finished. */
+  readonly resolving: boolean
   readonly closed: boolean
 }
 
@@ -462,6 +468,9 @@ const endTurn = (
   }
 }
 
+const resolvedTurn = (state: State, ctx: Context): Step =>
+  endTurn(state, ctx, { finish: "stop", time: { created: state.createdAt, completed: ctx.now() } })
+
 const demandCard = (
   state: State,
   ctx: Context,
@@ -524,7 +533,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
     assistantMessageID: opened.assistantMessageID,
     agent: opened.agent,
     model: opened.model,
-    createdAt: now,
+    createdAt: opened.createdAt ?? now,
     frame: -1,
     tokens: Protocol.noTokens,
     frameTokens: Protocol.noTokens,
@@ -532,6 +541,8 @@ export const open = (ctx: Context, opened: Opened): Step => {
     cell: undefined,
     calls: {},
     demandText: {},
+    answered: false,
+    resolving: false,
     closed: false
   }
   const user: Protocol.UserMessage = {
@@ -893,6 +904,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       // replay an update of the same cards.
       return { state: { ...state, frame: -1, reasoning: undefined, cell: undefined }, events: [] }
     case "resolved": {
+      // The answer and the frame's close arrive in either order: the
+      // recorded turn says the answer first, the engine says the close
+      // first. The turn ends once both have been folded.
       const finished = finishReasoning(state, ctx)
       const text = answerText(event.message)
       const now = ctx.now()
@@ -903,17 +917,19 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         ...chunks(text).map((delta) => deltaEvent(state, partID, "text", delta)),
         partEvent({ ...base(state), id: partID, type: "text", text, time: { start: now, end: ctx.now() } }, ctx.now())
       ]
-      return { state: finished.state, events }
+      const answered: State = { ...finished.state, answered: true }
+      if (!answered.resolving) return { state: answered, events }
+      const ended = resolvedTurn(answered, ctx)
+      return { state: ended.state, events: [...events, ...ended.events] }
     }
     case "turn-closed": {
       switch (event.outcome) {
         case "continue":
           return { state, events: [stepFinish(state, ctx, "tool-calls")] }
         case "resolved": {
-          const ended = endTurn(state, ctx, {
-            finish: "stop",
-            time: { created: state.createdAt, completed: ctx.now() }
-          })
+          const resolving: State = { ...state, resolving: true }
+          if (!resolving.answered) return { state: resolving, events: [stepFinish(state, ctx, "stop")] }
+          const ended = resolvedTurn(resolving, ctx)
           return { state: ended.state, events: [stepFinish(state, ctx, "stop"), ...ended.events] }
         }
         case "aborted": {
