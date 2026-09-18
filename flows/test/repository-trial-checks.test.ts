@@ -21,7 +21,7 @@ const fixture = (options: { status?: "passed" | "failed" | "skipped" | "error"; 
   nested?: boolean; omitted?: boolean; emptyExamined?: boolean; evidence?: readonly string[]; wrongPolicy?: boolean; duplicateId?: boolean;
   secondSkipped?: boolean; baselineOnly?: boolean; wrongSource?: boolean; builtInReview?: boolean } = {}) => {
   const job = options.builtInReview ? "review" : "ci", bridge = `repository-jobs/${job}`
-  const setup = initialSetup("example/repo", job, "maintainer"), policy = options.builtInReview ? "required" : options.policy ?? "report"
+  const setup = initialSetup("example/repo", job, "maintainer"), policy = options.builtInReview ? "report" : options.policy ?? "report"
   setup.draft.checks = [{ id: "observability", name: "Observability", kind: "ai", rule: "Handlers record telemetry", paths: ["src/**"], policy }]
   if (options.builtInReview) setup.draft.checks = []
   if (options.duplicateId) setup.draft.checks.push({ ...setup.draft.checks[0]!, kind: "command", rule: "true" })

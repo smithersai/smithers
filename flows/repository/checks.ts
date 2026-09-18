@@ -36,8 +36,13 @@ export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass",
   summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)) })
 /** Shared by review execution, its trial verifier and the evaluator. */
 export const reviewCheckId = (stepId: string): string => `review-${stepId}`
+/** A review's product is what it found on the exact source, so its own finding
+ * cannot be the reason its step failed: a required synthesized rule made every
+ * finding-bearing review an errored step with a blocked gate, which no eval
+ * case and no live trial could ever complete. Promoting an AI rule to a
+ * required gate stays the maintainer's separate decision (`suggestedChecks`). */
 export const reviewCheck = (step: typeof Step.Type): typeof Check.Type => ({
-  id: reviewCheckId(step.id), name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required"
+  id: reviewCheckId(step.id), name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "report"
 })
 export interface RecordedCheck {
   readonly step: typeof StepResult.Type
@@ -73,13 +78,17 @@ export const recordedChecks = (step: typeof StepResult.Type, sourceRevision: str
     return { step: check, output: value, phase: value.candidate === finalCandidate ? "candidate" as const : "baseline" as const }
   })
 }
+/** The checker's own recorded admission that it could not conclude on the
+ * supplied scope. `assessSemantic` is the only writer of this summary. */
+export const inconclusiveCheck = "The AI check did not establish complete scope coverage"
 /** A valid failed required check is a policy finding. It is not an unavailable
  * execution. Report-only model/tool errors still invalidate eval/trial proof.
- * A reviewed step's own check is the review itself: what the checker recorded
- * against this exact source is substance to judge, however it concluded. Its
- * gate must still agree, and a check that never reached its source refuses. */
+ * The single recorded error a reviewed step may be judged on is its own check
+ * reporting, against this exact source, that it could not conclude: a
+ * contradicted verdict, a citation outside the captured evidence, a missing
+ * context, an expired deadline and a lost execution all stay unavailable. */
 export const unavailableCheck = ({ output }: RecordedCheck, reviewedId?: string): typeof CheckResult.Type | undefined =>
-  output.results.find(check => check.status === "error" && !(check.checkId === reviewedId &&
+  output.results.find(check => check.status === "error" && !(check.checkId === reviewedId && check.summary === inconclusiveCheck &&
     check.evidence.includes(`execution:${check.executionId}`) && check.evidence.includes(`source:${output.candidate}`)))
 export const checkExecutionFailed = (recorded: RecordedCheck, reviewedId?: string): boolean => {
   if (unavailableCheck(recorded, reviewedId)) return true
@@ -329,7 +338,7 @@ export const assessSemantic = (comparison: typeof Comparison.Type, verdict: type
   const incomplete = context === undefined && baseContext === undefined ? undefined : comparisonContextFailure(comparison, context?.checkId ?? baseContext!.checkId, context, baseContext)
   if (incomplete) return { status: "error" as const, summary: incomplete }
   const examined = new Set(verdict.examinedPaths)
-  if (verdict.verdict === "uncertain" || comparison.paths.some(path => !examined.has(path)) || verdict.examinedPaths.some(path => !comparison.paths.includes(path))) return { status: "error" as const, summary: "The AI check did not establish complete scope coverage" }
+  if (verdict.verdict === "uncertain" || comparison.paths.some(path => !examined.has(path)) || verdict.examinedPaths.some(path => !comparison.paths.includes(path))) return { status: "error" as const, summary: inconclusiveCheck }
   if ((verdict.verdict === "pass" && verdict.findings.length) || (verdict.verdict === "fail" && !verdict.findings.length)) return { status: "error" as const, summary: "The AI verdict contradicts its recorded findings" }
   for (const finding of verdict.findings) {
     const file = comparison.files.find(file => file.path === finding.path)
