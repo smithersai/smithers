@@ -38,6 +38,6 @@ export const Receipt = Schema.Struct({
 })
 export type Receipt = typeof Receipt.Type
 export class WikiError extends Schema.TaggedError<WikiError>()("WikiError", {
-  code: Schema.Literals(["invalid-input", "stale-source", "review-failed", "output-conflict", "io"]),
+  code: Schema.Literals(["invalid-input", "stale-source", "review-failed", "output-conflict", "citation-check-unavailable", "io"]),
   message: Schema.String
 }) {}

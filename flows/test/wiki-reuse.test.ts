@@ -10,6 +10,7 @@ import { Capability } from "@smthrs/flows"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Effect, Layer, Schema, Stream } from "effect"
@@ -18,6 +19,9 @@ import { IncrementalWiki, Load, Select, policySources, reuseLayers } from "../wi
 import { actionLayers, agentLayers } from "../wiki/runtime.ts"
 import { Collect, Wiki } from "../wiki/workflow.ts"
 import { type Input, PageSpec, WikiError } from "../wiki/schema.ts"
+
+/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
+const citationsSupported = Evaluator.layerScripted(() => ({ support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }))
 
 // Simulate a section parser change that preserves ids, source and body hashes.
 const SectionsProbe = Flow.make("wiki/test/changed-sections", {
@@ -32,7 +36,7 @@ const SectionsProbe = Flow.make("wiki/test/changed-sections", {
 
 // Real native engine, journal, attempt store, AgentAction and QuickJS. Only the
 // model provider is scripted; every recorded receipt is produced by the flow.
-test("incremental wiki reuses exact terminal receipts after restart and reviews changed inputs", { timeout: 300_000 }, async (t) => {
+test("incremental wiki reuses exact terminal receipts after restart and reviews changed inputs", { timeout: 420_000 }, async (t) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-reuse-")))
   t.after(() => rm(root, { recursive: true, force: true }))
   execFileSync("jj", ["git", "init", root], { stdio: "pipe" })
@@ -68,7 +72,7 @@ test("incremental wiki reuses exact terminal receipts after restart and reviews 
   const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
   const host = () => runtime.layerHost({ filename: join(root, ".flows/engine.db"), workspaceRoot: root, owner: { hostId: "wiki-reuse-test" }, signals: [],
     rules: [[rule("fs:read", root), rule("fs:read", `${root}/**`), rule("fs:write", `${root}/.flows/**`)]]
-  }, Layer.mergeAll(actionLayers({ root, output }), reuseLayers({ root, output }), agentLayers(seats, 60_000), Interpreter.layer(Wiki), Interpreter.layer(SectionsProbe)).pipe(Layer.provideMerge(Action.layerImplementations)))
+  }, Layer.mergeAll(actionLayers({ root, output, evaluator: citationsSupported }), reuseLayers({ root, output }), agentLayers(seats, 60_000), Interpreter.layer(Wiki), Interpreter.layer(SectionsProbe)).pipe(Layer.provideMerge(Action.layerImplementations)))
   const input: Input = { pages, mode: "verified", reviewer: "scripted-wiki-reuse" }
   const first = await Effect.runPromise(Effect.scoped(Wiki.execute(input, { executionId: "wiki-original" }).pipe(Effect.provide(host()))))
   assert.equal(first.verification, "verified")

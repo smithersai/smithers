@@ -7,6 +7,7 @@ import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
@@ -24,6 +25,9 @@ import { ReviewPage } from "../wiki/workflow.ts"
 import { reuseLayers } from "../wiki/reuse.ts"
 import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec } from "../wiki/schema.ts"
+
+/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
+const citationsSupported = Evaluator.layerScripted(() => ({ support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }))
 
 const CheckRun = Flow.make("acceptance/WikiCheck", { payload: RunCheck.payloadSchema, success: Receipt, error: CodingError,
   body: input => RunCheck.call(input) })
@@ -72,7 +76,7 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
   const make = () => ManagedRuntime.make(runtime.layerHost({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "wiki-check-fixture" }, signals: [],
     rules: [[new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" }) })]] },
-    Layer.mergeAll(wikiCheckLayers(options()), actionLayers({ root, output, fs: trackedFs }), reuseLayers({ root, output, fs: trackedFs, hostPolicy }), catalogLayers, Interpreter.layer(CheckRun), ...catalog.executables.map(entry => entry.layer),
+    Layer.mergeAll(wikiCheckLayers(options()), actionLayers({ root, output, fs: trackedFs, evaluator: citationsSupported }), reuseLayers({ root, output, fs: trackedFs, hostPolicy }), catalogLayers, Interpreter.layer(CheckRun), ...catalog.executables.map(entry => entry.layer),
       ReviewPage.toLayer(({ evidence, correction, priorReview }) => Effect.gen(function*() {
         reviews++
         if (reviews === 1) { started(); yield* Effect.promise(() => resume) }

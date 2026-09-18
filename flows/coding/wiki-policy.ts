@@ -12,7 +12,7 @@ declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
 // the repository an agent is changing. Dependency pins also invalidate reuse.
 const sources = [
   "../wiki/workflow.ts", "../wiki/schema.ts", "../wiki/evidence.ts", "../wiki/runtime.ts",
-  "../wiki/operations.ts", "../wiki/reuse.ts", "./host.ts", "./planning-wiki.ts",
+  "../wiki/operations.ts", "../wiki/reuse.ts", "../wiki/jev-citations.ts", "./host.ts", "./planning-wiki.ts",
   "./planning-authority.ts", "./wiki-policy.ts", "./wiki-check.ts", "./wiki-registry.ts", "./immutable-source.ts", "../../pnpm-lock.yaml",
   "../../packages/smithers/agent/src/AgentAction.ts"
 ] as const

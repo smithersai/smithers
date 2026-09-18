@@ -18,8 +18,12 @@ at the source revision, and a retold history whose tree equals today's tree.
    and a semantic review marks its section supported. Failure publishes nothing.
 2. **Reuse the existing review machinery.** `flows/wiki` already reviews page
    sections and validates citations exactly (`flows/wiki/schema.ts`,
-   `operations.ts::assess`, `evidence.ts`). This work adds the missing *authoring*
-   step; it does not invent a second verification story.
+   `operations.ts::assess`, `evidence.ts`), and Jev then judges whether each
+   exactly resolved citation actually supports its claim
+   (`flows/wiki/jev-citations.ts`); an unsupported citation refuses the page by
+   name and an evaluator Jev cannot reach fails the step rather than publishing
+   unchecked. This work adds the missing *authoring* step; it does not invent a
+   second verification story.
 3. **Branch stays `mythical`.** The shipped readers (`HistorySeam.MYTHICAL_REF`,
    `HistoryCard`), the acceptance test and plue docs all say `mythical`. The
    `myth` name in the 2026-09-08 contract is recorded as a deviation here rather

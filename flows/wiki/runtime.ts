@@ -6,10 +6,13 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Registry from "@smthrs/registry/Registry"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Layer } from "effect"
+import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { checkCitations, unsupportedCitations } from "./jev-citations.ts"
 import { operations } from "./operations.ts"
 import { WikiError } from "./schema.ts"
-import { Assess, Collect, ReviewPage, ValidateReview, Wiki, Write } from "./workflow.ts"
+import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Wiki, Write } from "./workflow.ts"
 
 export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxReviewMillis: number) => {
   const host = Layer.effect(AgentAction.Host, Effect.gen(function*() {
@@ -25,11 +28,21 @@ export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxRe
 export const registration = (options: { readonly root: string; readonly output: string }, reviewers: ReturnType<typeof agentLayers>) =>
   Layer.mergeAll(actionLayers(options), reviewers, Interpreter.layer(Wiki)).pipe(Layer.provideMerge(Action.layerImplementations))
 
-export const actionLayers = (options: Parameters<typeof operations>[0]) => {
+/** Jev through the Vercel gateway when `AI_GATEWAY_API_KEY` is set, else one
+ * that answers `unreachable`. The key is required to review a page at all:
+ * without it every verified run refuses instead of publishing claims whose
+ * citations nothing checked. A test supplies its own scripted evaluator. */
+export const actionLayers = (options: Parameters<typeof operations>[0] & {
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+}) => {
   const ops = operations(options)
   return Layer.mergeAll(Collect.toLayer(({ spec }) => ops.collect(spec)), Assess.toLayer(ops.assess),
     ValidateReview.toLayer(({ evidence, review }) => review === null
       ? Effect.fail(new WikiError({ code: "review-failed", message: "Semantic validation requires a review" }))
       : ops.assess({ evidence, review, reviewer: null }).pipe(Effect.map(page => page.review!))),
+    CheckCitations.toLayer(({ evidence, review }) => checkCitations(evidence, review).pipe(
+      Effect.flatMap(citations => citations.verdict === "unsupported"
+        ? Effect.fail(unsupportedCitations(evidence, citations)) : Effect.succeed({ review, citations }))
+    )).pipe(Layer.provide(options.evaluator ?? evaluatorLayer(process.env))),
     Write.toLayer(({ pages, mode }) => ops.write(Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!), mode)))
 }

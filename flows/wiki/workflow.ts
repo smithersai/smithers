@@ -5,6 +5,7 @@ import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { Evidence, Input, PageSpec, Receipt, Review, ReviewedPage, WikiError } from "./schema.ts"
 import { reviewEvidence } from "./evidence.ts"
+import { PageCitations } from "./jev-citations.ts"
 
 export const Collect = Action.make("wiki/collect-page", {
   payload: { spec: PageSpec }, success: Evidence, error: WikiError, nondeterministic: true
@@ -28,14 +29,28 @@ export const ReviewPage = AgentAction.make("wiki/review-page", {
 export const ValidateReview = Action.make("wiki/validate-review", {
   payload: { evidence: Evidence, review: Schema.NullOr(Review) }, success: Review, error: WikiError
 })
+/** Jev judges whether each exactly resolved citation supports the claim it is
+ * attached to. It runs on the host, after exact assessment and outside the
+ * repair loop: an exact citation that does not support its claim is a refusal
+ * the reviewer cannot fix by moving a line number, and a Jev the host cannot
+ * reach is not the reviewer's fault, so neither spends a model call. */
+export const CheckedReview = Schema.Struct({ review: Review, citations: PageCitations })
+export const CheckCitations = Action.make("wiki/check-citations", {
+  payload: { evidence: Evidence, review: Review }, success: CheckedReview, error: WikiError
+})
 /** One semantic correction after a structurally decoded review fails exact
- * assessment. The second validation failure is terminal. */
+ * assessment. The second validation failure is terminal. Every review that
+ * survives it then has its citations checked for support. */
 export const validateOrRepairReview = (evidence: Parameters<typeof ValidateReview.call>[0]["evidence"],
   review: Parameters<typeof ValidateReview.call>[0]["review"]) =>
-  ValidateReview.call({ evidence, review }).pipe(Node.catch({
-    onFailure: failure => ReviewPage.call({ evidence, priorReview: review, correction: failure.message }).pipe(
-      Node.bindPlanned(repaired => ValidateReview.call({ evidence, review: repaired })))
-  }))
+  ValidateReview.call({ evidence, review }).pipe(
+    Node.catch({
+      onFailure: failure => ReviewPage.call({ evidence, priorReview: review, correction: failure.message }).pipe(
+        Node.bindPlanned(repaired => ValidateReview.call({ evidence, review: repaired })))
+    }),
+    Node.bindPlanned(validated => CheckCitations.call({ evidence, review: validated })),
+    Node.map(checked => checked.review)
+  )
 export const Assess = Action.make("wiki/assess-review", {
   payload: { evidence: Evidence, review: Schema.NullOr(Review), reviewer: Schema.NullOr(Schema.String) },
   success: ReviewedPage, error: WikiError

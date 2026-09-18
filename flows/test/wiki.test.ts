@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from "node
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { NodeServices } from "@effect/platform-node"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Schema } from "effect"
 import { operations } from "../wiki/operations.ts"
 import { reviewEvidence } from "../wiki/evidence.ts"
@@ -22,6 +23,9 @@ const fixture = async (t: TestContext) => {
 }
 const run = <A, E>(effect: Effect.Effect<A, E, import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto>) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))
 const supported = (evidence: ReviewedPage["evidence"]): Review => ({ sections: evidence.sections.map((section) => ({ id: section.id, verdict: "supported", explanation: "The exported constant supports the explanation.", citations: [{ path: "src/answer.ts", line: 1, quote: "export const answer = 42" }] })) })
+
+/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
+const citationsSupported = Evaluator.layerScripted(() => ({ support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }))
 
 test("host-owned wiki operations retain their injected filesystem under a different action context", async t => {
   const f = await fixture(t), fs = await run(FileSystem.FileSystem)
@@ -224,7 +228,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const seats = SeatResolver.layer({ resolve: (id) => Effect.succeed(Seat.make({ id, modelId: "scripted-wiki", model, contextWindowTokens: 200_000,
     route: { prepare: () => Effect.succeed({ routeId: "wiki-test", protocolId: "wiki-test", method: "POST", url: "https://example.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) }
   })) })
-  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output }), agentLayers(seats, 10_000), Interpreter.layer(Wiki)).pipe(
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000), Interpreter.layer(Wiki)).pipe(
     Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const input = { pages: [f.spec], mode: "verified" as const, reviewer: "scripted-test" }
@@ -243,7 +247,7 @@ test("independent page reviews finish before exact citation assessment can fail"
   const { ReviewPage, Wiki } = await import("../wiki/workflow.ts")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), completed: string[] = []
-  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output }), Interpreter.layer(Wiki),
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), Interpreter.layer(Wiki),
     ReviewPage.toLayer(({ evidence }) => Effect.gen(function*() {
       if (evidence.spec.id === "second") yield* Effect.sleep(20)
       const review = { sections: supported(evidence).sections.map((section) => ({ ...section,
@@ -267,7 +271,7 @@ test("one citation repair receives every bad citation and the same evidence, the
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), calls: string[] = []
   let initial: ReviewedPage["evidence"] | undefined
-  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output }), Interpreter.layer(Wiki),
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), Interpreter.layer(Wiki),
     ReviewPage.toLayer(({ evidence, priorReview, correction }) => Effect.sync(() => {
       calls.push(evidence.spec.id)
       if (evidence.spec.id === "second") { assert.equal(correction, undefined); return supported(evidence) }
