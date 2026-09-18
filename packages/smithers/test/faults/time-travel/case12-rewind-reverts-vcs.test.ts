@@ -9,6 +9,7 @@
  * assertion that matters — a rewind that only edited rows would leave the
  * workspace lying.
  */
+import { EventTypes } from "@smthrs/engine-store"
 import { Jj } from "@smthrs/jj"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
@@ -24,7 +25,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { layer, Ledger, ledgerFile, lineageOf, makeWorkspace } from "./harness/timeTravelRun.ts"
+import { layer, ledgerFile, lineageOf, makeWorkspace, parkLedger } from "./harness/timeTravelRun.ts"
 
 const jjInstalled = (() => {
   try {
@@ -58,7 +59,7 @@ describe.skipIf(!jjInstalled)("case12 rewind reverts the workspace with an audit
   it("restores the tree, truncates the suffix, and records the audit", async () => {
     const observed = await Effect.runPromise(
       Effect.gen(function*() {
-        yield* Ledger.execute({ entry: "posted" }, { executionId, discard: true })
+        yield* parkLedger(executionId)
 
         const journal = yield* Journal.Journal
         yield* journal.flush
@@ -82,8 +83,16 @@ describe.skipIf(!jjInstalled)("case12 rewind reverts the workspace with an audit
           { times: 200, schedule: Schedule.spaced("50 millis") }
         )
 
-        // A frame in the middle of what the run recorded.
-        const seq = before.entries[Math.floor(before.entries.length / 2)]!.seq
+        // The last frame the run's own workspace pre-image anchors, which is
+        // the middle of what it recorded: the compensable write records
+        // `snapshot-identified` before it runs, and that pointer is the tree
+        // the rewind restores. Taking the midpoint INDEX instead named an
+        // anchored frame only while a stray follow-loop round padded the
+        // journal; with the executor parked, the midpoint lands below the
+        // pre-image and the rewind is refused `irreversible` for a frame with
+        // nowhere honest to restore to.
+        const anchors = before.entries.filter((entry) => entry.eventType === EventTypes.snapshotIdentified)
+        const seq = anchors.at(-1)!.seq
         const timeTravel = yield* TimeTravel
         const result = yield* timeTravel.rewind({
           runId: executionId,
