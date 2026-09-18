@@ -421,8 +421,8 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
     doors: ["retry", "report"]
   },
   /*
-   * The three plue paces itself, with a second's Retry-After in the registry.
-   * A `report` door on a designed one-second blip is noise, so they carry the
+   * The four plue paces itself, with a Retry-After of a second or two in the
+   * registry. A `report` door on a designed blip is noise, so they carry the
    * retry alone.
    */
   sse_unavailable: {
@@ -436,6 +436,19 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
     lead: "The wiki's backend isn't answering. Not your fault; try it again in a second.",
     agent:
       "fault=infra: the wiki's collaboration backend is not answering — Smithers' own words say what it was doing. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Smithers asks for a second's wait; asking again after that usually works.",
+    doors: ["retry"]
+  },
+  /*
+   * A control-plane write that kept losing a race, abandoned rather than
+   * forced. Nothing changed, and plue's own doc says the identical request
+   * works once the contention clears — which is exactly what the generic infra
+   * line ("do not retry it on a timer") talks the reader out of.
+   */
+  sandbox_control_busy: {
+    lead:
+      "Smithers' box controller was busy with another write. Not your fault — nothing changed, and the same ask works in a moment.",
+    agent:
+      "fault=infra: a control-plane transaction lost a race with a concurrent writer and Smithers abandoned it rather than force it. NOTHING changed. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. The identical request works once the contention clears, so say plainly that it is worth asking again in a moment; do not suggest they change what they asked for.",
     doors: ["retry"]
   },
   /*

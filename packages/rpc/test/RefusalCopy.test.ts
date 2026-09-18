@@ -94,6 +94,22 @@ describe("the copy table", () => {
     expect(agentRefusalText(refusal)).not.toContain("@fucory")
   })
 
+  test("a contended control transaction says nothing changed and paces the re-ask, instead of the generic infra line that forbids one", () => {
+    // plue paces this one itself (503, retry_after 2) and its doc says the
+    // identical request works once the contention clears. The default infra
+    // copy says the opposite — "do not retry it on a timer" — so the reader
+    // and the model are both told to stop at a refusal that clears itself.
+    expect(PLUE_FAILURES.sandbox_control_busy).toEqual({ fault: "infra", status: 503, retryAfter: 2 })
+    const refusal = forCode("sandbox_control_busy", "control transaction contended")
+    const copy = refusalCopy(refusal)
+    expect(copy.lead).not.toBe(REFUSAL_COPY.infra.lead)
+    expect(copy.lead.toLowerCase()).toContain("not your fault")
+    expect(copy.lead.toLowerCase()).toContain("nothing changed")
+    expect(copy.agent).not.toContain("do not retry it on a timer")
+    expect(copy.agent.toLowerCase()).toContain("worth asking again")
+    expect(refusalDoors(refusal)).toEqual(["retry"])
+  })
+
   test("each fault renders its own lead line", () => {
     const leads = PLUE_FAULTS.map((fault) => REFUSAL_COPY[fault].lead)
     expect(new Set(leads).size).toBe(PLUE_FAULTS.length)
