@@ -21,7 +21,14 @@ const Registration = Schema.Struct({
   slug: Schema.String,
   schedule: Schema.String,
   /** The target flow's own input, as JSON text; the seam validates it against that flow's declared schema. */
-  input: Schema.optional(Schema.String)
+  input: Schema.optional(Schema.String),
+  /**
+   * What every unattended fire may spend. Blank uses the ceiling the scheduled
+   * flow declares for itself; a flow that declares none is refused until this
+   * registration names both (PRODUCT.md O-08).
+   */
+  tokens: Schema.optional(Schema.String),
+  minutes: Schema.optional(Schema.String)
 })
 
 /**
@@ -36,6 +43,9 @@ const PreparedRegistration = Schema.Struct({
   slug: Schema.String,
   schedule: Schema.String,
   input: Schema.optional(Schema.String),
+  /** Present only when the person named them; the seam derives them again either way. */
+  tokens: Schema.optional(Schema.Number),
+  minutes: Schema.optional(Schema.Number),
   planId: Schema.String,
   planDigest: Schema.String
 })
@@ -84,12 +94,21 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     name: "triggers.register",
     summary: "Register a repository flow to run on a schedule",
     runtime: ["cloud"],
-    args: "[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>]",
+    args: "[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>] [--tokens <n>] [--minutes <n>]",
     requires: ["signed-in"],
     input: Registration,
     form: {
       submitLabel: "Prepare",
-      args: (payload) => line(text(payload, "repo"), flag(payload, "flow"), flag(payload, "slug"), flag(payload, "schedule"), flag(payload, "input")),
+      args: (payload) =>
+        line(
+          text(payload, "repo"),
+          flag(payload, "flow"),
+          flag(payload, "slug"),
+          flag(payload, "schedule"),
+          flag(payload, "input"),
+          flag(payload, "tokens"),
+          flag(payload, "minutes")
+        ),
       fields: {
         repo: { label: "Repository", optionsFrom: "cloud-repos", kind: "text" },
         flow: { label: "Flow", placeholder: "nightly-lint" },

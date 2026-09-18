@@ -9,7 +9,7 @@ import type { AppStore } from "../AppStore"
 import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
-import { NO_RULES_SENTENCE, registerUnavailableSentence } from "./TriggersSeam"
+import { LIMIT_SHAPE, NO_RULES_SENTENCE, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
 
 const createAppController = scopedControllers()
 
@@ -539,28 +539,70 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
   })
 
   /*
-   * D-2 of the canary walk: the plan this production box really answers with
-   * carries `"budget": {}` (D-15-plan-librarian.json) — the flow declares no
-   * ceiling, which `Descriptor.budgetUnbounded` states by name — and the
-   * preview dropped the line, so a person was asked to approve an unattended
-   * schedule with no figure beside it.
+   * D3-N3 of walk run 3: the form field held `0 9 * * 1-5` and the preview the
+   * person approved read `checks/fast · 0 9 1-5 UTC`, because the transcript
+   * renders a message as markdown (TranscriptMessage.tsx) and `* *` is
+   * emphasis. The capability line rendered as a bare `*` for the same reason.
    */
-  test("the preview states the budget when the plan declares no ceiling, instead of leaving the line off", async () => {
+  test("the preview states the schedule and the capabilities verbatim, so markdown cannot eat a wildcard", async () => {
     const { store, controller } = await readyToRegister(
       backend({
         [PROJECTION]: projectionDocument(DAY_ONE),
         [RPC]: relayRoute([], workspaceAnswers({
           Plan: (payload) =>
             payload.flowId === "nightly-lint"
-              ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget: {} } })
+              ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, capabilities: ["*"] } })
               : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
         }))
       })
     )
     expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
     const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
-    expect(preview).toContain("fs:read:**")
-    expect(preview).toContain("no token or time limit")
+    expect(preview).toContain("`0 9 * * 1-5`")
+    expect(preview).toContain("`*`")
+  })
+
+  /*
+   * D3-N2 of walk run 3, the release blocker: `Plan checks/fast` answers
+   * `"budget": {}` (D3-13-plan-envelope.json) because the flow declares no
+   * ceiling, the registration carried that envelope, and the approval was
+   * refused upstream — `upstream_refused — automatic work needs the reviewed
+   * envelope and finite token/time limits`. A registration never reaches an
+   * approval without finite limits again: it is refused here, in the app, in a
+   * sentence that says what to do.
+   */
+  test("a flow that declares no ceiling is refused before any approval, unless the registration names the limits", async () => {
+    const calls: Array<RelayCall> = []
+    const unbounded = workspaceAnswers({
+      Plan: (payload) =>
+        payload.flowId === "nightly-lint"
+          ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget: {} } })
+          : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+    })
+    const { store, controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, unbounded) })
+    )
+    expect(await controller.registerTrigger(REQUEST)).toBe(unboundedFlowSentence("nightly-lint"))
+    expect(lastAction(store)).toBeUndefined()
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+
+    /* The same flow, with the limits the person gave: prepared, and the preview states them. */
+    expect(typeof await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
+    const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
+    expect(preview).toContain("150000 tokens · 20 min")
+    expect(JSON.parse(lastAction(store)?.args ?? "{}")).toMatchObject({ tokens: 150_000, minutes: 20 })
+  })
+
+  test("limits that are not whole positive numbers are refused before the workspace is asked anything", async () => {
+    const calls: Array<RelayCall> = []
+    const { controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, workspaceAnswers()) })
+    )
+    expect(await controller.registerTrigger({ ...REQUEST, tokens: "lots", minutes: "20" })).toBe(LIMIT_SHAPE)
+    expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "0" })).toBe(LIMIT_SHAPE)
+    /* Smithers Cloud refuses a registration past two hours; a person's own number never earns an upstream refusal. */
+    expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "500" })).toBe(LIMIT_SHAPE)
+    expect(calls).toEqual([])
   })
 
   /*
@@ -669,9 +711,15 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect(approved.status).toBe("executed")
     /* The approval answers at once and the registration runs behind it (AGENTS.md, instant chat). */
     await waitFor(() => calls.filter((call) => call.procedure === "Run").length === 1)
-    /* Plue's RecordApproval refuses an approval whose flow_id does not match the registered flow. */
+    /*
+     * Plue's RecordApproval refuses an approval whose flow_id does not match
+     * the registered flow, and `validateRepositoryJob` refuses an envelope
+     * with no finite token/time limits. The receipt carries the envelope the
+     * registration will carry: the plan's, bounded by the reviewed limits.
+     */
     expect(receipts).toEqual([{
-      repo: "will/flows", slug: "nightly", flowId: "nightly-lint", planId: "plan-1", planDigest: PLAN_DIGEST, envelope: PLAN.envelope
+      repo: "will/flows", slug: "nightly", flowId: "nightly-lint", planId: "plan-1", planDigest: PLAN_DIGEST,
+      envelope: { ...PLAN.envelope, budget: { tokens: 200_000, milliseconds: 1_800_000 } }
     }])
     expect(calls.map((call) => call.procedure).filter((name) => name !== "Projection.Snapshot")).toEqual([
       "List", "Plan", "List", "Plan", "Approval.Submit", "Plan", "Approval.Submit", "Run"
@@ -683,7 +731,7 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
       idempotencyKey: `trigger:${requestId}:register-plan`,
       input: {
         requestId, operation: "register", repo: "will/flows", slug: "nightly", flow: "nightly-lint",
-        schedule: "0 9 * * 1-5", input: { label: "nightly" },
+        schedule: "0 9 * * 1-5", input: { label: "nightly" }, budget: { tokens: 200_000, milliseconds: 1_800_000 },
         approvedPlanId: "plan-1", approvedPlanDigest: PLAN_DIGEST
       }
     })
@@ -734,6 +782,43 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     await waitFor(() => registrationRun(clouded.store, cloudId)?.payload.phase === "failed")
     expect(registrationRun(clouded.store, cloudId)?.payload.error).toContain("trigger_approval_missing")
     expect(registrationRun(clouded.store, cloudId)?.payload.error).toContain(cloudRefusal)
+  })
+
+  /*
+   * The other half of D3-N2: the preview is not the only door into the
+   * approval. A carried payload that names no limits — one prepared before
+   * this app asked for them — must stop at the app, before the plan is
+   * approved and before Smithers Cloud is asked to record a receipt for an
+   * envelope it will refuse.
+   */
+  test("an approval that names no finite limits never reaches the approval or Smithers Cloud", async () => {
+    const calls: Array<RelayCall> = []
+    const receipts: Array<unknown> = []
+    const { store, controller } = await readyToRegister(
+      watched(backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute(calls, workspaceAnswers({
+          Plan: (payload) =>
+            payload.flowId === "nightly-lint"
+              ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget: {} } })
+              : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+        })),
+        [APPROVAL]: async (request) => {
+          receipts.push(await request.json())
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
+        }
+      }))
+    )
+    const requestId = "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e"
+    const carried = JSON.stringify({
+      requestId, repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5",
+      input: '{"label":"nightly"}', planId: "plan-1", planDigest: PLAN_DIGEST
+    })
+    expect((await controller.commands.run("triggers.approve", carried)).status).toBe("executed")
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
+    expect(registrationRun(store, requestId)?.payload.error).toBe(unboundedFlowSentence("nightly-lint"))
+    expect(receipts).toEqual([])
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
   })
 
   test("a plan that no longer reproduces refuses rather than registering something else", async () => {

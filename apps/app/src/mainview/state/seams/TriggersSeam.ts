@@ -21,6 +21,7 @@ import { FACTORY_PROJECTION_PATH, FactoryProjectionSchema, ruleFlows } from "@sm
 import type { FactoryProjection, FactoryRule } from "@smthrs/rpc/FactoryProjection"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import { SetupDraftSchema } from "@smthrs/rpc/RepositorySetup"
 import { Schema, SchemaRepresentation } from "effect"
 import type { JsonSchema } from "effect"
 import type { Card } from "../AppState"
@@ -84,6 +85,30 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 /** Plue's own words for a schedule that is not five UTC cron fields. */
 export const CRON_REFUSAL = "schedule must have five cron fields in UTC"
 
+/**
+ * How long one repository job may run, as the five reviewed jobs already bound
+ * it (`SetupDraftSchema.budgetMinutes`, the same bound their card's control
+ * carries). A schedule is a sixth job on the same box, and Smithers Cloud
+ * refuses a registration past two hours, so the two bounds are the same one.
+ */
+const MINUTES = SetupDraftSchema.shape.budgetMinutes
+
+/** The shape the two limits take: a count of tokens and a count of minutes. */
+export const LIMIT_SHAPE =
+  `Token and time limits are whole numbers: tokens above 0, and ${MINUTES.minValue}–${MINUTES.maxValue} minutes.`
+
+/**
+ * A flow that declares no ceiling, asked for without limits of its own.
+ *
+ * Unattended work is registered with the envelope it will run under, and
+ * Smithers Cloud refuses one with no finite token/time limits
+ * (`validateRepositoryJob`, "automatic work needs the reviewed envelope and
+ * finite token/time limits"). Saying that here is the difference between a
+ * person reading what to do and reading that something Smithers depends on
+ * refused them.
+ */
+export const unboundedFlowSentence = (flow: string): string => `Set token and time limits: "${flow}" declares none.`
+
 /** What the trigger write door was asked to do. */
 export interface TriggerWrite {
   /**
@@ -96,6 +121,13 @@ export interface TriggerWrite {
   readonly flow?: string
   readonly slug?: string
   readonly schedule?: string
+  /**
+   * What every unattended fire of this schedule may spend, as the register
+   * form holds it (text) and as the approve button carries it back (numbers).
+   * Left out, the ceiling the scheduled flow declares for itself is used.
+   */
+  readonly tokens?: string | number
+  readonly minutes?: string | number
   /**
    * The one registration attempt this is, minted when the door prepares.
    * Every idempotency key of the attempt hangs off it, so pressing the same
@@ -397,38 +429,73 @@ const schemaRefusal = (document: unknown, input: unknown): string | undefined =>
   }
 }
 
-/**
- * What approving grants every unattended fire, in the envelope's own numbers.
- *
- * A flow that declares no ceiling plans with an EMPTY budget — the shipped
- * `Descriptor.budgetUnbounded`, which production's own plans carry
- * (`"budget": {}`) — and dropping the line there asked a person to approve
- * unattended spend with no figure attached. The absence is now stated.
- */
-export const UNBOUNDED_BUDGET = "no token or time limit"
+/** What every unattended fire of one schedule may spend, in the envelope's own units. */
+interface TriggerLimits {
+  readonly tokens: number
+  readonly milliseconds: number
+}
 
-const budgetOf = (envelope: Record<string, unknown>): string => {
+/**
+ * The limits the person typed, before anything is asked of the workspace:
+ * nothing, two whole positive numbers, or the one refusal their shape earns.
+ */
+const namedLimits = (request: TriggerWrite): TriggerLimits | { readonly error: string } | undefined => {
+  const tokens = String(request.tokens ?? "").trim()
+  const minutes = String(request.minutes ?? "").trim()
+  if (tokens === "" && minutes === "") return undefined
+  const count = Number(tokens)
+  const span = Number(minutes)
+  if (!Number.isSafeInteger(count) || count < 1) return { error: LIMIT_SHAPE }
+  if (!MINUTES.safeParse(span).success) return { error: LIMIT_SHAPE }
+  return { tokens: count, milliseconds: span * 60_000 }
+}
+
+/**
+ * The limits this registration will carry: the person's, else the ceiling the
+ * scheduled flow declares for itself (`Descriptor.budgetOf`, which answers the
+ * undeclared case with an empty budget). Neither is `undefined`, which is the
+ * registration Smithers Cloud refuses and the app never submits.
+ */
+const limitsFor = (named: TriggerLimits | undefined, envelope: Record<string, unknown>): TriggerLimits | undefined => {
+  if (named !== undefined) return named
   const budget = isRecord(envelope.budget) ? envelope.budget : {}
-  const minutes = typeof budget.milliseconds === "number" ? Math.round(budget.milliseconds / 60_000) : undefined
-  const parts = [typeof budget.tokens === "number" ? `${budget.tokens} tokens` : undefined, minutes === undefined ? undefined : `${minutes} min`]
-    .filter((part) => part !== undefined)
-  return parts.length === 0 ? UNBOUNDED_BUDGET : parts.join(" · ")
+  const tokens = budget.tokens
+  const milliseconds = budget.milliseconds
+  return typeof tokens === "number" && tokens > 0 && typeof milliseconds === "number" && milliseconds > 0
+    ? { tokens, milliseconds }
+    : undefined
+}
+
+/** The envelope the registration carries: the plan's, bounded by the limits the person approved. */
+const reviewedEnvelope = (envelope: unknown, limits: TriggerLimits): Record<string, unknown> =>
+  ({ ...(isRecord(envelope) ? envelope : {}), budget: { tokens: limits.tokens, milliseconds: limits.milliseconds } })
+
+/**
+ * A value the transcript's markdown must not read as syntax.
+ *
+ * The preview is appended as a message and rendered as Markdown
+ * (TranscriptMessage.tsx), so `0 9 * * 1-5` came out as `0 9 1-5` and a `*`
+ * capability as a bullet: the person approved a schedule they had not typed
+ * (walk run 3, D3-N3). A code span renders the bytes, and the fence grows past
+ * any backtick run inside the value so it cannot be closed early.
+ */
+const verbatim = (value: string): string => {
+  const fence = "`".repeat(Math.max(0, ...[...value.matchAll(/`+/g)].map((run) => run[0].length)) + 1)
+  return `${fence}${value.startsWith("`") || value.endsWith("`") ? ` ${value} ` : value}${fence}`
 }
 
 /**
  * The plan preview: the facts the workspace stated about what a fire would
- * run. The budget is what approving grants to every unattended fire, so it is
- * read from the envelope's own `budget` (control/ControlSchema.ts Envelope)
- * and shown beside the capabilities rather than left off the card.
+ * run, and the limits every one of those fires may spend.
  */
-const previewOf = (plan: Record<string, unknown>, schedule: string): string => {
+const previewOf = (plan: Record<string, unknown>, schedule: string, limits: TriggerLimits): string => {
   const envelope = isRecord(plan.envelope) ? plan.envelope : {}
   const capabilities = Array.isArray(envelope.capabilities) ? envelope.capabilities.filter((value): value is string => typeof value === "string") : []
   const digest = typeof plan.executionDigest === "string" ? plan.executionDigest.slice(0, 12) : ""
   return [
-    `${String(plan.flowId)} · ${schedule} UTC`,
-    capabilities.join(", "),
-    budgetOf(envelope),
+    `${String(plan.flowId)} · ${verbatim(schedule)} UTC`,
+    capabilities.map(verbatim).join(", "),
+    `${limits.tokens} tokens · ${Math.round(limits.milliseconds / 60_000)} min`,
     digest
   ].filter((line) => line !== "").join("\n")
 }
@@ -496,8 +563,22 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return { value: summarize(repo, declared, live) }
   }
 
-  /** The prepared registration the approve button carries, as one JSON object. */
-  const prepared = (request: TriggerWrite, repo: string, requestId: string, planId: string, planDigest: string): string =>
+  /**
+   * The prepared registration the approve button carries, as one JSON object.
+   *
+   * It carries only what the person gave, never the limits derived from the
+   * plan: the approve door plans the flow again anyway, so deriving them once
+   * more there keeps one rule in one place and cannot round a declared ceiling
+   * on the way through the button.
+   */
+  const prepared = (
+    request: TriggerWrite,
+    repo: string,
+    requestId: string,
+    planId: string,
+    planDigest: string,
+    named: TriggerLimits | undefined
+  ): string =>
     JSON.stringify({
       requestId,
       repo,
@@ -505,6 +586,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       slug: request.slug,
       schedule: request.schedule,
       ...(request.input === undefined || request.input.trim() === "" ? {} : { input: request.input }),
+      ...(named === undefined ? {} : { tokens: named.tokens, minutes: named.milliseconds / 60_000 }),
       planId,
       planDigest
     })
@@ -543,6 +625,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
         return "Input is not valid JSON."
       }
     }
+    const named = namedLimits(request)
+    if (named !== undefined && "error" in named) return named.error
     const items = await registrarFlows(repo)
     if ("error" in items) return items.error
     const target = items.find((item) => item.flowId === request.flow)
@@ -562,11 +646,13 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const planId = typeof planned.value.planId === "string" ? planned.value.planId : undefined
     const planDigest = typeof planned.value.digest === "string" ? planned.value.digest : undefined
     if (planId === undefined || planDigest === undefined) return "The workspace planned the flow but didn't name the plan."
+    const limits = limitsFor(named, isRecord(planned.value.envelope) ? planned.value.envelope : {})
+    if (limits === undefined) return unboundedFlowSentence(String(request.flow))
     ctx.dispatch({
       type: "message.appended",
       actor: "system",
-      text: previewOf(planned.value, schedule),
-      action: { flow: "triggers.approve", args: prepared(request, repo, requestId, planId, planDigest), label: "Approve and register" }
+      text: previewOf(planned.value, schedule, limits),
+      action: { flow: "triggers.approve", args: prepared(request, repo, requestId, planId, planDigest, named), label: "Approve and register" }
     })
     return { value: `Prepared ${slug}. It registers when the user approves the plan.` }
   }
@@ -637,6 +723,17 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       return refuse("The plan changed since you saw it. Prepare the registration again.")
     }
     const envelope = planned.value.envelope
+    /*
+     * The other door into this attempt is a carried payload, which may name no
+     * limits at all. Unattended work is registered with the envelope it runs
+     * under and Smithers Cloud refuses one with no finite pair, so the app
+     * stops here — before the plan is approved and before a receipt is asked
+     * for an envelope that would be refused.
+     */
+    const named = namedLimits(request)
+    if (named !== undefined && "error" in named) return refuse(named.error)
+    const limits = limitsFor(named, isRecord(envelope) ? envelope : {})
+    if (limits === undefined) return refuse(unboundedFlowSentence(String(request.flow)))
     const approved = await relay(ctx, repo, "Approval.Submit", {
       target: { _tag: "Plan", planId, digest: planDigest, envelope },
       scope: "run",
@@ -644,7 +741,10 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       decision: "approve"
     })
     if (!approved.ok) return refuse(approved.message)
-    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, { repo, slug, flowId: request.flow, planId, planDigest, envelope })
+    /* The receipt states the envelope the registration will carry, which is the plan's bounded by those limits. */
+    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, {
+      repo, slug, flowId: request.flow, planId, planDigest, envelope: reviewedEnvelope(envelope, limits)
+    })
     if (!receipt.ok) return refuse(receipt.message)
     const registrar = await relay(ctx, repo, "Plan", {
       flowId: REGISTRAR_FLOW,
@@ -656,6 +756,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
         flow: request.flow,
         schedule: request.schedule,
         input,
+        budget: { tokens: limits.tokens, milliseconds: limits.milliseconds },
         approvedPlanId: planId,
         approvedPlanDigest: planDigest
       },

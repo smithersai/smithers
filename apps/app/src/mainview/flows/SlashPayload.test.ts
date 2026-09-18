@@ -313,10 +313,14 @@ describe("every declaration that takes arguments names a decoder", () => {
     expect(payloadFor("triggers.list", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
     expect(payloadFor("triggers.register", "")).toEqual({ payload: {} })
     expect(payloadFor("triggers.register", "other/repo extra")).toEqual({
-      error: "triggers.register takes an owner/repo and --flow, --slug, --schedule, --input"
+      error: "triggers.register takes an owner/repo and --flow, --slug, --schedule, --input, --tokens, --minutes"
     })
     expect(payloadFor("triggers.register", 'other/repo --flow nightly-lint --slug nightly --schedule 0 9 * * 1-5 --input {"label":"a"}')).toEqual({
       payload: { repo: "other/repo", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: '{"label":"a"}' }
+    })
+    /* The limits every unattended fire may spend, when the person names them rather than taking the flow's own ceiling. */
+    expect(payloadFor("triggers.register", "other/repo --flow nightly-lint --slug nightly --schedule 0 9 * * 1-5 --tokens 150000 --minutes 20")).toEqual({
+      payload: { repo: "other/repo", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", tokens: "150000", minutes: "20" }
     })
   })
 })

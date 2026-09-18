@@ -163,6 +163,25 @@ const digestOf = (value: unknown): string | undefined =>
   typeof value === "string" && /^[0-9a-f]{64}$/.test(value) ? value : undefined
 
 /**
+ * Whether an envelope is the reviewed one an unattended registration needs:
+ * the two lists it grants and the two finite limits it may spend.
+ *
+ * Smithers Cloud stores the envelope on the registration and refuses anything
+ * less (`validateRepositoryJobEnvelope`, "automatic work needs the reviewed
+ * envelope and finite token/time limits"), which reached the person as
+ * `upstream_refused … Not your doing.` for a fact about their own
+ * registration. The flow id is already refused here rather than there for the
+ * same reason. The upper bound is Cloud's own and stays there; what this
+ * refuses is an envelope no registration could ever be made from.
+ */
+const isReviewed = (value: unknown): boolean => {
+  const envelope = typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
+  const budget = typeof envelope.budget === "object" && envelope.budget !== null ? envelope.budget as Record<string, unknown> : {}
+  const finite = (limit: unknown): boolean => typeof limit === "number" && Number.isFinite(limit) && limit > 0
+  return Array.isArray(envelope.capabilities) && Array.isArray(envelope.flows) && finite(budget.tokens) && finite(budget.milliseconds)
+}
+
+/**
  * E9 — every `flow:*` registration of one repository.
  *
  * Row by row, dropping what it does not recognise: a listing that carries the
@@ -234,6 +253,9 @@ export const handleTriggerApproval = (request: Request): Effect.Effect<Response,
     const planDigest = digestOf(candidate.planDigest)
     if (repo === undefined || slug === undefined || flowId === undefined || planId === undefined || planDigest === undefined) {
       return refuse("request_invalid", "Body must be { repo, slug, flowId, planId, planDigest, envelope }.")
+    }
+    if (!isReviewed(candidate.envelope)) {
+      return refuse("request_invalid", "The envelope must carry the reviewed capabilities and flows and finite token and time limits.")
     }
     const recorded = yield* Effect.result(cloud(
       session.login,

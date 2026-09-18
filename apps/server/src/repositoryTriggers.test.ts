@@ -162,24 +162,59 @@ test("an accepted pause always answers a numeric count, whatever shape Cloud ans
   }
 })
 
-const APPROVED_PLAN = { repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: {} }
+/* The envelope a registration carries: Cloud stores it and refuses one with no finite token/time limits. */
+const REVIEWED_ENVELOPE = { capabilities: ["fs:read:**"], flows: ["nightly-lint"], budget: { tokens: 200_000, milliseconds: 600_000 } }
+const APPROVED_PLAN = { repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: REVIEWED_ENVELOPE }
 const APPROVAL = { ...APPROVED_PLAN, flowId: "nightly-lint" }
 
 test("the approval receipt names the registered flow, sends only what Control produced, and Cloud alone states who approved", async () => {
   const recorded = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
   const answer = await recorded.fetchAs(TRIGGER_APPROVAL_PATH, {
     method: "POST",
-    body: JSON.stringify({ ...APPROVAL, envelope: { capabilities: ["fs:read:**"] }, approvedBy: 99, approvedAt: "1999-01-01T00:00:00Z" })
+    body: JSON.stringify({ ...APPROVAL, approvedBy: 99, approvedAt: "1999-01-01T00:00:00Z" })
   })
   expect(await body(answer)).toEqual({ status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
   expect(recorded.calls[0]?.path).toBe("/api/repos/org/repo/repository-jobs/flow:nightly/approvals")
   /* Plue's RecordApproval decodes exactly these four with DisallowUnknownFields and refuses an empty flow_id. */
   const sent = JSON.parse(recorded.calls[0]?.body ?? "{}") as Record<string, unknown>
-  expect(sent).toEqual({ plan_id: "plan-1", plan_digest: "d".repeat(64), flow_id: "nightly-lint", envelope: { capabilities: ["fs:read:**"] } })
+  expect(sent).toEqual({ plan_id: "plan-1", plan_digest: "d".repeat(64), flow_id: "nightly-lint", envelope: REVIEWED_ENVELOPE })
 
   const silent = deployment(() => Response.json({ ok: true }))
   const malformed = await silent.fetchAs(TRIGGER_APPROVAL_PATH, { method: "POST", body: JSON.stringify(APPROVAL) })
   expect((await body(malformed)).code).toBe("upstream_malformed")
+})
+
+/*
+ * Walk run 3, defect D3-N2: a registration carried the target flow's plan
+ * envelope, which for a flow that declares no ceiling is `"budget": {}`, and
+ * Smithers Cloud refused it — `automatic work needs the reviewed envelope and
+ * finite token/time limits`. The person read `upstream_refused … Not your
+ * doing.` for a fact about their own registration. Plue refuses it, so this
+ * route refuses it here rather than there, exactly as it already does for an
+ * absent flow id.
+ */
+test("an approval whose envelope names no finite token and time limits never reaches Smithers Cloud", async () => {
+  const { envelope: _reviewed, ...unbounded } = APPROVAL
+  for (
+    const envelope of [
+      undefined,
+      {},
+      { capabilities: ["*"], flows: [], budget: {} },
+      { capabilities: ["*"], flows: [], budget: { tokens: 200_000 } },
+      { capabilities: ["*"], flows: [], budget: { tokens: 0, milliseconds: 600_000 } },
+      { capabilities: ["*"], flows: [], budget: { tokens: "200000", milliseconds: 600_000 } },
+      { flows: [], budget: { tokens: 200_000, milliseconds: 600_000 } },
+      { capabilities: ["*"], budget: { tokens: 200_000, milliseconds: 600_000 } }
+    ] as const
+  ) {
+    const attempt = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
+    const answer = await attempt.fetchAs(TRIGGER_APPROVAL_PATH, {
+      method: "POST",
+      body: JSON.stringify({ ...unbounded, ...(envelope === undefined ? {} : { envelope }) })
+    })
+    expect((await body(answer)).code).toBe("request_invalid")
+    expect(attempt.calls).toEqual([])
+  }
 })
 
 test("an approval that does not name a registrable flow never reaches Smithers Cloud", async () => {

@@ -122,12 +122,13 @@ const flowRunBody = (args: string | undefined): { name?: string; repo?: string; 
 }
 
 /**
- * `[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>]`:
- * the registration triggers.register takes. The repository leads because a
- * cron expression and a JSON input both hold spaces, so nothing trailing is
- * unambiguous; each flag runs to the next one, which keeps those spaces.
+ * `[owner/repo] --flow <id> --slug <name> --schedule <cron> [--input <json>]
+ * [--tokens <n>] [--minutes <n>]`: the registration triggers.register takes.
+ * The repository leads because a cron expression and a JSON input both hold
+ * spaces, so nothing trailing is unambiguous; each flag runs to the next one,
+ * which keeps those spaces.
  */
-const TRIGGER_FIELDS: ReadonlyArray<string> = ["flow", "slug", "schedule", "input"]
+const TRIGGER_FIELDS: ReadonlyArray<string> = ["flow", "slug", "schedule", "input", "tokens", "minutes"]
 const triggerRegistration = (args: string | undefined): Parsed => {
   const reason = `triggers.register takes an owner/repo and ${TRIGGER_FIELDS.map((field) => `--${field}`).join(", ")}`
   const head = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed(args))
