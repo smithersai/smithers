@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { existsSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import * as Capability from "../src/Capability.ts"
 import * as Permission from "../src/Permission.ts"
 
@@ -17,7 +17,27 @@ const definesNothing = (path: string): boolean =>
  */
 const renamed: Readonly<Record<string, string>> = { Capability: "ExactCapability.ts" }
 
-const fileFor = (name: string): string => renamed[name] ?? `${name}.ts`
+/**
+ * The names `src` really holds, read once and compared exactly.
+ *
+ * `existsSync` asks the filesystem, and a macOS or Windows volume answers
+ * case-insensitively, so `permissionDenied.ts` "exists" there and does not on
+ * the Linux runner. The directory listing is the same on every host.
+ */
+const modules: ReadonlySet<string> = new Set(readdirSync(new URL("../src/", import.meta.url)))
+
+const capitalized = (name: string): string => `${name.slice(0, 1).toUpperCase()}${name.slice(1)}`
+
+/**
+ * Where a public name is defined: the file of its own name, or, for a value
+ * constructor named after the type it builds (`permissionDenied` builds a
+ * `PermissionDenied`), the file of that type.
+ */
+const isDefined = (name: string): boolean => {
+  const renamedFile = renamed[name]
+  if (renamedFile !== undefined) return modules.has(renamedFile)
+  return modules.has(`${name}.ts`) || modules.has(`${capitalized(name)}.ts`)
+}
 
 describe("module layout", () => {
   it.each([["Capability.ts"], ["Permission.ts"]])("%s only re-exports named modules", (barrel) => {
@@ -29,8 +49,7 @@ describe("module layout", () => {
     ["Permission", Object.keys(Permission)]
   ])("every %s export is defined in the file of its name", (_barrel, names) => {
     expect(names.length).toBeGreaterThan(0)
-    const missing = names.filter((name) => !existsSync(new URL(`../src/${fileFor(name)}`, import.meta.url)))
-    expect(missing).toEqual([])
+    expect(names.filter((name) => !isDefined(name))).toEqual([])
   })
 
   it.each([
