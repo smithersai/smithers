@@ -45,6 +45,7 @@
     "./Events": "./src/Events.ts",
     "./Health": "./src/Health.ts",
     "./Ids": "./src/Ids.ts",
+    "./Pricing": "./src/Pricing.ts",
     "./Projection": "./src/Projection.ts",
     "./Protocol": "./src/Protocol.ts",
     "./Routes": "./src/Routes.ts",
@@ -161,6 +162,16 @@
         "require": {
           "types": "./dist/cjs/Ids.d.ts",
           "default": "./dist/cjs/Ids.js"
+        }
+      },
+      "./Pricing": {
+        "import": {
+          "types": "./dist/esm/Pricing.d.ts",
+          "default": "./dist/esm/Pricing.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Pricing.d.ts",
+          "default": "./dist/cjs/Pricing.js"
         }
       },
       "./Projection": {

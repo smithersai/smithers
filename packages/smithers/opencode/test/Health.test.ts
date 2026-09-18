@@ -181,6 +181,8 @@ describe("Health", () => {
         .pipe(Effect.provide(Health.evaluatorLayer({})))
     )
     expect(without.code).toBe("unreachable")
+    expect(without.message).toBe(Health.noGatewayKey)
+    expect(Health.noGatewayKey).toContain("AI_GATEWAY_API_KEY")
     const blank = await Effect.runPromise(
       Effect.flatMap(Evaluator.Evaluator, (evaluator) => Effect.flip(evaluator.evaluate({ state: {}, questions: {} })))
         .pipe(Effect.provide(Health.evaluatorLayer({ AI_GATEWAY_API_KEY: "" })))

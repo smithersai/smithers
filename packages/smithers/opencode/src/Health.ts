@@ -372,9 +372,22 @@ export const evaluatorLayer = (
 ): Layer.Layer<Evaluator.Evaluator> => {
   const key = environment["AI_GATEWAY_API_KEY"]
   return key === undefined || key === ""
-    ? Evaluator.layerUnavailable()
+    ? Layer.succeed(Evaluator.Evaluator)(
+      Evaluator.Evaluator.of({
+        evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: noGatewayKey }))
+      })
+    )
     : Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
 }
+
+/**
+ * Why every evaluation is refused without a gateway key: what the health
+ * card and a refused classify call say, and what to do about it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const noGatewayKey = "health unavailable: set AI_GATEWAY_API_KEY to turn on health and classify"
 
 /**
  * The one line an answer set renders as on a health card.

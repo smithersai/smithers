@@ -22,6 +22,7 @@ import * as Auth from "@smthrs/opencode/Auth"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
 import type * as Driver from "@smthrs/opencode/Driver"
 import * as EngineDriver from "@smthrs/opencode/EngineDriver"
+import * as Pricing from "@smthrs/opencode/Pricing"
 import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
 import * as Store from "@smthrs/opencode/Store"
@@ -166,7 +167,8 @@ export const host = async (
         bind: requested,
         version: packageVersion,
         seat,
-        maxFrames: options.maxFrames
+        maxFrames: options.maxFrames,
+        pricing: Pricing.pricingOf(seat)
       })
     }).pipe(
       Effect.provide(driver),

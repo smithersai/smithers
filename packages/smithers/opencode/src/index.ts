@@ -47,6 +47,11 @@ export * as Ids from "./Ids.ts"
 /**
  * @since 1.0.0 @category projection
  */
+export * as Pricing from "./Pricing.ts"
+
+/**
+ * @since 1.0.0 @category projection
+ */
 export * as Projection from "./Projection.ts"
 
 /**

@@ -334,6 +334,8 @@ describe("unified root command dispatch", () => {
     }
     expect(ports.serveHost).toHaveBeenCalledOnce()
     expect(ports.serveHost.mock.calls[0]![0]).toMatchObject({ directory, seat: "scripted:demo", maxFrames: 7 })
+    // The scripted seat has no price; a starter seat's price rides along the same way.
+    expect(ports.serveHost.mock.calls[0]![0]).toHaveProperty("pricing", undefined)
   })
 
   it.each(["-1", "65536", "1.5"])("rejects invalid port %s before acquiring a host", async (port) => {

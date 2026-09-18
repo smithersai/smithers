@@ -926,6 +926,20 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect((green.events[1]!.properties["part"] as Protocol.ToolPart).id).toBe(
       Ids.part(assistantMessageID, { frame: 1, slot: Projection.slots.health, ordinal: 1 })
     )
+    // An evaluation the gateway refused is no Jev call: the count stays, and
+    // the card says why there is no answer.
+    const refused = Projection.health(ctx, green.state, triggers[3]!, {
+      decision: { color: "gray", reason: "health unavailable" },
+      answers: undefined,
+      latencyMs: 2,
+      usage: undefined,
+      error: "unreachable: set AI_GATEWAY_API_KEY"
+    })
+    expect(refused.state.summary.jevCalls).toBe(green.state.summary.jevCalls)
+    expect((refused.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
+      title: "health unavailable",
+      output: "unreachable: set AI_GATEWAY_API_KEY"
+    })
     // A decision that reaches a closed turn changes nothing.
     const closed = Projection.close(ctx, green.state, { _tag: "interrupted" })
     expect(Projection.health(ctx, closed.state, triggers[0]!, evaluation).events).toEqual([])

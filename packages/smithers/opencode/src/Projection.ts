@@ -1346,6 +1346,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
  *
  * @param answers what the evaluation answered, for the card
  * @param frame the zero-based frame the card sorts under; the current one by default
+ * @param failure why there are no answers, for the card, when the evaluation failed
  * @category combinators
  * @since 1.0.0
  */
@@ -1354,7 +1355,8 @@ export const decided = (
   state: State,
   decision: Health.Decision,
   answers: Health.Answers | undefined,
-  frame: number = state.frame
+  frame: number = state.frame,
+  failure?: string
 ): Step => {
   if (state.closed) return { state, events: [] }
   if (state.health?.color === decision.color) return { state: { ...state, health: decision }, events: [] }
@@ -1377,7 +1379,7 @@ export const decided = (
     state: {
       status: "completed",
       input: { color: decision.color },
-      output: Health.renderAnswers(answers),
+      output: answers === undefined && failure !== undefined ? failure : Health.renderAnswers(answers),
       title: decision.reason,
       metadata: { color: decision.color, reason: decision.reason, answers },
       time: { start: now, end: now }
@@ -1387,14 +1389,16 @@ export const decided = (
 }
 
 /**
- * Folds one health evaluation in: counts the Jev call, then `decided` under
- * the frame the facts were about (`facts.frame` counts from one).
+ * Folds one health evaluation in: counts the Jev call when Jev answered
+ * (a refused or timed-out evaluation is not a call the gateway took), then
+ * `decided` under the frame the facts were about (`facts.frame` counts
+ * from one), with the failure on the card when there is one.
  *
  * @category combinators
  * @since 1.0.0
  */
 export const health = (ctx: Context, state: State, facts: Health.Facts, evaluation: Health.Evaluation): Step => {
-  const counted: State = {
+  const counted: State = evaluation.error !== undefined ? state : {
     ...state,
     summary: {
       ...state.summary,
@@ -1403,7 +1407,7 @@ export const health = (ctx: Context, state: State, facts: Health.Facts, evaluati
       jevCost: state.summary.jevCost + Health.jevCost(evaluation.usage)
     }
   }
-  return decided(ctx, counted, evaluation.decision, evaluation.answers, facts.frame - 1)
+  return decided(ctx, counted, evaluation.decision, evaluation.answers, facts.frame - 1, evaluation.error)
 }
 
 /**
