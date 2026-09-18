@@ -24,7 +24,7 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { mkdirSync } from "node:fs"
-import { dirname } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import type * as Health from "./Health.ts"
 import type * as Protocol from "./Protocol.ts"
 
@@ -38,6 +38,15 @@ export class StoreError extends Schema.TaggedError<StoreError>()("@smthrs/openco
   message: Schema.String,
   cause: Schema.optional(Schema.Defect())
 }) {}
+
+/**
+ * The database file under the served directory: the one file the store, the
+ * engine driver, and the server all mean.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const databasePath = (directory: string): string => join(resolve(directory), ".smithers", "opencode.sqlite")
 
 /**
  * How many messages a history read returns when the app names no limit.

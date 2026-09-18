@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `Classify` maps evaluator failures with `Classifier.fromEvaluatorError` from
+  `@smthrs/model` instead of a private copy.
+
 ### Added
 
 - Added the `classify` flow (`Classify`): typed Jev questions about any JSON state, one state or a batch of up to 64 at 32 KiB each, evaluated eight at a time through the `Evaluator` service of `@smthrs/model`. Answers carry probabilities and a confidence per question; a batch keeps every failure beside its state. `Classify.curated(classifier)` declares a `classify/<id>` flow from any `Classifier.make` declaration, with the classifier's state as input and its digest on the declaration.

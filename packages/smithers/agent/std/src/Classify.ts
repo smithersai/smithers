@@ -260,13 +260,6 @@ export const capabilities = [capability("model:call", "*")]
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
-const fromEvaluatorError = (error: Evaluator.EvaluatorError): Classifier.ClassifierError =>
-  new Classifier.ClassifierError({
-    code: error.code,
-    ...(error.status === undefined ? {} : { status: error.status }),
-    message: error.message
-  })
-
 const confidences = (answers: Readonly<Record<string, Classifier.Answer>>): Record<string, number> =>
   Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, Classifier.confidence(answer)]))
 
@@ -282,7 +275,9 @@ export const ask = (
   questions: Classifier.Questions
 ): Effect.Effect<Verdict, Classifier.ClassifierError> =>
   Effect.gen(function*() {
-    const response = yield* evaluator.evaluate({ state, questions }).pipe(Effect.mapError(fromEvaluatorError))
+    const response = yield* evaluator.evaluate({ state, questions }).pipe(
+      Effect.mapError(Classifier.fromEvaluatorError)
+    )
     const answers = yield* Classifier.decodeAnswers(questions, response.answers)
     return { answers, confidence: confidences(answers), latencyMs: response.latencyMs }
   })

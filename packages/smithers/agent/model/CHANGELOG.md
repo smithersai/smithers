@@ -4,6 +4,9 @@
 
 ### Added
 
+- `Classifier.fromEvaluatorError`: the conversion from an evaluator failure to
+  a classifier failure, which `@smthrs/std`'s `classify` flow used to copy.
+
 - Added `Classifier` and `Evaluator`, the typed-question API over Jev described in
   section 4 of the repository's Jev harness design doc (docs/jev-harness/design.html
   at the repository root). `Classifier.make` declares an id, a

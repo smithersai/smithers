@@ -427,7 +427,14 @@ export interface MakeOptions<State extends Schema.Codec<any, any>, Qs extends Qu
   readonly questions: Qs
 }
 
-const fromEvaluatorError = (error: Evaluator.EvaluatorError): ClassifierError =>
+/**
+ * The classifier failure an evaluator failure is: the same code, status,
+ * and message. `@smthrs/std`'s `classify` flow maps its calls with it too.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const fromEvaluatorError = (error: Evaluator.EvaluatorError): ClassifierError =>
   new ClassifierError({
     code: error.code,
     ...(error.status === undefined ? {} : { status: error.status }),

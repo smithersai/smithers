@@ -76,7 +76,7 @@ import { constFalse } from "effect/Function"
 import type * as Path from "effect/Path"
 import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
-import { join, resolve } from "node:path"
+import { resolve } from "node:path"
 import * as Driver from "./Driver.ts"
 import * as Health from "./Health.ts"
 import * as Projection from "./Projection.ts"
@@ -164,12 +164,12 @@ export const defaultLimits: Sandbox.Limits = { memoryBytes: 256 * 1024 * 1024, s
 export const envelope: ReadonlyArray<string> = ["fs:read:/**", "fs:write:/**", "proc:spawn:*", "model:call:*"]
 
 /**
- * The database file under the served directory.
+ * The database file under the served directory: `Store.databasePath`.
  *
  * @category getters
  * @since 1.0.0
  */
-export const databasePath = (directory: string): string => join(resolve(directory), ".smithers", "opencode.sqlite")
+export const databasePath: (directory: string) => string = Store.databasePath
 
 /**
  * The version control the engine is built over. Nothing in a turn calls it:

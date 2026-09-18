@@ -23,7 +23,7 @@ import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
 import type { ServeError } from "effect/unstable/http/HttpServerError"
 import { createServer } from "node:http"
-import { join, resolve } from "node:path"
+import { resolve } from "node:path"
 import * as Auth from "./Auth.ts"
 import * as Cors from "./Cors.ts"
 import type * as Driver from "./Driver.ts"
@@ -31,7 +31,7 @@ import * as Events from "./Events.ts"
 import * as Health from "./Health.ts"
 import type * as Projection from "./Projection.ts"
 import * as Routes from "./Routes.ts"
-import type * as Store from "./Store.ts"
+import * as Store from "./Store.ts"
 import * as Turns from "./Turns.ts"
 
 /**
@@ -106,12 +106,12 @@ export const banner = (bind: Bind, directory: string): string =>
   `Serving ${resolve(directory)} at ${url(bind)}. Open https://app.opencode.ai and allow the local network permission.`
 
 /**
- * The database file under the served directory.
+ * The database file under the served directory: `Store.databasePath`.
  *
  * @category getters
  * @since 1.0.0
  */
-export const databasePath = (directory: string): string => join(resolve(directory), ".smithers", "opencode.sqlite")
+export const databasePath: (directory: string) => string = Store.databasePath
 
 /**
  * How the server is assembled.
