@@ -215,8 +215,10 @@ export const Node = (options: {
   }
   // A workflow reads the file from the checkout root, so an absolute path or one
   // that climbs out of the workspace names something the runner does not have.
-  if (options.versionFile !== undefined
-    && (!/^[\w.][\w./-]*$/.test(options.versionFile) || options.versionFile.split("/").includes(".."))) {
+  if (
+    options.versionFile !== undefined
+    && (!/^[\w.][\w./-]*$/.test(options.versionFile) || options.versionFile.split("/").includes(".."))
+  ) {
     throw new Error(`CiToolchain.Node: versionFile must be workspace-relative: ${JSON.stringify(options.versionFile)}`)
   }
   return NodeSetup.make({

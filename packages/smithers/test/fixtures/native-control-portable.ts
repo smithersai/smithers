@@ -1,6 +1,6 @@
 import { Control } from "@smthrs/control"
-import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Executable from "@smthrs/registry/Executable"
 import { Deferred, Effect, Layer, Schema, Stream } from "effect"

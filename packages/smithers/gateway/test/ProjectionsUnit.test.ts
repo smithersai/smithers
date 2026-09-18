@@ -406,9 +406,13 @@ describe("Projections resource bounds", () => {
 
   it.effect("preserves native engine evidence across bounded journal pages", () =>
     Effect.gen(function*() {
-      const payload = { version: 1, executionId: "native-request", payload: {
-        result: { description: "x".repeat(3 * 1024 * 1024), status: "validated" }
-      } }
+      const payload = {
+        version: 1,
+        executionId: "native-request",
+        payload: {
+          result: { description: "x".repeat(3 * 1024 * 1024), status: "validated" }
+        }
+      }
       const history = [event(1, "control.engine.event", payload), event(2, "control.engine.event", payload)]
       const projections = make(control({
         list: () => Effect.succeed({ _tag: "runs", items: [run] }),
@@ -426,7 +430,8 @@ describe("Projections resource bounds", () => {
     Effect.gen(function*() {
       const projections = make(control({
         list: () => Effect.succeed({ _tag: "runs", items: [run] }),
-        watch: () => Stream.succeed(event(1, "control.engine.event", { result: "x".repeat(Projections.maxProjectionBytes) }))
+        watch: () =>
+          Stream.succeed(event(1, "control.engine.event", { result: "x".repeat(Projections.maxProjectionBytes) }))
       }))
       expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
         .toBe("resource_limit")

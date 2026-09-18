@@ -994,10 +994,10 @@ describe("render", () => {
     expect(rendered).toContain([
       `      - uses: "${actions.setupNode}"`,
       "        with:",
-      '          "node-version-file": ".node-version"',
-      '          "cache": "pnpm"'
+      "          \"node-version-file\": \".node-version\"",
+      "          \"cache\": \"pnpm\""
     ].join("\n"))
-    expect(rendered).not.toContain('"node-version"')
+    expect(rendered).not.toContain("\"node-version\"")
   })
 
   it("refuses a Node declaration with both sources or neither, or a path off the checkout", () => {
