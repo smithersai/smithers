@@ -44,6 +44,22 @@ export interface SeamContext {
   readonly promptCloudSignIn?: () => void
 }
 
+/**
+ * A repository read the account is not signed in for.
+ *
+ * Thrown rather than returned because it travels through the prepared-view
+ * machinery, which answers a plain string by painting it onto the view's card.
+ * This one is not a card's sentence: the caller answers it with the sign-in
+ * step and its button, and a view that stops for it produced no view at all.
+ * PreparedView reads it through {@link signInRequired} so a refusal that is
+ * already answered never leaves a FAILED card beside the answer.
+ */
+export class RepositorySignInRequired extends Error {}
+
+/** Whether a thrown value is the sign-in refusal the caller has already answered. */
+export const signInRequired = (error: unknown): error is RepositorySignInRequired =>
+  error instanceof RepositorySignInRequired
+
 /** A bounded model-readable answer; the card retains the full parsed payload. */
 export const readResult = (value: string): { readonly value: string } => {
   const cap = 16_000

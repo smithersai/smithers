@@ -226,6 +226,32 @@ describe("issues seam — the list", () => {
       expect(store.collections.cards.get("issues-will/flows")).toMatchObject({ status: "error", loading: false })
     }
   })
+  /*
+   * Canary D-5: one refusal reached the person as two sentences. The
+   * transcript said the true one ("Sign in with GitHub to read issues on …",
+   * with the button) while the card beside it wore a FAILED headline and
+   * "This view couldn't be loaded. Try opening it again." — opening it again
+   * will never work, and the louder of the two was the false one. The
+   * sign-in prompt is the whole answer.
+   */
+  test("a signed-out read answers with the sign-in prompt alone, not a failed view card", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableRepositories, unavailableAgent,
+      backend({ "GET /api/repos/smithersai/smithers/issues": json(401, { status: "error", message: "sign in first" }) }))
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
+    store.dispatch({ type: "repositories.loaded", actor: "system",
+      repositories: [{ id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true }] })
+    await settled()
+    await controller.commands.run("issues.list", "open smithersai/smithers")
+    await settled()
+    const prompts = [...store.collections.messages.values()].filter((message) => message.action?.flow === "auth.sign-in")
+    expect(prompts.map((message) => message.text)).toEqual(["Sign in with GitHub to read issues on smithersai/smithers."])
+    for (const card of store.collections.cards.values()) {
+      expect(card.status).not.toBe("error")
+      expect(card.body ?? "").not.toContain("This view couldn't be loaded")
+    }
+  })
+
   test("issues.list upserts the issue-list card with defensively parsed rows and asks state=open", async () => {
     const calls: string[] = []
     const { store, controller } = await issuesController(

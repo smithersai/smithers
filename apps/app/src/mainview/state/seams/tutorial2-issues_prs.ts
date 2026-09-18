@@ -3,9 +3,7 @@ import { publishIssueView,publishRepoView } from "../EmbeddedHistory"
 import { isPracticeRepo,PRACTICE_CARD,PRACTICE_NAME,practiceIssue,practiceIssueList,practicePr,practicePrList } from "../practice/PracticeRepository"
 import { activeRepositoryId,resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { readErrorMessage,readResult } from "./SeamContext"
-
-class RepositorySignInRequired extends Error {}
+import { readErrorMessage,readResult,RepositorySignInRequired } from "./SeamContext"
 
 /** Stop an unauthorized list before it can publish rows or complete a lesson. */
 export async function readRepositoryListError(response: Response, fallback: string): Promise<string> {

@@ -1,5 +1,6 @@
 import { conversationTabIdOf,type Card } from "./AppState";
 import { paneTarget } from "./EmbeddedHistory";
+import { signInRequired } from "./seams/SeamContext";
 import type { SeamContext } from "./seams/SeamContext";
 
 export type ViewResult = string | { readonly card: Card; readonly value?: string }
@@ -107,7 +108,23 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
       await plan.after?.()
       return result.value === undefined ? undefined : { value: result.value }
     } catch (error) {
-      if (valid()) ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
+      /*
+       * A sign-in refusal is not a broken view. The caller answers it with
+       * the sign-in step and its button, and "This view couldn't be loaded.
+       * Try opening it again." beside that step says the opposite of the
+       * truth — opening it again never works, signing in does. The read
+       * produced no view, so the speculative card leaves and the refusal is
+       * the whole answer; a view that was already loaded keeps what it had.
+       */
+      if (valid()) {
+        if (!signInRequired(error)) {
+          ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
+        } else if (previous !== undefined && !previous.loading) {
+          ctx.dispatch({ type: "card.view.loaded", actor, card: previous })
+        } else {
+          ctx.dispatch({ type: "card.removed", actor, id })
+        }
+      }
       throw error
     } finally {
       const interrupted = live() ? ctx.store.collections.cards.get(id) : undefined
