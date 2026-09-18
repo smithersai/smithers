@@ -338,10 +338,11 @@ export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (ty
   const blocking = results.filter(result => result.policy === "required" && (result.status === "failed" || result.status === "error"))
   if (blocking.length) return `${blocking.length} required checks blocked`
   const ran = results.filter(result => result.status !== "skipped")
-  const skipped = results.length - ran.length
-  if (ran.length) return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed${skipped ? `, ${skipped} skipped` : ""}`
+  const skipped = results.filter(result => result.status === "skipped")
+  if (ran.length) return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed${skipped.length ? `, ${skipped.length} skipped` : ""}`
+  const kinds = [...new Set(skipped.flatMap(result => plan.work.checks.filter(check => check.id === result.checkId).map(check => check.kind)))].sort()
   const found = plan.searched.filter(source => source.present).map(source => source.path)
-  return `No checks ran${skipped ? ` (${skipped} configured check${skipped === 1 ? "" : "s"} skipped)` : ""}.${plan.searched.length
+  return `No checks ran${skipped.length ? ` (${skipped.length} configured ${kinds.length ? `${kinds.join("/")} ` : ""}check${skipped.length === 1 ? "" : "s"} skipped)` : ""}.${plan.searched.length
     ? ` Searched for workflow files, manifests and scripts in ${plan.searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
 }
 

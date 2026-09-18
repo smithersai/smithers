@@ -132,13 +132,24 @@ test("a repository that configures no runnable check says so and names the locat
   // A live CI job captures its evidence from the event payload, so evidence.missing
   // is empty and never describes where this repository would configure a check.
   const live = canaryPlan([], absent)
-  assert.equal(checksSummary(live, [checkResult({})]), `No checks ran (1 configured check skipped).${where}none present.`)
+  assert.equal(checksSummary(live, [checkResult({})]), `No checks ran (1 configured ai check skipped).${where}none present.`)
   assert.equal(checksSummary(canaryPlan(["package.json", "tox.ini", "pyproject.toml"], absent), [checkResult({})]),
     checksSummary(live, [checkResult({})]), "the setup inspect's prompt-derived paths are not the locations this step probed")
   const found = canaryPlan([], absent.map(source => source.path === "package.json" ? { path: source.path, present: true } : source))
-  assert.equal(checksSummary(found, [checkResult({})]), `No checks ran (1 configured check skipped).${where}found package.json.`)
+  assert.equal(checksSummary(found, [checkResult({})]), `No checks ran (1 configured ai check skipped).${where}found package.json.`)
   assert.equal(checksSummary(found, []), `No checks ran.${where}found package.json.`)
-  assert.equal(checksSummary(canaryPlan([], []), [checkResult({})]), "No checks ran (1 configured check skipped).")
+  assert.equal(checksSummary(canaryPlan([], []), [checkResult({})]), "No checks ran (1 configured ai check skipped).")
+})
+
+test("a summary that measured nothing names the kinds of the checks that did not run", () => {
+  const base = canaryPlan([], [])
+  const plan: typeof CheckPlan.Type = { ...base, work: { ...base.work,
+    checks: [...base.work.checks, { id: "verify", name: "Tests pass", kind: "command", rule: "npm test", paths: [], policy: "report" }] } }
+  assert.equal(checksSummary(plan, [checkResult({}), checkResult({ checkId: "verify" })]),
+    "No checks ran (2 configured ai/command checks skipped).")
+  assert.equal(checksSummary(plan, [checkResult({ checkId: "verify" })]), "No checks ran (1 configured command check skipped).")
+  assert.equal(checksSummary(plan, [checkResult({ checkId: "withdrawn" })]), "No checks ran (1 configured check skipped).",
+    "a result whose check the plan no longer carries contributes no kind")
 })
 
 test("the check-location probe measures this immutable tree, not an alias out of it", async t => {
