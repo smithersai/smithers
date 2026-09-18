@@ -525,7 +525,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         const updated = get(id)!
         attachRun(updated)
         if (updated.payload.recovery?.error) return updated.payload.recovery.error
-        if (updated.payload.request?.error) return updated.payload.request.error
+        if (updated.payload.request?.error) return setupRefusal(updated.payload.request.error) ?? updated.payload.request.error
         if (["requested", "running"].includes(updated.payload.request?.state ?? "")) { void send(id); return TOAST_SUPERSEDED }
         if (result.setup.state === "none" && result.registration.state === "known" && !result.registration.active && !result.registration.trial
           && updated.payload.inspectedAt === undefined && !updated.payload.request

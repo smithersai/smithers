@@ -1398,3 +1398,29 @@ test("the toast a settled setup refusal leaves states the host's sentence while 
     expect(toasts.map(toast => toast.detail)).toEqual([REFUSAL])
   } finally { await t.close() }
 })
+
+test("the toast a settled refusal recovered after a reload states the host's sentence too", async () => {
+  const REFUSAL = "Run evals for this exact candidate before continuing"
+  /* The 300ms law again: recovery only leaves a toast when the host's answer outlives the debounce. */
+  const gate = deferred()
+  const t = await fixture(async body => response(body, "completed", "inspect"))
+  t.recovery.answer = async () => {
+    await gate.promise
+    const recovered = settledWorkspaceGone()
+    const receipt = recovered.setup.state === "found" ? recovered.setup.result.receipt : undefined
+    if (recovered.setup.state !== "found" || receipt === undefined) throw Error("fixture")
+    recovered.setup = { ...recovered.setup, input: { ...recovered.setup.input, operation: "trial" },
+      result: { ...recovered.setup.result, receipt: { ...receipt, operation: "trial",
+        evidence: ["run:run-3"], error: `failed — invalid_receipt: ${REFUSAL}` } } }
+    return Response.json(recovered)
+  }
+  try {
+    const opened = t.setup.openRepositorySetup("issues", "example/repo")
+    await until(() => [...t.store.collections.toasts.values()].some(toast => toast.status === "running"))
+    gate.release()
+    await opened; await Promise.all(t.background)
+    expect(setupCard(t).payload.request).toMatchObject({ id: SETTLED_REQUEST, state: "failed", error: `failed — invalid_receipt: ${REFUSAL}` })
+    const toasts = [...t.store.collections.toasts.values()].filter(toast => toast.status === "failed")
+    expect(toasts.map(toast => toast.detail)).toEqual([REFUSAL])
+  } finally { gate.release(); await t.close() }
+})
