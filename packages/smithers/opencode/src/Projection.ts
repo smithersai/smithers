@@ -15,7 +15,10 @@
  * (`Ids.part`), so a frame replayed after a park names the same parts and
  * the app updates cards instead of duplicating them. That is also why a
  * park resets the frame counter: the engine re-drives the turn from frame
- * zero and the journal replays what settled.
+ * zero and the journal replays what settled. A replayed frame is not new
+ * information: it triggers no health evaluation and counts nothing twice
+ * (frames, calls, tokens, demands, frames since an edit), so every health
+ * card sorts under the frame whose settlement or park produced its facts.
  *
  * The fold is total. It never throws, and an event it does not understand
  * changes nothing, because the stream consumer runs inside the frame and a
@@ -797,17 +800,42 @@ const colorOf = (title: string): Health.Decision | undefined => {
   return color === undefined ? undefined : { color, reason: "" }
 }
 
-/** A demand issued: remembered for the health state, and pending for the next evaluation. */
-const demanded = (state: State, name: string): State => ({
-  ...state,
-  facts: { ...state.facts, demands: [...state.facts.demands, name].slice(-lastCallsKept), demandThisFrame: true }
-})
+/**
+ * A demand issued: remembered for the health state, and pending for the
+ * next evaluation. A demand whose card exists was issued before, and the
+ * replay is not a second demand.
+ */
+const demanded = (state: State, name: keyof typeof demandOrdinals, frame: number): State =>
+  Ids.part(state.assistantMessageID, { frame, slot: slots.demand, ordinal: demandOrdinals[name] }) in state.demandText
+    ? state
+    : {
+      ...state,
+      facts: { ...state.facts, demands: [...state.facts.demands, name].slice(-lastCallsKept), demandThisFrame: true }
+    }
 
-/** The facts to evaluate at a trigger, and the state once they are handed out. */
-const trigger = (state: State): { readonly state: State; readonly health: Health.Facts } => ({
-  state: { ...state, facts: { ...state.facts, demandThisFrame: false } },
+/**
+ * The facts to evaluate at a trigger, and the state once they are handed
+ * out. A settlement consumes the demand flag; a park does not, because the
+ * frame the demand was issued for has not settled yet, and it reads the
+ * flag when it does.
+ */
+const trigger = (state: State, settled: boolean): { readonly state: State; readonly health: Health.Facts } => ({
+  state: settled ? { ...state, facts: { ...state.facts, demandThisFrame: false } } : state,
   health: { ...state.facts, frame: state.frame + 1 }
 })
+
+/**
+ * Whether the current frame settled before: the engine re-drives a parked
+ * turn from frame zero, and every frame below the high-water mark is the
+ * journal replaying what it already holds.
+ */
+const replayed = (state: State): boolean => state.frame + 1 < state.summary.frames
+
+/**
+ * The last frame that opened, zero-based: the current one, or the
+ * high-water mark while a park has reset the counter.
+ */
+const lastFrame = (state: State): number => Math.max(state.frame, state.summary.frames - 1)
 
 /**
  * Opens a turn: the user message and its text part, the session with its
@@ -1072,7 +1100,10 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       const failure = `${result.message ?? "The call failed"}${result.code === undefined ? "" : ` (${result.code})`}${
         result.code === undefined ? "" : `\n${Cell.callFailureHint[result.code]}`
       }`
-      const facts: Health.Facts = {
+      // A settle already folded is the journal replaying it after a park:
+      // the card updates, the health facts and the counters do not.
+      const seen = `settle:${key}` in state.counted
+      const facts: Health.Facts = seen ? state.facts : {
         ...state.facts,
         lastCalls: [...state.facts.lastCalls, { flow: event.flowName, ok, summary }].slice(-lastCallsKept)
       }
@@ -1103,7 +1134,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       }
       const { [key]: _settled, ...calls } = state.calls
       // A replayed classify settle is the journal's answer, not a second Jev call.
-      const counted = !classify || `settle:${key}` in state.counted
+      const counted = !classify || seen
       return {
         state: {
           ...state,
@@ -1115,7 +1146,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
             jevCalls: state.summary.jevCalls + 1,
             jevLatencyMs: state.summary.jevLatencyMs + latency
           },
-          counted: classify ? { ...state.counted, [`settle:${key}`]: true } : state.counted
+          counted: { ...state.counted, [`settle:${key}`]: true }
         },
         events: [partEvent(part, now)]
       }
@@ -1164,16 +1195,19 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
             time: { start: cell.start, end: now }
           }
       }
+      // A frame the journal replays after a park settled before: the card
+      // updates, the frame is not counted again, and health is not asked.
+      if (replayed(state)) return { state: { ...state, cell: undefined }, events: [partEvent(part, now)] }
       const settled = trigger({
         ...state,
         cell: undefined,
         facts: { ...state.facts, framesSinceEdit: state.editedThisFrame ? 0 : state.facts.framesSinceEdit + 1 }
-      })
+      }, true)
       return { state: settled.state, events: [partEvent(part, now)], health: settled.health }
     }
     case "read-only-demand-issued":
       return demandCard(
-        demanded(state, "read-only"),
+        demanded(state, "read-only", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals["read-only"],
@@ -1199,7 +1233,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
     }
     case "repeat-demanded":
       return demandCard(
-        demanded(state, "repeat"),
+        demanded(state, "repeat", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals.repeat,
@@ -1208,7 +1242,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "narrowed-demanded":
       return demandCard(
-        demanded(state, "narrowed"),
+        demanded(state, "narrowed", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals.narrowed,
@@ -1217,7 +1251,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "unmoved-demanded":
       return demandCard(
-        demanded(state, "unmoved"),
+        demanded(state, "unmoved", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals.unmoved,
@@ -1228,7 +1262,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "unresolved-demanded":
       return demandCard(
-        demanded(state, "unresolved"),
+        demanded(state, "unresolved", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals.unresolved,
@@ -1237,7 +1271,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       )
     case "narrow-only-demanded":
       return demandCard(
-        demanded(state, "narrow-only"),
+        demanded(state, "narrow-only", event.nextFrame),
         ctx,
         event.nextFrame,
         demandOrdinals["narrow-only"],
@@ -1309,7 +1343,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         : event.reason.code === "permission-required"
         ? "permission"
         : "question"
-      const suspended = trigger({ ...state, facts: { ...state.facts, parked } })
+      const suspended = trigger({ ...state, facts: { ...state.facts, parked } }, false)
       return {
         state: { ...suspended.state, frame: -1, reasoning: undefined, cell: undefined },
         events: [],
@@ -1463,7 +1497,13 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
     : capEnded === undefined
     ? { color: "gray", reason: "failed" }
     : { color: "red", reason: `stopped: ${capEnded}` }
-  const marked = decided(ctx, { ...settled.state, facts: { ...settled.state.facts, capEnded } }, decision, undefined)
+  const marked = decided(
+    ctx,
+    { ...settled.state, facts: { ...settled.state.facts, capEnded } },
+    decision,
+    undefined,
+    lastFrame(settled.state)
+  )
   const ended = endTurn(marked.state, ctx, {
     finish: "error",
     time: { created: state.createdAt, completed: ctx.now() },

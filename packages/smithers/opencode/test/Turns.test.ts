@@ -99,11 +99,16 @@ describe("Turns", () => {
           turns.permission({ sessionID: "ses_1", permissionID: "per_nope", response: "once" })
         )
         yield* turns.permission({ sessionID: "ses_1", permissionID: pending[0]!.id, response: "once" })
+        // The answer ends the turn; the resumed frame's health decision may
+        // land just after it, so the history is read once both are stored.
         yield* Effect.promise(() =>
           until(() =>
             Effect.runPromise(
               Effect.map(store.listMessages("ses_1"), (messages) =>
-                messages.some((message) => message.info.role === "assistant" && message.info.finish === "stop"))
+                messages.some((message) =>
+                  message.info.role === "assistant" && message.info.finish === "stop" &&
+                  message.parts.filter((part) => part.type === "tool" && part.tool === "health").length === 3
+                ))
             )
           )
         )
@@ -120,9 +125,23 @@ describe("Turns", () => {
     expect(result.pending.length).toBe(1)
     expect(result.wrongPermission).toMatchObject({ code: "unknown_permission" })
     expect(result.messages.map((message) => message.info.role)).toEqual(["user", "assistant", "user"])
-    // Eight cards from the script, plus the health card the park turned red
-    // and the one the answer turned gray again.
-    expect(result.messages[1]!.parts.filter((part) => part.type === "tool").length).toBe(10)
+    // Seven cards from the script, plus the health cards: frame zero's
+    // settle (gray, no Jev key), the park (red), and the resumed frame's
+    // settle (gray again), each under the frame that produced it.
+    expect(
+      result.messages[1]!.parts.flatMap((part) => part.type === "tool" ? [`${part.tool}:${part.state.status}`] : [])
+    ).toEqual([
+      "cell:completed",
+      "read:completed",
+      "list:completed",
+      "classify:completed",
+      "health:completed",
+      "cell:completed",
+      "bash:completed",
+      "demand:completed",
+      "health:completed",
+      "health:completed"
+    ])
     expect(result.idle).toEqual({})
     expect(result.replayed.map((envelope) => envelope.payload.type)).toContain("permission.replied")
     expect(result.aborted).toBe(false)

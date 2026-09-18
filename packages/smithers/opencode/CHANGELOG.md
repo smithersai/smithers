@@ -82,6 +82,15 @@
   app writes after the dot, and the space behind it, so a renamed or
   archived session no longer keeps an invisible character in front of its
   title. A rename to an empty title keeps the title the session had.
+- Health cards sort under the frame whose settlement or park produced
+  their facts. The engine re-drives a parked turn from frame zero and the
+  journal replays what settled; every replayed settle asked Jev again with
+  the park cleared, so after each park a gray card landed under frame 1, and
+  the replay counted the frame, its calls and its demand a second time in
+  the facts Jev reads. A replayed frame now hands out nothing and counts
+  nothing twice, a park no longer consumes the demand flag the parked frame
+  reads when it settles, and a turn closed while parked marks the last
+  frame that opened.
 
 ### Added
 

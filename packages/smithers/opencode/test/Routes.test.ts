@@ -303,6 +303,13 @@ describe("Routes through the OpenCode SDK client", () => {
     })
     expect(replied.data).toBe(true)
     await until(async () => seen.some((event) => event.type === "session.idle"))
+    // The resumed frame's health decision may land just after the idle.
+    const healthStreamed = () =>
+      seen.filter((event) =>
+        event.type === "message.part.updated" && (event.properties["part"] as Part).type === "tool" &&
+        (event.properties["part"] as Extract<Part, { type: "tool" }>).tool === "health"
+      ).length
+    await until(async () => healthStreamed() === 3)
 
     const types = seen.map((event) => event.type)
     expect(types).toContain("message.part.delta")
@@ -330,16 +337,18 @@ describe("Routes through the OpenCode SDK client", () => {
       parentID: "msg_0000000000010000000000000u"
     })
     const tools = assistant.parts.filter((part: Part): part is Extract<Part, { type: "tool" }> => part.type === "tool")
+    // Frame zero's settle is judged once (gray, no Jev key); the park (red)
+    // and the resumed frame's settle (gray again) both sort under frame one.
     expect(tools.map((part) => part.tool)).toEqual([
       "cell",
       "read",
       "list",
       "classify",
       "health",
-      "health",
       "cell",
       "bash",
       "demand",
+      "health",
       "health"
     ])
     expect(tools.every((part) => part.state.status === "completed")).toBe(true)

@@ -82,9 +82,9 @@ describe("Health over the server", () => {
     const replied = await post(`/session/${session.id}/permissions/${asked.id}`, `{"response":"once"}`)
     expect(replied.status).toBe(200)
     await until(async () => seen.some((event) => event.type === "session.idle"))
-    // The resumed run replays frame zero (green again) and ends on the frame
-    // the read-only demand was issued for (yellow); the last decision may
-    // land just after the idle.
+    // The resumed run replays frame zero, which is not judged again, and
+    // ends on the frame the read-only demand was issued for (yellow); the
+    // last decision may land just after the idle.
     await until(async () => ((await get(`/session/${session.id}`)) as Protocol.Session).title.startsWith("🟡 "))
     const titles = seen
       .filter((event) => event.type === "session.updated")
@@ -98,21 +98,23 @@ describe("Health over the server", () => {
     const tools = assistant.parts.filter((part): part is Protocol.ToolPart => part.type === "tool")
     const health = tools.filter((part) => part.tool === "health")
     // The stream carries the decisions in time order; the history sorts each
-    // card under the frame it judged.
+    // card under the frame whose settlement or park produced it: frame zero's
+    // settle, then frame one's park and frame one's settle, in that order.
     const streamed = seen
       .filter((event) => event.type === "message.part.updated")
       .map((event) => event.properties["part"] as Protocol.Part)
       .filter((part): part is Protocol.ToolPart => part.type === "tool" && part.tool === "health")
       .map((part) => part.state.status === "completed" && part.state.title)
-    expect(streamed).toEqual(["progressing", "waiting for approval", "progressing", "read-only demanded"])
+    expect(streamed).toEqual(["progressing", "waiting for approval", "read-only demanded"])
     expect(health.map((part) => part.state.status === "completed" && part.state.title)).toEqual([
-      "progressing",
       "progressing",
       "waiting for approval",
       "read-only demanded"
     ])
-    expect(health[2]!.state.status === "completed" && health[2]!.state.output).toContain("needs a person: yes (90%)")
-    expect(health[2]!.state.status === "completed" && health[2]!.state.metadata).toMatchObject({ color: "red" })
+    const frameOf = (part: Protocol.Part) => Number.parseInt(part.id.slice(16, 20), 16)
+    expect(health.map(frameOf)).toEqual([0, 1, 1])
+    expect(health[1]!.state.status === "completed" && health[1]!.state.output).toContain("needs a person: yes (90%)")
+    expect(health[1]!.state.status === "completed" && health[1]!.state.metadata).toMatchObject({ color: "red" })
     const classify = tools.find((part) => part.tool === "classify")!
     expect(classify.state).toMatchObject({
       status: "completed",
@@ -130,13 +132,15 @@ describe("Health over the server", () => {
     // The home list carries the dot too.
     const home = (await get("/api/session?limit=5000&order=desc")) as { data: Array<Protocol.SessionV2> }
     expect(home.data.find((item) => item.id === session.id)!.title.startsWith("🟡 ")).toBe(true)
-    // Every decision was recorded.
+    // Every decision was recorded: frame zero's settle, the park, and frame
+    // one's settle; the replayed frame zero was not judged again.
     const records = await Effect.runPromise(
       Effect.flatMap(Store.Store, (store) => store.listHealth(session.id)).pipe(
         Effect.provide(Store.layerSqlite(`${served.directory}/.smithers/opencode.sqlite`))
       )
     )
-    expect(records.length).toBe(4)
+    expect(records.length).toBe(3)
+    expect(records.map((record) => record.frame)).toEqual([1, 2, 2])
     expect(records.map((record) => record.color)).toContain("red")
     expect(records.every((record) => record.type === "flows.opencode.health.v1" && record.answers !== undefined)).toBe(
       true

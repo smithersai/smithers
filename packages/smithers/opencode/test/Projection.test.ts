@@ -919,7 +919,8 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(state.facts.lastCalls.map((call) => call.flow)).toContain("classify/triage/relevance")
     expect(state.facts.lastCalls.map((call) => call.ok)).toContain(true)
     expect(state.facts.lastPrints).toContain("total 16")
-    expect(state.facts.demands).toEqual(["read-only", "read-only"])
+    // The replayed demand is the same demand: issued once, listed once.
+    expect(state.facts.demands).toEqual(["read-only"])
     expect(state.facts.lastTransition).toBe("complete")
     const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.synthetic === true)!
     expect(summary.text).toBe("2 frames · 4 calls · 1 classify · Jev 1 call · 212 ms · $0.0000")
@@ -957,11 +958,13 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       step = Projection.fold(ctx, step.state, event)
       if (step.health !== undefined) triggers.push(step.health)
     }
-    // Frame zero settled, frame one parked, then the replay: frame zero and frame one settled.
+    // Frame zero settled, frame one parked, then the resume: the journal
+    // replays frame zero, which hands out nothing (it settled before), and
+    // frame one settles for the first time, under its own frame, with the
+    // demand that was in force when it parked.
     expect(triggers.map((facts) => [facts.frame, facts.parked, facts.demandThisFrame])).toEqual([
       [1, "none", false],
       [2, "permission", true],
-      [1, "none", false],
       [2, "none", true]
     ])
     expect(triggers[0]).toMatchObject({
@@ -969,9 +972,12 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       maxFrames: 8,
       framesSinceEdit: 1
     })
-    // The replayed frames read only, so the count keeps climbing.
-    expect(triggers[3]!.framesSinceEdit).toBe(3)
-    expect(triggers[3]!.lastCalls.length).toBeGreaterThan(0)
+    // Two frames read only: the replayed frame zero is not counted again,
+    // its calls are not listed again, and its demand is not issued again.
+    expect(triggers[2]!.framesSinceEdit).toBe(2)
+    expect(triggers[2]!.lastCalls.map((call) => call.flow)).toEqual(["read", "ls", "classify/triage/relevance", "bash"])
+    expect(triggers[2]!.demands).toEqual(["read-only"])
+    expect(step.state.facts.framesSinceEdit).toBe(2)
 
     // A decision: the dot lands on the title, the card carries the reason and the answers.
     const evaluation: Health.Evaluation = {
@@ -1008,7 +1014,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(same.state.health).toEqual({ color: "yellow", reason: "still" })
     expect(same.state.healthCards).toBe(1)
     // A new color: the title changes, a second card follows.
-    const green = Projection.health(ctx, same.state, triggers[3]!, {
+    const green = Projection.health(ctx, same.state, triggers[2]!, {
       ...evaluation,
       decision: { color: "green", reason: "done" }
     })
@@ -1019,7 +1025,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     )
     // An evaluation the gateway refused is no Jev call: the count stays, and
     // the card says why there is no answer.
-    const refused = Projection.health(ctx, green.state, triggers[3]!, {
+    const refused = Projection.health(ctx, green.state, triggers[2]!, {
       decision: { color: "gray", reason: "health unavailable" },
       answers: undefined,
       latencyMs: 2,
