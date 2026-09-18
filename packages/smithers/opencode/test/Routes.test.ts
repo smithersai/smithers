@@ -718,6 +718,71 @@ describe("Routes through the OpenCode SDK client", () => {
     expect((await get("/session")) as Array<Session>).not.toContainEqual(expect.objectContaining({ id: session.id }))
   })
 
+  it("pages a 22-message history: the newest 20, then only what is strictly older than the cursor", async () => {
+    const sdk = client()
+    const session = (await sdk.session.create({ query: { directory: served.directory }, body: {} })).data!
+    const store = Store.layerSqlite(Serve.databasePath(served.directory))
+    const ids = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* Store.Store
+        const ids: Array<string> = []
+        for (let index = 0; index < 11; index++) {
+          const at = 1_810_000_000_000 + index * 1000
+          const userID = Ids.make("message", at)
+          yield* store.putMessage({
+            id: userID,
+            sessionID: session.id,
+            role: "user",
+            time: { created: at },
+            agent: "smithers",
+            model: { providerID: "scripted", modelID: "demo" }
+          })
+          ids.push(userID)
+          const replyID = Ids.reply(userID)
+          yield* store.putMessage({
+            id: replyID,
+            sessionID: session.id,
+            role: "assistant",
+            time: { created: at + 1, completed: at + 2 },
+            parentID: userID,
+            modelID: "demo",
+            providerID: "scripted",
+            mode: "smithers",
+            agent: "smithers",
+            path: { cwd: served.directory, root: served.directory },
+            cost: 0,
+            tokens: Protocol.noTokens,
+            finish: "stop"
+          })
+          ids.push(replyID)
+        }
+        return ids
+      }).pipe(Effect.provide(store))
+    )
+    expect(ids.length).toBe(22)
+    const page = await served.handler(new Request(`http://test/session/${session.id}/message?limit=20`))
+    const pageIDs = ((await page.json()) as Array<{ info: Message }>).map((item) => item.info.id)
+    // The newest twenty, oldest first (newest last), and the cursor is the
+    // oldest id on the page.
+    expect(pageIDs).toEqual(ids.slice(2))
+    expect(page.headers.get("x-next-cursor")).toBe(ids[2])
+    const older = await served.handler(
+      new Request(`http://test/session/${session.id}/message?limit=200&before=${ids[2]}`)
+    )
+    const olderIDs = ((await older.json()) as Array<{ info: Message }>).map((item) => item.info.id)
+    // Strictly older than the cursor: the two the page left out, and none
+    // of the page's own.
+    expect(olderIDs).toEqual(ids.slice(0, 2))
+    expect(olderIDs.filter((id) => pageIDs.includes(id))).toEqual([])
+    expect(older.headers.get("x-next-cursor")).toBeNull()
+    // Paging with the page size again from the cursor reads the same two.
+    const again = await served.handler(
+      new Request(`http://test/session/${session.id}/message?limit=20&before=${ids[2]}`)
+    )
+    expect(((await again.json()) as Array<{ info: Message }>).map((item) => item.info.id)).toEqual(ids.slice(0, 2))
+    expect(again.headers.get("x-next-cursor")).toBeNull()
+  })
+
   it("answers 500 with a typed error when the store fails", async () => {
     const failing: Store.Service = new Proxy({} as Store.Service, {
       get: () => () => Effect.fail(new Store.StoreError({ message: "disk gone" }))
