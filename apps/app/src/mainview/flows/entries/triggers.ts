@@ -43,6 +43,9 @@ const PreparedRegistration = Schema.Struct({
 /** One schedule, by its own name. */
 const ScheduleTarget = Schema.Struct({ repo: Schema.optional(Schema.String), slug: Schema.String })
 
+/** One schedule, by its own name, with the repository leading the form's line. */
+const RunTarget = Schema.Struct({ slug: Schema.String, repo: Schema.optional(Schema.String) })
+
 /**
  * The button doors below carry their values as one JSON object rather than a
  * positional line: a cron expression holds spaces and a flow's input is
@@ -114,6 +117,30 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     grammar: carried("triggers.approve"),
     input: PreparedRegistration,
     handler: (payload) => actions.registerTrigger({ operation: "approve", ...payload })
+  }),
+  flow({
+    /*
+     * Run now: one dispatch of a schedule already registered, through the
+     * registrar's own fire operation. Spending a run is consequential, so the
+     * agent asks and the human confirms; their own press dispatches, and two
+     * presses dispatch twice.
+     */
+    name: "triggers.run",
+    summary: "Run a registered schedule now",
+    runtime: ["cloud"],
+    args: "<name> [owner/repo]",
+    requires: ["signed-in"],
+    confirm: (payload) => `run ${String(payload["slug"])} now`,
+    input: RunTarget,
+    form: {
+      submitLabel: "Run now",
+      args: (payload) => line(text(payload, "slug"), text(payload, "repo")),
+      fields: {
+        slug: { label: "Name", placeholder: "nightly" },
+        repo: { label: "Repository", optionsFrom: "cloud-repos", kind: "text" }
+      }
+    },
+    handler: ({ repo, slug }) => actions.registerTrigger({ operation: "run", repo, slug })
   }),
   flow({
     /* Stopping a schedule is consequential, so the agent asks and the human confirms. */

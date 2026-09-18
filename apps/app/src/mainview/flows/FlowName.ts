@@ -268,6 +268,7 @@ export const FLOW_NAMES = [
   "triggers.list",
   "triggers.pause",
   "triggers.register",
+  "triggers.run",
   "tutorial.live.inspect",
   "tutorial.live.retry",
   "wiki",

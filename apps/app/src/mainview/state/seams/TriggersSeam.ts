@@ -66,6 +66,9 @@ const JOURNALLED_CODE = /^[a-z][a-z0-9_]*: /
 /** One registration attempt's run card; the same attempt never registers twice. */
 const registrationCardId = (requestId: string): string => `trigger-register-${requestId}`
 
+/** One manual dispatch's run card; every press is its own attempt, so every press is its own card. */
+const dispatchCardId = (requestId: string): string => `trigger-run-${requestId}`
+
 /** The run id a refused launch leaves on its card: the workspace named none. */
 const unlaunchedRunId = (requestId: string): string => `pending-${requestId}`
 
@@ -85,10 +88,10 @@ export const CRON_REFUSAL = "schedule must have five cron fields in UTC"
 export interface TriggerWrite {
   /**
    * `register` prepares: it validates, plans the target flow, and offers the
-   * human's approve button. `approve` is the human's alone. `pause` stops a
-   * schedule they enabled.
+   * human's approve button. `approve` is the human's alone. `run` fires a
+   * registered schedule once, now. `pause` stops a schedule they enabled.
    */
-  readonly operation: "register" | "approve" | "pause"
+  readonly operation: "register" | "approve" | "run" | "pause"
   readonly repo?: string
   readonly flow?: string
   readonly slug?: string
@@ -110,7 +113,7 @@ export interface TriggerWrite {
 export interface TriggersSeam {
   /** The dispatcher card (triggers.list): declared rows for every visitor, live rows when a box answered. */
   readonly listTriggers: (repo?: string) => Promise<string | void | { readonly value: string }>
-  /** The trigger write door: register, approve, pause (triggers.register / .approve / .pause). */
+  /** The trigger write door: register, approve, run, pause (triggers.register / .approve / .run / .pause). */
   readonly registerTrigger: (request: TriggerWrite) => Promise<string | void | { readonly value: string }>
 }
 
@@ -260,6 +263,7 @@ const registrationRow = (value: unknown): TriggerRow | undefined => {
   const next = typeof value.nextFireAt === "string" ? Date.parse(value.nextFireAt) : Number.NaN
   return {
     id: typeof value.registrationId === "string" ? value.registrationId : value.slug,
+    slug: value.slug,
     flowId: value.flowId,
     cron: value.schedule,
     timezone: "UTC",
@@ -394,6 +398,24 @@ const schemaRefusal = (document: unknown, input: unknown): string | undefined =>
 }
 
 /**
+ * What approving grants every unattended fire, in the envelope's own numbers.
+ *
+ * A flow that declares no ceiling plans with an EMPTY budget — the shipped
+ * `Descriptor.budgetUnbounded`, which production's own plans carry
+ * (`"budget": {}`) — and dropping the line there asked a person to approve
+ * unattended spend with no figure attached. The absence is now stated.
+ */
+export const UNBOUNDED_BUDGET = "no token or time limit"
+
+const budgetOf = (envelope: Record<string, unknown>): string => {
+  const budget = isRecord(envelope.budget) ? envelope.budget : {}
+  const minutes = typeof budget.milliseconds === "number" ? Math.round(budget.milliseconds / 60_000) : undefined
+  const parts = [typeof budget.tokens === "number" ? `${budget.tokens} tokens` : undefined, minutes === undefined ? undefined : `${minutes} min`]
+    .filter((part) => part !== undefined)
+  return parts.length === 0 ? UNBOUNDED_BUDGET : parts.join(" · ")
+}
+
+/**
  * The plan preview: the facts the workspace stated about what a fire would
  * run. The budget is what approving grants to every unattended fire, so it is
  * read from the envelope's own `budget` (control/ControlSchema.ts Envelope)
@@ -402,14 +424,11 @@ const schemaRefusal = (document: unknown, input: unknown): string | undefined =>
 const previewOf = (plan: Record<string, unknown>, schedule: string): string => {
   const envelope = isRecord(plan.envelope) ? plan.envelope : {}
   const capabilities = Array.isArray(envelope.capabilities) ? envelope.capabilities.filter((value): value is string => typeof value === "string") : []
-  const budget = isRecord(envelope.budget) ? envelope.budget : {}
-  const minutes = typeof budget.milliseconds === "number" ? Math.round(budget.milliseconds / 60_000) : undefined
   const digest = typeof plan.executionDigest === "string" ? plan.executionDigest.slice(0, 12) : ""
   return [
     `${String(plan.flowId)} · ${schedule} UTC`,
     capabilities.join(", "),
-    [typeof budget.tokens === "number" ? `${budget.tokens} tokens` : undefined, minutes === undefined ? undefined : `${minutes} min`]
-      .filter((part) => part !== undefined).join(" · "),
+    budgetOf(envelope),
     digest
   ].filter((line) => line !== "").join("\n")
 }
@@ -553,23 +572,23 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   }
 
   /**
-   * The durable card of one registration attempt. It is the registrar run's
-   * own card, so the watch, the reconnect after a reload and the trace are
-   * the ones every launched flow run already gets.
+   * The durable card of one attempt, registration or dispatch. It is the
+   * registrar run's own card, so the watch, the reconnect after a reload and
+   * the trace are the ones every launched flow run already gets.
    *
    * The card records the box the registrar run was started on, because that
    * binding is what the run watch relays with (state/controller/workflow-pump.ts).
    * A card with none binds the poll to the repository's own gateway, which
-   * holds no run of this registration and may hold an unrelated `run-1` of
+   * holds no run of this attempt and may hold an unrelated `run-1` of
    * its own: run ids are one counter per control plane.
    */
-  const runCardOf = (requestId: string, repo: string, slug: string, patch: RunCardPatch): Card => {
-    const existing = ctx.store.collections.cards.get(registrationCardId(requestId))
+  const runCardOf = (cardId: string, title: string, repo: string, patch: RunCardPatch): Card => {
+    const existing = ctx.store.collections.cards.get(cardId)
     const workspaceId = (existing?.kind === "run-trace" ? existing.payload.workspaceId : undefined) ?? jobWorkspace(ctx, repo)
     return {
-      id: registrationCardId(requestId),
+      id: cardId,
       kind: "run-trace",
-      title: `Register ${slug} · ${repo}`,
+      title,
       status: patch.phase === "failed" ? "error" : "active",
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
@@ -580,8 +599,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     }
   }
 
-  const putRunCard = (requestId: string, repo: string, slug: string, patch: RunCardPatch): Promise<unknown> =>
-    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: runCardOf(requestId, repo, slug, patch) }).isPersisted.promise
+  const putRunCard = (cardId: string, title: string, repo: string, patch: RunCardPatch): Promise<unknown> =>
+    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: runCardOf(cardId, title, repo, patch) }).isPersisted.promise
 
   /**
    * Everything the approval sets off: the six relayed calls, then the
@@ -600,8 +619,10 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     planDigest: string,
     input: unknown
   ): Promise<string | { readonly value: string }> => {
+    const cardId = registrationCardId(requestId)
+    const title = `Register ${slug} · ${repo}`
     const refuse = async (message: string): Promise<string> => {
-      await putRunCard(requestId, repo, slug, { runId: unlaunchedRunId(requestId), phase: "failed", error: message })
+      await putRunCard(cardId, title, repo, { runId: unlaunchedRunId(requestId), phase: "failed", error: message })
       return message
     }
     const items = await registrarFlows(repo)
@@ -663,8 +684,67 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     if (!started.ok) return refuse(started.message)
     const runId = typeof started.value.runId === "string" ? started.value.runId : undefined
     if (runId === undefined) return refuse("The registration started but the workspace didn't name the run.")
-    await putRunCard(requestId, repo, slug, { runId, phase: "running" })
-    return watchRegistration(requestId, repo, slug)
+    await putRunCard(cardId, title, repo, { runId, phase: "running" })
+    return watchAttempt(cardId, repo, `${slug} runs on ${repo}.`, `The registration of ${slug} on ${repo} is no longer being watched.`)
+  }
+
+  /**
+   * Fire a schedule that is already registered, once, now (triggers.run).
+   *
+   * The registrar's own `fire` operation is the dispatch: it reads the
+   * registration's revision and digest and asks Smithers Cloud to enqueue one
+   * manual run of exactly that registration (flows/repository/triggers.ts
+   * `Fire`). Each press mints its own request id, and the registrar derives
+   * the dispatch key from the run it is executing, so two presses enqueue two
+   * dispatches rather than returning the first one twice.
+   */
+  const dispatchTrigger = async (
+    repo: string,
+    slug: string,
+    flow: string,
+    schedule: string,
+    requestId: string
+  ): Promise<string | { readonly value: string }> => {
+    const cardId = dispatchCardId(requestId)
+    const title = `Run ${slug} · ${repo}`
+    const refuse = async (message: string): Promise<string> => {
+      await putRunCard(cardId, title, repo, { runId: unlaunchedRunId(requestId), phase: "failed", error: message })
+      return message
+    }
+    /*
+     * No flow listing first: nothing here is previewed and nothing is
+     * approved, so there is no plan a person could approve that this app
+     * could not go on to fire — the reason the register door lists. A box
+     * without the registrar refuses the plan in its own words instead.
+     */
+    const planned = await relay(ctx, repo, "Plan", {
+      flowId: REGISTRAR_FLOW,
+      input: { requestId, operation: "fire", repo, slug, flow, schedule, input: {} },
+      idempotencyKey: `trigger:${requestId}:fire-plan`
+    })
+    if (!planned.ok) return refuse(planned.message)
+    const planId = typeof planned.value.planId === "string" ? planned.value.planId : undefined
+    const planDigest = typeof planned.value.digest === "string" ? planned.value.digest : undefined
+    if (planId === undefined || planDigest === undefined) return refuse("The workspace planned the dispatch but didn't name the plan.")
+    const granted = await relay(ctx, repo, "Approval.Submit", {
+      target: { _tag: "Plan", planId, digest: planDigest, envelope: planned.value.envelope },
+      scope: "run",
+      idempotencyKey: `approve:${planId}`,
+      decision: "approve"
+    })
+    if (!granted.ok) return refuse(granted.message)
+    const started = await relay(ctx, repo, "Run", {
+      _tag: "Plan",
+      planId,
+      digest: planDigest,
+      envelope: planned.value.envelope,
+      idempotencyKey: `trigger:${requestId}:fire-run`
+    })
+    if (!started.ok) return refuse(started.message)
+    const runId = typeof started.value.runId === "string" ? started.value.runId : undefined
+    if (runId === undefined) return refuse("The dispatch started but the workspace didn't name the run.")
+    await putRunCard(cardId, title, repo, { runId, phase: "running" })
+    return watchAttempt(cardId, repo, `${slug} was dispatched on ${repo}.`, `The dispatch of ${slug} on ${repo} is no longer being watched.`)
   }
 
   /**
@@ -688,17 +768,17 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   }
 
   /**
-   * The registrar run's own verdict, read from the evidence the run watch
-   * committed. A refusal is the host's sentence, unrewritten; a completed
-   * registration is re-read from Smithers Cloud so the dispatcher states the
-   * schedule that now exists.
+   * A registrar run's own verdict, read from the evidence the run watch
+   * committed. A refusal is the host's sentence, unrewritten; a completed run
+   * re-reads the listing from Smithers Cloud so the dispatcher states what the
+   * repository now holds.
    */
-  const watchRegistration = async (
-    requestId: string,
+  const watchAttempt = async (
+    cardId: string,
     repo: string,
-    slug: string
+    settled: string,
+    unwatched: string
   ): Promise<string | { readonly value: string }> => {
-    const cardId = registrationCardId(requestId)
     await runtime.watchRun(cardId)
     /* The run this attempt reached is the one on its card, in the box the card names, not the one this call was handed. */
     const held = ctx.store.collections.cards.get(cardId)
@@ -706,12 +786,12 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const summary = scope === undefined ? undefined : ctx.store.committedRuntimeRun(runtimeRunKey(scope))?.summary
     if (summary?.status === "completed") {
       await listTriggers(repo)
-      return { value: `${slug} runs on ${repo}.` }
+      return { value: settled }
     }
     if (scope !== undefined && (summary?.status === "failed" || summary?.status === "cancelled")) {
       return refusalOfRun(scope) ?? summary.verdict
     }
-    return `The registration of ${slug} on ${repo} is no longer being watched.`
+    return unwatched
   }
 
   /**
@@ -763,6 +843,31 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return { value: `Registering ${slug} on ${repo}.` }
   }
 
+  /**
+   * The Run now door: one dispatch of a schedule this repository already
+   * holds, answered at once while the registrar run carries it (AGENTS.md,
+   * instant chat).
+   *
+   * The registration is read first so a name nothing holds is refused here,
+   * in the same words the pause door refuses one, instead of spending a plan
+   * and a run to learn it from the host.
+   */
+  const runTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
+    const slug = request.slug ?? ""
+    if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
+    const registered = await readTriggerRegistrations(ctx, repo)
+    const row = registered.triggers.find((trigger) => trigger.slug === slug)
+    if (row === undefined) return `No schedule "${slug}" is registered on ${repo}.`
+    const requestId = crypto.randomUUID()
+    void runtime.withToast(
+      `trigger.run.${repo}.${slug}`,
+      `Running ${slug} on ${repo}…`,
+      `${slug} dispatched`,
+      () => dispatchTrigger(repo, slug, row.flowId, row.cron, requestId)
+    )
+    return { value: `Running ${slug} on ${repo}.` }
+  }
+
   /*
    * A refused pause, said where it stays. The returned string reaches the
    * caller as the command-failure toast, which states itself and dismisses
@@ -798,6 +903,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const target = resolveTargetRepo(ctx.store, request.repo)
     if ("error" in target) return target.error
     if (request.operation === "approve") return approveTrigger(request, target.repo)
+    if (request.operation === "run") return runTrigger(request, target.repo)
     if (request.operation === "pause") return pauseTrigger(request, target.repo)
     return prepareTrigger(request, target.repo)
   }

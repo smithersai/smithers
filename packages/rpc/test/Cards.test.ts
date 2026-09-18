@@ -611,6 +611,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       live: true,
       triggers: [{
         id: "trg-1",
+        slug: "nightly",
         flowId: "ci",
         cron: "0 * * * *",
         timezone: "UTC",

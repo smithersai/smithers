@@ -539,6 +539,31 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
   })
 
   /*
+   * D-2 of the canary walk: the plan this production box really answers with
+   * carries `"budget": {}` (D-15-plan-librarian.json) — the flow declares no
+   * ceiling, which `Descriptor.budgetUnbounded` states by name — and the
+   * preview dropped the line, so a person was asked to approve an unattended
+   * schedule with no figure beside it.
+   */
+  test("the preview states the budget when the plan declares no ceiling, instead of leaving the line off", async () => {
+    const { store, controller } = await readyToRegister(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute([], workspaceAnswers({
+          Plan: (payload) =>
+            payload.flowId === "nightly-lint"
+              ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget: {} } })
+              : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+        }))
+      })
+    )
+    expect(typeof await controller.registerTrigger(REQUEST)).toBe("object")
+    const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
+    expect(preview).toContain("fs:read:**")
+    expect(preview).toContain("no token or time limit")
+  })
+
+  /*
    * The registrar is a built-in of the workspace coding host (flows/coding
    * host.ts, flows/repository/registry.ts). A relay call that names no
    * workspace reaches the repository's own gateway instead, which runs the
@@ -864,8 +889,9 @@ describe("triggers seam: watching the registration run", () => {
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "completed")
     await waitFor(() => registrationToast(store)?.status === "ok")
     await waitFor(() => triggerCard(store).payload.triggers.length === 1)
+    /* The row carries the registration's own name too: it is what the Run now door fires. */
     expect(triggerCard(store).payload.triggers).toEqual([{
-      id: "registration-nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
+      id: "registration-nightly", slug: "nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
       enabled: true, nextFireAt: Date.parse("2026-09-18T09:00:00Z")
     }])
   })
@@ -986,7 +1012,7 @@ describe("triggers seam: listing and pausing a schedule", () => {
     expect(card.payload.triggers).toEqual([
       { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false },
       {
-        id: "registration-nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
+        id: "registration-nightly", slug: "nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC",
         enabled: true, nextFireAt: Date.parse("2026-09-18T09:00:00Z")
       }
     ])
@@ -1082,5 +1108,109 @@ describe("triggers seam: listing and pausing a schedule", () => {
     const asked = await controller.commands.runForAgent("triggers.pause", JSON.stringify({ repo: "will/flows", slug: "nightly" }))
     expect(asked.status).toBe("executed")
     expect(lastAction(store)?.flow).toBe("triggers.pause")
+  })
+})
+
+/*
+ * "Run now": the manual dispatch of a schedule that is already registered.
+ * The host has carried the operation since d492503f4403 — `repository/trigger`
+ * with `operation: "fire"` reads the registration's own revision and digest
+ * and asks Smithers Cloud to enqueue one dispatch of it — while the app had no
+ * door to reach it: the canary walk's `/triggers.fire` and `/triggers.run`
+ * both answered "There is no /triggers.run flow." (D-REPORT part 1, "Run now,
+ * twice", receipt D-14-doors.json).
+ */
+describe("triggers seam: running a registered schedule now", () => {
+  const REGISTERED = {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{
+      slug: "nightly", flowId: "nightly-lint", schedule: "0 9 * * 1-5", enabled: true, revision: 1,
+      digest: "c".repeat(64), sourceRevision: "b".repeat(40), nextFireAt: "2026-09-18T09:00:00Z",
+      registrationId: "registration-nightly"
+    }]
+  }
+
+  const ROUTES = (calls: Array<RelayCall>, run: HostRun = { status: "running", verdict: "" }, rows: unknown = REGISTERED) =>
+    watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: json(200, rows),
+      [RPC]: relayRoute(calls, workspaceAnswers({}, run))
+    }))
+
+  const dispatchCards = (store: AppStore) =>
+    [...store.collections.cards.values()].filter((card) => card.id.startsWith("trigger-run-"))
+      .flatMap((card) => card.kind === "run-trace" ? [card] : [])
+
+  test("the door dispatches the registered schedule through the registrar's fire operation, and the run card carries it", async () => {
+    const calls: Array<RelayCall> = []
+    const run: HostRun = { status: "running", verdict: "" }
+    const { store, controller } = await readyToRegister(ROUTES(calls, run))
+    const outcome = await controller.commands.run("triggers.run", "nightly will/flows")
+    expect(outcome.status).toBe("executed")
+    if (outcome.status === "executed") expect(outcome.value).toBe("Running nightly on will/flows.")
+    await waitFor(() => calls.some((call) => call.procedure === "Run"))
+    const planned = calls.find((call) => call.procedure === "Plan")
+    expect(planned?.payload).toMatchObject({
+      flowId: "repository/trigger",
+      input: { operation: "fire", repo: "will/flows", slug: "nightly", flow: "nightly-lint", schedule: "0 9 * * 1-5" }
+    })
+    /* The registrar runs on the box the repository's reviewed jobs run on, as every other relayed call does. */
+    expect([...new Set(calls.map((call) => call.workspaceId))]).toEqual([JOB_WORKSPACE])
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "running")
+    const card = dispatchCards(store)[0]
+    expect(card?.payload.runId).toBe(REGISTRAR_RUN)
+    expect(card?.title).toBe("Run nightly · will/flows")
+    run.status = "completed"
+    run.verdict = "Dispatched nightly on will/flows."
+    await waitFor(() => store.collections.toasts.get("toast-trigger.run.will/flows.nightly")?.status === "ok")
+  })
+
+  test("two presses dispatch twice", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(ROUTES(calls))
+    expect((await controller.commands.run("triggers.run", "nightly will/flows")).status).toBe("executed")
+    await waitFor(() => calls.filter((call) => call.procedure === "Run").length === 1)
+    expect((await controller.commands.run("triggers.run", "nightly will/flows")).status).toBe("executed")
+    await waitFor(() => calls.filter((call) => call.procedure === "Run").length === 2)
+    const keys = calls.filter((call) => call.procedure === "Run").map((call) => String(call.payload.idempotencyKey))
+    expect(new Set(keys).size).toBe(2)
+    await waitFor(() => dispatchCards(store).length === 2)
+  })
+
+  test("a name no schedule holds is refused before anything is asked of the workspace", async () => {
+    const calls: Array<RelayCall> = []
+    const { controller } = await readyToRegister(ROUTES(calls, { status: "running", verdict: "" }, { status: "ok", repo: "will/flows", rows: [] }))
+    const outcome = await controller.commands.run("triggers.run", "nightly will/flows")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe('No schedule "nightly" is registered on will/flows.')
+    expect(calls).toEqual([])
+  })
+
+  /* The box the relay reaches decides whether a registrar answers at all (defect D-1); its refusal is its own sentence. */
+  test("a box that holds no registrar refuses the dispatch in its own words, on this press's card", async () => {
+    const refusal = 'No flow "repository/trigger" is registered on this workspace.'
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(watched(backend({
+      [PROJECTION]: projectionDocument(DAY_ONE),
+      [REGISTRATIONS]: json(200, REGISTERED),
+      [RPC]: relayRoute(calls, workspaceAnswers({ Plan: () => refusedFrame(refusal) }))
+    })))
+    expect((await controller.commands.run("triggers.run", "nightly will/flows")).status).toBe("executed")
+    await waitFor(() => dispatchCards(store)[0]?.payload.phase === "failed")
+    expect(dispatchCards(store)[0]?.payload.error).toBe(refusal)
+    expect(calls.map((call) => call.procedure)).toEqual(["Plan"])
+  })
+
+  test("the door is the agent's to ask for and the human's to confirm, and asks for the name it was not given", async () => {
+    const calls: Array<RelayCall> = []
+    const { store, controller } = await readyToRegister(ROUTES(calls))
+    const asked = await controller.commands.runForAgent("triggers.run", "nightly will/flows")
+    expect(asked.status).toBe("executed")
+    expect(lastAction(store)?.flow).toBe("triggers.run")
+    expect(calls).toEqual([])
+    const form = await controller.commands.run("triggers.run")
+    expect(form.status).toBe("form")
+    if (form.status === "form") expect(form.fields).toEqual(["slug"])
   })
 })

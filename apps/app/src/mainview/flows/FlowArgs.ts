@@ -24,6 +24,8 @@ export interface FlowInput {
   readonly "setup.view": { readonly cardId: string; readonly view: "flows" | "prompts" | "checks" | "evals" | "test" | "work"; readonly step?: string }
   readonly "setup.work": { readonly cardId: string; readonly stepId: string; readonly field?: "prompt" | "source" | "number"; readonly value?: unknown }
   readonly "setup.run": { readonly cardId: string; readonly operation: "inspect" | "evaluate" | "trial" | "apply" | "pause" | "run"; readonly manual?: SetupManualRequest }
+  /** `<name> [owner/repo]` — a schedule's name holds no whitespace, so the repository trails it. */
+  readonly "triggers.run": { readonly slug: string; readonly repo?: string }
   readonly "wiki.heading": { readonly line: string; readonly cardId?: string }
   readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
@@ -151,6 +153,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
       keyed(payload, "query")
     ),
   "target.select": (payload) => line(token(payload, "repoId"), token(payload, "label")),
+  "triggers.run": (payload) => line(token(payload, "slug"), token(payload, "repo")),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),
   "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),
 

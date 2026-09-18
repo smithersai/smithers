@@ -13,11 +13,14 @@ import { flowAction } from "../flows/FlowAction"
  * and the webhook channels. Signed out there is no live column and no
  * placeholder for one. With nothing declared and no box answering, the card
  * is exactly one sentence. Register is the button door of triggers.register,
- * whose requirement makes sign-in the door.
+ * whose requirement makes sign-in the door; a registration Smithers Cloud
+ * named carries Run now, the button door of triggers.run, and a trigger-store
+ * row with no registration name carries none.
  */
 import { ruleFlows } from "@smthrs/rpc/FactoryProjection"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
+import { flowArgs } from "../flows/FlowArgs"
 import { NO_RULES_SENTENCE } from "../state/seams/TriggersSeam"
 import { timeLabel as clockLabel } from "../Timestamps"
 import { describeEvent, describeSchedule } from "./TriggerEvents"
@@ -85,6 +88,16 @@ export const TriggerListCardBody = ({
                   <span>runs {trigger.flowId}</span>
                   <span data-testid={`trigger-state-${trigger.id}`}>{triggerStateLabel(trigger)}</span>
                 </span>
+                {trigger.slug === undefined ? null : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`trigger-run-${trigger.slug}`}
+                    {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug: trigger.slug, repo }))}
+                  >
+                    Run now
+                  </Button>
+                )}
               </li>
             ))}
             {webhooks.map((webhook) => (

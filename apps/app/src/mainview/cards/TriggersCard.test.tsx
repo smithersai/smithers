@@ -213,4 +213,33 @@ describe("the dispatcher card", () => {
     /* The one button: nothing in the card removes or edits a declared rule. */
     expect(host.querySelectorAll("button")).toHaveLength(1)
   })
+
+  /*
+   * The manual fire the canary walk could not press (D-REPORT part 1, "Run
+   * now, twice"): a registered schedule's own row carries it, a row the box
+   * reported without a registration name does not, and two presses are two
+   * dispatches.
+   */
+  test("Run now is the button door of triggers.run on a registered schedule's row", () => {
+    const calls: Array<[string, string | undefined]> = []
+    const host = render(
+      triggerCard({
+        declared: [],
+        live: true,
+        triggers: [
+          { id: "registration-nightly", slug: "nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true },
+          { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
+        ]
+      }),
+      (name, args) => calls.push([name, args])
+    )
+    const run = host.querySelector<HTMLButtonElement>("[data-testid='trigger-run-nightly']")
+    expect(run?.dataset.flow).toBe("triggers.run")
+    expect(run?.textContent).toBe("Run now")
+    run?.click()
+    run?.click()
+    expect(calls).toEqual([["triggers.run", `nightly ${REPO}`], ["triggers.run", `nightly ${REPO}`]])
+    /* A trigger-store row Smithers Cloud never named holds no schedule to fire. */
+    expect(host.querySelector("[data-testid='trigger-run-sweep']")).toBeNull()
+  })
 })

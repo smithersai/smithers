@@ -437,8 +437,12 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/TargetCards.tsx": 26,
       /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
-      /* The dispatcher card's Register door, the button door of triggers.register (factory mock 2; sign-in is the door). */
-      "../cards/TriggersCard.tsx": 1,
+      /*
+       * The dispatcher card's Register door, the button door of
+       * triggers.register (factory mock 2; sign-in is the door), and each
+       * registered schedule's Run now, the button door of triggers.run.
+       */
+      "../cards/TriggersCard.tsx": 2,
       /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
       "../cards/WikiCards.tsx": 3,
       /*

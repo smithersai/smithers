@@ -1103,6 +1103,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       triggers: z.array(
         z.object({
           id: z.string(),
+          /** A generic registration's own name, which is what a manual fire addresses; the trigger store's rows carry none. */
+          slug: z.string().optional(),
           flowId: z.string(),
           cron: z.string(),
           timezone: z.string().optional(),

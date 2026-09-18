@@ -147,6 +147,18 @@ const triggerRegistration = (args: string | undefined): Parsed => {
   return ok(payload)
 }
 
+/**
+ * `<name> [owner/repo]`: the schedule `triggers.run` fires now. A schedule's
+ * name holds no whitespace (SLUG), so the repository trails it as it does
+ * everywhere else, and a line with no name at all opens the form for it.
+ */
+const triggerRun = (args: string | undefined, known?: KnownRepositories): Parsed => {
+  const { rest, repo } = splitTrailingRepo(args, known)
+  const slug = rest.trim()
+  if (/\s/.test(slug)) return no("triggers.run takes a schedule name and optionally an owner/repo")
+  return ok({ ...(slug === "" ? {} : { slug }), ...(repo === undefined ? {} : { repo }) })
+}
+
 /** The three sandbox kinds `workspace.open --kind` accepts (ADR 0002). */
 const KINDS: ReadonlyArray<string> = ["container", "vm", "desktop"]
 
@@ -408,6 +420,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "flow.list": (args) => repoOnly("flow.list", args),
   "triggers.list": (args) => repoOnly("triggers.list", args),
   "triggers.register": (args) => triggerRegistration(args),
+  "triggers.run": (args, known) => triggerRun(args, known),
   "flow.run": (args) => {
     const { name, repo, input } = flowRunParts(args)
     if (name === undefined) return no("flow.run needs a flow name")
