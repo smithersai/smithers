@@ -1,5 +1,5 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
-import { initialSetup, setupActivationProblems, setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupActivationProblems, setupCandidate, storedSetupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { afterEach,describe,expect,test } from "bun:test"
@@ -245,9 +245,8 @@ describe("the live store's authoritative event path", () => {
     payload.draft.schedule = "0 9 * * *"
     payload.draft.steps = payload.draft.steps.map(step => ({ ...step, mode: "approved" as const }))
     payload.draft.cases = [{ id: "retained-chore", name: "Retained chore", input: "A weekly tidy", expected: "A scoped maintenance change", required: true }]
-    // The digest a card with no chore event carries, written into this card rather than recomputed here.
-    // Re-pinned when the trial's own test request left the candidate.
-    const digestBeforeChoreEvents = "cbd3bcb70b5428cae2605a1f55b29a71ae12fe114a5108658a1a516972c55648"
+    // The digest the pre-stack code at 1f7d9b40bcc5 wrote into this card, not one this build recomputes.
+    const digestBeforeChoreEvents = "4ae1937060bb181a4d1e1a910fab2b986e4139b8513c296f4c7279fd532686bd"
     const evidence = (operation: "evaluate" | "trial") => ({ requestId: `${operation}-request`, runId: `${operation}-run`,
       revision: 1, operation, phase: "completed" as const, digest: digestBeforeChoreEvents, updatedAt: 1,
       results: [{ caseId: "retained-chore", status: "passed" as const, observed: "A scoped maintenance change", evidence: ["execution:retained-chore"], executionId: "retained-chore" }],
@@ -280,8 +279,11 @@ describe("the live store's authoritative event path", () => {
     if (card.kind !== "repository-setup") throw Error("Chore was not retained")
     expect(card.payload.draft.choreEvent).toBe("none")
     expect(card.payload).toEqual(payload)
-    expect(setupCandidate(card.payload)).toBe(card.payload.active!.digest)
-    expect(setupActivationProblems(card.payload)).toEqual([])
+    expect(storedSetupCandidate(card.payload, card.payload.active!.digest)).toBe(true)
+    expect(setupCandidate(card.payload)).not.toBe(card.payload.active!.digest)
+    // The registration still names this draft. Its proof does not: a receipt
+    // carries the digest it was issued at, so the card re-proves this candidate.
+    expect(setupActivationProblems(card.payload)).toEqual(["Run evals for this draft.", "Complete the live trial for this draft."])
     expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
     expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
     expect((await restored.verifyState()).valid).toBe(true)

@@ -5,7 +5,7 @@ import { Action, Flow, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
-import { registrationScopeProblems, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { registrationScopeProblems, storedSetupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
 import { evaluatedCandidate } from "./evaluation.ts"
@@ -51,7 +51,7 @@ export const pausedRegistration = (response: unknown, input: SetupInput) => {
 export const restartedRegistration = (response: unknown, input: SetupInput) => {
   const row = policyRow(response, input)
   return row !== undefined && !row.enabled && row.revision < input.revision
-    && setupCandidate({ repo: input.repo, job: input.job, revision: row.revision, draft: JSON.parse(JSON.stringify(input.draft)) }) === row.digest ? row : undefined
+    && storedSetupCandidate({ repo: input.repo, job: input.job, revision: row.revision, draft: JSON.parse(JSON.stringify(input.draft)) }, row.digest) ? row : undefined
 }
 export const TrialIssue = Schema.Struct({ source: Schema.Literal("smithers-cloud"), number: Schema.Int.check(Schema.isGreaterThan(0)), issue_id: Schema.Number, request_id: Schema.String, api_path: Schema.String })
 export const Registration = Schema.Struct({ registration_id: Schema.String, revision: Schema.Int, digest: Schema.String,

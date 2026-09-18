@@ -480,16 +480,38 @@ export function setupConfiguration<Draft extends Pick<SetupDraft, "trialTitle" |
  * @category conversions
  */
 export function setupCandidate(setup: Pick<RepositorySetup, "repo" | "job" | "revision" | "draft">): string {
-  const configuration = setupConfiguration(SetupDraftSchema.parse(setup.draft))
-  const { choreEvent, ...chosen } = configuration
+  return candidateDigest(setup, setupConfiguration(SetupDraftSchema.parse(setup.draft)))
+}
+
+function candidateDigest(
+  setup: Pick<RepositorySetup, "repo" | "job" | "revision">,
+  hashed: Omit<SetupDraft, "trialTitle" | "trialBody"> | SetupDraft
+): string {
+  const { choreEvent, ...chosen } = hashed
   return digestSync(
     JSON.stringify({
       repo: setup.repo,
       job: setup.job,
       revision: setup.revision,
-      draft: choreEvent === "none" ? chosen : configuration
+      draft: choreEvent === "none" ? chosen : hashed
     })
   )
+}
+
+/**
+ * Whether a digest a registration row, a stored request or a dispatched job carries names this candidate. The
+ * identity written before the trial's own test request left the candidate hashed that request too, and nothing
+ * recomputes a stored digest, so both identities name one registration and a job registered then keeps running.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export function storedSetupCandidate(
+  setup: Pick<RepositorySetup, "repo" | "job" | "revision" | "draft">,
+  digest: string
+): boolean {
+  const draft = SetupDraftSchema.parse(setup.draft)
+  return digest === candidateDigest(setup, setupConfiguration(draft)) || digest === candidateDigest(setup, draft)
 }
 
 /**
@@ -507,7 +529,7 @@ export const SetupStartSchema = z.object({
   draft: SetupDraftSchema,
   workspaceId: z.string().uuid().optional(),
   manual: SetupManualRequestSchema.optional()
-}).refine((value) => setupCandidate(value) === value.digest, "The candidate digest must match the supplied draft")
+}).refine((value) => storedSetupCandidate(value, value.digest), "The candidate digest must match the supplied draft")
 /**
  * Durable modern-host entry input.
  *
@@ -742,7 +764,7 @@ export function setupActivationProblems(setup: RepositorySetup): string[] {
   // moves into the history; that advance is not a replacement.
   if (
     setup.active !== undefined && !setup.active.enabled
-    && setupCandidate({ ...setup, revision: setup.active.revision }) === setup.active.digest
+    && storedSetupCandidate({ ...setup, revision: setup.active.revision }, setup.active.digest)
   ) return problems
   if (!current(setup.evaluation, "evaluate")) problems.push("Run evals for this draft.")
   else {

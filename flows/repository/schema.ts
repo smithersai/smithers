@@ -1,7 +1,7 @@
 /** Repository jobs use the same editable setup contract as the app and Worker. */
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Schema } from "effect"
-import { SetupHostInputSchema, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { SetupHostInputSchema, storedSetupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { Revision } from "../coding/schema.ts"
 import { Source } from "../coding/planning-sources.ts"
 
@@ -43,7 +43,7 @@ export const JobInput = Schema.Struct({
   repo: Schema.NonEmptyString, job: Job, revision: Schema.Int.check(Schema.isGreaterThan(0)),
   digest: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)), sourceRevision: Schema.NonEmptyString,
   configuration: Draft, event: Event
-}).check(Schema.makeFilter(value => setupCandidate({ ...value, draft: JSON.parse(JSON.stringify(value.configuration)) }) === value.digest || "The job candidate changed"))
+}).check(Schema.makeFilter(value => storedSetupCandidate({ ...value, draft: JSON.parse(JSON.stringify(value.configuration)) }, value.digest) || "The job candidate changed"))
 export type JobInput = typeof JobInput.Type
 export const Record = Schema.Struct({
   source: Schema.Literals(["github", "smithers-cloud"]), kind: Schema.Literals(["issue", "pr"]),

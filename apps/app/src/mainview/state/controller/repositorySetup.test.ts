@@ -1601,13 +1601,12 @@ test("filling the trial's test request trials the candidate the evals passed on"
 })
 
 /*
- * The trial's own test request left the candidate, so every digest computed
- * before that change moves once. A retained card and an enabled registry row
- * still carry the older one: recovery advances the candidate past the active
- * revision and archives its stale proof, so the job keeps running under its
- * registration while the person re-proves the next revision.
+ * A card whose active registration names neither identity of its draft — the
+ * draft was edited somewhere this card never saw. Recovery advances the
+ * candidate past the active revision and archives its stale proof, so the job
+ * keeps running under its registration while the person re-proves the draft.
  */
-test("a card holding a digest from before the candidate changed recovers by advancing the candidate", () => {
+test("a card whose registration names another draft recovers by advancing the candidate", () => {
   const initial = initialSetup("example/repo", "issues", "maintainer")
   const stale = "4ae1937060bb181a4d1e1a910fab2b986e4139b8513c296f4c7279fd532686bd"
   const proof = (operation: "evaluate" | "trial") => ({ requestId: `${operation}-1`, runId: `${operation}-run`, revision: 4,
@@ -1628,4 +1627,44 @@ test("a card holding a digest from before the candidate changed recovers by adva
   expect(projected.trial).toBeUndefined()
   expect(projected.previousReceipts.map(receipt => receipt.requestId)).toEqual(["evaluate-1", "trial-1"])
   expect(setupActivationProblems(projected)).toContain("Run evals for this draft.")
+})
+
+/*
+ * R96 B1: a registration enabled before the trial's own test request left the
+ * candidate carries the digest that hashed it, and Plue never recomputes it.
+ * That row still names this draft here too, so recovery leaves the candidate
+ * where it is instead of asking for a cycle the running job does not need.
+ */
+// The digest the build before that change computed for this draft at revision 4.
+const registeredDigest = "1eeac04690cc9bee3617a8abc04ebbee093d5849bc78b6cc1dd4b21c33f24942"
+
+test("a registration enabled before the candidate changed still names this draft", () => {
+  const initial = initialSetup("example/repo", "issues", "maintainer")
+  const current: RepositorySetup = { ...initial, revision: 4,
+    recovery: { id: "recover", baseRevision: 4, baseDigest: setupCandidate({ ...initial, revision: 4 }), adoptDraft: true, state: "requested", registrationState: "unknown" } }
+  const policy = { registrationId: "active-1", workspaceId, revision: 4, digest: registeredDigest,
+    sourceRevision: "commit-1", enabled: true, owned: true, draft: initial.draft }
+  const recovered: SetupRecoveryResponse = { owner: "maintainer", repo: initial.repo, job: initial.job,
+    registration: { state: "known", active: policy }, setup: { state: "none" } }
+  const projected = projectRecoveredSetup(current, recovered)
+  expect(setupCandidate(projected)).not.toBe(registeredDigest)
+  expect(projected.revision).toBe(4)
+  expect(projected.draft).toEqual(initial.draft)
+  expect(projected.active?.digest).toBe(registeredDigest)
+})
+
+test("manual work and Discard draft read a registration enabled before the candidate changed as applied", async () => {
+  const t = await fixture(async body => response(body))
+  try {
+    // The same draft at revision 1, which is where this card's fixture stands.
+    const registered = "eaa65868ff1b8e731c14d789e16b27f980d92492601fca521d9a4534a9b3194f"
+    const card = t.store.collections.cards.get("setup")!
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, kind: "repository-setup",
+      payload: { ...t.state(), active: { revision: 1, digest: registered, registrationId: "active-1",
+        sourceRevision: "commit-1", enabled: true, owned: true, draft: t.state().draft } } } }).isPersisted.promise
+    expect(setupCandidate(t.state())).not.toBe(registered)
+    expect(await t.setup.runRepositorySetup("setup", "run")).toEqual({ value: "Work request is open." })
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toEqual({ value: "Keeping the current setup." })
+    expect(t.calls).toEqual([])
+  } finally { await t.close() }
 })

@@ -61,10 +61,9 @@ test("a chore registers exactly the event rule its draft chose", () => {
   }
 })
 
-// The digest for this draft with no chore event. A job registered or a setup
-// operation stored before that field existed carries no choreEvent key at all.
-// Re-pinned when the trial's own test request left the candidate.
-const storedChoreDigest = "43606782a7bd634fd52a35558f1d46ffa55f87531f529ac02490777881c4b342"
+// The digest the pre-stack code at 1f7d9b40bcc5 computed for this draft. A job
+// registered or a setup operation stored then carries no choreEvent key at all.
+const storedChoreDigest = "bbf342a61d1c36d83ecd20c7f7372dbc27cf61bf121f36590b874196b6ffdf35"
 
 test("a job and a setup operation registered before the chore event existed still decode here", () => {
   const setup = initialSetup("example/repo", "chores", "maintainer")

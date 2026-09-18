@@ -1,7 +1,7 @@
 import type { AgentRuntimeSetupDraft } from "@smthrs/rpc/AgentContext"
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
-  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, discardSetupDraft, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
+  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, discardSetupDraft, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate, storedSetupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
 import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
@@ -146,7 +146,7 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
     candidate !== undefined && candidate !== pinned && (spent || replaced)
   if (setup.state === "found") {
     const { input, result } = setup, receipt = result.receipt
-    if (input.repo !== current.repo || input.job !== current.job || setupCandidate(input) !== input.digest
+    if (input.repo !== current.repo || input.job !== current.job || !storedSetupCandidate(input, input.digest)
       || result.requestId !== input.requestId || result.revision !== input.revision || result.digest !== input.digest
       || !receipt || receipt.requestId !== input.requestId || receipt.revision !== input.revision || receipt.digest !== input.digest || receipt.operation !== input.operation
       || (receipt.phase === "completed" && (!receipt.runId || (input.operation === "run" && !receipt.jobRunId)))
@@ -186,7 +186,7 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
     next.active = active ? { revision: active.revision, digest: active.digest, registrationId: active.registrationId,
       sourceRevision: active.sourceRevision, enabled: active.enabled, owned: active.owned, draft: active.draft,
       ...(active.enabled && active.schedule ? { schedule: active.schedule } : {}) } : undefined
-    if (active && next.revision <= active.revision && (!active.enabled || setupCandidate(next) !== active.digest)) {
+    if (active && next.revision <= active.revision && (!active.enabled || !storedSetupCandidate(next, active.digest))) {
       const { evaluation, trial, ...rest } = next
       next = { ...rest, revision: active.revision + 1, previousReceipts: [...new Map([...rest.previousReceipts, ...[evaluation, trial].filter(item => item !== undefined)]
         .map(item => [item.requestId, item])).values()].slice(-50) }
@@ -641,7 +641,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     if (operation === "pause" && !card.payload.active?.enabled) return "This setup is not enabled."
     if (operation === "run") {
       if (!card.payload.active?.enabled) return "Enable this setup before running work."
-      if (card.payload.active.revision !== card.payload.revision || card.payload.active.digest !== setupCandidate(card.payload)) return "Test and apply this draft before running work."
+      if (card.payload.active.revision !== card.payload.revision || !storedSetupCandidate(card.payload, card.payload.active.digest)) return "Test and apply this draft before running work."
       const prepared = card.payload.manualDraft
       if (!manual && !prepared) {
         const step = card.payload.draft.steps.find(step => step.id === card.payload.selectedStep && step.mode !== "off")
@@ -809,7 +809,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       return edit(id, async () => {
         const latest = get(id), active = latest?.payload.active
         if (!latest || !active?.enabled || !active.draft) return "This setup is not enabled."
-        if (active.revision === latest.payload.revision && active.digest === setupCandidate(latest.payload)) return { value: "Keeping the current setup." }
+        if (active.revision === latest.payload.revision && storedSetupCandidate(latest.payload, active.digest)) return { value: "Keeping the current setup." }
         await upsert({ ...latest, status: "active", payload: discardSetupDraft(latest.payload) })
         return { value: "Draft discarded." }
       })

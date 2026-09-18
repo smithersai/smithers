@@ -50,3 +50,19 @@ test("a paused registration is restarted by the next revision of the same review
   edited.budgetMinutes = 20
   assert.equal(restartedRegistration([paused], request("apply", 7, edited)), undefined, "an edited draft is a replacement, not a restart")
 })
+
+/** R96 B1: a row paused before the trial's own test request left the candidate
+ * carries the digest that hashed it, so the restart path reaches the real rows
+ * that exist today and not only rows this build registered. */
+const registeredDigest = "7d58fb03b7f0ed28a6ba637caacb19617776ea94925eea34b1a495887a2df04b"
+
+test("a registration paused before the trial's test request left the candidate still restarts", () => {
+  const paused = row({ enabled: false, digest: registeredDigest })
+  assert.notEqual(appliedDigest, registeredDigest, "this build computes the other identity")
+  const restart = restartedRegistration([paused], request("apply", 7))
+  assert.equal(restart?.digest, registeredDigest)
+  assert.equal(restart?.revision, 6)
+  const edited = applied().draft
+  edited.budgetMinutes = 20
+  assert.equal(restartedRegistration([paused], request("apply", 7, edited)), undefined, "an edited draft is still a replacement")
+})

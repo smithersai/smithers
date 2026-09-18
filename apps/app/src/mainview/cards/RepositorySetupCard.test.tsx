@@ -478,6 +478,28 @@ test("an enabled job keeps its applied configuration one click away from an unap
 })
 
 /*
+ * R96 B1: the enabled registration a person has today carries the digest the
+ * build before the trial's own test request left the candidate wrote. The work
+ * button reads that row, so it stays live for the job that is still running.
+ */
+test("an enabled registration written before the candidate changed keeps its work button live", () => {
+  const card = makeCard("feature")
+  // The digest that build computed for this draft at revision 6.
+  const registered = "45fd2fa0d8b6ed547460a7b4c8315592a3ba906563fa678a8e1f95d4ec910822"
+  card.payload.revision = 6
+  card.payload.active = { revision: 6, digest: registered, registrationId: "259ef97c", sourceRevision: "fb8c7b08", enabled: true, draft: card.payload.draft }
+  card.payload.view = "work"
+  card.payload.manualDraft = { stepId: "feature", prompt: "Add the greeting", source: "github" }
+  const t = mount(card)
+  try {
+    expect(setupCandidate(card.payload)).not.toBe(registered)
+    expect(t.button("Build a feature")?.disabled).toBe(false)
+    expect(t.host.textContent).not.toContain("Test and apply this draft first.")
+    expect(t.button("Discard draft")).toBeUndefined()
+  } finally { t.close() }
+})
+
+/*
  * R88 follow-up 1: a card applied before the registration recorded its own
  * configuration hides the door, and the boot recovery every setup card gets
  * (state/controller/repositorySetup.ts requestRecovery on resume) records

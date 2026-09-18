@@ -155,6 +155,53 @@ const STORED_DIGESTS = {
   chores: "43606782a7bd634fd52a35558f1d46ffa55f87531f529ac02490777881c4b342"
 } as const
 
+/** R96 B1: digests the build before the trial's own test request left the candidate computed for these
+ * drafts. Every registration row, stored request and dispatched job written until now carries this
+ * identity, and none of them is ever recomputed where it is stored. */
+const REGISTERED_DIGESTS = {
+  issues: "eaa65868ff1b8e731c14d789e16b27f980d92492601fca521d9a4534a9b3194f",
+  chores: "bbf342a61d1c36d83ecd20c7f7372dbc27cf61bf121f36590b874196b6ffdf35"
+} as const
+
+it.each(["issues", "chores"] as const)(
+  "a %s request registered before the trial's test request left the candidate still names its draft",
+  (job) => {
+    const setup = initialSetup("example/repo", job, "maintainer")
+    const { choreEvent: _absent, ...stored } = setup.draft
+    const decodes = (digest: string, draft: unknown = stored) =>
+      SetupHostInputSchema.safeParse({
+        requestId: "stored-request",
+        repo: setup.repo,
+        job,
+        revision: setup.revision,
+        digest,
+        draft,
+        operation: "apply"
+      }).success
+    expect(setupCandidate(setup)).not.toBe(REGISTERED_DIGESTS[job])
+    expect(decodes(REGISTERED_DIGESTS[job])).toBe(true)
+    expect(decodes(STORED_DIGESTS[job])).toBe(true)
+    expect(decodes("0".repeat(64))).toBe(false)
+    // The stored row hashed its own trial request, so a configuration edit still replaces the candidate.
+    expect(decodes(REGISTERED_DIGESTS[job], { ...stored, budgetMinutes: 20 })).toBe(false)
+  }
+)
+
+it("a paused registration written before the trial's test request left the candidate still restarts", () => {
+  const setup = initialSetup("example/repo", "issues", "maintainer")
+  const active = {
+    revision: setup.revision,
+    digest: REGISTERED_DIGESTS.issues,
+    registrationId: "paused-registration",
+    sourceRevision: "candidate-commit",
+    enabled: false
+  }
+  const paused: RepositorySetup = { ...setup, revision: setup.revision + 1, active }
+  expect(setupActivationProblems(paused)).toEqual([])
+  expect(setupActivationProblems({ ...paused, active: { ...active, digest: "0".repeat(64) } }))
+    .toContain("Run evals for this draft.")
+})
+
 it.each(["issues", "chores"] as const)(
   "a %s candidate stored before the chore event existed keeps its digest, in both skew directions",
   (job) => {
@@ -323,7 +370,11 @@ describe("repository setup activation evidence", () => {
   it("filling the trial's own test request keeps the candidate its evals and trial were run on", () => {
     const setup = { ...initialSetup("example/repo", "issues", "maintainer"), revision: 10 }
     setup.draft.cases = [{ ...caseFixture }]
-    const evaluated: RepositorySetup = { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
+    const evaluated: RepositorySetup = {
+      ...setup,
+      evaluation: receipt(setup, "evaluate"),
+      trial: receipt(setup, "trial")
+    }
     expect(setupActivationProblems(evaluated)).toEqual([])
     const filled = editSetup(evaluated, {
       ...evaluated.draft,

@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect"
 import { z } from "zod"
-import { RepositoryJobSchema, SetupDraftSchema, setupCandidate, type RepositoryJob, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { RepositoryJobSchema, SetupDraftSchema, storedSetupCandidate, type RepositoryJob, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { ServerConfig } from "./Config"
 import { cloudTokenRefusalMessage, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
@@ -77,7 +77,7 @@ const registrations = (login: string, repo: string, job: RepositoryJob): Effect.
     const value = row.configuration
     if (result[field] || row.flow_id !== `repository-jobs/${job}` || value.repo !== repo || value.workspace_id !== row.workspace_id
       || value.source_revision !== row.source_revision || value.flow_id !== row.flow_id || value.mode !== row.mode || value.revision !== row.revision || value.digest !== row.digest
-      || (!redacted && setupCandidate({ repo, job, revision: row.revision, draft: value.input }) !== row.digest)) return yield* fail("Repository registration identity is inconsistent")
+      || (!redacted && !storedSetupCandidate({ repo, job, revision: row.revision, draft: value.input }, row.digest))) return yield* fail("Repository registration identity is inconsistent")
     if (row.schedule !== value.schedule || (row.mode === "enabled" && job === "chores" && row.schedule !== value.input.schedule)) return yield* fail("Repository schedule does not match its registration")
     result[field] = { registrationId: row.id, workspaceId: row.workspace_id, revision: row.revision, digest: row.digest,
       sourceRevision: row.source_revision, enabled: row.enabled, owned: !redacted && row.user_id === user.data.id, draft: value.input,

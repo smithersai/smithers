@@ -1,4 +1,4 @@
-import { setupActivationProblems, setupCandidate, type RepositoryJob, type RepositorySetup, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
+import { setupActivationProblems, storedSetupCandidate, type RepositoryJob, type RepositorySetup, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
 import { useLiveQuery } from "@tanstack/react-db"
 import { flowArgs } from "../flows/FlowArgs"
 import { repositoryCiConfigured, repositoryJobState } from "../state/RepositoryJobs"
@@ -45,7 +45,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const view = (next: RepositorySetup["view"], step?: string) => onRunCommand("setup.view", flowArgs("setup.view", { cardId: card.id, view: next, ...(step ? { step } : {}) }))
   const selected = draft.steps.find(step => step.id === state.selectedStep) ?? draft.steps[0]
   const gate = [...((state.job === "issues" || state.job === "review") && draft.replies !== "draft" ? ["Choose draft replies."] : []), ...setupActivationProblems(state)]
-  const activeMatches = owned && !unknown && state.active?.enabled && state.active.revision === state.revision && state.active.digest === setupCandidate(state)
+  const activeMatches = owned && !unknown && state.active?.enabled && state.active.revision === state.revision && storedSetupCandidate(state, state.active.digest)
   const drafted = owned && !unknown && state.active?.enabled === true && state.active.draft !== undefined && !activeMatches
   const schedule = state.job === "chores" && !unknown && state.active?.enabled && state.active.schedule?.expression === draft.schedule
     && Date.parse(state.active.schedule.nextFireAt) > Date.now() ? state.active.schedule : undefined

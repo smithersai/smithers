@@ -104,10 +104,9 @@ test("legacy byte limit also refuses selection and matching requires the exact i
   expect(t.storage.data.has(SETUP_QUEUE_KEY)).toBe(false)
 })
 
-// The digest for this draft with no chore event. A record stored or a
-// registration written before that field existed carries no choreEvent key at
-// all. Re-pinned when the trial's own test request left the candidate.
-const digestBeforeChoreEvents = "6e7e39aa2cc839a2c17b954e1e3f630182d43bf98181b840e32cf23fb75cc035"
+// The digest the pre-stack code at 1f7d9b40bcc5 wrote. A record stored or a
+// registration written then carries no choreEvent key at all.
+const digestBeforeChoreEvents = "84dee667d8f6ec0cb4cf4357043a8966fa6aa15f51dbdf1a77863c4a9cfb4e26"
 const withoutChoreEvent = () => {
   const { choreEvent: _absent, ...draft } = initialSetup("org/repo", "issues", "alice").draft
   return draft

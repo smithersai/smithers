@@ -1,7 +1,7 @@
 /** Reviewed repository CI is a separate dependency of local job checks. */
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Option, Schema } from "effect"
-import { SetupCheckSchema, SetupDraftSchema, setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
+import { SetupCheckSchema, SetupDraftSchema, storedSetupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { Landing } from "../coding/landing.ts"
 import { CodingError } from "../coding/schema.ts"
 import { RepositoryRemote } from "./remote.ts"
@@ -71,7 +71,7 @@ export const readCiPolicy = (repo: string, response: unknown, repositoryId?: num
   if (configuration.workspace_id !== row.workspace_id || configuration.flow_id !== row.flow_id || row.flow_id !== "repository-jobs/ci" ||
       configuration.revision !== row.revision || configuration.digest !== row.digest || configuration.source_revision !== row.source_revision || configuration.mode !== "enabled") throw unavailable()
   const draft = SetupDraftSchema.safeParse(configuration.input)
-  if (!draft.success || setupCandidate({ repo: configuration.repo, job: "ci", revision: row.revision, draft: draft.data }) !== row.digest) throw unavailable()
+  if (!draft.success || !storedSetupCandidate({ repo: configuration.repo, job: "ci", revision: row.revision, draft: draft.data }, row.digest)) throw unavailable()
   const reviewed = checks(draft.data.checks)
   // Deliberate whitelist: no cases, expected answers, prompts for other steps,
   // source records or mutable registration/configuration objects leave this read.

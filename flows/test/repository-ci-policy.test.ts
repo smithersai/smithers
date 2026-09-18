@@ -67,6 +67,23 @@ test("reviewed CI pins repository and execution identity while pause preserves t
   assert.doesNotThrow(() => assertCiPolicyCurrent(policy, readCiPolicy(repo, [{ ...row, enabled: false }])))
 })
 
+/** R96 B1: the digest the build before the trial's own test request left the
+ * candidate computed for this registration's draft. A CI job enabled until now
+ * carries it, and the required-check policy is read from that row. */
+const registeredDigest = "93062d30989b83eac122c443babebc785702d6b0ac9a9bc47032e205772cec83"
+
+test("a CI registration enabled before the candidate changed still pins its required checks", () => {
+  const row = registration()
+  assert.notEqual(row.digest, registeredDigest, "this build computes the other identity")
+  const stored = { ...row, digest: registeredDigest, configuration: { ...row.configuration, digest: registeredDigest } }
+  const policy = pinned([stored])
+  assert.equal(policy.ref.digest, registeredDigest)
+  assert.deepEqual(policy.ref.requiredCheckIds, [command.id])
+  assert.deepEqual(policy.checks, [command, ai])
+  assert.throws(() => readCiPolicy(repo, [{ ...stored,
+    configuration: { ...stored.configuration, input: { ...stored.configuration.input, budgetMinutes: 20 } } }]), /could not be verified/)
+})
+
 test("policy extraction never leaks held-out data or retains mutable input aliases", () => {
   const row = registration(), policy = readCiPolicy(repo, [row])
   for (const secret of ["HELD_OUT", "PRIVATE_EVAL", "cases"]) assert(!JSON.stringify(policy).includes(secret))
