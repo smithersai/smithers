@@ -165,6 +165,7 @@ describe("Turns", () => {
           aborted,
           pending,
           error: (list[1]!.info as Protocol.AssistantMessage).error,
+          tools: list[1]!.parts.filter((part): part is Protocol.ToolPart => part.type === "tool"),
           status: yield* turns.status()
         }
       }).pipe(
@@ -174,6 +175,10 @@ describe("Turns", () => {
     expect(result.aborted).toBe(true)
     expect(result.pending).toEqual([])
     expect(result.error?.name).toBe("MessageAbortedError")
+    // Stop leaves no card spinning: what was running reads as interrupted.
+    expect(result.tools.length).toBeGreaterThan(0)
+    expect(result.tools.every((part) => part.state.status !== "running")).toBe(true)
+    expect(result.tools.some((part) => part.state.status === "error" && part.state.error === "interrupted")).toBe(true)
     expect(result.status).toEqual({})
   })
 

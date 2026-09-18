@@ -318,14 +318,19 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         yield* wait(() => started(log.events, "bash").length === 1)
         yield* Effect.promise(() => until(async () => alive(marker)))
         const none = yield* driver.steer("ses_nobody", "x")
+        const started_ = Date.now()
         const interrupted = yield* driver.interrupt("ses_d")
         yield* wait(() => log.outcomes.length === 1)
+        const closedMs = Date.now() - started_
         yield* Effect.promise(() => until(async () => !alive(marker)))
         const again = yield* driver.interrupt("ses_d")
-        return { none, interrupted, again }
+        return { none, interrupted, again, closedMs }
       }), { asks: [] })
-    expect(result).toEqual({ none: false, interrupted: true, again: false })
+    expect(result).toMatchObject({ none: false, interrupted: true, again: false })
     expect(log.outcomes).toEqual([{ _tag: "interrupted" }])
+    // The sink hears the interrupt as soon as the body is gone, not after a
+    // ten second wait for a result a cancelled run never publishes.
+    expect(result.closedMs).toBeLessThan(3000)
   })
 
   it("interrupts a parked turn", async () => {
@@ -335,11 +340,46 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     const result = await process_(directory, (driver, store) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_e", "msg_e"), log.sink)
+        const started_ = Date.now()
         const interrupted = yield* driver.interrupt("ses_e")
-        return { interrupted, left: yield* store.listTurns() }
+        return { interrupted, interruptMs: Date.now() - started_, left: yield* store.listTurns() }
       }))
-    expect(result).toEqual({ interrupted: true, left: [] })
+    expect(result).toMatchObject({ interrupted: true, left: [] })
+    expect(result.interruptMs).toBeLessThan(3000)
     expect(log.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "interrupted" }])
+  })
+
+  it("settles a turn the engine cannot resume instead of leaving the session busy", async () => {
+    const directory = scratch()
+    const rewrite = (statement: string) =>
+      Effect.sync(() => {
+        const database = new DatabaseSync(join(directory, ".smithers", "opencode.sqlite"), { timeout: 5000 })
+        try {
+          database.exec(`PRAGMA foreign_keys = OFF; ${statement}`)
+        } finally {
+          database.close()
+        }
+      })
+    const gone = recorder()
+    const closed = recorder()
+    script.replies = [bashCell("echo gone"), bashCell("echo closed")]
+    const result = await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        // The row vanishes under the parked turn: the resume drives nothing,
+        // and nothing else would ever settle the turn.
+        yield* driver.start(input("ses_g", "msg_g"), gone.sink)
+        yield* rewrite("DELETE FROM flows_runs WHERE run_id = 'msg_g'")
+        yield* driver.permission({ sessionID: "ses_g", permissionID: permissionOf(gone.events), response: "once" })
+        const goneAgain = yield* driver.interrupt("ses_g")
+        // Another process cancelled the parked row before the person answered.
+        yield* driver.start(input("ses_h", "msg_h"), closed.sink)
+        yield* rewrite("UPDATE flows_runs SET status = 'cancelled' WHERE run_id = 'msg_h'")
+        yield* driver.permission({ sessionID: "ses_h", permissionID: permissionOf(closed.events), response: "once" })
+        return { goneAgain, closedAgain: yield* driver.interrupt("ses_h") }
+      }))
+    expect(result).toEqual({ goneAgain: false, closedAgain: false })
+    expect(gone.outcomes.map((outcome) => outcome._tag)).toEqual(["suspended", "failed"])
+    expect(closed.outcomes.map((outcome) => outcome._tag)).toEqual(["suspended", "interrupted"])
   })
 
   it("drains a steer at a frame boundary and carries the tail into a follow-up", async () => {

@@ -1398,6 +1398,7 @@ export const health = (ctx: Context, state: State, facts: Health.Facts, evaluati
 export const close = (ctx: Context, state: State, closing: Closing): Step => {
   if (state.closed) return { state, events: [] }
   const finished = finishReasoning(state, ctx)
+  const settled = settleOpenCards(finished.state, ctx, closing)
   const error: Protocol.MessageError = closing._tag === "interrupted"
     ? { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
     : { name: "UnknownError", data: { message: closing.message } }
@@ -1409,11 +1410,66 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
     : capEnded === undefined
     ? { color: "gray", reason: "failed" }
     : { color: "red", reason: `stopped: ${capEnded}` }
-  const marked = decided(ctx, { ...finished.state, facts: { ...finished.state.facts, capEnded } }, decision, undefined)
+  const marked = decided(ctx, { ...settled.state, facts: { ...settled.state.facts, capEnded } }, decision, undefined)
   const ended = endTurn(marked.state, ctx, {
     finish: "error",
     time: { created: state.createdAt, completed: ctx.now() },
     error
   })
-  return { state: ended.state, events: [...finished.events, ...marked.events, ...ended.events] }
+  return {
+    state: ended.state,
+    events: [...finished.events, ...settled.events, ...marked.events, ...ended.events]
+  }
+}
+
+/**
+ * Ends the cards a turn leaves running when it ends without the event that
+ * would settle them: the cell and every open call read as errors carrying
+ * why the turn ended, so a Stop leaves no card spinning, in the stream or
+ * after a reload.
+ */
+const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => {
+  const now = ctx.now()
+  const reason = closing._tag === "interrupted" ? "interrupted" : closing.message
+  const events: Array<Protocol.Emitted> = []
+  const cell = state.cell
+  if (cell !== undefined) {
+    events.push(partEvent(
+      {
+        ...base(state),
+        id: cell.partID,
+        type: "tool",
+        callID: cell.callID,
+        tool: "cell",
+        state: {
+          status: "error",
+          input: { frame: state.frame + 1, source: cell.source },
+          error: reason,
+          metadata: { outcome: closing._tag, output: cell.prints, calls: cell.calls, edits: cell.edits },
+          time: { start: cell.start, end: now }
+        }
+      },
+      now
+    ))
+  }
+  for (const card of Object.values(state.calls)) {
+    events.push(partEvent(
+      {
+        ...base(state),
+        id: card.partID,
+        type: "tool",
+        callID: card.callID,
+        tool: card.tool,
+        state: {
+          status: "error",
+          input: card.input,
+          error: reason,
+          metadata: {},
+          time: { start: card.start, end: now }
+        }
+      },
+      now
+    ))
+  }
+  return { state: { ...state, cell: undefined, calls: {} }, events }
 }

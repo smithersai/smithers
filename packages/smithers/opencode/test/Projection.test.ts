@@ -299,6 +299,28 @@ describe("Projection", () => {
     expect((capped.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
       title: "stopped: The read-only cap ended the run"
     })
+    // A turn stopped mid-call: the open cell and the open call read as errors
+    // carrying why, so nothing stays running in the stream or after a reload.
+    const events = scriptEvents()
+    const midCall = events.slice(0, events.findIndex((event) => event._tag === "cell-call-started") + 1)
+    const running = foldAll(midCall, ctx)
+    expect(running.state.cell).toBeDefined()
+    expect(Object.keys(running.state.calls).length).toBe(1)
+    const stopped = Projection.close(ctx, running.state, { _tag: "interrupted" })
+    const cards = stopped.events
+      .map((event) => event.properties["part"] as Protocol.Part | undefined)
+      .filter((part): part is Protocol.ToolPart => part?.type === "tool")
+    expect(cards.map((part) => [part.tool, part.state.status])).toEqual([
+      ["cell", "error"],
+      ["read", "error"],
+      ["health", "completed"]
+    ])
+    expect(cards[0]!.state).toMatchObject({ error: "interrupted", metadata: { outcome: "interrupted" } })
+    expect(cards[1]!.state).toMatchObject({ error: "interrupted" })
+    expect(stopped.state.cell).toBeUndefined()
+    expect(stopped.state.calls).toEqual({})
+    const died = Projection.close(ctx, running.state, { _tag: "failed", message: "the seat refused" })
+    expect((died.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({ error: "the seat refused" })
   })
 
   it("handles the events outside the demo turn", () => {

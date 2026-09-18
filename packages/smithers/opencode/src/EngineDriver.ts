@@ -55,7 +55,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
-import { Ownership } from "@smthrs/run-store"
+import { Ownership, RunStore } from "@smthrs/run-store"
 import {
   Cause,
   type Context,
@@ -527,6 +527,7 @@ export const layer = (options: Options) =>
       Effect.gen(function*() {
         const runtime = yield* FlowRuntime.FlowRuntime
         const state = yield* DurableEngineState.DurableEngineState
+        const rows = yield* RunStore.RunStore
         const queue = yield* NotificationQueue.NotificationQueue
         const stored = yield* Store.Store
         // The drives are forked into the driver's own scope, so shutting the
@@ -545,23 +546,40 @@ export const layer = (options: Options) =>
           })
         )
 
-        /** The engine's view of an execution, or `undefined` while it has none. */
-        const polled = (executionId: string) =>
+        /**
+         * The engine's view of an execution: its result once it has one,
+         * `undefined` while it has none, and `missing` when it has no row.
+         */
+        const polled = (executionId: string): Effect.Effect<Flow.Result<unknown, unknown> | "missing" | undefined> =>
           runtime.poll(turnFlow, executionId).pipe(
-            Effect.option,
-            Effect.map((known) => Option.getOrUndefined(Option.flatten(known)))
+            Effect.map((known) => Option.getOrUndefined(known)),
+            Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeed("missing" as const))
+          )
+
+        /** Whether the engine closed an execution as cancelled: a cancel is recorded, never settled as a result. */
+        const cancelled = (executionId: string): Effect.Effect<boolean> =>
+          rows.get(executionId).pipe(
+            Effect.map((row) => row.status === "cancelled"),
+            Effect.orElseSucceed(constFalse)
           )
 
         /**
          * Waits, for a while, until the engine has published what the body's
          * exit already said: the driver's caller must find the row parked or
-         * settled, not still being written.
+         * settled, not still being written. An interrupted turn is not
+         * waited for: a cancelled run carries no result to wait on (the
+         * cancel is recorded, not settled), nothing re-drives it, and the
+         * app is owed idle as soon as the body is gone.
          */
         const awaitPublished = (executionId: string, outcome: Driver.Outcome): Effect.Effect<void> =>
           Effect.gen(function*() {
+            if (outcome._tag === "interrupted") return
             for (let attempt = 0; attempt < 400 && !stopping; attempt++) {
               const result = yield* polled(executionId)
-              if (result !== undefined && result._tag === (outcome._tag === "suspended" ? "Suspended" : "Complete")) {
+              if (
+                result !== undefined && result !== "missing" &&
+                result._tag === (outcome._tag === "suspended" ? "Suspended" : "Complete")
+              ) {
                 return
               }
               yield* Effect.sleep("25 millis")
@@ -579,17 +597,26 @@ export const layer = (options: Options) =>
             yield* Effect.ignoreCause(stored.settleTurn(running.input.messageID))
           })
 
-        /** The engine's published result for an execution, once it has one. */
-        const published = (executionId: string): Effect.Effect<Driver.Outcome> =>
+        /**
+         * The engine's last word on an execution, once it has one: a result,
+         * a cancel, or, once the engine call returned, no row at all (a resume
+         * of a row that is gone drives nothing and would otherwise never
+         * settle the turn).
+         */
+        const published = (executionId: string, returned: () => boolean): Effect.Effect<Driver.Outcome> =>
           Effect.gen(function*() {
             for (;;) {
               const result = yield* polled(executionId)
-              if (result !== undefined && result._tag === "Complete") {
+              if (result === "missing" && returned()) {
+                return { _tag: "failed", message: "The engine has no record of this turn" }
+              }
+              if (result !== undefined && result !== "missing" && result._tag === "Complete") {
                 const exit = result.exit
                 return Exit.isSuccess(exit)
                   ? { _tag: "completed" }
                   : { _tag: "failed", message: failureMessage(exit.cause) }
               }
+              if (yield* cancelled(executionId)) return { _tag: "interrupted" }
               yield* Effect.sleep("50 millis")
             }
           })
@@ -615,9 +642,20 @@ export const layer = (options: Options) =>
               : runtime.resume(turnFlow, executionId)
             // The call's own outcome says nothing the body's exit and the
             // engine's published result do not: a completed id answers from
-            // its row, a running body reports through `settled`.
-            yield* Effect.forkIn(Effect.ignoreCause(run), scope)
-            const outcome = yield* Effect.raceFirst(Deferred.await(settled), published(executionId))
+            // its row, a running body reports through `settled`, and a call
+            // that drove nothing (a row that is gone or already cancelled)
+            // is read off the row once the call returned.
+            let returned = false
+            yield* Effect.forkIn(
+              Effect.ensuring(
+                Effect.ignoreCause(run),
+                Effect.sync(() => {
+                  returned = true
+                })
+              ),
+              scope
+            )
+            const outcome = yield* Effect.raceFirst(Deferred.await(settled), published(executionId, () => returned))
             yield* settle(running, outcome)
           })
 
