@@ -102,6 +102,10 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
     if (current.workspaceId && result.workspaceId && current.workspaceId !== result.workspaceId) throw Error("The recovered setup belongs to another workspace.")
     next = archiveReplacedSetupReceipt(next, receipt)
     next = { ...next, ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}), receipt }
+    // A settled failure is recorded evidence whether the app watched it or read
+    // it back here, so the next attempt is a new request, not a replay.
+    if (terminal(receipt.phase) && receipt.phase !== "completed") next = { ...next,
+      previousReceipts: [...next.previousReceipts.filter(item => item.requestId !== receipt.requestId), receipt].slice(-50) }
     if (result.inspection) {
       if (unchanged) next = editSetup(next, result.inspection.suggestedDraft)
       next = { ...next, sources: result.inspection.sources, inspectedAt: result.inspection.inspectedAt }
