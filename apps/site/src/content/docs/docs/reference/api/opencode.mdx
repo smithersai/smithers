@@ -37,41 +37,44 @@ also importable from `@smthrs/opencode/<Module>`.
 
 ## `Routes`
 
-| Export      | Signature                                                                  | Meaning                                                |
-| ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `Options`   | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                    |
-| `layer`     | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                    |
-| `projectID` | `(directory: string) => string`                                            | A stable hash of the absolute path.                    |
-| `modelOf`   | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`. |
-| `slugOf`    | `(id: string) => string`                                                   | Two words from a session id.                           |
-| `provider`  | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads. |
-| `agent`     | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                   |
-| `gitBranch` | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                           |
-| `listFiles` | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.           |
+| Export        | Signature                                                                  | Meaning                                                                                         |
+| ------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `Options`     | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                                                             |
+| `layer`       | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                                                             |
+| `projectID`   | `(directory: string) => string`                                            | A stable hash of the absolute path.                                                             |
+| `modelOf`     | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`.                                          |
+| `slugOf`      | `(id: string) => string`                                                   | Two words from a session id.                                                                    |
+| `provider`    | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads.                                          |
+| `agent`       | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                                                            |
+| `gitBranch`   | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                                                                    |
+| `listFiles`   | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.                                                    |
+| `fileContent` | `(directory: string, path: string) => FileContent \| undefined`            | A regular file under `directory` as `text`, or `binary` with no content; `undefined` otherwise. |
 
 Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
-`/path`, `/project`, `/project/current`, `/provider`, `/agent`, `/command`,
-`/lsp`, `/mcp`, `/experimental/resource`, `/question`, `/permission`, `/vcs`,
-`/vcs/diff`, `/vcs/status`, `/find/file`, `/file`, `/api/reference`,
-`/session/status`, `/api/session`, `GET|POST /session`,
-`GET|PATCH|DELETE /session/:id`, `/session/:id/message`, `/session/:id/todo`,
+`/path`, `/project`, `/project/current`, `PATCH /project/:id`, `/provider`,
+`/agent`, `/command`, `/lsp`, `/mcp`, `/experimental/resource`, `/question`,
+`/permission`, `/vcs`, `/vcs/diff`, `/vcs/status`, `/find/file`, `/file`,
+`/file/content`, `/api/reference`, `/session/status`, `/api/session`,
+`GET|POST /session`, `GET|PATCH|DELETE /session/:id`, `/session/:id/message`,
+`/session/:id/message/:messageID`, `/session/:id/todo`,
 `/session/:id/children`, `/session/:id/diff`, `POST /session/:id/prompt_async`,
 `POST /session/:id/abort`, `POST /session/:id/permissions/:permissionID`,
-`/global/event` and `/event`.
+`/global/event` and `/event`. Any other route answers the JSON 404
+`Cors.routeNotFound`, with the allow headers when the origin is allowed.
 
 ## `Events`
 
-| Export             | Signature                                                     | Meaning                                                                                           |
-| ------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                                                   |
-| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                                                             |
-| `Service`          | `{ publish, replay, stream, close }`                          | Stamp and broadcast an event; read the replay buffer; one SSE body; end every stream on shutdown. |
-| `Events`           | `Context.Service`                                             | The hub service.                                                                                  |
-| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                                                     |
-| `frame`            | `(envelope: Envelope) => string`                              | One `data:` frame.                                                                                |
-| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                                                    |
-| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                                                  |
-| `defaultReplay`    | `number`                                                      | 256 events.                                                                                       |
+| Export             | Signature                                                     | Meaning                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                                                                                                                             |
+| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                                                                                                                                       |
+| `Service`          | `{ publish, replay, stream, close }`                          | Stamp and broadcast an event; read the replay buffer; one SSE body (`{ after?, bare? }`), its live queue bounded to `replay` events, sliding; end every stream on shutdown. |
+| `Events`           | `Context.Service`                                             | The hub service.                                                                                                                                                            |
+| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                                                                                                                               |
+| `frame`            | `(envelope: Envelope, bare?) => string`                       | One `data:` frame: the envelope, or with `bare` its payload alone (the `/event` shape).                                                                                     |
+| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                                                                                                                              |
+| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                                                                                                                            |
+| `defaultReplay`    | `number`                                                      | 256 events.                                                                                                                                                                 |
 
 ## `Store`
 
@@ -83,6 +86,7 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | `Service`                 | sessions, messages, parts, permissions, grants, turns, `apply` | What the store does; `apply` persists what an emitted event implies.      |
 | `Store`                   | `Context.Service`                                              | The store service.                                                        |
 | `putHealth`, `listHealth` | on `Service`                                                   | One `flows.opencode.health.v1` record per decision, per session.          |
+| `listParts`               | on `Service`: `(messageID) => Effect<Array<Part>, StoreError>` | The parts of one message in id order.                                     |
 | `migrations`              | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger.      |
 | `make`                    | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                             |
 | `layer`                   | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                         |
@@ -103,6 +107,7 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | `prose`, `answerText`, `chunks`                                                       | The model's prose outside code fences, the final answer, and its streamed deltas.                                                                                                                                               |
 | `slots`, `finalFrame`, `summarySlot`, `demandOrdinals`                                | The sort keys parts are derived from.                                                                                                                                                                                           |
 | `isClassify`, `classifyEntries`, `classifyAnswers`, `classifyOutput`, `classifyTitle` | How a classify call becomes the `classify` card: one line per state, the full answers as metadata.                                                                                                                              |
+| `classifyDoor`                                                                        | `(flowName) => string`: the curated id (`triage/relevance`) or `ad hoc`, which leads the classify card's title.                                                                                                                 |
 | `Step.health`                                                                         | The `Health.Facts` a folded event hands out when it triggers an evaluation: a settled cell, a park, an aborted close.                                                                                                           |
 | `decided`, `health`                                                                   | Fold a decision in: the dot on the title and a `health` card on a color change; `health` counts the Jev call when Jev answered and puts a failure on the card.                                                                  |
 | `Pricing`, `costOf`, `sessionNow`                                                     | Dollars per million tokens, the cost of a token count, and the session with this turn's tokens and cost.                                                                                                                        |
@@ -207,7 +212,8 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
 | `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                           |
 | `Cors.allows`          | `(origin, extras?) => boolean`.                                                                |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers.                         |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.           |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.  |
 | `Auth.Credentials`     | `{ username, password }`.                                                                      |
 | `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                               |
 | `Auth.authorizes`      | `(header, credentials) => boolean`.                                                            |
