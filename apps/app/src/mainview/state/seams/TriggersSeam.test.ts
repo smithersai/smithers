@@ -582,6 +582,22 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
       .toEqual([`trigger:${first}:plan`, `trigger:${second}:plan`])
   })
 
+  /*
+   * A workspace that idle-suspended is resuming, and the relay answers that
+   * state as HTTP 200 with its own sentence (apps/server workflows.ts
+   * gatewayCallResponse: provisioning, no-capacity, quota-exceeded,
+   * no-cloud-identity, no-cloud-repo). Since the register door always
+   * addresses the repository-jobs box, this is the ordinary first press after
+   * the box has been idle.
+   */
+  test("a box that is still resuming answers with its own sentence, not with a refusal it never made", async () => {
+    const resuming = "The workspace is resuming; ask again in a moment."
+    const { controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: json(200, { status: "provisioning", message: resuming }) })
+    )
+    expect(await controller.registerTrigger(REQUEST)).toBe(resuming)
+  })
+
   test("a workspace that cannot register schedules says so before it plans anything", async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(

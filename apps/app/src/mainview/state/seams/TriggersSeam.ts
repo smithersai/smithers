@@ -344,7 +344,10 @@ const relay = async (
   if (!isRecord(body)) return { ok: false, message: "The workspace answered in a shape I didn't understand." }
   if (body.ok === true) return { ok: true, value: isRecord(body.payload) ? body.payload : {} }
   const error = isRecord(body.error) ? body.error : {}
-  return { ok: false, message: typeof error.message === "string" && error.message !== "" ? error.message : "The workspace refused the call." }
+  if (typeof error.message === "string" && error.message !== "") return { ok: false, message: error.message }
+  /* A box that is resuming, at capacity or over a quota answers 200 with that state and its own sentence (apps/server workflows.ts). */
+  if (typeof body.message === "string" && body.message !== "") return { ok: false, message: body.message }
+  return { ok: false, message: "The workspace refused the call." }
 }
 
 /** One of the Worker's own trigger routes, with its typed refusal kept whole. */
