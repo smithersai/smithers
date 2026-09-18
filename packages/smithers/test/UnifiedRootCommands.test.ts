@@ -351,6 +351,54 @@ describe("unified root command dispatch", () => {
     expect(ports.serveHost.mock.calls[0]![0]).toHaveProperty("pricing", undefined)
   })
 
+  it("ends with the shutdown line and no failure when a signal stops the server", async () => {
+    ports.opencode.mockRestore()
+    const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
+    const directory = mkdtempSync(join(tmpdir(), "smithers-opencode-cli-"))
+    const before = process.cwd()
+    const written: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      written.push(String(chunk))
+      return true
+    })
+    const options = {
+      directory,
+      port: 4096,
+      hostname: "127.0.0.1",
+      listen: false,
+      cors: [],
+      maxFrames: 7,
+      scripted: true
+    }
+    const globals = { credential: undefined, environment: {} }
+    try {
+      // SIGINT and SIGTERM both abort the runtime signal; the verb ends the
+      // way the operator asked, with nothing but the shutdown line.
+      ports.serveHost.mockImplementation(() => Effect.never)
+      const controller = new AbortController()
+      const serving = host(options, globals, { quiet: false }, { signal: controller.signal })
+      await vi.waitFor(() => expect(ports.serveHost).toHaveBeenCalledTimes(1))
+      controller.abort(new Error("smthrs interrupted by SIGTERM"))
+      await expect(serving).resolves.toBeUndefined()
+      expect(written).toEqual([expect.stringContaining(`Serving ${directory}`), `Stopped serving ${directory}.\n`])
+      // A quiet host says nothing either way.
+      written.length = 0
+      const quiet = new AbortController()
+      const serve = host(options, globals, { quiet: true }, { signal: quiet.signal })
+      await vi.waitFor(() => expect(ports.serveHost).toHaveBeenCalledTimes(2))
+      quiet.abort(new Error("smthrs interrupted by SIGINT"))
+      await expect(serve).resolves.toBeUndefined()
+      expect(written).toEqual([])
+      // A server that fails still reports the failure.
+      ports.serveHost.mockImplementation(() => Effect.fail(new Error("the socket is taken")))
+      await expect(host(options, globals, { quiet: true })).rejects.toMatchObject({ message: "the socket is taken" })
+    } finally {
+      stderr.mockRestore()
+      process.chdir(before)
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it.each(["-1", "65536", "1.5"])("rejects invalid port %s before acquiring a host", async (port) => {
     const result = await invoke(["serve", `--port=${port}`, "--json"])
     expect(result.codes.some((code) => code !== 0)).toBe(true)

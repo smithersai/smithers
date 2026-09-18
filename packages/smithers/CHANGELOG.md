@@ -9,6 +9,9 @@
   `--hostname`, `--listen`, `--cors`, `--seat`, `--max-frames`, and `--scripted`,
   which replays the recorded turn instead of running a model; every other turn
   runs on the durable engine driver under `<directory>/.smithers`.
+  A SIGINT or SIGTERM ends the server with the line `Stopped serving
+  <directory>.` and nothing else: the interrupted fiber was reported as
+  `command_failed` with "All fibers interrupted without error" on stderr.
 
 ### Fixed
 

@@ -116,7 +116,8 @@ export const nodeHost = (
 }
 
 /**
- * Serves the directory until the process is interrupted.
+ * Serves the directory until the process is interrupted. A SIGINT or
+ * SIGTERM ends it cleanly: the shutdown line, no failure.
  *
  * @category constructors
  * @since 1.0.0
@@ -179,5 +180,11 @@ export const host = async (
     ),
     { signal: config.signal }
   )
-  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  if (Exit.isSuccess(result)) return
+  // A signal aborts the runtime signal, which interrupts the server's
+  // fiber: that is the operator stopping the server, not a failure. The
+  // guard would otherwise report the interruption as `command_failed`
+  // with "All fibers interrupted without error" on stderr.
+  if (!Cause.hasInterruptsOnly(result.cause)) throw Cause.squash(result.cause)
+  if (!connection.quiet) process.stderr.write(`Stopped serving ${directory}.\n`)
 }
