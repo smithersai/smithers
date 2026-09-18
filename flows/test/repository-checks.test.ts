@@ -8,7 +8,7 @@ import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, FileSystem, Layer } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { assessSemantic, captureChecks, diffPaths, executeCommand, materializeProposal, selectedComparison, type Comparison } from "../repository/checks.ts"
+import { assessSemantic, captureChecks, checksSummary, diffPaths, executeCommand, materializeProposal, selectedComparison, type CheckResult, type Comparison } from "../repository/checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check } from "../repository/schema.ts"
 
@@ -105,4 +105,18 @@ test("semantic results cannot hide missing new handlers, fake source citations o
   assert.deepEqual(diffPaths(""), [])
   assert.throws(() => diffPaths("binary or partial output"), /did not identify/)
   assert.throws(() => diffPaths('diff --git "a/path with spaces" "b/path with spaces"'), /encoding/)
+})
+
+test("a repository that configures no runnable check says so and names the locations that were searched", () => {
+  const result = (values: Partial<typeof CheckResult.Type>): typeof CheckResult.Type => ({ checkId: "docs", policy: "report",
+    status: "skipped", summary: "No changed paths match this check", evidence: [], executionId: "execution-1", detail: null, ...values })
+  const skipped = result({})
+  const searched = ["package.json", "tox.ini", "pyproject.toml"]
+  assert.equal(checksSummary([skipped], searched),
+    "No checks are configured (searched package.json, tox.ini, pyproject.toml); nothing ran.")
+  assert.equal(checksSummary([skipped], []), "No checks are configured; nothing ran.")
+  const passed = result({ checkId: "verify", status: "passed", summary: "Exit 0" })
+  assert.equal(checksSummary([passed, skipped], searched), "1 of 1 checks passed", "a skipped check is not a measured pass or a measured failure")
+  assert.equal(checksSummary([passed, result({ checkId: "lint", status: "failed" })], searched), "1 of 2 checks passed")
+  assert.equal(checksSummary([passed, result({ checkId: "lint", status: "failed", policy: "required" })], searched), "1 required checks blocked")
 })

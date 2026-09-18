@@ -316,6 +316,16 @@ export const assessSemantic = (comparison: typeof Comparison.Type, verdict: type
   return { status: verdict.verdict === "pass" ? "passed" as const : "failed" as const, summary: verdict.summary }
 }
 
+/** A configured check that never ran is not a measured pass, so a repository
+ * that defines none says so and names the locations the inspect probed. */
+export const checksSummary = (results: readonly (typeof CheckResult.Type)[], searched: readonly string[]): string => {
+  const blocking = results.filter(result => result.policy === "required" && (result.status === "failed" || result.status === "error"))
+  if (blocking.length) return `${blocking.length} required checks blocked`
+  const ran = results.filter(result => result.status !== "skipped")
+  if (!ran.length) return `No checks are configured${searched.length ? ` (searched ${searched.join(", ")})` : ""}; nothing ran.`
+  return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed`
+}
+
 export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
   Interpreter.layer(CheckStep), Interpreter.layer(CommandCheck), Interpreter.layer(AICheck),
   CaptureChecks.toLayer(({ work }) => captureChecks(options, work)),
@@ -357,7 +367,7 @@ export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
     const required = results.filter(result => result.policy === "required")
     const blocking = required.filter(result => result.status === "failed" || result.status === "error")
     return { stepId: plan.work.step.id, executionId, status: blocking.length ? "error" as const : "completed" as const,
-      summary: blocking.length ? `${blocking.length} required checks blocked` : `${results.filter(result => result.status === "passed").length} checks passed`,
+      summary: checksSummary(results, plan.work.evidence.missing),
       evidence: [...new Set(results.flatMap(result => result.evidence))], output: json({ base: plan.comparison.base, candidate: plan.comparison.candidate,
         gate: blocking.length ? "blocked" : "passed", results } satisfies typeof CheckOutput.Type) }
   }))
