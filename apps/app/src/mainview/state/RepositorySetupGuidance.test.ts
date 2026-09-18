@@ -3,6 +3,7 @@ import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentRuntimeContextSchema, AgentRuntimeSetupDraftSchema, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { agentVisibleCatalog } from "../flows/agentTools"
+import { flowArgs } from "../flows/FlowArgs"
 import { disclosedEntries } from "../chain/FlowCatalog"
 import type { StorageApi } from "@tanstack/db"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
@@ -646,5 +647,30 @@ test("an operation on the candidate the open question is about refuses at once, 
     await t.controller.commands.run("setup.run", JSON.stringify({ cardId: id, operation: "evaluate" }))
     expect(t.setup().request?.operation).toBe("evaluate")
     await waitFor(() => t.fetches.some(({ url, method }) => url.includes("/repository-setup/evaluate") && method === "POST"))
+  } finally { await t.close() }
+})
+
+/*
+ * Walk run 3, B3-N5: `When to run Fix for real` was set to `Automatic`, the
+ * select went back to `Manual`, and the durable draft never carried the mode.
+ * The card projects the draft, so a refused edit shows up as that revert and
+ * nothing else — the door's own sentence reached the person as a toast that
+ * leaves after four seconds. It goes to the transcript too, where they are
+ * still looking. The accepted half is the evidence that the write path itself
+ * carries a step mode: the same args the card's select dispatches.
+ */
+test("a draft edit moves the durable draft, and one that is refused says so where the person is looking", async () => {
+  const t = await fixture()
+  try {
+    const before = t.setup().revision
+    const accepted = await t.controller.commands.run("setup.configure", flowArgs("setup.configure", { cardId: id, field: "step.fix.mode", value: "automatic" }))
+    expect(accepted).toEqual({ status: "executed", value: "Draft updated." })
+    expect(t.setup().draft.steps.find(step => step.id === "fix")?.mode).toBe("automatic")
+    expect(t.setup().revision).toBe(before + 1)
+    const refused = await t.controller.commands.run("setup.configure", flowArgs("setup.configure", { cardId: id, field: "replies", value: "automatic" }))
+    expect(refused).toEqual({ status: "failed", error: "Automatic replies are not available in this setup." })
+    expect(transcript(t.store)).toContain("Automatic replies are not available in this setup.")
+    expect(t.setup().draft.replies).toBe("draft")
+    expect(t.setup().revision).toBe(before + 1)
   } finally { await t.close() }
 })

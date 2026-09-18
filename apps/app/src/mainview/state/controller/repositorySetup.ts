@@ -705,12 +705,23 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (card.payload.inspectedAt === undefined && ctx.commandActor === "user") await requestGuidance(id, false)
       return requestRecovery(id)
     },
+    /*
+     * Every control on the card projects the draft, so an edit this door
+     * refuses reaches the person as the control snapping back to the value it
+     * already had — the sentence itself only ever appeared on a toast, gone
+     * after four seconds. It goes to the transcript as well, where they are
+     * still looking when the draft they edited submits the mode they replaced.
+     */
     configureRepositorySetup: (id, field, value) => edit(id, async () => {
+      const refuse = (sentence: string) => {
+        ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence })
+        return sentence
+      }
       const card = get(id)
-      if (!card) return "Open the setup first."
-      if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
+      if (!card) return refuse("Open the setup first.")
+      if (card.payload.owner !== null && card.payload.owner !== owner()) return refuse("This setup belongs to a different account.")
       const applied = applySetupEdit(card.payload.draft, card.payload.job, field, value)
-      if ("error" in applied) return applied.error
+      if ("error" in applied) return refuse(applied.error)
       await upsert({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
       return { value: "Draft updated." }
     }),
