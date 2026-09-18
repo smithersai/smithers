@@ -42,7 +42,7 @@ export const readRepositorySources = (options: InspectionOptions, root: string, 
   const ciNames = directory.startsWith(root + path.sep)
     ? yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => [] as string[])) : []
   const ciPaths = ciNames.filter(name => /^[^/\\]+\.(?:yml|yaml)$/.test(name)).sort().slice(0, 12).map(name => `.github/workflows/${name}`)
-  const first = yield* collectSources(sourceReader, [...extractPaths(prompt), ...ciPaths, ...(yield* repositoryContextPaths(sourceReader))])
+  const first = yield* collectSources(sourceReader, [...extractPaths(prompt), ".github/workflows", ...ciPaths, ...(yield* repositoryContextPaths(sourceReader))])
   return yield* collectSources(sourceReader, [...first.sources.map(file => file.path), ...first.missing,
     ...extractPaths(...first.sources.map(file => file.text))])
 })
