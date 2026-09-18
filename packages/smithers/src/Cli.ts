@@ -179,7 +179,8 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         )
     })
     .command("opencode", {
-      description: "Serve the OpenCode protocol over the agent loop for the hosted OpenCode app",
+      description:
+        "Serve the OpenCode protocol over the agent loop for the hosted OpenCode app; needs AI_GATEWAY_API_KEY unless --scripted",
       mcp: false,
       args: z.object({ directory: z.string().optional().describe("Directory to serve; defaults to the current one") }),
       options: options.extend({
@@ -191,7 +192,9 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         maxFrames: z.number().int().positive().default(40).describe(
           "Frame budget per turn; forty suits a prompt in the app, raise it for a long task"
         ),
-        scripted: z.boolean().default(false).describe("Replay the recorded turn instead of running a model")
+        scripted: z.boolean().default(false).describe(
+          "Replay the recorded turn instead of running a model; runs without AI_GATEWAY_API_KEY"
+        )
       }),
       run: (c) =>
         Presentation.guard(

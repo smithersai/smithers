@@ -13,7 +13,7 @@ import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Effect, Layer, Stream } from "effect"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -229,6 +229,16 @@ const connections = (directory: string): number => {
     .split("\n")
     .filter((line) => line.endsWith(file))
     .length
+}
+
+/** What `node test.mjs` exits with in a directory: the planted bug's own verdict. */
+const exitOf = (directory: string): number => {
+  try {
+    execFileSync("node", ["test.mjs"], { cwd: directory, stdio: "pipe" })
+    return 0
+  } catch (error) {
+    return (error as { status?: number }).status ?? -1
+  }
 }
 
 /** Whether a process whose command line carries the marker is alive. */
@@ -1065,5 +1075,84 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     expect(settledCalls(answered.events, "classify/triage/relevance")[0]!.result.outcome).toBe("success")
     expect(answer(answered.events)).toBe("answered true fixture")
     expect(script.calls).toBe(3)
+  })
+
+  /**
+   * The preflight the verb runs before it opens a socket. The question is
+   * what the host can provide, so an injected evaluator starts whatever the
+   * environment holds and a host that leaves the evaluator to its
+   * environment is refused when that environment holds no key.
+   */
+  it("refuses a host that can bind no evaluator, and passes one that brings its own", () => {
+    expect(EngineDriver.evaluatorRefusal({ environment: {} })).toBe(EngineDriver.noEvaluator)
+    expect(EngineDriver.evaluatorRefusal({ environment: { AI_GATEWAY_API_KEY: "" } }))
+      .toBe(EngineDriver.noEvaluator)
+    expect(EngineDriver.evaluatorRefusal({ environment: { AI_GATEWAY_API_KEY: "vck_test" } })).toBeUndefined()
+    expect(EngineDriver.evaluatorRefusal({ evaluator: judging, environment: {} })).toBeUndefined()
+    // No environment named: the process environment answers, held to no key
+    // here so the unit suite never reaches the gateway.
+    const ambientKey = process.env["AI_GATEWAY_API_KEY"]
+    delete process.env["AI_GATEWAY_API_KEY"]
+    try {
+      expect(EngineDriver.evaluatorRefusal({})).toBe(EngineDriver.noEvaluator)
+    } finally {
+      if (ambientKey !== undefined) process.env["AI_GATEWAY_API_KEY"] = ambientKey
+    }
+    expect(EngineDriver.noEvaluator).toContain("AI_GATEWAY_API_KEY")
+    expect(EngineDriver.noEvaluator).toContain("--scripted")
+  })
+
+  /**
+   * The whole product, on one real defect: a one-character bug, a turn that
+   * reads it, edits it, runs the repository's own test, and says so.
+   *
+   * The reproduction this case was written for ran the same turn against a
+   * host with no evaluator and settled the assistant message with
+   * `UnknownError` and "A completion no evaluator could judge", finish
+   * `error`, and `node test.mjs` still exiting 1. With a judge bound,
+   * nothing else changes and the turn finishes: the only thing between a
+   * keyless host and a working product is the key.
+   */
+  it("fixes a planted one-character bug and completes when the host binds a judge", async () => {
+    const directory = scratch()
+    mkdirSync(join(directory, "src"))
+    writeFileSync(join(directory, "src", "hello.js"), "export const add = (a, b) => a - b\n")
+    writeFileSync(
+      join(directory, "test.mjs"),
+      `import { add } from "./src/hello.js"\nif (add(2, 2) !== 4) { console.error("add(2, 2) is " + add(2, 2)); process.exit(1) }\nconsole.log("ok")\n`
+    )
+    // The bug is real before the turn runs.
+    expect(exitOf(directory)).toBe(1)
+
+    const log = recorder()
+    script.replies = [
+      `const before = await ctx.call("read", { path: ${JSON.stringify(join(directory, "src", "hello.js"))} })
+const edited = await ctx.call("edit", { path: ${
+        JSON.stringify(join(directory, "src", "hello.js"))
+      }, oldString: "a - b", newString: "a + b" })
+const ran = await ctx.call("bash", { mode: "unhermetic", command: "node test.mjs", cwd: ${JSON.stringify(directory)} })
+console.log(JSON.stringify({ read: before.ok, edited: edited.ok, exitCode: ran.exitCode, stdout: ran.stdout.trim() }))
+ctx.done("Fixed src/hello.js: add now returns a + b, and node test.mjs passes.")`
+    ]
+    await process_(
+      directory,
+      (driver) =>
+        Effect.gen(function*() {
+          yield* driver.start(
+            input("ses_fix", "msg_fix", "Fix the bug in src/hello.js so that node test.mjs passes."),
+            log.sink
+          )
+          yield* wait(() => log.outcomes.length === 1)
+        }),
+      { asks: [] }
+    )
+
+    expect(log.outcomes).toEqual([{ _tag: "completed" }])
+    expect(log.events.filter((event) => event._tag === "aborted")).toEqual([])
+    expect(printed(log.events)).toContain(`"exitCode":0`)
+    expect(answer(log.events)).toBe("Fixed src/hello.js: add now returns a + b, and node test.mjs passes.")
+    // The file on disk, and the repository's own test, are the evidence.
+    expect(readFileSync(join(directory, "src", "hello.js"), "utf8")).toContain("a + b")
+    expect(exitOf(directory)).toBe(0)
   })
 })

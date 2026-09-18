@@ -399,6 +399,52 @@ export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver
 }
 
 /**
+ * What a host is told when it can judge no completion, word for word.
+ *
+ * The harness asks Jev whether the sentence a turn wrote describes what the
+ * turn did, and a claim nothing could judge ends the run as
+ * `completion_unjudged` rather than standing (`CompletionClaim`,
+ * `HarnessError`). That brake is deliberate and it has no fallback, so a
+ * server started without an evaluator is a server that answers a
+ * conversation and fails every real task at its first completion. The verb
+ * refuses at startup instead, which is the same refusal an hour earlier.
+ *
+ * No colon follows the variable name. The journal redactor rewrites
+ * `<name ending in KEY><colon><token>` to `[REDACTED]`, so a sentence that
+ * punctuates the name that way reaches the operator with a word missing
+ * (`packages/flows/journal/src/Redaction.ts`).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const noEvaluator =
+  "smithers opencode needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge. Export AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or pass --scripted to replay the recorded turn without a model."
+
+/**
+ * Why this host cannot run a turn, or `undefined` when it can:
+ * {@link noEvaluator} when the options name no evaluator and the
+ * environment holds no gateway key.
+ *
+ * The question is what the host can provide, not what one variable says. A
+ * host that injects its own evaluator, which is what the tests and any
+ * scripted judge do, starts whatever the environment holds; a host that
+ * leaves the evaluator to {@link Options.environment} is refused when that
+ * environment cannot build one. The rule mirrors {@link layer}'s default so
+ * the preflight and the layer read the same two fields.
+ *
+ * @param options the driver options the host will build with
+ * @category predicates
+ * @since 1.0.0
+ */
+export const evaluatorRefusal = (
+  options: Pick<Options, "evaluator" | "environment">
+): string | undefined =>
+  options.evaluator !== undefined ||
+    Health.evaluatorConfigured(options.environment ?? Health.ambientEnvironment())
+    ? undefined
+    : noEvaluator
+
+/**
  * The line the server logs when the seat refused a model call: the seat,
  * what the provider said, and how to run on another seat.
  *

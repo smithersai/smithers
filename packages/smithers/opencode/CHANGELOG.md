@@ -2,7 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- A startup preflight. `smithers opencode` refuses to start when the host can
+  bind no evaluator, with `EngineDriver.noEvaluator` and exit 2:
+  "smithers opencode needs AI_GATEWAY_API_KEY, because the harness asks Jev to
+  judge every completion and fails a run it cannot judge. Export
+  AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or pass --scripted to
+  replay the recorded turn without a model." `EngineDriver.evaluatorRefusal`
+  asks what the host can provide, not what one variable says: a host that
+  injects its own evaluator, which is what the tests and any scripted judge do,
+  starts whatever the environment holds, and `--scripted` runs no model and
+  needs no key.
+
+  Before this, a keyless server started, answered a conversation, and failed
+  the first real coding task. The turn ran two frames and settled the
+  assistant message with `UnknownError` and "A completion no evaluator could
+  judge (unreachable): health unavailable: set AI_GATEWAY_API_KEY to turn on
+  health and classify", finish `error`, and the bug in the repository was
+  still there. The harness made the completion brake mandatory and has no
+  fallback by design, so the refusal belongs at startup, an hour earlier.
+
 ### Changed
+
+- `AI_GATEWAY_API_KEY` is documented as required to run a model, not as an
+  optional key that grays the health dot. The docs, the verb's help text, and
+  the banner say so.
+- The verb passes its `--environment` through to the evaluator
+  (`EngineDriver.Options.environment`), so the preflight and the layer read
+  the same environment instead of the preflight reading the options and the
+  layer reading `process.env`.
 
 - The engine driver arms the harness's read-only cap at six frames
   (`EngineDriver.readOnlyCap`; the harness default is twelve): a turn that

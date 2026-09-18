@@ -12,6 +12,12 @@
  * whose key is set. `--scripted` replays a recorded turn instead, so the
  * hosted app can be driven end to end without a model.
  *
+ * Running a model needs two keys, not one. `AI_GATEWAY_API_KEY` is the
+ * second: the harness asks Jev whether a completion describes what the run
+ * did, and a completion nothing judged fails the run. The verb refuses to
+ * start without it rather than serving a session that breaks at the first
+ * real task. `--scripted` runs no model and needs neither key.
+ *
  * @since 1.0.0
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
@@ -141,6 +147,14 @@ export const host = async (
         "No model seat: pass --seat provider:model, set SMITHERS_SEAT or a provider key such as CEREBRAS_API_KEY, or pass --scripted to replay the recorded turn."
     })
   }
+  // The harness fails any run whose completion nothing judged, so a server
+  // with no evaluator behind it answers a conversation and breaks on the
+  // first real task. Refuse here instead, an hour earlier, with the way out.
+  // A scripted replay runs no model and reaches no completion brake.
+  if (!options.scripted) {
+    const refusal = EngineDriver.evaluatorRefusal({ environment })
+    if (refusal !== undefined) throw new CliError.UsageError({ message: refusal })
+  }
   const requested = bind(options, environment)
   const refused = Serve.refusal(requested)
   if (refused !== undefined) throw new CliError.UnsupportedError({ message: refused })
@@ -157,9 +171,13 @@ export const host = async (
       directory,
       seat,
       maxFrames: options.maxFrames,
-      host: nodeHost(directory, environment)
+      host: nodeHost(directory, environment),
+      environment
     })
-  if (!connection.quiet) process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}.\n`)
+  if (!connection.quiet) {
+    const judge = options.scripted ? "No model runs; the recorded turn replays." : "Jev judges every completion."
+    process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
+  }
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
       // The guard samples the directory before the driver creates

@@ -436,10 +436,30 @@ export const unavailable = (message: string): string =>
 export const ambientEnvironment = (): Readonly<Record<string, string | undefined>> => process.env
 
 /**
+ * Whether an environment can give this host a working evaluator:
+ * `AI_GATEWAY_API_KEY` set to something. The mirror of
+ * {@link evaluatorLayer}, so a caller can ask before it builds, which is
+ * what the startup preflight in `EngineDriver.evaluatorRefusal` does. An
+ * exported but empty key is no key, the same rule the seat resolver uses.
+ *
+ * @param environment where the key is read from
+ * @category predicates
+ * @since 1.0.0
+ */
+export const evaluatorConfigured = (
+  environment: Readonly<Record<string, string | undefined>>
+): boolean => (environment["AI_GATEWAY_API_KEY"] ?? "") !== ""
+
+/**
  * The evaluator a host runs with: Jev through the Vercel gateway when
  * `AI_GATEWAY_API_KEY` is set in the environment, else one that answers
- * `unreachable`, so classify calls refuse and health goes gray without a
- * key.
+ * `unreachable`.
+ *
+ * The unconfigured arm is still here because a host may hold an evaluator
+ * that cannot answer one question, and health renders that gray rather than
+ * failing a turn. It is not the arm `smithers opencode` boots on: the
+ * harness fails any run whose completion nothing judged, so the verb refuses
+ * to start on it. See `EngineDriver.evaluatorRefusal`.
  *
  * @param environment where the key is read from
  * @category layers

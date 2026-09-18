@@ -1,5 +1,6 @@
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
+import * as EngineDriver from "@smthrs/opencode/EngineDriver"
 import { Effect } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -319,6 +320,39 @@ describe("unified root command dispatch", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("--listen") })
   })
 
+  /**
+   * The keyless start, which is the whole defect this case was written for.
+   * The harness fails a run whose completion nothing judged, so a server
+   * with no evaluator answers a conversation and breaks on the first real
+   * task. The verb refuses at startup instead, exits 2 like any other
+   * mistyped invocation, and opens no socket. `--scripted` runs no model,
+   * so it starts on the same keyless environment.
+   */
+  it("refuses a keyless start before it serves, and still replays the scripted turn", async () => {
+    const opencode = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>(
+      "../src/commands/OpenCode.ts"
+    )
+    ports.opencode.mockImplementation(opencode.host)
+    const refused = await invoke(["opencode", "--json"], { environment: { CEREBRAS_API_KEY: "seat-key" } })
+    expect(refused.codes).toContain(2)
+    // Printed word for word: the redactor eats the token after a name that
+    // ends in KEY and is punctuated with a colon, so the refusal is not.
+    expect(refused.stdout + refused.stderr).toContain(EngineDriver.noEvaluator)
+    expect(ports.serveHost).not.toHaveBeenCalled()
+
+    ports.serveHost.mockImplementation(() => Effect.void)
+    const scriptedDirectory = mkdtempSync(join(tmpdir(), "smithers-opencode-scripted-"))
+    const before = process.cwd()
+    try {
+      const replayed = await invoke(["opencode", scriptedDirectory, "--scripted", "--json"])
+      expect(replayed.codes).not.toContain(2)
+      expect(ports.serveHost.mock.calls.at(-1)![0]).toMatchObject({ seat: "scripted:demo" })
+    } finally {
+      process.chdir(before)
+      rmSync(scriptedDirectory, { recursive: true, force: true })
+    }
+  })
+
   it("hands the frame budget to the server as well as the engine", async () => {
     ports.opencode.mockRestore()
     const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
@@ -413,8 +447,11 @@ describe("unified root command dispatch", () => {
       const cwd = process.cwd()
       await host({ ...options, directory: undefined }, { credential: undefined }, { quiet: true })
       expect(ports.serveHost.mock.calls.at(-1)![0]).toMatchObject({ directory: cwd })
-      // Without --scripted the durable engine driver serves the turns.
+      // Without --scripted the durable engine driver serves the turns, and
+      // the preflight wants the gateway key the harness judges completions
+      // with; the process environment answers for both.
       const engineDirectory = mkdtempSync(join(tmpdir(), "smithers-opencode-engine-"))
+      vi.stubEnv("AI_GATEWAY_API_KEY", "vck_fixture")
       try {
         await host({ ...options, directory: engineDirectory, scripted: false, seat: "cerebras:gpt-oss-120b" }, {
           credential: undefined

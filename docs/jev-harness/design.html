@@ -288,14 +288,15 @@ classify — Ask Jev typed questions about any JSON state: boolean, choice (name
   --seat anthropic:claude-opus-5
   --max-frames 100
 
-env: ANTHROPIC_API_KEY / OPENAI_API_KEY (seat), AI_GATEWAY_API_KEY (Jev; optional, classify and health degrade without it), OPENCODE_SERVER_PASSWORD (optional)
+env: ANTHROPIC_API_KEY / OPENAI_API_KEY (seat), AI_GATEWAY_API_KEY (Jev; required to run a model, the verb refuses to start without it), OPENCODE_SERVER_PASSWORD (optional)
 state: &lt;directory&gt;/.smithers/opencode.sqlite (sessions, messages, journal)</code></pre>
 
 <h2>8. Error states</h2>
 <table>
 <tr><th>Condition</th><th>What the user sees</th></tr>
 <tr><td>No seat key</td><td>Prompt is refused with <code>session.execution.failed</code> and the message <em>No model key. Set ANTHROPIC_API_KEY or OPENAI_API_KEY and restart.</em></td></tr>
-<tr><td>No gateway key</td><td><code>classify</code> resolves <code>{ok: false, error: {code: "flow_failed", message: "Flow classify failed: unreachable: ..."}}</code>; health dot gray with <em>health unavailable</em>. Everything else works.</td></tr>
+<tr><td>No gateway key</td><td>The verb refuses to start. It prints <em>smithers opencode needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge. Export AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or pass --scripted to replay the recorded turn without a model.</em> and exits 2, and no socket opens. Harness change 51cac5dd made the completion brake mandatory, so a keyless server is one that settles the first real task with <code>UnknownError</code> and <em>A completion no evaluator could judge</em>, finish <code>error</code>, and the work not done. <code>--scripted</code> runs no model and starts without the key.</td></tr>
+<tr><td>Gateway key present, one evaluation does not answer</td><td><code>classify</code> resolves <code>{ok: false, error: {code: "flow_failed", message: "Flow classify failed: unreachable: ..."}}</code> and the cell goes on; health dot gray with <em>health unavailable</em>. A completion the brake could not put to Jev still fails the run, because the brake has no fallback.</td></tr>
 <tr><td>Provider quota</td><td><code>session.retry.scheduled</code> with the wake time; the run parks durably.</td></tr>
 <tr><td>Frame budget spent</td><td>Assistant text states the budget; dot red with <em>stopped: frame budget</em>.</td></tr>
 <tr><td>Server restarted mid-run</td><td>Session reloads; status busy; the run resumes from the journal; no duplicate tool cards.</td></tr>

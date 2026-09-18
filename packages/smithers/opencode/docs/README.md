@@ -55,10 +55,26 @@ the evaluation runs on its own fiber with a deadline and never touches the
 turn. Each decision is recorded in the store as a `flows.opencode.health.v1`
 row.
 
-Without `AI_GATEWAY_API_KEY` the evaluator answers `unreachable`: classify
-calls resolve as `{ ok: false }` in the cell, the dot is gray, the gray card
-is titled `health unavailable: set AI_GATEWAY_API_KEY to turn on health and
-classify`, and the run goes on.
+## The gateway key is required
+
+`AI_GATEWAY_API_KEY` is not optional for a server that runs a model. The
+harness asks Jev whether the sentence a turn wrote describes what the turn
+did, and a completion nothing judged ends the run as `completion_unjudged`
+rather than standing. So `smithers opencode` runs a startup preflight
+(`EngineDriver.evaluatorRefusal`) and refuses to start when the host can bind
+no evaluator, with `EngineDriver.noEvaluator` and exit 2. The question is what
+the host can provide: a host that injects its own evaluator, which is what the
+tests and any scripted judge do, starts whatever the environment holds.
+
+A turn that only converses still completes without a judge, because a
+completion with no evidence claim forms no question, which is why the gap
+showed up as a working demo and a failing first real task. `--scripted`
+replays the recorded turn, runs no model, and needs no key at all.
+
+When Jev is reachable but one evaluation fails, the transport answers
+`unreachable` for that call: the classify call resolves as `{ ok: false }` in
+the cell, the dot is gray, the gray card is titled `health unavailable: ...`,
+and the run goes on.
 
 ## Frames and the read-only cap
 

@@ -86,6 +86,6 @@ const scripted = Serve.host({
 )
 ```
 
-`AI_GATEWAY_API_KEY` turns on Jev: the cell's `classify` flows answer and the session title carries a health dot (🟢 🟡 🔴, ⚪ when Jev is unavailable). Without the key every classify call resolves `{ ok: false }` and the dot stays gray.
+`AI_GATEWAY_API_KEY` is required to run a model. The harness asks Jev whether a completion describes what the run did and fails a run it cannot judge, so `smithers opencode` refuses to start when the host can bind no evaluator (`EngineDriver.evaluatorRefusal`, exit 2). The same key turns on the cell's `classify` flows and the health dot (🟢 🟡 🔴, ⚪ when one evaluation does not answer). `--scripted` replays the recorded turn, runs no model, and needs no key.
 
 The contract this server answers is recorded in `docs/jev-harness/trace/summary.md` in the repository: the routes per step, the events per step, and the envelope, traced from the hosted app against OpenCode 1.18.31.
