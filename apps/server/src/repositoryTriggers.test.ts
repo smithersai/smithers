@@ -217,6 +217,41 @@ test("an approval whose envelope names no finite token and time limits never rea
   }
 })
 
+/*
+ * R98 F1: the app bounded only the limits a person typed, so a flow that
+ * DECLARES four hours (nothing in `Descriptor.BudgetCeiling` stops it) reached
+ * this route with that envelope, and Plue refused the approval with the same
+ * `automatic work needs the reviewed envelope and finite token/time limits`.
+ * The deployment's own ceiling is the bound on both sides of this wire, so an
+ * envelope no registration could run under writes no approval row.
+ */
+test("an approval whose envelope is past the deployment's ceiling never reaches Smithers Cloud", async () => {
+  const { envelope: _reviewed, ...unbounded } = APPROVAL
+  for (
+    const budget of [
+      { tokens: 200_000, milliseconds: 4 * 60 * 60_000 },
+      { tokens: 200_001, milliseconds: 600_000 },
+      { tokens: 5_000_000, milliseconds: 86_400_000 }
+    ]
+  ) {
+    const attempt = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
+    const answer = await attempt.fetchAs(TRIGGER_APPROVAL_PATH, {
+      method: "POST",
+      body: JSON.stringify({ ...unbounded, envelope: { ...REVIEWED_ENVELOPE, budget } })
+    })
+    expect((await body(answer)).code).toBe("request_invalid")
+    expect(attempt.calls).toEqual([])
+  }
+  /* The ceiling itself is a registration, not a refusal: 200000 tokens and the two hours Plue admits. */
+  const ceiling = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))
+  const recorded = await ceiling.fetchAs(TRIGGER_APPROVAL_PATH, {
+    method: "POST",
+    body: JSON.stringify({ ...unbounded, envelope: { ...REVIEWED_ENVELOPE, budget: { tokens: 200_000, milliseconds: 7_200_000 } } })
+  })
+  expect((await body(recorded)).status).toBe("ok")
+  expect(ceiling.calls).toHaveLength(1)
+})
+
 test("an approval that does not name a registrable flow never reaches Smithers Cloud", async () => {
   for (const flowId of [undefined, "", "-leading-dash", "x".repeat(201)]) {
     const attempt = deployment(() => Response.json({ approved_at: "2026-09-17T06:00:00Z", approved_by: 1 }))

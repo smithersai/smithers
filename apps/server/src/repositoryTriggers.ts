@@ -15,6 +15,7 @@
  * listing, and the five setup jobs' own recovery (repositorySetupRecovery.ts)
  * is a separate reader that this file never touches.
  */
+import { BudgetTokensSchema, SetupDraftSchema } from "@smthrs/rpc/RepositorySetup"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { Data, Effect, Result } from "effect"
 import { z } from "zod"
@@ -171,14 +172,18 @@ const digestOf = (value: unknown): string | undefined =>
  * envelope and finite token/time limits"), which reached the person as
  * `upstream_refused … Not your doing.` for a fact about their own
  * registration. The flow id is already refused here rather than there for the
- * same reason. The upper bound is Cloud's own and stays there; what this
- * refuses is an envelope no registration could ever be made from.
+ * same reason. The bound is the deployment's own, the pair the app holds a
+ * person to and the host's registrar enforces on the registration run: a flow
+ * may DECLARE four hours, and forwarding that earned the same refusal.
  */
 const isReviewed = (value: unknown): boolean => {
   const envelope = typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
   const budget = typeof envelope.budget === "object" && envelope.budget !== null ? envelope.budget as Record<string, unknown> : {}
-  const finite = (limit: unknown): boolean => typeof limit === "number" && Number.isFinite(limit) && limit > 0
-  return Array.isArray(envelope.capabilities) && Array.isArray(envelope.flows) && finite(budget.tokens) && finite(budget.milliseconds)
+  const within = (limit: unknown, ceiling: number): boolean =>
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0 && limit <= ceiling
+  return Array.isArray(envelope.capabilities) && Array.isArray(envelope.flows) &&
+    within(budget.tokens, BudgetTokensSchema.maxValue!) &&
+    within(budget.milliseconds, SetupDraftSchema.shape.budgetMinutes.maxValue! * 60_000)
 }
 
 /**

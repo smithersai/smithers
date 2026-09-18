@@ -9,7 +9,8 @@ import type { AppStore } from "../AppStore"
 import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
-import { LIMIT_SHAPE, NO_RULES_SENTENCE, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
+import { readFile } from "node:fs/promises"
+import { LIMIT_SHAPE, NO_RULES_SENTENCE, overBoundFlowSentence, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
 
 const createAppController = scopedControllers()
 
@@ -593,6 +594,38 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect(JSON.parse(lastAction(store)?.args ?? "{}")).toMatchObject({ tokens: 150_000, minutes: 20 })
   })
 
+  /*
+   * R98 F1: `Descriptor.BudgetCeiling` bounds nothing from above, so a flow
+   * may DECLARE four hours or a million tokens. Only the person's own numbers
+   * were held to the deployment's ceiling, so such a declaration was previewed,
+   * approved, and refused upstream — the same production toast, for the same
+   * reason, on a path the walk never reached because `checks/fast` declares
+   * nothing at all.
+   */
+  test("a flow that declares a ceiling past the deployment's own is refused before the preview, in a sentence naming the range", async () => {
+    const declaring = (budget: Record<string, number>) =>
+      workspaceAnswers({
+        Plan: (payload) =>
+          payload.flowId === "nightly-lint"
+            ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget } })
+            : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+      })
+    for (const budget of [{ tokens: 200_000, milliseconds: 14_400_000 }, { tokens: 5_000_000, milliseconds: 600_000 }]) {
+      const calls: Array<RelayCall> = []
+      const { store, controller } = await readyToRegister(
+        backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, declaring(budget)) })
+      )
+      expect(await controller.registerTrigger(REQUEST)).toBe(overBoundFlowSentence("nightly-lint"))
+      expect(lastAction(store)).toBeUndefined()
+      expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+
+      /* The same flow, bounded by the limits the person gave: prepared, and the preview states theirs. */
+      expect(typeof await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "20" })).toBe("object")
+      const preview = [...store.collections.messages.values()].sort((left, right) => right.ordinal - left.ordinal)[0]?.text ?? ""
+      expect(preview).toContain("150000 tokens · 20 min")
+    }
+  })
+
   test("limits that are not whole positive numbers are refused before the workspace is asked anything", async () => {
     const calls: Array<RelayCall> = []
     const { controller } = await readyToRegister(
@@ -602,7 +635,39 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "0" })).toBe(LIMIT_SHAPE)
     /* Smithers Cloud refuses a registration past two hours; a person's own number never earns an upstream refusal. */
     expect(await controller.registerTrigger({ ...REQUEST, tokens: "150000", minutes: "500" })).toBe(LIMIT_SHAPE)
+    /* R98 F2: past the registrar's token ceiling the host refused on the registration run, after a Plue approval row existed. */
+    expect(await controller.registerTrigger({ ...REQUEST, tokens: "500000", minutes: "20" })).toBe(LIMIT_SHAPE)
     expect(calls).toEqual([])
+  })
+
+  /*
+   * R98 F2: `Set token and time limits: "checks/fast" declares none.` asked a
+   * person for two numbers without saying which ones are acceptable, and the
+   * number they could not guess — the registrar's token ceiling — was enforced
+   * late, by the host, after an approval row had been written.
+   */
+  test("every limits refusal names the range the register door takes", () => {
+    expect(unboundedFlowSentence("checks/fast")).toBe(
+      `Set token and time limits: "checks/fast" declares none. --tokens 1..200000, --minutes 1..120.`
+    )
+    expect(overBoundFlowSentence("checks/fast")).toBe(
+      `Set token and time limits: "checks/fast" declares more than --tokens 1..200000, --minutes 1..120.`
+    )
+    expect(LIMIT_SHAPE).toBe("Token and time limits are whole numbers: --tokens 1..200000, --minutes 1..120.")
+  })
+
+  /*
+   * The app holds no second copy of host policy: the ceiling it names is the
+   * registrar's own (`flows/repository/inspection.ts`, enforced by `Prepare`
+   * and by repository setup), read here so the two cannot drift apart while
+   * both still pass their own tests.
+   */
+  test("the range the app names is the registrar's own ceiling", async () => {
+    const source = await readFile(new URL("../../../../../../flows/repository/inspection.ts", import.meta.url), "utf8")
+    const ceiling = (name: string): number =>
+      Number((new RegExp(`export const ${name} = ([0-9_]+)`).exec(source)?.[1] ?? "").replaceAll("_", ""))
+    expect(LIMIT_SHAPE).toContain(`--tokens 1..${ceiling("deploymentTokens")}`)
+    expect(LIMIT_SHAPE).toContain(`--minutes 1..${ceiling("deploymentMinutes")}`)
   })
 
   /*
@@ -817,6 +882,37 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect((await controller.commands.run("triggers.approve", carried)).status).toBe("executed")
     await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
     expect(registrationRun(store, requestId)?.payload.error).toBe(unboundedFlowSentence("nightly-lint"))
+    expect(receipts).toEqual([])
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+  })
+
+  /* The same door, the same bound: a flow's own four hours is refused here too, so no approval row is written for it. */
+  test("an approval whose flow declares more than the ceiling never reaches the approval or Smithers Cloud", async () => {
+    const calls: Array<RelayCall> = []
+    const receipts: Array<unknown> = []
+    const { store, controller } = await readyToRegister(
+      watched(backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [RPC]: relayRoute(calls, workspaceAnswers({
+          Plan: (payload) =>
+            payload.flowId === "nightly-lint"
+              ? okFrame({ ...PLAN, envelope: { ...PLAN.envelope, budget: { tokens: 200_000, milliseconds: 14_400_000 } } })
+              : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+        })),
+        [APPROVAL]: async (request) => {
+          receipts.push(await request.json())
+          return json(200, { status: "ok", approvedAt: "2026-09-17T06:00:00Z", approvedBy: 1 })
+        }
+      }))
+    )
+    const requestId = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+    const carried = JSON.stringify({
+      requestId, repo: "will/flows", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5",
+      input: '{"label":"nightly"}', planId: "plan-1", planDigest: PLAN_DIGEST
+    })
+    expect((await controller.commands.run("triggers.approve", carried)).status).toBe("executed")
+    await waitFor(() => registrationRun(store, requestId)?.payload.phase === "failed")
+    expect(registrationRun(store, requestId)?.payload.error).toBe(overBoundFlowSentence("nightly-lint"))
     expect(receipts).toEqual([])
     expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
   })
