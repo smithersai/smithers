@@ -90,11 +90,18 @@ export const inconclusiveCheck = "The AI check did not establish complete scope 
 export const unavailableCheck = ({ output }: RecordedCheck, reviewedId?: string): typeof CheckResult.Type | undefined =>
   output.results.find(check => check.status === "error" && !(check.checkId === reviewedId && check.summary === inconclusiveCheck &&
     check.evidence.includes(`execution:${check.executionId}`) && check.evidence.includes(`source:${output.candidate}`)))
-export const checkExecutionFailed = (recorded: RecordedCheck, reviewedId?: string): boolean => {
-  if (unavailableCheck(recorded, reviewedId)) return true
+/** The refusal carries the check and its measured reason: a report-only rule
+ * the gate deliberately ignored still stops the trial, and the bare fact that
+ * something was unavailable sent the last operator to a retained workspace
+ * file the product's file door cannot serve. Evaluation reads only the boolean. */
+export const checkExecutionFailure = (recorded: RecordedCheck, reviewedId?: string): string | undefined => {
+  const unavailable = unavailableCheck(recorded, reviewedId)
+  if (unavailable) return `The trial recorded an unavailable check: ${unavailable.checkId} — ${unavailable.summary.slice(0, 200)}`
   const blocked = recorded.output.results.some(check => check.policy === "required" && check.status !== "passed" && check.status !== "skipped")
   return recorded.output.gate !== (blocked ? "blocked" : "passed") || recorded.step.status !== (blocked ? "error" : "completed")
+    ? `The trial recorded an inconsistent ${recorded.step.stepId} check step: gate ${recorded.output.gate} with status ${recorded.step.status}` : undefined
 }
+export const checkExecutionFailed = (recorded: RecordedCheck, reviewedId?: string): boolean => checkExecutionFailure(recorded, reviewedId) !== undefined
 /** Only the owned trial receipt uses this gate. Unrelated live events may skip. */
 export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">, result: JobResult): void => {
   // A review trial selects its core review step. Other event/manual steps and
@@ -106,7 +113,8 @@ export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">
   if (checks.some(check => !check.id) || new Set(checks.map(check => check.id)).size !== checks.length) throw invalid("AI trial checks need unique configured IDs")
   const outputs = result.results.flatMap(step => {
     const recorded = recordedChecks(step, result.sourceRevision)
-    if (recorded?.some(check => checkExecutionFailed(check))) throw invalid("The trial contains an unavailable or inconsistent check execution")
+    const unavailable = (recorded ?? []).map(check => checkExecutionFailure(check)).find(reason => reason !== undefined)
+    if (unavailable) throw invalid(unavailable)
     const final = recorded?.at(-1)
     return final?.phase === "candidate" && final.step.status === "completed" && final.output.gate === "passed" ? [final.output] : []
   })

@@ -22,6 +22,10 @@ const requireRemote = Effect.gen(function*() {
   return Option.isSome(remote) ? remote.value : yield* invalid("Connect the repository host before activation")
 })
 export const TrialIssue = Schema.Struct({ source: Schema.Literal("smithers-cloud"), number: Schema.Int.check(Schema.isGreaterThan(0)), issue_id: Schema.Number, request_id: Schema.String, api_path: Schema.String })
+/** One trial artefact per candidate, not per press. The trial request is
+ * idempotent on this name, so testing the same draft again reuses its issue
+ * instead of opening another one the registration row cannot then name. */
+export const trialRequestId = (input: Pick<SetupInput, "job" | "revision" | "digest">) => `candidate-${input.job}-${input.revision}-${input.digest}`
 export const Registration = Schema.Struct({ registration_id: Schema.String, revision: Schema.Int, digest: Schema.String,
   source_revision: Schema.String, mode: Schema.Literals(["trial", "enabled"]), enabled: Schema.Boolean })
 export const Activated = Schema.Struct({ registration: Registration, source: Revision, trialIssue: Schema.optionalKey(TrialIssue) })
@@ -118,10 +122,11 @@ export const activationLayers = Layer.mergeAll(Interpreter.layer(RegisterCandida
     yield* (yield* Jj.Jj).snapshot("repository automation registration")
     const source = (yield* (yield* NativeCoding).read()).head
     if (source.kind !== "resolved") return yield* invalid("Resolve native source conflicts before registration")
-    const issue = mode === "trial" ? yield* remote.createTrial(input.job, input.requestId, json({ repo: input.repo, workspace_id: remote.workspaceId,
+    const trialRequest = trialRequestId(input)
+    const issue = mode === "trial" ? yield* remote.createTrial(input.job, trialRequest, json({ repo: input.repo, workspace_id: remote.workspaceId,
       revision: input.revision, digest: input.digest, title: input.draft.trialTitle, body: input.draft.trialBody })).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(TrialIssue)), Effect.mapError(() => invalid("The trial issue response does not match its request"))) : undefined
-    if (issue !== undefined && issue.request_id !== input.requestId) return yield* invalid("The trial issue receipt names another request")
+    if (issue !== undefined && issue.request_id !== trialRequest) return yield* invalid("The trial issue receipt names another request")
     // Planning fixes the exact bundle authority before event dispatch. The input
     // event and the held-out cases vary; executable identity and finite envelope
     // do not, so the probe reads them from the configuration without the answers.

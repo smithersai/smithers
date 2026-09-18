@@ -17,7 +17,7 @@ import { verifyTrialChecks } from "../repository/checks.ts"
 
 const source = "a".repeat(40), base = "b".repeat(40)
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
-const fixture = (options: { status?: "passed" | "failed" | "skipped" | "error"; policy?: "report" | "required";
+const fixture = (options: { status?: "passed" | "failed" | "skipped" | "error"; policy?: "report" | "required"; summary?: string;
   nested?: boolean; omitted?: boolean; emptyExamined?: boolean; evidence?: readonly string[]; wrongPolicy?: boolean; duplicateId?: boolean;
   secondSkipped?: boolean; baselineOnly?: boolean; wrongSource?: boolean; builtInReview?: boolean } = {}) => {
   const job = options.builtInReview ? "review" : "ci", bridge = `repository-jobs/${job}`
@@ -33,7 +33,7 @@ const fixture = (options: { status?: "passed" | "failed" | "skipped" | "error"; 
   const proposal = [{ path: "src/handler.ts", beforeDigest: null, content: "export const handler = () => 1\n" }]
   const checkedSource = options.wrongSource ? "f".repeat(40) : options.nested ? `${source}+${Digest.digest(Digest.canonical(proposal))}` : source
   const checks = { base: options.nested ? source : base, candidate: checkedSource, gate: blocked ? "blocked" : "passed", results: options.omitted ? [] : [{
-    checkId: options.builtInReview ? "review-review" : "observability", policy: options.wrongPolicy ? "report" : policy, status, summary: status, executionId: "ai-execution",
+    checkId: options.builtInReview ? "review-review" : "observability", policy: options.wrongPolicy ? "report" : policy, status, summary: options.summary ?? status, executionId: "ai-execution",
     evidence: options.evidence ?? [`execution:ai-execution`, `source:${checkedSource}`, `base:${options.nested ? source : base}`],
     detail: status === "error" || status === "skipped" ? null : { verdict: status === "passed" ? "pass" : "fail", summary: "Checked the handler",
       examinedPaths: options.emptyExamined ? [] : ["src/handler.ts"], findings: status === "failed" ? [{ path: "src/handler.ts", line: 1, message: "Missing telemetry" }] : [] }
@@ -127,6 +127,19 @@ test("the selected built-in PR review must run without requiring other event or 
     { id: "disabled-review", name: "Disabled", mode: "off" as const, prompt: "Unused" }] }
   // Disabled steps never create a required check in the proof verifier.
   assert.doesNotThrow(() => verifyTrialChecks(draft, configured.result))
+})
+
+test("an unavailable trial check names itself and its recorded reason", async () => {
+  const reason = "The AI check did not establish complete scope coverage"
+  for (const nested of [false, true]) {
+    const refused = await fixture({ status: "error", summary: reason, nested }).trial().then(() => undefined, error => String(error))
+    assert.match(refused ?? "accepted", /observability/, `nested ${nested}`)
+    assert.match(refused ?? "accepted", new RegExp(reason), `nested ${nested}`)
+  }
+  const inconsistent = fixture({ policy: "required", status: "failed" })
+  const step = inconsistent.result.results[0]!
+  assert.throws(() => verifyTrialChecks(inconsistent.input.configuration, { ...inconsistent.result,
+    results: [{ ...step, status: "completed" }] }), /gate blocked with status completed/)
 })
 
 test("a successful AI invocation cannot mask another unavailable invocation in the same trial", () => {

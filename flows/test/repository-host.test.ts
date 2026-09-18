@@ -429,7 +429,16 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       if (kind.startsWith("ai-") && !deletionUnavailable) {
         const verify = () => verifyTrialChecks(configured.draft, output)
         if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
-        else if (["ai-unavailable", "ai-context-missing", "ai-context-required"].includes(kind)) assert.throws(verify, /unavailable.*check/)
+        else if (["ai-unavailable", "ai-context-missing", "ai-context-required"].includes(kind)) {
+          // The trial refuses on a recorded execution the maintainer cannot
+          // read through the product, so the refusal carries the check and the
+          // reason it measured. A report-only rule the gate ignored still stops
+          // the trial, and "something was unavailable" is not actionable.
+          const recorded = (output.results[0]!.output as any), nested = recorded.checks?.at(-1)?.output ?? recorded
+          const errored = nested.results.find((check: any) => check.status === "error")
+          assert.throws(verify, /unavailable.*check/, kind)
+          assert.throws(verify, new RegExp(`${errored.checkId}.+${errored.summary.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), kind)
+        }
         else assert.doesNotThrow(verify)
         if (kind === "ai-skip") {
           assert.equal((output.results[0]!.output as any).results.find((check: any) => check.checkId === "observability").status, "skipped")

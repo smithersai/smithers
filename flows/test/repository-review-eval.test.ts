@@ -156,7 +156,8 @@ test("a review trial that reports grounded findings verifies its own check", asy
   const { step: result } = await Effect.runPromise(runReviewStep(f.options, reported))
   assert.doesNotThrow(() => verifyTrialChecks({ checks: [], steps: [step, followup] }, observed(result)))
   const { step: lost } = await Effect.runPromise(runReviewStep(f.options, null))
-  assert.throws(() => verifyTrialChecks({ checks: [], steps: [step, followup] }, observed(lost)), /unavailable or inconsistent/)
+  assert.throws(() => verifyTrialChecks({ checks: [], steps: [step, followup] }, observed(lost)),
+    /The trial recorded an unavailable check: review-review — /)
 })
 
 test("a checker that contradicts its findings or cites source it never captured stays an execution failure", async t => {
