@@ -47,6 +47,7 @@ import type { RepositoryRemote } from "../repository/remote.ts"
 import { activationLayers } from "../repository/activation.ts"
 import { RunTrigger, triggerLayers } from "../repository/triggers.ts"
 import { checkLayers as repositoryCheckLayers, checkModelLayers, checkModelNames } from "../repository/checks.ts"
+import { evaluatorLayer } from "../repository/jev-checks.ts"
 import { deliveryLayers } from "../repository/delivery.ts"
 import { replyLayers } from "../repository/replies.ts"
 import { changeLayers, changeModelLayers, changeModelNames } from "../repository/changes.ts"
@@ -161,7 +162,11 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }), evaluationLayers,
       setupLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }), activationLayers, triggerLayers, replyLayers, deliveryLayers,
-      repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
+      // Jev answers the AI checks' hunks when the host has a gateway key, and
+      // the frontier seat keeps every rule it is unsure of. Without the key
+      // `evaluatorLayer` refuses every evaluation and nothing changes.
+      repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath,
+        environment: options.checkEnvironment, evaluator: evaluatorLayer(process.env) }),
       changeLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       evidenceOnly(Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, checkModelLayers, changeModelLayers), new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...checkModelNames, ...changeModelNames])))
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,

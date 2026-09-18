@@ -1,6 +1,7 @@
 /** Repository CI runs cheap commands first and records semantic checks on exact source. */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Digest from "@smthrs/core/Digest"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Path, Schema } from "effect"
@@ -13,6 +14,7 @@ import { currentExecutionId } from "./inspection.ts"
 import { Work } from "./jobs.ts"
 import { Check, Proposal, StepResult, type Draft, type JobResult, type Step } from "./schema.ts"
 import { captureCheckContext, CheckContext, contextFailure, privatePath, rulePaths } from "./check-context.ts"
+import { jevSemanticCheck } from "./jev-checks.ts"
 import { admitSourcePath, withCapturedCommit } from "./source.ts"
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -32,8 +34,14 @@ export const CheckResult = Schema.Struct({ checkId: Schema.String, policy: Check
 export const CheckOutput = Schema.Struct({ base: Commit, candidate: Schema.NonEmptyString,
   gate: Schema.Literals(["blocked", "passed"]), results: Schema.Array(CheckResult).check(Schema.isMinLength(1)) })
 const Finding = Schema.Struct({ path: Schema.NonEmptyString, line: Schema.Int.check(Schema.isGreaterThan(0)), message: Schema.NonEmptyString })
+/** Which model reached the verdict a row retained. The key is optional because
+ * every row stored before Jev answered a rule was the seat's, and a stored row
+ * must keep decoding. `RetainSemantic` is its only writer, so a checker that
+ * names itself in its own output cannot forge the record. */
+export const DecidedBy = Schema.Literals(["jev", "seat"])
 export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass", "fail", "uncertain"]),
-  summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)) })
+  summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)),
+  decidedBy: Schema.optionalKey(DecidedBy) })
 /** Shared by review execution, its trial verifier and the evaluator. */
 export const reviewCheckId = (stepId: string): string => `review-${stepId}`
 /** A review's product is what it found on the exact source, so its own finding
@@ -162,14 +170,30 @@ export const SemanticCheck = AgentAction.make("repository/semantic-check", {
 export const CaptureChecks = Action.make("repository/capture-checks", { payload: { work: Work }, success: CheckPlan, error: CodingError, nondeterministic: true })
 export const ExecuteCommand = Action.make("repository/execute-command-check", { payload: { plan: CheckPlan, check: Check }, success: CheckResult, error: CodingError, nondeterministic: true })
 export const RetainSemantic = Action.make("repository/retain-semantic-check", {
-  payload: { plan: CheckPlan, check: Check, comparison: Comparison, verdict: SemanticVerdict }, success: CheckResult, error: CodingError
+  payload: { plan: CheckPlan, check: Check, comparison: Comparison, verdict: SemanticVerdict, decidedBy: Schema.optionalKey(DecidedBy) },
+  success: CheckResult, error: CodingError
+})
+/** Jev judges the maintainer's rule one changed hunk at a time and never
+ * fails: a missing gateway, a refused call and an answer between the two
+ * thresholds all come back `uncertain`, which is the one verdict that spends
+ * a frontier call. */
+export const JevSemanticCheck = Action.make("repository/jev-semantic-check", {
+  payload: { check: Check, comparison: Comparison }, success: SemanticVerdict, error: CodingError, nondeterministic: true
 })
 export const CommandCheck = Flow.make("repository/CommandCheck", { payload: ExecuteCommand.payloadSchema, success: CheckResult, error: CodingError,
   body: input => ExecuteCommand.call(input) })
+/** Jev decides first. Only a verdict it could not reach decisively reaches the
+ * seat, so a decisive pass or fail costs no frontier call and the seat's own
+ * path is unchanged for the rules Jev is unsure of. */
 export const AICheck = Flow.make("repository/AICheck", {
   payload: { plan: CheckPlan, check: Check, comparison: Comparison, context: CheckContext, baseContext: Schema.optionalKey(CheckContext) }, success: CheckResult, error: Schema.Union([CodingError, AgentAction.AgentFailure]),
-  body: input => SemanticCheck.call({ repo: input.plan.work.repo, check: input.check, comparison: input.comparison,
-    context: input.context, ...(input.baseContext ? { baseContext: input.baseContext } : {}), deadlineAt: input.plan.work.deadlineAt }).pipe(Node.bindPlanned(verdict => RetainSemantic.call({ ...input, verdict })))
+  body: input => JevSemanticCheck.call({ check: input.check, comparison: input.comparison }).pipe(Node.branch({
+    if: verdict => verdict.verdict !== "uncertain",
+    then: verdict => RetainSemantic.call({ ...input, verdict, decidedBy: "jev" as const }),
+    else: () => SemanticCheck.call({ repo: input.plan.work.repo, check: input.check, comparison: input.comparison,
+      context: input.context, ...(input.baseContext ? { baseContext: input.baseContext } : {}), deadlineAt: input.plan.work.deadlineAt }).pipe(
+      Node.bindPlanned(verdict => RetainSemantic.call({ ...input, verdict, decidedBy: "seat" as const })))
+  }))
 })
 export const RunChecks = Action.make("repository/run-checks", { payload: CheckPlan, success: StepResult, error: CodingError })
 export const CheckStep = Flow.make("repository/CheckStep", { payload: { work: Work }, success: StepResult, error: CodingError,
@@ -392,16 +416,22 @@ export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (ty
     ? ` Searched for workflow files, manifests and scripts in ${searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
 }
 
-export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
+/** `evaluator` is the whole Jev opt-in. A composition that names none keeps
+ * `layerUnavailable`, so every hunk reads indecisive and the seat decides
+ * exactly as it did before. */
+export const checkLayers = (options: ImmutableSourceOptions & { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   Interpreter.layer(CheckStep), Interpreter.layer(CommandCheck), Interpreter.layer(AICheck),
+  JevSemanticCheck.toLayer(({ check, comparison }) => jevSemanticCheck(comparison, check)).pipe(
+    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
   CaptureChecks.toLayer(({ work }) => captureChecks(options, work)),
   ExecuteCommand.toLayer(({ plan, check }) => currentExecutionId.pipe(Effect.flatMap(id => executeCommand(options, plan, check, id)))),
-  RetainSemantic.toLayer(({ plan, check, comparison, verdict }) => Effect.gen(function* () {
+  RetainSemantic.toLayer(({ plan, check, comparison, verdict, decidedBy }) => Effect.gen(function* () {
     const executionId = yield* currentExecutionId
     const context = plan.contexts.find(value => value.checkId === check.id), baseContext = plan.baseContexts?.find(value => value.checkId === check.id)
     if (comparisonContextFailure(comparison, check.id, context, baseContext)) return yield* invalid("The semantic check has no complete supporting context")
     return { checkId: check.id, policy: check.policy, ...assessSemantic(comparison, verdict, context, baseContext), executionId,
-      evidence: [`execution:${executionId}`, `source:${plan.comparison.candidate}`, `base:${plan.comparison.base}`], detail: json({ ...verdict, context, ...(baseContext ? { baseContext } : {}) }) }
+      evidence: [`execution:${executionId}`, `source:${plan.comparison.candidate}`, `base:${plan.comparison.base}`],
+      detail: json({ ...verdict, decidedBy: decidedBy ?? "seat", context, ...(baseContext ? { baseContext } : {}) }) }
   })),
   RunChecks.toLayer(plan => Effect.gen(function* () {
     const runtime = yield* FlowRuntime.FlowRuntime, executionId = yield* currentExecutionId
