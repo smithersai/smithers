@@ -79,7 +79,11 @@ describe("declaration dependency preflight", () => {
       expect.objectContaining({
         code: "declaration_dependency_unresolved",
         path: file,
-        cause: expect.objectContaining({ code: "ERR_MODULE_NOT_FOUND" })
+        cause: expect.objectContaining({ code: "ERR_MODULE_NOT_FOUND" }),
+        // The cause travels in the message as well as in the field: a refusal
+        // rendered from `code` and `message` alone is unfixable on a host the
+        // author cannot reach.
+        message: expect.stringContaining("ERR_MODULE_NOT_FOUND")
       })
     )
   })
@@ -105,6 +109,20 @@ describe("declaration dependency preflight", () => {
         expect((cause as Error).message).toContain("workspace-local CLI")
       }
     }
+  })
+
+  /**
+   * A declaration that lives inside one of the shared packages names that
+   * package, and the enclosing scope is the answer.
+   * `packages/smithers/build/targets/PACKAGE.ts` is the real instance, and it
+   * is the file the advisory Windows row refuses with
+   * `declaration_dependency_unresolved: cannot resolve @smthrs/targets`. This
+   * pins what every other host answers for it.
+   */
+  it("accepts a declaration that lives inside the shared package it names", () => {
+    const manifest = findPackageJSON("@smthrs/targets", import.meta.url)!
+    const file = Path.join(Path.dirname(manifest), "PACKAGE.ts")
+    expect(() => assertDeclarationDependencies([file], { bootstrap: false })).not.toThrow()
   })
 
   it("refuses a foreign installation even when its metadata cannot be parsed", async () => {

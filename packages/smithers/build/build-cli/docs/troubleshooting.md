@@ -81,8 +81,9 @@ same version can still have different schema sentinels and continuation tables.
 
 **`declaration_dependency_unresolved: cannot resolve <package> ...`**
 
-The dependency check could not complete. Install the workspace dependencies
-and check the original cause for filesystem or package-resolution errors.
+The dependency check could not complete. The message names the underlying
+filesystem or package-resolution error in parentheses, and the refusal carries
+it as its cause. Install the workspace dependencies.
 See [Declaration loading](./concepts/declaration-loading.md).
 
 **`two targets carry one label: <label>`** and

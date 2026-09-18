@@ -17,6 +17,24 @@ import { PackageError } from "../PackageError.ts"
 const sharedPackages = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/core", "@smthrs/flow"] as const
 
 /**
+ * The code and message of the failure a refusal is standing in for.
+ *
+ * The refusal carries its cause, and the documentation says to read it, but
+ * nothing renders it: the Windows runner reported
+ * `cannot resolve @smthrs/targets; install the workspace dependencies and run
+ * its local CLI` and no more, which names neither the filesystem error nor the
+ * resolution error that produced it. A host-only failure cannot be fixed from
+ * a message that withholds the one fact that differs per host, so the cause
+ * travels in the message too.
+ */
+const describeCause = (cause: unknown): string => {
+  if (typeof cause !== "object" || cause === null) return String(cause)
+  const code = "code" in cause && typeof cause.code === "string" ? `${cause.code}: ` : ""
+  const message = "message" in cause && typeof cause.message === "string" ? cause.message : String(cause)
+  return `${code}${message}`
+}
+
+/**
  * Refuses a declaration closure that would select another physical runtime.
  *
  * Missing packages remain admissible only when the caller explicitly requests
@@ -60,7 +78,8 @@ export const assertDeclarationDependencies = (
       } catch (cause) {
         throw new PackageError(
           "declaration_dependency_unresolved",
-          `cannot resolve ${dependency}; install the workspace dependencies and run its local CLI`,
+          `cannot resolve ${dependency}; install the workspace dependencies and run its local CLI ` +
+            `(${describeCause(cause)})`,
           { path: file, cause }
         )
       }

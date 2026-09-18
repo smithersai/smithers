@@ -21,8 +21,8 @@ Before evaluation, the loader checks the declaration files and their statically
 discovered relative-import closure. Node's default package lookup performs this
 check independently of the current resolve hooks. A conflict fails with
 `declaration_dependency_mismatch`, including the importing file and the two
-manifest paths. Resolution failures carry `declaration_dependency_unresolved`
-and preserve their original cause.
+manifest paths. Resolution failures carry `declaration_dependency_unresolved`,
+name their original cause in the message, and preserve it as the cause.
 
 This preflight checks physical package selection. It does not certify arbitrary
 custom loaders, absolute runtime URLs, query-string module copies, dynamic
