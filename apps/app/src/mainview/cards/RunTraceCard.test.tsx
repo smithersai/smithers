@@ -159,6 +159,23 @@ describe("the run card as a trace", () => {
     expect(refusal(engine.host).getAttribute("data-refusal-fault")).toBe("infra")
     expect(technical(engine.host)).toBe(VERDICT)
   })
+  test("a setup refusal the person must answer leads with the host's sentence; the bridge's own invalid_receipt does not", () => {
+    /* .artifacts/mvp-canary-walk-20260917/B-18-state-trial-terminal.json: `Create test issue` before the evals passed. */
+    const trial = "Run evals for this exact candidate before continuing"
+    const setupVerdict = `failed — invalid_receipt: ${trial}`
+    const refused = renderRun({ workflow: "repository/setup", phase: "failed", error: setupVerdict,
+      events: failedJournal(`invalid_receipt: ${trial}\n    at repository/Setup (flows/repository/receipts.ts:109)`) })
+    expect(refusal(refused.host).textContent).toBe(trial)
+    expect(refusal(refused.host).textContent).not.toContain("invalid_receipt")
+    expect(refusal(refused.host).getAttribute("data-refusal-fault")).toBe("user")
+    expect(technical(refused.host)).toBe(`invalid_receipt: ${trial}`)
+
+    const bridge = renderRun({ workflow: "repository/setup", phase: "failed", error: setupVerdict,
+      events: failedJournal("invalid_receipt: Setup output failed the shared response contract") })
+    expect(refusal(bridge.host).textContent).toContain("Not your fault")
+    expect(refusal(bridge.host).getAttribute("data-refusal-fault")).toBe("infra")
+    expect(technical(bridge.host)).toBe(setupVerdict)
+  })
   test("a refusal written to the stream before this change replays, and the reopened card still leads with it", async () => {
     const card = runCard({ workflow: "repository/trigger" })
     const scope = { repo: card.payload.repo, runId: card.payload.runId }

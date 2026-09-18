@@ -126,6 +126,15 @@ test("a settled registrar refusal is transcribed as the sentence the card leads 
   expect(result.messages).toEqual([`The run failed: ${refusal}`])
 })
 
+test("a settled setup refusal is transcribed as the sentence the person has to answer", async () => {
+  const refusal = "Run evals for this exact candidate before continuing"
+  const verdict = `failed — invalid_receipt: ${refusal}`
+  const cause = `invalid_receipt: ${refusal}\n    at repository/Setup (flows/repository/receipts.ts:109)`
+  const result = await poll([{ events: [failed(1, cause)], revision: 1, status: "failed", verdict }], { flowId: "repository/setup" })
+  expect(result.card.payload.error).toBe(verdict)
+  expect(result.messages).toEqual([`The run failed: ${refusal}`])
+})
+
 test("another flow's invalid_receipt is still Smithers' in the transcript", async () => {
   const verdict = "failed — invalid_receipt: Native source creation returned an invalid receipt"
   const result = await poll([{ events: [failed(1, verdict.slice("failed — ".length))], revision: 1, status: "failed", verdict }], { flowId: "coding/request" })

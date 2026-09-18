@@ -13,6 +13,39 @@ export function runFailure(detail = "") {
 /** The workspace built-in that registers a repository flow on a schedule. */
 const REGISTRAR_FLOW = "repository/trigger"
 
+/** The bridge every repository setup operation runs under (apps/server/src/repositorySetupExecution.ts). */
+const SETUP_FLOW = "repository/setup"
+
+/**
+ * The setup bridge's own refusals, verbatim from the host that writes them.
+ *
+ * The bridge is not the registrar: its `invalid_receipt` covers the candidate
+ * the person declared AND the receipt plumbing behind it — ancestry, response
+ * contracts, control ownership — so the flow and the code together still say
+ * nothing about blame, and the host's own sentence is what does. Each one here
+ * names an act the person performs: a draft edit, a run of the evals or the
+ * trial, resolving source conflicts, connecting the repository host. Nothing
+ * is inferred from the prose and no fragment is matched; a sentence the host
+ * rewords falls back to the infra lead, and RunFailure.test.ts fails when one
+ * of these leaves the file that emits it.
+ */
+export const SETUP_REFUSALS: ReadonlySet<string> = new Set([
+  // flows/repository/receipts.ts:109 — the evidence the next operation needs
+  "Run evals for this exact candidate before continuing",
+  "Run the live trial for this exact candidate before continuing",
+  // flows/repository/setup.ts
+  "Required evaluation cases have not passed with evidence",
+  "A retained candidate was edited; create a new revision",
+  "The reviewed flow declaration was edited; create a new candidate",
+  "Connect the repository host before testing or activating automation",
+  "Repository source changed after the live trial; test the candidate again",
+  // flows/repository/activation.ts
+  "Connect the repository host before activation",
+  "Setup reached its configured time limit",
+  "Automatic replies are currently available for native issue handling only; choose draft replies",
+  "Resolve native source conflicts before registration"
+])
+
 /** `<code>: <sentence>`, the pair agent/internal/FailureSummary.ts writes on a journalled failure's first line. */
 const JOURNALLED = /^([a-z][a-z0-9_]*): (\S.*)$/
 
@@ -30,11 +63,13 @@ const journalledCause = (events: ReadonlyArray<Record<string, unknown>> = []): s
  * a decode failure, a deadline — so the code alone says nothing about blame.
  * The registrar is the one flow that builds it from the maintainer's own
  * declared input (flows/repository/triggers.ts), so the pair identifies a
- * refusal the request has to answer. Every other pair is Smithers' until the
- * host journals the fault beside the cause.
+ * refusal the request has to answer. The setup bridge mixes both, so there the
+ * host's own sentence decides. Every other pair is Smithers' until the host
+ * journals the fault beside the cause.
  */
-const journalledFault = (workflow: string, code: string): PlueFault | undefined =>
-  workflow === REGISTRAR_FLOW && code === "invalid_receipt" ? "user" : undefined
+const journalledFault = (workflow: string, code: string, sentence: string): PlueFault | undefined =>
+  code !== "invalid_receipt" ? undefined
+    : workflow === REGISTRAR_FLOW || (workflow === SETUP_FLOW && SETUP_REFUSALS.has(sentence)) ? "user" : undefined
 
 /**
  * A failed run's copy, framed at render time from what the card already
@@ -51,7 +86,7 @@ export const runFailureOf = (payload: {
   const line = journalledCause(payload.events)
   const journalled = line === undefined ? null : JOURNALLED.exec(line)
   if (line === undefined || journalled === null) return failure
-  const fault = journalledFault(payload.workflow, journalled[1] ?? "")
+  const fault = journalledFault(payload.workflow, journalled[1] ?? "", journalled[2] ?? "")
   if (fault === undefined) return failure
   switch (fault) {
     case "user": return { fault, message: journalled[2] ?? "", detail: line }

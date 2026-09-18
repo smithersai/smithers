@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
-import { runFailure, runFailureOf } from "./RunFailure"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { runFailure, runFailureOf, SETUP_REFUSALS } from "./RunFailure"
 import { librarianFailureMessage } from "./LibrarianLaunch"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
@@ -50,4 +52,52 @@ test("a registrar failure the registrar did not refuse keeps the verdict and the
   expect(runFailureOf({ workflow: "repository/trigger", error: VERDICT, events: [] })).toEqual({ fault: "infra", message: INFRA, detail: VERDICT })
   expect(runFailureOf({ workflow: "repository/trigger", error: VERDICT })).toEqual({ fault: "infra", message: INFRA, detail: VERDICT })
   expect(runFailureOf({ workflow: "repository/trigger" })).toEqual({ fault: "infra", message: INFRA, detail: "" })
+})
+
+/* The canary's own trial refusal, verbatim: `Create test issue` pressed before the evals passed
+ * (.artifacts/mvp-canary-walk-20260917/B-18-state-trial-terminal.json, receipt run-3). */
+const TRIAL = "Run evals for this exact candidate before continuing"
+const TRIAL_VERDICT = `failed — invalid_receipt: ${TRIAL}`
+const setupCause = (sentence: string) => journal(`invalid_receipt: ${sentence}\n    at repository/Setup (flows/repository/receipts.ts:109)`)
+
+test("a setup refusal the person must answer is the person's, headline and all", () => {
+  expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: setupCause(TRIAL) }))
+    .toEqual({ fault: "user", message: TRIAL, detail: `invalid_receipt: ${TRIAL}` })
+  for (const sentence of [
+    "Required evaluation cases have not passed with evidence",
+    "Repository source changed after the live trial; test the candidate again",
+    "Automatic replies are currently available for native issue handling only; choose draft replies"
+  ]) {
+    expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: setupCause(sentence) }))
+      .toEqual({ fault: "user", message: sentence, detail: `invalid_receipt: ${sentence}` })
+  }
+})
+
+test("a setup failure the person cannot act on stays Smithers', and no other flow reads the table", () => {
+  for (const engine of [
+    "Setup output failed the shared response contract",
+    "Repository setup needs its approved Control entry",
+    "The receipt has no retained native owner",
+    "Setup belongs to a different repository or workspace"
+  ]) {
+    expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: setupCause(engine) }))
+      .toEqual({ fault: "infra", message: INFRA, detail: TRIAL_VERDICT })
+  }
+  for (const workflow of ["coding/request", "librarian/wiki", "repository-jobs/issues", "repository/Setup"]) {
+    expect(runFailureOf({ workflow, error: TRIAL_VERDICT, events: setupCause(TRIAL) }))
+      .toEqual({ fault: "infra", message: INFRA, detail: TRIAL_VERDICT })
+  }
+  expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: journal(`execution: ${TRIAL}`) }))
+    .toEqual({ fault: "infra", message: INFRA, detail: TRIAL_VERDICT })
+})
+
+test("every sentence in the table is one the setup flows still emit, in the file that emits it", () => {
+  const read = (file: string) => readFileSync(fileURLToPath(new URL(`../../../../../flows/repository/${file}`, import.meta.url)), "utf8")
+  const source = ["setup.ts", "activation.ts"].map(read).join("\n")
+  /* The two the host builds from one template; the rest it writes out. */
+  expect(read("receipts.ts")).toContain('invalid(`Run ${operation === "evaluate" ? "evals" : "the live trial"} for this exact candidate before continuing`)')
+  for (const sentence of SETUP_REFUSALS) {
+    if (sentence.endsWith("for this exact candidate before continuing")) continue
+    expect(source).toContain(`invalid("${sentence}")`)
+  }
 })
