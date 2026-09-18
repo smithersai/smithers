@@ -231,7 +231,7 @@ ctx.done(JSON.stringify({ targets, readme: curated.answers.role.value, confidenc
         flows: [StandardFlows.classify(evaluatorServices(Evaluator.layerUnavailable()))],
         cells: [
           `const verdict = await ctx.call("classify", { state: { file: "a.py" }, questions: { ok: { type: "boolean", instructions: "Is it done?" } } })
-const check = await ctx.call("classify/check/verdict", { command: "pytest", exitCode: 1, output: "E assert" })
+const check = await ctx.call("classify/check/verdict", { task: "keep km", command: "pytest", exitCode: 1, output: "E assert" })
 ctx.done(JSON.stringify({ single: verdict, curated: check }))`
         ]
       })

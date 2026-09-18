@@ -73,11 +73,15 @@ its own flow named `classify/<id>`. The catalog then shows the model what each
 one judges, its input is the classifier's own state schema, and the questions
 never cross the wire from the cell. Three ship in `Classifiers`:
 
-| Flow                        | State                           | Answers                                                                        |
-| --------------------------- | ------------------------------- | ------------------------------------------------------------------------------ |
-| `classify/triage/relevance` | `{ task, file, excerpt }`       | `relevant` boolean, `role` implementation, fixture, or unrelated, `risk` score |
-| `classify/check/verdict`    | `{ command, exitCode, output }` | `rightReason` boolean, `invalidProbe` boolean                                  |
-| `classify/edit/risk`        | `{ path, hunk, task }`          | `risk` score none to high, `reversible` boolean                                |
+| Flow                        | State                                 | Answers                                                                        |
+| --------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| `classify/triage/relevance` | `{ task, file, excerpt }`             | `relevant` boolean, `role` implementation, fixture, or unrelated, `risk` score |
+| `classify/check/verdict`    | `{ task, command, exitCode, output }` | `rightReason` boolean, `invalidProbe` boolean                                  |
+| `classify/edit/risk`        | `{ task, path, hunk }`                | `risk` score none to high, `reversible` boolean                                |
+
+Every state starts with `task`, the task as the person stated it, because each
+judgment is made against it: `rightReason` is only an answer when Jev can read
+which bug the task describes.
 
 `check/verdict` answers the question rule 7 of the cell contract leaves to the
 model: a command is evidence only once it has failed for the right reason, and
@@ -87,6 +91,7 @@ exist reproduces nothing. Ask it in the same cell that ran the check:
 ```cell
 const before = await ctx.call("bash", { command: "pytest tests/test_widen.py::test_keeps_unit -q" }, { at: ctx.base })
 const judged = await ctx.call("classify/check/verdict", {
+  task: "widen() drops the unit: test_keeps_unit expects 'km' and gets 'm'",
   command: "pytest tests/test_widen.py::test_keeps_unit -q",
   exitCode: before.exitCode,
   output: before.stdout + before.stderr

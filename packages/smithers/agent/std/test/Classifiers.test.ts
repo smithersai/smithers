@@ -54,14 +54,46 @@ describe("the curated classifiers", () => {
       "excerpt"
     ])
     expect(Object.keys((Classifiers.checkVerdict.state as Schema.Struct<Schema.Struct.Fields>).fields)).toEqual([
+      "task",
       "command",
       "exitCode",
       "output"
     ])
     expect(Object.keys((Classifiers.editRisk.state as Schema.Struct<Schema.Struct.Fields>).fields)).toEqual([
+      "task",
       "path",
-      "hunk",
-      "task"
+      "hunk"
+    ])
+  })
+
+  it("send the task over the wire with every state that judges against it", async () => {
+    // A verdict against "the bug the task describes" is only a judgment when
+    // the judge can read the task; the field list alone does not pin that.
+    const seen: Array<ReadonlyArray<string>> = []
+    const recording = Evaluator.layerScripted((request) => {
+      seen.push(Object.keys(request.state as Record<string, unknown>))
+      return Object.fromEntries(
+        Object.entries(request.questions).map(([id, question]) => [
+          id,
+          question.type === "boolean"
+            ? { probability: 0.5 }
+            : question.type === "choice"
+            ? { choice: Object.keys(question.criteria)[0]! }
+            : { score: 0 }
+        ])
+      )
+    })
+    await Effect.runPromise(
+      Effect.all([
+        Classifiers.checkVerdict.evaluate({ task: "widen keeps km", command: "pytest -q", exitCode: 1, output: "E" }),
+        Classifiers.editRisk.evaluate({ task: "rename", path: "a.py", hunk: "-a\n+b" }),
+        Classifiers.relevance.evaluate({ task: "t", file: "f", excerpt: "e" })
+      ]).pipe(Effect.provide(recording))
+    )
+    expect(seen).toEqual([
+      ["task", "command", "exitCode", "output"],
+      ["task", "path", "hunk"],
+      ["task", "file", "excerpt"]
     ])
   })
 
@@ -81,14 +113,18 @@ describe("the curated classifiers", () => {
       }))
     })
     const verdict = await Effect.runPromise(
-      Classifiers.checkVerdict.evaluate({ command: "pytest -q", exitCode: 1, output: "AssertionError" }).pipe(
-        Effect.provide(layer)
-      )
+      Classifiers.checkVerdict.evaluate({
+        task: "widen keeps km",
+        command: "pytest -q",
+        exitCode: 1,
+        output: "AssertionError"
+      })
+        .pipe(Effect.provide(layer))
     )
     expect(verdict.rightReason.value).toBe(true)
     expect(verdict.invalidProbe.probability).toBe(0.9)
     const risk = await Effect.runPromise(
-      Classifiers.editRisk.evaluate({ path: "a.py", hunk: "-a\n+b", task: "rename" }).pipe(Effect.provide(layer))
+      Classifiers.editRisk.evaluate({ task: "rename", path: "a.py", hunk: "-a\n+b" }).pipe(Effect.provide(layer))
     )
     expect(risk.risk.label).toBe("high")
     expect(risk.reversible.value).toBe(true)

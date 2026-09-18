@@ -115,8 +115,8 @@ schema and atomic questions.
 | Export         | Type                            | Meaning                                                                                                  |
 | -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `relevance`    | `Classifier` `triage/relevance` | `{ task, file, excerpt }`: `relevant` boolean, `role` choice, `risk` score.                              |
-| `checkVerdict` | `Classifier` `check/verdict`    | `{ command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                          |
-| `editRisk`     | `Classifier` `edit/risk`        | `{ path, hunk, task }`: `risk` score, `reversible` boolean.                                              |
+| `checkVerdict` | `Classifier` `check/verdict`    | `{ task, command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                    |
+| `editRisk`     | `Classifier` `edit/risk`        | `{ task, path, hunk }`: `risk` score, `reversible` boolean.                                              |
 | `all`          | `ReadonlyArray<AnyClassifier>`  | The three above, in catalog order; what `StandardFlows.classify` binds when a host names no classifiers. |
 
 `Classify.curated(classifier)` turns any of them, or a host's own, into a

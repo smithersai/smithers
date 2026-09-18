@@ -63,15 +63,16 @@ export const checkVerdict = Classifier.make("check/verdict", {
   description:
     "Judge one command result against the task: whether it failed because of the bug the task names, and whether it failed because a name, file, module, or environment does not exist.",
   state: Schema.Struct({
+    task: Schema.String.annotate({ description: "The task, as the person stated it" }),
     command: Schema.String.annotate({ description: "The command that ran" }),
     exitCode: Schema.Int.annotate({ description: "Its exit code" }),
     output: Schema.String.annotate({ description: "Its captured stdout and stderr, tail first if truncated" })
   }),
   questions: {
     rightReason: Classifier.boolean({
-      instructions: "Did this command fail because of the bug the task names?",
+      instructions: "Did this command fail because of the bug `task` describes?",
       criteria: {
-        true: "the output shows the wrong behavior, wrong value, or assertion the task describes",
+        true: "the output shows the wrong behavior, wrong value, or assertion `task` describes",
         false: "the output shows another failure, or the command passed"
       }
     }),
@@ -95,9 +96,9 @@ export const editRisk = Classifier.make("edit/risk", {
   description:
     "Judge one applied hunk against the task: how much it could break beyond its file, and whether reverting it restores the previous behavior.",
   state: Schema.Struct({
+    task: Schema.String.annotate({ description: "The task, as the person stated it" }),
     path: Schema.String.annotate({ description: "The edited file's path" }),
-    hunk: Schema.String.annotate({ description: "The applied hunk, as edit returned it" }),
-    task: Schema.String.annotate({ description: "The task, as the person stated it" })
+    hunk: Schema.String.annotate({ description: "The applied hunk, as edit returned it" })
   }),
   questions: {
     risk: Classifier.score({

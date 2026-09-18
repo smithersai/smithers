@@ -163,7 +163,7 @@ describe("the standard capability catalog", () => {
     })
     const curated = await Effect.runPromise(
       byName.get("classify/check/verdict")!.run(
-        callOf("classify/check/verdict", { command: "pytest", exitCode: 1, output: "E assert" })
+        callOf("classify/check/verdict", { task: "keep km", command: "pytest", exitCode: 1, output: "E assert" })
       )
     )
     expect(curated).toMatchObject({
@@ -182,7 +182,9 @@ describe("the standard capability catalog", () => {
     const byName = new Map(bindings.map((binding) => [binding.descriptor.name, binding]))
     const answered = await Effect.runPromise(
       byName.get("classify/check/verdict")!.run(
-        callOf("classify/check/verdict", { states: [{ command: "pytest", exitCode: 1, output: "E assert" }] })
+        callOf("classify/check/verdict", {
+          states: [{ task: "keep km", command: "pytest", exitCode: 1, output: "E assert" }]
+        })
       )
     )
     expect(answered).toMatchObject({
