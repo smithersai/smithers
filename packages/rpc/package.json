@@ -21,7 +21,6 @@
     "lint": "eslint src --max-warnings=0 && dprint check"
   },
   "dependencies": {
-    "@smthrs/crypto": "workspace:*",
     "zod": "4.5.4",
     "@smthrs/canonical": "1.0.0-rc.0"
   },

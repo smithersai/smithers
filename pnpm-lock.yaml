@@ -2035,9 +2035,6 @@ importers:
       '@smthrs/canonical':
         specifier: 1.0.0-rc.0
         version: link:../smithers/flows/canonical
-      '@smthrs/crypto':
-        specifier: workspace:*
-        version: link:../smithers/flows/crypto
       zod:
         specifier: 4.5.4
         version: 4.5.4
