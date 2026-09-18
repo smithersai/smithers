@@ -1,5 +1,4 @@
 import * as Effect from "effect/Effect"
-import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage, AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
@@ -34,16 +33,15 @@ import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
  * function_call / function_call_output pair.
  *
  * That continuation is the one place the protocol forces a choice: the client
- * MUST post it. So the call id this module mints is prefixed (`frontdoor-`,
- * spelled in @smthrs/rpc NativeAgent so both halves read one constant), the
- * prefix round-trips through the client untouched, and a continuation whose
- * trailing call carries it is answered here too — with `done` and nothing
- * else. The routed turn's whole answer is the transcript's act line, rendered
- * from the registry's honest result string; the client reads the same prefix
- * and ends such a leg as a worked turn rather than the empty response an
- * ordinary silent leg would be. No claim about run state is invented, and the
+ * MUST post it, and a turn that ends with no text renders as "Smithers Cloud
+ * returned an empty response". So the call id this module mints is prefixed
+ * (`frontdoor-`), the prefix round-trips through the client untouched, and a
+ * continuation whose trailing call carries it is answered here too — one
+ * deterministic text delta naming the command, and nothing else. No claim
+ * about run state is invented: the transcript's own act line (rendered from
+ * the registry's honest result string) is what says what happened, and the
  * deterministic claim surface (RunClaims.ts) still owns a launch turn's prose.
- * A client that forges the prefix buys itself a turn that says nothing, no
+ * A client that forges the prefix buys itself an echo of a command name, no
  * model call and no ceiling it had not already spent.
  *
  * Privacy: the tail already goes to Jev for the composer's pills under zero
@@ -82,11 +80,9 @@ export const FRONT_DOOR_NONE = "none"
 /**
  * The prefix on a call id this Worker minted. It round-trips through the
  * client's tool loop, so the continuation leg is recognisable without any
- * server-side state, and the client reads the same prefix to know that leg
- * answers an act rather than a question. Spelled once in the contract package
- * both halves share.
+ * server-side state.
  */
-export const FRONT_DOOR_CALL_PREFIX = AGENT_TURN_FRONT_DOOR_CALL_PREFIX
+export const FRONT_DOOR_CALL_PREFIX = "frontdoor-"
 
 /** The one tool the chat model has (apps/app flows/agentTools.ts commandsToolSpec). */
 export const FRONT_DOOR_TOOL = "commands"
@@ -279,19 +275,15 @@ export const frontDoorContinuation = (body: TurnRequest): string | undefined => 
 }
 
 /**
- * The continuation leg's answer: `stop`, and not one word.
+ * The continuation leg's answer: the command's name, and nothing else.
  *
  * The transcript already carries the registry's own honest act line for this
- * call ("Smithers ran /runs.list", or the refusal it really got), so the
- * assistant has nothing left to say. This leg used to echo `/<command>` as a
- * text delta, because a turn with no text renders as "Smithers Cloud returned
- * an empty response" — and that echo became an assistant bubble under every
- * act line, saying a second time what the line already said, reading as
- * success even when the act had failed, and persisting into every later
- * turn's transcript. The client now reads the minted call id and takes this
- * leg's silence for what it is: the act was the answer.
+ * call, so the assistant's words have no work left to do — and anything more
+ * than the name would be this Worker inventing a report about a run it never
+ * watched. One delta so the turn is not an empty response, then `stop`.
  */
-export const frontDoorContinuationFrames = (runId: string): ReadonlyArray<AgentTurnFrame> => [
+export const frontDoorContinuationFrames = (runId: string, command: string): ReadonlyArray<AgentTurnFrame> => [
+  { runId, type: "delta", kind: "text", text: `/${command}` },
   { runId, type: "done", reason: "stop" }
 ]
 
@@ -331,7 +323,7 @@ export const handleFrontDoor = (
   Effect.gen(function*() {
     // A leg answering this Worker's own tool call: deterministic, no model.
     const continued = frontDoorContinuation(body)
-    if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId), headers)
+    if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId, continued), headers)
     const commands = body.commands
     if (commands === undefined || !isFrontDoorTurn(body)) return undefined
     const decision = yield* askFrontDoor(body, commands)

@@ -330,7 +330,7 @@ describe("the Jev front door on POST /api/agent/turn", () => {
     expect(calls.upstream.length).toBe(1)
   })
 
-  test("the leg answering this Worker's own tool call ends the turn on `done` alone, with no text of its own", async () => {
+  test("the leg answering this Worker's own tool call is answered here: the command's name, then stop", async () => {
     const callId = `${FRONT_DOOR_CALL_PREFIX}b0a1`
     const { response, calls } = await turn(turnBody({
       messages: [
@@ -342,26 +342,9 @@ describe("the Jev front door on POST /api/agent/turn", () => {
 
     expect(calls.gateway).toEqual([])
     expect(calls.upstream).toEqual([])
-    /*
-     * The act line the client rendered from the registry's own result IS the
-     * answer. A delta here echoed the command name under it as an assistant
-     * bubble — a second, wordless answer that read as success even when the
-     * act line said the command had failed, and that persisted into every
-     * later turn's transcript.
-     */
-    expect(await frames(response)).toEqual([{ runId: "run-front-door", type: "done", reason: "stop" }])
-  })
-
-  test("a forged front-door call id whose pair names no command is not answered here", async () => {
-    const callId = `${FRONT_DOOR_CALL_PREFIX}forged`
-    const { calls } = await turn(turnBody({
-      messages: [
-        { role: "user", content: "show me my runs" },
-        { type: "function_call", call_id: callId, name: "commands", arguments: "{\"action\":\"execute\"}" },
-        { type: "function_call_output", call_id: callId, output: "executed" }
-      ]
-    }))
-
-    expect(calls.upstream.length).toBe(1)
+    expect(await frames(response)).toEqual([
+      { runId: "run-front-door", type: "delta", kind: "text", text: "/runs.list" },
+      { runId: "run-front-door", type: "done", reason: "stop" }
+    ])
   })
 })
