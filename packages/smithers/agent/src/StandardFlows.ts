@@ -183,11 +183,18 @@ export const shell = (
  * flow says so when it is called. A host whose runner lives in a container adds
  * `Container` to the same context, which is also what `bash` reads it from.
  *
+ * It needs the `Evaluator` too: the flow asks Jev whether a non-zero exit is
+ * the tree's failure or the command failing to resolve a name, and a host
+ * whose evaluator is `Evaluator.layerUnavailable()` gets that refusal as the
+ * call's own typed failure rather than an unjudged result.
+ *
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const tests = (
-  services: Context.Context<ChildProcessSpawner.ChildProcessSpawner | TestRunner.TestRunner>
+  services: Context.Context<
+    ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
+  >
 ): FlowBinding.Source =>
   FlowBinding.source("std/tests", [
     FlowBinding.provide(

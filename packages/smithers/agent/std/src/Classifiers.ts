@@ -6,7 +6,9 @@
  * atomic judgment each, with every criterion spelled out. They cover the
  * three judgments the trace program found cells paying whole frames for: is
  * this file worth reading further, did this check fail for the reason the
- * task names, and how much could this edit break.
+ * task names, and how much could this edit break. {@link probeAttribution} is
+ * declared here beside them and offered to no cell: the `test` flow asks it
+ * itself.
  *
  * @since 1.0.0
  */
@@ -83,6 +85,50 @@ export const checkVerdict = Classifier.make("check/verdict", {
       criteria: {
         true: "the output reports a missing command, test id, file, module, import, package, interpreter, or service",
         false: "everything the command named was found, and it ran to a verdict"
+      }
+    })
+  }
+})
+
+/**
+ * What one failed command's exit code describes: the tree, or a name the
+ * command could not resolve.
+ *
+ * The one classifier here that no cell calls. `Probe.classify` asks it on
+ * behalf of the `test` flow, which has the command and its output and has no
+ * task to judge them against, so the state is the three facts of the run and
+ * the questions carry every criterion themselves. It is not in {@link all}:
+ * a door for the model to ask this would be a door onto a judgment the flow
+ * has already made.
+ *
+ * @category classifiers
+ * @since 1.0.0
+ */
+export const probeAttribution = Classifier.make("probe/attribution", {
+  description:
+    "Judge one failed command: whether it ran the tests it named and failed about the code, or never resolved a name it was given.",
+  state: Schema.Struct({
+    command: Schema.String.annotate({ description: "The command that ran" }),
+    exitCode: Schema.Int.annotate({ description: "Its exit code, which is not zero" }),
+    output: Schema.String.annotate({ description: "Its captured stdout and stderr, newest bytes when clipped" })
+  }),
+  questions: {
+    attribution: Classifier.choice({
+      instructions: "What does this non-zero exit describe?",
+      criteria: {
+        tree: "the command ran the intended tests and the failure is the code's",
+        "unknown-command": "the shell could not find the program it was asked to run",
+        "unknown-test": "the test runner could not find the test that was named",
+        "unknown-path": "the file or directory that was named does not exist",
+        "unknown-module": "the module that was imported does not exist here",
+        "unknown-environment": "the runner has no environment by that name"
+      }
+    }),
+    executed: Classifier.boolean({
+      instructions: "Did a test runner actually run tests?",
+      criteria: {
+        true: "the runner reported its own tally of tests that ran, such as a count of passes or failures",
+        false: "nothing in the output reports that any test was executed"
       }
     })
   }

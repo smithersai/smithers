@@ -120,13 +120,13 @@ A non-zero exit code is an ordinary value, not a failure. Only a timeout, a
 spawn failure, a permission refusal, and the hermetic pre-check use the error
 channel.
 
-| Field                                      | Meaning                                                                    |
-| ------------------------------------------ | -------------------------------------------------------------------------- |
-| `exitCode`                                 | The command's exit code.                                                   |
-| `stdout`, `stderr`                         | The captured streams, tail-first when truncated.                           |
-| `stdoutTruncated`, `stderrTruncated`       | Whether that stream is a fragment.                                         |
-| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the start.                                              |
-| `invalidProbe`                             | Present when the exit code describes the command, not the code under test. |
+| Field                                      | Meaning                                                     |
+| ------------------------------------------ | ----------------------------------------------------------- |
+| `exitCode`                                 | The command's exit code.                                    |
+| `stdout`, `stderr`                         | The captured streams, tail-first when truncated.            |
+| `stdoutTruncated`, `stderrTruncated`       | Whether that stream is a fragment.                          |
+| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the start.                               |
+| `invalidProbe`                             | Present when the shell refused to start the command at all. |
 
 Each stream is bounded at 30,000 bytes and the tail is kept, because a failing
 command prints its verdict last. Never write a truncated stream to a file: it is
@@ -144,8 +144,8 @@ code and still exits non-zero.
 
 `invalidProbe` names that case, with a `reason` from a closed list
 (`unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`,
-`unknown-environment`), the `evidence` line it was read from, and a `message`
-stating what the result does and does not prove.
+`unknown-environment`), the `evidence` it rests on, and a `message` stating
+what the result does and does not prove.
 
 ```ts
 if (result.invalidProbe !== undefined) {
@@ -154,11 +154,14 @@ if (result.invalidProbe !== undefined) {
 }
 ```
 
-The classification is precise rather than exhaustive. A runner's own report that
-it executed tests vetoes every wording recogniser, so a real reproduction that
-happens to print `No module named` is never suppressed. Exit codes 126 and 127
-are the shell's own verdict and are not vetoed. `Probe.classify` is exported, so
-a host that runs commands another way can apply the same reading.
+`bash` fills it from one thing only: the two exit codes POSIX reserves for the
+shell's own refusal to start the command, 127 for a program it could not find
+and 126 for one it could not execute. That is a fact the exit code carries, and
+`Probe.posix` is exported so a host that runs commands another way can read it
+too. Telling the other four apart means reading what a runner printed, which is
+a judgment rather than a fact; the `test` flow asks Jev for it, because its
+caller is asking about a suite. See
+[Run the test suite](/guides/run-the-test-suite/#who-the-failure-belongs-to).
 
 ## The Codex-shaped alternative
 

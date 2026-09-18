@@ -169,9 +169,12 @@ test, a file, a module, an environment, or a program that does not exist never
 reaches any code and still exits non-zero, so the exit code reads the same
 before and after a correct fix.
 
-**What to change.** The `evidence` field carries the output line the
-classification was read from, and `reason` says which kind of name failed to
-resolve. Repair the names and run it again before drawing any conclusion.
+**What to change.** `reason` says which kind of name failed to resolve, and
+`evidence` says what the attribution rests on: the shell's own exit code, or
+Jev's reading of the output and how sure it was. Repair the names and run it
+again before drawing any conclusion. An empty `invalidProbe` on a `test` result
+is an answer too, because the flow fails rather than reporting a run no judge
+attributed.
 
 ## command_failed: rg exceeded the capture cap
 

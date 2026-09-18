@@ -15,6 +15,7 @@
  */
 import { NodeServices } from "@effect/platform-node"
 import { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { execFileSync } from "node:child_process"
@@ -24,6 +25,16 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as TestRun from "../src/TestRun.ts"
 import * as TestRunner from "../src/TestRunner.ts"
+
+/**
+ * The attribution judge, scripted: every run here fails, or passes, about the
+ * tree. What the judge decides is `TestRun.test.ts`'s subject; what this file
+ * needs is that the flow has one, because it refuses to answer without one.
+ */
+const tree = Evaluator.layerScripted(() => ({
+  attribution: { choice: "tree" },
+  executed: { probability: 0.95 }
+}))
 
 const git = (root: string, args: ReadonlyArray<string>): string =>
   execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })
@@ -58,7 +69,7 @@ const run = (input: typeof TestRun.Input.Type, runner: TestRunner.Runner) =>
   Effect.runPromise(
     Effect.provide(
       TestRun.run(input),
-      Layer.mergeAll(NodeServices.layer, TestRunner.layer(runner))
+      Layer.mergeAll(NodeServices.layer, TestRunner.layer(runner), tree)
     ) as Effect.Effect<typeof TestRun.Output.Type>
   )
 
@@ -102,7 +113,7 @@ describe("TestRun over a real repository", () => {
         const initial = yield* Fiber.join(first)
         expect(initial.base?.parsed).toBe(true)
         expect(second.base?.parsed).toBe(true)
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, tree)))
     )
     expect(new Set(paths).size).toBe(2)
     for (const path of paths) expect(existsSync(path)).toBe(false)
@@ -140,7 +151,7 @@ describe("TestRun over a real repository", () => {
         yield* Deferred.await(entered)
         yield* Fiber.interrupt(fiber)
         return yield* Fiber.await(fiber)
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, tree)))
     )
     expect(exit._tag).toBe("Failure")
     expect(scratch).not.toBe("")
@@ -214,6 +225,7 @@ describe("TestRun over a real repository", () => {
           TestRun.run({ against: "base" }),
           Layer.mergeAll(
             NodeServices.layer,
+            tree,
             TestRunner.layer({ command: "bash ./runtests.sh", cwd: root, root, baseRef: "refs/flows/absent" })
           )
         )

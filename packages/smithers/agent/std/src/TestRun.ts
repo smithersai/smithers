@@ -15,10 +15,18 @@
  * blaming your own edit, run the same command on the unmodified tree") is only
  * cheap when the tool can do it.
  *
+ * A third thing is answered on the way out: whether a non-zero exit is the
+ * tree's failure at all, or the command failing to resolve a name. Jev decides
+ * it through `Probe.classify`, so the flow needs an `Evaluator` and a host
+ * needs `AI_GATEWAY_API_KEY`. A judge that does not answer fails the call with
+ * the code `Probe.unjudged` names, because a run nobody judged is not a run
+ * this flow can report on.
+ *
  * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -222,7 +230,7 @@ const execute = (
 ): Effect.Effect<
   { readonly outcome: typeof Outcome.Type; readonly report: TestReport.Report },
   StdError.StdError,
-  ChildProcessSpawner.ChildProcessSpawner
+  ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator
 > =>
   Effect.gen(function*() {
     const plan = invocation(runner, options.selection)
@@ -256,9 +264,14 @@ const execute = (
       : `${result.stdout}\n${result.stderr}`
     const tail = truncateBytes(combined, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
     const report = TestReport.parse(combined)
-    // Classify only the text this call returns, so every evidence line remains
-    // quotable after capture and output truncation.
-    const probe = Probe.classify({ exitCode: result.exitCode, stdout: tail.text, stderr: "" })
+    // Judged on the text this call returns rather than the text it captured,
+    // so the attribution is made from the output the reader can see. A judge
+    // that does not answer fails the call: see `Probe.unjudged`.
+    const probe = yield* Probe.classify({
+      command: quoted,
+      exitCode: result.exitCode,
+      output: tail.text
+    }).pipe(Effect.mapError(Probe.unjudged))
     const capturedDroppedBytes = result.stdoutDroppedBytes + result.stderrDroppedBytes
     return {
       outcome: {
@@ -270,7 +283,7 @@ const execute = (
         tail: tail.text,
         tailTruncated: capturedDroppedBytes > 0 || tail.truncated,
         tailDroppedBytes: capturedDroppedBytes + tail.droppedBytes,
-        ...(probe === undefined ? {} : { invalidProbe: probe })
+        ...(probe.invalidProbe === undefined ? {} : { invalidProbe: probe.invalidProbe })
       },
       report
     }
@@ -291,7 +304,7 @@ export const run = Effect.fn("TestRun.run")(function*(
 ): Effect.fn.Return<
   typeof Output.Type,
   StdError.StdError,
-  ChildProcessSpawner.ChildProcessSpawner | TestRunner.TestRunner
+  ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
 > {
   const declaration = yield* TestRunner.TestRunner
   const runner = yield* declaration.declared

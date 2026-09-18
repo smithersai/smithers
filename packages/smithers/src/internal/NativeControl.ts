@@ -46,6 +46,7 @@ import type * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import type { NotificationQueue } from "@smthrs/notifications"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
@@ -77,7 +78,7 @@ import * as HealthHost from "./HealthHost.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
-import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
+import { cellLimits, checkpointStore, evaluator, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 /** Captured durable control services shared by native consumers.
@@ -612,7 +613,9 @@ export const make = (
         const nativeSearch = NativeSearch.make(Context.merge(filesystemServices, shellServices))
         // `test` is offered exactly when this host can say how the repository
         // runs its tests. The declaration carries the container too, so the
-        // runner reaches the same transport `bash` does.
+        // runner reaches the same transport `bash` does, and the judge that
+        // attributes a non-zero exit travels with them.
+        const judge = yield* Effect.context<Evaluator.Evaluator>()
         const runner = testRunner(environment, root, workspaceRoot)
         const container = Container.makeCommand()
         // Each configured server is a startup-time connection the operator
@@ -624,7 +627,7 @@ export const make = (
           StandardFlows.filesystem(filesystemServices, nativeSearch),
           StandardFlows.shell(shellServices, container),
           StandardFlows.memory(memoryServices),
-          ...testFlows(shellServices, container, runner),
+          ...testFlows(Context.merge(shellServices, judge), container, runner),
           ...mcp
         ]
         const actionHost = AgentAction.makeHost({
@@ -754,6 +757,10 @@ export const make = (
         // between a run that can prove fails-before without reverting its own
         // work and one that cannot.
         Checkpoints.layerGit(checkpointStore(environment, workspaceRoot)),
+        // Jev, which the `test` flow attributes a non-zero exit with. Without
+        // `AI_GATEWAY_API_KEY` every evaluation is refused and a `test` call
+        // fails saying so, rather than reporting a run nothing judged.
+        evaluator(environment),
         seats(environment).pipe(Layer.provide(requestExecutor))
       ])
     )

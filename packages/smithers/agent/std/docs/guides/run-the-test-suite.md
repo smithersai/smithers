@@ -5,8 +5,9 @@ sidebar:
   order: 5
 ---
 
-The `test` flow answers two questions a shell command cannot: what the suite
-reported, and which of the failures are yours.
+The `test` flow answers three questions a shell command cannot: what the suite
+reported, which of the failures are yours, and whether the run failed about the
+code at all.
 
 ## Declare the runner once
 
@@ -82,6 +83,26 @@ Unittest unexpected successes count as failures; attribution requires their
 reported ids. Python 3.10 class-only headers and Python 3.11+ full test ids are
 both supported. Missing failure ids or unknown unittest summary fields leave
 `parsed` false.
+
+## Who the failure belongs to
+
+A non-zero exit is a runner's verdict about the code it ran, not about the
+command it was handed. A run that names a test, a file, a module, an
+environment, or a program that does not exist never reaches any code and still
+exits non-zero, so it reads the same before and after a correct fix.
+`invalidProbe` is present when this run was one of those, with a `reason` from
+that closed list and a `message` saying what the result does and does not
+prove.
+
+Jev makes that attribution. The flow asks the `probe/attribution` classifier
+through the `Evaluator` service of [`@smthrs/model`](/api/model), so a host
+binds an evaluator and sets `AI_GATEWAY_API_KEY`. Two answers still come from
+the exit code alone, because an exit code is a fact rather than prose: a zero
+exit is never attributed anywhere but the tree, and 126 and 127 are the shell's
+own refusal to start the command. There is no third path. A judge that cannot
+be reached, refuses, times out, or answers something unusable fails the call
+with `provider_unavailable`, `timeout`, or `request_failed`, because a guess at
+whether a reproduction reproduced is worth less than no answer at all.
 
 ## Attribute a failure to your own edit
 

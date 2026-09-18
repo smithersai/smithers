@@ -26,6 +26,7 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -64,6 +65,22 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Seat from "../src/Seat.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
+
+/**
+ * The attribution judge the `test` flow asks about every non-zero exit. These
+ * runs fail about the tree; what the judge decides is `@smthrs/std`'s subject,
+ * and what matters here is that the flow has one.
+ */
+const judge = Evaluator.Evaluator.of({
+  evaluate: () =>
+    Effect.succeed({
+      answers: {
+        attribution: { type: "choice" as const, choice: "tree" },
+        executed: { type: "boolean" as const, probability: 0.95 }
+      },
+      latencyMs: 0
+    })
+})
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -580,7 +597,8 @@ ctx.done(probe.stdout.trim())`
                   })
               })
             ).pipe(
-              Context.add(TestRunner.TestRunner, TestRunner.make({ command: "python -m pytest -rA", cwd: "/repo" }))
+              Context.add(TestRunner.TestRunner, TestRunner.make({ command: "python -m pytest -rA", cwd: "/repo" })),
+              Context.add(Evaluator.Evaluator, judge)
             )
           )
         ],
@@ -611,14 +629,16 @@ ctx.done(suite.passed + " passed, " + suite.failed.join(","))`
     const outcome = await drive(collect({
       flows: [
         StandardFlows.shell(Context.merge(spawner, pathServices)),
-        StandardFlows.tests(Context.add(
-          spawner,
-          TestRunner.TestRunner,
-          TestRunner.make({
-            command: "SYNTHETIC_HOST_RUNNER",
-            timeoutMs: 1
-          })
-        ))
+        StandardFlows.tests(
+          Context.add(
+            spawner,
+            TestRunner.TestRunner,
+            TestRunner.make({
+              command: "SYNTHETIC_HOST_RUNNER",
+              timeoutMs: 1
+            })
+          ).pipe(Context.add(Evaluator.Evaluator, judge))
+        )
       ],
       cells: [`for (const [name, input] of [
         ["bash", { mode: "unhermetic", command: "echo SYNTHETIC_COMMAND", timeoutMs: 1 }],

@@ -1127,12 +1127,18 @@ supplies none refuses a containerised call.
 
 ```ts
 const tests: (
-  services: Context.Context<ChildProcessSpawner.ChildProcessSpawner | TestRunner.TestRunner>
+  services: Context.Context<
+    ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
+  >
 ) => FlowBinding.Source
 ```
 
 The project's own test runner as one ordinary flow. A host that has no
-runner binds `TestRunner.layerNoop` and the flow says so when it is called.
+runner binds `TestRunner.layerNoop` and the flow says so when it is called. The
+`Evaluator` is what the flow attributes a non-zero exit with: Jev answers
+whether the run failed about the code or about the command it was handed, so a
+host binds an evaluator and sets `AI_GATEWAY_API_KEY`, and a judge that does
+not answer fails the call.
 
 ### StandardFlows.memory
 

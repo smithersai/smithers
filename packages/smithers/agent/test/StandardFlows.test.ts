@@ -49,10 +49,18 @@ const shellServices = Context.merge(
   pathServices
 )
 
+const evaluatorServices = (layer: Layer.Layer<Evaluator.Evaluator>): Context.Context<Evaluator.Evaluator> =>
+  Effect.runSync(Effect.provide(Effect.context<Evaluator.Evaluator>(), layer))
+
 const testServices = Context.make(
   ChildProcessSpawner.ChildProcessSpawner,
   ChildProcessSpawner.makeNoop()
-).pipe(Context.add(TestRunner.TestRunner, TestRunner.makeNoop()))
+).pipe(
+  Context.add(TestRunner.TestRunner, TestRunner.makeNoop()),
+  // The `test` flow attributes a non-zero exit with Jev. A host without a key
+  // binds this, and the flow fails rather than reporting an unjudged run.
+  Context.merge(evaluatorServices(Evaluator.layerUnavailable()))
+)
 
 const memoryServices = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
   Context.add(Recall.Recall, Recall.makeNoop())
@@ -61,9 +69,6 @@ const memoryServices = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoo
 const clockServices = Context.empty() as Context.Context<
   Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 >
-
-const evaluatorServices = (layer: Layer.Layer<Evaluator.Evaluator>): Context.Context<Evaluator.Evaluator> =>
-  Effect.runSync(Effect.provide(Effect.context<Evaluator.Evaluator>(), layer))
 
 /** The catalog `docs/guides/capabilities.md` promises, helper by helper. */
 const promised: ReadonlyArray<{

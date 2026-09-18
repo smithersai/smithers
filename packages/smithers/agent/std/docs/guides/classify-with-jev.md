@@ -85,6 +85,11 @@ Every state starts with `task`, the task as the person stated it, because each
 judgment is made against it: `rightReason` is only an answer when Jev can read
 which bug the task describes.
 
+`Classifiers` declares a fourth, `probe/attribution`, and binds it to nothing.
+It takes `{ command, exitCode, output }` with no task, and the `test` flow asks
+it through `Probe.classify` on every non-zero exit, so a cell never has to ask
+whether the run it just made was a run at all.
+
 `check/verdict` answers the question rule 7 of the cell contract leaves to the
 model: a command is evidence only once it has failed for the right reason, and
 a command that fails because it names a test, file, or module that does not

@@ -146,10 +146,12 @@ export type Input = typeof Input.Type
 /**
  * Output schema for the bash flow.
  *
- * `invalidProbe` is the one field that is not a fact about the process. It is
- * present only when the exit code describes the command rather than the code
- * the command was meant to check, which is the distinction an exit code alone
- * cannot carry. See `Probe`.
+ * `invalidProbe` is present when the shell itself refused to start the
+ * command, which its exit code says outright: 127 for a program it could not
+ * find, 126 for one it could not execute. Only that. Reading a runner's own
+ * wording is a judgment rather than a fact, and `Probe.classify` makes it with
+ * Jev for the `test` flow, whose caller is asking about a suite; a shell call
+ * is any command at all and stays free of the gateway. See `Probe`.
  *
  * The `<stream>Truncated` flags are a wire convention, not a display detail.
  * A truncated capture is a fragment of what the process printed, and the
@@ -181,7 +183,7 @@ export const Output = Schema.Struct({
   invalidProbe: Schema.optional(
     Probe.InvalidProbe.annotate({
       description:
-        "Present when the command named something that does not exist, so the non-zero exit is about the command and not about the code under test"
+        "Present when the shell refused to start the command at all, so the non-zero exit is about the command and not about the code under test"
     })
   )
 })
@@ -414,10 +416,10 @@ export const run = Effect.fn("Bash.run")(function*(
   }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
   const stdout = truncateBytes(result.stdout, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
   const stderr = truncateBytes(result.stderr, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
-  // Classified against the text this call returns rather than the text it
-  // captured, so the evidence line is always quotable from what the caller can
-  // read. Truncation keeps the tail, which is where a runner prints its refusal.
-  const probe = Probe.classify({ exitCode: result.exitCode, stdout: stdout.text, stderr: stderr.text })
+  // The shell's own verdict on the command it was handed, which is a fact its
+  // exit code carries. What a runner printed is a judgment, and the `test`
+  // flow is where it is asked for.
+  const probe = Probe.posix(result.exitCode)
   return {
     exitCode: result.exitCode,
     stdout: stdout.text,

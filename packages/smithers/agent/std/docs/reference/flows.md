@@ -216,13 +216,13 @@ Runs a shell command line, or a script delivered to an interpreter as data.
 | `env`         | record of string, optional     | Environment variables.                            |
 | `timeoutMs`   | number, optional               | Wall-clock timeout. Defaults to 600,000.          |
 
-| Output                                     | Type                           | Meaning                                           |
-| ------------------------------------------ | ------------------------------ | ------------------------------------------------- |
-| `exitCode`                                 | number                         | The command's exit code, including non-zero.      |
-| `stdout`, `stderr`                         | string                         | Captured streams, tail kept when truncated.       |
-| `stdoutTruncated`, `stderrTruncated`       | boolean                        | Whether that stream is a fragment.                |
-| `stdoutDroppedBytes`, `stderrDroppedBytes` | number                         | Bytes omitted from the start.                     |
-| `invalidProbe`                             | `Probe.InvalidProbe`, optional | Present when the exit code describes the command. |
+| Output                                     | Type                           | Meaning                                                               |
+| ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
+| `exitCode`                                 | number                         | The command's exit code, including non-zero.                          |
+| `stdout`, `stderr`                         | string                         | Captured streams, tail kept when truncated.                           |
+| `stdoutTruncated`, `stderrTruncated`       | boolean                        | Whether that stream is a fragment.                                    |
+| `stdoutDroppedBytes`, `stderrDroppedBytes` | number                         | Bytes omitted from the start.                                         |
+| `invalidProbe`                             | `Probe.InvalidProbe`, optional | Present when the shell refused to start the command: exit 126 or 127. |
 
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside
 the schemas. Fails with `invalid_input`, `outside_declared_reads`,
@@ -242,17 +242,17 @@ Runs the declared test runner and returns a reading rather than a log.
 `Output` is `Outcome` plus the attribution fields. `TestRun.Outcome` is exported
 separately, because the base run carries the same shape:
 
-| Outcome            | Type                           | Meaning                                                        |
-| ------------------ | ------------------------------ | -------------------------------------------------------------- |
-| `command`          | string                         | The logical invocation, without container transport arguments. |
-| `exitCode`         | number                         | The runner's exit code.                                        |
-| `passed`           | number                         | Tests reported passing. Zero when `parsed` is false.           |
-| `failed`           | array of string                | Ids reported failing or erroring.                              |
-| `parsed`           | boolean                        | Whether the complete report could be read.                     |
-| `tail`             | string                         | The end of the runner's combined output.                       |
-| `tailTruncated`    | boolean                        | Whether `tail` is a fragment.                                  |
-| `tailDroppedBytes` | number                         | Bytes omitted from the start of `tail`.                        |
-| `invalidProbe`     | `Probe.InvalidProbe`, optional | Present when the exit code describes the command.              |
+| Outcome            | Type                           | Meaning                                                           |
+| ------------------ | ------------------------------ | ----------------------------------------------------------------- |
+| `command`          | string                         | The logical invocation, without container transport arguments.    |
+| `exitCode`         | number                         | The runner's exit code.                                           |
+| `passed`           | number                         | Tests reported passing. Zero when `parsed` is false.              |
+| `failed`           | array of string                | Ids reported failing or erroring.                                 |
+| `parsed`           | boolean                        | Whether the complete report could be read.                        |
+| `tail`             | string                         | The end of the runner's combined output.                          |
+| `tailTruncated`    | boolean                        | Whether `tail` is a fragment.                                     |
+| `tailDroppedBytes` | number                         | Bytes omitted from the start of `tail`.                           |
+| `invalidProbe`     | `Probe.InvalidProbe`, optional | Present when the exit code describes the command, as Jev read it. |
 
 | Output adds   | Type                                        | Meaning                                    |
 | ------------- | ------------------------------------------- | ------------------------------------------ |
@@ -261,10 +261,15 @@ separately, because the base run carries the same shape:
 | `preexisting` | array of string, optional                   | Failing on both trees.                     |
 | `fixed`       | array of string, optional                   | Failing on the base tree and passing here. |
 
-Attribution is omitted unless both reports parsed. Fails with
-`provider_unavailable` when no runner is declared or a container transport is
-missing, `invalid_input` when `against: "base"` finds no repository directory,
-`not_found` when the base ref does not resolve, `timeout`, or `command_failed`.
+Attribution is omitted unless both reports parsed. `invalidProbe` is Jev's
+answer, asked through the `Evaluator` service, so the flow also needs an
+evaluator and a host needs `AI_GATEWAY_API_KEY`; a judge that does not answer
+fails the call rather than leaving the run unjudged. Fails with
+`provider_unavailable` when no runner is declared, a container transport is
+missing, or the judge is unreachable or refuses, `request_failed` when the
+judge answers something unusable, `invalid_input` when `against: "base"` finds
+no repository directory, `not_found` when the base ref does not resolve,
+`timeout`, or `command_failed`.
 
 ## shell_command
 

@@ -27,7 +27,7 @@ const run = agent.run({
   flows: [
     StandardFlows.filesystem(filesystemServices), // FileSystem | Path
     StandardFlows.shell(shellServices), // ChildProcessSpawner | Path
-    StandardFlows.tests(testServices), // ChildProcessSpawner | TestRunner
+    StandardFlows.tests(testServices), // ChildProcessSpawner | Evaluator | TestRunner
     StandardFlows.memory(memoryServices), // MemoryStore | Recall
     StandardFlows.classify(evaluatorServices), // Evaluator
     ChildFlows.source(children)
@@ -35,15 +35,15 @@ const run = agent.run({
 })
 ```
 
-| Helper       | Flows bound                                                                             | Context it takes                        |
-| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------- |
-| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`                            | `FileSystem \| Path`                    |
-| `shell`      | `bash`                                                                                  | `ChildProcessSpawner \| Path`           |
-| `tests`      | the project's test runner                                                               | `ChildProcessSpawner \| TestRunner`     |
-| `memory`     | `remember`, `recall`                                                                    | `MemoryStore \| Recall`                 |
-| `clock`      | `wait`                                                                                  | `Crypto \| FlowRuntime \| FlowInstance` |
-| `approval`   | `ask`                                                                                   | an `Asker` port, not a context          |
-| `classify`   | `classify`, `classify/triage/relevance`, `classify/check/verdict`, `classify/edit/risk` | `Evaluator`                             |
+| Helper       | Flows bound                                                                             | Context it takes                                 |
+| ------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`                            | `FileSystem \| Path`                             |
+| `shell`      | `bash`                                                                                  | `ChildProcessSpawner \| Path`                    |
+| `tests`      | the project's test runner                                                               | `ChildProcessSpawner \| Evaluator \| TestRunner` |
+| `memory`     | `remember`, `recall`                                                                    | `MemoryStore \| Recall`                          |
+| `clock`      | `wait`                                                                                  | `Crypto \| FlowRuntime \| FlowInstance`          |
+| `approval`   | `ask`                                                                                   | an `Asker` port, not a context                   |
+| `classify`   | `classify`, `classify/triage/relevance`, `classify/check/verdict`, `classify/edit/risk` | `Evaluator`                                      |
 
 All seven filesystem flows are bound, not just `read` and `write`: a host that
 offers whole-file writes and nothing else forces every edit through "read the

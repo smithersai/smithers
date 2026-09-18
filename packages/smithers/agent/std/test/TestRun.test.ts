@@ -1,4 +1,5 @@
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type * as ChildProcess from "effect/unstable/process/ChildProcess"
@@ -55,7 +56,36 @@ const host = (
       })
   }))
 
-const runner = TestRunner.layer({ command: "python -m pytest -rA", cwd: "/repo" })
+/**
+ * A judge that answers one attribution with the confidence it is given, so a
+ * run's own attribution is a fixture rather than a reading of its output.
+ */
+const judging = (attribution: string, probability = 0.95): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerScripted((request) => {
+    const options = Object.keys(
+      (request.questions["attribution"] as { readonly criteria: Record<string, string> }).criteria
+    )
+    const rest = (1 - probability) / (options.length - 1)
+    return {
+      attribution: {
+        choice: attribution,
+        probabilities: Object.fromEntries(
+          options.map((option) => [option, option === attribution ? probability : rest])
+        )
+      },
+      executed: { probability: 0.9 }
+    }
+  })
+
+/** The judgment every run that is not about the judgment gets: it is the tree. */
+const tree = judging("tree")
+
+const declaration = TestRunner.layer({ command: "python -m pytest -rA", cwd: "/repo" })
+
+// Beside the spawner, a run needs the host's runner declaration and the judge
+// that attributes a non-zero exit. A test about the attribution itself merges
+// its own judge with `declaration` instead.
+const runner = Layer.merge(declaration, tree)
 
 const failureOf = <A>(exit: Exit.Exit<A, unknown>) =>
   Exit.isFailure(exit)
@@ -104,8 +134,13 @@ describe("TestRun", () => {
     expect(result.tail).toContain("Segmentation fault")
   })
 
-  it("classifies invalid probes only from the tail it returns", async () => {
+  it("judges the tail it returns, and the command it reports, and nothing else", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
+    const judged: Array<Record<string, unknown>> = []
+    const recording = Evaluator.layerScripted((request) => {
+      judged.push(request.state as Record<string, unknown>)
+      return { attribution: { choice: "tree" }, executed: { probability: 0.9 } }
+    })
     const output = `ModuleNotFoundError: No module named 'missing_probe'\n${
       "x".repeat(
         MAX_SHELL_OUTPUT_BYTES + 100
@@ -113,12 +148,63 @@ describe("TestRun", () => {
     }`
     const result = await execute(Effect.provide(
       TestRun.run({}),
-      Layer.merge(host(spawns, [["pytest", { stdout: output, exitCode: 1 }]]), runner)
+      Layer.mergeAll(host(spawns, [["pytest", { stdout: output, exitCode: 1 }]]), declaration, recording)
     ))
 
     expect(result.tailTruncated).toBe(true)
     expect(result.tail).not.toContain("missing_probe")
     expect(result.invalidProbe).toBeUndefined()
+    expect(judged).toHaveLength(1)
+    expect(judged[0]?.["output"]).toBe(result.tail)
+    expect(judged[0]?.["command"]).toBe(result.command)
+    expect(judged[0]?.["exitCode"]).toBe(1)
+  })
+
+  it("reports the reason the judge decided on", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const result = await execute(Effect.provide(
+      TestRun.run({ selection: ["tests/test_admin.py::nope"] }),
+      Layer.mergeAll(
+        host(spawns, [["pytest", { stderr: "ERROR: not found: tests/test_admin.py::nope\n", exitCode: 4 }]]),
+        declaration,
+        judging("unknown-test", 0.92)
+      )
+    ))
+    expect(result.invalidProbe).toMatchObject({ reason: "unknown-test" })
+    expect(result.invalidProbe?.message).toContain("not a reproduction")
+  })
+
+  it("keeps the shell's reserved exit codes out of the judge's hands", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const asked: Array<unknown> = []
+    const recording = Evaluator.layerScripted((request) => {
+      asked.push(request.state)
+      return { attribution: { choice: "tree" }, executed: { probability: 0.9 } }
+    })
+    const result = await execute(Effect.provide(
+      TestRun.run({}),
+      Layer.mergeAll(
+        host(spawns, [["pytest", { stderr: "bash: pytest: command not found\n", exitCode: 127 }]]),
+        declaration,
+        recording
+      )
+    ))
+    expect(result.invalidProbe).toMatchObject({ reason: "unknown-command", evidence: "the command exited 127" })
+    expect(asked).toEqual([])
+  })
+
+  it("fails the call when the judge does not answer, rather than reporting an unjudged run", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await execute(Effect.provide(
+      Effect.exit(TestRun.run({})),
+      Layer.mergeAll(
+        host(spawns, [["pytest", { stdout: "1 failed, 41 passed in 1.2s\n", exitCode: 1 }]]),
+        declaration,
+        Evaluator.layerUnavailable()
+      )
+    ))
+    expect(failureOf(exit)?.code).toBe("provider_unavailable")
+    expect(failureOf(exit)?.message).toContain("not judged")
   })
 
   it("bounds captured output and includes capture loss in the returned tail count", async () => {
@@ -241,7 +327,7 @@ describe("TestRun", () => {
       Effect.exit(TestRun.run({ against: "base" })),
       Layer.merge(
         host(spawns, [["rev-parse", { exitCode: 1 }], ["pytest", { stdout: "3 passed\n" }]]),
-        TestRunner.layer({ command: "pytest", cwd: "/repo", baseRef: "refs/flows/absent" })
+        Layer.merge(TestRunner.layer({ command: "pytest", cwd: "/repo", baseRef: "refs/flows/absent" }), tree)
       )
     ))
     expect(failureOf(exit)?.code).toBe("not_found")
@@ -293,6 +379,7 @@ describe("TestRun", () => {
       Layer.mergeAll(
         host(spawns, [["pytest", { stdout: "1 passed\n" }]]),
         TestRunner.layer({ command: "pytest -rA", cwd: "/testbed", root: "/work/repo", container: "swebench-1" }),
+        tree,
         Layer.succeed(Container.Container)(Container.makeCommand())
       )
     ))
@@ -349,6 +436,7 @@ describe("TestRun", () => {
           container: "test-worker",
           env: { DATABASE_PASSWORD: "s3cret-value" }
         }),
+        tree,
         Layer.succeed(Container.Container)(Container.makeCommand())
       )
     ))
@@ -367,7 +455,7 @@ describe("TestRun", () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await execute(Effect.provide(
       Effect.exit(TestRun.run({})),
-      Layer.merge(host(spawns, []), TestRunner.layerNoop)
+      Layer.mergeAll(host(spawns, []), TestRunner.layerNoop, tree)
     ))
     expect(failureOf(exit)?.code).toBe("provider_unavailable")
     expect(spawns).toEqual([])

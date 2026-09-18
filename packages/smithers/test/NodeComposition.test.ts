@@ -14,6 +14,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Path from "@smthrs/kernel/Path"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Registry } from "@smthrs/registry"
 import * as Container from "@smthrs/std/Container"
 import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Option } from "effect"
@@ -421,7 +422,7 @@ describe("NodeControl.testRunner", () => {
     const names = await Effect.runPromise(
       Effect.gen(function*() {
         const services = yield* Effect.context<
-          KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
+          Evaluator.Evaluator | KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
         >()
         const container = Container.makeCommand()
         expect(NodeControl.testFlows(services, container, undefined)).toEqual([])
@@ -436,7 +437,9 @@ describe("NodeControl.testRunner", () => {
         const bound = yield* Effect.forEach(offered, (source) => source.bindings())
         return bound.flat().map((binding) => binding.descriptor.name)
       }).pipe(
-        Effect.provide(NodeServices.layer),
+        // The judge the flow attributes a non-zero exit with. A host without
+        // `AI_GATEWAY_API_KEY` binds exactly this one.
+        Effect.provide(Layer.merge(NodeServices.layer, NodeControl.evaluator({}))),
         Effect.orDie
       ) as Effect.Effect<ReadonlyArray<string>>
     )

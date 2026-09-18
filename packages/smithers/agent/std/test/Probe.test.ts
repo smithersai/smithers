@@ -1,144 +1,190 @@
 /**
  * Telling an invalid probe from a failing check.
  *
- * The cases fix one property: a classification is only made when the command
- * failed *about itself*. Every recogniser is exercised against output a real
- * runner prints, and the negative cases are the ones that matter more — a false
- * positive suppresses genuine regression evidence.
+ * The cases fix three properties. The two facts are decided without a judge: a
+ * command that exited zero, and the exit codes POSIX reserves for the shell's
+ * own refusal. Everything else is Jev's answer, taken only when it is decisive
+ * — an answer below the floor is the tree's failure, which is the reading that
+ * leaves a genuine reproduction intact. And a judge that does not answer is a
+ * typed failure, never a reason and never a silent pass.
  */
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as TestReport from "../src/internal/TestReport.ts"
+import * as Classifiers from "../src/Classifiers.ts"
 import * as Probe from "../src/Probe.ts"
 
-const failing = (text: string, exitCode = 1) => Probe.classify({ exitCode, stdout: "", stderr: text })
+/** An evaluator that answers one attribution, with the confidence it is given. */
+const answering = (
+  attribution: string,
+  probability: number,
+  options?: { readonly executed?: boolean }
+): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerScripted((request) => {
+    const options_ = Object.keys(
+      (request.questions["attribution"] as { readonly criteria: Record<string, string> }).criteria
+    )
+    const rest = (1 - probability) / (options_.length - 1)
+    return {
+      attribution: {
+        choice: attribution,
+        probabilities: Object.fromEntries(
+          options_.map((option) => [option, option === attribution ? probability : rest])
+        )
+      },
+      executed: { probability: options?.executed === true ? 0.95 : 0.05 }
+    }
+  })
+
+const refusing = (code: Evaluator.EvaluatorErrorCode): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerScripted(() =>
+    Effect.fail(new Evaluator.EvaluatorError({ code, message: `The gateway answered ${code}` }))
+  )
+
+const classify = (
+  result: { readonly command?: string; readonly exitCode: number; readonly output?: string },
+  layer: Layer.Layer<Evaluator.Evaluator> = answering("tree", 0.9)
+) =>
+  Effect.runPromise(
+    Probe.classify({
+      command: result.command ?? "python -m pytest -rA",
+      exitCode: result.exitCode,
+      output: result.output ?? ""
+    }).pipe(Effect.result, Effect.provide(layer))
+  )
+
+const success = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isFailure(result)) throw new Error(`Expected a success, got ${JSON.stringify(result.failure)}`)
+  return result.success
+}
+
+const failure = <A, E>(result: Result.Result<A, E>): E => {
+  if (Result.isSuccess(result)) throw new Error(`Expected a failure, got ${JSON.stringify(result.success)}`)
+  return result.failure
+}
 
 describe("Probe.classify", () => {
-  it("never classifies a command that exited zero, whatever it printed", () => {
+  it("never asks about a command that exited zero, whatever it printed", async () => {
+    const asked: Array<unknown> = []
+    const recording = Evaluator.layerScripted((request) => {
+      asked.push(request.state)
+      return { attribution: { choice: "unknown-module" }, executed: { probability: 0.1 } }
+    })
     expect(
-      Probe.classify({
-        exitCode: 0,
-        stdout: "unittest.loader._FailedTest",
-        stderr: "ModuleNotFoundError: No module named 'nope'"
-      })
-    ).toBeUndefined()
+      success(await classify({ exitCode: 0, output: "ModuleNotFoundError: No module named 'nope'" }, recording))
+    ).toEqual({ to: "tree" })
+    expect(asked).toEqual([])
   })
 
-  it("reads unittest's synthesised placeholder as a test that does not exist", () => {
-    const probe = failing(
-      "ERROR: test_missing (unittest.loader._FailedTest.test_missing)\nAttributeError: module has none"
-    )
-    expect(probe?.reason).toBe("unknown-test")
-  })
-
-  it("reads a missing test method on a real class as a test that does not exist", () => {
-    // The django wave-3 case, verbatim: exit 1, and nothing about the tree.
-    const probe = failing(
-      "AttributeError: type object 'AdminViewBasicTest' has no attribute 'test_catch_all_view_append_slash'"
-    )
-    expect(probe).toMatchObject({ reason: "unknown-test" })
-    expect(probe?.evidence).toContain("test_catch_all_view_append_slash")
-  })
-
-  it("reads pytest's unresolvable node id as a test that does not exist", () => {
-    expect(failing("ERROR: not found: /repo/tests/test_admin.py::test_nope")?.reason).toBe("unknown-test")
-  })
-
-  it("reads pytest's missing collection root as a path that does not exist", () => {
-    expect(failing("ERROR: file or directory not found: tests/test_absent.py")?.reason).toBe("unknown-path")
-  })
-
-  it("reads a python interpreter that could not open its script as a path that does not exist", () => {
-    expect(failing("python: can't open file '/repo/repro.py': [Errno 2] No such file or directory")?.reason).toBe(
-      "unknown-path"
-    )
-  })
-
-  it("reads both import errors as a module that does not exist", () => {
-    expect(failing("ModuleNotFoundError: No module named 'django.contrib.nope'")?.reason).toBe("unknown-module")
-    expect(failing("ImportError: No module named tests.helpers")?.reason).toBe("unknown-module")
-  })
-
-  it("reads a runner's unknown environment as an environment that does not exist", () => {
-    expect(failing("ERROR: unknown environment 'py313'")?.reason).toBe("unknown-environment")
-  })
-
-  it.each([
-    ["unittest placeholder", "E   AssertionError: expected 'unittest.loader._FailedTest' in the diagnostic"],
-    ["missing method", "E   AssertionError: output contains \"has no attribute 'test_missing'\""],
-    [
-      "missing script",
-      "E   AssertionError: output contains \"python: can't open file '/repo/nope.py': [Errno 2]\""
-    ],
-    ["missing module", "E   AssertionError: output contains \"ModuleNotFoundError: No module named 'nope'\""],
-    ["missing environment", "E   AssertionError: output contains \"ERROR: unknown environment 'py313'\""]
-  ])("does not classify %s wording quoted in the middle of an assertion line", (_name, output) => {
-    expect(failing(output)).toBeUndefined()
-  })
-
-  it("reads both shells' phrasing as a program that does not exist", () => {
-    expect(failing("bash: line 1: pytest: command not found", 127)?.reason).toBe("unknown-command")
-    expect(failing("sh: 1: pytest: not found", 127)?.reason).toBe("unknown-command")
-  })
-
-  it("falls back to the POSIX exit codes when the shell printed nothing recognisable", () => {
-    // 127 is "not found" and 126 is "found and not executable"; no test runner
-    // reaches its own tests and then reports either.
-    expect(Probe.classify({ exitCode: 127, stdout: "", stderr: "" })).toMatchObject({
+  it.each([127, 126])("reads exit %i as the shell's own refusal, without asking", async (exitCode) => {
+    const asked: Array<unknown> = []
+    const recording = Evaluator.layerScripted((request) => {
+      asked.push(request.state)
+      return { attribution: { choice: "tree" }, executed: { probability: 0.9 } }
+    })
+    const attribution = success(await classify({ exitCode, output: "412 passed in 3.20s" }, recording))
+    expect(attribution.to).toBe("unknown-command")
+    expect(attribution.invalidProbe).toMatchObject({
       reason: "unknown-command",
-      evidence: "the command exited 127"
+      evidence: `the command exited ${exitCode}`
     })
-    expect(Probe.classify({ exitCode: 126, stdout: "", stderr: "" })?.reason).toBe("unknown-command")
+    // 126 and 127 are the shell's verdict on the command it was handed. A
+    // compound command whose check ran and whose next program is missing still
+    // ran a broken invocation, and no judgment changes what the shell said.
+    expect(asked).toEqual([])
   })
 
-  it("leaves an ordinary failing check alone", () => {
-    const output = [
-      "FAILED tests/test_admin.py::AdminViewBasicTest::test_catch_all_view - AssertionError",
-      "assert 301 == 404",
-      "1 failed, 412 passed in 3.20s"
-    ].join("\n")
-    expect(Probe.classify({ exitCode: 1, stdout: output, stderr: "" })).toBeUndefined()
+  it.each(
+    [
+      "unknown-command",
+      "unknown-test",
+      "unknown-path",
+      "unknown-module",
+      "unknown-environment"
+    ] as const
+  )("reports %s when the judge is decisive about it", async (reason) => {
+    const attribution = success(await classify({ exitCode: 1 }, answering(reason, 0.93)))
+    expect(attribution.to).toBe(reason)
+    expect(attribution.invalidProbe?.reason).toBe(reason)
+    expect(attribution.invalidProbe?.evidence).toContain("confidence 0.93")
+    expect(attribution.invalidProbe?.message).toContain("never ran a check")
+    expect(attribution.invalidProbe?.message).toContain("not a reproduction")
   })
 
-  it("leaves an attribute error about anything but a test alone", () => {
-    expect(failing("AttributeError: 'Model' object has no attribute 'related_name'")).toBeUndefined()
-  })
-
-  it("leaves an ordinary missing file alone", () => {
-    // The phrase on its own is what half of every failing suite prints; only
-    // the runner's own load-time wording is evidence.
-    expect(failing("OSError: [Errno 2] No such file or directory: '/tmp/fixture'")).toBeUndefined()
-  })
-
-  it("classifies from stdout as readily as from stderr, and from both together", () => {
-    expect(Probe.classify({ exitCode: 1, stdout: "ERROR: not found: t.py::x", stderr: "" })?.reason).toBe(
-      "unknown-test"
+  it("leaves the failure with the tree when the judge says the tree", async () => {
+    const attribution = success(
+      await classify(
+        { exitCode: 1, output: "1 failed, 412 passed in 3.20s" },
+        answering("tree", 0.97, { executed: true })
+      )
     )
-    expect(
-      Probe.classify({ exitCode: 1, stdout: "collecting …", stderr: "ERROR: not found: t.py::x" })?.reason
-    ).toBe("unknown-test")
+    expect(attribution).toEqual({ to: "tree", executed: true })
   })
 
-  it("quotes the whole matched line as evidence and clips a long one", () => {
-    const probe = Probe.classify({
-      exitCode: 1,
-      stdout: "collected 0 items\nERROR: not found: tests/test_admin.py::nope\n1 error",
-      stderr: ""
-    })
-    expect(probe?.evidence).toBe("ERROR: not found: tests/test_admin.py::nope")
-
-    const long = Probe.classify({
-      exitCode: 1,
-      stdout: `ERROR: not found: ${"x".repeat(600)}`,
-      stderr: ""
-    })
-    expect(long?.evidence).toHaveLength(240)
-    expect(long?.evidence.endsWith("…")).toBe(true)
+  it("leaves the failure with the tree when the judge is not sure, and reports what it read", async () => {
+    // Below the floor the judge has not decided. The reading that costs a
+    // reader nothing it had is the tree's; a false invalid probe tells it its
+    // reproduction proved nothing.
+    const attribution = success(
+      await classify({ exitCode: 1 }, answering("unknown-module", Probe.CONFIDENCE_FLOOR - 0.01, { executed: true }))
+    )
+    expect(attribution).toEqual({ to: "tree", executed: true })
+    expect(Probe.CONFIDENCE_FLOOR).toBe(0.7)
   })
 
-  it("states what the failure does and does not prove, in the result itself", () => {
-    const probe = failing("ERROR: not found: t.py::x")
-    expect(probe?.message).toContain("never ran a check")
-    expect(probe?.message).toContain("not a reproduction")
+  it("takes an attribution exactly at the floor", async () => {
+    const attribution = success(await classify({ exitCode: 1 }, answering("unknown-test", Probe.CONFIDENCE_FLOOR)))
+    expect(attribution.to).toBe("unknown-test")
+  })
+
+  it("says so when the judge attributed the failure although a runner reported a tally", async () => {
+    const attribution = success(
+      await classify(
+        { exitCode: 1, output: "1 failed, 2 passed\nERROR: not found: t.py::x" },
+        answering("unknown-test", 0.88, { executed: true })
+      )
+    )
+    expect(attribution.executed).toBe(true)
+    expect(attribution.invalidProbe?.evidence).toContain("also reported that it ran tests")
+  })
+
+  it("sends the command, the exit code and the newest output bytes, and nothing else", async () => {
+    const seen: Array<Record<string, unknown>> = []
+    const recording = Evaluator.layerScripted((request) => {
+      seen.push(request.state as Record<string, unknown>)
+      return { attribution: { choice: "tree" }, executed: { probability: 0.9 } }
+    })
+    const output = `${"padding\n".repeat(6_000)}ERROR: file or directory not found: tests/absent.py`
+    await classify({ command: "pytest tests/absent.py", exitCode: 4, output }, recording)
+    expect(Object.keys(seen[0]!)).toEqual(["command", "exitCode", "output"])
+    expect(seen[0]?.["command"]).toBe("pytest tests/absent.py")
+    expect(seen[0]?.["exitCode"]).toBe(4)
+    const sent = seen[0]?.["output"] as string
+    expect(new TextEncoder().encode(sent).byteLength).toBeLessThanOrEqual(Probe.MAX_OUTPUT_BYTES)
+    expect(sent).toContain("tests/absent.py")
+    expect(Probe.MAX_OUTPUT_BYTES).toBe(32 * 1024)
+  })
+
+  it.each(
+    [
+      ["unreachable", "provider_unavailable"],
+      ["refused", "provider_unavailable"],
+      ["empty", "provider_unavailable"],
+      ["timeout", "timeout"],
+      ["invalid_answer", "request_failed"],
+      ["invalid_question", "request_failed"]
+    ] as const
+  )("fails typed when the judge answers %s, and reports no reason", async (code, expected) => {
+    const error = failure(await classify({ exitCode: 1 }, refusing(code)))
+    expect(Probe.unjudged(error).code).toBe(expected)
+    expect(Probe.unjudged(error).message).toContain(code)
+    expect(Probe.unjudged(error).message).toContain("AI_GATEWAY_API_KEY")
+  })
+
+  it("fails rather than guessing when no evaluator is installed", async () => {
+    const error = failure(await classify({ exitCode: 1 }, Evaluator.layerUnavailable()))
+    expect(error.code).toBe("unreachable")
+    expect(Probe.unjudged(error).code).toBe("provider_unavailable")
   })
 
   it("names the reserved output key flows report under", () => {
@@ -146,99 +192,34 @@ describe("Probe.classify", () => {
   })
 })
 
-describe("Probe.classify against a genuine failure that prints refusal wording", () => {
-  // The failure mode that would make this module worse than nothing: the bug
-  // under test is itself an import error, or a test asserts on a shell message,
-  // so a real reproduction carries the exact phrase a refusal carries. Reading
-  // one as an invalid probe tells the agent its reproduction proved nothing.
-  it("leaves an import error raised inside a test that ran alone", () => {
-    const probe = Probe.classify({
-      exitCode: 1,
-      stdout: [
-        "collected 3 items",
-        "",
-        "=================================== FAILURES ===================================",
-        "    def test_lazy_import():",
-        ">       load_backend('sqlite3')",
-        "E   ModuleNotFoundError: No module named 'app.backends.sqlite3'",
-        "========================= 1 failed, 2 passed in 0.41s =========================="
-      ].join("\n"),
-      stderr: ""
-    })
-    expect(probe).toBeUndefined()
+describe("Probe.posix", () => {
+  it("reads only the two codes POSIX reserves for the shell's refusal", () => {
+    expect(Probe.posix(127)?.reason).toBe("unknown-command")
+    expect(Probe.posix(126)?.reason).toBe("unknown-command")
+    expect(Probe.posix(0)).toBeUndefined()
+    expect(Probe.posix(1)).toBeUndefined()
+    expect(Probe.posix(125)).toBeUndefined()
+    expect(Probe.posix(128)).toBeUndefined()
+  })
+})
+
+describe("the probe/attribution classifier", () => {
+  it("offers the tree beside every reason, and asks whether tests ran", () => {
+    expect(Classifiers.probeAttribution.id).toBe("probe/attribution")
+    expect(Object.keys(Classifiers.probeAttribution.questions)).toEqual(["attribution", "executed"])
+    expect(Object.keys(Classifiers.probeAttribution.questions.attribution.criteria)).toEqual([
+      "tree",
+      ...Probe.Reason.literals
+    ])
+    for (const question of Object.values(Classifiers.probeAttribution.questions)) {
+      expect(question.instructions).toMatch(/^[A-Z].*\?$/)
+      expect(question.instructions).not.toContain(" and ")
+    }
   })
 
-  it("leaves an import error raised inside a unittest case that ran alone", () => {
-    const output = [
-      ".....E",
-      "ERROR: test_optional_dep (tests.test_compat.CompatTests.test_optional_dep)",
-      "Traceback (most recent call last):",
-      "    from app.compat import pytz_shim",
-      "ImportError: No module named pytz",
-      "----------------------------------------------------------------------",
-      "Ran 6 tests in 0.013s",
-      "",
-      "FAILED (errors=1)"
-    ].join("\n")
-    expect(failing(output)).toBeUndefined()
-    expect(TestReport.parse(output)).toEqual({
-      passed: 5,
-      failed: ["tests.test_compat.CompatTests.test_optional_dep"],
-      reportedFailed: 1,
-      parsed: true
-    })
-  })
-
-  it("leaves a test that asserts on a shell's own not-found message alone", () => {
-    expect(
-      failing(
-        [
-          "E   AssertionError: assert 'sh: nope: command not found' == 'sh: nope: not executable'",
-          "========================= 1 failed, 40 passed in 2.10s ========================="
-        ].join("\n")
-      )
-    ).toBeUndefined()
-  })
-
-  it("leaves a missing attribute that only starts with the word test alone", () => {
-    // `testing`, `tests` and `tested` are ordinary attribute names, and their
-    // absence is an ordinary bug. Only `test_foo` and the older `testFoo` are
-    // shaped like the test method a runner was asked to find.
-    expect(failing("AttributeError: type object 'Settings' has no attribute 'testing'")).toBeUndefined()
-    expect(failing("AttributeError: module 'app.conf' has no attribute 'tests'")).toBeUndefined()
-    expect(failing("AttributeError: type object 'Case' has no attribute 'testFoo'")?.reason).toBe("unknown-test")
-  })
-
-  it("still classifies when the runner reported that it ran nothing", () => {
-    // A collection error tallies `error`, never `passed` or `failed`, so the
-    // veto does not fire and the load-time wording is still read.
-    expect(
-      Probe.classify({
-        exitCode: 2,
-        stdout: "collected 0 items / 1 error\nE   ModuleNotFoundError: No module named 'django'\n1 error in 0.12s",
-        stderr: ""
-      })?.reason
-    ).toBe("unknown-module")
-    // A tally of zero is a tally of nothing, and proves nothing ran.
-    expect(failing("Ran 0 tests in 0.000s\nModuleNotFoundError: No module named 'tests.helpers'")?.reason).toBe(
-      "unknown-module"
-    )
-    expect(failing("0 passed in 0.01s\nERROR: not found: t.py::x")?.reason).toBe("unknown-test")
-  })
-
-  it("reads both shells' word order, and only as a whole line", () => {
-    expect(failing("bash: line 1: pytest: command not found", 127)?.reason).toBe("unknown-command")
-    expect(failing("zsh: command not found: pytest", 127)?.reason).toBe("unknown-command")
-    expect(failing("stdout captured: 'x: command not found' was expected here")).toBeUndefined()
-  })
-
-  it("lets the shell's reserved exit codes speak even when tests ran", () => {
-    // 126 and 127 are the shell's verdict on the command it was handed. A
-    // compound command whose check passed and whose next program is missing
-    // still ran a broken invocation, and nothing in the tally contradicts the
-    // shell.
-    expect(
-      Probe.classify({ exitCode: 127, stdout: "412 passed in 3.20s", stderr: "flake9: command not found" })?.reason
-    ).toBe("unknown-command")
+  it("stays out of the catalog a host binds", () => {
+    // The `test` flow asks it. A door for the model to ask the same thing
+    // would be a door onto a judgment the flow has already made.
+    expect(Classifiers.all.map((classifier) => classifier.id)).not.toContain("probe/attribution")
   })
 })
