@@ -606,6 +606,69 @@ describe("Turns", () => {
     expect(result.records).toEqual([])
   })
 
+  it("records a decision that outlived its turn without folding it into a closed one", async () => {
+    // Health runs on a fiber of its own, so a slow evaluator answers after the
+    // turn it was asked about has closed and its state has been dropped. The
+    // decision is still recorded; what it cannot do is reopen a finished turn.
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const slow = Evaluator.layerScripted(() =>
+      Effect.as(Effect.promise(() => gate), {
+        progress: { score: 3 },
+        stuck: { probability: 0.05 },
+        needsHuman: { probability: 0.05 }
+      })
+    )
+    const store = Store.layerSqlite(`${scratch.directory}/health-late.sqlite`)
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const late = Layer.mergeAll(Turns.layer(options), store, hub).pipe(
+      Layer.provideMerge(Layer.mergeAll(scripted, store, hub, slow))
+    )
+    const healthCards = (messages: ReadonlyArray<Store.MessageWithParts>) =>
+      messages.flatMap((message) => message.parts.filter((part) => part.type === "tool" && part.tool === "health"))
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_late"))
+        yield* turns.prompt({ sessionID: "ses_late", parts: [{ type: "text", text: "Read package.json" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_late"), (list) => list.length === 1)))
+        )
+        const pending = yield* store.listPermissions("ses_late")
+        yield* turns.permission({ sessionID: "ses_late", permissionID: pending[0]!.id, response: "once" })
+        // The turn finishes while every evaluation is still waiting on the gate.
+        yield* Effect.promise(() =>
+          until(() =>
+            Effect.runPromise(
+              Effect.map(store.listMessages("ses_late"), (messages) =>
+                messages.some((message) => message.info.role === "assistant" && message.info.finish === "stop"))
+            )
+          )
+        )
+        const closed = yield* turns.status()
+        const duringTurn = healthCards(yield* store.listMessages("ses_late"))
+        release()
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listHealth("ses_late"), (list) => list.length > 0)))
+        )
+        return {
+          closed,
+          duringTurn,
+          records: yield* store.listHealth("ses_late"),
+          cards: healthCards(yield* store.listMessages("ses_late"))
+        }
+      }).pipe(Effect.provide(late))
+    )
+    expect(result.closed).toEqual({})
+    expect(result.duringTurn).toEqual([])
+    expect(result.records.length).toBeGreaterThan(0)
+    // Recorded, never folded: a closed turn grows no card from a late verdict.
+    expect(result.cards).toEqual([])
+  })
+
   it("renders the conversation tail a follow-up carries, newest last and cut from the front", () => {
     const message = (id: string, role: "user" | "assistant", texts: ReadonlyArray<string>): Store.MessageWithParts => ({
       info: role === "user"
