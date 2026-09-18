@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as HttpBody from "effect/unstable/http/HttpBody"
+import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 
 /**
@@ -232,13 +233,22 @@ export interface Usage {
 
 /**
  * What one evaluation answered: the raw answers keyed by question id, the
- * usage when the transport reported it, and the wall-clock time the call took.
+ * confidence and usage when the transport reported them, and the wall-clock
+ * time the call took.
+ *
+ * `confidence` is the provider's own number, not one derived here. Jev reports
+ * it for a choice and a score and never for a boolean, whose `probability` is
+ * already the whole answer, so a key is absent whenever the provider sent
+ * none. It is distinct from `Classifier.confidence`, which reads the largest
+ * probability in a distribution and therefore reads 1 for an answer that
+ * carried no distribution at all.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
 export interface Response {
   readonly answers: RawAnswers
+  readonly confidence?: Readonly<Record<string, number>>
   readonly usage?: Usage
   readonly latencyMs: number
 }
@@ -331,6 +341,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const decodeRawAnswers = Schema.decodeUnknownEffect(RawAnswers)
 
+/**
+ * The per-question confidence the provider reported, at the path the gateway
+ * puts it: `providerMetadata.typesafe.confidence`. Anything that is not a
+ * number is dropped rather than coerced, and a metadata block that carries no
+ * numbers at all reads as no confidence.
+ */
+const confidenceOf = (body: Record<string, unknown>): Readonly<Record<string, number>> | undefined => {
+  const providerMetadata = body["providerMetadata"]
+  if (!isRecord(providerMetadata)) return undefined
+  const typesafe = providerMetadata["typesafe"]
+  if (!isRecord(typesafe)) return undefined
+  const confidence = typesafe["confidence"]
+  if (!isRecord(confidence)) return undefined
+  const numbers = Object.entries(confidence).filter((entry): entry is [string, number] => typeof entry[1] === "number")
+  return numbers.length === 0 ? undefined : Object.fromEntries(numbers)
+}
+
 const usageOf = (body: Record<string, unknown>): Usage | undefined => {
   const usage = body["usage"]
   if (!isRecord(usage)) return undefined
@@ -388,7 +415,11 @@ export function layerVercelGateway(
   return Layer.effect(
     Evaluator,
     Effect.gen(function*() {
-      const http = yield* KernelHttpClient.HttpClient
+      // Every request's lifetime is tied to the scope the call opens below, so
+      // its abort fires the moment the call settles. Without it an answer the
+      // transport refused, or one whose body this module never reads, leaves
+      // the response body held open until the runtime collects it.
+      const http = HttpClient.withScope(yield* KernelHttpClient.HttpClient)
       const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : yield* options.apiKey
       const model = options.model ?? defaultModel
       const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
@@ -444,10 +475,17 @@ export function layerVercelGateway(
               new EvaluatorError({ code: "invalid_answer", status: 200, message: error.message })
             )
           )
+          const confidence = confidenceOf(body)
           const usage = usageOf(body)
           const latencyMs = (yield* Clock.currentTimeMillis) - started
-          return usage === undefined ? { answers, latencyMs } : { answers, usage, latencyMs }
+          return {
+            answers,
+            ...(confidence === undefined ? {} : { confidence }),
+            ...(usage === undefined ? {} : { usage }),
+            latencyMs
+          }
         }).pipe(
+          Effect.scoped,
           Effect.timeoutOrElse({
             duration: timeoutMs,
             orElse: () =>

@@ -135,6 +135,40 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(modelCall).toBe("typesafe-ai/jev")
   })
 
+  it("carries the provider's own per-question confidence", async () => {
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(
+        httpLayer([], () =>
+          json({
+            ...recorded,
+            providerMetadata: { typesafe: { confidence: { role: 0.8, risk: 0.65, relevant: "high" } } }
+          }))
+      )
+    )
+
+    const response = success(await evaluate(layer))
+
+    // Only numbers survive. Jev reports no confidence for a boolean, and a
+    // value that is not a number is dropped rather than coerced to one.
+    expect(response.confidence).toEqual({ role: 0.8, risk: 0.65 })
+  })
+
+  it.each([
+    ["no metadata", {}],
+    ["metadata that is not an object", { providerMetadata: "none" }],
+    ["no typesafe block", { providerMetadata: { other: { confidence: { role: 0.8 } } } }],
+    ["a typesafe block that is not an object", { providerMetadata: { typesafe: 7 } }],
+    ["no confidence block", { providerMetadata: { typesafe: {} } }],
+    ["a confidence block that is not an object", { providerMetadata: { typesafe: { confidence: 0.8 } } }],
+    ["a confidence block holding no numbers", { providerMetadata: { typesafe: { confidence: { role: "high" } } } }]
+  ])("reports no confidence for %s", async (_, extra) => {
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer([], () => json({ ...recorded, ...extra })))
+    )
+
+    expect(success(await evaluate(layer)).confidence).toBeUndefined()
+  })
+
   it("honours every option and reads the key from Config", async () => {
     const sent: Array<Sent> = []
     const layer = Evaluator.layerVercelGateway({
