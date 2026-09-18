@@ -474,7 +474,90 @@ describe("Projection", () => {
     )
     const errorState = (editFailed.events[0]!.properties["part"] as Protocol.ToolPart).state
     expect(errorState.status).toBe("error")
-    expect(errorState.status === "error" && errorState.error).toBe("The call failed")
+    expect(errorState.status === "error" && errorState.error).toBe("f: The call failed")
+    // A failed shell leads with its command: the app's error card shows the
+    // words before the first ": " in its header and the rest in its body,
+    // so the person reads the command and the reason, not "Failed".
+    const shellIdentity = new Cell.CallIdentity({
+      session: sessionID,
+      frame: 0,
+      cell: source.digest,
+      ordinal: 1,
+      declaration: "d",
+      layers: []
+    })
+    const shellStarted = Projection.fold(
+      ctx,
+      editFailed.state,
+      new AgentEvents.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName: "bash",
+          input: { command: "node test.mjs" },
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+          placement: Option.none(),
+          identity: shellIdentity
+        })
+      })
+    )
+    const shellFailed = Projection.fold(
+      ctx,
+      shellStarted.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "bash",
+        identity: shellIdentity,
+        result: new Cell.CallResult({
+          outcome: "failure",
+          value: null,
+          code: "capability_refused",
+          message: "This host pins no trees, so there is no base to run bash against"
+        })
+      })
+    )
+    const shellState = (shellFailed.events[0]!.properties["part"] as Protocol.ToolPart).state
+    expect(shellState.status === "error" && shellState.error).toBe(
+      "node test.mjs: This host pins no trees, so there is no base to run bash against (capability_refused)\n" +
+        Cell.callFailureHint["capability_refused"]
+    )
+    expect(shellFailed.state.facts.lastCalls.at(-1)).toMatchObject({ flow: "bash", ok: false })
+    // A call with nothing to name it keeps the bare reason.
+    const bareIdentity = new Cell.CallIdentity({
+      session: sessionID,
+      frame: 0,
+      cell: source.digest,
+      ordinal: 2,
+      declaration: "d",
+      layers: []
+    })
+    const bareStarted = Projection.fold(
+      ctx,
+      shellFailed.state,
+      new AgentEvents.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName: "glob",
+          input: {},
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+          placement: Option.none(),
+          identity: bareIdentity
+        })
+      })
+    )
+    const bareFailed = Projection.fold(
+      ctx,
+      bareStarted.state,
+      new AgentEvents.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "glob",
+        identity: bareIdentity,
+        result: new Cell.CallResult({ outcome: "failure", value: null, message: "no such file" })
+      })
+    )
+    const bareState = (bareFailed.events[0]!.properties["part"] as Protocol.ToolPart).state
+    expect(bareState.status === "error" && bareState.error).toBe("no such file")
     const raised = Projection.fold(
       ctx,
       editFailed.state,
@@ -551,7 +634,9 @@ describe("Projection", () => {
       })
     )
     const codedState = (coded.events[0]!.properties["part"] as Protocol.ToolPart).state
-    expect(codedState.status === "error" && codedState.error.startsWith("refused (capability_refused)\n")).toBe(true)
+    expect(codedState.status === "error" && codedState.error.startsWith("true: refused (capability_refused)\n")).toBe(
+      true
+    )
     const oneEdit = { ...produced.state, cell: { ...produced.state.cell!, calls: 1, edits: 1 } }
     const settledOne = Projection.fold(
       ctx,

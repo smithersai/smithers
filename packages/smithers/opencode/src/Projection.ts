@@ -1041,9 +1041,17 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       const classify = isClassify(event.flowName)
       const latency = classify && isRecord(result.value) ? asNumber(result.value["latencyMs"]) ?? now - card.start : 0
       const edited = ok && ["edit", "write", "apply_patch"].includes(event.flowName)
+      const subject = toolTitle(event.flowName, card.input)
       const summary = ok
-        ? toolTitle(event.flowName, card.input) || toolOutput(event.flowName, result.value).slice(0, 80)
+        ? subject || toolOutput(event.flowName, result.value).slice(0, 80)
         : `${result.code ?? Cell.defaultCallFailureCode}: ${result.message ?? ""}`.slice(0, 80)
+      // A failed card's error leads with what was called (the command, the
+      // file): the app shows the words before the first `: ` in the card's
+      // header and the rest in its body, so a failed shell reads as the
+      // command and the reason instead of "Failed" over nothing.
+      const failure = `${result.message ?? "The call failed"}${result.code === undefined ? "" : ` (${result.code})`}${
+        result.code === undefined ? "" : `\n${Cell.callFailureHint[result.code]}`
+      }`
       const facts: Health.Facts = {
         ...state.facts,
         lastCalls: [...state.facts.lastCalls, { flow: event.flowName, ok, summary }].slice(-lastCallsKept)
@@ -1068,9 +1076,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           : {
             status: "error",
             input: card.input,
-            error: `${result.message ?? "The call failed"}${result.code === undefined ? "" : ` (${result.code})`}${
-              result.code === undefined ? "" : `\n${Cell.callFailureHint[result.code]}`
-            }`,
+            error: subject === "" ? failure : `${subject}: ${failure}`,
             metadata: { code: result.code ?? Cell.defaultCallFailureCode, result: result.value },
             time: { start: card.start, end: now }
           }
