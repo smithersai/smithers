@@ -90,47 +90,47 @@ const initial = new Uint32Array([
 const rotateRight = (value: number, bits: number): number => (value >>> bits) | (value << (32 - bits))
 
 const compress = (hash: Uint32Array, view: DataView, offset: number, schedule: Uint32Array): void => {
-    for (let index = 0; index < 16; index++) schedule[index] = view.getUint32(offset + index * 4, false)
-    for (let index = 16; index < 64; index++) {
-      const previous = schedule[index - 15]!
-      const recent = schedule[index - 2]!
-      const sigma0 = rotateRight(previous, 7) ^ rotateRight(previous, 18) ^ (previous >>> 3)
-      const sigma1 = rotateRight(recent, 17) ^ rotateRight(recent, 19) ^ (recent >>> 10)
-      schedule[index] = (schedule[index - 16]! + sigma0 + schedule[index - 7]! + sigma1) >>> 0
-    }
+  for (let index = 0; index < 16; index++) schedule[index] = view.getUint32(offset + index * 4, false)
+  for (let index = 16; index < 64; index++) {
+    const previous = schedule[index - 15]!
+    const recent = schedule[index - 2]!
+    const sigma0 = rotateRight(previous, 7) ^ rotateRight(previous, 18) ^ (previous >>> 3)
+    const sigma1 = rotateRight(recent, 17) ^ rotateRight(recent, 19) ^ (recent >>> 10)
+    schedule[index] = (schedule[index - 16]! + sigma0 + schedule[index - 7]! + sigma1) >>> 0
+  }
 
-    let a = hash[0]!
-    let b = hash[1]!
-    let c = hash[2]!
-    let d = hash[3]!
-    let e = hash[4]!
-    let f = hash[5]!
-    let g = hash[6]!
-    let h = hash[7]!
-    for (let index = 0; index < 64; index++) {
-      const sigma1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25)
-      const choose = (e & f) ^ (~e & g)
-      const temporary1 = (h + sigma1 + choose + rounds[index]! + schedule[index]!) >>> 0
-      const sigma0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22)
-      const majority = (a & b) ^ (a & c) ^ (b & c)
-      const temporary2 = (sigma0 + majority) >>> 0
-      h = g
-      g = f
-      f = e
-      e = (d + temporary1) >>> 0
-      d = c
-      c = b
-      b = a
-      a = (temporary1 + temporary2) >>> 0
-    }
-    hash[0] = (hash[0]! + a) >>> 0
-    hash[1] = (hash[1]! + b) >>> 0
-    hash[2] = (hash[2]! + c) >>> 0
-    hash[3] = (hash[3]! + d) >>> 0
-    hash[4] = (hash[4]! + e) >>> 0
-    hash[5] = (hash[5]! + f) >>> 0
-    hash[6] = (hash[6]! + g) >>> 0
-    hash[7] = (hash[7]! + h) >>> 0
+  let a = hash[0]!
+  let b = hash[1]!
+  let c = hash[2]!
+  let d = hash[3]!
+  let e = hash[4]!
+  let f = hash[5]!
+  let g = hash[6]!
+  let h = hash[7]!
+  for (let index = 0; index < 64; index++) {
+    const sigma1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25)
+    const choose = (e & f) ^ (~e & g)
+    const temporary1 = (h + sigma1 + choose + rounds[index]! + schedule[index]!) >>> 0
+    const sigma0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22)
+    const majority = (a & b) ^ (a & c) ^ (b & c)
+    const temporary2 = (sigma0 + majority) >>> 0
+    h = g
+    g = f
+    f = e
+    e = (d + temporary1) >>> 0
+    d = c
+    c = b
+    b = a
+    a = (temporary1 + temporary2) >>> 0
+  }
+  hash[0] = (hash[0]! + a) >>> 0
+  hash[1] = (hash[1]! + b) >>> 0
+  hash[2] = (hash[2]! + c) >>> 0
+  hash[3] = (hash[3]! + d) >>> 0
+  hash[4] = (hash[4]! + e) >>> 0
+  hash[5] = (hash[5]! + f) >>> 0
+  hash[6] = (hash[6]! + g) >>> 0
+  hash[7] = (hash[7]! + h) >>> 0
 }
 
 /**
@@ -161,20 +161,28 @@ export const sha256 = (message: Uint8Array): Uint8Array => {
   return digest
 }
 
-/** Cloneable prefix state; the same compression routine as the one-shot digest. */
+/**
+ * Cloneable prefix state; the same compression routine as the one-shot digest.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
 export class Sha256Prefix {
   private hash = initial.slice()
   private tail = new Uint8Array(0)
   private length = 0
   clone(): Sha256Prefix {
     const copy = new Sha256Prefix()
-    copy.hash = this.hash.slice(); copy.tail = this.tail.slice(); copy.length = this.length
+    copy.hash = this.hash.slice()
+    copy.tail = this.tail.slice()
+    copy.length = this.length
     return copy
   }
   update(bytes: Uint8Array): this {
     this.length += bytes.length
     const data = new Uint8Array(this.tail.length + bytes.length)
-    data.set(this.tail); data.set(bytes, this.tail.length)
+    data.set(this.tail)
+    data.set(bytes, this.tail.length)
     const complete = data.length - data.length % 64
     const view = new DataView(data.buffer), schedule = new Uint32Array(64)
     for (let offset = 0; offset < complete; offset += 64) compress(this.hash, view, offset, schedule)

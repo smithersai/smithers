@@ -326,20 +326,23 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
 /**
  * Hash individually well-formed UTF-8 text fragments with bounded prefix reuse.
  * Results equal digestSync(parts.join("")); only the last call's prefixes live.
- * @since 1.0.0
+ *
+ * @category hashing
+ * @since 1.0.0-rc.0
  */
-export const makeDigestPartsSync = (): ((parts: ReadonlyArray<string>) => Digest) => {
-  let previous: ReadonlyArray<string> = [], prefixes: Sha256Prefix[] = []
-  return parts => {
+export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest => {
+  let previous: ReadonlyArray<string> = [], prefixes: Array<Sha256Prefix> = []
+  return (parts) => {
     let same = 0
     while (same < parts.length && same < previous.length && parts[same] === previous[same]) same++
-    let state = same ? prefixes[same - 1]!.clone() : new Sha256Prefix()
+    const state = same ? prefixes[same - 1]!.clone() : new Sha256Prefix()
     const next = prefixes.slice(0, same)
     for (let index = same; index < parts.length; index++) {
       state.update(snapshotSync(parts[index]!))
       next.push(state.clone())
     }
-    previous = [...parts]; prefixes = next
+    previous = [...parts]
+    prefixes = next
     return encodeHex(state.finish()) as Digest
   }
 }
