@@ -1,7 +1,7 @@
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import { setupCandidate } from "@smthrs/rpc/RepositorySetup"
+import { setupCandidate, storedSetupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage,AgentTurnCommand,AgentTurnFrame,TurnRefusal } from "@smthrs/rpc/NativeAgent"
 import { clientRefusal } from "@smthrs/rpc/Refusal"
@@ -476,7 +476,7 @@ export const createTurnController = (
           const { repo, job, revision, inspectedAt, active } = card.payload
           const digest = setupCandidate(card.payload)
           return [{ cardId: card.id, repo, job, revision, digest, inspectedAt,
-            state: active?.enabled && active.revision === revision && active.digest === digest ? "enabled" as const
+            state: active?.enabled && active.revision === revision && storedSetupCandidate(card.payload, active.digest) ? "enabled" as const
               : active?.enabled === false ? "paused" as const : "draft" as const }]
         })
     }, instructionRoles(), { budgetBytes, lastStage })

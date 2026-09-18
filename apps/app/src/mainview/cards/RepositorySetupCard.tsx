@@ -153,7 +153,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         {owned && !unknown && state.active?.enabled && <button type="button" disabled={pending} onClick={() => run("pause")}>Pause</button>}
         {drafted && <button type="button" disabled={pending} onClick={() => onRunCommand("setup.discard", card.id)}>Discard draft</button>}
         <button type="button" disabled={pending || unknown || !owned || gate.length > 0 || (state.active?.enabled && state.active.revision === state.revision)} onClick={() => run("apply")}>{state.active?.enabled ? labels.update : labels.enable}</button>
-        {gate.length > 0 && <span className="setup-gate">{gate[0]}</span>}
+        {gate.length > 0 && !activeMatches && <span className="setup-gate">{gate[0]}</span>}
       </>}
     </footer>
   </div>

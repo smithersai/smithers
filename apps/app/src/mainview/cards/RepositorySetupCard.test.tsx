@@ -2,7 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { initialSetup, setupCandidate, type RepositoryJob, type SetupReceipt, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupActivationProblems, setupCandidate, type RepositoryJob, type SetupReceipt, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { projectRecoveredSetup } from "../state/controller/repositorySetup"
 import { flowArgs } from "../flows/FlowArgs"
 import { payloadFor } from "../flows/SlashPayload"
@@ -12,6 +12,10 @@ import { RepositorySetupCard } from "./RepositorySetupCard"
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
 
+// The digest the build before the trial's test request left the candidate computed for the canary's
+// `feature` draft at revision 6, and the one its enabled registration still carries in the registry
+// (flows/test/repository-stored-registration.test.ts).
+const REGISTERED_DIGEST = "7d58fb03b7f0ed28a6ba637caacb19617776ea94925eea34b1a495887a2df04b"
 const makeCard = (job: RepositoryJob = "issues"): CardOf<"repository-setup"> => ({
   id: "setup", kind: "repository-setup", title: "Setup", status: "active", createdAt: 1, ordinal: 1,
   payload: initialSetup("example/repo", job, "maintainer")
@@ -231,6 +235,26 @@ test("a paused job keeps its way back on the card, through the flow every door r
     t.render(card)
     expect(t.button("Enable feature flow")?.disabled).toBe(true)
     expect(t.host.querySelector(".setup-gate")?.textContent).toBe("Run evals for this draft.")
+  } finally { t.close() }
+})
+
+/*
+ * R96b follow-up 1: the canary's `feature` registration was enabled under the
+ * digest the build before this chain wrote, so its card reads applied and its
+ * Update button is already disabled at that revision. The activation gate beside
+ * them asks for evals that prove a candidate the row is already running.
+ */
+test("an enabled registration written with the older identity shows no gate beside its disabled Update", () => {
+  const card: CardOf<"repository-setup"> = { id: "setup", kind: "repository-setup", title: "Setup", status: "active", createdAt: 1, ordinal: 1,
+    payload: { ...initialSetup("codeplanesmithers/canary-sandbox", "feature", "maintainer"), revision: 6,
+      active: { revision: 6, digest: REGISTERED_DIGEST, registrationId: "canary-feature", sourceRevision: "c2556c7da43868894aa8368a01d7d1ce2c736d0f", enabled: true, owned: true } } }
+  const t = mount(card)
+  try {
+    expect(setupCandidate(card.payload)).not.toBe(REGISTERED_DIGEST)
+    expect(setupActivationProblems(card.payload)).toContain("Run evals for this draft.")
+    expect(t.host.querySelector(".setup-heading")?.lastElementChild?.textContent).toBe("Enabled")
+    expect(t.button("Update feature flow")?.disabled).toBe(true)
+    expect(t.host.querySelector(".setup-gate")).toBeNull()
   } finally { t.close() }
 })
 

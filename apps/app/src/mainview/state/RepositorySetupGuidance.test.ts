@@ -15,7 +15,11 @@ import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionSt
 import { memoryStorage, recordingAgent, scriptedToolAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const id = "setup:maintainer:example%2Frepo:issues"
-const setupNames = ["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.discard", "setup.retry"]
+// The digest the build before the trial's test request left the candidate computed for the canary's
+// `feature` draft at revision 6, and the one its enabled registration still carries in the registry
+// (flows/test/repository-stored-registration.test.ts).
+const REGISTERED_DIGEST = "7d58fb03b7f0ed28a6ba637caacb19617776ea94925eea34b1a495887a2df04b"
+const setupNames =["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.discard", "setup.retry"]
 const QUESTION = "Keep issue research, duplicate lookup and bug reproduction automatic?"
 const CHOICES = ["Keep them automatic", "Ask me before each one runs", "Turn them off"]
 
@@ -508,6 +512,32 @@ test("setup authority refreshes after an edit and never includes another account
     expect(cards[0]).toMatchObject({ cardId: id, revision: 2, digest: setupCandidate(t.setup()) })
     expect(line).not.toContain("other/private")
     expect(await t.call({ action: "execute", name: "setup.guide", args: "foreign-setup" })).toContain("different account")
+  } finally { await t.close() }
+})
+
+/*
+ * R96b B1. The canary's enabled `feature` registration sits at revision 6 under
+ * the digest the build before this chain wrote; Plue keeps that digest and
+ * dispatches from it verbatim. This line is the model's only reading of that
+ * row, so recomputing the candidate and comparing for equality tells it a
+ * running registration is a draft — the state the walk's "Nothing runs
+ * automatically" answer was built on.
+ */
+test("an enabled registration keeps its state in the turn under the identity it was registered with", async () => {
+  const t = await fixture()
+  try {
+    const registered = "setup:maintainer:codeplanesmithers%2Fcanary-sandbox:feature"
+    const payload = { ...initialSetup("codeplanesmithers/canary-sandbox", "feature", "maintainer"), revision: 6, inspectedAt: 1234,
+      active: { revision: 6, digest: REGISTERED_DIGEST, registrationId: "canary-feature", sourceRevision: "c2556c7da43868894aa8368a01d7d1ce2c736d0f", enabled: true, owned: true } }
+    expect(setupCandidate(payload)).not.toBe(REGISTERED_DIGEST)
+    await t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: registered, kind: "repository-setup", title: "Ship a feature", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(), payload } }).isPersisted.promise
+    await t.controller.send(`what is set up in ${registered}?`)
+    await waitFor(() => t.requests.length > 0)
+    const card = t.store.collections.cards.get(registered)!
+    expect(card.kind === "repository-setup" && card.payload.active?.digest).toBe(REGISTERED_DIGEST)
+    const line = conversationTurn(t.requests).instructions.split("\n").find(line => line.startsWith("Current repository setup cards:"))!
+    const cards = JSON.parse(line.slice("Current repository setup cards: ".length))
+    expect(cards.find((row: { cardId: string }) => row.cardId === registered)).toMatchObject({ revision: 6, state: "enabled" })
   } finally { await t.close() }
 })
 

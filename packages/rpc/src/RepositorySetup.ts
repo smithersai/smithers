@@ -502,6 +502,8 @@ function candidateDigest(
  * Whether a digest a registration row, a stored request or a dispatched job carries names this candidate. The
  * identity written before the trial's own test request left the candidate hashed that request too, and nothing
  * recomputes a stored digest, so both identities name one registration and a job registered then keeps running.
+ * That older identity is accepted until a migration rewrites every stored registry digest (added 2026-09-18);
+ * it may be dropped in the same change that rewrites them, and not before.
  *
  * @since 1.0.0
  * @category conversions
