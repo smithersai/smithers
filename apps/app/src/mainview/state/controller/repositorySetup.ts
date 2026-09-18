@@ -142,7 +142,7 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
       || (receipt.phase === "completed" && (!receipt.runId || (input.operation === "run" && !receipt.jobRunId)))
       || (result.inspection && (input.operation !== "inspect" || receipt.phase !== "completed"))) throw Error("The recovered receipt does not match its setup request.")
     if (unchanged) next = { ...next, draft: input.draft, revision: input.revision }
-    if (result.workspaceId !== undefined && result.workspaceId !== pinned
+    if (result.workspaceId !== undefined && pinned !== undefined && result.workspaceId !== pinned
       && policy?.owned === false && policy.workspaceId === result.workspaceId) throw Error("The recovered setup belongs to another workspace.")
     next = archiveReplacedSetupReceipt(next, receipt)
     next = { ...next, ...(supersedes(result.workspaceId, input.workspaceId === pinned) ? { workspaceId: result.workspaceId } : {}), receipt }

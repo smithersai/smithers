@@ -1204,7 +1204,7 @@ test("a browser pinned to the deleted workspace adopts the registration's live o
  * reads both back, so recovery has to follow the host instead of refusing the
  * whole projection and leaving every door answering "Setup recovery requested."
  */
-const persistedSetup = async (t: Awaited<ReturnType<typeof fixture>>, workspace: string) =>
+const persistedSetup = async (t: Awaited<ReturnType<typeof fixture>>, workspace?: string) =>
   t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup:maintainer:example%2Frepo:issues",
     kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
     payload: { ...initialSetup("example/repo", "issues", "maintainer"), workspaceId: workspace, inspectedAt: 1 } } }).isPersisted.promise
@@ -1341,5 +1341,39 @@ test("a settled failure recovered after a reload never reaches the reused-id ref
     await t.setup.retryRepositorySetup(setupCard(t).id); await Promise.all(t.background)
     expect(t.calls.every(call => call.body.requestId !== SETTLED_REQUEST)).toBe(true)
     expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
+  } finally { await t.close() }
+})
+
+/*
+ * R77b follow-up 1: the workspace guard lost its `current.workspaceId`
+ * precondition, so a card that carries no pin at all measured
+ * `result.workspaceId !== undefined` as a mismatch and refused. That card has
+ * nothing to protect and no other door, so it adopts what the host reports.
+ */
+const unowned = "c1d2e3f4-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+const unownedElsewhere = (): SetupRecoveryResponse => {
+  const recovered = boundTo(undefined)
+  if (recovered.setup.state !== "found" || recovered.registration.state !== "known" || !recovered.registration.active) throw Error("fixture")
+  return { ...recovered, registration: { ...recovered.registration, active: { ...recovered.registration.active, workspaceId: unowned, owned: false } },
+    setup: { ...recovered.setup, result: { ...recovered.setup.result, workspaceId: unowned } } }
+}
+
+test("a card with no pin adopts the host's workspace even where the registration says another account owns it", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json() as Record<string, unknown>
+    return Response.json({ ...value, workspaceId: unowned })
+  })
+  t.recovery.answer = async () => Response.json(unownedElsewhere())
+  try {
+    await persistedSetup(t)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(card.payload.recovery?.error).toBeUndefined()
+    expect(card.payload.workspaceId).toBe(unowned)
+    const inspect = await t.setup.runRepositorySetup(card.id, "inspect"); await Promise.all(t.background)
+    expect(inspect).not.toEqual({ value: "Setup recovery requested." })
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.workspaceId).toBe(unowned)
   } finally { await t.close() }
 })
