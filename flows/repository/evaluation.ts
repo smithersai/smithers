@@ -51,6 +51,11 @@ export const evaluatedCandidate = (setup: SetupInput): Pick<JobInput, "repo" | "
 }
 const CaptureCase = Flow.make("repository/CaptureCase", { payload: CaptureRepository.payloadSchema,
   success: RepositoryEvidence, error: CodingError, body: input => CaptureRepository.call(input) })
+/** The next reader needs the underlying cause, not the fact that one existed. */
+const capturedCause = (error: unknown): string => {
+  const fields = error !== null && typeof error === "object" ? error as { readonly code?: unknown; readonly message?: unknown } : {}
+  return typeof fields.code === "string" && typeof fields.message === "string" ? `: ${fields.code} — ${fields.message}` : "."
+}
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
   current !== null && typeof current === "object" ? (current as Record<string, unknown>)[token.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined, value)
 const executionFailed = (step: JobResult["results"][number], sourceRevision: string): boolean => {
@@ -96,10 +101,11 @@ export const evaluationLayers = Layer.mergeAll(Interpreter.layer(ScoreExecution)
       }
       const captured = decoded.value.sourceRevision === evidence.source.commitId ? Effect.succeed(evidence)
         : runtime.execute(CaptureCase, { executionId: `${key}-source`, payload: { repo: setup.repo,
-          sourceRevision: decoded.value.sourceRevision, prompt: JSON.stringify(decoded.value.event.payload) } })
+          sourceRevision: decoded.value.sourceRevision, heldOut: true, prompt: JSON.stringify(decoded.value.event.payload) } })
       const capturedResult = yield* captured.pipe(Effect.result)
       if (capturedResult._tag === "Failure") {
-        results.push({ caseId: test.id, status: "error", observed: "The held-out source commit could not be captured.", evidence: [`execution:${key}-source`], executionId: `${key}-source` })
+        results.push({ caseId: test.id, status: "error", observed: `The held-out source commit could not be captured${capturedCause(capturedResult.failure)}`,
+          evidence: [`execution:${key}-source`], executionId: `${key}-source` })
         continue
       }
       const caseEvidence = capturedResult.success

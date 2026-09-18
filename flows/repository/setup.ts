@@ -60,10 +60,11 @@ export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["che
     Digest.canonical(value.paths) === Digest.canonical(check.paths))
   return { ...check, policy: prior.length === 1 ? prior[0]!.policy : "report" }
 })
-/** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text. */
-export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type): Draft => ({
+/** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text.
+ * The held-out source is the commit this inspection actually captured, never a revision the model named. */
+export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type, sourceRevision: string): Draft => ({
   ...suggested, steps: suggestedSteps(existing.steps, suggested.steps), checks: suggestedChecks(existing.checks, suggested.checks),
-  cases: existing.cases.length ? existing.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify(test.input) })),
+  cases: existing.cases.length ? existing.cases : suggested.cases.map(test => ({ ...test, input: JSON.stringify({ ...test.input, sourceRevision }) })),
   replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
   schedule: existing.schedule, choreEvent: existing.choreEvent, connectIssues: existing.connectIssues,
   budgetMinutes: existing.budgetMinutes
@@ -196,7 +197,7 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
       const evidence = yield* runtime.execute(Capture, { executionId: key("capture"), payload: { repo: input.repo, prompt: input.draft.steps.map(step => step.prompt).join("\n") } })
       if (input.operation === "inspect") {
         const suggested = yield* runtime.execute(Suggest, { executionId: key("suggest"), payload: { input, evidence, deadlineAt } })
-        const suggestedDraft = suggestedSetupDraft(input.draft, suggested)
+        const suggestedDraft = suggestedSetupDraft(input.draft, suggested, evidence.source.commitId)
         return yield* respond({ ...identity, inspection: { sources: evidence.sources, suggestedDraft, inspectedAt: Date.now() },
           receipt: receipt({ sourceRevision: evidence.source.commitId, evidence: evidence.sources.filter(source => source.status === "read").map(source => source.path) }) })
       }

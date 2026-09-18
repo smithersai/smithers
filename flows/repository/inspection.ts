@@ -6,6 +6,7 @@ import { NativeCoding } from "../coding/native.ts"
 import { collectSources, extractPaths, normalizePath, reader, repositoryContextPaths, type SourceReader } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { RepositoryRemote } from "./remote.ts"
+import { hasSourceCommits } from "./retention.ts"
 import { withCapturedCommit } from "./source.ts"
 import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { RepositoryEvidence } from "./schema.ts"
@@ -13,7 +14,8 @@ import { RepositoryEvidence } from "./schema.ts"
 export const deploymentMinutes = 120
 export const deploymentTokens = 200_000
 export const CaptureRepository = Action.make("repository/capture", {
-  payload: { repo: Schema.NonEmptyString, prompt: Schema.String, sourceRevision: Schema.optionalKey(Schema.String) }, success: RepositoryEvidence, error: CodingError,
+  payload: { repo: Schema.NonEmptyString, prompt: Schema.String, sourceRevision: Schema.optionalKey(Schema.String),
+    heldOut: Schema.optionalKey(Schema.Boolean) }, success: RepositoryEvidence, error: CodingError,
   nondeterministic: true
 })
 export interface InspectionOptions extends ImmutableSourceOptions {}
@@ -49,8 +51,13 @@ export const captureRepository = (options: InspectionOptions, input: typeof Capt
     ...extractPaths(...first.sources.map(file => file.text))])
   return files
   })
-  const captured = mode === "immutable" || (input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId)
-    ? yield* withCapturedCommit(options, input.sourceRevision ?? before.head.commitId, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
+  // A held-out revision outlives the workspace that recorded it, and a replaced
+  // workspace never held that commit. Current source is what this host can capture.
+  const pinned = input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId &&
+    (input.heldOut !== true || (yield* hasSourceCommits(options, [input.sourceRevision], before.operationId).pipe(Effect.orElseSucceed(() => false))))
+    ? input.sourceRevision : undefined
+  const captured = mode === "immutable" || pinned !== undefined
+    ? yield* withCapturedCommit(options, pinned ?? before.head.commitId, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
     : { files: yield* readFiles(yield* options.fs.realPath(options.repositoryPath)), source: before.head }
   const files = captured.files
   const history = Option.isSome(remote) ? yield* remote.value.history : {
