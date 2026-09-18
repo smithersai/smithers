@@ -211,7 +211,6 @@ Start at [the CLI reference index](https://smithers.sh/docs/reference/cli/), or 
 [`signal`](https://smithers.sh/docs/reference/cli/signal/), [`steer`](https://smithers.sh/docs/reference/cli/steer/), [`ls`](https://smithers.sh/docs/reference/cli/ls/),
 [`ps`](https://smithers.sh/docs/reference/cli/ps/), [`status`](https://smithers.sh/docs/reference/cli/status/), [`logs`](https://smithers.sh/docs/reference/cli/logs/),
 [`output`](https://smithers.sh/docs/reference/cli/output/), [`down`](https://smithers.sh/docs/reference/cli/down/), [`serve`](https://smithers.sh/docs/reference/cli/serve/),
-[`opencode`](https://smithers.sh/docs/reference/cli/opencode/),
 [`init`](https://smithers.sh/docs/reference/cli/init/), [`suggest`](https://smithers.sh/docs/reference/cli/suggest/), [`doctor`](https://smithers.sh/docs/reference/cli/doctor/),
 [`migrate`](https://smithers.sh/docs/reference/cli/migrate/), [`gc`](https://smithers.sh/docs/reference/cli/gc/), [`memory`](https://smithers.sh/docs/reference/cli/memory/),
 [`claude`](https://smithers.sh/docs/reference/cli/claude/), [`mcp`](https://smithers.sh/docs/reference/cli/mcp/), [`update`](https://smithers.sh/docs/reference/cli/update/), and

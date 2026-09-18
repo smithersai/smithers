@@ -369,7 +369,7 @@ The diff is 48 insertions, 0 deletions, and includes two pre-existing parity red
 4. `packages/smithers/test/UnifiedRootCommands.test.ts`: add `"opencode"` to the inert-help list at line 130, `vi.mock("../src/commands/OpenCode.ts", ...)` beside the other command mocks, and one routing test in the `serve` style (lines 205 to 240) asserting the parsed flags reach the port and that `--remote` is refused.
 5. `packages/smithers/test/Bin.test.ts` optional: one spawned-process case that `opencode --help` exits 0 (the `Bin` suite is the process-boundary oracle).
 6. `packages/smithers/docs/README.md` line 85: add `opencode` to the "Host and integrate" row.
-7. `packages/smithers/docs/reference/cli/README.md` line 31: add `opencode` to the `serve`, `doctor`, ... row and the link list at lines 205 to 214 (`[`opencode`](/cli/opencode)`).
+7. `packages/smithers/docs/reference/cli/README.md` line 31: add `opencode` to the `serve`, `doctor`, ... row. Leave the verb link list at lines 205 to 214 alone: `/cli/opencode` has no page until item 11 adds one, and a link to it is dead on the site.
 8. `packages/smithers/README.md` commands table (line 62 region): add `opencode` to a row.
 9. `packages/smithers/CHANGELOG.md`: `### Added` under `[Unreleased]`.
 10. `node apps/site/scripts/gen-cli-data.mjs`: regenerates `apps/site/src/data/cli-commands.json`, `apps/site/src/data/help/opencode.txt`, the generated table in `apps/site/src/content/docs/docs/reference/cli/index.mdx`, and `smthrs.txt`. `//apps/site:cliData` lint-checks drift. The script runs `makeCli` in process, so the verb must parse with `--help` cleanly.

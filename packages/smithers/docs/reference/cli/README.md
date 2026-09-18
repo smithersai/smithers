@@ -210,7 +210,6 @@ Start at [the CLI reference index](/cli), or go straight to a verb:
 [`signal`](/cli/signal), [`steer`](/cli/steer), [`ls`](/cli/ls),
 [`ps`](/cli/ps), [`status`](/cli/status), [`logs`](/cli/logs),
 [`output`](/cli/output), [`down`](/cli/down), [`serve`](/cli/serve),
-[`opencode`](/cli/opencode),
 [`init`](/cli/init), [`suggest`](/cli/suggest), [`doctor`](/cli/doctor),
 [`migrate`](/cli/migrate), [`gc`](/cli/gc), [`memory`](/cli/memory),
 [`claude`](/cli/claude), [`mcp`](/cli/mcp), [`update`](/cli/update), and
