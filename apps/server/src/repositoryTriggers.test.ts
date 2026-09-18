@@ -144,6 +144,24 @@ test("pause counts the rows Smithers Cloud actually stopped, and says zero when 
   expect(invalid.calls).toEqual([])
 })
 
+/*
+ * The app reads `paused` as a NUMBER and says "no such schedule" below one
+ * (TriggersSeam pauseTrigger). Any other shape reads as a successful pause,
+ * so an accepted pause answers a number whatever Smithers Cloud returned —
+ * including a body this Worker's vocabulary does not cover.
+ */
+test("an accepted pause always answers a numeric count, whatever shape Cloud answered", async () => {
+  for (const answer of [{}, null, { rows: [] }, "ok"] as const) {
+    const deployed = deployment(() => Response.json(answer))
+    const paused = await body(await deployed.fetchAs(TRIGGER_PAUSE_PATH, {
+      method: "POST",
+      body: JSON.stringify({ repo: "org/repo", slug: "nightly" })
+    }))
+    expect(paused).toEqual({ status: "ok", paused: 0 })
+    expect(typeof paused.paused).toBe("number")
+  }
+})
+
 const APPROVED_PLAN = { repo: "org/repo", slug: "nightly", planId: "plan-1", planDigest: "d".repeat(64), envelope: {} }
 const APPROVAL = { ...APPROVED_PLAN, flowId: "nightly-lint" }
 

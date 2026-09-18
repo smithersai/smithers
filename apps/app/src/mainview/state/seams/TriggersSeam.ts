@@ -763,15 +763,27 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     return { value: `Registering ${slug} on ${repo}.` }
   }
 
+  /*
+   * A refused pause, said where it stays. The returned string reaches the
+   * caller as the command-failure toast, which states itself and dismisses
+   * after four seconds; a consequential door the human pressed needs an
+   * answer that is still there when they look back, so the sentence is
+   * appended to the transcript as well.
+   */
+  const refusePause = (message: string): string => {
+    ctx.dispatch({ type: "message.appended", actor: "system", text: message })
+    return message
+  }
+
   /** Stop a schedule the human enabled, then re-read the listing so the card states it. */
   const pauseTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
     const slug = request.slug ?? ""
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
     const paused = await workerCall(ctx, TRIGGER_PAUSE_PATH, { repo, slug })
-    if (!paused.ok) return paused.message
+    if (!paused.ok) return refusePause(paused.message)
     /* Smithers Cloud counts the registrations it stopped; a name it does not hold stops none, and that is not a pause. */
     if (typeof paused.value.paused === "number" && paused.value.paused < 1) {
-      return `No schedule "${slug}" is registered on ${repo}.`
+      return refusePause(`No schedule "${slug}" is registered on ${repo}.`)
     }
     await listTriggers(repo)
     return { value: `Paused ${slug} on ${repo}.` }

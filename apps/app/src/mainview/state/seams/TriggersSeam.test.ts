@@ -1056,6 +1056,27 @@ describe("triggers seam: listing and pausing a schedule", () => {
     expect(seen.filter((path) => path.startsWith(REGISTRATIONS))).toEqual([])
   })
 
+  /*
+   * Canary D-3: the sentence above was returned and never read. A returned
+   * string surfaces only as the command-failure toast, which states itself
+   * and dismisses after four seconds, so a person who pressed a consequential
+   * door and looked away saw nothing at all. The transcript is the durable
+   * half of the answer, so the door writes it there itself.
+   */
+  test("a pause that stopped nothing states it in the transcript, not only on a toast", async () => {
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [PAUSE]: json(200, { status: "ok", paused: 0 })
+      }),
+      { signedIn: true }
+    )
+    await controller.registerTrigger({ operation: "pause", repo: "will/flows", slug: "canary-never-registered" })
+    await settled()
+    expect([...store.collections.messages.values()].map((message) => message.text))
+      .toContain('No schedule "canary-never-registered" is registered on will/flows.')
+  })
+
   test("the pause door is the agent's to ask for and the human's to confirm", async () => {
     const { store, controller } = await ready(backend({ [PROJECTION]: projectionDocument(DAY_ONE) }), { signedIn: true })
     const asked = await controller.commands.runForAgent("triggers.pause", JSON.stringify({ repo: "will/flows", slug: "nightly" }))
