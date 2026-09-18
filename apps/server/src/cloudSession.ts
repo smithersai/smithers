@@ -1,4 +1,6 @@
 import type { CloudSession } from "@smthrs/rpc/LocalApp"
+import { plueFailureCode } from "@smthrs/rpc/Refusal"
+import { machineReadableRefusal, upstreamProse } from "@smthrs/rpc/UpstreamProse"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
@@ -6,6 +8,39 @@ import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readText } from "./Http"
 import { validateSession } from "./identity"
 import { json, refuse } from "./Responses"
+
+/**
+ * The sentence plue's scope gate writes, verbatim.
+ *
+ * It is a constant of OUR service, not a phrase we hope a 403 contains:
+ * `RequireScope` in plue internal/middleware/scope.go builds it at one line
+ * (`errors.Forbidden("insufficient token scope")`) and plue's own suite pins
+ * the string (internal/routes/regression_test.go, internal/middleware/
+ * admin_test.go). Reading it is still reading a sentence, which is why it is
+ * only ever consulted INSIDE a body that already carried plue's typed
+ * `forbidden` verdict — see `isCloudScopeRefusal`.
+ */
+const CLOUD_SCOPE_REFUSAL = "insufficient token scope"
+
+/**
+ * Whether a 403 from Smithers Cloud is the scope refusal a degraded session
+ * exists for.
+ *
+ * The verdict comes off the wire: plue serializes `code` first and clients
+ * branch on it, never on `message` (plue pkg/errors/errors.go `APIError`). A
+ * body with no plue code — Cloudflare's own block page, another proxy's
+ * envelope, a string that merely reads like a scope complaint — cannot
+ * publish a signed-in session, whatever English it contains.
+ *
+ * plue's taxonomy has no code for "this token's scopes are short": the scope
+ * gate, the workspaces feature flag, and the repository-bound-token gate all
+ * answer `forbidden`, so the code alone cannot separate them and the pinned
+ * sentence above picks the scope one out. That is the producer's gap, and
+ * fixing it is a change in plue: give `RequireScope` its own registry code
+ * (pkg/errors/registry.go) and this function becomes the code test alone.
+ */
+const isCloudScopeRefusal = (body: string): boolean =>
+  plueFailureCode(machineReadableRefusal(body).code) === "forbidden" && upstreamProse(body) === CLOUD_SCOPE_REFUSAL
 
 /**
  * Web counterpart of the native CloudAuth session. The app's cookie names
@@ -38,8 +73,9 @@ export const probeCloudSession = (request: Request) => Effect.gen(function* () {
   const response = probe.success
   let degraded = false
   if (response.status === 403) {
+    // An unreadable body carries no verdict, so it degrades nothing.
     const body = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
-    degraded = /insufficient/i.test(body) && /scope/i.test(body)
+    degraded = isCloudScopeRefusal(body)
   } else {
     yield* discardBody(response)
   }

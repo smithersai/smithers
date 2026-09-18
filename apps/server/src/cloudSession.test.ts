@@ -4,7 +4,31 @@ import { configLayer } from "./Config"
 import { probeCloudSession } from "./cloudSession"
 import { transportLayer } from "./Http"
 
-const run = (options: { identity?: number; token?: boolean; scope?: number; message?: string; offline?: boolean; refusal?: string } = {}) => {
+/**
+ * Smithers Cloud's refusal envelope, in its own wire order: the machine-
+ * readable verdict first, the sentence after (plue pkg/errors/errors.go
+ * `APIError`, pinned there by TestErrorBodyPutsVerdictFirst). Every fixture
+ * below is a body plue can actually produce on GET /api/user/workspaces.
+ */
+const cloudRefusal = (status: number, code: string, fault: string, message: string) =>
+  new Response(JSON.stringify({ code, fault, message }), {
+    status,
+    headers: { "content-type": "application/json" }
+  })
+
+/** A 403 whose body starts arriving and then fails mid-stream. */
+const unreadable = (status: number) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`{"code":"forbidden","message":"insufficient token scope`))
+        controller.error(new Error("connection reset"))
+      }
+    }),
+    { status, headers: { "content-type": "application/json" } }
+  )
+
+const run = (options: { identity?: number; token?: boolean; scope?: number; message?: string; offline?: boolean; refusal?: string; cloud?: () => Response } = {}) => {
   const calls: Request[] = []
   const response = Effect.runPromise(probeCloudSession(new Request("https://web.test/api/cloud-auth/session", {
     headers: { cookie: "session=fixture" }
@@ -20,6 +44,7 @@ const run = (options: { identity?: number; token?: boolean; scope?: number; mess
       return Response.json(options.token === false ? { found: false } : { found: true, token: "private-fixture-token" })
     }
     if (options.offline) throw new Error("offline")
+    if (options.cloud !== undefined) return options.cloud()
     return Response.json({ message: options.message ?? "upstream refused" }, { status: options.scope ?? 200 })
   }))))
   return { response, calls }
@@ -60,9 +85,53 @@ test("signed-out identity never exchanges a token or calls Cloud", async () => {
   expect(calls).toHaveLength(1)
 })
 
-test("Cloud scope failure is a signed-in degraded session, independent of GitHub scopes", async () => {
-  const { response } = run({ scope: 403, message: "Insufficient scope: read:workspace" })
+// The one 403 a degraded session is FOR: plue's scope gate
+// (internal/middleware/scope.go RequireScope) refusing the Cloud PAT.
+test("Cloud's scope refusal is a signed-in degraded session, independent of GitHub scopes", async () => {
+  const { response } = run({ cloud: () => cloudRefusal(403, "forbidden", "user", "insufficient token scope") })
   expect(await (await response).json()).toEqual({ state: "signed-in", username: "ada", expiresAt: null, scopes: "degraded" })
+})
+
+// Every other refusal Cloud can put on this route. None of them says the
+// token's scopes are short, so none of them may publish a signed-in session.
+for (const [code, message] of [
+  // plue's workspaces feature flag is off for the deployment
+  // (internal/middleware/feature_flag.go): the same code, a different refusal.
+  ["forbidden", "feature not available"],
+  ["forbidden", "repository-bound token cannot access resources outside its repository"],
+  ["access_not_granted", "account is not on the closed-alpha whitelist"],
+  ["org_membership_required", "join the organization to read its workspaces"]
+] as const) {
+  test(`a Cloud 403 that is not the scope refusal never degrades: ${code} / ${message}`, async () => {
+    const { response } = run({ cloud: () => cloudRefusal(403, code, "user", message) })
+    const answer = await response
+    expect(answer.status).toBeGreaterThanOrEqual(500)
+    expect(await answer.json()).toMatchObject({ code: "upstream_refused" })
+  })
+}
+
+// The point of reading the code: two English words in a body nobody typed
+// for us decided whether a person stayed signed in. A 403 that carries no
+// verdict is not Cloud saying "your scopes are short", whatever it reads like.
+for (const [label, body] of [
+  ["a bare sentence with no code", `{"message":"Insufficient scope: read:workspace"}`],
+  ["another party's envelope", `{"error":{"message":"insufficient scope for this token"}}`],
+  ["an edge HTML page", `<!DOCTYPE html><title>403</title><p>insufficient scope</p>`],
+  ["a code from no registry", `{"code":"insufficient_scope","message":"insufficient token scope"}`]
+] as const) {
+  test(`a 403 that only reads like a scope refusal no longer degrades: ${label}`, async () => {
+    const { response } = run({ cloud: () => new Response(body, { status: 403 }) })
+    const answer = await response
+    expect(answer.status).toBeGreaterThanOrEqual(500)
+    expect(await answer.json()).toMatchObject({ code: "upstream_refused" })
+  })
+}
+
+test("a 403 whose body cannot be read refuses rather than degrading", async () => {
+  const { response } = run({ cloud: () => unreadable(403) })
+  const answer = await response
+  expect(answer.status).toBeGreaterThanOrEqual(500)
+  expect(await answer.json()).toMatchObject({ code: "upstream_refused" })
 })
 
 for (const options of [{ identity: 500 }, { token: false }, { scope: 401 }, { scope: 403 }, { scope: 503 }, { offline: true }]) {
