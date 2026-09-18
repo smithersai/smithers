@@ -969,10 +969,15 @@ test("recovery rejects mismatched candidate and workspace identities while retai
   if (badDigest.setup.state !== "found") throw Error("fixture")
   badDigest.setup.input.draft.budgetMinutes += 1
   expect(() => projectRecoveredSetup(current, badDigest)).toThrow("does not match")
+  const otherRequest = recoveredInspection()
+  if (otherRequest.setup.state !== "found") throw Error("fixture")
+  otherRequest.setup.result.requestId = "another-inspection"
+  expect(() => projectRecoveredSetup(current, otherRequest)).toThrow("The recovered receipt does not match its setup request.")
   const wrongWorkspace = recoveredInspection()
   if (wrongWorkspace.setup.state !== "found") throw Error("fixture")
-  wrongWorkspace.setup.input.workspaceId = "22222222-2222-4222-8222-222222222222"
-  expect(() => projectRecoveredSetup(current, wrongWorkspace)).toThrow("does not match")
+  wrongWorkspace.registration = { state: "known", active: { registrationId: "other-maintainer", workspaceId, owned: false,
+    enabled: false, revision: 1, digest: setupCandidate(initial), sourceRevision: "e1846f17", draft: initial.draft } }
+  expect(() => projectRecoveredSetup({ ...current, workspaceId: deadPin }, wrongWorkspace)).toThrow("The recovered setup belongs to another workspace.")
   expect(current.revision).toBe(1)
 })
 
@@ -1189,5 +1194,111 @@ test("a browser pinned to the deleted workspace adopts the registration's live o
     expect(t.calls[0]?.body.workspaceId).toBe(replacement)
     expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
     expect(setupCard(t).payload.workspaceId).toBe(replacement)
+  } finally { await t.close() }
+})
+
+/*
+ * A request that pinned a deleted workspace ends on the replacement the host
+ * bound for it, and the recovered result reports that replacement while the
+ * recorded input keeps the dead pin. A page that never watched the allocation
+ * reads both back, so recovery has to follow the host instead of refusing the
+ * whole projection and leaving every door answering "Setup recovery requested."
+ */
+const persistedSetup = async (t: Awaited<ReturnType<typeof fixture>>, workspace: string) =>
+  t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup:maintainer:example%2Frepo:issues",
+    kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
+    payload: { ...initialSetup("example/repo", "issues", "maintainer"), workspaceId: workspace, inspectedAt: 1 } } }).isPersisted.promise
+
+const loadedWorkspaces = async (t: Awaited<ReturnType<typeof fixture>>, ...ids: Array<string>) =>
+  t.store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: "example/repo",
+    workspaces: ids.map(id => ({ id, repoId: "example/repo", name: id, targetBookmark: null, status: "running" as const,
+      provisioningStage: null, suspendedAt: null, createdAt: null })) }).isPersisted.promise
+
+const boundTo = (pin: string | undefined): SetupRecoveryResponse => {
+  const recovered = settledWorkspaceGone()
+  if (recovered.setup.state !== "found") throw Error("fixture")
+  recovered.setup = { ...recovered.setup, input: { ...recovered.setup.input, workspaceId: pin },
+    result: { ...recovered.setup.result, workspaceId: replacement } }
+  return recovered
+}
+
+const registeredOn = (workspace: string): SetupRecoveryResponse => {
+  const base = initialSetup("example/repo", "issues", "maintainer")
+  return { owner: "maintainer", repo: base.repo, job: base.job,
+    registration: { state: "known", active: { registrationId: "a5622c49", workspaceId: workspace, owned: true, enabled: false,
+      revision: 4, digest: setupCandidate({ ...base, revision: 4 }), sourceRevision: "e1846f17", draft: base.draft } },
+    setup: { state: "none" } }
+}
+
+test("a recovered result naming the replacement of the pin its own request carried recovers, and every door acts", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json() as Record<string, unknown>
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  t.recovery.answer = async () => Response.json(boundTo(deadPin))
+  try {
+    await persistedSetup(t, deadPin)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(card.payload.recovery?.error).toBeUndefined()
+    expect(card.payload.workspaceId).toBe(replacement)
+    expect(card.payload.request).toMatchObject({ id: SETTLED_REQUEST, state: "failed", error: WORKSPACE_GONE })
+    await t.setup.retryRepositorySetup(card.id); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.workspaceId).toBe(replacement)
+    const answers: Array<unknown> = []
+    for (const operation of ["inspect", "evaluate", "trial", "apply", "pause"] as const) {
+      answers.push(await t.setup.runRepositorySetup(card.id, operation)); await Promise.all(t.background)
+    }
+    expect(answers).not.toContainEqual({ value: "Setup recovery requested." })
+    expect(t.calls.filter(call => call.method === "POST")).toHaveLength(4)
+    expect(t.calls.every(call => call.body.workspaceId === replacement)).toBe(true)
+  } finally { await t.close() }
+})
+
+test("a recovered result for a request that carried no pin adopts the host's workspace instead of refusing", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json() as Record<string, unknown>
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  t.recovery.answer = async () => Response.json(boundTo(undefined))
+  try {
+    await persistedSetup(t, deadPin)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(card.payload.recovery?.error).toBeUndefined()
+    expect(card.payload.workspaceId).toBe(replacement)
+    const inspect = await t.setup.runRepositorySetup(card.id, "inspect"); await Promise.all(t.background)
+    expect(inspect).not.toEqual({ value: "Setup recovery requested." })
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.workspaceId).toBe(replacement)
+  } finally { await t.close() }
+})
+
+test("a pin the loaded workspaces still list is not moved by a registration naming a deleted box", async () => {
+  const t = await fixture(async body => response(body, "completed", "inspect"))
+  t.recovery.answer = async () => Response.json(registeredOn(deadPin))
+  try {
+    await persistedSetup(t, replacement)
+    await loadedWorkspaces(t, replacement)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    expect(setupCard(t).payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(setupCard(t).payload.workspaceId).toBe(replacement)
+    expect(t.calls).toEqual([])
+  } finally { await t.close() }
+})
+
+test("a pin the loaded workspaces no longer list is replaced by the registration's own box", async () => {
+  const t = await fixture(async body => response(body, "completed", "inspect"))
+  t.recovery.answer = async () => Response.json(registeredOn(replacement))
+  try {
+    await persistedSetup(t, deadPin)
+    await loadedWorkspaces(t, replacement)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    expect(setupCard(t).payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(setupCard(t).payload.workspaceId).toBe(replacement)
+    expect(t.calls).toEqual([])
   } finally { await t.close() }
 })

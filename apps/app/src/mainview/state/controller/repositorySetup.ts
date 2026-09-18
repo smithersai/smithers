@@ -82,26 +82,37 @@ export const applySetupEdit = (
   return { draft: parsed.data }
 }
 
-/** Recover input and evidence independently of current backend policy. */
-export function projectRecoveredSetup(current: RepositorySetup, recovered: SetupRecoveryResponse): RepositorySetup {
+/**
+ * Recover input and evidence independently of current backend policy.
+ * `liveWorkspaces` is the ids this repository's loaded workspaces hold; an
+ * unloaded collection names none, and the pin then moves on host evidence alone.
+ */
+export function projectRecoveredSetup(current: RepositorySetup, recovered: SetupRecoveryResponse, liveWorkspaces?: ReadonlySet<string>): RepositorySetup {
   if (recovered.owner !== current.owner) throw Error("The recovered setup belongs to a different account.")
   if (recovered.repo !== current.repo || recovered.job !== current.job || !current.recovery) throw Error("The recovered setup belongs to another repository.")
   const unchanged = current.recovery.adoptDraft === true && current.revision === current.recovery.baseRevision && setupCandidate(current) === current.recovery.baseDigest
   let next = { ...current }
   const { registration, setup } = recovered
   const policy = registration.state === "known" ? registration.active ?? registration.trial : undefined
+  // A pin those workspaces still list is the live one and nothing moves it. A
+  // pin they do not list is spent, and so is one the host itself replaced on
+  // the request that carried it — `binding ?? workspaceId` is its later word.
+  const pinned = current.workspaceId
+  const spent = pinned === undefined || liveWorkspaces === undefined || !liveWorkspaces.has(pinned)
+  const supersedes = (candidate: string | undefined, replaced = false): candidate is string =>
+    candidate !== undefined && candidate !== pinned && (spent || replaced)
   if (setup.state === "found") {
     const { input, result } = setup, receipt = result.receipt
     if (input.repo !== current.repo || input.job !== current.job || setupCandidate(input) !== input.digest
-      || (input.workspaceId !== undefined && result.workspaceId !== undefined && input.workspaceId !== result.workspaceId)
       || result.requestId !== input.requestId || result.revision !== input.revision || result.digest !== input.digest
       || !receipt || receipt.requestId !== input.requestId || receipt.revision !== input.revision || receipt.digest !== input.digest || receipt.operation !== input.operation
       || (receipt.phase === "completed" && (!receipt.runId || (input.operation === "run" && !receipt.jobRunId)))
       || (result.inspection && (input.operation !== "inspect" || receipt.phase !== "completed"))) throw Error("The recovered receipt does not match its setup request.")
     if (unchanged) next = { ...next, draft: input.draft, revision: input.revision }
-    if (current.workspaceId && result.workspaceId && current.workspaceId !== result.workspaceId) throw Error("The recovered setup belongs to another workspace.")
+    if (result.workspaceId !== undefined && result.workspaceId !== pinned
+      && policy?.owned === false && policy.workspaceId === result.workspaceId) throw Error("The recovered setup belongs to another workspace.")
     next = archiveReplacedSetupReceipt(next, receipt)
-    next = { ...next, ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}), receipt }
+    next = { ...next, ...(supersedes(result.workspaceId, input.workspaceId === pinned) ? { workspaceId: result.workspaceId } : {}), receipt }
     // A settled failure is recorded evidence whether the app watched it or read
     // it back here, so the next attempt is a new request, not a replay.
     if (terminal(receipt.phase) && receipt.phase !== "completed") next = { ...next,
@@ -123,9 +134,9 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
       ...(policy.owned && !next.workspaceId ? { workspaceId: policy.workspaceId } : {}) }
   }
   // Cloud binds one repository-jobs workspace per person and repository, so an
-  // owned registration on a different box means the pinned one was replaced.
-  // Follow it; a recovered result names the newer binding and keeps its own.
-  if (policy?.owned && next.workspaceId && policy.workspaceId !== next.workspaceId
+  // owned registration on a spent pin means that pin was replaced. Follow it;
+  // a recovered result names the newer binding and keeps its own.
+  if (policy?.owned && next.workspaceId && supersedes(policy.workspaceId)
     && (setup.state !== "found" || setup.result.workspaceId === undefined)) next = { ...next, workspaceId: policy.workspaceId }
   if (registration.state === "known") {
     const active = registration.active
@@ -464,7 +475,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         await edit(id, async () => {
           if (!recoveryCurrent(id, intent.id, login, accountEpoch)) return
           const latest = get(id)!
-          const payload = projectRecoveredSetup(latest.payload, result)
+          const payload = projectRecoveredSetup(latest.payload, result, new Set([...ctx.store.collections.cloudWorkspaces.values()]
+            .filter(workspace => workspace.repoId === repo).map(workspace => workspace.id)))
           await upsert({ ...latest, status: payload.recovery?.state === "failed" ? "error" : "active", payload }, "system")
         })
         if (!recoveryCurrent(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
