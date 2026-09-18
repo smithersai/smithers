@@ -1,4 +1,4 @@
-import { Effect, Fiber, Stream } from "effect"
+import { Deferred, Effect, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Events from "../src/Events.ts"
 import { run } from "./Harness.ts"
@@ -80,10 +80,65 @@ describe("Events", () => {
     expect(result.late).toEqual(["server.connected", "session.idle"])
   })
 
+  it("bounds each live queue: a stalled consumer gets the newest events, never every one", async () => {
+    const result = await run(
+      Effect.gen(function*() {
+        const hub = yield* Events.make({ directory: "/d", project: "p", heartbeat: "1 hour", replay: 3 })
+        const gate = yield* Deferred.make<void>()
+        const seen: Array<Events.Envelope> = []
+        // The consumer reads server.connected, then stalls on the first live
+        // frame until the gate opens.
+        const consumer = yield* Effect.forkChild(
+          hub.stream().pipe(
+            Stream.mapEffect((chunk) =>
+              Effect.as(
+                seen.length === 0 ? Effect.void : Deferred.await(gate),
+                parse([chunk])[0]!
+              )
+            ),
+            Stream.runForEach((envelope) => Effect.sync(() => void seen.push(envelope)))
+          )
+        )
+        yield* Effect.sleep("10 millis")
+        for (let index = 1; index <= 40; index++) {
+          yield* hub.publish({ type: "message.part.delta", properties: { delta: `${index}` } })
+        }
+        yield* Effect.sleep("10 millis")
+        yield* Deferred.succeed(gate, undefined)
+        yield* Effect.sleep("10 millis")
+        yield* hub.close
+        yield* Fiber.join(consumer)
+        return seen.filter((envelope) => envelope.payload.type === "message.part.delta")
+          .map((envelope) => envelope.payload.properties["delta"])
+      })
+    )
+    expect(result.length).toBeLessThan(40)
+    expect(result.slice(-3)).toEqual(["38", "39", "40"])
+  })
+
   it("frames an envelope as one SSE data line and drops a closed subscriber", async () => {
     expect(Events.frame({ payload: { id: "evt_1", type: "x", properties: {} } })).toBe(
       `data: {"payload":{"id":"evt_1","type":"x","properties":{}}}\n\n`
     )
+    expect(Events.frame({ directory: "/d", project: "p", payload: { id: "evt_1", type: "x", properties: {} } }, true))
+      .toBe(`data: {"id":"evt_1","type":"x","properties":{}}\n\n`)
+    const bare = await run(
+      Effect.gen(function*() {
+        const hub = yield* Events.make(options)
+        yield* hub.publish({ type: "a", properties: { sessionID: "s" } })
+        const collected = yield* Effect.forkChild(hub.stream({ bare: true }).pipe(Stream.take(4), Stream.runCollect))
+        yield* Effect.sleep("5 millis")
+        yield* hub.publish({ type: "b", properties: {} })
+        return yield* Fiber.join(collected)
+      })
+    )
+    const bareEvents = bare.flatMap((chunk) =>
+      chunk.split("\n\n").filter((line) => line.startsWith("data: ")).map((line) =>
+        JSON.parse(line.slice(6)) as Record<string, unknown>
+      )
+    )
+    expect(bareEvents.map((event) => event["type"])).toEqual(["server.connected", "a", "b", "server.heartbeat"])
+    expect(bareEvents.every((event) => !("payload" in event) && !("directory" in event))).toBe(true)
     const count = await run(
       Effect.gen(function*() {
         const hub = yield* Events.make({ directory: "/d", project: "p" })

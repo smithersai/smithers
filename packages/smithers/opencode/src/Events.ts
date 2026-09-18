@@ -62,8 +62,12 @@ export interface Service {
   /**
    * One SSE body: `server.connected`, the replay after `after`, then live
    * events and heartbeats until the consumer stops reading or the hub closes.
+   * `bare` frames each event as the payload alone (`{id, type, properties}`),
+   * the shape `GET /event` answers; the default is the global envelope.
    */
-  readonly stream: (options?: { readonly after?: string | undefined }) => Stream.Stream<string>
+  readonly stream: (
+    options?: { readonly after?: string | undefined; readonly bare?: boolean | undefined }
+  ) => Stream.Stream<string>
   /**
    * Ends every open stream and every stream opened afterwards, so the
    * responses finish and the server can close its connections at once
@@ -97,12 +101,14 @@ export const defaultHeartbeat: Duration.Input = "15 seconds"
 export const defaultReplay = 256
 
 /**
- * One SSE frame for an envelope.
+ * One SSE frame for an envelope: the envelope itself, or with `bare` its
+ * payload alone, the `Event` shape of the 1.18.31 OpenAPI for `GET /event`.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const frame = (envelope: Envelope): string => `data: ${JSON.stringify(envelope)}\n\n`
+export const frame = (envelope: Envelope, bare = false): string =>
+  `data: ${JSON.stringify(bare ? envelope.payload : envelope)}\n\n`
 
 /**
  * The keepalive comment.
@@ -148,6 +154,11 @@ export const make = (options: Options): Effect.Effect<Service> =>
       })
 
     const stream: Service["stream"] = (streamOptions = {}) => {
+      const bare = streamOptions.bare === true
+      // A stalled consumer (a backgrounded tab, a half-closed socket) keeps
+      // the newest `capacity` events, never every event of every later
+      // turn: the app reloads history on reconnect and `Last-Event-ID`
+      // replays the gap.
       const live = Stream.callback<Envelope>((queue) =>
         Effect.suspend(() =>
           closed ? Queue.end(queue) : Effect.acquireRelease(
@@ -159,17 +170,21 @@ export const make = (options: Options): Effect.Effect<Service> =>
                 subscribers.delete(queue)
               })
           )
-        )
-      )
+        ), { bufferSize: capacity, strategy: "sliding" })
       const beats = Stream.tick(options.heartbeat ?? defaultHeartbeat).pipe(
         Stream.drop(1),
-        Stream.map(() => heartbeatComment + frame(serverEvent("server.heartbeat")))
+        Stream.map(() =>
+          heartbeatComment + frame(serverEvent("server.heartbeat"), bare)
+        )
       )
       return Stream.fromEffect(replay(streamOptions.after)).pipe(
         Stream.flatMap((missed) =>
           Stream.concat(
-            Stream.fromIterable([frame(serverEvent("server.connected")), ...missed.map(frame)]),
-            Stream.merge(Stream.map(live, frame), beats, { haltStrategy: "left" })
+            Stream.fromIterable([
+              frame(serverEvent("server.connected"), bare),
+              ...missed.map((envelope) => frame(envelope, bare))
+            ]),
+            Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare)), beats, { haltStrategy: "left" })
           )
         )
       )

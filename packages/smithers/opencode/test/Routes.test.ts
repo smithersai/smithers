@@ -372,10 +372,27 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(updated.tokens.input).toBeGreaterThan(0)
     expect((await sdk.session.abort({ path: { id: session.id } })).data).toBe(false)
     await reader.cancel()
-    // A stream opened with the last id it saw resumes after it.
+    // A stream opened with the last id it saw resumes after it; `/event`
+    // carries the bare Event of the OpenAPI, not the global envelope.
     const lastID = await served.handler(new Request("http://test/event", { headers: { "last-event-id": "evt_nope" } }))
     expect(lastID.status).toBe(200)
-    await lastID.body!.cancel()
+    const bareReader = lastID.body!.getReader()
+    let bareText = ""
+    const bareFrames: Array<Record<string, unknown>> = []
+    while (!bareFrames.some((event) => event["type"] === "session.idle")) {
+      bareText += new TextDecoder().decode((await bareReader.read()).value)
+      const chunks = bareText.split("\n\n")
+      bareText = chunks.pop() ?? ""
+      for (const chunk of chunks) {
+        if (chunk.startsWith("data: ")) bareFrames.push(JSON.parse(chunk.slice(6)) as Record<string, unknown>)
+      }
+    }
+    await bareReader.cancel()
+    expect(bareFrames[0]).toMatchObject({ type: "server.connected", properties: {} })
+    expect(bareFrames.every((event) => !("payload" in event) && !("directory" in event))).toBe(true)
+    expect(bareFrames.find((event) => event["type"] === "session.idle")!["properties"]).toEqual({
+      sessionID: session.id
+    })
   })
 
   it("serves one message by id, a file's content, and the project update the app sends", async () => {

@@ -284,8 +284,11 @@ export const layer = (
 
       const sessionParam = Effect.map(HttpRouter.params, (params) => params["id"]!)
 
-      const sse = (request: HttpServerRequest.HttpServerRequest) =>
-        HttpServerResponse.stream(Stream.encodeText(hub.stream({ after: request.headers["last-event-id"] })), {
+      // `/global/event` carries the `{directory, project, payload}` envelope
+      // the app folds; `/event` carries the bare `Event` of the OpenAPI, which
+      // is what the SDK's `event.subscribe` and the TUI read.
+      const sse = (request: HttpServerRequest.HttpServerRequest, bare = false) =>
+        HttpServerResponse.stream(Stream.encodeText(hub.stream({ after: request.headers["last-event-id"], bare })), {
           contentType: "text/event-stream",
           headers: {
             "cache-control": "no-cache, no-transform",
@@ -645,6 +648,6 @@ export const layer = (
 
       // The streams.
       yield* router.add("GET", "/global/event", (request) => Effect.succeed(sse(request)))
-      yield* router.add("GET", "/event", (request) => Effect.succeed(sse(request)))
+      yield* router.add("GET", "/event", (request) => Effect.succeed(sse(request, true)))
     })
   )
