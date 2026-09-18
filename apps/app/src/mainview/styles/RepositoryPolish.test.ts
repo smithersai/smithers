@@ -49,6 +49,16 @@ test("an unknown repository starts at the top", () => {
 
 test("help uses an opaque surface even when its parent is translucent", () => {
   style("../HelpBubble.css")
-  document.body.innerHTML = '<div style="--g-bg:#f7f6f1;--g-panel:rgba(255,255,252,0.73)"><div class="help-bubble">Help</div></div>'
+  document.body.innerHTML = '<div style="--surface:#f7f6f1;--surface-glass:rgba(255,255,252,0.73)"><div class="help-bubble">Help</div></div>'
   expect(getComputedStyle(document.querySelector(".help-bubble")!).backgroundColor).toBe("#f7f6f1")
 })
+
+for (const [theme, ink] of [["light", "#403f53"], ["dark", "#d6deeb"]]) {
+  test(`a help bubble reads in ${theme} mode`, () => {
+    style("./tokens.css")
+    style("../HelpBubble.css")
+    document.documentElement.dataset.theme = theme
+    document.body.innerHTML = '<div class="help-bubble"><div class="help-bubble-content">Help</div></div>'
+    expect(getComputedStyle(document.querySelector(".help-bubble")!).color).toBe(ink)
+  })
+}

@@ -31,7 +31,7 @@
 
 .help-bubble {
   --help-tip-border: color-mix(in srgb, var(--g-accent, #286447) 28%, transparent);
-  --help-tip-background: var(--g-bg, var(--surface, #fff));
+  --help-tip-background: var(--surface, #fff);
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -44,7 +44,7 @@
   border-left: 4px solid var(--g-accent, #286447);
   border-radius: 12px;
   background: var(--help-tip-background);
-  color: var(--g-ink, #183e2d);
+  color: var(--text, #403f53);
   box-shadow: 0 4px 14px #1e393012;
   text-align: left;
   /* A hint explains the control beneath it; it never eats that control's clicks. */

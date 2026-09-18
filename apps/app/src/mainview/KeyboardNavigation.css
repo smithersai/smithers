@@ -9,9 +9,9 @@
 .keyboard-hints, .keyboard-pane-number {
   position: fixed;
   z-index: 10000;
-  color: var(--g-ink, var(--text, #403f53));
-  background: var(--g-panel, var(--surface, #fefefe));
-  border: 1px solid var(--g-line, var(--border, #d8d5df));
+  color: var(--text, #403f53);
+  background: var(--surface, #fefefe);
+  border: 1px solid var(--border, #d8d5df);
   border-radius: 6px;
   box-shadow: 0 3px 12px #0002;
   font: 11px/1.6 var(--font-mono, monospace);
