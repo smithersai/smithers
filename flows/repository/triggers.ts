@@ -147,9 +147,14 @@ export const triggerLayers = Layer.mergeAll(
     if (Digest.canonical(stored.decodedInput) !== Digest.canonical(request.input)) {
       return yield* invalid(`The approved plan for "${request.flow}" was made for different input.`)
     }
-    if (!card.executionDigest ||
-        !card.envelope.budget || card.envelope.budget.milliseconds === undefined || card.envelope.budget.tokens === undefined ||
-        card.envelope.budget.milliseconds > deploymentMinutes * 60_000 || card.envelope.budget.tokens > deploymentTokens) {
+    // The limits this registration names bound every unattended fire of it, and
+    // the envelope carrying them is what Smithers Cloud stores and validates.
+    // A flow that declares its own ceiling keeps it when the registration names
+    // none; the deployment ceiling caps either one.
+    const budget = request.budget ?? card.envelope.budget
+    if (!card.executionDigest || budget.milliseconds === undefined || budget.tokens === undefined ||
+        budget.milliseconds < 1 || budget.tokens < 1 ||
+        budget.milliseconds > deploymentMinutes * 60_000 || budget.tokens > deploymentTokens) {
       return yield* invalid("The job declaration has no bounded reviewed execution policy")
     }
     // Step 3 of the approval sequence, re-verified here: this host asks its own
@@ -172,7 +177,8 @@ export const triggerLayers = Layer.mergeAll(
       }
     }
     const current = yield* currentRegistration(request.slug)
-    return { planId: card.planId, planDigest: card.digest, executionDigest: card.executionDigest, envelope: json(card.envelope),
+    return { planId: card.planId, planDigest: card.digest, executionDigest: card.executionDigest,
+      envelope: json({ ...card.envelope, budget }),
       sourceRevision: source.commitId, revision: current.revision + 1, candidate: triggerCandidate(request),
       ...(testRunId === undefined ? {} : { testRunId }) }
   }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The schedule could not be prepared")))),

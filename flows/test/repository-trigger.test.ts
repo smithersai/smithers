@@ -34,6 +34,9 @@ const fixtures = (target: string, marker: string) => ({
   /** The supported form: one model this workspace's resolver answers. */
   "flows/nightly-report/flow.mdx": ["---", "description: A maintainer's own scheduled report.",
     "model: test:scripted", `capabilities: ["fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", "Summarise the repository.", ""].join("\n"),
+  /** Declares no ceiling, so `Descriptor.budgetOf` answers `{}` and nothing bounds an unattended fire. */
+  "flows/unbounded-report/flow.mdx": ["---", "description: A scheduled report that declares no ceiling.",
+    "model: test:scripted", `capabilities: ["fs:read:**"]`, "---", "Summarise the repository.", ""].join("\n"),
   /** Names one host delegate and no model, so no dispatch can launch it. */
   "flows/nightly-check/flow.mdx": ["---", "description: Run the reviewed command on a schedule.",
     "flows: [coding/CommandCheck]", `capabilities: ["proc:spawn:*", "fs:read:**"]`, "budget:", "  tokens: 200000", "  milliseconds: 600000", "---", target, ""].join("\n"),
@@ -311,6 +314,56 @@ test("the registrar registers only a plan a person approved, with the exact cand
     assert.equal(registered.output.registration.timezone, "UTC")
     assert.equal(registered.output.planDigest, planned.digest)
     assert.equal(registered.output.testRunId, undefined, "no test run is claimed when the caller ran none")
+  }))
+
+/*
+ * Walk run 3, defect D3-N2: `Plan checks/fast` answered `"budget": {}` on the
+ * canary box, the registration carried that envelope, and Smithers Cloud
+ * refused it — `automatic work needs the reviewed envelope and finite
+ * token/time limits` (plue internal/services/repository_jobs.go
+ * `validateRepositoryJob`). The registration's own limits are what bound every
+ * unattended fire, so the request carries them and this host binds them into
+ * the envelope it registers, capped by the deployment ceiling.
+ */
+test("a flow that declares no ceiling registers only with the limits the registration names, never above the deployment ceiling", nativeOptions, t =>
+  proveTrigger(t, async probe => {
+    const input = { label: "nightly" }
+    const planned = await probe.plan("unbounded-report", input, "trigger:unbounded:plan")
+    assert.deepEqual(planned.envelope.budget, {}, `an undeclared ceiling plans empty; got ${JSON.stringify(planned.envelope)}`)
+    await probe.approve(planned)
+    const request = { ...REQUEST, slug: "unbounded", flow: "unbounded-report", input,
+      approvedPlanId: planned.planId, approvedPlanDigest: planned.digest }
+    const unbounded = await probe.register(request)
+    says(String(unbounded.failure), "The job declaration has no bounded reviewed execution policy")
+    const over = await probe.register({ ...request, budget: { tokens: 200001, milliseconds: 600000 } })
+    says(String(over.failure), "The job declaration has no bounded reviewed execution policy")
+    const long = await probe.register({ ...request, budget: { tokens: 150000, milliseconds: 7200001 } })
+    says(String(long.failure), "The job declaration has no bounded reviewed execution policy")
+    assert.equal(probe.registrations.length, 0, `nothing unbounded may register; got ${JSON.stringify(probe.registrations)}`)
+    const bounded = await probe.register({ ...request, budget: { tokens: 150000, milliseconds: 600000 } })
+    assert(bounded.output, `expected a receipt once the registration names its limits; got ${String(bounded.failure).slice(0, 2000)}`)
+    assert.equal(probe.registrations.length, 1, JSON.stringify(probe.registrations))
+    assert.deepEqual(probe.registrations[0]!.body.envelope.budget, { tokens: 150000, milliseconds: 600000 },
+      "the registered envelope carries the reviewed limits, which is what Smithers Cloud validates")
+    // Not asserted on `bounded.output`: a run's own result travels through the
+    // journal, whose `Redaction.isSensitiveKey` reads `tokens` as a credential
+    // and writes `"[REDACTED]"` in its place (packages/smithers/agent/src/Budget.ts
+    // records the same trap). The registration body above never enters a journal.
+  }))
+
+/* A flow that declares its own ceiling keeps it, and the registration may tighten it but never loosen it. */
+test("a declared ceiling is what registers when the registration names no limits, and a named limit replaces it", nativeOptions, t =>
+  proveTrigger(t, async probe => {
+    const input = { label: "nightly" }
+    const planned = await probe.plan("nightly-report", input, "trigger:declared:plan")
+    await probe.approve(planned)
+    const request = { ...REQUEST, input, approvedPlanId: planned.planId, approvedPlanDigest: planned.digest }
+    const declared = await probe.register(request)
+    assert(declared.output, `expected a receipt; got ${String(declared.failure).slice(0, 2000)}`)
+    assert.deepEqual(probe.registrations[0]!.body.envelope.budget, { tokens: 200000, milliseconds: 600000 })
+    const tightened = await probe.register({ ...request, slug: "tighter", budget: { tokens: 50000, milliseconds: 300000 } })
+    assert(tightened.output, `expected a receipt; got ${String(tightened.failure).slice(0, 2000)}`)
+    assert.deepEqual(probe.registrations[1]!.body.envelope.budget, { tokens: 50000, milliseconds: 300000 })
   }))
 
 test("the registrar reads the approved plan by id under the app's own request key, and refuses one that no longer reproduces", nativeOptions, async t => {

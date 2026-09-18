@@ -110,6 +110,11 @@ export const OperationResult = Schema.Struct({ requestId: Schema.String, revisio
  * may register the same flow under two slugs with different inputs. */
 export const FlowSlug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/))
 export const CronUtc = Schema.String.check(Schema.isMaxLength(200))
+/** What every unattended fire of one schedule may spend. Smithers Cloud stores
+ * it on the registration and refuses one whose envelope names no finite pair
+ * (`validateRepositoryJob`), so a registration states it rather than inheriting
+ * whatever ceiling the scheduled flow happened to declare for itself. */
+export const TriggerBudget = Schema.Struct({ tokens: Schema.Int, milliseconds: Schema.Int })
 /** What the app sends the registrar. The approval fields carry the plan a
  * person approved; nothing here names who approved it or when. */
 export const TriggerRequest = Schema.Struct({
@@ -117,6 +122,7 @@ export const TriggerRequest = Schema.Struct({
   repo: Schema.NonEmptyString, slug: FlowSlug,
   flow: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,199}$/)),
   schedule: CronUtc, input: Schema.Json, workspaceId: Schema.optionalKey(Schema.String),
+  budget: Schema.optionalKey(TriggerBudget),
   approvedPlanId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   approvedPlanDigest: Schema.optionalKey(Schema.String),
   /** A completed run of that exact plan, when the caller made one first. */
