@@ -8,12 +8,16 @@ import type { ServerConfigShape } from "./Config"
 import { memoryStorage } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { ExecutionContext, executionContextFrom } from "./Environment"
-import { FRONT_DOOR_CALL_PREFIX, FRONT_DOOR_CONFIDENCE_FLOOR } from "./frontDoor"
+import {
+  FRONT_DOOR_CALL_PREFIX,
+  FRONT_DOOR_CONFIDENCE_FLOOR,
+  FRONT_DOOR_IS_COMMAND_FLOOR,
+  FRONT_DOOR_JEV_COMMANDS_MAX
+} from "./frontDoor"
 import { transportLayer } from "./Http"
 import {
   memoryRecommendStorage,
   readRecommendLog,
-  RECOMMEND_JEV_COMMANDS_MAX,
   RECOMMEND_JEV_TIMEOUT_MS,
   RecommendLog,
   recommendLogLayer
@@ -90,6 +94,17 @@ const evaluation = (
     }),
     { status: 200, headers: { "content-type": "application/json" } }
   )
+
+/** A catalog of `count` commands, as the client posts one. */
+const catalog = (count: number): ReadonlyArray<{ name: string; summary: string }> =>
+  Array.from({ length: count }, (_, index) => ({ name: `c${index}`, summary: `does ${index}` }))
+
+/** A gateway evaluation carrying exactly these answers. */
+const answered = (answers: Record<string, unknown>): Response =>
+  new Response(JSON.stringify({ answers }), { status: 200, headers: { "content-type": "application/json" } })
+
+/** One choice answer: the option that won, and the probability it won by. */
+const chose = (choice: string, probability: number) => ({ type: "choice", choice, probabilities: { [choice]: probability } })
 
 const memoryCancels = (): NativeNamespace => {
   const registries = new Map<string, TurnCancelRegistry>()
@@ -475,14 +490,196 @@ describe("a Jev that does not answer refuses the turn", () => {
     expect(calls.upstream).toEqual([])
   })
 
-  test("more commands than one choice question holds is not a Jev failure: the concierge answers, as for any turn the door never read", async () => {
-    // Each question would need its own `none`, and two questions'
-    // probabilities cannot be compared to pick one winner, so this catalog is
-    // not a decision Jev can be asked for. Nothing failed, so nothing refuses.
-    const commands = Array.from({ length: RECOMMEND_JEV_COMMANDS_MAX }, (_, index) => ({ name: `c${index}`, summary: "s" }))
-    const { response, calls } = await turn(turnBody({ commands }))
-    expect(response.status).toBe(200)
-    expect(calls.gateway).toEqual([])
+  test("a Jev that fails a split catalog refuses the turn too, with the same typed failure", async () => {
+    const { response, calls } = await turn(turnBody({ commands: catalog(300) }), { jev: () => new Response("no", { status: 403 }) })
+    expect(response.status).toBe(502)
+    expect((await response.json() as { code: string }).code).toBe("upstream_refused")
+    expect(calls.gateway.length).toBe(1)
+    expect(calls.upstream).toEqual([])
+  })
+})
+
+/*
+ * A catalog of any size is still Jev's decision. One request carries the
+ * commands as several `choice` questions — each at most
+ * FRONT_DOOR_JEV_COMMANDS_MAX commands plus its own `none` — and one
+ * `boolean` question asking whether the message is a request to run a command
+ * at all. Probabilities from different questions are never compared: the turn
+ * is routed only when the boolean clears its floor, exactly one question
+ * names a command, and that command clears the confidence floor.
+ */
+describe("a catalog too long for one choice question", () => {
+  /** What the live client offers today: below the cap, so the live path must not move. */
+  const LIVE_COMMANDS = 194
+
+  const questionsOf = async (calls: Calls): Promise<Record<string, { type: string; criteria?: Record<string, string> }>> =>
+    ((await calls.gateway[0]!.json()) as {
+      questions: Record<string, { type: string; criteria?: Record<string, string> }>
+    }).questions
+
+  test("today's catalog asks exactly what it asked before: one `command` question, and no boolean gate", async () => {
+    const commands = catalog(LIVE_COMMANDS)
+    expect(commands.length).toBeLessThanOrEqual(FRONT_DOOR_JEV_COMMANDS_MAX)
+    const { response, calls } = await turn(turnBody({ commands }), {
+      jev: () => answered({ command: chose("c7", 0.97), impossible: { type: "choice", choice: "none" } })
+    })
+
+    const questions = await questionsOf(calls)
+    expect(Object.keys(questions)).toEqual(["command", "impossible"])
+    expect(Object.keys(questions["command"]!.criteria!)).toEqual([...commands.map((command) => command.name), "none"])
+    expect(questions["command"]!.criteria!["c0"]).toBe("does 0")
+    // Unchanged routing: the same tool-call pair, on the same one question.
+    expect(calls.upstream).toEqual([])
+    expect((await frames(response))[0]).toMatchObject({
+      type: "tool_call",
+      arguments: JSON.stringify({ action: "execute", name: "c7" })
+    })
+  })
+
+  test("three hundred commands ride two choice questions and one boolean in ONE request", async () => {
+    const commands = catalog(300)
+    const { calls } = await turn(turnBody({ commands }), {
+      jev: () =>
+        answered({
+          command1: chose("none", 0.98),
+          command2: chose("none", 0.98),
+          isCommand: { type: "boolean", probability: 0.1 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+
+    expect(calls.gateway.length).toBe(1)
+    const questions = await questionsOf(calls)
+    expect(Object.keys(questions)).toEqual(["command1", "command2", "isCommand", "impossible"])
+    expect(questions["isCommand"]!.type).toBe("boolean")
+    expect(Object.keys(questions["command1"]!.criteria!).length).toBe(FRONT_DOOR_JEV_COMMANDS_MAX + 1)
+    expect(Object.keys(questions["command2"]!.criteria!).length).toBe(300 - FRONT_DOOR_JEV_COMMANDS_MAX + 1)
+    // Every command is offered exactly once, and every question offers `none`.
+    const offered = [questions["command1"]!, questions["command2"]!].flatMap((question) =>
+      Object.keys(question.criteria!).filter((name) => name !== "none")
+    )
+    expect(offered).toEqual(commands.map((command) => command.name))
+    expect(questions["command1"]!.criteria!["none"]).toBe(questions["command2"]!.criteria!["none"])
+  })
+
+  test("one confident command in the second question, `none` in the first, routes the turn", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody({ commands: catalog(300) }), {
+      logs,
+      jev: () =>
+        answered({
+          command1: chose("none", 0.99),
+          command2: chose("c260", 0.96),
+          isCommand: { type: "boolean", probability: 0.98 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+
+    expect(calls.upstream).toEqual([])
+    const emitted = await frames(response)
+    expect(emitted[0]).toMatchObject({ type: "tool_call", name: "commands", arguments: JSON.stringify({ action: "execute", name: "c260" }) })
+    expect(emitted[1]).toEqual({ runId: "run-front-door", type: "done", reason: "tool_call" })
+    const rows = await rowsOf(logs)
+    expect(rows[0]!.commands).toEqual(["c260"])
+    expect(rows[0]!.commandCount).toBe(300)
+    expect(rows[0]!.frontDoor).toEqual({ confidence: 0.96, impossible: "none", routed: true })
+  })
+
+  test("`none` in every question is Jev choosing the concierge, and the row is as sure as the least sure question", async () => {
+    const logs = memoryLog()
+    const { calls } = await turn(turnBody({ commands: catalog(300) }), {
+      logs,
+      jev: () =>
+        answered({
+          command1: chose("none", 0.97),
+          command2: chose("none", 0.99),
+          isCommand: { type: "boolean", probability: 0.05 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+
     expect(calls.upstream.length).toBe(1)
+    const rows = await rowsOf(logs)
+    expect(rows[0]!.commands).toEqual([])
+    expect(rows[0]!.frontDoor).toEqual({ confidence: 0.97, impossible: "none", routed: false })
+  })
+
+  test("two questions both naming a command is ambiguity, not a decision: the concierge answers", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody({ commands: catalog(300) }), {
+      logs,
+      jev: () =>
+        answered({
+          command1: chose("c3", 0.96),
+          command2: chose("c260", 0.97),
+          isCommand: { type: "boolean", probability: 0.99 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+
+    // Both clear the floor, and no probability from one question can be
+    // compared with one from the other, so neither command is the answer.
+    expect(calls.upstream.length).toBe(1)
+    // The concierge's own answer, streamed through this turn.
+    expect((await frames(response))[0]).toMatchObject({ type: "delta", text: "upstream" })
+    const rows = await rowsOf(logs)
+    expect(rows[0]!.commands).toEqual([])
+    expect(rows[0]!.frontDoor).toEqual({ confidence: 0, impossible: "none", routed: false })
+  })
+
+  test("a command under the floor in one question and `none` in the other still goes to the concierge", async () => {
+    const { calls } = await turn(turnBody({ commands: catalog(300) }), {
+      jev: () =>
+        answered({
+          command1: chose("none", 0.99),
+          command2: chose("c260", 0.6),
+          isCommand: { type: "boolean", probability: 0.99 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+    expect(0.6).toBeLessThan(FRONT_DOOR_CONFIDENCE_FLOOR)
+    expect(calls.upstream.length).toBe(1)
+  })
+
+  test("a sure command under an unsure `isCommand` is not routed", async () => {
+    const logs = memoryLog()
+    const { calls } = await turn(turnBody({ commands: catalog(300) }), {
+      logs,
+      jev: () =>
+        answered({
+          command1: chose("none", 0.99),
+          command2: chose("c260", 0.97),
+          isCommand: { type: "boolean", probability: 0.3 },
+          impossible: { type: "choice", choice: "none" }
+        })
+    })
+
+    expect(0.3).toBeLessThan(FRONT_DOOR_IS_COMMAND_FLOOR)
+    expect(calls.upstream.length).toBe(1)
+    const rows = await rowsOf(logs)
+    expect(rows[0]!.frontDoor).toEqual({ confidence: 0.97, impossible: "none", routed: false })
+  })
+
+  test("a split answer missing the boolean gate is model_no_answer, not a route and not an upstream", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody({ commands: catalog(300) }), {
+      logs,
+      jev: () => answered({ command1: chose("none", 0.99), command2: chose("c260", 0.97) })
+    })
+
+    expect(response.status).toBe(502)
+    expect((await response.json() as { code: string }).code).toBe("model_no_answer")
+    expect(calls.upstream).toEqual([])
+    expect(await rowsOf(logs)).toEqual([])
+  })
+
+  test("a split answer missing one command question is model_no_answer: a decision this client cannot read is not a decision", async () => {
+    const { response, calls } = await turn(turnBody({ commands: catalog(300) }), {
+      jev: () => answered({ command2: chose("c260", 0.97), isCommand: { type: "boolean", probability: 0.99 } })
+    })
+
+    expect(response.status).toBe(502)
+    expect((await response.json() as { code: string }).code).toBe("model_no_answer")
+    expect(calls.upstream).toEqual([])
   })
 })

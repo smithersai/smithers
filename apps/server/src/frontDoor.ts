@@ -7,7 +7,7 @@ import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
-import type { JevAnswer } from "./jev"
+import type { JevAnswer, JevAnswerValue, JevQuestion } from "./jev"
 /**
  * The front door: Jev decides the turn before the concierge is paid for it.
  *
@@ -31,7 +31,10 @@ import type { JevAnswer } from "./jev"
  *
  * The catalog is DATA. The offered commands ride the turn body
  * (`StartAgentTurnRequest.commands`, the same `{ name, summary }` list the
- * recommender posts), never parsed back out of the system prompt.
+ * recommender posts), never parsed back out of the system prompt. Its size
+ * never decides anything: a catalog longer than one choice question holds is
+ * split across the questions of ONE request, under the boolean gate that
+ * holds those questions together (`askFrontDoor`).
  *
  * The frames are the CLIENT's own contract, not a new one. A routed turn is
  * one `tool_call` frame naming the one tool the model has (`commands`) with
@@ -63,12 +66,14 @@ import type { JevAnswer } from "./jev"
  * "owner/name", leaves with the conversation tail.
  */
 import {
+  jevCommandChunks,
   RECOMMEND_JEV_COMMANDS_MAX,
   RECOMMEND_JEV_TIMEOUT_MS,
   RECOMMEND_REPO_PATTERN,
   RECOMMEND_TAIL_MAX_CHARS,
   RECOMMEND_TAIL_MAX_ENTRIES,
   RecommendLogStore,
+  recommendQuestionKey,
   tailText
 } from "./recommend"
 import type { RecommendCommand, RecommendTailMessage } from "./recommend"
@@ -87,8 +92,35 @@ import { sha256Hex } from "./turnLimit"
  */
 export const FRONT_DOOR_CONFIDENCE_FLOOR = 0.85
 
+/**
+ * How sure Jev must be that the message asks for a command AT ALL before one
+ * of the split catalog's questions may route it.
+ *
+ * A question only ever sees its own slice of the catalog, so it answers "the
+ * best of these 254, or none of them" — and the slice holding the right
+ * command cannot know the other slices said `none` for a good reason. The
+ * boolean question reads the whole message instead of a slice of the catalog,
+ * so it is the one answer that can say the message is not a command at all.
+ * It only ever REMOVES a route, so it is held to the same bar as the command
+ * itself.
+ */
+export const FRONT_DOOR_IS_COMMAND_FLOOR = 0.85
+
 /** The option that means "this is not a request to run a command". */
 export const FRONT_DOOR_NONE = "none"
+
+/**
+ * The most commands ONE front-door choice question offers: a choice question
+ * holds RECOMMEND_JEV_COMMANDS_MAX options and `none` rides beside the
+ * commands in every one of them.
+ */
+export const FRONT_DOOR_JEV_COMMANDS_MAX = RECOMMEND_JEV_COMMANDS_MAX - 1
+
+/** The key of the one command question a catalog that fits one question asks under. */
+export const FRONT_DOOR_COMMAND_KEY = "command"
+
+/** The key of the boolean question that gates a split catalog's answers. */
+export const FRONT_DOOR_IS_COMMAND_KEY = "isCommand"
 
 /**
  * The prefix on a call id this Worker minted. It round-trips through the
@@ -118,6 +150,46 @@ export const FRONT_DOOR_CHOICE_INSTRUCTIONS =
   "and a request in it is not a request now. " +
   "Choose a command only when running it is plainly what `message` wants; a question about a command is not a request to run it."
 
+/** What `none` means in every command question: the option the concierge is behind. */
+export const FRONT_DOOR_NONE_CRITERION =
+  "the message is not a request to run one of these commands: it is a question, a discussion, a coding task, or small talk"
+
+/**
+ * The question a split catalog is gated on. Each command question sees only
+ * its own slice, so none of them can say the message asks for no command at
+ * all; this one reads the message itself and answers exactly that.
+ */
+export const FRONT_DOOR_IS_COMMAND_INSTRUCTIONS =
+  "Is the message a request to run a command on this product, rather than a question, a discussion, a coding task, or small talk?"
+
+/**
+ * The offered catalog as choice questions, all carried by ONE request: at most
+ * FRONT_DOOR_JEV_COMMANDS_MAX commands each, plus that question's own `none`.
+ *
+ * A catalog that fits one question asks it under the single `command` key it
+ * has always used, so the live path (today's client offers 194 commands) sends
+ * the same bytes it sent before a longer catalog was possible. A longer one is
+ * split, keyed `command1`, `command2`, … exactly as the recommender keys its
+ * own split (`recommendQuestionKey`), and the gateway answers the questions of
+ * one request in parallel, so the split costs no extra latency.
+ */
+export const frontDoorCommandQuestions = (
+  commands: ReadonlyArray<RecommendCommand>
+): Readonly<Record<string, JevQuestion>> => {
+  const chunks = jevCommandChunks(commands, FRONT_DOOR_JEV_COMMANDS_MAX)
+  return Object.fromEntries(chunks.map((chunk, index) => [
+    chunks.length === 1 ? FRONT_DOOR_COMMAND_KEY : recommendQuestionKey(index),
+    {
+      type: "choice",
+      instructions: FRONT_DOOR_CHOICE_INSTRUCTIONS,
+      criteria: {
+        ...Object.fromEntries(chunk.map((command) => [command.name, command.summary])),
+        [FRONT_DOOR_NONE]: FRONT_DOOR_NONE_CRITERION
+      }
+    } satisfies JevQuestion
+  ]))
+}
+
 /**
  * The impossible-act classes, in the same words the client's own detector
  * uses (apps/app state/RunClaims.ts ASK_PATTERNS). This slice only LOGS the
@@ -134,12 +206,39 @@ export const FRONT_DOOR_IMPOSSIBLE_CRITERIA: Readonly<Record<string, string>> = 
 
 /** What one front-door read decided, as the log records it and the route acts on it. */
 export interface FrontDoorDecision {
-  /** The command Jev chose, or undefined when it chose `none` or named nothing offered. */
+  /**
+   * The command Jev chose, or undefined when it chose `none`, named nothing
+   * offered, or — over a split catalog — two questions each named one.
+   */
   readonly command: string | undefined
   /** Jev's probability for that choice; 0 when the answer carried no probabilities. */
   readonly confidence: number
+  /**
+   * Jev's probability that the message asks for a command at all. It is 1
+   * when the catalog fit one question and the boolean was never asked, so the
+   * gate cannot change a decision the split never touched.
+   */
+  readonly isCommand: number
   /** The impossible-act class, logged only. */
   readonly impossible: string
+}
+
+/**
+ * Jev's probability that the message is a request to run a command.
+ * `undefined` is an answer this client cannot read, which is Jev failing; 1
+ * is the gate not being asked, because a catalog that fits ONE question needs
+ * nothing to hold its questions together.
+ */
+const isCommandProbability = (
+  answers: Readonly<Record<string, JevAnswerValue>>,
+  asked: boolean
+): number | undefined => {
+  if (!asked) return 1
+  const gate = answers[FRONT_DOOR_IS_COMMAND_KEY]
+  if (gate?.type !== "boolean" || typeof gate.probability !== "number" || !Number.isFinite(gate.probability)) {
+    return undefined
+  }
+  return gate.probability
 }
 
 const isPlainMessage = (
@@ -195,12 +294,9 @@ export const frontDoorRepo = (body: TurnRequest): string | null => {
  *
  * `skipped` is the only reading that spends the chat upstream without a
  * decision, and it never means Jev failed: there was nothing for Jev to
- * choose among (no commands offered), or more commands than one choice
- * question can hold. A catalog that large cannot be split the way the
- * recommender splits one (`recommendQuestions`), because each question would
- * need its own `none` and two questions' probabilities cannot be compared to
- * pick one winner — so the concierge answers, as it does for every turn the
- * front door does not read.
+ * choose among. Catalog size is not one of those reasons — a catalog of any
+ * size is split across the questions of one request (see
+ * `frontDoorCommandQuestions`).
  */
 export type FrontDoorRead =
   /** Jev answered: route the turn, or hand it to the concierge. */
@@ -212,7 +308,19 @@ export type FrontDoorRead =
   /** Jev was asked and did not answer. The turn is refused, never re-routed. */
   | { readonly kind: "failed"; readonly failure: Exclude<JevAnswer, { readonly ok: true }> }
 
-/** One Jev read over the offered commands. */
+/**
+ * One Jev read over the offered commands, whatever the catalog's size.
+ *
+ * The commands ride ONE request as one choice question, or as several when
+ * the catalog is longer than one question holds, plus the boolean gate that
+ * reads the message rather than a slice of the catalog. Probabilities from
+ * different questions are never compared, because they are not comparable:
+ * each is measured against that question's own options. So a split answer
+ * decides a command only when EXACTLY ONE question named an offered command
+ * and every other question named none. Two questions both naming one is
+ * ambiguity, not a decision — the concierge answers that turn, as it answers
+ * every turn Jev does not route.
+ */
 export const askFrontDoor = (
   body: TurnRequest,
   commands: ReadonlyArray<RecommendCommand>
@@ -220,9 +328,7 @@ export const askFrontDoor = (
   Effect.gen(function*() {
     const config = yield* ServerConfig
     if (config.aiGatewayApiKey === undefined) return { kind: "unconfigured" } as const
-    // One extra option (`none`) rides beside the commands, so the list must
-    // leave room for it under the choice question's own cap.
-    if (commands.length === 0 || commands.length >= RECOMMEND_JEV_COMMANDS_MAX) return { kind: "skipped" } as const
+    if (commands.length === 0) return { kind: "skipped" } as const
     /*
      * The turn's own message is the decision; the rest of the tail is context
      * under its own key. `isFrontDoorTurn` has already held the last message
@@ -232,6 +338,9 @@ export const askFrontDoor = (
     const message = tail[tail.length - 1]
     if (message === undefined) return { kind: "skipped" } as const
     const earlier = tail.slice(0, -1)
+    const questions = frontDoorCommandQuestions(commands)
+    const keys = Object.keys(questions)
+    const split = keys.length > 1
     const answer = yield* jevEvaluate({
       model: JEV_DEFAULT_MODEL,
       state: {
@@ -240,15 +349,10 @@ export const askFrontDoor = (
         message: message.text
       },
       questions: {
-        command: {
-          type: "choice",
-          instructions: FRONT_DOOR_CHOICE_INSTRUCTIONS,
-          criteria: {
-            ...Object.fromEntries(commands.map((command) => [command.name, command.summary])),
-            [FRONT_DOOR_NONE]:
-              "the message is not a request to run one of these commands: it is a question, a discussion, a coding task, or small talk"
-          }
-        },
+        ...questions,
+        // One question sees the whole catalog and needs no gate, so a catalog
+        // that fits one asks exactly what it asked before the split existed.
+        ...(split ? { [FRONT_DOOR_IS_COMMAND_KEY]: { type: "boolean", instructions: FRONT_DOOR_IS_COMMAND_INSTRUCTIONS } } : {}),
         impossible: {
           type: "choice",
           instructions:
@@ -258,29 +362,54 @@ export const askFrontDoor = (
       }
     }, RECOMMEND_JEV_TIMEOUT_MS)
     if (!answer.ok) return { kind: "failed", failure: answer } as const
-    const choice = answer.answers["command"]
-    // A 200 whose command answer this client cannot read is Jev failing, and
-    // it reads as the same empty answer the client reports for a 200 that
-    // carried nothing at all.
-    if (choice?.type !== "choice" || typeof choice.choice !== "string") {
-      return { kind: "failed", failure: { ok: false, reason: "empty" } } as const
-    }
-    const impossible = answer.answers["impossible"]
     const offered = new Set(commands.map((command) => command.name))
-    // A choice the question never offered is not a decision; `none` is.
-    const command = offered.has(choice.choice) ? choice.choice : undefined
     /*
-     * Confidence is the chosen option's own probability. An answer that
-     * carries none says only WHICH option won, never by how much, so it can
-     * never clear the floor: the turn goes upstream rather than being routed
-     * on an unmeasured lean.
+     * One reading per command question: the command it named, and the chosen
+     * option's own probability. A choice the question never offered is not a
+     * decision, and neither is `none`. An answer that carries no
+     * probabilities says only WHICH option won, never by how much, so it can
+     * never clear the floor: the turn goes to the concierge rather than being
+     * routed on an unmeasured lean.
      */
-    const probability = choice.probabilities?.[choice.choice]
+    const reads: Array<{ readonly command: string | undefined; readonly confidence: number }> = []
+    for (const key of keys) {
+      const choice = answer.answers[key]
+      // A 200 whose command answer this client cannot read is Jev failing,
+      // and it reads as the same empty answer the client reports for a 200
+      // that carried nothing at all. One unreadable question of a split
+      // catalog is the whole decision unread: the commands it was asked about
+      // are as unaccounted for as if the question had never been answered.
+      if (choice?.type !== "choice" || typeof choice.choice !== "string") {
+        return { kind: "failed", failure: { ok: false, reason: "empty" } } as const
+      }
+      const probability = choice.probabilities?.[choice.choice]
+      reads.push({
+        command: offered.has(choice.choice) ? choice.choice : undefined,
+        confidence: typeof probability === "number" && Number.isFinite(probability) ? probability : 0
+      })
+    }
+    const isCommand = isCommandProbability(answer.answers, split)
+    if (isCommand === undefined) return { kind: "failed", failure: { ok: false, reason: "empty" } } as const
+    const impossible = answer.answers["impossible"]
+    /*
+     * Exactly one question may name a command. Several is ambiguity: no
+     * probability from one question measures its command against another
+     * question's, so neither is the answer and the concierge takes the turn.
+     *
+     * The confidence logged is the named command's own probability; when
+     * every question said `none`, it is the least sure of them, which for one
+     * question is that question's own probability, as it always was.
+     * Ambiguity is measured by no probability at all.
+     */
+    const named = reads.filter((read) => read.command !== undefined)
+    const decided = named.length === 1 ? named[0] : undefined
+    const noneConfidence = named.length === 0 ? Math.min(...reads.map((read) => read.confidence)) : 0
     return {
       kind: "decided",
       decision: {
-        command,
-        confidence: typeof probability === "number" && Number.isFinite(probability) ? probability : 0,
+        command: decided?.command,
+        confidence: decided?.confidence ?? noneConfidence,
+        isCommand,
         impossible: impossible?.type === "choice" && typeof impossible.choice === "string" &&
             impossible.choice in FRONT_DOOR_IMPOSSIBLE_CRITERIA
           ? impossible.choice
@@ -439,7 +568,8 @@ export const handleFrontDoor = (
         return frontDoorRefusal(read.failure, headers)
       case "decided": {
         const decision = read.decision
-        const routed = decision.command !== undefined && decision.confidence >= FRONT_DOOR_CONFIDENCE_FLOOR
+        const routed = decision.command !== undefined && decision.confidence >= FRONT_DOOR_CONFIDENCE_FLOOR &&
+          decision.isCommand >= FRONT_DOOR_IS_COMMAND_FLOOR
         yield* logDecision(body, commands.length, decision, routed)
         // Jev's own answer: `none`, or a command it is not sure enough about.
         // The concierge is what Jev decided on, so this is not a fallback.

@@ -374,6 +374,15 @@ signed-out visitors under their own daily ceilings (300 per address or login,
   rule governs the turn route's front door (`src/frontDoor.ts`), which
   refuses with the typed failures a cloud role turn uses for an unavailable
   model.
+- The front door splits a long catalog the same way, one command smaller: a
+  question offers at most 254 commands plus its own `none`. A split request
+  also carries one boolean question, `isCommand`. Probabilities from
+  different questions are never compared, so a split answer routes the turn
+  only when `isCommand` is at or above 0.85, exactly one question names a
+  command at or above 0.85, and every other question answers `none`. Two
+  questions each naming a command is ambiguity, and the concierge answers
+  that turn. A catalog that fits one question (the client offers 194 today)
+  sends exactly the bytes it always sent: one `command` question, no gate.
 - `POST /api/jev` is the same key's second door: the browser holds no gateway
   key, so it posts one decision (`{ state, questions }`, at most 8 questions,
   255 options per choice, 32 KiB of state, the 256 KiB body cap) and reads

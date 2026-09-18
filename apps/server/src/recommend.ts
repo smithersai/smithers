@@ -540,6 +540,24 @@ export const RECOMMEND_CHOICE_INSTRUCTIONS =
 export const recommendQuestionKey = (index: number): string => `command${index + 1}`
 
 /**
+ * The offered catalog in order, cut into chunks of at most `size` commands —
+ * one question's worth each. An empty catalog is still one (empty) chunk, so
+ * a request's shape never depends on whether the client had anything to
+ * offer. The front door cuts the same catalog one command smaller
+ * (frontDoor.ts FRONT_DOOR_JEV_COMMANDS_MAX), because each of its questions
+ * carries a `none` option beside the commands.
+ */
+export const jevCommandChunks = (
+  commands: ReadonlyArray<RecommendCommand>,
+  size: number
+): ReadonlyArray<ReadonlyArray<RecommendCommand>> => {
+  const chunks: Array<ReadonlyArray<RecommendCommand>> = []
+  for (let start = 0; start < commands.length; start += size) chunks.push(commands.slice(start, start + size))
+  if (chunks.length === 0) chunks.push([])
+  return chunks
+}
+
+/**
  * The offered catalog as choice questions: one per RECOMMEND_JEV_COMMANDS_MAX
  * commands, all carried by ONE request. The gateway answers the questions of
  * a request in parallel, so a catalog of three hundred costs the latency of
@@ -549,13 +567,7 @@ export const recommendQuestionKey = (index: number): string => `command${index +
 export const recommendQuestions = (
   commands: ReadonlyArray<RecommendCommand>
 ): Readonly<Record<string, JevQuestion>> => {
-  const chunks: Array<ReadonlyArray<RecommendCommand>> = []
-  for (let start = 0; start < commands.length; start += RECOMMEND_JEV_COMMANDS_MAX) {
-    chunks.push(commands.slice(start, start + RECOMMEND_JEV_COMMANDS_MAX))
-  }
-  // An empty catalog is still one question, so the request's shape never
-  // depends on whether the client had anything to offer.
-  if (chunks.length === 0) chunks.push([])
+  const chunks = jevCommandChunks(commands, RECOMMEND_JEV_COMMANDS_MAX)
   return Object.fromEntries(chunks.map((chunk, index) => [
     recommendQuestionKey(index),
     {
