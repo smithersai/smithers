@@ -107,8 +107,10 @@ export const checkExecutionFailed = (recorded: RecordedCheck, reviewedId?: strin
 export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">, result: JobResult): void => {
   // A review trial selects its core review step. Other event/manual steps and
   // disabled steps do not become extra requirements for this particular trial.
-  const checks = [...configuration.checks, ...(result.job === "review" ? configuration.steps.filter(step => step.mode !== "off" &&
-    step.id !== "checks" && result.results.some(value => value.stepId === step.id)).map(reviewCheck) : [])]
+  const reviewed = result.job === "review" ? configuration.steps.filter(step => step.mode !== "off" &&
+    step.id !== "checks" && result.results.some(value => value.stepId === step.id)).map(reviewCheck) : []
+  const checks = [...configuration.checks, ...reviewed]
+  const subjects = new Set(reviewed.map(check => check.id))
   const ai = checks.filter(check => check.kind === "ai")
   if (!ai.length) return
   if (checks.some(check => !check.id) || new Set(checks.map(check => check.id)).size !== checks.length) throw invalid("AI trial checks need unique configured IDs")
@@ -131,7 +133,15 @@ export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">
       return observed.examinedPaths.length > 0 && observed.examinedPaths.every(path => !check.paths.length || check.paths.some(pattern => matchesGlob(path, pattern))) &&
         (value.status === "passed" ? observed.verdict === "pass" && !observed.findings.length : observed.verdict === "fail" && observed.findings.length > 0)
     })
-    if (!ran) throw invalid(`AI check ${check.name || check.id} has no completed in-scope trial result; test a change that exercises it`)
+    // Only a required rule holds a trial and its activation. A report-only rule
+    // informs, so a trial whose change touches nothing in its scope leaves it
+    // unexercised and finishes; a review a review trial exists to prove is that
+    // trial's own subject, and a report-only rule that did record a result
+    // still has to have recorded a real one.
+    if (!ran && (check.policy === "required" || subjects.has(check.id) ||
+        outputs.some(output => output.results.some(value => value.checkId === check.id && value.status !== "skipped")))) {
+      throw invalid(`AI check ${check.name || check.id} has no completed in-scope trial result; test a change that exercises it`)
+    }
   }
 }
 export const SemanticCheck = AgentAction.make("repository/semantic-check", {

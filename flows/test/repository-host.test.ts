@@ -428,7 +428,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       }
       if (kind.startsWith("ai-") && !deletionUnavailable) {
         const verify = () => verifyTrialChecks(configured.draft, output)
-        if (kind === "ai-skip" || kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
+        if (kind === "ai-empty-review") assert.throws(verify, /AI check .+in-scope trial/)
         else if (["ai-unavailable", "ai-context-missing", "ai-context-required"].includes(kind)) {
           // The trial refuses on a recorded execution the maintainer cannot
           // read through the product, so the refusal carries the check and the
@@ -443,6 +443,9 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         if (kind === "ai-skip") {
           assert.equal((output.results[0]!.output as any).results.find((check: any) => check.checkId === "observability").status, "skipped")
           assert.equal(output.status, "completed", "unrelated ordinary work retains legitimate skips")
+          assert.throws(() => verifyTrialChecks({ ...configured.draft, checks: configured.draft.checks.map(check =>
+            check.kind === "ai" ? { ...check, policy: "required" as const } : check) }, output),
+            /AI check Observability has no completed in-scope trial result/, "the same unexercised rule holds the trial once it is required")
         }
       }
       if (job === "review") {

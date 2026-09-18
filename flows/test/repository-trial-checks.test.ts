@@ -87,9 +87,51 @@ const fixture = (options: { status?: "passed" | "failed" | "skipped" | "error"; 
     apply: () => Effect.runPromise(priorSetupReceipt({ ...setupInput, operation: "apply" }, "trial").pipe(Effect.provide(services))) }
 }
 
-test("live trial proof rejects wholly unmatched, missing and unavailable AI rules", async () => {
-  for (const options of [{ status: "skipped" }, { status: "error" }, { omitted: true }, { emptyExamined: true }, { evidence: [] },
-    { policy: "required", wrongPolicy: true }, { secondSkipped: true }, { wrongSource: true }, { nested: true, baselineOnly: true }] as const) {
+/** Walk run 3's two refused production trials: the only change a trial of the
+ * issues or chores draft produces is its own test issue, so the check step
+ * never records a result for a configured rule to be judged on. */
+const untouchedScope = (job: "issues" | "chores", policy: "report" | "required") => {
+  const setup = initialSetup("codeplanesmithers/canary-sandbox", job, "maintainer")
+  setup.draft.checks = [job === "issues"
+    ? { id: "docs-preserve", name: "Documentation edits preserve existing content", kind: "ai", policy,
+        rule: "Documentation edits preserve existing content", paths: ["docs/**"] }
+    : { id: "chore-scope", name: "Chore stays within its requested scope", kind: "ai", policy,
+        rule: "A chore changes only what it was asked to change", paths: [] }]
+  const configuration = Schema.decodeUnknownSync(Draft)(setup.draft)
+  const results = job === "issues"
+    ? configuration.steps.filter(step => step.mode === "automatic").map(step => ({ stepId: step.id, status: "completed" as const,
+        summary: "Answered the test issue", executionId: `execution-${step.id}`, evidence: [`source:${source}`],
+        output: json({ classification: "question", summary: "Answered the test issue", citations: [], question: "" }) }))
+    : [{ stepId: "chore", status: "completed" as const, summary: "No proposed changes", executionId: "execution-chore",
+        evidence: [`source:${source}`], output: json({ status: "proposal", summary: "No proposed changes",
+          source: { commitId: source }, proposal: [], children: [], checks: [], question: "" }) }]
+  const result: JobResult = { repo: setup.repo, job, revision: setup.revision, digest: setupCandidate(setup),
+    sourceRevision: source, eventKey: "trial:68", status: "completed", publicActions: [], results }
+  return { configuration, result, name: configuration.checks[0]!.name }
+}
+
+test("a report-only rule the trial's own change never exercised does not refuse the trial", async () => {
+  for (const job of ["issues", "chores"] as const) {
+    const reported = untouchedScope(job, "report")
+    assert.doesNotThrow(() => verifyTrialChecks(reported.configuration, reported.result), job)
+    const required = untouchedScope(job, "required")
+    assert.throws(() => verifyTrialChecks(required.configuration, required.result),
+      new RegExp(`AI check ${required.name} has no completed in-scope trial result; test a change that exercises it`), job)
+  }
+  const unchecked = untouchedScope("issues", "required")
+  assert.doesNotThrow(() => verifyTrialChecks({ ...unchecked.configuration, checks: [] }, unchecked.result), "no configured rule holds this trial")
+  // The check step ran and recorded the rule skipped for want of a path in its scope.
+  assert.equal((await fixture({ status: "skipped" }).trial())?.executionId, "job")
+  assert.equal((await fixture({ secondSkipped: true }).trial())?.executionId, "job")
+  assert.equal((await fixture({ nested: true, baselineOnly: true }).trial())?.executionId, "job")
+  await assert.rejects(fixture({ policy: "required", status: "skipped" }).trial(),
+    /AI check Observability has no completed in-scope trial result; test a change that exercises it/)
+})
+
+test("live trial proof rejects unmatched required, missing and unavailable AI rules", async () => {
+  for (const options of [{ policy: "required", status: "skipped" }, { status: "error" }, { omitted: true }, { emptyExamined: true }, { evidence: [] },
+    { policy: "required", wrongPolicy: true }, { policy: "required", secondSkipped: true }, { wrongSource: true },
+    { policy: "required", nested: true, baselineOnly: true }] as const) {
     await assert.rejects(fixture(options).trial(), /AI|check|trial/i, JSON.stringify(options))
   }
   assert.throws(() => fixture({ duplicateId: true }), /unique id/, "the shared candidate schema already refuses duplicate configured IDs")
@@ -104,7 +146,8 @@ test("matched report findings and required passes prove actual direct or nested 
 })
 
 test("activation rechecks older successful trial receipts against their owned actual AI results", async () => {
-  await assert.rejects(fixture({ status: "skipped" }).apply(), /AI|check|trial/i)
+  await assert.rejects(fixture({ policy: "required", status: "skipped" }).apply(), /AI|check|trial/i)
+  assert.equal((await fixture({ status: "skipped" }).apply()).phase, "completed", "a report-only rule the change never exercised does not hold activation either")
   assert.equal((await fixture().apply()).phase, "completed")
   const missing = fixture(); missing.rows.delete("job")
   await assert.rejects(missing.apply(), /matching|receipt|trial/i)
