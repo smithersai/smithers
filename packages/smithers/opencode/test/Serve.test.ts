@@ -133,7 +133,8 @@ describe("Serve", () => {
           )
         )
       )
-      expect(String(error)).toContain("--listen")
+      expect(error).toBeInstanceOf(Serve.BindRefused)
+      expect(error.message).toContain("--listen")
     } finally {
       scratch.remove()
     }

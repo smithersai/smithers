@@ -169,7 +169,7 @@ export const make = (
     const store = yield* Store.Store
     const hub = yield* Events.Events
     const evaluator = yield* Evaluator.Evaluator
-    /** Where health evaluations are forked: they end with the composition. */
+    /** Where every fiber the composition starts is forked: the drives, the steers, the answers, and the health evaluations end with it. */
     const scope = yield* Scope.Scope
     const ctx: Projection.Context = {
       directory: options.directory,
@@ -344,7 +344,7 @@ export const make = (
           })
         })
         const sink = sinkFor(session.id)
-        yield* Effect.forkDetach(
+        yield* Effect.forkIn(
           driver.start(
             { sessionID: session.id, messageID: assistantMessageID, prompt: text, history: tail, agent, model },
             sink
@@ -354,7 +354,8 @@ export const make = (
                 Effect.andThen(sink.closed({ _tag: "failed", message: "The turn could not start" }))
               )
             )
-          )
+          ),
+          scope
         )
       })
 
@@ -480,10 +481,11 @@ export const make = (
             properties: { sessionID: input.sessionID, requestID: input.permissionID, reply: input.response }
           }]
         })
-        yield* Effect.forkDetach(
+        yield* Effect.forkIn(
           driver.permission(input).pipe(
             Effect.catchCause((cause) => Effect.logError({ message: "The permission could not be answered", cause }))
-          )
+          ),
+          scope
         )
       })
 

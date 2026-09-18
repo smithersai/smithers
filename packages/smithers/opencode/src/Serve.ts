@@ -18,7 +18,7 @@
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { type Duration, Effect, Layer } from "effect"
+import { type Duration, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
 import type { ServeError } from "effect/unstable/http/HttpServerError"
@@ -86,6 +86,17 @@ export const refusal = (bind: Bind): string | undefined => {
   }
   return undefined
 }
+
+/**
+ * A bind the rule refuses: a non-loopback host without `--listen`, or
+ * without a password. The message is the refusal.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class BindRefused extends Schema.TaggedError<BindRefused>()("@smthrs/opencode/BindRefused", {
+  message: Schema.String
+}) {}
 
 /**
  * The URL the app connects to.
@@ -200,11 +211,11 @@ export const shutdownTimeout: Duration.Input = "2 seconds"
  */
 export const layer = (
   options: Options
-): Layer.Layer<HttpServer, ServeError | Error, Driver.Driver | Store.Store> =>
+): Layer.Layer<HttpServer, ServeError | BindRefused, Driver.Driver | Store.Store> =>
   Layer.unwrap(
     Effect.suspend(() => {
       const refused = refusal(options.bind)
-      if (refused !== undefined) return Effect.fail(new Error(refused))
+      if (refused !== undefined) return Effect.fail(new BindRefused({ message: refused }))
       const hub = hubOf(options)
       const served = HttpRouter.serve(assemble(options, hub), { disableListenLog: true, disableLogger: true }).pipe(
         Layer.provideMerge(
@@ -229,5 +240,6 @@ export const layer = (
  * @category constructors
  * @since 1.0.0
  */
-export const host = (options: Options): Effect.Effect<never, ServeError | Error, Driver.Driver | Store.Store> =>
-  Layer.launch(layer(options))
+export const host = (
+  options: Options
+): Effect.Effect<never, ServeError | BindRefused, Driver.Driver | Store.Store> => Layer.launch(layer(options))

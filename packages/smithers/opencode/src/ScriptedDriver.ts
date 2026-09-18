@@ -17,7 +17,7 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as AgentEvents from "@smthrs/harness/AgentEvent"
 import * as EngineLike from "@smthrs/harness/EngineLike"
-import { Deferred, type Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Deferred, type Duration, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import * as Driver from "./Driver.ts"
 import type * as Protocol from "./Protocol.ts"
 
@@ -83,8 +83,10 @@ interface Running {
  * @category constructors
  * @since 1.0.0
  */
-export const make = (options: Options): Effect.Effect<Driver.Service> =>
-  Effect.sync(() => {
+export const make = (options: Options): Effect.Effect<Driver.Service, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    /** Where every play is forked: a disposed driver plays nothing on. */
+    const scope = yield* Scope.Scope
     const sessions = new Map<string, Running>()
     const delay = options.delay ?? "40 millis"
 
@@ -124,7 +126,7 @@ export const make = (options: Options): Effect.Effect<Driver.Service> =>
     /** Forks one drive of the body and reports its exit through the sink. */
     const drive = (sessionID: string, run: Running): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const fiber = yield* Effect.forkDetach(
+        const fiber = yield* Effect.forkIn(
           play(sessionID, run).pipe(
             Effect.onExit((exit) => {
               run.fiber = undefined
@@ -134,7 +136,8 @@ export const make = (options: Options): Effect.Effect<Driver.Service> =>
               sessions.delete(sessionID)
               return run.sink.closed({ _tag: "interrupted" })
             })
-          )
+          ),
+          scope
         )
         run.fiber = fiber
         // An interrupted drive is an exit like any other: the sink already heard about it.

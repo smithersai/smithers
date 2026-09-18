@@ -1,10 +1,13 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import { Effect, Fiber } from "effect"
+import { Effect, Exit, Fiber, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
 import * as Driver from "../src/Driver.ts"
 import * as ScriptedDriver from "../src/ScriptedDriver.ts"
-import { run, until } from "./Harness.ts"
+import { until } from "./Harness.ts"
+
+/** The driver's fibers live in a scope: every test runs inside one. */
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> => Effect.runPromise(Effect.scoped(effect))
 
 const input: Driver.StartInput = { sessionID: "ses_test", messageID: "msg_test", prompt: "hello" }
 
@@ -106,6 +109,22 @@ describe("ScriptedDriver", () => {
     expect(result).toEqual({ interrupted: true, none: false, parkedInterrupted: true })
     expect(running.outcomes).toEqual([{ _tag: "interrupted" }])
     expect(parked.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "interrupted" }])
+  })
+
+  it("ends an in-flight turn with the scope it was built in", async () => {
+    const log = recorder()
+    const scope = await Effect.runPromise(Scope.make())
+    const scripted = await Effect.runPromise(
+      Scope.provide(ScriptedDriver.make({ script: DemoScript.script, delay: "20 millis" }), scope)
+    )
+    await Effect.runPromise(Effect.forkDetach(scripted.start(input, log.sink)))
+    await until(async () => log.events.length >= 2)
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+    const seen = log.events.length
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    // Nothing plays on after the scope closed, and the sink heard the interrupt.
+    expect(log.events.length).toBe(seen)
+    expect(log.outcomes).toEqual([{ _tag: "interrupted" }])
   })
 
   it("accepts a fixed script and answers a permission inside a plain segment as unknown", async () => {

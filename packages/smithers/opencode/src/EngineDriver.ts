@@ -828,7 +828,7 @@ export const layer = (options: Options) =>
                 running.parked = { requestID: token, flow, always: `${flow} ${request?.always[0] ?? "*"}` }
                 continue
               }
-              yield* Effect.forkDetach(drive(running, "resume"))
+              yield* Effect.forkIn(drive(running, "resume"), scope)
             }
           })
 
