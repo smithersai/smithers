@@ -27,7 +27,9 @@ export const relevance = Classifier.make("triage/relevance", {
   state: Schema.Struct({
     task: Schema.String.annotate({ description: "The task, as the person stated it" }),
     file: Schema.String.annotate({ description: "The file's path" }),
-    excerpt: Schema.String.annotate({ description: "The part of the file to judge, raw text" })
+    excerpt: Schema.String.annotate({
+      description: "The part of the file to judge, raw text, kept under the 32 KiB the whole state may take"
+    })
   }),
   questions: {
     relevant: Classifier.boolean({

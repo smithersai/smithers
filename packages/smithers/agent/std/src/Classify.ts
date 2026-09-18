@@ -364,9 +364,25 @@ export interface AnyClassifier {
 export interface Curated {
   readonly name: string
   readonly digest: string
-  readonly flow: Flow.Flow<typeof Schema.Unknown, typeof Output>
+  readonly flow: Flow.Flow<CuratedInput, typeof Output>
   readonly run: (input: unknown) => Effect.Effect<Output, Classifier.ClassifierError, Evaluator.Evaluator>
 }
+
+/**
+ * The input schema of a curated flow: the classifier's state, or a batch of
+ * them under `states`. Structural over the state, exactly as
+ * {@link AnyClassifier} is, so a host that reads `curated.flow.input` gets
+ * the union the binding decodes with.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type CuratedInput = Schema.Union<
+  readonly [
+    Schema.Struct<{ readonly states: Schema.Codec<ReadonlyArray<unknown>, ReadonlyArray<unknown>> }>,
+    Schema.Codec<unknown, unknown>
+  ]
+>
 
 /**
  * What one answer looks like for a question of each shape, as the cell reads
@@ -395,6 +411,18 @@ export const answerContract = (questions: Classifier.Questions): string =>
   `Answers: ${
     Object.entries(questions).map(([id, question]) => `${id} ${answerShape(question)}`).join("; ")
   }. ${batchContract}`
+
+/**
+ * The description the catalog shows for one curated state: the classifier's
+ * own, when it wrote one, followed by the byte limit every state is held to,
+ * so an oversized excerpt is trimmed before the call rather than after a
+ * refusal.
+ */
+const stateDescription = (state: Schema.Codec<unknown, unknown>): string => {
+  const own = state.ast.annotations?.description
+  const limit = `at most ${MAX_STATE_BYTES} bytes as JSON`
+  return typeof own === "string" && own.length > 0 ? `${own}, ${limit}` : `One state to judge, ${limit}`
+}
 
 const isBatch = (input: unknown): input is { readonly states: ReadonlyArray<unknown> } =>
   typeof input === "object" && input !== null && Array.isArray((input as { readonly states?: unknown }).states)
@@ -427,8 +455,10 @@ export const curated = (classifier: AnyClassifier): Curated => {
     )
   }
   const name = `classify/${classifier.id}`
-  const state = classifier.state.pipe(Schema.check(withinStateBytes))
-  const input = Schema.Union([
+  const state: Schema.Codec<unknown, unknown> = classifier.state
+    .annotate({ description: stateDescription(classifier.state) })
+    .pipe(Schema.check(withinStateBytes))
+  const input: CuratedInput = Schema.Union([
     Schema.Struct({
       states: Schema.Array(state).annotate({ description: "Up to 64 states to judge, one result each" }).check(
         Schema.isMinLength(1),
@@ -436,7 +466,7 @@ export const curated = (classifier: AnyClassifier): Curated => {
       )
     }),
     state
-  ]) as unknown as typeof Schema.Unknown
+  ])
   const encode = Schema.encodeEffect(classifier.state)
   const encoded = (value: unknown): Effect.Effect<unknown, Classifier.ClassifierError> =>
     encode(value).pipe(

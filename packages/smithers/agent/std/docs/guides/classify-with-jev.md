@@ -104,7 +104,9 @@ console.log(before.exitCode, judged.ok === false ? judged.error.message : judged
 ```
 
 A curated flow takes one state, or `{ states: [...] }` for a batch, and
-answers in the same two shapes as `classify`.
+answers in the same two shapes as `classify`. Every state is held to 32 KiB as
+JSON, and the catalog says so on the state itself, so trim an excerpt before
+the call rather than after an `invalid_input` refusal.
 
 ## Bind it in a host
 

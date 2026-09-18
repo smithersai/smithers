@@ -230,6 +230,34 @@ describe("Classify.curated", () => {
     expect(adHoc).toContain("returns { answers, confidence, latencyMs }")
   })
 
+  it("declares the union it decodes with, and says the byte limit on every state the catalog shows", () => {
+    // `flow.input` is the schema the binding decodes calls with, not a
+    // `Schema.Unknown` stand-in, so a host reading it sees both branches.
+    const document = Schema.toJsonSchemaDocument(curated.flow.input, { onExcessProperty: "error" }).schema as {
+      readonly anyOf: ReadonlyArray<{
+        readonly description?: string
+        readonly properties: Readonly<Record<string, { readonly items?: { readonly description?: string } }>>
+      }>
+    }
+    expect(document.anyOf).toHaveLength(2)
+    expect(document.anyOf[0]!.properties.states!.items!.description).toBe(
+      "One state to judge, at most 32768 bytes as JSON"
+    )
+    expect(document.anyOf[1]!.description).toBe("One state to judge, at most 32768 bytes as JSON")
+    // A host's own state description survives, with the limit appended.
+    const described = Classify.curated(
+      Classifier.make("test/described", {
+        description: "A state the host described.",
+        state: Schema.Struct({ a: Schema.String }).annotate({ description: "One host state" }),
+        questions: { ok: Classifier.boolean({ instructions: "Is it?" }) }
+      })
+    )
+    const own = Schema.toJsonSchemaDocument(described.flow.input).schema as {
+      readonly anyOf: ReadonlyArray<{ readonly description?: string }>
+    }
+    expect(own.anyOf[1]!.description).toBe("One host state, at most 32768 bytes as JSON")
+  })
+
   it("accepts the classifier's state or a batch of them, and refuses anything else", () => {
     expect(success(decodeCurated(state))).toEqual(state)
     expect(success(decodeCurated({ states: [state, state] }))).toEqual({ states: [state, state] })
