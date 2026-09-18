@@ -459,6 +459,20 @@ export function initialSetup(repo: string, job: RepositoryJob, owner: string | n
 }
 
 /**
+ * The configuration a registration runs. The trial's own test request is the maintainer's input to one trial run,
+ * so filling it neither advances the candidate nor stales the evals and the trial that prove the candidate.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export function setupConfiguration<Draft extends Pick<SetupDraft, "trialTitle" | "trialBody">>(
+  draft: Draft
+): Omit<Draft, "trialTitle" | "trialBody"> {
+  const { trialTitle: _title, trialBody: _body, ...configuration } = draft
+  return configuration
+}
+
+/**
  * A stable candidate identity used to reject stale results. A chore event of "none" leaves the hashed draft, so a
  * candidate stored, registered or retained before the field existed keeps its digest.
  *
@@ -466,14 +480,14 @@ export function initialSetup(repo: string, job: RepositoryJob, owner: string | n
  * @category conversions
  */
 export function setupCandidate(setup: Pick<RepositorySetup, "repo" | "job" | "revision" | "draft">): string {
-  const parsed = SetupDraftSchema.parse(setup.draft)
-  const { choreEvent, ...chosen } = parsed
+  const configuration = setupConfiguration(SetupDraftSchema.parse(setup.draft))
+  const { choreEvent, ...chosen } = configuration
   return digestSync(
     JSON.stringify({
       repo: setup.repo,
       job: setup.job,
       revision: setup.revision,
-      draft: choreEvent === "none" ? chosen : parsed
+      draft: choreEvent === "none" ? chosen : configuration
     })
   )
 }
@@ -590,6 +604,11 @@ export function editSetup(setup: RepositorySetup, draft: SetupDraft): Repository
   const parsed = SetupDraftSchema.parse(draft)
   const current = reconcileSetupHistory(setup)
   if (JSON.stringify(parsed) === JSON.stringify(current.draft)) return current
+  // Writing the trial's own test request changes no candidate, so the revision,
+  // the digest and the evidence the trial and the apply stand on all survive it.
+  if (JSON.stringify(setupConfiguration(parsed)) === JSON.stringify(setupConfiguration(current.draft))) {
+    return { ...current, draft: parsed }
+  }
   const { request: _request, evaluation: _evaluation, trial: _trial, receipt: _receipt, ...preserved } = current
   return {
     ...preserved,

@@ -39,16 +39,30 @@ test("the committed candidate keeps each public test definition and never its he
   const candidate = JSON.parse(files["candidate.json"]!)
   assert.deepEqual(candidate.draft.cases, definitions)
   assert.equal(candidate.digest, input.digest)
-  assert.deepEqual({ ...candidate.draft, cases: input.draft.cases }, JSON.parse(JSON.stringify(input.draft)))
+  const { trialTitle: _title, trialBody: _body, ...configured } = JSON.parse(JSON.stringify(input.draft))
+  assert.deepEqual({ ...candidate.draft, cases: input.draft.cases }, configured)
   assert.equal(files["prompt-research.md"], input.draft.steps.find(step => step.id === "research")!.prompt + "\n")
   assert.deepEqual(candidateFiles(held(true)), files)
 })
 
 test("a draft with no cases materialises the same bytes as before the split", () => {
   const input = held(false), files = candidateFiles(input)
+  const { trialTitle: _title, trialBody: _body, ...configured } = input.draft
   assert.equal(files["candidate.json"], JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision,
-    digest: input.digest, draft: input.draft }, null, 2) + "\n")
+    digest: input.digest, draft: configured }, null, 2) + "\n")
   assert.equal(files["evals.json"], "[]\n")
+})
+
+/** Walk run 3, defect B3-N1: `Test issue title` and `Test issue body` are the
+ * maintainer's request for one trial run, not the configuration the evals and
+ * the trial prove, so refilling them leaves the retained candidate alone. */
+test("the trial's own test request is neither the candidate nor its retained bytes", () => {
+  const input = held(true)
+  const refilled = { ...input, draft: { ...input.draft, trialTitle: "[canary] Reproduce the reported crash",
+    trialBody: JSON.stringify({ source: "github", number: 2 }) } }
+  assert.equal(setupCandidate({ ...refilled, draft: JSON.parse(JSON.stringify(refilled.draft)) }), input.digest)
+  assert.deepEqual(candidateFiles(refilled), candidateFiles(input))
+  for (const contents of Object.values(candidateFiles(refilled))) assert(!contents.includes("Reproduce the reported crash"))
 })
 
 test("the evaluated job receives no case material and still verifies the configuration it carries", () => {
@@ -57,8 +71,9 @@ test("the evaluated job receives no case material and still verifies the configu
   assert(!JSON.stringify(job).includes("HELD_OUT_EXPECTATION"))
   assert.deepEqual(job.configuration.cases, [])
   assert.deepEqual({ ...job.configuration, cases: input.draft.cases }, input.draft)
-  assert.equal(input.digest, "6a35b1cf11f6f740821c48bc4055c5e14f30963bdffea204005aad62e61f05e1")
-  assert.equal(job.digest, "eaa65868ff1b8e731c14d789e16b27f980d92492601fca521d9a4534a9b3194f")
+  // Re-pinned when the trial's own test request left the candidate.
+  assert.equal(input.digest, "ce1f5de8fcbe7154e5ce145a0e8b474e09742e67be8340fce3c82db18093917d")
+  assert.equal(job.digest, "5ca740ed1ed3e3a2f15d993d8b80dc972de3fcd8c422553f5eb98fcd1a0396e8")
   assert.doesNotThrow(() => Schema.decodeUnknownSync(JobInput)({ repo: input.repo, job: input.job, revision: input.revision,
     digest: input.digest, configuration: input.draft, sourceRevision, event: { ...event, deliveryKey: "live-key" } }))
 })

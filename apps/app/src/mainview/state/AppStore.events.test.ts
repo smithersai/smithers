@@ -245,8 +245,9 @@ describe("the live store's authoritative event path", () => {
     payload.draft.schedule = "0 9 * * *"
     payload.draft.steps = payload.draft.steps.map(step => ({ ...step, mode: "approved" as const }))
     payload.draft.cases = [{ id: "retained-chore", name: "Retained chore", input: "A weekly tidy", expected: "A scoped maintenance change", required: true }]
-    // The digest the pre-stack code at 1f7d9b40bcc5 wrote into this card, not one this build recomputes.
-    const digestBeforeChoreEvents = "4ae1937060bb181a4d1e1a910fab2b986e4139b8513c296f4c7279fd532686bd"
+    // The digest a card with no chore event carries, written into this card rather than recomputed here.
+    // Re-pinned when the trial's own test request left the candidate.
+    const digestBeforeChoreEvents = "cbd3bcb70b5428cae2605a1f55b29a71ae12fe114a5108658a1a516972c55648"
     const evidence = (operation: "evaluate" | "trial") => ({ requestId: `${operation}-request`, runId: `${operation}-run`,
       revision: 1, operation, phase: "completed" as const, digest: digestBeforeChoreEvents, updatedAt: 1,
       results: [{ caseId: "retained-chore", status: "passed" as const, observed: "A scoped maintenance change", evidence: ["execution:retained-chore"], executionId: "retained-chore" }],

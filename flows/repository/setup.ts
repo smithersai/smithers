@@ -9,7 +9,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Path, Schema } from "effect"
-import { SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
+import { setupConfiguration, SetupOperationResponseSchema } from "../../packages/rpc/src/RepositorySetup.ts"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { NativeCoding } from "../coding/native.ts"
@@ -136,7 +136,10 @@ export const publicCase = (test: typeof EvalCase.Type) => ({ id: test.id, name: 
   }), required: test.required })
 export const candidateFiles = (input: SetupInput): Record<string, string> => {
   const cases = input.draft.cases.map(publicCase)
-  const files: Record<string, string> = { "candidate.json": JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft: { ...input.draft, cases } }, null, 2) + "\n",
+  // The retained candidate is the configuration this digest names. The trial's
+  // own test request belongs to one trial press, so refilling it cannot edit it.
+  const draft = { ...setupConfiguration(input.draft), cases }
+  const files: Record<string, string> = { "candidate.json": JSON.stringify({ repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft }, null, 2) + "\n",
     "evals.json": JSON.stringify(cases, null, 2) + "\n" }
   for (const step of input.draft.steps) {
     if (!/^[A-Za-z0-9_-]+$/.test(step.id)) throw invalid("Step IDs must be safe repository filenames")
@@ -225,11 +228,16 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
         registrationId: dispatch.registration_id, ...(work.runId ? { jobRunId: work.runId } : {}),
         ...(work.result ? { sourceRevision: work.result.sourceRevision } : {}), ...(work.error ? { error: work.error } : {}), evidence: work.evidence }) })
     }
-    // Restarting a paused policy applies the draft it was activated with, so its
-    // own evaluation and live trial are this candidate's proof.
+    // A candidate's own evaluation and live trial are its proof. Restarting a
+    // paused policy applies the draft it was activated with, so that row's
+    // receipts stand in when this candidate has none of its own; re-enabling it
+    // after evaluating and trialling it again is still an apply at this digest.
     const restart = input.operation === "apply" ? restartedRegistration(yield* remote.registrations, input) : undefined
     const reviewed: SetupInput = restart ? { ...input, revision: restart.revision, digest: restart.digest } : input
-    const evaluation = yield* priorSetupReceipt(reviewed, "evaluate")
+    const proven = (operation: "evaluate" | "trial") => restart === undefined ? priorSetupReceipt(input, operation)
+      : priorSetupReceipt(input, operation).pipe(Effect.catch(own =>
+        priorSetupReceipt(reviewed, operation).pipe(Effect.catch(() => Effect.fail(own)))))
+    const evaluation = yield* proven("evaluate")
     yield* Effect.try({ try: () => verifyEvaluation(input, evaluation), catch: error => error instanceof CodingError ? error : invalid("Evaluation proof is invalid") })
     const candidate = yield* writeCandidate(options, input)
     if (input.operation === "trial") {
@@ -240,9 +248,9 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
         trialIssue: { source: "smithers-cloud", number: activation.trialIssue!.number }, registrationId: activation.registration.registration_id,
         evidence: [candidate, ...trial.evidence] }) })
     }
-    const trial = yield* priorSetupReceipt(reviewed, "trial")
+    const trial = yield* proven("trial")
     if (!trial.sourceRevision || !trial.evidence.some(ref => ref.startsWith("execution:")) || !trial.trialIssue) return yield* invalid("The live trial has no verified real source result")
-    if (restart && restart.source_revision !== trial.sourceRevision) return yield* invalid("The paused registration was activated from another source; test this draft again")
+    if (restart && trial.revision === restart.revision && restart.source_revision !== trial.sourceRevision) return yield* invalid("The paused registration was activated from another source; test this draft again")
     const current = (yield* (yield* NativeCoding).read()).head
     if (current.kind !== "resolved" || current.commitId !== trial.sourceRevision) return yield* invalid("Repository source changed after the live trial; test the candidate again")
     const activation = yield* runtime.execute(RegisterCandidate, { executionId: key("enable"), payload: { input, mode: "enabled", deadlineAt } })

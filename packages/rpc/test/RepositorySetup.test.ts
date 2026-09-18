@@ -146,11 +146,13 @@ it("refuses a padded label where the label decides what runs, so a label that ne
   expect(setupActivationProblems({ ...issues, draft: { ...issues.draft, label: " triage " } })).not.toContain(padded)
 })
 
-/** Digests the pre-stack code at 1f7d9b40bcc5 computed, which is what stored
- * setup records, registration rows and retained cards still carry. */
+/** Digests for a draft that never set a chore event, which is what a record
+ * stored before that field existed still decodes to. Re-pinned when the trial's
+ * own test request left the candidate: every digest computed before that change
+ * moves once, and the app re-proves the candidate at its next revision. */
 const STORED_DIGESTS = {
-  issues: "eaa65868ff1b8e731c14d789e16b27f980d92492601fca521d9a4534a9b3194f",
-  chores: "bbf342a61d1c36d83ecd20c7f7372dbc27cf61bf121f36590b874196b6ffdf35"
+  issues: "5ca740ed1ed3e3a2f15d993d8b80dc972de3fcd8c422553f5eb98fcd1a0396e8",
+  chores: "43606782a7bd634fd52a35558f1d46ffa55f87531f529ac02490777881c4b342"
 } as const
 
 it.each(["issues", "chores"] as const)(
@@ -310,6 +312,39 @@ describe("repository setup activation evidence", () => {
     expect(setup.draft.steps.find((step) => step.id === "fix")?.mode).toBe("manual")
     expect(setup.draft.replies).toBe("draft")
     expect(setupActivationProblems(setup)).toHaveLength(2)
+  })
+  /*
+   * Walk run 3, defect B3-N1: the issues draft stood at revision 10 with its
+   * evals passed when the maintainer filled `Test issue title` and `Test issue
+   * body`. That moved the candidate to revision 12, and `Create test issue`
+   * refused with "Run evals for this exact candidate before continuing"
+   * (.artifacts/mvp-canary-walk-20260917/B3-13-state-trial-terminal.json).
+   */
+  it("filling the trial's own test request keeps the candidate its evals and trial were run on", () => {
+    const setup = { ...initialSetup("example/repo", "issues", "maintainer"), revision: 10 }
+    setup.draft.cases = [{ ...caseFixture }]
+    const evaluated: RepositorySetup = { ...setup, evaluation: receipt(setup, "evaluate"), trial: receipt(setup, "trial") }
+    expect(setupActivationProblems(evaluated)).toEqual([])
+    const filled = editSetup(evaluated, {
+      ...evaluated.draft,
+      trialTitle: "[canary 20260918 b3d] Does the README explain the cloud review workflow?",
+      trialBody: "Answer the question from README.md."
+    })
+    expect(filled.draft.trialTitle).toBe("[canary 20260918 b3d] Does the README explain the cloud review workflow?")
+    expect(filled.revision).toBe(10)
+    expect(setupCandidate(filled)).toBe(setupCandidate(evaluated))
+    expect(filled.evaluation).toEqual(evaluated.evaluation)
+    expect(filled.trial).toEqual(evaluated.trial)
+    expect(filled.previousReceipts).toEqual([])
+    expect(setupActivationProblems(filled)).toEqual([])
+    // A trial PR is selected through the same field, and a configured change
+    // beside it is still a new candidate that owes its own proof.
+    const pr = editSetup(filled, { ...filled.draft, trialBody: JSON.stringify({ source: "github", number: 2 }) })
+    expect(pr.revision).toBe(10)
+    expect(setupActivationProblems(pr)).toEqual([])
+    const configured = editSetup(pr, { ...pr.draft, budgetMinutes: 20, trialTitle: "Another test issue" })
+    expect(configured.revision).toBe(11)
+    expect(setupActivationProblems(configured)).toContain("Run evals for this draft.")
   })
   it("restarts a paused registration from the draft it was activated with, without new evals or trial", () => {
     const applied = proven()

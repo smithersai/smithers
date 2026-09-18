@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test"
-import { initialSetup, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { createAppStore } from "../AppStore"
 import { memoryStorage, recordingAgent, unavailableRepositories } from "../TestFixtures"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
@@ -423,7 +423,9 @@ test("PR trials require a real selector and immediate launch uses both ordered f
     await Promise.all([...changes, ...t.background])
     expect(t.calls).toHaveLength(1)
     expect(JSON.parse(t.calls[0]!.body.draft.trialBody)).toEqual({ source: "smithers-cloud", number: 42 })
-    expect(t.calls[0]!.body.revision).toBe(3)
+    // Selecting the PR to trial is the trial's own input, not a new candidate.
+    expect(t.calls[0]!.body.revision).toBe(1)
+    expect(t.calls[0]!.body.digest).toBe(setupCandidate(t.state()))
   } finally { await t.close() }
 })
 
@@ -1564,4 +1566,66 @@ test("the discard door asks first, and only the confirmation's own door discards
     expect(t.state().draft).toEqual(active.draft)
     expect(t.calls).toEqual([])
   } finally { await t.close() }
+})
+
+/*
+ * Walk run 3, defect B3-N1: the issues card's `Test issue title` and `Test
+ * issue body` were candidate fields, so filling them moved the draft from
+ * revision 10 to 12 and `Create test issue` refused with "Run evals for this
+ * exact candidate before continuing"
+ * (.artifacts/mvp-canary-walk-20260917/B3-13-state-trial-terminal.json).
+ */
+test("filling the trial's test request trials the candidate the evals passed on", async () => {
+  const t = await fixture(async body => response(body, "completed", "trial"))
+  try {
+    const card = t.store.collections.cards.get("setup")!
+    const payload = { ...t.state(), revision: 10, draft: { ...t.state().draft,
+      cases: [{ id: "case", name: "A known bug", input: "a recorded bug", expected: "A reproduction", required: true }] } }
+    const digest = setupCandidate(payload)
+    const evaluation = { requestId: "eval-1", runId: "eval-run", operation: "evaluate" as const, revision: payload.revision,
+      digest, phase: "completed" as const, updatedAt: 1, evidence: ["artifact:evals"], sourceRevision: "commit-1",
+      results: [{ caseId: "case", status: "passed" as const, observed: "A reproduction", evidence: ["test:case"], executionId: "eval-case" }] }
+    await t.store.dispatch({ type: "card.upsert", actor: "system",
+      card: { ...card, kind: "repository-setup", payload: { ...payload, evaluation } } }).isPersisted.promise
+    const title = "[canary 20260918 b3d] Does the README explain the cloud review workflow?"
+    await t.setup.configureRepositorySetup("setup", "trialTitle", title)
+    await t.setup.configureRepositorySetup("setup", "trialBody", "Answer the question from README.md.")
+    expect(t.state().revision).toBe(10)
+    expect(setupCandidate(t.state())).toBe(digest)
+    expect(t.state().evaluation).toEqual(evaluation)
+    await t.setup.runRepositorySetup("setup", "trial"); await Promise.all(t.background)
+    expect(t.calls.map(call => [call.body.revision, call.body.digest])).toEqual([[10, digest]])
+    expect(t.calls[0]!.body.draft.trialTitle).toBe(title)
+    expect(t.state().request?.state).toBe("completed")
+  } finally { await t.close() }
+})
+
+/*
+ * The trial's own test request left the candidate, so every digest computed
+ * before that change moves once. A retained card and an enabled registry row
+ * still carry the older one: recovery advances the candidate past the active
+ * revision and archives its stale proof, so the job keeps running under its
+ * registration while the person re-proves the next revision.
+ */
+test("a card holding a digest from before the candidate changed recovers by advancing the candidate", () => {
+  const initial = initialSetup("example/repo", "issues", "maintainer")
+  const stale = "4ae1937060bb181a4d1e1a910fab2b986e4139b8513c296f4c7279fd532686bd"
+  const proof = (operation: "evaluate" | "trial") => ({ requestId: `${operation}-1`, runId: `${operation}-run`, revision: 4,
+    operation, phase: "completed" as const, digest: stale, updatedAt: 1, results: [], evidence: [`run:${operation}-run`],
+    sourceRevision: "commit-1" })
+  const current: RepositorySetup = { ...initial, revision: 4, evaluation: proof("evaluate"), trial: proof("trial"),
+    active: { revision: 4, digest: stale, registrationId: "active-1", sourceRevision: "commit-1", enabled: true, owned: true, draft: initial.draft },
+    recovery: { id: "recover", baseRevision: 4, baseDigest: stale, state: "requested", registrationState: "unknown" } }
+  const recovered: SetupRecoveryResponse = { owner: "maintainer", repo: initial.repo, job: initial.job,
+    registration: { state: "known", active: { registrationId: "active-1", workspaceId, revision: 4, digest: stale,
+      sourceRevision: "commit-1", enabled: true, owned: true, draft: initial.draft } }, setup: { state: "none" } }
+  const projected = projectRecoveredSetup(current, recovered)
+  expect(setupCandidate(current)).not.toBe(stale)
+  expect(projected.revision).toBe(5)
+  expect(projected.draft).toEqual(initial.draft)
+  expect(projected.active?.enabled).toBe(true)
+  expect(projected.evaluation).toBeUndefined()
+  expect(projected.trial).toBeUndefined()
+  expect(projected.previousReceipts.map(receipt => receipt.requestId)).toEqual(["evaluate-1", "trial-1"])
+  expect(setupActivationProblems(projected)).toContain("Run evals for this draft.")
 })
