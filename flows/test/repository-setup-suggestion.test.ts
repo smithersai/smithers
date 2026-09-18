@@ -105,6 +105,45 @@ test("a fresh inspection re-pins the cases it authored and leaves an edited case
   assert.deepEqual(suggestedSetupDraft(edited, suggestion(), replaced).cases, edited.cases, "an edited case keeps the commit it names")
 })
 
+/** A case the inspection authored names the commit it captured twice: as the pin
+ * and as the event's candidate. `checks.ts` accepts no other source for a review
+ * or CI event, so a re-pin that moves only the pin moves nothing that decides the
+ * run. A candidate the remote published is the event's own fact and stays. */
+const reviewCase = (head: string, pin: string, extra: Partial<Draft["cases"][number]> = {}): Draft["cases"][number] =>
+  ({ id: "review", name: "Review", required: true, expected: "The review runs on the candidate.", ...extra,
+    input: JSON.stringify({ event: { source: "github", type: "pull_request", action: "opened", deliveryKey: "delivery-2",
+      payload: { pull_request: { title: "Canary", body: "Read the README.", base: { sha: "b".repeat(40) }, head: { sha: head } } } },
+      sourceRevision: pin, assertions: [{ path: "/results/0/status", equals: "completed" }] }) })
+
+test("a re-pin moves the event candidate that same pin wrote, and never one the remote published", () => {
+  const replaced = "d".repeat(40)
+  const own: Draft = { ...draft, cases: [reviewCase(captured, captured)] }
+  const moved = JSON.parse(suggestedSetupDraft(own, suggestion(), replaced).cases[0]!.input)
+  assert.equal(moved.sourceRevision, replaced)
+  assert.equal(moved.event.payload.pull_request.head.sha, replaced, "the candidate this inspection wrote moves with the pin")
+  assert.equal(moved.event.payload.pull_request.base.sha, "b".repeat(40), "the remote's own base is untouched")
+  assert.deepEqual(moved, JSON.parse(reviewCase(captured, captured).input.split(captured).join(replaced)), "and nothing else moves")
+
+  const published: Draft = { ...draft, cases: [reviewCase("e".repeat(40), captured)] }
+  const kept = JSON.parse(suggestedSetupDraft(published, suggestion(), replaced).cases[0]!.input)
+  assert.equal(kept.sourceRevision, replaced, "the held-out pin still moves")
+  assert.equal(kept.event.payload.pull_request.head.sha, "e".repeat(40), "a candidate this inspection did not write is the event's own")
+
+  const edited: Draft = { ...draft, cases: [reviewCase(captured, captured, { edited: true })] }
+  assert.deepEqual(suggestedSetupDraft(edited, suggestion(), replaced).cases, edited.cases, "an edited case keeps both")
+
+  // A manual checks case names its candidate in the payload the CI step reads.
+  for (const field of ["head_commit_id", "candidateCommitId"] as const) {
+    const manual: Draft = { ...draft, cases: [{ id: "checks", name: "Checks", required: true, expected: "The checks step reports honestly.",
+      input: JSON.stringify({ event: { source: "smithers-cloud", type: "manual", action: "manual:checks", manualStep: "checks",
+        deliveryKey: "delivery-3", payload: { prompt: "Run the repository checks", [field]: captured } },
+        sourceRevision: captured, assertions: [{ path: "/results/0/status", equals: "completed" }] }) }] }
+    const moved = JSON.parse(suggestedSetupDraft(manual, suggestion(), replaced).cases[0]!.input)
+    assert.equal(moved.event.payload[field], replaced, `a re-pin moves the candidate named by ${field}`)
+    assert.equal(moved.event.payload.prompt, "Run the repository checks", "and leaves the rest of the payload alone")
+  }
+})
+
 test("a suggested case whose input the maintainer replaced with unreadable text is left as written", () => {
   const authored = suggestedSetupDraft(draft, suggestion(), captured)
   const opaque = { ...authored, cases: [{ ...authored.cases[0]!, input: "answer the question" }] }

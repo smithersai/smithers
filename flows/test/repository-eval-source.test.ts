@@ -16,7 +16,8 @@ import { CodingError } from "../coding/schema.ts"
 import { Evaluate, evaluationLayers, ScoreCase } from "../repository/evaluation.ts"
 import { CaptureRepository, captureRepository } from "../repository/inspection.ts"
 import { FinishJob, Investigate, RunSteps } from "../repository/jobs.ts"
-import { SetupInput, type JobResult, type RepositoryEvidence } from "../repository/schema.ts"
+import { suggestedSetupDraft } from "../repository/setup.ts"
+import { EvalCase, SetupInput, type Draft, type JobResult, type RepositoryEvidence } from "../repository/schema.ts"
 
 const exporter = process.env.PLUE_JJ_EXPORT_BINARY
 const gate = { skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the native source exporter" : false, timeout: 120_000 }
@@ -76,26 +77,56 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
 }
 
 interface Case { readonly id: string; readonly sourceRevision: string; readonly event: Schema.Json }
-const setupFor = (job: "issues" | "review" | "ci", cases: readonly Case[]): SetupInput => {
+const storedSetup = (job: "issues" | "review" | "ci", cases: readonly (typeof EvalCase.Type)[]): SetupInput => {
   const setup = initialSetup("example/repo", job, "maintainer")
-  setup.draft.cases = cases.map(test => ({ id: test.id, name: test.id, required: true,
-    expected: "The investigation answers from the captured README.",
-    input: JSON.stringify({ event: test.event, sourceRevision: test.sourceRevision,
-      assertions: [{ path: "/results/0/output/classification", equals: "question" }] }) }))
+  setup.draft.cases = cases.map(test => ({ ...test }))
   return Schema.decodeUnknownSync(SetupInput)({ requestId: "eval-source", repo: setup.repo, job: setup.job,
     operation: "evaluate", revision: setup.revision, digest: setupCandidate(setup), draft: setup.draft })
 }
+const setupFor = (job: "issues" | "review" | "ci", cases: readonly Case[]): SetupInput =>
+  storedSetup(job, cases.map(test => ({ id: test.id, name: test.id, required: true,
+    expected: "The investigation answers from the captured README.",
+    input: JSON.stringify({ event: test.event, sourceRevision: test.sourceRevision,
+      assertions: [{ path: "/results/0/output/classification", equals: "question" }] }) })))
 const json = (value: unknown) => value as Schema.Json
 const issueEvent = json({ source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: "seed", issueNumber: 53,
   payload: { issue: { title: "What is this repository for?", body: "The README is short. A cited answer is enough." } } })
 const ciEvent = json({ source: "smithers-cloud", type: "manual", action: "manual:checks", manualStep: "checks", deliveryKey: "seed",
   payload: { prompt: "Run the repository checks" } })
 /** What the review and CI steps actually check: the commit the event calls the
- * work under review. `checks.ts` refuses any other source for it. */
+ * work under review. `checks.ts` refuses any other source for it. A captured PR
+ * event carries the head and base the host read and no pull request number,
+ * which is the shape every walk-run-3 case persisted. */
 const prEvent = (head: string, base: string) => json({ source: "github", type: "pull_request", action: "opened", deliveryKey: "seed",
+  payload: { pull_request: { title: "Change the greeting", body: "Inspect README.md", base: { sha: base }, head: { sha: head } } } })
+/** A live GitHub delivery names its pull request, so retention can ask for its refs. */
+const numberedPrEvent = (head: string, base: string) => json({ source: "github", type: "pull_request", action: "opened", deliveryKey: "seed",
   payload: { pull_request: { number: 2, title: "Change the greeting", body: "Inspect README.md", base: { sha: base }, head: { sha: head } } } })
 const ciPrEvent = (head: string) => json({ source: "smithers-cloud", type: "manual", action: "manual:checks", manualStep: "checks",
   deliveryKey: "seed", payload: { prompt: "Run the repository checks", candidateCommitId: head } })
+/** The two cases the walk-run-3 host persisted, verbatim from its terminal receipts
+ * (`.artifacts/mvp-canary-walk-20260917/B3-21-state-evals-terminal.json` and
+ * `B3-22-…`). Each names that inspection's own captured commit as its pin AND as
+ * its event's candidate, and neither carries a pull request number. */
+const walkCase = {
+  review: { id: "review-open-canary-pr", name: "Review the open canary summary PR against its base", required: true,
+    expected: "The review step runs on the open pull request 'Canary: read-only repository summary' and compares the head revision against the correct base. The repository is a documentation-only canary fixture whose README describes opening the repo in Smithers, requesting a small change via Chat, and reviewing changes in the cloud before landing. A correct run grounds every finding in the actual changed files: it reports concrete findings with code evidence if the diff introduces a problem, and explicitly reports no findings for a clean change rather than inventing issues. It must not modify files, and its summary identifies what was reviewed and the verdict reached.",
+    input: "{\"event\":{\"source\":\"github\",\"type\":\"pull_request\",\"action\":\"opened\",\"deliveryKey\":\"[REDACTED]\",\"payload\":{\"pull_request\":{\"title\":\"Canary: read-only repository summary\",\"body\":\"Durable production fixture. The Multi concierge should mention this open pull request in its repository update.\",\"base\":{\"sha\":\"fb8c7b08f0d0feb5887cabbec5650e28dae2e6c1\"},\"head\":{\"sha\":\"989b1f1c0c4c153d3917d89de00f2caee95292d0\"}}}},\"sourceRevision\":\"989b1f1c0c4c153d3917d89de00f2caee95292d0\",\"assertions\":[{\"path\":\"/results/0/stepId\",\"equals\":\"review\"},{\"path\":\"/results/0/status\",\"equals\":\"completed\"}]}" },
+  ci: { id: "ci-pr2-no-checks-honest-report", name: "Checks step on open PR #2 completes and reports honestly that the repository defines no checks", required: true,
+    expected: "The checks step runs for this pull request against the captured revision. The repository tree contains only README.md and defines no CI workflows, build manifests, or test scripts, so the step completes successfully and its summary states plainly that no repository checks exist, naming what it searched for (workflow files, manifests, scripts) and where. It does not fabricate a pass, does not error, does not install toolchains, and does not modify any file. The report-only documentation-grounding AI check may attach findings about Markdown changes but never gates the result.",
+    input: "{\"event\":{\"source\":\"github\",\"type\":\"pull_request\",\"action\":\"opened\",\"deliveryKey\":\"[REDACTED]\",\"payload\":{\"pull_request\":{\"title\":\"Canary: read-only repository summary\",\"body\":\"Durable production fixture. The Multi concierge should mention this open pull request in its repository update.\",\"base\":{\"sha\":\"fb8c7b08f0d0feb5887cabbec5650e28dae2e6c1\"},\"head\":{\"sha\":\"f4d4814e64ec741c153a6163e6cac16c02691db6\"}}}},\"sourceRevision\":\"f4d4814e64ec741c153a6163e6cac16c02691db6\",\"assertions\":[{\"path\":\"/results/0/stepId\",\"equals\":\"checks\"},{\"path\":\"/results/0/status\",\"equals\":\"completed\"}]}" }
+} satisfies Record<"review" | "ci", typeof EvalCase.Type>
+const walkPin = { review: "989b1f1c0c4c153d3917d89de00f2caee95292d0", ci: "f4d4814e64ec741c153a6163e6cac16c02691db6" }
+/** Everything an inspection may propose. The host keeps the maintainer's decisions,
+ * and an existing case is the inspection's own to re-pin. */
+const inspection = (existing: Draft): Parameters<typeof suggestedSetupDraft>[1] => ({ checks: existing.checks,
+  cases: [{ id: "suggested", name: "Suggested", required: true, expected: "The reply cites the captured README.",
+    input: { sourceRevision: "b".repeat(40), assertions: [{ path: "/results/0/status", equals: "completed" }],
+      event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: "seed",
+        payload: { issue: { title: "What is this repository for?", body: "The README is short." } } } } }],
+  replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label, schedule: existing.schedule,
+  choreEvent: existing.choreEvent, budgetMinutes: existing.budgetMinutes, connectIssues: existing.connectIssues,
+  trialTitle: existing.trialTitle, trialBody: existing.trialBody })
 
 /** The production wiring is `"snapshot"`; `"immutable"` is the captured-source path. */
 async function harness(t: TestContext, mode: "snapshot" | "immutable") {
@@ -122,12 +153,14 @@ async function harness(t: TestContext, mode: "snapshot" | "immutable") {
   const evidence: RepositoryEvidence = await Effect.runPromise(captureRepository(f.options, { repo: "example/repo", prompt: "README.md" }, mode)
     .pipe(Effect.provide(f.owned)))
   assert.equal(f.snapshots.length > 0, mode === "snapshot", "only snapshot capture snapshots the working copy")
-  const evaluate = (job: "issues" | "review" | "ci", cases: readonly Case[], executionId: string) =>
-    runtime.runPromise(RunEvaluate.execute({ setup: setupFor(job, cases), evidence, deadlineAt: Date.now() + 120_000 },
+  const run = (setup: SetupInput, executionId: string) =>
+    runtime.runPromise(RunEvaluate.execute({ setup, evidence, deadlineAt: Date.now() + 120_000 },
       { executionId }).pipe(Effect.scoped), { signal: t.signal })
+  const evaluate = (job: "issues" | "review" | "ci", cases: readonly Case[], executionId: string) => run(setupFor(job, cases), executionId)
+  const replay = (job: "issues" | "review" | "ci", cases: readonly (typeof EvalCase.Type)[], executionId: string) => run(storedSetup(job, cases), executionId)
   const capture = (payload: typeof CaptureRepository.payloadSchema.Type, options = f.options) =>
     Effect.runPromise(captureRepository(options, payload, mode).pipe(Effect.provide(f.owned), Effect.result))
-  return { ...f, captured, executed, refused, evidence, evaluate, capture }
+  return { ...f, captured, executed, refused, evidence, evaluate, replay, capture }
 }
 
 for (const mode of ["immutable", "snapshot"] as const) {
@@ -158,7 +191,7 @@ test(`a held-out case pinned to a commit this host never held still executes and
   const broken = await f.evaluate("issues", [{ id: "readme-purpose-question", sourceRevision: f.pinned, event: issueEvent }], "issues-capture-failed")
   assert.equal(broken[0]!.status, "error")
   assert.equal(broken[0]!.observed,
-    "The held-out source commit could not be captured: stale_revision — Source changed during repository inspection; retry")
+    "The held-out source commit could not be captured: stale_revision — Source changed during repository inspection; retry.")
   assert.ok(f.captured.includes(f.pinned), "the held pin reaches the capture")
 
   const fallback = await f.capture({ repo: "example/repo", prompt: "README.md", sourceRevision: f.stranger, heldOut: true })
@@ -189,12 +222,53 @@ test(`a review or CI case is evaluated on its event's candidate revision, not on
   }
 
   const missing = "c".repeat(40)
-  const absent = await f.evaluate("review", [{ id: "review-case", sourceRevision: f.pinned, event: prEvent(missing, source) }], "review-candidate-absent")
+  const absent = await f.evaluate("review", [{ id: "review-case", sourceRevision: f.pinned, event: numberedPrEvent(missing, source) }], "review-candidate-absent")
   assert.equal(absent[0]!.status, "error")
   assert.match(absent[0]!.observed, /^The event's candidate revision cccccccccccc could not be captured: source_unavailable — /)
-  assert.match(absent[0]!.observed, /Inspect again to re-pin this case\.$/)
+  assert.match(absent[0]!.observed, /Edit this case to name source this host holds\.$/, "no inspection moves a candidate the case did not pin")
   assert.equal(f.executed.includes(source), false, "a candidate this host cannot capture never scores other source")
+
+  // A captured PR event names no pull request, so there is no retain request to
+  // make. The capture then stands on what this host holds and names what it does not.
+  const unnumbered = await f.evaluate("review", [{ id: "review-case", sourceRevision: missing, event: prEvent(missing, source) }], "review-candidate-unnumbered")
+  assert.equal(unnumbered[0]!.status, "error")
+  assert.equal(unnumbered[0]!.observed, "The event's candidate revision cccccccccccc could not be captured: " +
+    "invalid_receipt — The selected source commit is unavailable on this repository host. Inspect again to re-pin this case.")
+  assert.equal(f.executed.includes(source), false)
 })
+
+/*
+ * The release symptom itself, replayed from the receipts. Both terminal walk-run-3
+ * receipts read "step <id> error — The workspace source is not the event's
+ * candidate revision", and re-pinning a case is a remedy only if the inspection
+ * that authored the pin moves the candidate it wrote in the same event.
+ */
+for (const job of ["review", "ci"] as const) {
+test(`the walk-run-3 ${job} case passes once a fresh inspection re-pins it (${mode})`, gate, async t => {
+  const f = await harness(t, mode), captured = f.evidence.source.commitId, dead = walkPin[job]
+
+  const persisted = await f.replay(job, [walkCase[job]], `${job}-walk-persisted`)
+  assert.equal(persisted[0]!.status, "error", "the persisted case names a commit no live workspace holds")
+  assert.equal(persisted[0]!.observed, `The event's candidate revision ${short(dead)} could not be captured: ` +
+    "invalid_receipt — The selected source commit is unavailable on this repository host. Inspect again to re-pin this case.")
+  assert.equal(f.executed.length, 0, "and never scores this workspace's source instead")
+
+  const existing = storedSetup(job, [walkCase[job]]).draft
+  const repinned = suggestedSetupDraft(existing, inspection(existing), captured).cases[0]!
+  const input = JSON.parse(repinned.input) as { sourceRevision: string; event: { payload: { pull_request: Record<string, { sha: string }> } } }
+  assert.equal(input.sourceRevision, captured, "the fresh inspection re-pins the case it authored")
+  assert.equal(input.event.payload.pull_request.head!.sha, captured, "and moves the candidate that same pin wrote")
+  assert.equal(input.event.payload.pull_request.base!.sha, "fb8c7b08f0d0feb5887cabbec5650e28dae2e6c1", "the remote's own base is never rewritten")
+  assert.deepEqual(input, JSON.parse(walkCase[job].input.split(dead).join(captured)), "nothing but this inspection's own commit changes")
+  assert.deepEqual({ ...repinned, input: walkCase[job].input }, walkCase[job], "and no other field of the case moves")
+
+  const evaluated = await f.replay(job, [repinned], `${job}-walk-repinned`)
+  assert.equal(evaluated[0]!.status, "passed", evaluated[0]!.observed)
+  assert.equal(evaluated[0]!.observed, judged, "a re-pinned case is scored against no substituted source")
+  assert.deepEqual(evaluated[0]!.evidence, [`source:${captured}`])
+  assert.deepEqual(f.executed, [captured], "the production step runs on the revision the event now names")
+})
+}
 
 test(`a source lookup that cannot answer keeps its own fault class instead of substituting source (${mode})`, gate, async t => {
   const f = await harness(t, mode), ran = f.executed.length
@@ -202,7 +276,7 @@ test(`a source lookup that cannot answer keeps its own fault class instead of su
   const unanswered = await f.evaluate("issues", [{ id: "readme-purpose-question", sourceRevision: unreachable, event: issueEvent }], "issues-lookup-unavailable")
   assert.equal(unanswered[0]!.status, "error", `a lookup that cannot answer is not a proven absence: ${unanswered[0]!.observed}`)
   assert.equal(unanswered[0]!.observed,
-    "The held-out source commit could not be captured: source_unavailable — The native source lookup could not complete")
+    "The held-out source commit could not be captured: source_unavailable — The native source lookup could not complete.")
   assert.equal(f.executed.length, ran, "the case never runs against substituted source when its lookup failed")
 
   const blind = await f.capture({ repo: "example/repo", prompt: "README.md", sourceRevision: unreachable, heldOut: true }, f.unanswerable)

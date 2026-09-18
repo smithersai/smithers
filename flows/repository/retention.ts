@@ -21,7 +21,12 @@ export const sourceRequest = (event: typeof Event.Type, capturedPayload: Schema.
     const pushed = object(normalized.payload)
     request = { kind: "push", head: pushed.candidateCommitId, base: pushed.baseCommitId, ref: pushed.ref, delivery_key: event.deliveryKey }
   } else if (pr.source === "github" || event.source === "github" && (event.type === "pull_request" || event.manualStep !== undefined)) {
-    request = { kind: "pull_request", number: pr.number ?? event.issueNumber, head: object(pr.head).sha, base: object(pr.base).sha }
+    // A captured PR payload records the head and base this host read, not the
+    // delivery that named the pull request. With no number there is nothing to
+    // ask the remote for, and source this host already holds stays readable.
+    const number = pr.number ?? event.issueNumber
+    if (number === undefined) return undefined
+    request = { kind: "pull_request", number, head: object(pr.head).sha, base: object(pr.base).sha }
   } else return undefined
   return yield* Schema.decodeUnknownEffect(RetainSourceRequest)(request).pipe(
     Effect.mapError(() => new CodingError({ code: "source_refused", message: "The repository event has no exact retainable source identity" })))

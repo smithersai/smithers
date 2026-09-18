@@ -15,7 +15,7 @@ import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
 import { CaptureRepository, currentExecutionId, StartBudget, type InspectionOptions } from "./inspection.ts"
-import { CaseInput, Evaluate } from "./evaluation.ts"
+import { CaseInput, Evaluate, repinnedEvent } from "./evaluation.ts"
 import { RepositoryRemote } from "./remote.ts"
 import { Draft, EvalCase, Event, JobInput, JobResult, OperationResult, Receipt, RepositoryEvidence, SetupInput, Step } from "./schema.ts"
 import { Observation, RepositoryJob } from "./jobs.ts"
@@ -61,12 +61,19 @@ export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["che
   return { ...check, policy: prior.length === 1 ? prior[0]!.policy : "report" }
 })
 /** A pin outlives no workspace but its own, so every inspection re-pins the cases
- * it wrote to the commit it just captured. Only the pin moves: the event, the
+ * it wrote to the commit it just captured. Only this inspection's own commit
+ * moves, in both places it wrote it: the case's pin and the candidate of the
+ * event it authored, which is the only source a review or CI step accepts. The
  * assertions and the expected answer stay exactly as they were written, and a
  * case the maintainer has touched is theirs, pin included. */
-const repinnedCase = (test: typeof EvalCase.Type, sourceRevision: string): typeof EvalCase.Type =>
-  Option.isNone(Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)) ? test
-    : { ...test, input: JSON.stringify({ ...JSON.parse(test.input) as Record<string, unknown>, sourceRevision }) }
+const repinnedCase = (test: typeof EvalCase.Type, sourceRevision: string): typeof EvalCase.Type => {
+  const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)
+  if (Option.isNone(decoded)) return test
+  const stored = JSON.parse(test.input) as { readonly event: Record<string, unknown> } & Record<string, unknown>
+  const event = repinnedEvent(decoded.value.event, decoded.value.sourceRevision, sourceRevision)
+  return { ...test, input: JSON.stringify({ ...stored, sourceRevision,
+    ...(event === decoded.value.event ? {} : { event: { ...stored.event, payload: event.payload } }) }) }
+}
 /** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text.
  * The held-out source is the commit this inspection actually captured, never a revision the model named. */
 export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type, sourceRevision: string): Draft => ({

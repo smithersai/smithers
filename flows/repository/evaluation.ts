@@ -71,7 +71,7 @@ const CaptureCase = Flow.make("repository/CaptureCase", { payload: CaptureReposi
 /** The next reader needs the underlying cause, not the fact that one existed. */
 const capturedCause = (error: unknown): string => {
   const fields = error !== null && typeof error === "object" ? error as { readonly code?: unknown; readonly message?: unknown } : {}
-  return typeof fields.code === "string" && typeof fields.message === "string" ? `: ${fields.code} — ${fields.message}` : "."
+  return typeof fields.code === "string" && typeof fields.message === "string" ? `: ${fields.code} — ${fields.message}.` : "."
 }
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 /** The commit an event calls the work under review. `captureChecks` accepts no
@@ -81,6 +81,17 @@ export const eventCandidate = (event: typeof Event.Type): string | undefined => 
   const payload = object(event.payload), pr = object(payload.pull_request)
   const candidate = object(pr.head).sha ?? payload.head_commit_id ?? payload.candidateCommitId
   return typeof candidate === "string" && /^(?!0{40}$)[0-9a-f]{40}$/.test(candidate) ? candidate : undefined
+}
+/** An inspection writes the commit it captured twice: as the case's pin and as
+ * the candidate of the event it authored. Re-pinning only the first moves nothing
+ * that decides the run, so both move together. A candidate the remote published
+ * is the event's own fact, and no inspection rewrites it. */
+export const repinnedEvent = (event: typeof Event.Type, from: string, to: string): typeof Event.Type => {
+  if (eventCandidate(event) !== from) return event
+  const payload = object(event.payload), pr = object(payload.pull_request)
+  const rewritten = object(pr.head).sha === from ? { ...payload, pull_request: { ...pr, head: { ...object(pr.head), sha: to } } }
+    : payload.head_commit_id === from ? { ...payload, head_commit_id: to } : { ...payload, candidateCommitId: to }
+  return { ...event, payload: rewritten as Schema.Json }
 }
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
   current !== null && typeof current === "object" ? (current as Record<string, unknown>)[token.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined, value)
@@ -149,9 +160,13 @@ export const evaluationLayers = (options: { readonly evaluator?: Layer.Layer<Eva
           ...(candidate === undefined ? { heldOut: true } : { event: decoded.value.event }), prompt: JSON.stringify(decoded.value.event.payload) } })
       const capturedResult = yield* captured.pipe(Effect.result)
       if (capturedResult._tag === "Failure") {
+        // The next inspection moves a candidate its own inspection wrote and
+        // nothing else, so only that shape is told to inspect again.
+        const remedy = test.edited !== true && candidate === decoded.value.sourceRevision
+          ? "Inspect again to re-pin this case." : "Edit this case to name source this host holds."
         results.push({ caseId: test.id, status: "error", executionId: `${key}-source`, evidence: [`execution:${key}-source`],
           observed: candidate === undefined ? `The held-out source commit could not be captured${capturedCause(capturedResult.failure)}`
-            : `The event's candidate revision ${candidate.slice(0, 12)} could not be captured${capturedCause(capturedResult.failure)} Inspect again to re-pin this case.` })
+            : `The event's candidate revision ${candidate.slice(0, 12)} could not be captured${capturedCause(capturedResult.failure)} ${remedy}` })
         continue
       }
       const caseEvidence = capturedResult.success

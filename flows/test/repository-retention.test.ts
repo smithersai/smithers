@@ -25,6 +25,12 @@ test("retention selects canonical PR identities and original signed push identit
   assert.equal(await Effect.runPromise(sourceRequest(deleted, deleted.payload)), undefined)
   await assert.rejects(Effect.runPromise(sourceRequest({ ...trial, source: "github", type: "pull_request" },
     { pull_request: { number: 7, head: { sha: "main" }, base: { sha: base } } })), /exact retainable source identity/)
+  // A captured PR event records the head and base the host read, not the delivery
+  // that named the pull request. There is nothing to ask the remote for, and a
+  // commit this host already holds stays readable.
+  const captured: typeof Event.Type = { source: "github", type: "pull_request", action: "opened", deliveryKey: "github:captured-pr", payload: {} }
+  assert.equal(await Effect.runPromise(sourceRequest(captured,
+    { pull_request: { title: "Canary", body: "A durable fixture.", head: { sha: head }, base: { sha: base } } })), undefined)
 })
 
 test("native commit lookup requires the exact nonempty set even when JJ exits zero for a missing commit", async t => {
