@@ -56,8 +56,21 @@ turn. Each decision is recorded in the store as a `flows.opencode.health.v1`
 row.
 
 Without `AI_GATEWAY_API_KEY` the evaluator answers `unreachable`: classify
-calls resolve as `{ ok: false }` in the cell, the dot is gray, and the run
-goes on.
+calls resolve as `{ ok: false }` in the cell, the dot is gray, the gray card
+is titled `health unavailable: set AI_GATEWAY_API_KEY to turn on health and
+classify`, and the run goes on.
+
+## Frames and the read-only cap
+
+A turn runs on the harness's cell loop with the host's teaching in its
+system context (`EngineDriver.hostTeaching`): answer a conversational
+request, or one the printed output already answers, with `ctx.done` in that
+same cell; call flows only when the request needs them; never run a command
+the person did not ask for. The read-only cap is armed at six frames
+(`EngineDriver.readOnlyCap`): a turn that only reads or only prints is
+demanded an action at six read-only frames and stopped at twelve, which
+closes as a red `stopped` health decision. `smithers opencode` passes a
+frame budget of forty (`--max-frames`); raise it for a long task.
 
 ## Cost
 

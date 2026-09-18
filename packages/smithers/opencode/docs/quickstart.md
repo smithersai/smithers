@@ -44,8 +44,16 @@ front of the session title.
 | ⚪  | No `AI_GATEWAY_API_KEY`, Jev unreachable or over its 1.5 s deadline, every answer under 0.5 confidence, or the turn was interrupted. |
 
 A `health` card appears in the timeline on every color change, titled with
-the reason and carrying the three answers. Renaming the session keeps the
-dot in front of your title; archiving removes it.
+the reason and carrying the three answers; without a key the gray card says
+`health unavailable: set AI_GATEWAY_API_KEY to turn on health and classify`.
+Renaming the session keeps the dot in front of your title; archiving removes
+it.
+
+## Frames
+
+Every prompt has a budget of forty frames (`--max-frames`), and a turn that
+only reads or only prints for six frames is told to act, and stopped at
+twelve. Raise `--max-frames` for a long task.
 
 ## Cost
 

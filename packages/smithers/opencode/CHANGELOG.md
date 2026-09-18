@@ -2,7 +2,38 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The engine driver arms the harness's read-only cap at six frames
+  (`EngineDriver.readOnlyCap`; the harness default is twelve): a turn that
+  only reads or only prints is demanded an action at six read-only frames
+  and stopped at twelve as `read_only_cap`, which closes as a red `stopped`
+  health decision. The day-one drive on Cerebras spent 27 frames and 290k
+  input tokens on "Say B" because the model printed the answer instead of
+  calling `ctx.done` and nothing bounded the streak.
+- Every turn carries the host's teaching (`EngineDriver.hostTeaching`) in
+  its system context: answer a conversational request, or one the printed
+  output already answers, with `ctx.done` in that same cell; call flows only
+  when the request needs them; never run a command the person did not ask
+  for.
+
 ### Fixed
+
+- A gray health card names why and the way out: `health unavailable: set
+  AI_GATEWAY_API_KEY to turn on health and classify` without a key, the
+  transport's words or the deadline otherwise (`Health.unavailable`). The
+  card was titled `health unavailable` and said nothing a person could act
+  on. A card is still emitted on a color change only: one gray card at the
+  first frame, one red card on a park, one gray or green card after.
+- A rename that arrives with a dot in front of it (the app echoes the
+  dotted title back, with U+FE0F after the dot) is stored behind the
+  session's own dot, or without one when the session has no color yet
+  (`Health.retitle`). Stored verbatim, the app's dot stayed in front of the
+  words and the next color change put the server's dot in front of that.
+- The message a rejected call settles with says the harness's generic
+  `capability_refused` hint beside it ("This run cannot reach that flow")
+  is about the flow, not this call, and that the flow stays available for
+  commands the person allows (`EngineDriver.deniedMessage`).
 
 - A route the server does not mount answers the JSON 404 the mounted routes
   answer, with the allow headers when the origin is allowed: the router
