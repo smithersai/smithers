@@ -441,6 +441,26 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(items[0]!.info.role).toBe("assistant")
     const parentID = (items[0]!.info as Protocol.AssistantMessage).parentID
     expect(parentID).toBe(ids[0])
+    // More remain: the page names the cursor the way 1.18.31 does, exposed to
+    // the app, and the next page from it is the first prompt with no cursor.
+    expect(page.headers.get("x-next-cursor")).toBe(items[0]!.info.id)
+    expect(page.headers.get("access-control-expose-headers")).toBe("Link, X-Next-Cursor")
+    expect(page.headers.get("link")).toBe(
+      `</session/${session.id}/message?limit=20&before=${items[0]!.info.id}>; rel="next"`
+    )
+    const older = await served.handler(
+      new Request(`http://test/session/${session.id}/message?limit=20&before=${items[0]!.info.id}`)
+    )
+    expect(((await older.json()) as Array<{ info: Message }>).map((item) => item.info.id)).toEqual([ids[0]])
+    expect(older.headers.get("x-next-cursor")).toBeNull()
+    expect(older.headers.get("link")).toBeNull()
+    // No limit: every message, no cursor.
+    const whole = await served.handler(new Request(`http://test/session/${session.id}/message`))
+    expect(((await whole.json()) as Array<unknown>).length).toBe(21)
+    expect(whole.headers.get("x-next-cursor")).toBeNull()
+    const exact = await served.handler(new Request(`http://test/session/${session.id}/message?limit=21`))
+    expect(((await exact.json()) as Array<unknown>).length).toBe(21)
+    expect(exact.headers.get("x-next-cursor")).toBeNull()
     const parent = await served.handler(
       new Request(`http://test/session/${session.id}/message/${parentID}`, {
         headers: { origin: "https://app.opencode.ai" }

@@ -531,12 +531,30 @@ export const layer = (
         (request) =>
           Effect.flatMap(sessionParam, (id) =>
             withSession(id, () => {
+              // The way 1.18.31 pages: no limit is the whole history; a
+              // limit is a page, and when more remain the answer names the
+              // cursor (the oldest id on the page) in `X-Next-Cursor` and a
+              // `Link` (relative, so no host is guessed), exposed so the app
+              // can read them and load older messages on scroll.
               const params = query(request)
-              const limit = Number(params.get("limit") ?? String(Store.defaultMessageLimit))
+              const limit = Number(params.get("limit") ?? "0")
               const before = params.get("before") ?? undefined
+              const page = Number.isFinite(limit) && limit > 0 ? limit : undefined
               return Effect.map(
-                store.listMessages(id, { limit: Number.isFinite(limit) && limit > 0 ? limit : undefined, before }),
-                (messages) => json(messages)
+                store.listMessages(id, { limit: page === undefined ? Number.MAX_SAFE_INTEGER : page + 1, before }),
+                (messages) => {
+                  if (page === undefined || messages.length <= page) return json(messages)
+                  const items = messages.slice(1)
+                  const cursor = items[0]!.info.id
+                  const next = new URL(request.url, "http://localhost")
+                  next.searchParams.set("limit", String(page))
+                  next.searchParams.set("before", cursor)
+                  return json(items).pipe(HttpServerResponse.setHeaders({
+                    "access-control-expose-headers": "Link, X-Next-Cursor",
+                    link: `<${next.pathname}${next.search}>; rel="next"`,
+                    "x-next-cursor": cursor
+                  }))
+                }
               )
             }))
       )

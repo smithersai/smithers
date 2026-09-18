@@ -15,6 +15,11 @@
   twenty messages), `GET /file/content` answers a file under the served
   directory (a click on a file in a read card), and `PATCH /project/:id`
   echoes the project (a rename from the app).
+- Message paging names its cursor: a `GET /session/:id/message?limit=N`
+  page with older messages left sends `X-Next-Cursor` and a `Link`, exposed
+  to the app, and no limit answers the whole history, the way 1.18.31 does.
+  The app marked the history complete when the header was absent, so a
+  session longer than twenty messages lost its beginning on reload.
 - The health dot reads the facts before the answers: a run parked on a
   permission, a question or quota, or ended by a cap, is red even when Jev is
   unavailable or unconfident (day one, with no gateway key, a park showed
