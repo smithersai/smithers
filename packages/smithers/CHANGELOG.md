@@ -6,8 +6,9 @@
 
 - `smithers opencode [directory]`: serves OpenCode protocol v1 over the agent
   loop for the hosted OpenCode app, through `@smthrs/opencode`. Flags: `--port`,
-  `--hostname`, `--listen`, `--cors`, `--seat`, `--max-frames`, and `--scripted`
-  (the recorded turn, until the engine driver lands).
+  `--hostname`, `--listen`, `--cors`, `--seat`, `--max-frames`, and `--scripted`,
+  which replays the recorded turn instead of running a model; every other turn
+  runs on the durable engine driver under `<directory>/.smithers`.
 
 ### Changed
 
