@@ -3,10 +3,12 @@
  * Command handlers acquire services only after parsing, keeping help/schema inert.
  * @since 1.0.0
  */
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import { makeCli as makeBuildCli } from "@smthrs/build-cli/Cli"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
-import { Effect, Logger } from "effect"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { Effect, Layer, Logger, Redacted } from "effect"
 import { Cli, z } from "incur"
 import { resolve } from "node:path"
 import * as Agents from "./Agents.ts"
@@ -25,6 +27,7 @@ import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
 import * as OpenCodeCmd from "./commands/OpenCode.ts"
 import * as UpdateCmd from "./commands/Update.ts"
+import { didYouMean } from "./DidYouMean.ts"
 import * as Doctor from "./Doctor.ts"
 import { createEvalCli } from "./evaluation/EvalCli.ts"
 import * as Init from "./Init.ts"
@@ -42,6 +45,20 @@ import * as Update from "./Update.ts"
 import { packageVersion } from "./Version.ts"
 
 const options = Bridge.connectionOptions
+
+/**
+ * Jev over the Vercel AI Gateway, or an evaluator that refuses every request.
+ *
+ * There is no third case and no fallback: without `AI_GATEWAY_API_KEY` the
+ * decision below reports a transport it could not reach, rather than deciding
+ * the question some other way.
+ */
+const evaluator = (environment: Record<string, string | undefined>): Layer.Layer<Evaluator.Evaluator> => {
+  const apiKey = environment["AI_GATEWAY_API_KEY"]
+  return apiKey === undefined || apiKey === ""
+    ? Evaluator.layerUnavailable()
+    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(apiKey) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
+}
 
 /** The shared guard's inputs, read from the typed connection options. */
 const globalsOf = (connection: Bridge.ConnectionOptions, config: Bridge.Runtime): Globals.Options => ({
@@ -345,7 +362,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
   // Incur 0.5 intercepts `mcp` before looking up registered commands. Dispatch
   // the mounted subtree directly so registration uses Agents.addMcp as documented.
   const serve = cli.serve.bind(cli)
-  cli.serve = (argv = process.argv.slice(2), serveOptions) => {
+  cli.serve = async (argv = process.argv.slice(2), serveOptions) => {
     const parsed = Argv.parse(argv)
     let offset = 0
     // Argv retains document switches and --ui in rest; use its parsed option
@@ -359,7 +376,30 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     if (parsed.rest[offset] === "mcp" && index !== undefined && !argv.includes("--mcp")) {
       return mcp.serve([...argv.slice(0, index), ...argv.slice(index + 1)], serveOptions)
     }
-    return serve(argv, serveOptions)
+    const typed = parsed.rest[offset]
+    if (typed === undefined) return serve(argv, serveOptions)
+    // The parser decides what a verb is, and it has already refused by the
+    // time its sentence is written: asking Jev beforehand would question every
+    // command that runs, and the bare-label form means a token this module
+    // does not recognise can still be a target. So the suggestion is appended
+    // to the refusal, on the same stream, after the parser has set the exit
+    // code and run nothing.
+    const write = serveOptions?.stdout ?? ((text: string) => void process.stdout.write(text))
+    let refused = false
+    await serve(argv, {
+      ...serveOptions,
+      stdout: (text) => {
+        refused ||= text.includes(`'${typed}' is not a command`)
+        write(text)
+      }
+    })
+    if (!refused) return
+    const suggestion = await Effect.runPromise(
+      didYouMean(typed, parsed.rest.slice(offset + 1)).pipe(
+        Effect.provide(evaluator(config.environment ?? process.env))
+      )
+    )
+    if (suggestion !== undefined) write(`${suggestion}\n`)
   }
   return cli
 }

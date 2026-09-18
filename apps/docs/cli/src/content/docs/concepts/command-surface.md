@@ -41,6 +41,11 @@ the handler the parse selects, not to the program: `Command.provide` builds
 `NodeControl.layer` inside the chosen handler, so a typo, an unknown flag, or a
 missing argument stays file-free.
 
+A verb neither list holds is refused as unknown, and that refusal gains one
+line: `Did you mean: smithers <verb>?` when Jev picks a shipped verb with at
+least 0.7 confidence, or `Could not ask Jev for a suggestion: <reason>` when
+the evaluator could not answer, never a string-distance guess.
+
 ## Required input
 
 When stdin is a terminal, omitting a required positional argument opens a
