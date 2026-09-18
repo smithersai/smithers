@@ -264,6 +264,11 @@ describe("the inert plugin JSON boundary", () => {
       ...Boundary.defaultLimits,
       maxMembers: 1
     })).toMatchObject({ ok: false, path: "$.nested" })
+    // A nested key that is not a JavaScript identifier reports the bracketed path.
+    expect(Boundary.mergeRecords(snapshot({ "nested-key": { a: 1 } }), snapshot({ "nested-key": { b: 2 } }), {
+      ...Boundary.defaultLimits,
+      maxMembers: 1
+    })).toMatchObject({ ok: false, path: "$[\"nested-key\"]" })
   })
 
   it("admits only records through the record entry point", () => {
