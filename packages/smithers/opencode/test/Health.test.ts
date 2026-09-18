@@ -108,6 +108,27 @@ describe("Health", () => {
         answers({ stuck: { value: true, probability: 0.9 } }),
         "red",
         "waiting for approval"
+      ],
+      // And red with no Jev at all (day one: no gateway key), or with answers
+      // under the floor: waiting for approval needs no judgment.
+      ["parked with no answers", facts({ parked: "permission" }), undefined, "red", "waiting for approval"],
+      [
+        "a cap ended the run with no answers",
+        facts({ capEnded: "read-only cap" }),
+        undefined,
+        "red",
+        "stopped: read-only cap"
+      ],
+      [
+        "parked with every answer under the floor",
+        facts({ parked: "question" }),
+        answers({
+          progress: { value: 2, label: "progressing", probabilities: { progressing: 0.3 }, confidence: 0.3 },
+          stuck: { value: false, probability: 0.4 },
+          needsHuman: { value: true, probability: 0.6 }
+        }),
+        "red",
+        "waiting for an answer"
       ]
     ]
     for (const [name, given, replied, color, reason] of table) {

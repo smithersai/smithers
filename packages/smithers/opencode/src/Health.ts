@@ -180,19 +180,21 @@ const parkedReason: Readonly<Record<Exclude<State["parked"], "none">, string>> =
 }
 
 /**
- * The color rule, design section 3.3, first match wins. No answers, or no
- * answer at or above the confidence floor, is gray: health is unavailable,
- * and the run is not judged on nothing.
+ * The color rule, design section 3.3, first match wins. The facts decide
+ * first: a parked run and a cap that ended the run are red whether or not
+ * Jev answered, because waiting for approval needs no judgment. Then the
+ * answers: none, or none at or above the confidence floor, is gray, since
+ * health is unavailable and the run is not judged on nothing.
  *
  * @category combinators
  * @since 1.0.0
  */
 export const decide = (facts: Facts, answers: Answers | undefined): Decision => {
+  if (facts.parked !== "none") return { color: "red", reason: parkedReason[facts.parked] }
+  if (facts.capEnded !== undefined) return { color: "red", reason: `stopped: ${facts.capEnded}` }
   if (answers === undefined) return { color: "gray", reason: "health unavailable" }
   const confident = Object.values(answers).some((answer) => Classifier.confidence(answer) >= confidenceFloor)
   if (!confident) return { color: "gray", reason: "health uncertain" }
-  if (facts.parked !== "none") return { color: "red", reason: parkedReason[facts.parked] }
-  if (facts.capEnded !== undefined) return { color: "red", reason: `stopped: ${facts.capEnded}` }
   if (answers.needsHuman.probability >= 0.7) {
     return { color: "red", reason: `needs you (${percent(answers.needsHuman.probability)})` }
   }

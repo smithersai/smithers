@@ -120,7 +120,9 @@ describe("Turns", () => {
     expect(result.pending.length).toBe(1)
     expect(result.wrongPermission).toMatchObject({ code: "unknown_permission" })
     expect(result.messages.map((message) => message.info.role)).toEqual(["user", "assistant", "user"])
-    expect(result.messages[1]!.parts.filter((part) => part.type === "tool").length).toBe(8)
+    // Eight cards from the script, plus the health card the park turned red
+    // and the one the answer turned gray again.
+    expect(result.messages[1]!.parts.filter((part) => part.type === "tool").length).toBe(10)
     expect(result.idle).toEqual({})
     expect(result.replayed.map((envelope) => envelope.payload.type)).toContain("permission.replied")
     expect(result.aborted).toBe(false)

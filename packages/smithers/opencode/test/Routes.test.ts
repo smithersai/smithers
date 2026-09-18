@@ -334,11 +334,24 @@ describe("Routes through the OpenCode SDK client", () => {
       "list",
       "classify",
       "health",
+      "health",
       "cell",
       "bash",
-      "demand"
+      "demand",
+      "health"
     ])
     expect(tools.every((part) => part.state.status === "completed")).toBe(true)
+    // The park turned the dot red with no Jev at all; the answer turned it
+    // back. The cards sort under the frame each judged, so read them in time.
+    const healthCards = tools
+      .filter((part) => part.tool === "health")
+      .map((part) => part.state as Extract<Protocol.ToolState, { status: "completed" }>)
+      .sort((a, b) => a.time.start - b.time.start)
+    expect(healthCards.map((state) => state.title)).toEqual([
+      "health unavailable",
+      "waiting for approval",
+      "health unavailable"
+    ])
     const bash = tools.find((part) => part.tool === "bash")!
     expect(bash.state.status === "completed" && bash.state.metadata).toMatchObject({ exit: 0 })
     expect(bash.state.input).toEqual({ command: "ls -la" })

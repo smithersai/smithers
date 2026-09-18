@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- The health dot reads the facts before the answers: a run parked on a
+  permission, a question or quota, or ended by a cap, is red even when Jev is
+  unavailable or unconfident (day one, with no gateway key, a park showed
+  gray).
 - A store write that found the engine holding the database is retried:
   `Turns.isLocked` reads the lock off the `SqlError` reason, where
   `String(cause)` never said "locked", so a bash card no longer stays running
