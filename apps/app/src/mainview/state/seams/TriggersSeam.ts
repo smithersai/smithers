@@ -27,6 +27,7 @@ import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { runtimeRunKey } from "../RuntimeProjection"
+import type { RuntimeScope } from "../RuntimeProjection"
 import { errorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
@@ -291,6 +292,19 @@ type Relayed =
   | { readonly ok: false; readonly message: string }
 
 /**
+ * The box this repository's reviewed jobs run on, as their own setups
+ * recorded it: the workspace gateway that holds the registrar. Every relayed
+ * call names it, and so does the registration's own run card, because a
+ * gateway binding is what decides which of the two registries answers.
+ */
+const jobWorkspace = (ctx: SeamContext, repo: string): string | undefined =>
+  repositoryJobWorkspace(
+    ctx.store.collections.cards.values(),
+    repo,
+    ctx.store.collections.identitySessions.get("identity")?.login ?? null
+  )
+
+/**
  * One call to the workspace through the existing `/api/workflow/rpc` relay.
  *
  * The call names the workspace the repository's reviewed jobs run on, because
@@ -312,11 +326,7 @@ const relay = async (
   procedure: string,
   payload: unknown
 ): Promise<Relayed> => {
-  const workspaceId = repositoryJobWorkspace(
-    ctx.store.collections.cards.values(),
-    repo,
-    ctx.store.collections.identitySessions.get("identity")?.login ?? null
-  )
+  const workspaceId = jobWorkspace(ctx, repo)
   let response: Response
   try {
     response = await ctx.http(`${ctx.baseUrl}${WORKFLOW_RPC_PATH}`, {
@@ -543,9 +553,16 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
    * The durable card of one registration attempt. It is the registrar run's
    * own card, so the watch, the reconnect after a reload and the trace are
    * the ones every launched flow run already gets.
+   *
+   * The card records the box the registrar run was started on, because that
+   * binding is what the run watch relays with (state/controller/workflow-pump.ts).
+   * A card with none binds the poll to the repository's own gateway, which
+   * holds no run of this registration and may hold an unrelated `run-1` of
+   * its own: run ids are one counter per control plane.
    */
   const runCardOf = (requestId: string, repo: string, slug: string, patch: RunCardPatch): Card => {
     const existing = ctx.store.collections.cards.get(registrationCardId(requestId))
+    const workspaceId = (existing?.kind === "run-trace" ? existing.payload.workspaceId : undefined) ?? jobWorkspace(ctx, repo)
     return {
       id: registrationCardId(requestId),
       kind: "run-trace",
@@ -553,7 +570,10 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       status: patch.phase === "failed" ? "error" : "active",
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
-      payload: { repo, gatewayBindingVersion: 1, workflow: REGISTRAR_FLOW, steps: [], result: null, lastSeq: 0, ...patch }
+      payload: {
+        repo, gatewayBindingVersion: 1, ...(workspaceId === undefined ? {} : { workspaceId }),
+        workflow: REGISTRAR_FLOW, steps: [], result: null, lastSeq: 0, ...patch
+      }
     }
   }
 
@@ -655,8 +675,8 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
    * rendered cause — so the sentence behind the code is the whole of what the
    * person has to act on.
    */
-  const refusalOfRun = (repo: string, runId: string): string | undefined => {
-    const events = ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.events ?? []
+  const refusalOfRun = (scope: RuntimeScope): string | undefined => {
+    const events = ctx.store.committedRuntimeRun(runtimeRunKey(scope))?.events ?? []
     const failed = events.filter((event) => event.kind === "control.run.failed").at(-1)
     const payload = failed === undefined || !isRecord(failed.payload) ? undefined : failed.payload
     if (typeof payload?.cause !== "string") return undefined
@@ -677,16 +697,16 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   ): Promise<string | { readonly value: string }> => {
     const cardId = registrationCardId(requestId)
     await runtime.watchRun(cardId)
-    /* The run this attempt reached is the one on its card, not the one this call was handed. */
+    /* The run this attempt reached is the one on its card, in the box the card names, not the one this call was handed. */
     const held = ctx.store.collections.cards.get(cardId)
-    const runId = held?.kind === "run-trace" ? held.payload.runId : undefined
-    const summary = runId === undefined ? undefined : ctx.store.committedRuntimeRun(runtimeRunKey({ repo, runId }))?.summary
+    const scope = held?.kind === "run-trace" ? held.payload : undefined
+    const summary = scope === undefined ? undefined : ctx.store.committedRuntimeRun(runtimeRunKey(scope))?.summary
     if (summary?.status === "completed") {
       await listTriggers(repo)
       return { value: `${slug} runs on ${repo}.` }
     }
-    if (runId !== undefined && (summary?.status === "failed" || summary?.status === "cancelled")) {
-      return refusalOfRun(repo, runId) ?? summary.verdict
+    if (scope !== undefined && (summary?.status === "failed" || summary?.status === "cancelled")) {
+      return refusalOfRun(scope) ?? summary.verdict
     }
     return `The registration of ${slug} on ${repo} is no longer being watched.`
   }
