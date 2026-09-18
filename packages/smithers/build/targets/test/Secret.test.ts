@@ -903,6 +903,52 @@ describe("SecretProxy server", () => {
     }
   })
 
+  it("answers 502 when the vault cannot resolve the destination", async () => {
+    // The route exists, so this is not a 404: the boundary was asked for a
+    // credential it is authorized to hold and could not produce it.
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault({ read: () => undefined }))
+    try {
+      const capability = new URL(proxy.urlFor(Secret.Secret("PROXY_MISSING_DESTINATION")))
+      const result = await boundedProxyRequest(proxy.endpoint, capability.pathname)
+      expect(result.status).toBe(502)
+      // The declaration's own failure text, which names the variable and never
+      // the value.
+      expect(result.body).toContain("PROXY_MISSING_DESTINATION")
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("answers 502 without detail when resolving fails for an unexpected reason", async () => {
+    // Any other failure is the boundary's own, and its text could carry
+    // anything the reader threw, so the response states nothing about it.
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault({
+      read: () => {
+        throw new Error("real-value leaked through the failure")
+      }
+    }))
+    try {
+      const capability = new URL(proxy.urlFor(Secret.Secret("PROXY_HOSTILE_DESTINATION")))
+      const result = await boundedProxyRequest(proxy.endpoint, capability.pathname)
+      expect(result.status).toBe(502)
+      expect(result.body).toBe("secret substitution failed")
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("answers 502 when a secret destination is not a URL at all", async () => {
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault({ read: () => "example.invalid/x" }))
+    try {
+      const capability = new URL(proxy.urlFor(Secret.Secret("PROXY_UNPARSEABLE_DESTINATION")))
+      const result = await boundedProxyRequest(proxy.endpoint, capability.pathname)
+      expect(result.status).toBe(502)
+      expect(result.body).toBe("the declared secret PROXY_UNPARSEABLE_DESTINATION is not an http(s) URL")
+    } finally {
+      await proxy.close()
+    }
+  })
+
   it("refuses an opaque CONNECT tunnel when the vault holds a placeholder", async () => {
     let upstreamConnections = 0
     const upstream = NodeNet.createServer((socket) => {

@@ -8,6 +8,11 @@ describe("Github.Workflow build-system attrs", () => {
     expect(() => GithubTarget.workflowAttrsOf(setup)).toThrow("expected a Github.Workflow target")
   })
 
+  it("reads a Github.Setup target through its own accessor", () => {
+    const setup = GithubTarget.Setup({})
+    expect(GithubTarget.setupAttrsOf(setup)).toEqual(Target.metadata(setup).attrs)
+  })
+
   it("accepts typed triggers, workflow policy, and raw steps without run targets", () => {
     const workflow = GithubTarget.Workflow({
       name: "coordinate",

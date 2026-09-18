@@ -342,6 +342,13 @@ describe("renderStep", () => {
     expect(steps.map((step) => [step.run, step.shell])).toEqual([["a\nb", "bash"]])
   })
 
+  it("refuses a step that declares nothing to run", () => {
+    // Every field is optional on the rendered shape, so a caller can build a
+    // step that names no action at all. YAML would accept the empty item and
+    // the job would silently do nothing, so the renderer refuses it instead.
+    expect(() => renderStep({}, "      ")).toThrow("a CI step must declare uses or run")
+  })
+
   it("keeps a named multi-line script under its own key", () => {
     const lines = renderStep({ name: "Probe", run: "a\nb", shell: "bash" }, "      ")
     expect(lines).toEqual([

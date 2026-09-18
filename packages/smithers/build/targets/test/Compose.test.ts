@@ -79,6 +79,24 @@ describe("Generate plans", () => {
       { action: "smithers-build/not-implemented", payload: { target: "Generate" } }
     ])
   })
+
+  it("refuses a declaration that names no executable form or more than one", () => {
+    // The four forms are alternatives, not a precedence list: a declaration
+    // that names none has nothing to run, and one that names two leaves the
+    // executor to guess which the author meant.
+    expect(() => Compose.Generate({ changes: ["out.txt"] })).toThrow(
+      "Generate requires exactly one of emit, script, bin, command; received none"
+    )
+    expect(() =>
+      Compose.Generate({
+        command: "printf generated",
+        script: { path: "out.ts" },
+        changes: ["out.txt"]
+      })
+    ).toThrow(
+      "Generate requires exactly one of emit, script, bin, command; received script, command"
+    )
+  })
 })
 
 describe("Files declarations", () => {

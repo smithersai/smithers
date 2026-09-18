@@ -82,6 +82,11 @@ describe("Owners.declare", () => {
       /auto-land, human-approve, or deny/
     )
     expect(() => Owners.declare({ owners: ["will"], agents: { approve: ["x"] } as never })).toThrow(/unknown key/)
+    // A known key is not a known policy: the fallback every unmatched path
+    // lands on has to be one of the three, not merely a string.
+    expect(() => Owners.declare({ owners: ["will"], agents: { default: "maybe" } as never })).toThrow(
+      /default is not auto-land, human-approve, or deny/
+    )
     expect(() => Owners.declare({ owners: ["will"], upstream: "all" as never })).toThrow(/none, review, approve/)
     expect(() => Owners.declare({ owners: ["will"], upstream: { mode: "review", packages: [] } })).toThrow(
       /non-empty array/

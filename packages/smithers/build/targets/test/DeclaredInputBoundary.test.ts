@@ -117,6 +117,18 @@ describe("declared inputs are recognized without running author code", () => {
     }
   })
 
+  it("refuses a handle carried on a class prototype rather than a plain object", () => {
+    // Recognition reads own descriptors only, so a class instance could smuggle
+    // behaviour onto its prototype and still present the right own fields. An
+    // input declaration is data, and data has the object prototype or none.
+    class FileHandle {
+      readonly _tag = "File"
+      readonly path = "README.md"
+    }
+    expect(Input.isDeclared(new FileHandle())).toBe(false)
+    expect(Input.isDeclared(Object.assign(Object.create({ leak: true }), Input.file("README.md")))).toBe(false)
+  })
+
   it("preserves richer input types when used as a filter predicate", () => {
     const input = { ...Input.file("README.md"), hint: "documentation" }
     const values: Array<typeof input | undefined> = [input, undefined]
