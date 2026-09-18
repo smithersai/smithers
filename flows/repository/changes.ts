@@ -129,15 +129,12 @@ export const changeLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
     yield* withImmutableSource(options, work.evidence.source, (_tree, root) => materializeProposal(options, root, draft.proposal))
     if (work.step.id === "poc") return finish("completed", "Experiment prepared", false)
     if (blocked) return finish("needs-maintainer", blocked, false)
-    const hasCommands = work.checks.some(check => check.kind === "command" && check.policy === "required")
     const reviewWork = { ...work, checks: reviewChecks(work) }
     checkedWork = reviewWork
-    if (!hasCommands) {
-      const review = yield* runtime.execute(CheckStep, { executionId: `${executionId}-review`, payload: { work: { ...reviewWork, proposal: draft.proposal } } })
-      checks.push(review)
-      return finish(review.status === "completed" ? "completed" : "needs-maintainer", review.status === "completed" ? "Reviewed draft" : "Draft needs review", false)
-    }
     if (work.step.id === "fix") {
+      if (!work.checks.some(check => check.kind === "command" && check.policy === "required")) {
+        return finish("needs-maintainer", "A fix needs a required command check to establish its failing regression", false)
+      }
       if (!draft.baseline.length || draft.baseline.some(file => file.beforeDigest !== null || !draft.proposal.some(candidate => candidate.path === file.path && candidate.content === file.content))) {
         return finish("needs-maintainer", "A real fix needs an unchanged regression fixture in its failing baseline and final proposal", false)
       }

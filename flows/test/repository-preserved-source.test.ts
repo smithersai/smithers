@@ -119,7 +119,7 @@ const pinned = (rule: string) => {
   return policy
 }
 
-for (const mode of ["land", "push-chore", "push-chore-ci", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
+for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "push-chore", "push-chore-ci", "push-chore-main-moved", "old-helper", "changed-main", "changed-before-create", "creation-unacknowledged", "delivery-main-moved", "publication-failed", "foreign-creation", "post-commit-race", "bad-child", "fresh-check-failed"] as const) {
   test(`proposal flow preserves editor and binds final native source: ${mode}`, gate, async t => {
     const f = await fixture(t), calls: string[] = [], seenChecks: string[] = []
     const evidence = await Effect.runPromise(captureRepository(f.options, { repo: "example/repo", prompt: "code.txt", sourceRevision: f.head.commitId }, "immutable").pipe(Effect.provide(f.owned)))
@@ -127,13 +127,20 @@ for (const mode of ["land", "push-chore", "push-chore-ci", "push-chore-main-move
     // A push to the default branch is the first trigger that both names an
     // immutable revision and produces a new one.
     const chore = mode === "push-chore" || mode === "push-chore-ci" || mode === "push-chore-main-moved"
+    // The configuration the setup guide produces: one AI check and no command.
+    const advisory = { id: "docs-only-scope", name: "Docs-only scope", kind: "ai" as const, paths: [],
+      policy: mode === "ai-only-blocked" ? "required" as const : "report" as const, rule: "Report changes outside the requested scope" }
     const trigger = { ref: "refs/heads/main", before: "a".repeat(40), after: f.base.commitId, created: false, deleted: false,
       repository: { default_branch: "main" }, candidateCommitId: f.base.commitId, baseCommitId: "a".repeat(40) }
-    const work: typeof Work.Type = { repo: "example/repo", job: chore ? "chores" : "feature",
-      step: chore ? { id: "chore", name: "Chore", mode: "automatic", prompt: "Update code.txt" } : { id: "feature", name: "Feature", mode: "manual", prompt: "Update code.txt" },
+    const work: typeof Work.Type = { repo: "example/repo", job: chore ? "chores" : mode === "ai-only-fix" ? "issues" : "feature",
+      step: chore ? { id: "chore", name: "Chore", mode: "automatic", prompt: "Update code.txt" }
+        : mode === "ai-only-fix" ? { id: "fix", name: "Fix for real", mode: "manual", prompt: "Update code.txt" }
+        : { id: "feature", name: "Feature", mode: "manual", prompt: "Update code.txt" },
       event: chore ? { source: "github", type: "push", action: "", deliveryKey: "github:signed-push", payload: trigger }
         : { source: "smithers-cloud", type: "manual", action: "manual:feature", manualStep: "feature", deliveryKey: "feature", payload: { manual: { prompt: "Update code.txt" } } },
-      evidence, checks: mode === "push-chore-ci" ? composeCiChecks([], pinned(command)) : [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
+      evidence, checks: mode === "push-chore-ci" ? composeCiChecks([], pinned(command))
+        : mode.startsWith("ai-only") ? [advisory]
+        : [{ id: "verify", name: "Verify", kind: "command", policy: "required", rule: command, paths: [] }],
       ...(mode === "push-chore-ci" ? { policy: pinned(command) } : {}),
       landing: mode === "old-helper" ? "ask" : "checks", replies: "draft", executionMode: "live", deadlineAt: Date.now() + 60000 }
     let draftedAdmissionReads = 0
@@ -174,6 +181,8 @@ for (const mode of ["land", "push-chore", "push-chore-ci", "push-chore-main-move
       DraftChange.toLayer(author => Effect.sync(() => { calls.push("draft"); assert.equal(author.evidence.source.commitId, f.base.commitId)
         return { summary: "Update the implementation", question: "", children: [], baseline: [], proposal: [{ path: "code.txt", beforeDigest: digest("original\n"), content: "checked implementation\n" }] } })),
       SemanticCheck.toLayer(input => Effect.sync(() => { seenChecks.push(input.comparison.candidate)
+        if (input.check.id === advisory.id) return { verdict: "fail" as const, summary: "The change edits code.txt",
+          examinedPaths: input.comparison.paths, findings: input.comparison.paths.map(path => ({ path, line: 1, message: "Outside the requested scope" })) }
         return { verdict: mode === "fresh-check-failed" && input.comparison.candidate === f.child.commitId ? "uncertain" as const : "pass" as const,
           summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }))
     ).pipe(Layer.provide(Layer.mergeAll(f.platform, Layer.succeed(NativeCoding, native), Layer.succeed(Landing, landing))),
@@ -210,6 +219,23 @@ for (const mode of ["land", "push-chore", "push-chore-ci", "push-chore-main-move
       assert.ok(seenChecks.includes(f.child.commitId), "fresh checks inspect the actual immutable result")
       assert.deepEqual(await runtime.runPromise(ProposalStep.execute({ work }, { executionId: "preserved-feature" })), output)
       assert.equal(calls.length, 6, "durable replay does not create or publish twice")
+    } else if (mode === "ai-only-land") {
+      assert.deepEqual(calls, ["draft", "create", "publish", "prepare", "landing", "queue"], "a passed AI-only gate opens the same landing request a command-checked change opens")
+      assert.equal(output.status, "completed")
+      assert.equal((output.output as Record<string, Schema.Json>).landed, true)
+      const checked = ((output.output as Record<string, Schema.Json>).checks as Record<string, Schema.Json>).output as Record<string, Schema.Json>
+      assert.equal(checked.gate, "passed")
+      assert.deepEqual((checked.results as Array<Record<string, Schema.Json>>).map(value => [value.checkId, value.policy, value.status]),
+        [[advisory.id, "report", "failed"], ["implementation-review", "required", "passed"]], "a report-only finding informs without holding landing")
+    } else if (mode === "ai-only-blocked") {
+      assert.equal(output.status, "error")
+      assert.deepEqual(calls, ["draft"], "a failed required AI check holds landing before any native creation")
+      const recorded = ((output.output as Record<string, Schema.Json>).checks as Array<Record<string, Schema.Json>>).at(-1)!
+      assert.equal((recorded.output as Record<string, Schema.Json>).gate, "blocked")
+    } else if (mode === "ai-only-fix") {
+      assert.equal(output.status, "needs-maintainer")
+      assert.equal(output.summary, "A fix needs a required command check to establish its failing regression")
+      assert.deepEqual(calls, ["draft"], "an unprovable regression says so instead of retaining a silent draft")
     } else {
       assert.equal(output.status, "needs-maintainer")
       assert.ok(!calls.includes("publish") && !calls.includes("queue"))

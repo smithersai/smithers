@@ -450,9 +450,9 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       }
       if (job === "feature" || job === "chores" || kind === "fix") {
         const change = output.results[0]!.output as any
-        assert.equal(change.status, kind === "draft" || deletionUnavailable ? "proposal" : "checked-proposal")
+        assert.equal(change.status, deletionUnavailable ? "proposal" : "checked-proposal")
         assert(change.proposal.some((file: any) => file.path === (deleting ? "obsolete.mjs" : "greeting.mjs")))
-        if (kind === "draft") assert.equal(output.results[0]!.summary, "Reviewed draft")
+        if (kind === "draft") assert.equal(output.results[0]!.summary, "Checked change ready")
         else assert(change.checks.at(-1).output.results.some((check: any) => check.detail.exitCode === 0))
         if (kind.startsWith("ai-delete")) {
           assert(ownedJob)
