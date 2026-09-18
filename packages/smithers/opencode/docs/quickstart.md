@@ -68,6 +68,22 @@ means the gateway refused this evaluation, not that the key is missing: the
 server does not start without one. Renaming the session keeps the dot in
 front of your title; archiving removes it.
 
+## When the gateway is down
+
+Jev judges every completion, and a completion nothing judged fails the turn.
+A blip does not: the server asks the gateway again, up to three times, 250 ms
+apart, with 2500 ms over each request and 8 s over all of them. It asks again
+only for a failure that a second request can mend, which is a connection that
+never opened, a request that ran out of time, and a `429` or a `5xx` from the
+gateway. A `401` or a `403`, a question the gateway rejected, and a body it
+could not read are answered once, because the second answer is the first one.
+
+A gateway that is down for all three requests fails the turn with the last
+request's own reason, so the error names what happened:
+`A completion no evaluator could judge (refused): The gateway answered 503`.
+The health dot keeps its own 1.5 s deadline, so it still grays within a second
+and a half whatever the gateway is doing.
+
 ## Frames
 
 Every prompt has a budget of forty frames (`--max-frames`), and a turn that

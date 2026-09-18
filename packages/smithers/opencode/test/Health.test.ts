@@ -1,5 +1,5 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as Driver from "../src/Driver.ts"
 import * as Health from "../src/Health.ts"
@@ -327,5 +327,150 @@ describe("Health", () => {
     expect(Health.classifier.id).toBe("harness/health")
     expect(Object.keys(Health.classifier.questions)).toEqual(["progress", "stuck", "needsHuman"])
     expect(Health.recordType).toBe("flows.opencode.health.v1")
+  })
+})
+
+describe("the retry the host wraps its evaluator in", () => {
+  const request: Evaluator.Request = { state: {}, questions: {} }
+
+  const answered: Evaluator.Response = { answers: {}, latencyMs: 0 }
+
+  const fails = (
+    error: Evaluator.EvaluatorError,
+    until = Number.POSITIVE_INFINITY
+  ): { readonly evaluator: Evaluator.Evaluator; readonly calls: () => number } => {
+    let calls = 0
+    return {
+      calls: () => calls,
+      evaluator: Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.suspend(() => {
+            calls += 1
+            return calls <= until ? Effect.fail(error) : Effect.succeed(answered)
+          })
+      })
+    }
+  }
+
+  const refused = (status: number | undefined): Evaluator.EvaluatorError =>
+    new Evaluator.EvaluatorError({
+      code: "refused",
+      ...(status === undefined ? {} : { status }),
+      message: `The gateway answered ${status}`
+    })
+
+  /**
+   * The numbers the docblock states, asserted here so a change to either has
+   * to be a change to both: three requests, 250 ms apart, 2500 ms over each,
+   * and a ceiling that is exactly three deadlines plus the two waits, so the
+   * budget never truncates a request the attempt count allows.
+   */
+  it("is three requests, 250 ms apart, 2500 ms each, inside an 8 s ceiling", () => {
+    expect(Health.evaluatorRetry).toEqual({ attempts: 3, backoffMs: 250, deadlineMs: 2500, budgetMs: 8000 })
+    expect(
+      Health.evaluatorRetry.attempts * Health.evaluatorRetry.deadlineMs +
+        (Health.evaluatorRetry.attempts - 1) * Health.evaluatorRetry.backoffMs
+    ).toBe(Health.evaluatorRetry.budgetMs)
+  })
+
+  it("asks again for a blip and never for an answer that will not change", () => {
+    expect(Health.retryable(new Evaluator.EvaluatorError({ code: "unreachable", message: "no route" }))).toBe(true)
+    expect(Health.retryable(new Evaluator.EvaluatorError({ code: "timeout", message: "too slow" }))).toBe(true)
+    expect(Health.retryable(refused(429))).toBe(true)
+    expect(Health.retryable(refused(500))).toBe(true)
+    expect(Health.retryable(refused(503))).toBe(true)
+    expect(Health.retryable(refused(401))).toBe(false)
+    expect(Health.retryable(refused(403))).toBe(false)
+    expect(Health.retryable(refused(404))).toBe(false)
+    expect(Health.retryable(refused(undefined))).toBe(false)
+    expect(Health.retryable(new Evaluator.EvaluatorError({ code: "empty", message: "no answers" }))).toBe(false)
+    expect(Health.retryable(new Evaluator.EvaluatorError({ code: "invalid_answer", message: "bad shape" })))
+      .toBe(false)
+    expect(Health.retryable(new Evaluator.EvaluatorError({ code: "invalid_question", message: "bad question" })))
+      .toBe(false)
+  })
+
+  it("answers on the second request when the first one blipped, and asks nothing more", async () => {
+    const once = fails(refused(429), 1)
+    const response = await Effect.runPromise(
+      Health.retrying(once.evaluator, { ...Health.evaluatorRetry, backoffMs: 1 }).evaluate(request)
+    )
+    expect(response).toBe(answered)
+    expect(once.calls()).toBe(2)
+  })
+
+  it("makes no second request when nothing is wrong", async () => {
+    const never = fails(refused(429), 0)
+    await Effect.runPromise(Health.retrying(never.evaluator).evaluate(request))
+    expect(never.calls()).toBe(1)
+  })
+
+  it("stops at the documented count and fails with the last reason, rather than spinning", async () => {
+    const always = fails(refused(503))
+    const error = await Effect.runPromise(
+      Effect.flip(Health.retrying(always.evaluator, { ...Health.evaluatorRetry, backoffMs: 1 }).evaluate(request))
+    )
+    expect(always.calls()).toBe(Health.evaluatorRetry.attempts)
+    expect(error.code).toBe("refused")
+    expect(error.status).toBe(503)
+    expect(error.message).toBe("The gateway answered 503")
+  })
+
+  it("does not ask a second time after a key the gateway rejected", async () => {
+    const unauthorized = fails(refused(401))
+    const error = await Effect.runPromise(Effect.flip(Health.retrying(unauthorized.evaluator).evaluate(request)))
+    expect(unauthorized.calls()).toBe(1)
+    expect(error.status).toBe(401)
+  })
+
+  /**
+   * The ceiling outranks the count: a policy whose budget cannot pay for a
+   * wait plus another full deadline stops after the first request, with that
+   * request's own reason, rather than starting one it would have to cut off.
+   */
+  it("starts no request the ceiling cannot pay the deadline for", async () => {
+    const always = fails(new Evaluator.EvaluatorError({ code: "unreachable", message: "no route" }))
+    const error = await Effect.runPromise(
+      Effect.flip(
+        Health.retrying(always.evaluator, { attempts: 5, backoffMs: 1, deadlineMs: 2500, budgetMs: 100 })
+          .evaluate(request)
+      )
+    )
+    expect(always.calls()).toBe(1)
+    expect(error.code).toBe("unreachable")
+  })
+
+  it("wraps the layer a host binds, and leaves the keyless arm asking once", async () => {
+    const always = fails(refused(502))
+    const wrapped = Health.retryingLayer(
+      Layer.succeed(Evaluator.Evaluator)(always.evaluator),
+      { ...Health.evaluatorRetry, backoffMs: 1 }
+    )
+    const error = await Effect.runPromise(
+      Effect.flatMap(Evaluator.Evaluator, (evaluator) => Effect.flip(evaluator.evaluate(request)))
+        .pipe(Effect.provide(wrapped))
+    )
+    expect(error.status).toBe(502)
+    expect(always.calls()).toBe(Health.evaluatorRetry.attempts)
+
+    // Without a key there is nothing to ask again: the refusal is the key,
+    // so a health frame pays one refusal and not three plus two waits.
+    let keyless = 0
+    const counted = Layer.succeed(Evaluator.Evaluator)(
+      Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.suspend(() => {
+            keyless += 1
+            return Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: Health.noGatewayKey }))
+          })
+      })
+    )
+    await Effect.runPromise(
+      Effect.flatMap(Evaluator.Evaluator, (evaluator) => Effect.flip(evaluator.evaluate(request)))
+        .pipe(Effect.provide(counted))
+    )
+    expect(keyless).toBe(1)
+    const noKey = await Effect.runPromise(Health.evaluate(facts()).pipe(Effect.provide(Health.evaluatorLayer({}))))
+    expect(noKey.decision.reason).toBe(Health.noGatewayKey)
   })
 })

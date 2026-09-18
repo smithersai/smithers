@@ -18,7 +18,7 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Clock, Effect, Layer, Redacted, Schema } from "effect"
+import { Clock, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import type * as Driver from "./Driver.ts"
 
 /**
@@ -451,15 +451,161 @@ export const evaluatorConfigured = (
 ): boolean => (environment["AI_GATEWAY_API_KEY"] ?? "") !== ""
 
 /**
- * The evaluator a host runs with: Jev through the Vercel gateway when
- * `AI_GATEWAY_API_KEY` is set in the environment, else one that answers
- * `unreachable`.
+ * How this host retries the evaluator it binds: the requests one evaluation
+ * may make, the wait between them, the deadline over each, and the ceiling
+ * over all of them together.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RetryPolicy {
+  /** Requests one evaluation may make, the first one counted. */
+  readonly attempts: number
+  /** The wait between two requests, in milliseconds. */
+  readonly backoffMs: number
+  /** The deadline over one request, in milliseconds. */
+  readonly deadlineMs: number
+  /** The most milliseconds one evaluation may spend, over every request and wait. */
+  readonly budgetMs: number
+}
+
+/**
+ * The retry every gateway evaluation on this host runs under: three
+ * requests, 250 ms apart, 2500 ms over each, 8000 ms over all of them.
+ *
+ * The numbers come from what Jev actually does and what the failure
+ * actually is. Jev answers in about 300 ms end to end, of which 163 to 235
+ * ms is provider time (`docs/jev-harness/research.html`), so the realistic
+ * failure is a blip and not slowness: one 429 from the gateway's rate
+ * limiter, one 5xx from a restarting edge, one connection that never
+ * opened. A blip fails in milliseconds, so three requests 250 ms apart cost
+ * about 750 ms of waiting in the case they exist for, and a fixed wait is
+ * enough because the thing being waited out is a restart or a token bucket,
+ * neither of which cares about the difference between 250 and 500 ms.
+ *
+ * `deadlineMs` is 2500, not the 1500 of {@link Evaluator.defaultTimeoutMs}:
+ * see {@link evaluatorLayer}. `budgetMs` is 8000, which is exactly three
+ * full deadlines plus the two waits between them, so the ceiling never
+ * truncates a request that the attempt count allows, and 8 s is the longest
+ * a person waits for the brake before the turn fails with the reason. It is
+ * a ceiling and not a target: a run that fails fast, which is the case this
+ * policy exists for, spends under a second.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const evaluatorRetry: RetryPolicy = {
+  attempts: 3,
+  backoffMs: 250,
+  deadlineMs: 2500,
+  budgetMs: 8000
+}
+
+/**
+ * Whether a failed evaluation is worth asking again.
+ *
+ * Three codes are: `unreachable` is a request that never got an answer,
+ * `timeout` is one that did not get it in time, and `refused` carrying 429
+ * or a 5xx is the gateway saying "not now" rather than "not ever". Nothing
+ * else is. `invalid_question` is a question the gateway will reject in the
+ * same words every time, `invalid_answer` and `empty` are the wire protocol
+ * having changed under us, and `refused` carrying 401 or 403 is a key that
+ * a second request will not mend. Asking again for any of those spends a
+ * person's seconds to reach the same failure, so the reason reaches them
+ * immediately instead.
+ *
+ * @param error what the transport failed with
+ * @category predicates
+ * @since 1.0.0
+ */
+export const retryable = (error: Evaluator.EvaluatorError): boolean => {
+  if (error.code === "unreachable" || error.code === "timeout") return true
+  if (error.code !== "refused") return false
+  return error.status === 429 || (error.status !== undefined && error.status >= 500)
+}
+
+/**
+ * The same evaluator, asked again when the failure was a blip.
+ *
+ * The harness's completion brake never falls back: `CompletionClaim.read`
+ * fails the whole turn as `completion_unjudged` on any transport failure,
+ * by design, so one 429 on the judgement of a task a person waited through
+ * used to end that task. `Evaluator.layerVercelGateway` makes one request
+ * with one deadline and no retries on purpose, and says the caller decides
+ * the retry policy. This host is that caller, so the policy lives here.
+ *
+ * It decorates the service rather than the layer, and it retries only: the
+ * per-request deadline stays where the transport already owns it
+ * ({@link RetryPolicy.deadlineMs} is passed to the gateway as its
+ * `timeoutMs`), so one number has one owner and a `timeout` reaching this
+ * decorator is the transport's own.
+ *
+ * The last failure is the one that surfaces, so the sentence a person reads
+ * names what actually happened on the last request rather than a retry
+ * wrapper's paraphrase of it.
+ *
+ * @param evaluator the transport to ask
+ * @param policy the requests, wait, deadline and ceiling; {@link evaluatorRetry} by default
+ * @category combinators
+ * @since 1.0.0
+ */
+export const retrying = (
+  evaluator: Evaluator.Evaluator,
+  policy: RetryPolicy = evaluatorRetry
+): Evaluator.Evaluator => {
+  const ask = (
+    request: Evaluator.Request,
+    attempt: number,
+    startedAt: number
+  ): Effect.Effect<Evaluator.Response, Evaluator.EvaluatorError> =>
+    evaluator.evaluate(request).pipe(
+      Effect.catch((error) =>
+        attempt >= policy.attempts || !retryable(error)
+          ? Effect.fail(error)
+          : Effect.flatMap(Clock.currentTimeMillis, (now) =>
+            // Never start a request the budget cannot also pay the deadline
+            // for: the ceiling is a promise about when the answer arrives,
+            // and a request cut off mid-flight keeps no promise at all.
+            now - startedAt + policy.backoffMs + policy.deadlineMs > policy.budgetMs
+              ? Effect.fail(error)
+              : Effect.andThen(Effect.sleep(Duration.millis(policy.backoffMs)), ask(request, attempt + 1, startedAt)))
+      )
+    )
+  return Evaluator.Evaluator.of({
+    evaluate: (request) => Effect.flatMap(Clock.currentTimeMillis, (started) => ask(request, 1, started))
+  })
+}
+
+/**
+ * The evaluator a host runs with: Jev through the Vercel gateway, under
+ * {@link evaluatorRetry}, when `AI_GATEWAY_API_KEY` is set in the
+ * environment, else one that answers `unreachable`.
  *
  * The unconfigured arm is still here because a host may hold an evaluator
  * that cannot answer one question, and health renders that gray rather than
  * failing a turn. It is not the arm `smithers opencode` boots on: the
  * harness fails any run whose completion nothing judged, so the verb refuses
- * to start on it. See `EngineDriver.evaluatorRefusal`.
+ * to start on it. See `EngineDriver.evaluatorRefusal`. That arm is not
+ * retried, and must not be: its `unreachable` is a key nobody exported, so
+ * three requests and two waits would cost every frame 750 ms to reach the
+ * same sentence.
+ *
+ * The configured arm is the one the whole run shares, so the retry covers
+ * both paths that ask it, deliberately:
+ *
+ * - The completion brake, which has no deadline of its own and inherits the
+ *   transport's. That was {@link Evaluator.defaultTimeoutMs}, 1500 ms, a
+ *   number chosen for a health dot on a frame and applied by inheritance to
+ *   the judgement a whole task ends on. This host passes 2500 ms instead
+ *   ({@link RetryPolicy.deadlineMs}), about ten times Jev's measured
+ *   answer, which buys the one judgement that matters the room a slow
+ *   answer needs without waiting on a transport that is plainly gone.
+ * - The health dot, which cannot become slower to fail: {@link evaluate}
+ *   puts its own {@link deadlineMs} of 1500 ms over the whole service call,
+ *   so a retry runs inside that deadline and a gray dot still arrives
+ *   within 1.5 s exactly as before. What changes is only that a blip inside
+ *   the deadline now has a second chance to answer, which turns a gray dot
+ *   into a real color instead of losing the frame.
  *
  * @param environment where the key is read from
  * @category layers
@@ -469,14 +615,36 @@ export const evaluatorLayer = (
   environment: Readonly<Record<string, string | undefined>>
 ): Layer.Layer<Evaluator.Evaluator> => {
   const key = environment["AI_GATEWAY_API_KEY"]
-  return key === undefined || key === ""
-    ? Layer.succeed(Evaluator.Evaluator)(
+  if (key === undefined || key === "") {
+    return Layer.succeed(Evaluator.Evaluator)(
       Evaluator.Evaluator.of({
         evaluate: () => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: noGatewayKey }))
       })
     )
-    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  }
+  const gateway = Evaluator.layerVercelGateway({
+    apiKey: Redacted.make(key),
+    timeoutMs: evaluatorRetry.deadlineMs
+  }).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  return retryingLayer(gateway)
 }
+
+/**
+ * The same evaluator a layer builds, wrapped in {@link retrying}.
+ *
+ * @param layer the transport to decorate
+ * @param policy the requests, wait, deadline and ceiling; {@link evaluatorRetry} by default
+ * @category layers
+ * @since 1.0.0
+ */
+export const retryingLayer = (
+  layer: Layer.Layer<Evaluator.Evaluator>,
+  policy: RetryPolicy = evaluatorRetry
+): Layer.Layer<Evaluator.Evaluator> =>
+  Layer.effect(
+    Evaluator.Evaluator,
+    Effect.map(Evaluator.Evaluator, (bound) => retrying(bound, policy))
+  ).pipe(Layer.provide(layer))
 
 /**
  * Why every evaluation is refused without a gateway key: what the health

@@ -4,6 +4,35 @@
 
 ### Added
 
+- A bounded retry over the evaluator this server binds
+  (`Health.evaluatorRetry`, `Health.retryable`, `Health.retrying`,
+  `Health.retryingLayer`): three requests, 250 ms apart, 2500 ms over each,
+  8000 ms over all of them, which is exactly three deadlines plus the two
+  waits, so the ceiling never truncates a request the count allows.
+
+  The harness's completion brake never falls back: `CompletionClaim.read`
+  fails the whole turn as `completion_unjudged` on any transport failure, and
+  `Evaluator.layerVercelGateway` makes one request with no retries and says
+  the caller decides the retry policy. This server is that caller, so one
+  HTTP 429, one 5xx, or one connection that never opened used to end a task a
+  person had waited through. Jev answers in about 300 ms, so the realistic
+  failure is a blip and not slowness, and a blip now costs a wait instead of
+  the run.
+
+  Only a failure a second request can mend is asked again: `unreachable`,
+  `timeout`, and `refused` carrying 429 or a 5xx. `invalid_question`,
+  `invalid_answer`, `empty`, and `refused` carrying 401 or 403 are answered
+  once, because asking again spends a person's seconds to reach the same
+  sentence. The last failure is the one that surfaces, so the error still
+  names what actually happened.
+
+  The retry covers the whole evaluator the run shares, health included. The
+  health dot cannot become slower to fail: `Health.evaluate` puts its own
+  1.5 s deadline over the service call, so a gray dot still arrives within a
+  second and a half, and what changes is only that a blip inside that
+  deadline now has a second chance to answer. The keyless arm is not
+  retried, and must not be: its `unreachable` is a key nobody exported.
+
 - A startup preflight. `smithers opencode` refuses to start when the host can
   bind no evaluator, with `EngineDriver.noEvaluator` and exit 2:
   "smithers opencode needs AI_GATEWAY_API_KEY, because the harness asks Jev to
@@ -24,6 +53,16 @@
   fallback by design, so the refusal belongs at startup, an hour earlier.
 
 ### Changed
+
+- The completion brake's deadline is this server's own number, not an
+  inherited one. `Health.evaluatorLayer` passes `timeoutMs: 2500` to
+  `Evaluator.layerVercelGateway` in place of the library's
+  `defaultTimeoutMs` of 1500 ms, which was chosen for a health dot on one
+  frame and reached the completion brake only because the brake declares no
+  deadline of its own. 2500 ms is about ten times Jev's measured answer,
+  which is the room a judgement a whole task ends on deserves without
+  waiting on a transport that is plainly gone. `@smthrs/model` is unchanged:
+  only this host's option moved.
 
 - `AI_GATEWAY_API_KEY` is documented as required to run a model, not as an
   optional key that grays the health dot. The docs, the verb's help text, and

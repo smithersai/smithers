@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Driver from "../src/Driver.ts"
 import * as EngineDriver from "../src/EngineDriver.ts"
 import * as Events from "../src/Events.ts"
+import * as Health from "../src/Health.ts"
 import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
@@ -1075,6 +1076,89 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     expect(settledCalls(answered.events, "classify/triage/relevance")[0]!.result.outcome).toBe("success")
     expect(answer(answered.events)).toBe("answered true fixture")
     expect(script.calls).toBe(3)
+  })
+
+  /**
+   * The completion brake never falls back: a claim no evaluator judged fails
+   * the whole turn. `Health.retryingLayer` is what the server binds over the
+   * gateway, so the three cases a person can actually meet are driven here
+   * through the real driver rather than through the decorator alone.
+   */
+  it("survives one gateway blip on the completion brake, stops at the documented count, and never retries a 401", async () => {
+    const judge = (blips: number, error: () => Evaluator.EvaluatorError) => {
+      const state = { asked: 0 }
+      return {
+        state,
+        layer: Health.retryingLayer(
+          Evaluator.layerScripted((request) => {
+            if (!("complete" in request.questions)) {
+              return Effect.fail(
+                new Evaluator.EvaluatorError({ code: "invalid_question", message: "only the brake asks here" })
+              )
+            }
+            state.asked += 1
+            return state.asked > blips
+              ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+              : Effect.fail(error())
+          }),
+          // The wait is the policy's only wall-clock cost, and what it waits
+          // out is a rate limiter this test does not have.
+          { ...Health.evaluatorRetry, backoffMs: 1 }
+        )
+      }
+    }
+    const drive = async (name: string, evaluator: Layer.Layer<Evaluator.Evaluator>) => {
+      const directory = scratch()
+      const log = recorder()
+      script.replies = [doneCell]
+      await process_(
+        directory,
+        (driver) =>
+          Effect.gen(function*() {
+            yield* driver.start(input(`ses_${name}`, `msg_${name}`), log.sink)
+            yield* wait(() => log.outcomes.length === 1)
+          }),
+        { evaluator }
+      )
+      return log
+    }
+
+    // One 429 and then an answer: the second request judges the claim and the
+    // turn the person waited on finishes. Before the retry this was a dead run.
+    const blip = judge(
+      1,
+      () => new Evaluator.EvaluatorError({ code: "refused", status: 429, message: "The gateway answered 429" })
+    )
+    const survived = await drive("r1", blip.layer)
+    expect(survived.outcomes).toEqual([{ _tag: "completed" }])
+    expect(answer(survived.events)).toBe("done")
+    expect(blip.state.asked).toBe(2)
+
+    // A gateway that is down for all three: the turn fails, it fails with the
+    // last request's own reason, and it asks exactly the documented count.
+    const outage = judge(
+      Number.POSITIVE_INFINITY,
+      () => new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "The gateway answered 503" })
+    )
+    const down = await drive("r2", outage.layer)
+    expect(down.outcomes).toEqual([{
+      _tag: "failed",
+      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 503")
+    }])
+    expect(outage.state.asked).toBe(Health.evaluatorRetry.attempts)
+
+    // A key the gateway rejected: one request, because the second would be
+    // rejected in the same words and the person would wait for it.
+    const rejected = judge(
+      Number.POSITIVE_INFINITY,
+      () => new Evaluator.EvaluatorError({ code: "refused", status: 401, message: "The gateway answered 401" })
+    )
+    const unauthorized = await drive("r3", rejected.layer)
+    expect(unauthorized.outcomes).toEqual([{
+      _tag: "failed",
+      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 401")
+    }])
+    expect(rejected.state.asked).toBe(1)
   })
 
   /**
