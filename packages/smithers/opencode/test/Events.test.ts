@@ -59,6 +59,27 @@ describe("Events", () => {
     expect(parse(beats)[0]!.payload.type).toBe("server.heartbeat")
   })
 
+  it("ends every open stream on close, and a stream opened afterwards ends at once", async () => {
+    const result = await run(
+      Effect.gen(function*() {
+        const hub = yield* Events.make(options)
+        const open = yield* Effect.forkDetach(Stream.runCollect(hub.stream()))
+        yield* Effect.sleep("20 millis")
+        yield* hub.publish({ type: "session.idle", properties: { sessionID: "s" } })
+        yield* hub.close
+        const drained = yield* Fiber.join(open)
+        const late = yield* Stream.runCollect(hub.stream())
+        return {
+          drained: parse(drained).map((envelope) => envelope.payload.type),
+          late: parse(late).map((e) => e.payload.type)
+        }
+      })
+    )
+    expect(result.drained).toEqual(["server.connected", "session.idle"])
+    // Opened after the close: the replay, then the end, never a live wait.
+    expect(result.late).toEqual(["server.connected", "session.idle"])
+  })
+
   it("frames an envelope as one SSE data line and drops a closed subscriber", async () => {
     expect(Events.frame({ payload: { id: "evt_1", type: "x", properties: {} } })).toBe(
       `data: {"payload":{"id":"evt_1","type":"x","properties":{}}}\n\n`

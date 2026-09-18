@@ -68,6 +68,50 @@ describe("Serve", () => {
     }
   })
 
+  it("closes the socket at once with an event stream held open", async () => {
+    const scratch = scratchDirectory()
+    const held: { reader?: ReadableStreamDefaultReader<Uint8Array> } = {}
+    let started = 0
+    try {
+      await run(
+        Effect.gen(function*() {
+          const server = yield* HttpServer
+          const address = server.address
+          const port = address._tag === "InetAddressV4" || address._tag === "InetAddressV6" ? address.port : 0
+          const response = yield* Effect.promise(() => fetch(`http://127.0.0.1:${port}/global/event`))
+          held.reader = response.body!.getReader()
+          const first = yield* Effect.promise(() => held.reader!.read())
+          expect(new TextDecoder().decode(first.value)).toContain("server.connected")
+          started = Date.now()
+        }).pipe(
+          Effect.provide(
+            Serve.layer({
+              directory: scratch.directory,
+              bind: { ...Serve.defaultBind, port: 0 },
+              version: "test",
+              seat: "scripted:demo"
+            }).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  ScriptedDriver.layer({ script: DemoScript.script, delay: 0 }),
+                  Store.layerSqlite(Serve.databasePath(scratch.directory))
+                )
+              )
+            )
+          ),
+          Effect.scoped
+        )
+      )
+      // The stream was ended by the hub, not by the socket's graceful timeout.
+      expect(Date.now() - started).toBeLessThan(1500)
+      let done = false
+      for (let reads = 0; reads < 20 && !done; reads++) done = (await held.reader!.read()).done
+      expect(done).toBe(true)
+    } finally {
+      scratch.remove()
+    }
+  })
+
   it("fails the layer on a refused bind", async () => {
     const scratch = scratchDirectory()
     try {

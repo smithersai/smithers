@@ -18,7 +18,7 @@
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, Layer } from "effect"
+import { type Duration, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
 import type { ServeError } from "effect/unstable/http/HttpServerError"
@@ -147,10 +147,19 @@ export interface Options {
  */
 export const app = (
   options: Options
+): Layer.Layer<never, never, HttpRouter.HttpRouter | Driver.Driver | Store.Store> => assemble(options, hubOf(options))
+
+const hubOf = (options: Options): Layer.Layer<Events.Events> => {
+  const directory = resolve(options.directory)
+  return Events.layer({ directory, project: Routes.projectID(directory), heartbeat: options.heartbeat })
+}
+
+const assemble = (
+  options: Options,
+  hub: Layer.Layer<Events.Events>
 ): Layer.Layer<never, never, HttpRouter.HttpRouter | Driver.Driver | Store.Store> => {
   const directory = resolve(options.directory)
   const agentName = options.agent ?? "smithers"
-  const hub = Events.layer({ directory, project: Routes.projectID(directory), heartbeat: options.heartbeat })
   const evaluator = options.evaluator ?? Health.evaluatorLayer(options.environment ?? Health.ambientEnvironment())
   const turns = Turns.layer({
     directory,
@@ -167,10 +176,24 @@ export const app = (
 }
 
 /**
+ * How long the socket waits for its connections to drain on shutdown
+ * before it closes them. The event streams are ended first, so the wait
+ * covers a response mid-write, not a stream a client holds open.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const shutdownTimeout: Duration.Input = "2 seconds"
+
+/**
  * The server on a Node socket. Needs a driver and a store: the engine
  * driver brings its own store over the engine database, and the scripted
  * driver is paired with `Store.layerSqlite(databasePath(directory))`. The
  * layer fails when the bind is refused or the socket cannot be bound.
+ *
+ * On shutdown the hub ends every event stream first, so the open
+ * `/global/event` responses finish and the socket closes at once instead
+ * of waiting its graceful timeout on clients that never disconnect.
  *
  * @category layers
  * @since 1.0.0
@@ -182,13 +205,21 @@ export const layer = (
     Effect.suspend(() => {
       const refused = refusal(options.bind)
       if (refused !== undefined) return Effect.fail(new Error(refused))
-      return Effect.succeed(
-        HttpRouter.serve(app(options), { disableListenLog: true, disableLogger: true }).pipe(
-          Layer.provideMerge(
-            NodeHttpServer.layer(createServer, { host: options.bind.hostname, port: options.bind.port })
-          )
+      const hub = hubOf(options)
+      const served = HttpRouter.serve(assemble(options, hub), { disableListenLog: true, disableLogger: true }).pipe(
+        Layer.provideMerge(
+          NodeHttpServer.layer(createServer, {
+            host: options.bind.hostname,
+            port: options.bind.port,
+            gracefulShutdownTimeout: shutdownTimeout
+          })
         )
       )
+      // Built after the socket, so its finalizer runs before the socket's.
+      const closing = Layer.effectDiscard(
+        Effect.flatMap(Events.Events, (events) => Effect.addFinalizer(() => events.close))
+      ).pipe(Layer.provide(hub))
+      return Effect.succeed(Layer.provideMerge(closing, served))
     })
   )
 

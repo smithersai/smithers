@@ -263,6 +263,9 @@ export const layer = (
           contentType: "text/event-stream",
           headers: {
             "cache-control": "no-cache, no-transform",
+            // The socket closes with the stream: a shutdown that ends the
+            // streams is not then held by an idle keep-alive connection.
+            connection: "close",
             "x-accel-buffering": "no",
             "x-content-type-options": "nosniff"
           }

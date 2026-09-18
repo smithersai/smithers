@@ -458,23 +458,34 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     const gone = recorder()
     const closed = recorder()
     script.replies = [bashCell("echo gone"), bashCell("echo closed")]
+    await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_g", "msg_g"), gone.sink)
+        yield* driver.start(input("ses_h", "msg_h"), closed.sink)
+      }))
+    expect(gone.outcomes).toEqual([{ _tag: "suspended" }])
+    expect(closed.outcomes).toEqual([{ _tag: "suspended" }])
+    // The next process holds nothing in memory for either park: what the
+    // rows say is all the engine has.
+    const goneAgain = recorder()
+    const closedAgain = recorder()
     const result = await process_(directory, (driver) =>
       Effect.gen(function*() {
-        // The row vanishes under the parked turn: the resume drives nothing,
-        // and nothing else would ever settle the turn.
-        yield* driver.start(input("ses_g", "msg_g"), gone.sink)
+        yield* driver.resumeOnBoot((turn) =>
+          Effect.succeed(turn.sessionID === "ses_g" ? goneAgain.sink : closedAgain.sink)
+        )
+        // One row vanished: the resume drives nothing, and nothing else would settle the turn.
         yield* rewrite("DELETE FROM flows_runs WHERE run_id = 'msg_g'")
-        yield* driver.permission({ sessionID: "ses_g", permissionID: permissionOf(gone.events), response: "once" })
-        const goneAgain = yield* driver.interrupt("ses_g")
-        // Another process cancelled the parked row before the person answered.
-        yield* driver.start(input("ses_h", "msg_h"), closed.sink)
+        // The other was cancelled by another process before the person answered.
         yield* rewrite("UPDATE flows_runs SET status = 'cancelled' WHERE run_id = 'msg_h'")
+        yield* driver.permission({ sessionID: "ses_g", permissionID: permissionOf(gone.events), response: "once" })
         yield* driver.permission({ sessionID: "ses_h", permissionID: permissionOf(closed.events), response: "once" })
-        return { goneAgain, closedAgain: yield* driver.interrupt("ses_h") }
+        return { gone: yield* driver.interrupt("ses_g"), closed: yield* driver.interrupt("ses_h") }
       }))
-    expect(result).toEqual({ goneAgain: false, closedAgain: false })
-    expect(gone.outcomes.map((outcome) => outcome._tag)).toEqual(["suspended", "failed"])
-    expect(closed.outcomes.map((outcome) => outcome._tag)).toEqual(["suspended", "interrupted"])
+    expect(result).toEqual({ gone: false, closed: false })
+    expect(goneAgain.outcomes.map((outcome) => outcome._tag)).toEqual(["failed"])
+    expect(closedAgain.outcomes.map((outcome) => outcome._tag)).toEqual(["interrupted"])
+    expect(script.calls).toBe(2)
   })
 
   it("drains a steer at a frame boundary and carries the tail into a follow-up", async () => {

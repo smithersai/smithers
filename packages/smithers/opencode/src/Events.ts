@@ -61,9 +61,15 @@ export interface Service {
   readonly replay: (after?: string) => Effect.Effect<Array<Envelope>>
   /**
    * One SSE body: `server.connected`, the replay after `after`, then live
-   * events and heartbeats until the consumer stops reading.
+   * events and heartbeats until the consumer stops reading or the hub closes.
    */
   readonly stream: (options?: { readonly after?: string | undefined }) => Stream.Stream<string>
+  /**
+   * Ends every open stream and every stream opened afterwards, so the
+   * responses finish and the server can close its connections at once
+   * instead of waiting on clients that never disconnect.
+   */
+  readonly close: Effect.Effect<void>
 }
 
 /**
@@ -119,6 +125,7 @@ export const make = (options: Options): Effect.Effect<Service> =>
     const capacity = options.replay ?? defaultReplay
     const buffer: Array<Envelope> = []
     const subscribers = new Set<Queue.Queue<Envelope, Cause.Done>>()
+    let closed = false
 
     const publish: Service["publish"] = (event) =>
       Effect.sync(() => {
@@ -142,14 +149,16 @@ export const make = (options: Options): Effect.Effect<Service> =>
 
     const stream: Service["stream"] = (streamOptions = {}) => {
       const live = Stream.callback<Envelope>((queue) =>
-        Effect.acquireRelease(
-          Effect.sync(() => {
-            subscribers.add(queue)
-          }),
-          () =>
+        Effect.suspend(() =>
+          closed ? Queue.end(queue) : Effect.acquireRelease(
             Effect.sync(() => {
-              subscribers.delete(queue)
-            })
+              subscribers.add(queue)
+            }),
+            () =>
+              Effect.sync(() => {
+                subscribers.delete(queue)
+              })
+          )
         )
       )
       const beats = Stream.tick(options.heartbeat ?? defaultHeartbeat).pipe(
@@ -166,7 +175,12 @@ export const make = (options: Options): Effect.Effect<Service> =>
       )
     }
 
-    return { publish, replay, stream }
+    const close: Service["close"] = Effect.suspend(() => {
+      closed = true
+      return Effect.forEach(subscribers, (queue) => Queue.end(queue), { discard: true })
+    })
+
+    return { publish, replay, stream, close }
   })
 
 /**
