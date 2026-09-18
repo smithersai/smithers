@@ -122,7 +122,13 @@ export const applySetupEdit = (
   } else return { error: "That setting cannot be edited." }
   const parsed = SetupDraftSchema.safeParse(next)
   if (!parsed.success) return { error: "The setting does not match the expected value." }
-  return { draft: parsed.data }
+  // A case this write changed is the maintainer's, pin included; the next
+  // inspection re-pins only the cases it wrote itself.
+  if (field !== "cases") return { draft: parsed.data }
+  return { draft: { ...parsed.data, cases: parsed.data.cases.map(test => {
+    const prior = draft.cases.find(item => item.id === test.id)
+    return prior && prior.input === test.input && prior.expected === test.expected ? test : { ...test, edited: true }
+  }) } }
 }
 
 /**
@@ -224,6 +230,18 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
   }
   const epoch = () => ctx.accountEpoch ?? 0
+  /**
+   * The pin a new request may carry. A workspace this repository's loaded
+   * collection no longer lists is gone, and sending it runs the work somewhere
+   * else under a name that no longer resolves; the host allocates the box
+   * instead, exactly as it does for a first setup. An unloaded collection lists
+   * none and contradicts nothing, so the pin stands.
+   */
+  const livePin = (payload: RepositorySetup): string | undefined => {
+    const pin = payload.workspaceId
+    const loaded = [...ctx.store.collections.cloudWorkspaces.values()].filter(workspace => workspace.repoId === payload.repo)
+    return pin === undefined || !loaded.length || loaded.some(workspace => workspace.id === pin) ? pin : undefined
+  }
   const scheduleRefresh = (card: SetupCard) => {
     const prior = shared.scheduleTimers.get(card.id), active = card.payload.active, schedule = active?.schedule
     const login = card.payload.owner, accountEpoch = epoch()
@@ -671,7 +689,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     const intent: NonNullable<RepositorySetup["request"]> = { id: retry ? old.id : crypto.randomUUID(), operation,
       revision: card.payload.revision, digest: setupCandidate(card.payload), state: "requested", ...(manual ? { manual } : {}) }
     const accountEpoch = epoch()
-    await upsert({ ...card, status: "active", payload: { ...card.payload, owner: login, request: intent } })
+    await upsert({ ...card, status: "active", payload: { ...card.payload, owner: login, workspaceId: livePin(card.payload), request: intent } })
     if (!current(cardId, intent.id, login, accountEpoch)) return
     void send(cardId)
     return { value: `${REPOSITORY_JOB_TITLES[card.payload.job]}: ${operation} requested in the background.` }

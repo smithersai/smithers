@@ -1,11 +1,11 @@
 import { expect, spyOn, test } from "bun:test"
-import { initialSetup, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { editSetup, initialSetup, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { createAppStore } from "../AppStore"
 import { memoryStorage, recordingAgent, unavailableRepositories } from "../TestFixtures"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { ControllerContext } from "./context"
 import { createFailureController } from "./failures"
-import { createRepositorySetupController, projectRecoveredSetup, type RepositorySetupDependencies } from "./repositorySetup"
+import { applySetupEdit, createRepositorySetupController, projectRecoveredSetup, type RepositorySetupDependencies } from "./repositorySetup"
 import { cardContainsRun, runScopeFromCard } from "../RunReference"
 import { PRACTICE_REPO } from "../practice/PracticeRepository"
 
@@ -1312,6 +1312,62 @@ test("a pin the loaded workspaces no longer list is replaced by the registration
     expect(setupCard(t).payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
     expect(setupCard(t).payload.workspaceId).toBe(replacement)
     expect(t.calls).toEqual([])
+  } finally { await t.close() }
+})
+
+/*
+ * Canary walk run 3 (B3-N4): the fixture workspace was deleted and replaced, the
+ * registration still named the deleted one, so nothing moved the card's pin and
+ * every request created that morning carried `input.workspaceId` of a workspace
+ * that no longer existed while the host ran the work on the box it allocated.
+ */
+test("a request never carries a pin the loaded workspaces no longer list", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json() as Record<string, unknown>
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  t.recovery.answer = async () => Response.json(registeredOn(deadPin))
+  try {
+    await persistedSetup(t, deadPin)
+    await loadedWorkspaces(t, replacement)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    await t.setup.runRepositorySetup(card.id, "inspect"); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.workspaceId).toBeUndefined()
+    expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
+    expect(setupCard(t).payload.workspaceId).toBe(replacement)
+  } finally { await t.close() }
+})
+
+/*
+ * The next inspection re-pins the cases it wrote to the commit it captured
+ * (flows/repository/setup.ts). A case the person or the agent has written
+ * through this door is theirs, pin included, so the write drops that mark.
+ */
+test("editing a case through the configure door makes it the maintainer's, so the next inspection leaves its pin", () => {
+  const inspected = editSetup(initialSetup("example/repo", "issues", "maintainer"),
+    { ...initialSetup("example/repo", "issues", "maintainer").draft, cases: [
+      { id: "c1", name: "Answers a source question", input: "{\"pin\":1}", expected: "It cites the README.", required: true },
+      { id: "c2", name: "Reproduces the reported bug", input: "{\"pin\":2}", expected: "It runs the fixture.", required: true }
+    ] })
+  expect(inspected.draft.cases.map(test => test.edited)).toEqual([undefined, undefined])
+  const edited = applySetupEdit(inspected.draft, "issues", "cases",
+    inspected.draft.cases.map(test => test.id === "c1" ? { ...test, expected: "It cites CONTRIBUTING.md." } : test))
+  expect("error" in edited).toBe(false)
+  expect("draft" in edited && edited.draft.cases.map(test => test.edited)).toEqual([true, undefined])
+  expect("draft" in edited && edited.draft.cases[0]?.expected).toBe("It cites CONTRIBUTING.md.")
+})
+
+test("a pin no loaded collection can contradict is still sent", async () => {
+  const t = await fixture(async body => response(body, "completed", "inspect"))
+  t.recovery.answer = async () => Response.json(registeredOn(workspaceId))
+  try {
+    await persistedSetup(t, workspaceId)
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    await t.setup.runRepositorySetup(setupCard(t).id, "inspect"); await Promise.all(t.background)
+    expect(t.calls[0]?.body.workspaceId).toBe(workspaceId)
   } finally { await t.close() }
 })
 
