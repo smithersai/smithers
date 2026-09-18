@@ -3,13 +3,15 @@ import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, Stream } from "effect"
+import { Cause, Effect, Layer, Stream } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -62,10 +64,29 @@ const model = Model.make({
     })
 })
 
+/** A seat whose provider refuses every call: an account with no credit. */
+const refused = "You exceeded your current quota, please check your plan and billing details."
+const dead = Model.make({
+  stream: () =>
+    Stream.fail(
+      new ModelError({ code: "quota_exceeded", httpStatus: 429, providerCode: "insufficient_quota", message: refused })
+    )
+})
+
 const seats = SeatResolver.layer({
   resolve: (id) =>
     id === "broken:seat"
       ? Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `Seat ${id} names no provider` }))
+      : id === "openai:dead"
+      ? Effect.succeed(
+        Seat.make({
+          id,
+          modelId: "dead-model",
+          model: dead,
+          route,
+          contextWindowTokens: SeatResolver.contextWindowTokensFor("dead-model")
+        })
+      )
       : Effect.succeed(
         Seat.make({
           id,
@@ -300,6 +321,68 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(EngineDriver.alwaysKey(directory, "bash", { command: "  cat package.json" })).toBe("bash cat *")
     expect(EngineDriver.alwaysKey(directory, "bash", { command: "" })).toBe("bash *")
     expect(EngineDriver.alwaysKey(directory, "read", { path: `${directory}/a.txt` })).toBe("read *")
+  })
+
+  it("reports a seat the provider refused with the seat, the code, the status, and the provider's words", async () => {
+    const directory = scratch()
+    const log = recorder()
+    await process_(directory, (driver) => driver.start(input("ses_dead", "msg_dead"), log.sink), {
+      seat: "openai:dead"
+    })
+    expect(log.outcomes).toEqual([{
+      _tag: "failed",
+      message: `quota_exceeded (HTTP 429) from openai:dead: ${refused}`,
+      provider: { seat: "openai:dead", providerID: "openai", code: "quota_exceeded", status: 429, message: refused }
+    }])
+    expect(script.calls).toBe(0)
+    // The engine's JSON projection of the same failure reads the same way.
+    const projected = EngineDriver.failedOutcome(
+      "anthropic:claude",
+      Cause.fail({
+        _tag: "HarnessError",
+        code: "model_failed",
+        message: "The cell frame failed",
+        cause: { _tag: "flows/model/ModelError", code: "authentication", httpStatus: 401, message: "invalid x-api-key" }
+      })
+    )
+    expect(projected).toMatchObject({
+      message: "authentication (HTTP 401) from anthropic:claude: invalid x-api-key",
+      provider: { providerID: "anthropic", code: "authentication", status: 401 }
+    })
+    const noStatus = EngineDriver.failedOutcome(
+      "local",
+      Cause.fail(
+        new HarnessError({
+          code: "model_failed",
+          message: "x",
+          cause: new ModelError({ code: "transport", message: "socket hang up" })
+        })
+      )
+    )
+    expect(noStatus).toMatchObject({
+      message: "transport from local: socket hang up",
+      provider: { providerID: "local" }
+    })
+    expect(EngineDriver.failedOutcome("s", Cause.fail(new Error("boom")))).toEqual({ _tag: "failed", message: "boom" })
+    expect(EngineDriver.failedOutcome("s", Cause.fail({ code: "odd" }))).toEqual({
+      _tag: "failed",
+      message: "{\"code\":\"odd\"}"
+    })
+    expect(
+      EngineDriver.seatFailureLine({
+        seat: "openai:dead",
+        providerID: "openai",
+        code: "quota_exceeded",
+        status: 429,
+        message: refused
+      })
+    ).toBe(
+      `Seat openai:dead refused the model call (quota_exceeded, HTTP 429): ${refused} Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`
+    )
+    expect(EngineDriver.seatFailureLine({ seat: "local", providerID: "local", code: "transport", message: "down" }))
+      .toBe(
+        "Seat local refused the model call (transport): down Pass --seat provider:model or set SMITHERS_SEAT to run on another seat."
+      )
   })
 
   it("settles a rejected call as a failure the cell reads, and the turn goes on", async () => {

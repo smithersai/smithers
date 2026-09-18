@@ -48,7 +48,25 @@ export type Outcome =
   | { readonly _tag: "completed" }
   | { readonly _tag: "interrupted" }
   | { readonly _tag: "suspended" }
-  | { readonly _tag: "failed"; readonly message: string }
+  | { readonly _tag: "failed"; readonly message: string; readonly provider?: ProviderFailure | undefined }
+
+/**
+ * A model call the seat's provider refused: what the person needs to fix
+ * the seat, with the provider's own words untouched.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ProviderFailure {
+  /** The seat the turn ran on, as `provider:model`. */
+  readonly seat: string
+  readonly providerID: string
+  /** The normalized failure code: `authentication`, `quota_exceeded`, `rate_limited`, and the rest of `ModelErrorCode`. */
+  readonly code: string
+  readonly status?: number | undefined
+  /** The provider's message, verbatim. */
+  readonly message: string
+}
 
 /**
  * Where a running turn reports.

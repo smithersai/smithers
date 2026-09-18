@@ -121,10 +121,9 @@ export interface UserMessage {
  * @category models
  * @since 1.0.0
  */
-export interface MessageError {
-  readonly name: "UnknownError" | "MessageAbortedError"
-  readonly data: { readonly message: string }
-}
+export type MessageError =
+  | { readonly name: "UnknownError" | "MessageAbortedError"; readonly data: { readonly message: string } }
+  | { readonly name: "ProviderAuthError"; readonly data: { readonly providerID: string; readonly message: string } }
 
 /**
  * An assistant message header.

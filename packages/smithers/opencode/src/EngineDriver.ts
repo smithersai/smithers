@@ -332,6 +332,49 @@ const failureMessage = (cause: Cause.Cause<unknown>): string => {
 }
 
 /**
+ * The outcome a failed body settles as. A model call the provider refused
+ * (a bad key, an account with no credit, a closed quota window) is found
+ * through the frame's wrapper, live or as the engine's JSON projection, and
+ * reported with the seat, the code, the HTTP status, and the provider's
+ * message verbatim; any other failure keeps its own message.
+ *
+ * @param seat the seat the turn ran on
+ * @param cause the body's failure
+ * @category conversions
+ * @since 1.0.0
+ */
+export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver.Outcome => {
+  const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(Cause.squash(cause)))
+  if (model === undefined) return { _tag: "failed", message: failureMessage(cause) }
+  const provider: Driver.ProviderFailure = {
+    seat,
+    providerID: seat.slice(0, Math.max(seat.indexOf(":"), 0)) || seat,
+    code: model.code,
+    status: model.httpStatus,
+    message: model.message
+  }
+  return {
+    _tag: "failed",
+    message: `${model.code}${
+      model.httpStatus === undefined ? "" : ` (HTTP ${model.httpStatus})`
+    } from ${seat}: ${model.message}`,
+    provider
+  }
+}
+
+/**
+ * The line the server logs when the seat refused a model call: the seat,
+ * what the provider said, and how to run on another seat.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const seatFailureLine = (failure: Driver.ProviderFailure): string =>
+  `Seat ${failure.seat} refused the model call (${failure.code}${
+    failure.status === undefined ? "" : `, HTTP ${failure.status}`
+  }): ${failure.message} Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`
+
+/**
  * Builds the driver and the store over one engine database. The layer
  * exposes both, because the store shares the engine's connection and the
  * turns need the same store the driver records grants and open turns in.
@@ -508,7 +551,7 @@ export const layer = (options: Options) =>
                   ? { _tag: "completed" }
                   : Cause.hasInterruptsOnly(exit.cause)
                   ? (instance.suspended || stopping ? { _tag: "suspended" } : { _tag: "interrupted" })
-                  : { _tag: "failed", message: failureMessage(exit.cause) }
+                  : failedOutcome(options.seat, exit.cause)
                 return Effect.asVoid(Deferred.succeed(running.settled, outcome))
               })
             ),
@@ -611,6 +654,9 @@ export const layer = (options: Options) =>
         const settle = (running: Running, outcome: Driver.Outcome): Effect.Effect<void> =>
           Effect.gen(function*() {
             yield* awaitPublished(running.input.messageID, outcome)
+            if (outcome._tag === "failed" && outcome.provider !== undefined) {
+              yield* Effect.logError(seatFailureLine(outcome.provider))
+            }
             running.driving = false
             yield* running.sink.closed(outcome)
             if (outcome._tag === "suspended") return
@@ -634,9 +680,7 @@ export const layer = (options: Options) =>
               }
               if (result !== undefined && result !== "missing" && result._tag === "Complete") {
                 const exit = result.exit
-                return Exit.isSuccess(exit)
-                  ? { _tag: "completed" }
-                  : { _tag: "failed", message: failureMessage(exit.cause) }
+                return Exit.isSuccess(exit) ? { _tag: "completed" } : failedOutcome(options.seat, exit.cause)
               }
               if (yield* cancelled(executionId)) return { _tag: "interrupted" }
               yield* Effect.sleep("50 millis")

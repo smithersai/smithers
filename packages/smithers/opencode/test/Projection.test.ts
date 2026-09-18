@@ -321,6 +321,37 @@ describe("Projection", () => {
     expect(stopped.state.calls).toEqual({})
     const died = Projection.close(ctx, running.state, { _tag: "failed", message: "the seat refused" })
     expect((died.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({ error: "the seat refused" })
+    // A refused key is the app's own ProviderAuthError; other refusals keep the composed message.
+    const errorOf = (step: Projection.Step): Protocol.MessageError | undefined => {
+      const assistant = step.events.find((event) =>
+        event.type === "message.updated" && (event.properties["info"] as Protocol.Message).role === "assistant"
+      )
+      return (assistant!.properties["info"] as Protocol.AssistantMessage).error
+    }
+    const badKey = Projection.close(ctx, start.state, {
+      _tag: "failed",
+      message: "authentication (HTTP 401) from openai:gpt: Incorrect API key provided",
+      provider: {
+        seat: "openai:gpt",
+        providerID: "openai",
+        code: "authentication",
+        status: 401,
+        message: "Incorrect API key provided"
+      }
+    })
+    expect(errorOf(badKey)).toEqual({
+      name: "ProviderAuthError",
+      data: { providerID: "openai", message: "authentication (HTTP 401) from openai:gpt: Incorrect API key provided" }
+    })
+    const noCredit = Projection.close(ctx, start.state, {
+      _tag: "failed",
+      message: "quota_exceeded (HTTP 429) from openai:gpt: no credits",
+      provider: { seat: "openai:gpt", providerID: "openai", code: "quota_exceeded", status: 429, message: "no credits" }
+    })
+    expect(errorOf(noCredit)).toEqual({
+      name: "UnknownError",
+      data: { message: "quota_exceeded (HTTP 429) from openai:gpt: no credits" }
+    })
   })
 
   it("handles the events outside the demo turn", () => {

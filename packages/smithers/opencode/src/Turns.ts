@@ -287,7 +287,7 @@ export const make = (
               closing: outcome._tag === "interrupted"
                 ? { _tag: "interrupted" }
                 : outcome._tag === "failed"
-                ? { _tag: "failed", message: outcome.message }
+                ? { _tag: "failed", message: outcome.message, provider: outcome.provider }
                 : { _tag: "failed", message: "The turn ended without an answer" }
             })
           )

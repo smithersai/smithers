@@ -37,6 +37,7 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type { Schema } from "effect"
 import { basename, isAbsolute, join } from "node:path"
+import type * as Driver from "./Driver.ts"
 import * as Health from "./Health.ts"
 import * as Ids from "./Ids.ts"
 import * as Protocol from "./Protocol.ts"
@@ -108,7 +109,7 @@ export interface Opened {
  */
 export type Closing =
   | { readonly _tag: "interrupted" }
-  | { readonly _tag: "failed"; readonly message: string }
+  | { readonly _tag: "failed"; readonly message: string; readonly provider?: Driver.ProviderFailure | undefined }
 
 interface CallCard {
   readonly partID: string
@@ -1399,8 +1400,12 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
   if (state.closed) return { state, events: [] }
   const finished = finishReasoning(state, ctx)
   const settled = settleOpenCards(finished.state, ctx, closing)
+  // A refused key is the app's own ProviderAuthError; every other provider
+  // refusal keeps the composed message, with the provider's words verbatim.
   const error: Protocol.MessageError = closing._tag === "interrupted"
     ? { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
+    : closing.provider?.code === "authentication"
+    ? { name: "ProviderAuthError", data: { providerID: closing.provider.providerID, message: closing.message } }
     : { name: "UnknownError", data: { message: closing.message } }
   // A cap that ended the run is red; anything else that ended it without
   // an answer leaves health unknown.
