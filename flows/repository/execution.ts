@@ -9,7 +9,8 @@ import { CodingError } from "../coding/schema.ts"
 import { captureCiPolicy, composeCiChecks, inheritsCiPolicy, revalidateCiPolicy } from "./ci-policy.ts"
 import { captureRepository, currentExecutionId } from "./inspection.ts"
 import { ApproveStep, AwaitReply, CaptureFollowup, CaptureJob, CheckReply, ContinueAuthor, ExecuteRepro, FailedStep, FinishJob, Investigate, InvestigateStep, RetainObservation, RetainReproductionReview, RunSteps, ValidateReply, retainedStepError, type Observation, type ReproductionReview, type Work } from "./jobs.ts"
-import { Event, StepResult, type JobInput } from "./schema.ts"
+import { Event, StepResult, type IntakeScreening, type JobInput } from "./schema.ts"
+import { screenEvent } from "./intake.ts"
 import { CheckStep, reviewCheck } from "./checks.ts"
 import { ProposalStep } from "./changes.ts"
 import { RepositoryRemote } from "./remote.ts"
@@ -59,8 +60,10 @@ const choreEventStarts = (configuration: JobInput["configuration"], event: typeo
   event.type === "push" ? configuration.choreEvent === "push" && defaultBranchPush(event)
     : event.type === "issues" ? configuration.choreEvent === "labeled" && event.action === "labeled"
       : event.type === "schedule" || event.type === "manual"
-export const selectedSteps = (input: Pick<JobInput, "job" | "configuration" | "event">) => {
-  if (sourceEvent(input.event).ignored) return []
+export const selectedSteps = (input: Pick<JobInput, "job" | "configuration" | "event">, intake?: typeof IntakeScreening.Type | undefined) => {
+  // An event the intake screen dropped ends this job exactly where an
+  // already-ignored one does: no step is selected, so no model is asked.
+  if (intake?.action === "ignored" || sourceEvent(input.event).ignored) return []
   if (input.job === "chores" && input.event.trial !== true && input.event.manualStep === undefined &&
     !choreEventStarts(input.configuration, input.event)) return []
   const manualStep = input.event.manualStep
@@ -117,9 +120,14 @@ export const captureJobSource = (options: ImmutableSourceOptions, input: typeof 
     if (needsPR && !review && !(input.event.type === "pull_request" && typeof head.sha === "string")) return yield* invalid("Select the actual PR and immutable candidate for review")
     const sourceRevision = review?.sourceRevision ?? normalized.sourceRevision ?? (typeof head.sha === "string" ? head.sha : undefined)
     if (sourceRevision !== undefined) yield* ensureSource(options, input.event, review?.payload ?? normalized.payload, yield* currentExecutionId)
-    const evidence = yield* captureRepository(options, { repo: input.repo, prompt: JSON.stringify(review?.payload ?? input.event.payload),
-      ...(sourceRevision === undefined ? {} : { sourceRevision }) }, selectedSteps(input).some(step => ["fix", "feature", "chore"].includes(step.id)) ? "immutable" : "snapshot")
-    return review ? { ...evidence, subject: review.payload } : normalized.sourceRevision ? { ...evidence, subject: normalized.payload } : evidence
+    // The one place the event's own untrusted text becomes model evidence.
+    // Jev reads it here, before any prompt is built, and what it withholds is
+    // replaced for source selection and for every Work this evidence carries.
+    const screened = yield* screenEvent({ repo: input.repo, event: input.event, payload: review?.payload ?? normalized.payload })
+    const evidence = yield* captureRepository(options, { repo: input.repo, prompt: JSON.stringify(screened.payload),
+      ...(sourceRevision === undefined ? {} : { sourceRevision }) },
+      selectedSteps(input, screened.screening).some(step => ["fix", "feature", "chore"].includes(step.id)) ? "immutable" : "snapshot")
+    return { ...evidence, subject: screened.payload, intake: screened.screening }
   }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
     orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))
 export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
@@ -169,7 +177,7 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
     const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
     const ids = job.configuration.steps.map(step => step.id)
     if (new Set(ids).size !== ids.length || ids.some(id => !/^[a-zA-Z0-9_-]+$/.test(id))) return yield* invalid("Configured steps need unique safe IDs")
-    const selected = yield* Effect.try({ try: () => selectedSteps(job), catch: error => error instanceof CodingError ? error : invalid("Invalid step selection") })
+    const selected = yield* Effect.try({ try: () => selectedSteps(job, evidence.intake), catch: error => error instanceof CodingError ? error : invalid("Invalid step selection") })
     // The reviewed CI policy is read once for this job, pinned into every Work
     // it produces, and composed under reserved ids a local check cannot take.
     const inherits = inheritsCiPolicy(job, selected, evaluation === true)
@@ -182,7 +190,11 @@ export const executionLayers = (options: ImmutableSourceOptions) => Layer.mergeA
       const executionId = Digest.digest(Digest.canonical(["repository/step/v1", instance.executionId, input.digest, input.event.deliveryKey, step.id]))
       const work = { repo: input.repo, job: input.job, event: { ...input.event, payload: evidence.subject ?? input.event.payload }, step, evidence, deadlineAt, policy,
         checks: input.configuration.checks, landing: input.configuration.landing, replies: input.configuration.replies,
-        executionMode: evaluation ? "evaluation" as const : input.event.trial ? "trial" as const : "live" as const }
+        executionMode: evaluation ? "evaluation" as const : input.event.trial ? "trial" as const : "live" as const,
+        // The screen's answers ride along as data. Nothing reads them yet;
+        // Observation.classification stays the investigation's own finding.
+        ...(evidence.intake?.kind === undefined || evidence.intake.urgency === undefined ? {}
+          : { intake: { kind: evidence.intake.kind, urgency: evidence.intake.urgency } }) }
       const subject = object(object(work.event.payload).issue)
       const performed = Effect.gen(function*() {
         if (step.mode === "approved" && !evaluation && !(yield* runtime.execute(ApproveStep, { executionId: `${executionId}-approval`,

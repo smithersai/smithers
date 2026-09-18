@@ -7,7 +7,7 @@ import { PublishReply } from "./replies.ts"
 import { CiPolicy } from "./ci-policy.ts"
 import { CodingError } from "../coding/schema.ts"
 import { AssertBudget, currentExecutionId, StartBudget } from "./inspection.ts"
-import { Check, Event, JobInput, JobResult, Proposal, RepositoryEvidence, Step, StepResult } from "./schema.ts"
+import { Check, Event, IntakeAnswers, JobInput, JobResult, Proposal, RepositoryEvidence, Step, StepResult } from "./schema.ts"
 import { FileRecovery } from "../coding/native-schema.ts"
 
 const boundedText = Schema.String.check(Schema.isMaxLength(16000))
@@ -42,6 +42,9 @@ export const Work = Schema.Struct({
   repo: Schema.String, job: JobInput.fields.job, event: Event, step: Step, evidence: RepositoryEvidence, deadlineAt: Schema.Number,
   checks: Schema.Array(Check), landing: Schema.Literals(["ask", "checks"]), replies: Schema.Literals(["draft", "automatic"]),
   executionMode: Schema.Literals(["live", "trial", "evaluation"]),
+  /** What the intake screen decided about this event, carried so a later step
+   * may read it. It is not `Observation.classification` and never replaces it. */
+  intake: Schema.optionalKey(IntakeAnswers),
   policy: Schema.optionalKey(CiPolicy),
   proposal: Schema.optionalKey(Proposal)
 })

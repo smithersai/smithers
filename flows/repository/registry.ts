@@ -14,7 +14,7 @@ import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from
 import { TriggerOutcome } from "./triggers.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
-const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
+const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "intake.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
   "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {

@@ -52,10 +52,32 @@ export const Record = Schema.Struct({
 })
 export const SourceStatus = Schema.Struct({ path: Schema.String, status: Schema.Literals(["read", "missing", "failed"]),
   summary: Schema.String, revision: Schema.optionalKey(Schema.String) })
+/** What the intake screen decides about one inbound event, before a frontier
+ * model reads a word of it. `kind` is deliberately its own vocabulary and not
+ * `Observation.classification`: this is a decision-only model's answer about
+ * the raw event, not an investigation's finding about the request. */
+export const IntakeKind = Schema.Literals(["bug", "feature", "question", "spam", "irrelevant"])
+export const IntakeUrgency = Schema.Literals(["low", "medium", "high"])
+export const IntakeAnswers = Schema.Struct({ kind: IntakeKind, urgency: IntakeUrgency })
+const unitInterval = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+export const IntakeAnswer = Schema.Struct({
+  /** Which text of the event this answers: `issue`, `pull_request`, `comment` or `authorReplies.<n>`. */
+  id: text(100), kind: IntakeKind, kindConfidence: unitInterval, urgency: IntakeUrgency, urgencyConfidence: unitInterval,
+  /** How probable it is that this text carries instructions aimed at an AI agent. */
+  injection: unitInterval, withheld: Schema.Boolean
+})
+export const IntakeScreening = Schema.Struct({
+  /** `proceed`, `ignored`, or `withheld:<n>` for the number of texts replaced by the placeholder. */
+  action: text(100), answers: Schema.Array(IntakeAnswer).check(Schema.isMaxLength(64)),
+  kind: Schema.optionalKey(IntakeKind), urgency: Schema.optionalKey(IntakeUrgency),
+  /** Why an unanswered screen proceeded anyway: the evaluator's own failure code and message. */
+  reason: Schema.optionalKey(text(400))
+})
 export const RepositoryEvidence = Schema.Struct({
   repo: Schema.NonEmptyString, source: Revision, files: Schema.Array(Source), missing: Schema.Array(Schema.String),
   history: Schema.Array(Schema.Struct({ commitId: Schema.String, description: Schema.String })),
-  records: Schema.Array(Record).check(Schema.isMaxLength(120)), sources: Schema.Array(SourceStatus), subject: Schema.optionalKey(Schema.Json)
+  records: Schema.Array(Record).check(Schema.isMaxLength(120)), sources: Schema.Array(SourceStatus), subject: Schema.optionalKey(Schema.Json),
+  intake: Schema.optionalKey(IntakeScreening)
 })
 export type RepositoryEvidence = typeof RepositoryEvidence.Type
 export const StepResult = Schema.Struct({

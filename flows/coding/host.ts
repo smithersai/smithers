@@ -158,15 +158,18 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer)),
       ...(options.landing === undefined ? [] : [vibeRegistration.pipe(Layer.provide(options.landing)), cleanupModels])
     )
-    const repository = Layer.mergeAll(inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
+    // Jev, the decision-only model the intake screen asks about every inbound
+    // event and the AI checks ask about every changed hunk. A host without a
+    // gateway key installs the unavailable transport, so the screen reports a
+    // missing evaluator, the seat decides every check, and the job proceeds
+    // untouched instead of hanging or inventing an answer.
+    const evaluator = evaluatorLayer(process.env)
+    const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }), evaluationLayers,
       setupLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }), activationLayers, triggerLayers, replyLayers, deliveryLayers,
-      // Jev answers the AI checks' hunks when the host has a gateway key, and
-      // the frontier seat keeps every rule it is unsure of. Without the key
-      // `evaluatorLayer` refuses every evaluation and nothing changes.
       repositoryCheckLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath,
-        environment: options.checkEnvironment, evaluator: evaluatorLayer(process.env) }),
+        environment: options.checkEnvironment, evaluator }),
       changeLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       evidenceOnly(Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, checkModelLayers, changeModelLayers), new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...checkModelNames, ...changeModelNames])))
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,
