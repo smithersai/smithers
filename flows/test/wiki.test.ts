@@ -24,8 +24,16 @@ const fixture = async (t: TestContext) => {
 const run = <A, E>(effect: Effect.Effect<A, E, import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto>) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))
 const supported = (evidence: ReviewedPage["evidence"]): Review => ({ sections: evidence.sections.map((section) => ({ id: section.id, verdict: "supported", explanation: "The exported constant supports the explanation.", citations: [{ path: "src/answer.ts", line: 1, quote: "export const answer = 42" }] })) })
 
-/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
-const citationsSupported = Evaluator.layerScripted(() => ({ support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }))
+/** Jev answers every citation of this fixture supported, and lets a seat's
+ * completion stand. One layer answers both because a composition holds ONE
+ * `Evaluator`: the citation check and the harness completion brake ask the
+ * same service, so a script that answers only its own question hands the
+ * other an answer its question cannot decode. `wiki-jev-citations.test.ts`
+ * owns the citation check's own behavior. */
+const citationsSupported = Evaluator.layerScripted((request) =>
+  "support" in request.questions
+    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
 
 test("host-owned wiki operations retain their injected filesystem under a different action context", async t => {
   const f = await fixture(t), fs = await run(FileSystem.FileSystem)
@@ -228,7 +236,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const seats = SeatResolver.layer({ resolve: (id) => Effect.succeed(Seat.make({ id, modelId: "scripted-wiki", model, contextWindowTokens: 200_000,
     route: { prepare: () => Effect.succeed({ routeId: "wiki-test", protocolId: "wiki-test", method: "POST", url: "https://example.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) }
   })) })
-  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))), Interpreter.layer(Wiki)).pipe(
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000, citationsSupported), Interpreter.layer(Wiki)).pipe(
     Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const input = { pages: [f.spec], mode: "verified" as const, reviewer: "scripted-test" }

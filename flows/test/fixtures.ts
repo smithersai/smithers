@@ -26,13 +26,19 @@ export const outline = { angle: "Durable approvals", outline: ["Resume an approv
 /** Jev's narrative beside the writer's outline, the way the flow assembles it. */
 export const brief = { template: "reliability report", ...outline }
 /** A scripted Jev that confidently names the fixture's narrative, so a flow
- * test exercises the real pick step without a gateway key. */
-export const scriptedTemplate = Evaluator.layerScripted(() => ({
-  template: {
-    choice: brief.template,
-    probabilities: Object.fromEntries(templates.map((name) => [name, name === brief.template ? 0.95 : 0.05 / 3]))
-  }
-}))
+ * test exercises the real pick step without a gateway key. It answers the
+ * harness completion brake too, because a composition holds ONE `Evaluator`
+ * and a script that answers only its own question hands the brake an answer
+ * its question cannot decode. */
+export const scriptedTemplate = Evaluator.layerScripted((request) =>
+  "template" in request.questions
+    ? {
+      template: {
+        choice: brief.template,
+        probabilities: Object.fromEntries(templates.map((name) => [name, name === brief.template ? 0.95 : 0.05 / 3]))
+      }
+    }
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
 export const copy = { text: "Release approvals resume after a process restart.", claimIds: ["approval"] }
 export const draft: Draft = { changelog: copy, blog: copy, thread: { tweets: [copy] } }
 export const review = { passed: true, score: 0.95, feedback: [] }

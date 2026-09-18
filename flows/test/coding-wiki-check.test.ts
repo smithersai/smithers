@@ -27,7 +27,10 @@ import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
 /** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
-const citationsSupported = Evaluator.layerScripted(() => ({ support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }))
+const citationsSupported = Evaluator.layerScripted((request) =>
+  "support" in request.questions
+    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
 
 const CheckRun = Flow.make("acceptance/WikiCheck", { payload: RunCheck.payloadSchema, success: Receipt, error: CodingError,
   body: input => RunCheck.call(input) })
