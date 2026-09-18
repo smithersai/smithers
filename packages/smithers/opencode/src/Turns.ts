@@ -318,10 +318,14 @@ export const make = (
       partID: string,
       text: string,
       agent: string,
-      model: Protocol.ModelRef
+      model: Protocol.ModelRef,
+      userCreatedAt?: number
     ): Effect.Effect<void, Store.StoreError> =>
       Effect.gen(function*() {
-        const assistantMessageID = Ids.make("message")
+        // The answer's id, and so the execution id, is derived from the
+        // prompt's: a prompt the app retries runs the same execution, which
+        // the engine answers from its row.
+        const assistantMessageID = Ids.reply(userMessageID)
         // The tail is the conversation before this prompt: the prompt itself
         // is the task, and a retried prompt is already stored.
         const tail = history((yield* store.listMessages(session.id)).filter((m) => m.info.id !== userMessageID))
@@ -335,7 +339,8 @@ export const make = (
             assistantMessageID,
             prompt: text,
             agent,
-            model
+            model,
+            userCreatedAt
           })
         })
         const sink = sinkFor(session.id)
@@ -387,6 +392,16 @@ export const make = (
         const partID = userPartID(userMessageID, input.parts)
         const agent = input.agent ?? options.agent
         const model = input.model ?? options.model
+        const stored = yield* store.getMessage(userMessageID)
+        if (Option.isSome(stored)) {
+          // A retry of a prompt already taken: stored once, steered once, and
+          // answered once. Only an answer the session lost (idle, no finish)
+          // runs again, as the same execution.
+          if (states.has(input.sessionID)) return
+          const answer = yield* store.getMessage(Ids.reply(userMessageID))
+          if (Option.isSome(answer) && answer.value.role === "assistant" && answer.value.finish !== undefined) return
+          return yield* open(session.value, userMessageID, partID, text, agent, model, stored.value.time.created)
+        }
         if (states.has(input.sessionID)) {
           const now = ctx.now()
           const user: Protocol.UserMessage = {

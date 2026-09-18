@@ -47,4 +47,22 @@ describe("Ids", () => {
   it("pads a short message body so the key still sorts", () => {
     expect(Ids.part("msg_ab", { frame: 0, slot: 0, ordinal: 0 })).toBe(`prt_ab${"0".repeat(24)}`)
   })
+
+  it("derives the answer's id from the prompt's, right after it", () => {
+    const user = "msg_0000000000010000000000000u"
+    const answer = Ids.reply(user)
+    expect(answer).toBe("msg_0000000000010000000000000v")
+    expect(answer > user).toBe(true)
+    expect(Ids.reply(user)).toBe(answer)
+    // The two share a time head, so the part id carries the tail too.
+    const key = { frame: 0, slot: 0, ordinal: 0 }
+    expect(Ids.part(user, key)).not.toBe(Ids.part(answer, key))
+    expect(Ids.part(user, key)).toBe("prt_0000000000010000000000000u")
+    expect(Ids.part(answer, key)).toBe("prt_0000000000010000000000000v")
+    // A full tail carries; a tail with nothing left to add falls back to a fresh id.
+    expect(Ids.reply("msg_000000000001000000000000zz")).toBe("msg_00000000000100000000000100")
+    const fresh = Ids.reply("msg_000000000001zzzzzzzzzzzzzz")
+    expect(Ids.isKind("message", fresh)).toBe(true)
+    expect(fresh).not.toBe("msg_000000000001zzzzzzzzzzzzzz")
+  })
 })

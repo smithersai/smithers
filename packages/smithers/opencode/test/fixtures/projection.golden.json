@@ -23,7 +23,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "part": {
-        "id": "prt_00000000100100000000000000",
+        "id": "prt_0000000010010000000000000a",
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010010000000000000a",
         "type": "text",
@@ -115,7 +115,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000000000000",
+        "id": "prt_0000000010020000000000000b",
         "type": "step-start"
       },
       "time": 1002
@@ -128,7 +128,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000100000000",
+        "id": "prt_0000000010020000010000000b",
         "type": "reasoning",
         "text": "",
         "time": {
@@ -143,7 +143,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "I'll "
     }
@@ -153,7 +153,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "read "
     }
@@ -163,7 +163,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "package.json "
     }
@@ -173,7 +173,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "and "
     }
@@ -183,7 +183,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "list "
     }
@@ -193,7 +193,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "the "
     }
@@ -203,7 +203,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "directory "
     }
@@ -213,7 +213,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "first.\n"
     }
@@ -223,7 +223,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "\n"
     }
@@ -269,7 +269,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000100000000",
+        "id": "prt_0000000010020000010000000b",
         "type": "reasoning",
         "text": "I'll read package.json and list the directory first.",
         "time": {
@@ -287,7 +287,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000200000000",
+        "id": "prt_0000000010020000020000000b",
         "type": "tool",
         "callID": "cell_0_9265220e",
         "tool": "cell",
@@ -313,7 +313,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000000000",
+        "id": "prt_0000000010020000100000000b",
         "type": "tool",
         "callID": "call_0_9265220e_0",
         "tool": "read",
@@ -338,7 +338,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000000000",
+        "id": "prt_0000000010020000100000000b",
         "type": "tool",
         "callID": "call_0_9265220e_0",
         "tool": "read",
@@ -370,7 +370,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000010000",
+        "id": "prt_0000000010020000100001000b",
         "type": "tool",
         "callID": "call_0_9265220e_1",
         "tool": "list",
@@ -395,7 +395,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000010000",
+        "id": "prt_0000000010020000100001000b",
         "type": "tool",
         "callID": "call_0_9265220e_1",
         "tool": "list",
@@ -442,7 +442,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000020000",
+        "id": "prt_0000000010020000100002000b",
         "type": "tool",
         "callID": "call_0_9265220e_2",
         "tool": "classify",
@@ -469,7 +469,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000020000",
+        "id": "prt_0000000010020000100002000b",
         "type": "tool",
         "callID": "call_0_9265220e_2",
         "tool": "classify",
@@ -562,7 +562,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000200000000",
+        "id": "prt_0000000010020000020000000b",
         "type": "tool",
         "callID": "cell_0_9265220e",
         "tool": "cell",
@@ -595,7 +595,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020001e000000000",
+        "id": "prt_0000000010020001e00000000b",
         "type": "tool",
         "callID": "demand_1_0",
         "tool": "demand",
@@ -621,7 +621,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020000ff00000000",
+        "id": "prt_0000000010020000ff0000000b",
         "type": "step-finish",
         "reason": "tool-calls",
         "cost": 0,
@@ -645,7 +645,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010000000000",
+        "id": "prt_0000000010020001000000000b",
         "type": "step-start"
       },
       "time": 1020
@@ -658,7 +658,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010100000000",
+        "id": "prt_0000000010020001010000000b",
         "type": "reasoning",
         "text": "",
         "time": {
@@ -673,7 +673,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "The "
     }
@@ -683,7 +683,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "read-only "
     }
@@ -693,7 +693,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "cap "
     }
@@ -703,7 +703,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "asks "
     }
@@ -713,7 +713,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "for "
     }
@@ -723,7 +723,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "an "
     }
@@ -733,7 +733,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "action, "
     }
@@ -743,7 +743,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "so "
     }
@@ -753,7 +753,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "I'll "
     }
@@ -763,7 +763,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "run "
     }
@@ -773,7 +773,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "the "
     }
@@ -783,7 +783,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "command "
     }
@@ -793,7 +793,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "and "
     }
@@ -803,7 +803,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "answer.\n"
     }
@@ -813,7 +813,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "\n"
     }
@@ -859,7 +859,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010100000000",
+        "id": "prt_0000000010020001010000000b",
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
@@ -877,7 +877,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010200000000",
+        "id": "prt_0000000010020001020000000b",
         "type": "tool",
         "callID": "cell_1_4b3d3727",
         "tool": "cell",
@@ -903,7 +903,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020001e000000000",
+        "id": "prt_0000000010020001e00000000b",
         "type": "tool",
         "callID": "demand_1_0",
         "tool": "demand",
@@ -929,7 +929,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200011000000000",
+        "id": "prt_0000000010020001100000000b",
         "type": "tool",
         "callID": "call_1_4b3d3727_0",
         "tool": "bash",
@@ -980,7 +980,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000000000000",
+        "id": "prt_0000000010020000000000000b",
         "type": "step-start"
       },
       "time": 1028
@@ -993,7 +993,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000100000000",
+        "id": "prt_0000000010020000010000000b",
         "type": "reasoning",
         "text": "",
         "time": {
@@ -1008,7 +1008,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "I'll "
     }
@@ -1018,7 +1018,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "read "
     }
@@ -1028,7 +1028,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "package.json "
     }
@@ -1038,7 +1038,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "and "
     }
@@ -1048,7 +1048,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "list "
     }
@@ -1058,7 +1058,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "the "
     }
@@ -1068,7 +1068,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "directory "
     }
@@ -1078,7 +1078,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "first.\n"
     }
@@ -1088,7 +1088,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200000100000000",
+      "partID": "prt_0000000010020000010000000b",
       "field": "text",
       "delta": "\n"
     }
@@ -1134,7 +1134,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000100000000",
+        "id": "prt_0000000010020000010000000b",
         "type": "reasoning",
         "text": "I'll read package.json and list the directory first.",
         "time": {
@@ -1152,7 +1152,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000200000000",
+        "id": "prt_0000000010020000020000000b",
         "type": "tool",
         "callID": "cell_0_9265220e",
         "tool": "cell",
@@ -1178,7 +1178,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000000000",
+        "id": "prt_0000000010020000100000000b",
         "type": "tool",
         "callID": "call_0_9265220e_0",
         "tool": "read",
@@ -1203,7 +1203,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000000000",
+        "id": "prt_0000000010020000100000000b",
         "type": "tool",
         "callID": "call_0_9265220e_0",
         "tool": "read",
@@ -1235,7 +1235,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000010000",
+        "id": "prt_0000000010020000100001000b",
         "type": "tool",
         "callID": "call_0_9265220e_1",
         "tool": "list",
@@ -1260,7 +1260,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000010000",
+        "id": "prt_0000000010020000100001000b",
         "type": "tool",
         "callID": "call_0_9265220e_1",
         "tool": "list",
@@ -1307,7 +1307,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000020000",
+        "id": "prt_0000000010020000100002000b",
         "type": "tool",
         "callID": "call_0_9265220e_2",
         "tool": "classify",
@@ -1334,7 +1334,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200001000020000",
+        "id": "prt_0000000010020000100002000b",
         "type": "tool",
         "callID": "call_0_9265220e_2",
         "tool": "classify",
@@ -1427,7 +1427,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200000200000000",
+        "id": "prt_0000000010020000020000000b",
         "type": "tool",
         "callID": "cell_0_9265220e",
         "tool": "cell",
@@ -1460,7 +1460,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020001e000000000",
+        "id": "prt_0000000010020001e00000000b",
         "type": "tool",
         "callID": "demand_1_0",
         "tool": "demand",
@@ -1486,7 +1486,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020000ff00000000",
+        "id": "prt_0000000010020000ff0000000b",
         "type": "step-finish",
         "reason": "tool-calls",
         "cost": 0,
@@ -1510,7 +1510,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010000000000",
+        "id": "prt_0000000010020001000000000b",
         "type": "step-start"
       },
       "time": 1046
@@ -1523,7 +1523,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010100000000",
+        "id": "prt_0000000010020001010000000b",
         "type": "reasoning",
         "text": "",
         "time": {
@@ -1538,7 +1538,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "The "
     }
@@ -1548,7 +1548,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "read-only "
     }
@@ -1558,7 +1558,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "cap "
     }
@@ -1568,7 +1568,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "asks "
     }
@@ -1578,7 +1578,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "for "
     }
@@ -1588,7 +1588,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "an "
     }
@@ -1598,7 +1598,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "action, "
     }
@@ -1608,7 +1608,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "so "
     }
@@ -1618,7 +1618,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "I'll "
     }
@@ -1628,7 +1628,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "run "
     }
@@ -1638,7 +1638,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "the "
     }
@@ -1648,7 +1648,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "command "
     }
@@ -1658,7 +1658,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "and "
     }
@@ -1668,7 +1668,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "answer.\n"
     }
@@ -1678,7 +1678,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_00000000100200010100000000",
+      "partID": "prt_0000000010020001010000000b",
       "field": "text",
       "delta": "\n"
     }
@@ -1724,7 +1724,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010100000000",
+        "id": "prt_0000000010020001010000000b",
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
@@ -1742,7 +1742,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010200000000",
+        "id": "prt_0000000010020001020000000b",
         "type": "tool",
         "callID": "cell_1_4b3d3727",
         "tool": "cell",
@@ -1768,7 +1768,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020001e000000000",
+        "id": "prt_0000000010020001e00000000b",
         "type": "tool",
         "callID": "demand_1_0",
         "tool": "demand",
@@ -1794,7 +1794,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200011000000000",
+        "id": "prt_0000000010020001100000000b",
         "type": "tool",
         "callID": "call_1_4b3d3727_0",
         "tool": "bash",
@@ -1819,7 +1819,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200011000000000",
+        "id": "prt_0000000010020001100000000b",
         "type": "tool",
         "callID": "call_1_4b3d3727_0",
         "tool": "bash",
@@ -1860,7 +1860,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_00000000100200010200000000",
+        "id": "prt_0000000010020001020000000b",
         "type": "tool",
         "callID": "cell_1_4b3d3727",
         "tool": "cell",
@@ -1893,7 +1893,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_0000000010020001ff00000000",
+        "id": "prt_0000000010020001ff0000000b",
         "type": "step-finish",
         "reason": "stop",
         "cost": 0,
@@ -1917,7 +1917,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_000000001002ffff0000000000",
+        "id": "prt_000000001002ffff000000000b",
         "type": "text",
         "text": "",
         "time": {
@@ -1932,7 +1932,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_000000001002ffff0000000000",
+      "partID": "prt_000000001002ffff000000000b",
       "field": "text",
       "delta": "The package is "
     }
@@ -1942,7 +1942,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_000000001002ffff0000000000",
+      "partID": "prt_000000001002ffff000000000b",
       "field": "text",
       "delta": "demo-repo 0.1.0; the "
     }
@@ -1952,7 +1952,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_000000001002ffff0000000000",
+      "partID": "prt_000000001002ffff000000000b",
       "field": "text",
       "delta": "directory holds "
     }
@@ -1962,7 +1962,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_000000001002ffff0000000000",
+      "partID": "prt_000000001002ffff000000000b",
       "field": "text",
       "delta": "README.md, package.json "
     }
@@ -1972,7 +1972,7 @@
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
       "messageID": "msg_0000000010020000000000000b",
-      "partID": "prt_000000001002ffff0000000000",
+      "partID": "prt_000000001002ffff000000000b",
       "field": "text",
       "delta": "and src/."
     }
@@ -1984,7 +1984,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_000000001002ffff0000000000",
+        "id": "prt_000000001002ffff000000000b",
         "type": "text",
         "text": "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.",
         "time": {
@@ -2037,7 +2037,7 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
-        "id": "prt_000000001002ffff0100000000",
+        "id": "prt_000000001002ffff010000000b",
         "type": "text",
         "text": "4 frames · 7 calls · 2 classify · Jev 2 calls · 424 ms · $0.0000",
         "synthetic": true,

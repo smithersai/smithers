@@ -101,6 +101,8 @@ export interface Opened {
   readonly model: Protocol.ModelRef
   /** When the assistant message was first created; now, unless a re-opened turn says otherwise. */
   readonly createdAt?: number | undefined
+  /** When the user message was first created; now, unless the prompt is a retry of a stored one. */
+  readonly userCreatedAt?: number | undefined
 }
 
 /**
@@ -841,7 +843,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
     id: opened.userMessageID,
     sessionID: session.id,
     role: "user",
-    time: { created: now },
+    time: { created: opened.userCreatedAt ?? now },
     agent: opened.agent,
     model: opened.model
   }

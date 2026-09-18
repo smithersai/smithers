@@ -94,9 +94,12 @@ export const make = (kind: Kind, timestamp: number = Date.now()): string => {
  * frame projected twice names the same part.
  *
  * The body keeps the message's time head, so parts of a later message sort
- * after parts of an earlier one, and appends the key, so parts of one message
- * sort by the key. The key is `frame`, `slot`, `ordinal`: the frame the part
- * belongs to, its place inside the frame, and its index among siblings.
+ * after parts of an earlier one, appends the key, so parts of one message
+ * sort by the key, and ends with the last four characters of the message's
+ * tail, so two messages that share a head (a prompt and the answer derived
+ * from it by {@link reply}) still name distinct parts. The key is `frame`,
+ * `slot`, `ordinal`: the frame the part belongs to, its place inside the
+ * frame, and its index among siblings.
  *
  * @param messageID the assistant message the part belongs to
  * @param key where the part sits in the message
@@ -112,7 +115,32 @@ export const part = (
   const encoded = key.frame.toString(16).padStart(4, "0") +
     key.slot.toString(16).padStart(2, "0") +
     key.ordinal.toString(16).padStart(4, "0")
-  return `${prefixes.part}_${time}${encoded}${"0".repeat(bodyLength - timeLength - encoded.length)}`
+  const tail = body.slice(timeLength).slice(-(bodyLength - timeLength - encoded.length))
+  return `${prefixes.part}_${time}${encoded}${tail.padStart(bodyLength - timeLength - encoded.length, "0")}`
+}
+
+/**
+ * The id of the assistant message that answers a user message, derived so
+ * a prompt the app retries with the same message id runs the same
+ * execution: the user id's tail plus one, which sorts right after it and
+ * before the next message. A tail with nothing left to add falls back to a
+ * fresh id.
+ *
+ * @param userMessageID the user message the answer replies to
+ * @category constructors
+ * @since 1.0.0
+ */
+export const reply = (userMessageID: string): string => {
+  const chars = userMessageID.slice(userMessageID.indexOf("_") + 1).split("")
+  for (let index = chars.length - 1; index >= timeLength; index--) {
+    const at = alphabet.indexOf(chars[index]!)
+    if (at < alphabet.length - 1) {
+      chars[index] = alphabet[at + 1]!
+      return `${prefixes.message}_${chars.join("")}`
+    }
+    chars[index] = alphabet[0]!
+  }
+  return make("message")
 }
 
 /**

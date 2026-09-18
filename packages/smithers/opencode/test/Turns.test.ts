@@ -8,6 +8,7 @@ import * as DemoScript from "../src/DemoScript.ts"
 import * as Driver from "../src/Driver.ts"
 import * as Events from "../src/Events.ts"
 import * as Health from "../src/Health.ts"
+import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as ScriptedDriver from "../src/ScriptedDriver.ts"
 import * as Store from "../src/Store.ts"
@@ -266,6 +267,72 @@ describe("Turns", () => {
       )
     )
     expect(refused).toEqual({ started: 1, status: {} })
+  })
+
+  it("takes a retried prompt once: answered, busy, or lost, it never runs twice", async () => {
+    const steers: Array<string> = []
+    const starts: Array<Driver.StartInput> = []
+    const sinks: Array<Driver.Sink> = []
+    const driver = Layer.succeed(Driver.Driver, {
+      start: (input, sink) =>
+        Effect.sync(() => {
+          starts.push(input)
+          sinks.push(sink)
+        }),
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: (_session, text) =>
+        Effect.sync(() => {
+          steers.push(text)
+          return true
+        }),
+      resumeOnBoot: () => Effect.void
+    })
+    const user = "msg_0000000000020000000000000u"
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_retry"))
+        const prompt = (text: string, messageID = user) =>
+          turns.prompt({ sessionID: "ses_retry", messageID, parts: [{ type: "text", text }] })
+        yield* prompt("first")
+        // Retried while the turn runs: not stored again, not steered.
+        yield* prompt("first")
+        const during = yield* store.listMessages("ses_retry")
+        // A different prompt while busy is steered; its retry is not.
+        yield* prompt("more", "msg_0000000000030000000000000u")
+        yield* prompt("more", "msg_0000000000030000000000000u")
+        yield* Effect.sleep("30 millis")
+        yield* sinks[0]!.closed({ _tag: "completed" })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(turns.status(), (s) => s["ses_retry"] === undefined)))
+        )
+        // Retried after the answer: nothing runs.
+        const answered = yield* store.listMessages("ses_retry")
+        yield* prompt("first")
+        yield* Effect.sleep("30 millis")
+        const after = yield* store.listMessages("ses_retry")
+        // The steered prompt's answer was lost (idle, no finish): its retry runs the same execution.
+        yield* prompt("more", "msg_0000000000030000000000000u")
+        yield* Effect.promise(() => until(async () => starts.length === 2))
+        const reopened = yield* store.listMessages("ses_retry")
+        return { during, answered, after, reopened, status: yield* turns.status() }
+      }).pipe(Effect.provide(stack(driver, "turns-retry")))
+    )
+    expect(result.during.map((m) => m.info.id)).toEqual([user, Ids.reply(user)])
+    expect(steers).toEqual(["more"])
+    expect(result.answered.map((m) => m.info.role)).toEqual(["user", "assistant", "user"])
+    expect(result.after.map((m) => m.info.id)).toEqual(result.answered.map((m) => m.info.id))
+    expect(result.after[0]!.info.time.created).toBe(result.answered[0]!.info.time.created)
+    expect(starts.map((input) => input.messageID)).toEqual([
+      Ids.reply(user),
+      Ids.reply("msg_0000000000030000000000000u")
+    ])
+    expect(starts[1]!.history).toBe("Person: first")
+    expect(result.reopened.map((m) => m.info.role)).toEqual(["user", "assistant", "user", "assistant"])
+    expect(result.reopened[2]!.info.time.created).toBe(result.answered[2]!.info.time.created)
+    expect(result.status).toEqual({ ses_retry: { type: "busy" } })
   })
 
   it("closes an open turn on abort even when the driver has nothing to interrupt", async () => {
