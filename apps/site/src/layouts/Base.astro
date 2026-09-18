@@ -1,4 +1,5 @@
 ---
+import { Font } from "astro:assets"
 import "../styles/site.css"
 import "../styles/navigation.css"
 interface Props {
@@ -28,12 +29,11 @@ const { title, description, header = true, footer = true } = Astro.props
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-    />
+    {/* Self-hosted, inlined @font-face rules. Only the regular latin face of
+        each family is preloaded: those are the ones the landing page paints
+        first, and preloading the rest would compete with them. */}
+    <Font cssVariable="--font-inter" preload={[{ weight: 400, style: "normal", subset: "latin" }]} />
+    <Font cssVariable="--font-plex-mono" preload={[{ weight: 400, style: "normal", subset: "latin" }]} />
   </head>
   <body>
     {header && (

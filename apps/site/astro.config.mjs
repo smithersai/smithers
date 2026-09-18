@@ -2,7 +2,7 @@
 import react from "@astrojs/react"
 import starlight from "@astrojs/starlight"
 import tailwindcss from "@tailwindcss/vite"
-import { defineConfig } from "astro/config"
+import { defineConfig, fontProviders } from "astro/config"
 import { fileURLToPath } from "node:url"
 import { buildStamp } from "./scripts/build-stamp-integration.ts"
 import project from "./src/data/project.json" with { type: "json" }
@@ -33,6 +33,29 @@ export default defineConfig({
   output: "static",
   prefetch: { defaultStrategy: "hover" },
   experimental: { clientPrerender: true },
+  // Inter and IBM Plex Mono are the product UI's pairing. Astro downloads them
+  // at build time and serves them from /_astro/fonts, so no page waits on a
+  // cross-origin Google Fonts stylesheet. Each family names a generic family
+  // last, which makes Astro generate a metric-adjusted local fallback; that is
+  // what keeps the ASCII wordmark from reflowing when the real face swaps in.
+  fonts: [
+    {
+      provider: fontProviders.google(),
+      name: "Inter",
+      cssVariable: "--font-inter",
+      weights: [400, 500, 600, 700],
+      fallbacks: ["ui-sans-serif", "system-ui", "sans-serif"],
+      display: "swap"
+    },
+    {
+      provider: fontProviders.google(),
+      name: "IBM Plex Mono",
+      cssVariable: "--font-plex-mono",
+      weights: [400, 500, 600],
+      fallbacks: ["ui-monospace", "monospace"],
+      display: "swap"
+    }
+  ],
   vite: {
     server: {
       // Start Here imports these lazily; a cold dev server otherwise compiles the graph on the first press.
@@ -71,7 +94,11 @@ export default defineConfig({
     build: {
       // Milkdown ships one indivisible 818 kB module behind the World editor's
       // dynamic import; keep the size warning meaningful for every other chunk.
-      chunkSizeWarningLimit: 900
+      chunkSizeWarningLimit: 900,
+      // The home page's stylesheet is about 7.5 kB, over Vite's 4 kB default;
+      // raising the limit lets `build.inlineStylesheets: "auto"` inline it and
+      // removes the last render-blocking request on `/`.
+      assetsInlineLimit: 8192
     }
   },
   integrations: [
