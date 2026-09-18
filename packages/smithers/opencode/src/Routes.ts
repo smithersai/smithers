@@ -502,6 +502,7 @@ export const layer = (
               const input = yield* body(request)
               const parts = Array.isArray(input["parts"])
                 ? input["parts"].filter(isRecord).map((part) => ({
+                  id: typeof part["id"] === "string" ? part["id"] : undefined,
                   type: typeof part["type"] === "string" ? part["type"] : "",
                   text: typeof part["text"] === "string" ? part["text"] : undefined
                 }))

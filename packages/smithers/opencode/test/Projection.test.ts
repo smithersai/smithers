@@ -40,6 +40,7 @@ const clock = () => {
 const opened = (): Projection.Opened => ({
   session,
   userMessageID,
+  userPartID: Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 }),
   assistantMessageID,
   prompt: "Read package.json and tell me the name field.",
   agent: "smithers",

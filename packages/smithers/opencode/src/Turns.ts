@@ -46,7 +46,10 @@ export interface PromptInput {
   readonly messageID?: string | undefined
   readonly agent?: string | undefined
   readonly model?: Protocol.ModelRef | undefined
-  readonly parts: ReadonlyArray<{ readonly type: string; readonly text?: string | undefined }>
+  /** The parts as sent; a text part's `id` is echoed back so the app confirms the part it already shows. */
+  readonly parts: ReadonlyArray<
+    { readonly id?: string | undefined; readonly type: string; readonly text?: string | undefined }
+  >
 }
 
 /**
@@ -139,6 +142,18 @@ export class Turns extends Context.Service<Turns, Service>()("@smthrs/opencode/T
  */
 export const promptText = (parts: PromptInput["parts"]): string =>
   parts.flatMap((part) => part.type === "text" && typeof part.text === "string" ? [part.text] : []).join("\n")
+
+/**
+ * The id of the user message's text part: the id the app sent with its
+ * first text part, so the optimistic part it already shows is confirmed
+ * rather than doubled, else one derived from the message.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const userPartID = (userMessageID: string, parts: PromptInput["parts"]): string =>
+  parts.find((part) => part.type === "text" && typeof part.id === "string")?.id ??
+    Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 })
 
 /**
  * Builds the composition.
@@ -300,6 +315,7 @@ export const make = (
     const open = (
       session: Protocol.Session,
       userMessageID: string,
+      partID: string,
       text: string,
       agent: string,
       model: Protocol.ModelRef
@@ -312,7 +328,15 @@ export const make = (
         yield* commit({
           _tag: "open",
           sessionID: session.id,
-          step: Projection.open(ctx, { session, userMessageID, assistantMessageID, prompt: text, agent, model })
+          step: Projection.open(ctx, {
+            session,
+            userMessageID,
+            userPartID: partID,
+            assistantMessageID,
+            prompt: text,
+            agent,
+            model
+          })
         })
         const sink = sinkFor(session.id)
         yield* Effect.forkDetach(
@@ -338,6 +362,7 @@ export const make = (
     const steerOrOpen = (
       session: Protocol.Session,
       userMessageID: string,
+      partID: string,
       text: string,
       agent: string,
       model: Protocol.ModelRef
@@ -345,7 +370,7 @@ export const make = (
       Effect.gen(function*() {
         if (yield* driver.steer(session.id, text)) return
         while (states.has(session.id)) yield* Effect.sleep(steerRetryDelay)
-        yield* open(session, userMessageID, text, agent, model)
+        yield* open(session, userMessageID, partID, text, agent, model)
       })
 
     const prompt: Service["prompt"] = (input) =>
@@ -359,6 +384,7 @@ export const make = (
           return yield* new TurnsError({ code: "empty_prompt", message: "The prompt has no text" })
         }
         const userMessageID = input.messageID ?? Ids.make("message")
+        const partID = userPartID(userMessageID, input.parts)
         const agent = input.agent ?? options.agent
         const model = input.model ?? options.model
         if (states.has(input.sessionID)) {
@@ -381,7 +407,7 @@ export const make = (
                 properties: {
                   sessionID: input.sessionID,
                   part: {
-                    id: Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 }),
+                    id: partID,
                     sessionID: input.sessionID,
                     messageID: userMessageID,
                     type: "text",
@@ -396,14 +422,14 @@ export const make = (
           // the frame's own transaction, and the app expects the prompt route
           // to answer at once.
           yield* Effect.forkIn(
-            steerOrOpen(session.value, userMessageID, text, agent, model).pipe(
+            steerOrOpen(session.value, userMessageID, partID, text, agent, model).pipe(
               Effect.catchCause((cause) => Effect.logError({ message: "The prompt could not open a turn", cause }))
             ),
             scope
           )
           return
         }
-        yield* open(session.value, userMessageID, text, agent, model)
+        yield* open(session.value, userMessageID, partID, text, agent, model)
       })
 
     /**
@@ -466,12 +492,14 @@ export const make = (
         const assistant = Option.isSome(header) && header.value.role === "assistant" ? header.value : undefined
         if (assistant?.finish !== undefined) return inert
         if (!states.has(input.sessionID)) {
+          const userMessageID = assistant?.parentID ?? Ids.make("message")
           yield* commit({
             _tag: "open",
             sessionID: input.sessionID,
             step: Projection.open(ctx, {
               session: session.value,
-              userMessageID: assistant?.parentID ?? Ids.make("message"),
+              userMessageID,
+              userPartID: userPartID(userMessageID, []),
               assistantMessageID: input.messageID,
               prompt: input.prompt,
               agent: input.agent ?? options.agent,

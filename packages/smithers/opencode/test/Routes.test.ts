@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Driver from "../src/Driver.ts"
+import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Routes from "../src/Routes.ts"
 import * as Serve from "../src/Serve.ts"
@@ -307,6 +308,19 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(types.filter((type) => type === "session.status").length).toBeGreaterThanOrEqual(2)
     const history = (await sdk.session.messages({ path: { id: session.id }, query: { limit: 20 } })).data!
     expect(history.map((item: { info: Message }) => item.info.role)).toEqual(["user", "assistant", "user"])
+    // The app's own part id comes back on the stream and in the history, so
+    // its optimistic part is confirmed; a prompt sent without one gets a
+    // derived id.
+    expect(history[0]!.parts.map((part: Part) => part.id)).toEqual(["prt_0000000000010000000000000u"])
+    expect(
+      seen.some((event) =>
+        event.type === "message.part.updated" &&
+        (event.properties["part"] as Part).id === "prt_0000000000010000000000000u"
+      )
+    ).toBe(true)
+    expect(history[2]!.parts.map((part: Part) => part.id)).toEqual([
+      Ids.part(history[2]!.info.id, { frame: 0, slot: 0, ordinal: 0 })
+    ])
     const assistant = history[1]!
     expect(assistant.info).toMatchObject({
       role: "assistant",

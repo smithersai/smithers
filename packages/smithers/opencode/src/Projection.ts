@@ -93,6 +93,8 @@ export const costOf = (tokens: Protocol.Tokens, pricing: Pricing | undefined): n
 export interface Opened {
   readonly session: Protocol.Session
   readonly userMessageID: string
+  /** The id of the user message's text part: the app's own when it sent one, so its optimistic part is confirmed. */
+  readonly userPartID: string
   readonly assistantMessageID: string
   readonly prompt: string
   readonly agent: string
@@ -844,7 +846,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
     model: opened.model
   }
   const userText: Protocol.TextPart = {
-    id: Ids.part(opened.userMessageID, { frame: 0, slot: 0, ordinal: 0 }),
+    id: opened.userPartID,
     sessionID: session.id,
     messageID: opened.userMessageID,
     type: "text",
