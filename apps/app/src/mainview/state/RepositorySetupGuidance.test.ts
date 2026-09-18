@@ -14,7 +14,7 @@ import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionSt
 import { memoryStorage, recordingAgent, scriptedToolAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const id = "setup:maintainer:example%2Frepo:issues"
-const setupNames = ["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.retry"]
+const setupNames = ["setup.guide", "setup.configure", "setup.view", "setup.work", "setup.run", "setup.discard", "setup.retry"]
 const QUESTION = "Keep issue research, duplicate lookup and bug reproduction automatic?"
 const CHOICES = ["Keep them automatic", "Ask me before each one runs", "Turn them off"]
 

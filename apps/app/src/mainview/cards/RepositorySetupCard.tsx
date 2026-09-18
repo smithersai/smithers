@@ -46,6 +46,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const selected = draft.steps.find(step => step.id === state.selectedStep) ?? draft.steps[0]
   const gate = [...((state.job === "issues" || state.job === "review") && draft.replies !== "draft" ? ["Choose draft replies."] : []), ...setupActivationProblems(state)]
   const activeMatches = owned && !unknown && state.active?.enabled && state.active.revision === state.revision && state.active.digest === setupCandidate(state)
+  const drafted = owned && !unknown && state.active?.enabled === true && state.active.draft !== undefined && !activeMatches
   const schedule = state.job === "chores" && !unknown && state.active?.enabled && state.active.schedule?.expression === draft.schedule
     && Date.parse(state.active.schedule.nextFireAt) > Date.now() ? state.active.schedule : undefined
   const manual = state.manualDraft
@@ -150,6 +151,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
       {preview ? <button type="button" onClick={() => onRunCommand("auth.prompt")}>Sign in</button> : practice ? <button type="button" onClick={() => onRunCommand("repo.choose")}>Choose repository</button> : <>
         {pending && <span>{recovering ? "Requested" : receipt?.phase === "waiting" ? "Waiting" : receipt?.phase === "running" ? "Running" : receipt?.phase === "queued" ? "Queued" : "Requested"}</span>}
         {owned && !unknown && state.active?.enabled && <button type="button" disabled={pending} onClick={() => run("pause")}>Pause</button>}
+        {drafted && <button type="button" disabled={pending} onClick={() => onRunCommand("setup.discard", card.id)}>Discard draft</button>}
         <button type="button" disabled={pending || unknown || !owned || gate.length > 0 || (state.active?.enabled && state.active.revision === state.revision)} onClick={() => run("apply")}>{state.active?.enabled ? labels.update : labels.enable}</button>
         {gate.length > 0 && <span className="setup-gate">{gate[0]}</span>}
       </>}

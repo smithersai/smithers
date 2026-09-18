@@ -433,3 +433,45 @@ test("a settled refusal the person must answer reads as the host's sentence, not
     expect(t.host.querySelector(".setup-error p")?.textContent).toBe("The workspace behind this setup is gone.")
   } finally { t.close() }
 })
+
+/*
+ * Production, .artifacts/mvp-canary-walk-20260917/C-REPORT.md defect C-3: the
+ * feature registration stayed enabled at revision 6 while the draft sat at
+ * revision 11 behind a required command check whose trial kept failing. The
+ * run gate refused the enabled job's manual work for the life of that draft
+ * and `C-31-trial-retry.json` `buttonsBefore` held no way back.
+ */
+test("an enabled job keeps its applied configuration one click away from an unappliable draft", () => {
+  const card = makeCard("feature")
+  const applied = card.payload.draft
+  card.payload.revision = 6
+  card.payload.active = { revision: 6, digest: setupCandidate(card.payload), registrationId: "259ef97c", sourceRevision: "fb8c7b08", enabled: true, draft: applied }
+  card.payload.revision = 11
+  card.payload.draft = { ...applied, checks: [{ id: "hello", name: "Repository check", kind: "command", rule: "test -f docs/nested/hello.txt", paths: ["docs/nested/hello.txt"], policy: "required" }] }
+  card.payload.view = "work"
+  card.payload.manualDraft = { stepId: "feature", prompt: "Add the greeting", source: "github" }
+  const t = mount(card)
+  try {
+    expect(t.button("Build a feature")?.disabled).toBe(true)
+    expect(t.host.textContent).toContain("Test and apply this draft first.")
+    t.button("Discard draft")!.click()
+    expect(t.calls).toEqual([["setup.discard", card.id]])
+    card.payload.revision = 6
+    card.payload.draft = applied
+    t.render(card)
+    expect(t.button("Discard draft")).toBeUndefined()
+    expect(t.button("Build a feature")?.disabled).toBe(false)
+    expect(t.host.textContent).not.toContain("Test and apply this draft first.")
+    card.payload.revision = 11
+    card.payload.active = { ...card.payload.active, enabled: false }
+    t.render(card)
+    expect(t.button("Discard draft")).toBeUndefined()
+    card.payload.active = { ...card.payload.active, enabled: true, owned: false }
+    t.render(card)
+    expect(t.button("Discard draft")).toBeUndefined()
+    card.payload.active = { ...card.payload.active, owned: true, draft: undefined }
+    t.render(card)
+    expect(t.button("Discard draft")).toBeUndefined()
+    expect(t.calls).toHaveLength(1)
+  } finally { t.close() }
+})

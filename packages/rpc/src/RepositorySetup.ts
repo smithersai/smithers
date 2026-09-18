@@ -119,7 +119,7 @@ export const RepositorySetupSchema = z.object({
   request: SetupRequestSchema.optional(), evaluation: SetupReceiptSchema.optional(), trial: SetupReceiptSchema.optional(),
   receipt: SetupReceiptSchema.optional(),
   previousReceipts: z.array(SetupReceiptSchema).max(50).default([]),
-  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean().optional(), schedule: SetupScheduleSchema.optional() }).optional(),
+  active: z.object({ revision: z.number().int().positive(), digest: z.string().min(1), registrationId: z.string().min(1), sourceRevision: z.string().min(1), enabled: z.boolean(), owned: z.boolean().optional(), draft: SetupDraftSchema.optional(), schedule: SetupScheduleSchema.optional() }).optional(),
   recovery: z.object({ id: z.string().min(1), baseRevision: z.number().int().positive(), baseDigest: z.string(),
     adoptDraft: z.boolean().optional(),
     state: z.enum(["requested", "completed", "failed"]), registrationState: z.enum(["unknown", "known", "unavailable"]),
@@ -232,6 +232,15 @@ export function editSetup(setup: RepositorySetup, draft: SetupDraft): Repository
   return { ...preserved, revision: current.revision + 1, draft: parsed,
     ...(_request?.observeOnly && (!current.receipt || !terminalReceipt(current.receipt)) ? { request: _request, ...(_receipt ? { receipt: _receipt } : {}) } : {}),
     previousReceipts: rememberReceipts([...current.previousReceipts, ...availableReceipts(current)]) }
+}
+
+/** Return the candidate to the enabled registration's own recorded
+ * configuration. Its revision comes back with its draft, because the revision
+ * is part of the candidate digest the run gate compares. @since 1.0.0 */
+export function discardSetupDraft(setup: RepositorySetup): RepositorySetup {
+  const active = setup.active
+  if (!active?.draft) return setup
+  return { ...editSetup(setup, active.draft), revision: active.revision }
 }
 
 /** The host acknowledges an inspection or a durable execution request. @since 1.0.0 */

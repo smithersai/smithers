@@ -267,6 +267,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "setup.work": args => setupObject(args),
   "setup.run": args => setupObject(args),
   "setup.retry": args => required("cardId", args, "Choose the setup to retry"),
+  "setup.discard": args => required("cardId", args, "Choose the setup whose draft to discard"),
   "appearance.theme": (args) => ok({ palette: args ?? "" }),
   "chat.send": (args) => required("text", args, "send needs the text to submit"),
   "chat.clear": (args) => trimmed(args) === "" ? NONE : trimmed(args) === "--summarize"

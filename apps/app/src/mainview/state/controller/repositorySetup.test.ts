@@ -1434,3 +1434,103 @@ test("the toast a settled refusal recovered after a reload states the host's sen
     expect(toasts.map(toast => toast.detail)).toEqual([REFUSAL])
   } finally { gate.release(); await t.close() }
 })
+
+/*
+ * Defect C-3 (.artifacts/mvp-canary-walk-20260917/C-REPORT.md): one required
+ * command check whose trial kept failing left the feature job enabled at
+ * revision 6 with the draft at revision 11, and manual work refused for the
+ * life of that draft. The run gate is the product's own rule — `setup.run`
+ * with operation `run` "requires an active revision/digest match"
+ * (docs/mvp/ENGINEERING.md) — so the way back is returning the candidate to
+ * the registration's own configuration.
+ */
+test("discarding a draft returns the candidate to the enabled registration and unfreezes manual work", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", body.manual ? "run" : "apply").json()
+    return Response.json({ ...value, receipt: { ...value.receipt, registrationId: "active-1", sourceRevision: "commit-1",
+      ...(body.manual ? { jobRunId: "actual-job-run" } : {}) } })
+  })
+  const manual = { stepId: "fix", prompt: "Fix the underlying cause", subject: { source: "github", kind: "issue", number: 42 } } as const
+  try {
+    const card = t.store.collections.cards.get("setup")!
+    const payload = { ...t.state(), draft: { ...t.state().draft,
+      cases: [{ id: "case", name: "A known bug", input: "a recorded bug", expected: "A reproduction", required: true }] } }
+    const digest = setupCandidate(payload)
+    const proof = { runId: "prior-run", revision: payload.revision, digest, phase: "completed" as const, updatedAt: 1,
+      results: [{ caseId: "case", status: "passed" as const, observed: "A reproduction", evidence: ["test:case"], executionId: "eval-case" }],
+      evidence: ["artifact:prior-results"], sourceRevision: "commit-1" }
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, kind: "repository-setup", payload: { ...payload,
+      evaluation: { ...proof, requestId: "eval-1", operation: "evaluate" },
+      trial: { ...proof, requestId: "trial-1", operation: "trial", trialIssue: { source: "smithers-cloud", number: 59 } }
+    } } }).isPersisted.promise
+    await t.setup.runRepositorySetup("setup", "apply"); await Promise.all(t.background)
+    expect(t.state().active).toEqual({ revision: payload.revision, digest, registrationId: "active-1",
+      sourceRevision: "commit-1", enabled: true, draft: payload.draft })
+    const applied = t.state().active!
+    await t.setup.configureRepositorySetup("setup", "checks", [{ id: "hello", name: "Repository check", kind: "command",
+      rule: "test -f docs/nested/hello.txt", paths: ["docs/nested/hello.txt"], policy: "required" }])
+    await t.setup.configureRepositorySetup("setup", "budgetMinutes", 30)
+    expect(t.state().revision).toBe(applied.revision + 2)
+    expect(await t.setup.runRepositorySetup("setup", "run", manual)).toBe("Test and apply this draft before running work.")
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toEqual({ value: "Draft discarded." })
+    expect(t.state().revision).toBe(applied.revision)
+    expect(t.state().draft).toEqual(applied.draft!)
+    expect(setupCandidate(t.state())).toBe(applied.digest)
+    expect(t.state().active).toEqual(applied)
+    expect(t.state().evaluation).toBeUndefined()
+    expect(t.state().trial).toBeUndefined()
+    expect(t.state().previousReceipts.map(receipt => receipt.requestId)).toContain("trial-1")
+    await t.setup.runRepositorySetup("setup", "run", manual); await Promise.all(t.background)
+    expect(t.state().request?.state).toBe("completed")
+    expect(t.calls.map(call => [call.body.revision, call.body.digest]))
+      .toEqual([[applied.revision, applied.digest], [applied.revision, applied.digest]])
+    const storage = t.storage
+    await t.close()
+    const again = await fixture(async body => response(body), storage)
+    try {
+      expect(again.state().revision).toBe(applied.revision)
+      expect(again.state().draft).toEqual(applied.draft!)
+    } finally { await again.close() }
+  } finally { await t.close() }
+})
+
+test("a discard needs this account's own enabled registration and the configuration it recorded", async () => {
+  const t = await fixture(async body => response(body))
+  try {
+    expect(await t.setup.discardRepositorySetupDraft("absent")).toBe("Open the setup first.")
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toBe("This setup is not enabled.")
+    const active = { revision: 1, digest: setupCandidate(t.state()), registrationId: "active-1", sourceRevision: "commit-1",
+      enabled: true, owned: false, draft: t.state().draft }
+    const seed = async (payload: Partial<RepositorySetup>) => {
+      const card = t.store.collections.cards.get("setup")!
+      await t.store.dispatch({ type: "card.upsert", actor: "system",
+        card: { ...card, kind: "repository-setup", payload: { ...t.state(), ...payload } } }).isPersisted.promise
+    }
+    await seed({ active })
+    await t.setup.configureRepositorySetup("setup", "budgetMinutes", 30)
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toBe("This registration belongs to another maintainer.")
+    await seed({ active: { ...active, owned: true, draft: undefined } })
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toEqual({ value: "Handle issues requested." })
+    expect(t.state().recovery?.state).toBe("requested")
+    await Promise.all(t.background)
+    await seed({ revision: 1, draft: active.draft, active: { ...active, owned: true }, recovery: undefined })
+    expect(setupCandidate(t.state())).toBe(active.digest)
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toEqual({ value: "Keeping the current setup." })
+    expect(t.state().revision).toBe(1)
+    expect(t.calls).toEqual([])
+  } finally { await t.close() }
+})
+
+test("recovery records the enabled registration's own configuration so the way back survives a reload", () => {
+  const initial = initialSetup("example/repo", "issues", "maintainer")
+  const current: RepositorySetup = { ...initial, revision: 3, draft: { ...initial.draft, budgetMinutes: 30 },
+    recovery: { id: "recover", baseRevision: 3, baseDigest: "stale", state: "requested", registrationState: "unknown" } }
+  const policy = { registrationId: "active-1", workspaceId, revision: 1, digest: setupCandidate(initial),
+    sourceRevision: "commit-1", enabled: true, owned: true, draft: initial.draft }
+  const recovered: SetupRecoveryResponse = { owner: "maintainer", repo: initial.repo, job: initial.job,
+    registration: { state: "known", active: policy }, setup: { state: "none" } }
+  const projected = projectRecoveredSetup(current, recovered)
+  expect(projected.revision).toBe(3)
+  expect(projected.active?.draft).toEqual(initial.draft)
+  expect(setupCandidate({ ...projected, revision: policy.revision, draft: projected.active!.draft! })).toBe(policy.digest)
+})

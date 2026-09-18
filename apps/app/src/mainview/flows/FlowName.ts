@@ -222,6 +222,7 @@ export const FLOW_NAMES = [
   "secrets.list",
   "setup.ask",
   "setup.configure",
+  "setup.discard",
   "setup.guide",
   "setup.retry",
   "setup.run",

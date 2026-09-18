@@ -1,7 +1,7 @@
 import type { AgentRuntimeSetupDraft } from "@smthrs/rpc/AgentContext"
 import {
   REPOSITORY_JOB_TITLES, REPOSITORY_SETUP_API, RepositoryJobSchema, SetupDraftSchema,
-  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
+  SetupHostInputSchema, SetupOperationResponseSchema, SetupRecoveryResponseSchema, archiveReplacedSetupReceipt, discardSetupDraft, editSetup, initialSetup, reconcileSetupHistory, setupActivationProblems, setupCandidate,
   type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
 import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
@@ -27,6 +27,8 @@ export interface RepositorySetupController {
   readonly viewRepositorySetup: (cardId: string, view: RepositorySetup["view"], step?: string) => Result
   readonly prepareRepositoryWork: (cardId: string, stepId: string, field?: "prompt" | "source" | "number", value?: unknown) => Result
   readonly runRepositorySetup: (cardId: string, operation: Operation, manual?: SetupManualRequest) => Result
+  /** Return the candidate to the enabled registration's configuration. */
+  readonly discardRepositorySetupDraft: (cardId: string) => Result
   readonly retryRepositorySetup: (cardId: string) => Result
   readonly guideRepositorySetup: (cardId: string) => Result
   readonly resumeRepositorySetups: () => void
@@ -175,7 +177,7 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
   if (registration.state === "known") {
     const active = registration.active
     next.active = active ? { revision: active.revision, digest: active.digest, registrationId: active.registrationId,
-      sourceRevision: active.sourceRevision, enabled: active.enabled, owned: active.owned,
+      sourceRevision: active.sourceRevision, enabled: active.enabled, owned: active.owned, draft: active.draft,
       ...(active.enabled && active.schedule ? { schedule: active.schedule } : {}) } : undefined
     if (active && next.revision <= active.revision && (!active.enabled || setupCandidate(next) !== active.digest)) {
       const { evaluation, trial, ...rest } = next
@@ -452,7 +454,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
             previousReceipts: [...next.previousReceipts.filter(item => item.requestId !== receipt.requestId), receipt].slice(-50) }
           if (receipt.phase === "completed" && intent.operation === "apply" && !observing()) {
             if (!receipt.registrationId || !receipt.sourceRevision || !receipt.evidence.length) throw Error("The host did not confirm the saved workflow and active registration.")
-            next = { ...next, active: { revision: intent.revision, digest: intent.digest, registrationId: receipt.registrationId, sourceRevision: receipt.sourceRevision, enabled: true } }
+            next = { ...next, active: { revision: intent.revision, digest: intent.digest, registrationId: receipt.registrationId, sourceRevision: receipt.sourceRevision, enabled: true, draft: latest.payload.draft } }
           }
           if (receipt.phase === "completed" && intent.operation === "pause" && !observing()) {
             if (!next.active || receipt.registrationId !== next.active.registrationId || !receipt.evidence.length) throw Error("The host did not confirm that this registration paused.")
@@ -731,6 +733,28 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       return { value: "Work request updated." }
     }),
     runRepositorySetup,
+    /*
+     * The way back from a draft that cannot pass its trial. Manual work on an
+     * enabled job requires an active revision/digest match (ENGINEERING.md;
+     * the host refuses a dispatch that does not "retain the exact active
+     * configuration"), and the revision is inside the digest, so the
+     * registration's own revision returns with its draft.
+     */
+    discardRepositorySetupDraft: async id => {
+      const card = get(id)
+      if (!card) return "Open the setup first."
+      if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
+      if (!card.payload.active?.enabled) return "This setup is not enabled."
+      if (card.payload.active.owned === false) return "This registration belongs to another maintainer."
+      if (!card.payload.active.draft) return requestRecovery(id)
+      return edit(id, async () => {
+        const latest = get(id), active = latest?.payload.active
+        if (!latest || !active?.enabled || !active.draft) return "This setup is not enabled."
+        if (active.revision === latest.payload.revision && active.digest === setupCandidate(latest.payload)) return { value: "Keeping the current setup." }
+        await upsert({ ...latest, status: "active", payload: discardSetupDraft(latest.payload) })
+        return { value: "Draft discarded." }
+      })
+    },
     retryRepositorySetup: async id => {
       const card = get(id)
       if (card?.payload.recovery?.state === "failed") return requestRecovery(id)
