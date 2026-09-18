@@ -136,7 +136,7 @@ describe("TargetRunFrameSchema", () => {
 })
 
 /*
- * The harness table (`HarnessModels` in apps/app/src/bun/Harnesses.ts): a row
+ * The harness table (`HarnessModels` in @smthrs/harness-detect): a row
  * says which binary the app found, whether that binary is signed in, and
  * whether it can be pointed at a model. The account and the model table are
  * the two facts a row may not have, and they say so differently: `account`

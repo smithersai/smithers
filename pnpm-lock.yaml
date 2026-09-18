@@ -152,6 +152,9 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/harness
+      '@smthrs/harness-detect':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/harness-detect
       '@smthrs/jj':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/jj
@@ -2645,6 +2648,55 @@ importers:
       effect:
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-jsdoc:
+        specifier: 64.3.4
+        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      madge:
+        specifier: 8.0.0
+        version: 8.0.0(supports-color@10.2.2)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  packages/smithers/agent/harness-detect:
+    dependencies:
+      '@smthrs/rpc':
+        specifier: workspace:*
+        version: link:../../../rpc
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      '@vitest/coverage-v8':
+        specifier: 5.0.0
+        version: 5.0.0(vitest@5.0.0)
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
       esbuild:
         specifier: 0.28.2
         version: 0.28.2

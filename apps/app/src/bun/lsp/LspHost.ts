@@ -88,7 +88,7 @@ const safeRealpath = (path: string): string => {
   }
 }
 
-/** This process's filesystem and environment, the way Harnesses.ts reads them. */
+/** This process's filesystem and environment, the way the harness host reads them. */
 export const defaultServerLookup = (env: Readonly<Record<string, string | undefined>> = Bun.env, home?: string): ServerLookup => ({
   env,
   home: home ?? env.HOME ?? tmpdir(),

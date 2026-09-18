@@ -39,6 +39,7 @@
     "@smthrs/flow": "workspace:*",
     "@smthrs/gateway": "workspace:*",
     "@smthrs/harness": "workspace:*",
+    "@smthrs/harness-detect": "workspace:*",
     "@smthrs/jj": "workspace:*",
     "@smthrs/journal": "workspace:*",
     "@smthrs/kernel": "workspace:*",

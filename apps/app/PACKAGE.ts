@@ -9,6 +9,7 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
+import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
 import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
 import { Package as componentPackage } from "../../packages/smithers/ui/PACKAGE.ts"
 
@@ -127,7 +128,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
   cwd
 })
 
@@ -164,7 +165,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("//pnpm-lock.yaml")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
   cwd
 })
 

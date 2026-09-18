@@ -14,10 +14,10 @@
  * inside the language server: that is the server's job, under the sandbox.)
  */
 import { delimiter, extname, join } from "node:path"
+import { harnessCandidateDirs } from "@smthrs/harness-detect"
+import type { HarnessHost } from "@smthrs/harness-detect"
 import { LSP_LANGUAGE_EXTENSIONS } from "@smthrs/rpc/LocalApp"
 import type { LspLanguageId } from "@smthrs/rpc/LocalApp"
-import { harnessCandidateDirs } from "../Harnesses"
-import type { HarnessHost } from "../Harnesses"
 import type { NodeSidecar } from "../Node"
 
 export type LanguageId = LspLanguageId

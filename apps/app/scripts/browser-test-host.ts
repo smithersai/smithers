@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { detectHarnessesWith } from "../src/bun/Harnesses"
+import { detectHarnessesWith } from "@smthrs/harness-detect"
 import { createPtyManager } from "../src/bun/Pty"
 import { startLocalServer } from "../src/bun/server"
 import type { LocalServerOptions } from "../src/bun/server"
