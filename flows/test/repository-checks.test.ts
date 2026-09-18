@@ -8,7 +8,7 @@ import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, FileSystem, Layer } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { assessSemantic, captureChecks, checksSummary, diffPaths, executeCommand, materializeProposal, selectedComparison, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
+import { assessSemantic, captureChecks, checkLocations, checksSummary, diffPaths, executeCommand, materializeProposal, probeCheckLocations, selectedComparison, type CheckPlan, type CheckResult, type Comparison } from "../repository/checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check } from "../repository/schema.ts"
 
@@ -111,7 +111,8 @@ const checkResult = (values: Partial<typeof CheckResult.Type>): typeof CheckResu
   status: "skipped", summary: "No changed paths match this check", evidence: [], executionId: "execution-1", detail: null, ...values })
 /** The shape of the canary's failing eval: a PR job whose evidence was captured
  * from the event payload, and one report-only AI check that matched no path. */
-const canaryPlan = (missing: readonly string[]): typeof CheckPlan.Type => ({
+const canaryPlan = (missing: readonly string[], searched: readonly { readonly path: string; readonly present: boolean }[]): typeof CheckPlan.Type => ({
+  searched,
   work: { repo: "codeplanesmithers/canary-sandbox", job: "ci", deadlineAt: Date.now() + 600_000,
     step: { id: "checks", name: "Run repository checks", mode: "automatic", prompt: "Inventory the tree for CI workflow files, build/test manifests and runnable scripts" },
     checks: [{ id: "docs", name: "Documentation stays grounded", kind: "ai", rule: "Report findings only", paths: ["**/*.md"], policy: "report" }],
@@ -124,14 +125,44 @@ const canaryPlan = (missing: readonly string[]): typeof CheckPlan.Type => ({
   contexts: []
 })
 
+const absent = [".github/workflows", "package.json", "Makefile", "tox.ini", "pyproject.toml", "Cargo.toml", "go.mod"].map(path => ({ path, present: false }))
+const where = " Searched for workflow files, manifests and scripts in .github/workflows, package.json, Makefile, tox.ini, pyproject.toml, Cargo.toml, go.mod: "
+
 test("a repository that configures no runnable check says so and names the locations that were searched", () => {
-  const skipped = checkResult({})
-  const searched = canaryPlan(["package.json", "tox.ini", "pyproject.toml"])
-  assert.equal(checksSummary(searched, [skipped]),
-    "No checks are configured (searched package.json, tox.ini, pyproject.toml); nothing ran.")
-  assert.equal(checksSummary(canaryPlan([]), [skipped]), "No checks are configured; nothing ran.")
+  // A live CI job captures its evidence from the event payload, so evidence.missing
+  // is empty and never describes where this repository would configure a check.
+  const live = canaryPlan([], absent)
+  assert.equal(checksSummary(live, [checkResult({})]), `No checks ran (1 configured check skipped).${where}none present.`)
+  assert.equal(checksSummary(canaryPlan(["package.json", "tox.ini", "pyproject.toml"], absent), [checkResult({})]),
+    checksSummary(live, [checkResult({})]), "the setup inspect's prompt-derived paths are not the locations this step probed")
+  const found = canaryPlan([], absent.map(source => source.path === "package.json" ? { path: source.path, present: true } : source))
+  assert.equal(checksSummary(found, [checkResult({})]), `No checks ran (1 configured check skipped).${where}found package.json.`)
+  assert.equal(checksSummary(found, []), `No checks ran.${where}found package.json.`)
+  assert.equal(checksSummary(canaryPlan([], []), [checkResult({})]), "No checks ran (1 configured check skipped).")
+})
+
+test("the check-location probe measures this immutable tree, not an alias out of it", async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "repository-check-locations-")))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const outside = await realpath(await mkdtemp(join(tmpdir(), "repository-check-locations-outside-")))
+  t.after(() => rm(outside, { recursive: true, force: true }))
+  await writeFile(join(outside, "package.json"), "{}")
+  await writeFile(join(root, "README.md"), "# canary\n")
+  await symlink(join(outside, "package.json"), join(root, "package.json"))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const probe = () => Effect.runPromise(probeCheckLocations({ fs, repositoryPath: root }, root).pipe(Effect.provide(NodeServices.layer)))
+  assert.deepEqual(await probe(), checkLocations.map(path => ({ path, present: false })),
+    "a tree holding only README.md defines no check, and an aliased manifest is not this tree's source")
+  await mkdir(join(root, ".github", "workflows"), { recursive: true })
+  await writeFile(join(root, "Makefile"), "test:\n\techo ok\n")
+  assert.deepEqual(await probe(), checkLocations.map(path => ({ path, present: path === ".github/workflows" || path === "Makefile" })))
+  assert.deepEqual(absent.map(source => source.path), checkLocations, "the summary names every location the probe reads")
+})
+
+test("a skipped check is neither a measured pass nor a measured failure", () => {
+  const plan = canaryPlan([], absent)
   const passed = checkResult({ checkId: "verify", status: "passed", summary: "Exit 0" })
-  assert.equal(checksSummary(searched, [passed, skipped]), "1 of 1 checks passed", "a skipped check is not a measured pass or a measured failure")
-  assert.equal(checksSummary(searched, [passed, checkResult({ checkId: "lint", status: "failed" })]), "1 of 2 checks passed")
-  assert.equal(checksSummary(searched, [passed, checkResult({ checkId: "lint", status: "failed", policy: "required" })]), "1 required checks blocked")
+  assert.equal(checksSummary(plan, [passed, checkResult({})]), "1 of 1 checks passed, 1 skipped")
+  assert.equal(checksSummary(plan, [passed, checkResult({ checkId: "lint", status: "failed" })]), "1 of 2 checks passed")
+  assert.equal(checksSummary(plan, [passed, checkResult({ checkId: "lint", status: "failed", policy: "required" })]), "1 required checks blocked")
 })

@@ -22,7 +22,9 @@ const Commit = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
 export const Comparison = Schema.Struct({ base: Commit, candidate: Schema.NonEmptyString, diff: Schema.String,
   paths: Schema.Array(Schema.String), files: Schema.Array(Source),
   changes: Schema.Array(Schema.Struct({ path: Schema.String, before: Schema.NullOr(Schema.String), after: Schema.NullOr(Schema.String) })) })
-export const CheckPlan = Schema.Struct({ work: Work, comparison: Comparison, contexts: Schema.Array(CheckContext), baseContexts: Schema.optionalKey(Schema.Array(CheckContext)) })
+export const CheckSource = Schema.Struct({ path: Schema.NonEmptyString, present: Schema.Boolean })
+export const CheckPlan = Schema.Struct({ work: Work, comparison: Comparison, contexts: Schema.Array(CheckContext),
+  baseContexts: Schema.optionalKey(Schema.Array(CheckContext)), searched: Schema.Array(CheckSource) })
 export const CheckResult = Schema.Struct({ checkId: Schema.String, policy: Check.fields.policy,
   status: Schema.Literals(["passed", "failed", "error", "skipped"]), summary: Schema.String,
   evidence: Schema.Array(Schema.String), executionId: Schema.String, detail: Schema.Json })
@@ -193,6 +195,20 @@ export const materializeProposal = (options: ImmutableSourceOptions, root: strin
   return changes
 }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The proposal could not be materialized on its exact source")))
 
+/** A repository configures checks in workflow files, manifests and task
+ * scripts. The step probes those locations on its own immutable source, so its
+ * report never borrows the paths a triggering event happened to mention. */
+export const checkLocations = [".github/workflows", "package.json", "Makefile", "tox.ini", "pyproject.toml", "Cargo.toml", "go.mod"]
+export const probeCheckLocations = (options: ImmutableSourceOptions, root: string) => Effect.gen(function* () {
+  const path = yield* Path.Path, fs = options.fs
+  const searched: Array<typeof CheckSource.Type> = []
+  for (const name of checkLocations) {
+    const resolved = yield* fs.realPath(path.join(root, name)).pipe(Effect.orElseSucceed(() => ""))
+    searched.push({ path: name, present: resolved !== "" && contained(root, resolved, path) })
+  }
+  return searched
+})
+
 export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work.Type) => Effect.gen(function* () {
   if (!work.checks.length) return yield* invalid("Configure at least one repository check before running CI")
   if (Date.now() >= work.deadlineAt) return yield* invalid("The configured check deadline expired")
@@ -269,7 +285,7 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
       if (proposed && (proposed.after !== null || proposed.before !== before.text)) return yield* invalid("The deleted proposal disagrees with its captured base")
       if (!proposed) changes.push({ path: name, before: before.text, after: null })
     }
-    return { work, comparison, contexts, baseContexts }
+    return { work, comparison, contexts, baseContexts, searched: yield* probeCheckLocations(options, root) }
   }))
 }).pipe(Effect.mapError(error => error instanceof CodingError ? error : invalid("The check comparison could not be captured")))
 
@@ -316,15 +332,17 @@ export const assessSemantic = (comparison: typeof Comparison.Type, verdict: type
   return { status: verdict.verdict === "pass" ? "passed" as const : "failed" as const, summary: verdict.summary }
 }
 
-/** A configured check that never ran is not a measured pass, so a repository
- * that defines none says so and names the locations the inspect probed. */
+/** A configured check that never ran is not a measured pass, so a run that
+ * measured nothing says so and names the locations this step probed. */
 export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (typeof CheckResult.Type)[]): string => {
-  const searched = plan.work.evidence.missing
   const blocking = results.filter(result => result.policy === "required" && (result.status === "failed" || result.status === "error"))
   if (blocking.length) return `${blocking.length} required checks blocked`
   const ran = results.filter(result => result.status !== "skipped")
-  if (!ran.length) return `No checks are configured${searched.length ? ` (searched ${searched.join(", ")})` : ""}; nothing ran.`
-  return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed`
+  const skipped = results.length - ran.length
+  if (ran.length) return `${ran.filter(result => result.status === "passed").length} of ${ran.length} checks passed${skipped ? `, ${skipped} skipped` : ""}`
+  const found = plan.searched.filter(source => source.present).map(source => source.path)
+  return `No checks ran${skipped ? ` (${skipped} configured check${skipped === 1 ? "" : "s"} skipped)` : ""}.${plan.searched.length
+    ? ` Searched for workflow files, manifests and scripts in ${plan.searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
 }
 
 export const checkLayers = (options: ImmutableSourceOptions) => Layer.mergeAll(
