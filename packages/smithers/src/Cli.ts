@@ -171,7 +171,9 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         listen: z.boolean().default(false).describe("Allow a non-loopback bind; needs OPENCODE_SERVER_PASSWORD"),
         cors: z.array(z.string()).default([]).describe("Extra browser origins to allow"),
         seat: z.string().optional().describe("Model seat as provider:model"),
-        maxFrames: z.number().int().positive().default(100).describe("Frame budget per turn"),
+        maxFrames: z.number().int().positive().default(40).describe(
+          "Frame budget per turn; forty suits a prompt in the app, raise it for a long task"
+        ),
         scripted: z.boolean().default(false).describe("Replay the recorded turn instead of running a model")
       }),
       run: (c) =>

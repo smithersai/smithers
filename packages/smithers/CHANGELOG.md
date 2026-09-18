@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- `smithers opencode --max-frames` defaults to forty instead of one hundred:
+  a prompt in the app is a person waiting, and the help says so.
 - `smithers opencode` no longer prints the 0.x state notice for its own
   `.smithers/opencode.sqlite`: the guard samples the directory before the
   driver creates the database, and the database is not a 0.x marker.

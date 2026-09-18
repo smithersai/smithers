@@ -288,9 +288,12 @@ describe("unified root command dispatch", () => {
       hostname: "127.0.0.1",
       listen: false,
       cors: [],
-      maxFrames: 100,
+      maxFrames: 40,
       scripted: false
     })
+    // The interactive budget is visible in the help.
+    const help = await invoke(["opencode", "--help"])
+    expect(help.stdout).toMatch(/--max-frames <number>\s+.*\(default: 40\)/)
     ports.opencode.mockRestore()
     const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
     await expect(

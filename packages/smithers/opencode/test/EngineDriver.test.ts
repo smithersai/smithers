@@ -397,9 +397,49 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(log.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "completed" }])
     expect(printed(log.events)).toContain("\"code\":\"capability_refused\"")
     expect(printed(log.events)).toContain("permission_denied")
+    // The harness appends its generic `capability_refused` hint ("This run
+    // cannot reach that flow") beside the message; the message says the
+    // hint is about the flow, not this call, and that the flow stays open.
+    expect(printed(log.events)).toContain(EngineDriver.deniedMessage("bash").replace(/"/g, "\\\""))
+    expect(EngineDriver.deniedMessage("bash")).toBe(
+      "permission_denied: the person rejected this bash call. Do not retry it; do the work another way or explain what you would have run. The generic hint beside this message is about the flow, not this call: the flow stays available for commands the person allows."
+    )
     expect(answer(log.events)).toBe("refused capability_refused")
     const settled = log.events.find((event) => event._tag === "cell-call-settled") as AgentEvent.CellCallSettled
     expect(settled.result.outcome).toBe("failure")
+  })
+
+  it("arms the read-only cap for this host and teaches the model to answer in the cell that has the answer", async () => {
+    const directory = scratch()
+    const log = recorder()
+    // A model that prints instead of calling ctx.done: every frame reads
+    // as read-only, the cap demands at the host's value, and the run is
+    // stopped at twice that instead of spending the frame budget.
+    script.replies = Array.from({ length: 40 }, (_, frame) => `console.log("B ${"#".repeat(frame + 1)}")`)
+    await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_ro", "msg_ro", "Say B"), log.sink)
+        yield* wait(() => log.outcomes.length === 1)
+      }), { maxFrames: 40 })
+    const armed = log.events.find((event): event is AgentEvent.DisciplineArmed => event._tag === "discipline-armed")!
+    expect(armed.readOnlyCap).toBe(EngineDriver.readOnlyCap)
+    expect(EngineDriver.readOnlyCap).toBe(6)
+    const demand = log.events.find((event): event is AgentEvent.ReadOnlyDemandIssued =>
+      event._tag === "read-only-demand-issued"
+    )!
+    expect(demand.cap).toBe(EngineDriver.readOnlyCap)
+    expect(log.outcomes).toEqual([{ _tag: "failed", message: expect.stringContaining("read-only budget of 6") }])
+    expect(script.calls).toBe(EngineDriver.readOnlyCap * 2)
+    // The host's teaching is in the system context of the first request,
+    // ahead of the task, and says when to call ctx.done.
+    const first = JSON.stringify(script.requests[0])
+    expect(first).toContain(JSON.stringify(EngineDriver.hostTeaching).slice(1, -1))
+    expect(first.indexOf(EngineDriver.hostTeaching.slice(0, 40))).toBeLessThan(first.indexOf("The task for this run"))
+    expect(EngineDriver.hostTeaching).toContain("ctx.done")
+    expect(EngineDriver.hostTeaching).toContain("Never run a command the person did not ask for")
+    const systemTexts = (script.requests[0] as unknown as { system?: ReadonlyArray<{ text: string }> }).system
+      ?.map((part) => part.text.slice(0, 48)) ?? []
+    expect(systemTexts.some((text) => EngineDriver.hostTeaching.startsWith(text))).toBe(true)
   })
 
   it("interrupts a running turn and leaves no shell process behind", async () => {

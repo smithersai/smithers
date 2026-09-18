@@ -125,7 +125,7 @@ export interface Options {
   /** The seat every turn runs on, as `provider:model`. */
   readonly seat: string
   readonly host: Host
-  /** The frame budget per turn. One hundred by default. */
+  /** The frame budget per turn. One hundred by default (`Projection.defaultMaxFrames`); the CLI passes forty. */
   readonly maxFrames?: number | undefined
   /** The sandbox budget per cell. The CLI's values by default. */
   readonly limits?: Sandbox.Limits | undefined
@@ -153,6 +153,51 @@ export interface Options {
  * @since 1.0.0
  */
 export const defaultLimits: Sandbox.Limits = { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 }
+
+/**
+ * Consecutive read-only frames a turn may spend before the harness demands
+ * an action: six here, half the harness default of twelve. The harness
+ * default was read off task runs of a hundred frames; a turn in the app is
+ * a person waiting, and the day-one drive on Cerebras spent 27 frames and
+ * 290k input tokens answering "Say B" because the model printed the answer
+ * instead of calling `ctx.done` and nothing bounded the streak. At six
+ * read-only frames the harness issues its read-only demand (the next frame
+ * must write or say why it cannot); at twelve it ends the run as
+ * `read_only_cap`, which the projection closes as a red `stopped` health
+ * decision. A frame with no call at all is read-only: the cap counts what
+ * the frame left unchanged, not what it declared.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const readOnlyCap = 6
+
+/**
+ * The host's teaching, passed as `Agent.Options.system`: what this host is
+ * (a person's prompt in the app, not a task run) and when to answer. The
+ * harness places it in the system context ahead of the task, after the
+ * cell contract `CellTurn.teach` prepends; it is stable across frames, so
+ * the model reads it on every one.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const hostTeaching =
+  "You are answering a person in a chat app. When the request is conversational, or your printed output already answers it, call ctx.done(answer) in that same cell. Call flows only when the request needs them. Never run a command the person did not ask for."
+
+/**
+ * The message a rejected call settles with. The harness appends its generic
+ * `capability_refused` hint beside it ("This run cannot reach that flow"),
+ * which the server cannot change, so the message says the hint is about
+ * the flow and not this call, and that the flow stays open for commands
+ * the person allows.
+ *
+ * @param flow the flow the person rejected a call to
+ * @category constructors
+ * @since 1.0.0
+ */
+export const deniedMessage = (flow: string): string =>
+  `permission_denied: the person rejected this ${flow} call. Do not retry it; do the work another way or explain what you would have run. The generic hint beside this message is about the flow, not this call: the flow stays available for commands the person allows.`
 
 /**
  * The capability envelope every turn runs under: the standard flows over
@@ -279,8 +324,7 @@ export const refusing = (
               new Cell.CallResult({
                 outcome: "failure",
                 value: { permission: "denied", flow: call.flowName },
-                message:
-                  `permission_denied: the person rejected this ${call.flowName} call. Do not retry it; do the work another way or explain what you would have run.`,
+                message: deniedMessage(call.flowName),
                 code: "capability_refused"
               })
             )
@@ -514,6 +558,10 @@ export const layer = (options: Options) =>
               limits,
               maxFrames,
               approvalChannel: true,
+              system: [hostTeaching],
+              // A turn that only reads, or only prints, is demanded at six
+              // frames and stopped at twelve; see `readOnlyCap`.
+              readOnlyCap,
               // A conversational answer changes no file; the unmoved-tree
               // demand would bounce every completion of such a prompt.
               unmovedCap: 0
