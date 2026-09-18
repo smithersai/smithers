@@ -139,6 +139,7 @@ describe("the inert fs boundary", () => {
     const optionalAccessor = Object.defineProperty({ a: 1 }, "b", { enumerable: true, get: getter })
     expect(Boundary.inspectRecord(optionalAccessor, ["a"], ["b"])).toMatchObject({ ok: false, path: "$.b" })
     expect(getter).not.toHaveBeenCalled()
+    expect(Boundary.inspectRecord({}, ["a-b"])).toMatchObject({ ok: false, path: "$[\"a-b\"]" })
     const hostile = new Proxy({ a: 1 }, {
       ownKeys: () => {
         throw new Error("trap")
