@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type * as Cleanup from "../src/internal/ProcessCleanup.ts"
-import "../src/ProcessReaper.ts"
+import * as ProcessReaper from "../src/ProcessReaper.ts"
 
 const captured = vi.hoisted(() => ({ system: undefined as Cleanup.System | undefined }))
 vi.mock("../src/internal/ProcessCleanup.ts", () => ({
@@ -32,7 +32,23 @@ const answer = (stdout: string, extra: Record<string, unknown> = {}) =>
     ...extra
   }) as unknown as ReturnType<typeof spawnSync>
 
+/**
+ * The `ps` reader, asked for by name rather than taken from `process.platform`.
+ *
+ * Linux reads the process table out of `/proc` and never spawns `ps` at all,
+ * so a suite that probed the platform's own reader would inject a `spawnSync`
+ * fault nothing on that host consults, and the refusals below would go
+ * unexercised on the only runner where the wiring differs. Naming a POSIX
+ * platform pins the reader under test on every host; the test after them pins
+ * the wiring, which is the part that varies.
+ */
+const snapshot = ProcessReaper.groupSnapshotFor("darwin")
+
 describe.skipIf(process.platform === "win32")("live process identity probe", () => {
+  it("wires the `ps` reader everywhere but Linux, which reads the kernel instead", () => {
+    expect(captured.system!.snapshot === snapshot).toBe(process.platform !== "linux")
+  })
+
   for (
     const [name, output] of [
       ["spawn error", answer("", { error: new Error("ENOENT") })],
@@ -50,7 +66,7 @@ describe.skipIf(process.platform === "win32")("live process identity probe", () 
     it(`refuses an unanswered identity check: ${name}`, async () => {
       vi.mocked(spawnSync).mockReturnValue(output)
       const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-      expect(captured.system!.snapshot(target)).toBeUndefined()
+      expect(snapshot(target)).toBeUndefined()
       expect(kill).not.toHaveBeenCalled()
       expect(spawnSync).toHaveBeenCalledWith("/bin/ps", ["-A", "-o", "pid=,pgid=,stat=,lstart="], {
         encoding: "utf8",
@@ -64,7 +80,7 @@ describe.skipIf(process.platform === "win32")("live process identity probe", () 
   it("reads the owner and all group identities without signalling", () => {
     vi.mocked(spawnSync).mockReturnValue(answer(`${own}\n${member}\n4322 ${target} Z ${start}`))
     const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-    expect(captured.system!.snapshot(target)).toEqual({
+    expect(snapshot(target)).toEqual({
       ownGroup: 77,
       members: [
         { pid: target, startedAtMs: Date.UTC(2026, 8, 5, 12), zombie: false },

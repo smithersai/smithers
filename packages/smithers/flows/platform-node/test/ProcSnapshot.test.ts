@@ -168,10 +168,14 @@ describe("ProcessReaper.groupSnapshotFor", () => {
     const posix = ProcessReaper.groupSnapshotFor("darwin")
 
     expect(linux).not.toBe(posix)
-    // Whichever host runs this suite, exactly one of the two can answer, and
-    // neither may invent a group it did not observe.
-    const answers = [linux(process.pid), posix(process.pid)].filter((observed) => observed !== undefined)
-    expect(answers.length).toBe(1)
-    expect(answers[0]!.ownGroup).toBeGreaterThan(0)
+    // The kernel reader answers on Linux and on no other host, because
+    // `/proc` is where it reads. It is not the only reader that can answer
+    // there: a Linux image that does ship `procps` answers through both, so
+    // the two are not exclusive. What the reaper depends on is that the
+    // reader this platform picks answers, and that it reports a group it
+    // observed rather than one it invented.
+    expect(linux(process.pid) !== undefined).toBe(process.platform === "linux")
+    const chosen = ProcessReaper.groupSnapshotFor(process.platform)(process.pid)
+    expect(chosen?.ownGroup).toBeGreaterThan(0)
   })
 })
