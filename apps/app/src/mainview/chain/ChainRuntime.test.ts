@@ -81,10 +81,20 @@ interface Harness {
   readonly settle: () => Promise<void>
 }
 
+/**
+ * The Jev relay `recall` ranks through (chain/Worldview.ts). Unbound, it
+ * throws rather than reaching a network, so only a test that means to rank
+ * pays for one.
+ */
+const noRelay = async (): Promise<Response> => {
+  throw new Error("no Jev relay bound in this harness")
+}
+
 const harness = async (options: {
   readonly storage?: StorageApi
   readonly author: Layer.Layer<Author.Author>
   readonly entries?: ReadonlyArray<Catalog.Entry>
+  readonly fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 }): Promise<Harness> => {
   const { store, settle } = trackDispatchCommits(await createAppStore({
     kind: "localStorage",
@@ -98,6 +108,7 @@ const harness = async (options: {
       store,
       commands: controller.commands,
       entries: options.entries,
+      fetchImpl: options.fetchImpl ?? noRelay,
       authorLayer: options.author,
       runnerLayer: ScriptRunner.layerInProcess
     })
@@ -1107,11 +1118,29 @@ describe("ChainRuntime behind the AgentPort seam", () => {
 
   test("scripts read and write the worldview through recall and remember", async () => {
     const h = await harness({
+      // recall shortlists with the keyword scorer and Jev orders what it
+      // found; the relay double ranks every option the door offered.
+      fetchImpl: async (_input, init) => {
+        const sent = JSON.parse(String(init?.body)) as {
+          questions: { order: { criteria: Record<string, string> } }
+        }
+        const paths = Object.keys(sent.questions.order.criteria)
+        return new Response(
+          JSON.stringify({
+            answers: {
+              order: { type: "choice", choice: paths[0], probabilities: Object.fromEntries(paths.map((path) => [path, 1])) },
+              covered: { type: "boolean", probability: 0.9 }
+            },
+            model: "typesafe-ai/jev"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      },
       author: Author.layerMock([
         flow(
           `const found = await ctx.call("recall", { query: "world" })`,
           `await ctx.call("remember", { title: "Learned", text: "The user likes Tuesdays." })`,
-          `await ctx.call("say", { text: "Recalled " + found.results.length + " notes." })`,
+          `await ctx.call("say", { text: "Recalled " + found.results.length + " notes, covered " + found.covered + "." })`,
           `return done({})`
         )
       ])
@@ -1127,7 +1156,7 @@ describe("ChainRuntime behind the AgentPort seam", () => {
     const smithers = [...h.store.collections.messages.values()].find(
       (message) => message.role === "smithers" && message.act === undefined
     )
-    expect(smithers?.text).toMatch(/Recalled [1-9]\d* notes\./)
+    expect(smithers?.text).toMatch(/Recalled [1-9]\d* notes, covered true\./)
   })
 
   test("a reload replays the finished lineage with zero authored calls and zero effects", async () => {

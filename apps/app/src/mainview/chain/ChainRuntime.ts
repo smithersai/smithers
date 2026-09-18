@@ -238,7 +238,9 @@ export const createChainRuntime = (options: ChainRuntimeOptions): AgentPort => {
   const runnerLayerOf = () =>
     options.runnerLayer ?? QuickJsRunner.layer({ steps: 100_000, memoryBytes: 16 * 1024 * 1024 })
 
-  const worldview = worldviewEntries(options.store)
+  // recall ranks through the Worker's Jev relay, so it takes the same origin
+  // and the same injectable fetch the author seat uses.
+  const worldview = worldviewEntries(options.store, { baseUrl: options.baseUrl, fetchImpl: options.fetchImpl })
 
   const subPrefix = (): string =>
     Prompt.assemble({

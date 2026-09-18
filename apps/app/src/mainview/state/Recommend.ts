@@ -10,7 +10,7 @@ import { REPO_TOKEN } from "./RepoContext"
 /*
  * The next-step pills as a WORKFLOW, not a rule (will, 2026-08-30): after every
  * material change the app tails the chat, lists every flow the user can invoke,
- * and asks the server's recommender (POST /api/recommend, a Cerebras call) for
+ * and asks the server's recommender (POST /api/recommend, a Jev call) for
  * the order it would click them in. This module is the pure half: what counts
  * as material, the request the contract fixes, the strict answer contract, and
  * the rule that stands in when the recommender cannot answer. The controller
