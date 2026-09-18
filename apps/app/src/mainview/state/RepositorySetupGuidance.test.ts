@@ -623,3 +623,28 @@ test("the human's own discard door confirms before the draft goes", async () => 
     expect(t.untouched()).toBe(true)
   } finally { await t.close() }
 })
+
+/*
+ * Walk run 3, C3-N5: `Run evals`, pressed while the setup's first question was
+ * still open, sent no request for fourteen minutes and said nothing — the
+ * footer went on asking for the evals the door would not run. The question is
+ * asked about the exact candidate an evaluate, trial or apply submits, so the
+ * door refuses that press where the person is looking instead of swallowing it.
+ */
+test("an operation on the candidate the open question is about refuses at once, and says so", async () => {
+  const t = await fixture(pendingHttpAgent)
+  try {
+    const card = await askAndWait(t)
+    const outcome = await t.controller.commands.run("setup.run", JSON.stringify({ cardId: id, operation: "evaluate" }))
+    expect(outcome).toEqual({ status: "failed", error: "Answer the setup question first." })
+    expect(transcript(t.store)).toContain("Answer the setup question first.")
+    expect(t.setup().request).toBeUndefined()
+    expect(t.untouched()).toBe(true)
+    await t.controller.commands.run("form.set", `${card.id} choice approved`)
+    await t.controller.commands.run("form.submit", card.id)
+    await waitFor(() => t.question()?.status === "acted")
+    await t.controller.commands.run("setup.run", JSON.stringify({ cardId: id, operation: "evaluate" }))
+    expect(t.setup().request?.operation).toBe("evaluate")
+    await waitFor(() => t.fetches.some(({ url, method }) => url.includes("/repository-setup/evaluate") && method === "POST"))
+  } finally { await t.close() }
+})

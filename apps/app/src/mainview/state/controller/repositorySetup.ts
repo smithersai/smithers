@@ -88,6 +88,11 @@ const terminal = (phase: string | undefined) => phase !== undefined && ["complet
 /** The card the app's own setup question lives in, one per setup. */
 export const setupQuestionCardId = (cardId: string): string => `form-setup.ask:${cardId}`
 
+/** The operations that submit the candidate the app's first question is about. */
+const CANDIDATE_OPERATIONS: ReadonlySet<Operation> = new Set(["evaluate", "trial", "apply"])
+
+const SETUP_QUESTION_GATE = "Answer the setup question first."
+
 /**
  * One setup.configure edit against a draft: the new draft, or the honest
  * refusal. The configure door and the question's answer share this validator,
@@ -600,6 +605,18 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     if (isPracticeRepo(card.payload.repo)) {
       await dependencies?.chooseRepository()
       return { value: "Choose a repository for this setup. The practice repository is unchanged." }
+    }
+    /*
+     * The app's first question is asked about the exact candidate an evaluate,
+     * a trial and an apply submit, and its answer edits that candidate. A press
+     * made while it is still open is refused here, before any branch below can
+     * absorb it into a request that is already in flight: a toast leaves after
+     * four seconds, so the sentence also goes to the transcript, where the
+     * person is still looking a minute later.
+     */
+    if (CANDIDATE_OPERATIONS.has(operation) && openQuestion(card) !== undefined) {
+      ctx.store.dispatch({ type: "message.appended", actor: "system", text: SETUP_QUESTION_GATE })
+      return SETUP_QUESTION_GATE
     }
     if (card.payload.recovery && (card.payload.recovery.state !== "completed" || card.payload.recovery.registrationState !== "known")) {
       const accountEpoch = epoch()
