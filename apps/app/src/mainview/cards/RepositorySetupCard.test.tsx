@@ -384,7 +384,7 @@ test("a probe that found nothing is its own evidence row, in the words a person 
   const t = mount(card)
   try {
     const rows = [...t.host.querySelectorAll("details li")].map(row => row.textContent)
-    expect(rows).toEqual(["README.md · readRead", "package.json · not found", "tox.ini · not found", "pyproject.toml · not found",
+    expect(rows).toEqual(["README.md · read", "package.json · not found", "tox.ini · not found", "pyproject.toml · not found",
       "github:/repos/codeplanesmithers/canary-sandbox/pulls?state=all&per_page=30 · read1 records"])
     expect(t.host.textContent).not.toContain("Not present")
     expect(t.host.textContent).not.toContain("· missing")
