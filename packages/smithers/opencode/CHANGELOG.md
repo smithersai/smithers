@@ -78,6 +78,10 @@
   calls once across a replay.
 - `Serve.layer` fails a refused bind with `BindRefused`; every fiber a
   driver or the turns start ends with its scope.
+- `Health.strip` drops the emoji presentation selector (U+FE0F) the hosted
+  app writes after the dot, and the space behind it, so a renamed or
+  archived session no longer keeps an invisible character in front of its
+  title. A rename to an empty title keeps the title the session had.
 
 ### Added
 

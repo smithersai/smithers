@@ -224,14 +224,16 @@ export const colorOf = (title: string): Color | undefined => {
 }
 
 /**
- * The title without its dot.
+ * The title without its dot. The hosted app echoes a dotted title back with
+ * an emoji presentation selector (U+FE0F) after the dot, so the selector
+ * and the space that follows it go with the dot.
  *
  * @category conversions
  * @since 1.0.0
  */
 export const strip = (title: string): string => {
   const color = colorOf(title)
-  return color === undefined ? title : title.slice(dots[color].length).trimStart()
+  return color === undefined ? title : title.slice(dots[color].length).replace(/^\uFE0F?\s*/, "")
 }
 
 /**
@@ -244,12 +246,14 @@ export const dotted = (title: string, color: Color): string => `${dots[color]} $
 
 /**
  * The title a rename produces: the person's words, behind the dot the
- * session already carries unless the person typed one.
+ * session already carries unless the person typed one. An empty rename
+ * keeps the current title: a session is never left without a name.
  *
  * @category conversions
  * @since 1.0.0
  */
 export const retitle = (current: string, wanted: string): string => {
+  if (wanted.trim() === "") return current
   const color = colorOf(current)
   return color === undefined || colorOf(wanted) !== undefined ? wanted : dotted(wanted, color)
 }

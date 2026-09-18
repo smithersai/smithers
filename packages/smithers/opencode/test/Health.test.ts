@@ -149,6 +149,20 @@ describe("Health", () => {
     expect(Health.retitle("🟢 Old", "🔴 Mine")).toBe("🔴 Mine")
   })
 
+  it("strips the U+FE0F the app appends to the dot, and keeps the title on an empty rename", () => {
+    // The hosted app writes an emoji presentation selector (U+FE0F) after
+    // the dot when it echoes a title back; the dot and its selector go together.
+    expect(Health.strip("🟢\uFE0F Fix it")).toBe("Fix it")
+    expect(Health.strip("🟢\uFE0FFix it")).toBe("Fix it")
+    expect(Health.strip("🟢\uFE0F")).toBe("")
+    expect(Health.dotted("🔴\uFE0F Fix it", "green")).toBe("🟢 Fix it")
+    expect(Health.retitle("🟢\uFE0F Old", "New")).toBe("🟢 New")
+    // An empty rename keeps the title it would have erased, dot and all.
+    expect(Health.retitle("🟢 Old", "")).toBe("🟢 Old")
+    expect(Health.retitle("🟢 Old", "   ")).toBe("🟢 Old")
+    expect(Health.retitle("Old", "")).toBe("Old")
+  })
+
   it("evaluates through a scripted evaluator and decides", async () => {
     const evaluation = await Effect.runPromise(
       Health.evaluate(facts()).pipe(Effect.provide(Evaluator.layerScripted(script(healthy))))
