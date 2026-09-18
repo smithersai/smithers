@@ -100,6 +100,13 @@ function rewriteLinks(text, pkg) {
   // /cli and /cli/<verb> -> /docs/reference/cli/...
   out = out.replace(/\]\((?:https:\/\/smithers\.sh)?\/cli\/([a-z0-9-]+)(#[^)]+)?\)/gi, (_m, seg, frag) => `](/docs/reference/cli/${seg.toLowerCase()}/${frag ?? ""})`)
   out = out.replace(/\]\((?:https:\/\/smithers\.sh)?\/cli\)/gi, "](/docs/reference/cli/)")
+  // A package README is read on npmjs.com, where a site-relative href is a
+  // 404, so it spells the published route in full. The same sentence reaches
+  // this site through api.md, where the route is already local.
+  out = out.replace(
+    /\]\(https:\/\/smithers\.sh(\/docs\/reference\/cli\/(?:[a-z0-9-]+\/)?)(#[^)]+)?\)/gi,
+    (_m, path, frag) => `](${path}${frag ?? ""})`
+  )
   // smithers.sh/migration/1.0 -> site-relative
   out = out.replace(/\]\(https:\/\/smithers\.sh\/migration\/1\.0(#[^)]+)?\)/gi, (_m, frag) => `](/docs/migration/1.0/${frag ?? ""})`)
   // A relative .md link in api.md names a sibling page of the package's own

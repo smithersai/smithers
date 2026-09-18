@@ -580,7 +580,7 @@ as its identity, classification, and reason, never as the effect's `input`,
 `TimeTravel.layer` requires `TimeTravelStore`, `Journal`, `RunStore`,
 `CacheStore`, and `Jj`, and nothing else. Time travel is a library API, also
 exposed as `smthrs runs inspect|replay|fork|rewind`; see the
-[CLI reference](/cli). MCP exposes these verbs
+[CLI reference](https://smithers.sh/docs/reference/cli/). MCP exposes these verbs
 only through the unified command tools.
 
 The engine is the producer of everything the service reads.
