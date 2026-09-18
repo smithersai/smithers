@@ -397,6 +397,9 @@ const ci = Smithers.GithubCiGen({
       steps: [
         { name: "UI typecheck", verb: Smithers.Verb.Build, pattern: "//apps/app:check" },
         { name: "UI unit tests", verb: Smithers.Verb.Test, pattern: "//apps/app:unitTests" },
+        // The literal pin left the unit gate when `src/` became app source
+        // only; it is its own lint target over `apps/app/lint/conformance`.
+        { name: "UI conformance lint", verb: Smithers.Verb.Test, pattern: "//apps/app:conformance" },
         { name: "UI browser end-to-end suite", verb: Smithers.Verb.Test, pattern: "//apps/app:browserE2e" }
       ]
     },

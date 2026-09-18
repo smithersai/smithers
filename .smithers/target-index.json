@@ -669,6 +669,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/app/lint/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/app/vite.config.ts"
       },
@@ -700,6 +705,95 @@
     "outputs": [],
     "dependencies": [
       "//apps/app:devkit"
+    ],
+    "source": {
+      "file": "apps/app/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/app:conformance",
+    "package": "apps/app",
+    "name": "conformance",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/src/**/*.css",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/contracts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/lint/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/postcss.config.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/app/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/gateway:check",
+      "//packages/smithers/ui:check"
     ],
     "source": {
       "file": "apps/app/PACKAGE.ts"
