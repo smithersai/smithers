@@ -136,6 +136,9 @@ test("an unavailable trial check names itself and its recorded reason", async ()
     assert.match(refused ?? "accepted", /observability/, `nested ${nested}`)
     assert.match(refused ?? "accepted", new RegExp(reason), `nested ${nested}`)
   }
+  const silent = fixture({ status: "error", summary: "" })
+  assert.throws(() => verifyTrialChecks(silent.input.configuration, silent.result), error =>
+    /unavailable check: observability$/.test(String((error as { message: string }).message)))
   const inconsistent = fixture({ policy: "required", status: "failed" })
   const step = inconsistent.result.results[0]!
   assert.throws(() => verifyTrialChecks(inconsistent.input.configuration, { ...inconsistent.result,

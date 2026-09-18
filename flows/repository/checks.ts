@@ -96,7 +96,8 @@ export const unavailableCheck = ({ output }: RecordedCheck, reviewedId?: string)
  * file the product's file door cannot serve. Evaluation reads only the boolean. */
 export const checkExecutionFailure = (recorded: RecordedCheck, reviewedId?: string): string | undefined => {
   const unavailable = unavailableCheck(recorded, reviewedId)
-  if (unavailable) return `The trial recorded an unavailable check: ${unavailable.checkId} — ${unavailable.summary.slice(0, 200)}`
+  const measured = unavailable?.summary.slice(0, 200).trim()
+  if (unavailable) return `The trial recorded an unavailable check: ${unavailable.checkId}${measured ? ` — ${measured}` : ""}`
   const blocked = recorded.output.results.some(check => check.policy === "required" && check.status !== "passed" && check.status !== "skipped")
   return recorded.output.gate !== (blocked ? "blocked" : "passed") || recorded.step.status !== (blocked ? "error" : "completed")
     ? `The trial recorded an inconsistent ${recorded.step.stepId} check step: gate ${recorded.output.gate} with status ${recorded.step.status}` : undefined

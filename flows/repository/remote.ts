@@ -60,9 +60,9 @@ export const makeRemote = (options: RemoteOptions) => Effect.gen(function*() {
     const response = yield* HttpClient.withScope(client).execute(request.pipe(
       HttpClientRequest.bearerToken(gateway ? Redacted.make(options.credential) : options.token), HttpClientRequest.acceptJson))
     if (response.status < 200 || response.status >= 300) {
-      // A repository that already holds the object this operation would create
-      // is not a status the reader can act on. Name the operation, and carry
-      // the repository's own reason for refusing it.
+      // A bare status is not something the reader can act on. Name the refused
+      // operation and carry the repository's own reason; the repository refuses
+      // one endpoint for several reasons, so the cause is never ours to name.
       if (response.status === 409 && conflicting !== undefined) {
         const body = object(yield* readJson(response).pipe(Effect.orElseSucceed(() => null)))
         const reason = string(body.message ?? object(body.error).message, 200).replace(/\s+/g, " ").trim()
@@ -180,11 +180,11 @@ export const makeRemote = (options: RemoteOptions) => Effect.gen(function*() {
     comment: (job, step, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}/comments/${encodeURIComponent(step)}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true),
     manual: (job, requestId, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}/manual/${encodeURIComponent(requestId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true),
     register: (job, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true, false,
-      `The ${job} ${object(input).mode === "trial" ? "trial " : ""}registration at revision ${String(object(input).revision).slice(0, 20)} belongs to an earlier request`),
+      `The ${job} ${object(input).mode === "trial" ? "trial " : ""}registration was refused`),
     pause: job => send(HttpClientRequest.post(`${base}/repository-jobs/${job}/pause`)),
     dispatches: job => send(HttpClientRequest.get(`${base}/repository-jobs/${job}/dispatches`)),
     createTrial: (job, requestId, input) => send(HttpClientRequest.put(`${options.apiBaseUrl}/gateways/${encodeURIComponent(options.gatewayId)}/repository-jobs/${job}/trials/${encodeURIComponent(requestId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(input)), true, false,
-      `The ${job} trial issue for revision ${String(object(input).revision).slice(0, 20)} belongs to an earlier trial`),
+      `The ${job} trial issue was refused`),
     registrations: send(HttpClientRequest.get(`${base}/repository-jobs`))
   })
 })
