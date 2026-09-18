@@ -380,8 +380,25 @@ describe("time travel over an engine-written journal", () => {
             yield* Deferred.await(childStarted)
             return yield* DurableDeferred.await(Settled)
           }))
-        yield* engine.execute(parent, { executionId: "spawn-parent", payload: {}, discard: true })
+        // A rewind requires a quiescent executor, so this caller owns the
+        // parent's execution and stops it once the run parks. Submitting the
+        // parent as a DISCARDED execution put its follow loop in the
+        // registration scope, out of this caller's reach: the loop re-drove
+        // the parked run, writing a claim, a resume and a park, while the
+        // rewind was validating, and the rewind then refused the moved journal
+        // tail with `busy` instead of ever assessing the live child.
+        const running = yield* engine.execute(parent, { executionId: "spawn-parent", payload: {} }).pipe(
+          Effect.forkChild
+        )
         const runs = yield* RunStore.RunStore
+        for (let attempts = 0; attempts < 1_000; attempts++) {
+          const row = yield* runs.get("spawn-parent").pipe(Effect.option)
+          if (Option.isSome(row) && row.value.status === "suspended") {
+            break
+          }
+          yield* Effect.yieldNow
+        }
+        yield* Fiber.interrupt(running)
         expect((yield* runs.get("spawn-child")).status).toBe("running")
         expect((yield* runs.get("spawn-parent")).status).toBe("suspended")
         const journal = yield* Journal.Journal
