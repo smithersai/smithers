@@ -60,6 +60,12 @@ describe("execution target routing", () => {
     expect(executionRunId(["resume", "--json=maybe", "fork-run"])).toBeUndefined()
     expect(executionRunId(["steer", "fork-run", "--takeover"])).toBeUndefined()
     expect(executionRunId(["resume", "--root"])).toBeUndefined()
+    // A verb flag that takes a value: written with `=`, and written last with
+    // nothing after it to take.
+    expect(executionRunId(["steer", "fork-run", "--message=go"])).toBe("fork-run")
+    expect(executionRunId(["steer", "fork-run", "--message"])).toBeUndefined()
+    // A verb switch only carries a boolean.
+    expect(executionRunId(["run", "fork-run", "--resume=maybe"])).toBeUndefined()
     expect(executionRunId(["status", "fork-run"])).toBeUndefined()
     expect(executionRunId(["resume", "--", "-fork-run"])).toBe("-fork-run")
   })

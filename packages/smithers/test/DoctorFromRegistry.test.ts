@@ -14,7 +14,7 @@ import { Effect } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import * as DoctorCmd from "../src/commands/Doctor.ts"
 import type * as Doctor from "../src/Doctor.ts"
 import * as Project from "../src/Project.ts"
@@ -47,13 +47,14 @@ const warning = (
 
 const check = (report: Doctor.Report, name: string) => report.checks.find((entry) => entry.name === name)
 
-const run = (
+const runWith = (
+  globals: Parameters<typeof DoctorCmd.fromRegistry>[0],
   root: string,
   descriptors: ReadonlyArray<Descriptor.FlowDescriptor>,
   warnings: ReadonlyArray<Descriptor.DiscoveryWarning>
 ): Promise<Doctor.Report> =>
   Effect.runPromise(
-    DoctorCmd.fromRegistry({ environment: {} }).pipe(
+    DoctorCmd.fromRegistry(globals).pipe(
       Effect.provide(
         Registry.layerNoop({ list: () => Effect.succeed(descriptors), warnings: () => Effect.succeed(warnings) })
       ),
@@ -61,6 +62,12 @@ const run = (
       Effect.provideService(Project.LegacyState, [])
     )
   )
+
+const run = (
+  root: string,
+  descriptors: ReadonlyArray<Descriptor.FlowDescriptor>,
+  warnings: ReadonlyArray<Descriptor.DiscoveryWarning>
+): Promise<Doctor.Report> => runWith({ environment: {} }, root, descriptors, warnings)
 
 describe("local diagnostics off the registry snapshot", () => {
   it("counts the discovered flows and leaves the reserved ones out", async () => {
@@ -96,6 +103,20 @@ describe("local diagnostics off the registry snapshot", () => {
       level: "warn",
       detail: "missing_description: A flow needs a description"
     })
+  })
+
+  it("inspects the hidden --backend flag, and the process environment when the invocation carries none", async () => {
+    // `doctor` reports an unsupported backend as a check instead of refusing,
+    // so the flag has to reach the environment `Doctor.inspect` reads.
+    const flagged = await runWith({ environment: {}, backend: "postgres" }, project(), [], [])
+    expect(check(flagged, "backend")).toMatchObject({ level: "fail" })
+    vi.stubEnv("SMITHERS_BACKEND", "pglite")
+    try {
+      const inherited = await runWith({}, project(), [], [])
+      expect(check(inherited, "backend")).toMatchObject({ level: "fail" })
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("opens no execution database", async () => {

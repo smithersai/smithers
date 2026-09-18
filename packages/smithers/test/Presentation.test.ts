@@ -296,6 +296,13 @@ describe("agent-friendly compatibility spellings", () => {
     expect(agentArguments(["up", "hello", "--serve"])).toBeUndefined()
     expect(agentArguments(["internal", "claude", "tick"])).toBeUndefined()
     expect(agentArguments(["up", "--help"])).toBeUndefined()
+    // `bug` with no words is the 0.x spelling the legacy parser still owns.
+    expect(legacyArguments(["bug"])).toEqual(["bug"])
+    expect(legacyArguments(["bug", "it", "broke"])).toBeUndefined()
+    // An alias missing its positional keeps the legacy parser's typed usage
+    // error instead of becoming a canonical one.
+    expect(agentArguments(["resume"])).toBeUndefined()
+    expect(agentArguments(["resume", "--verbose"])).toBeUndefined()
   })
 })
 

@@ -351,6 +351,82 @@ describe("unified root command dispatch", () => {
     expect(ports.serveHost.mock.calls[0]![0]).toHaveProperty("pricing", undefined)
   })
 
+  it("resolves the opencode seat, bind and engine host from the options and the environment", async () => {
+    const opencode = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>(
+      "../src/commands/OpenCode.ts"
+    )
+    // An empty --seat and an empty SMITHERS_SEAT are both "not named", so the
+    // first provider key the environment sets decides the seat.
+    expect(opencode.seatOf({ seat: "" }, { SMITHERS_SEAT: "", CEREBRAS_API_KEY: "key" }))
+      .toBe("cerebras:gpt-oss-120b")
+    expect(opencode.seatOf({ seat: undefined }, { SMITHERS_SEAT: "anthropic:claude-sonnet-4-5" }))
+      .toBe("anthropic:claude-sonnet-4-5")
+    expect(opencode.seatOf({ seat: "openai:gpt-5.6-sol" }, { SMITHERS_SEAT: "gemini:gemini-2.5-pro" }))
+      .toBe("openai:gpt-5.6-sol")
+    // An exported but empty key is no key.
+    expect(opencode.seatOf({ seat: undefined }, { CEREBRAS_API_KEY: "" })).toBeUndefined()
+    const options = { port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 100, scripted: true }
+    expect(opencode.bind(options, { OPENCODE_SERVER_PASSWORD: "pw", OPENCODE_SERVER_USERNAME: "ada" }))
+      .toMatchObject({
+        port: 4096,
+        hostname: "127.0.0.1",
+        listen: false,
+        credentials: { username: "ada", password: "pw" }
+      })
+    expect(opencode.bind(options, {}).credentials).toBeUndefined()
+    // The engine host is three layers over the served directory. Building the
+    // description opens no database and spawns nothing.
+    expect(Object.keys(opencode.nodeHost(directory, {}))).toEqual(["platform", "seats", "registry"])
+  })
+
+  it("reads the opencode environment from the runtime, then the globals, then the process", async () => {
+    ports.opencode.mockRestore()
+    const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
+    const served = mkdtempSync(join(tmpdir(), "smithers-opencode-cli-"))
+    const before = process.cwd()
+    ports.serveHost.mockImplementation(() => Effect.void)
+    const options = {
+      directory: served,
+      port: 4096,
+      hostname: "127.0.0.1",
+      listen: false,
+      cors: [],
+      maxFrames: 7,
+      scripted: true
+    }
+    const credentials = () => ports.serveHost.mock.calls.at(-1)![0].bind.credentials
+    try {
+      // The runtime environment the bridge supplies wins over the globals.
+      await host(options, { credential: undefined, environment: {} }, { quiet: true }, {
+        environment: { OPENCODE_SERVER_PASSWORD: "runtime" }
+      })
+      expect(credentials()).toEqual({ username: "opencode", password: "runtime" })
+      // With neither, the process environment answers.
+      vi.stubEnv("OPENCODE_SERVER_PASSWORD", "process")
+      await host(options, { credential: undefined }, { quiet: true })
+      expect(credentials()).toEqual({ username: "opencode", password: "process" })
+      // No directory argument serves the working directory.
+      process.chdir(served)
+      const cwd = process.cwd()
+      await host({ ...options, directory: undefined }, { credential: undefined }, { quiet: true })
+      expect(ports.serveHost.mock.calls.at(-1)![0]).toMatchObject({ directory: cwd })
+      // Without --scripted the durable engine driver serves the turns.
+      const engineDirectory = mkdtempSync(join(tmpdir(), "smithers-opencode-engine-"))
+      try {
+        await host({ ...options, directory: engineDirectory, scripted: false, seat: "cerebras:gpt-oss-120b" }, {
+          credential: undefined
+        }, { quiet: true })
+        expect(ports.serveHost.mock.calls.at(-1)![0]).toMatchObject({ seat: "cerebras:gpt-oss-120b" })
+      } finally {
+        rmSync(engineDirectory, { recursive: true, force: true })
+      }
+    } finally {
+      vi.unstubAllEnvs()
+      process.chdir(before)
+      rmSync(served, { recursive: true, force: true })
+    }
+  })
+
   it("ends with the shutdown line and no failure when a signal stops the server", async () => {
     ports.opencode.mockRestore()
     const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")

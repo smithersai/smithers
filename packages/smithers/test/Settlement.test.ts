@@ -2,7 +2,9 @@
  * The settlement vocabulary a launching verb reports its run with, pinned at
  * the module that now owns it instead of only through `Command.cli`.
  */
+import { ControlError } from "@smthrs/control"
 import type { ControlSchema } from "@smthrs/control"
+import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Settlement from "../src/commands/Settlement.ts"
 
@@ -51,6 +53,30 @@ describe("Settlement", () => {
       status: "failed",
       cause: "no cause recorded in the journal"
     })
+  })
+
+  it("keeps a transport failure's own retryability when it wraps one", () => {
+    // A watch that failed because the transport said so is retryable exactly
+    // as that transport said; anything else is retryable by default.
+    expect(
+      Settlement.watchFailure(
+        new ControlError.TransportError({ message: "gone", retryable: false }),
+        "run-1",
+        "settlement"
+      ).retryable
+    ).toBe(false)
+    expect(Settlement.watchFailure(new Error("socket reset"), "run-1", "settlement").retryable).toBe(true)
+  })
+
+  it("keeps the highest sequence a stream carries, whatever order it arrives in", async () => {
+    const sequences = (numbers: ReadonlyArray<number>) =>
+      Effect.runPromise(Settlement.latestSequence(Stream.fromArray(numbers.map((sequence) => ({ sequence })))))
+
+    expect(await sequences([])).toBeUndefined()
+    expect(await sequences([7])).toBe(7)
+    expect(await sequences([7, 9])).toBe(9)
+    // A replay out of order must not lower the park a resume keys on.
+    expect(await sequences([9, 7])).toBe(9)
   })
 
   it("names the run and the next commands when no executor took it", () => {
