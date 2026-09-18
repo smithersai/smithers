@@ -899,7 +899,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
       parked: "none",
       lastTransition: "continue",
       demandThisFrame: false,
-      capEnded: undefined
+      stoppedBy: undefined
     },
     editedThisFrame: false,
     health: colorOf(session.title),
@@ -1526,17 +1526,20 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
     : closing.provider?.code === "authentication"
     ? { name: "ProviderAuthError", data: { providerID: closing.provider.providerID, message: closing.message } }
     : { name: "UnknownError", data: { message: closing.message } }
-  // A cap that ended the run is red; anything else that ended it without
-  // an answer leaves health unknown.
-  const capEnded = closing._tag === "failed" && /\bcap\b/i.test(closing.message) ? closing.message : undefined
+  // A usage limit that ended the run is red, because raising it is something
+  // the operator can do; anything else that ended the run without an answer
+  // leaves health unknown. Which one this is comes off the provider's
+  // normalized code and never off its sentence: the code is the contract
+  // (`Health.limitReached`, `@smthrs/model/ModelError`).
+  const stoppedBy = closing._tag === "failed" ? Health.limitReached(closing.provider) : undefined
   const decision: Health.Decision = closing._tag === "interrupted"
     ? { color: "gray", reason: "interrupted" }
-    : capEnded === undefined
+    : stoppedBy === undefined
     ? { color: "gray", reason: "failed" }
-    : { color: "red", reason: `stopped: ${capEnded}` }
+    : { color: "red", reason: Health.limitReason(stoppedBy) }
   const marked = decided(
     ctx,
-    { ...settled.state, facts: { ...settled.state.facts, capEnded } },
+    { ...settled.state, facts: { ...settled.state.facts, stoppedBy } },
     decision,
     undefined,
     lastFrame(settled.state)

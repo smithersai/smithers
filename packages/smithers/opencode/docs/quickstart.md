@@ -40,7 +40,7 @@ front of the session title.
 | --- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | 🟢  | Progressing, verifying, or done.                                                                                                     |
 | 🟡  | Repeating itself, exploring without an edit for four frames, or a discipline demand was just issued.                                 |
-| 🔴  | Parked on a permission, a question, or quota; needs a person; or a cap ended the run.                                                |
+| 🔴  | Parked on a permission, a question, or quota; needs a person; or a usage limit ended the run.                                        |
 | ⚪  | No `AI_GATEWAY_API_KEY`, Jev unreachable or over its 1.5 s deadline, every answer under 0.5 confidence, or the turn was interrupted. |
 
 A `health` card appears in the timeline on every color change, titled with

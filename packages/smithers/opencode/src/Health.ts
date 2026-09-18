@@ -19,6 +19,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Clock, Effect, Layer, Redacted, Schema } from "effect"
+import type * as Driver from "./Driver.ts"
 
 /**
  * The state sent to Jev, from design section 3.1.
@@ -47,6 +48,53 @@ export const State = Schema.Struct({
 export type State = typeof State.Type
 
 /**
+ * A usage limit that ended a run: which limit, and the seat that hit it.
+ *
+ * The limit is named by the provider-neutral `ModelError` code the protocol
+ * adapter published, never by the sentence beside it. Provider message text
+ * is not a contract and changes without notice, which is the whole reason
+ * the codes exist (`@smthrs/model/ModelError`, and the same rule restated in
+ * `packages/rpc/src/UpstreamProse.ts`), and a run stopped at a limit is the
+ * one failure an operator can act on — so guessing it from the provider's
+ * English is the one guess that must not be made here.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Limit {
+  /** Which limit the seat hit, off `ModelError.code`. */
+  readonly code: "quota_exceeded" | "rate_limited"
+  /** The seat that hit it, as `provider:model`. */
+  readonly seat: string
+}
+
+/**
+ * The limit a refusal reports, or `undefined` when the refusal is not one:
+ * a provider that broke, a bad key, a request the model rejected. Only the
+ * two usage codes count, and only from the typed field.
+ *
+ * @category classification
+ * @since 1.0.0
+ */
+export const limitReached = (failure: Driver.ProviderFailure | undefined): Limit | undefined => {
+  if (failure === undefined) return undefined
+  return failure.code === "quota_exceeded" || failure.code === "rate_limited"
+    ? { code: failure.code, seat: failure.seat }
+    : undefined
+}
+
+/**
+ * The reason a run stopped at a limit renders as, on the dot and the card.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const limitReason = (limit: Limit): string =>
+  limit.code === "quota_exceeded"
+    ? `stopped: ${limit.seat} is out of quota`
+    : `stopped: ${limit.seat} is rate limited`
+
+/**
  * What the color rule reads: the state Jev sees, plus two harness facts
  * that never leave the server.
  *
@@ -56,8 +104,8 @@ export type State = typeof State.Type
 export interface Facts extends State {
   /** Whether a discipline demand was issued since the last evaluation. */
   readonly demandThisFrame: boolean
-  /** The reason a discipline cap ended the run, when one did. */
-  readonly capEnded: string | undefined
+  /** The usage limit that ended the run, when the provider's code said one did. */
+  readonly stoppedBy: Limit | undefined
 }
 
 /**
@@ -181,7 +229,7 @@ const parkedReason: Readonly<Record<Exclude<State["parked"], "none">, string>> =
 
 /**
  * The color rule, design section 3.3, first match wins. The facts decide
- * first: a parked run and a cap that ended the run are red whether or not
+ * first: a parked run and a run a usage limit ended are red whether or not
  * Jev answered, because waiting for approval needs no judgment. Then the
  * answers: none, or none at or above the confidence floor, is gray, since
  * health is unavailable and the run is not judged on nothing.
@@ -191,7 +239,7 @@ const parkedReason: Readonly<Record<Exclude<State["parked"], "none">, string>> =
  */
 export const decide = (facts: Facts, answers: Answers | undefined): Decision => {
   if (facts.parked !== "none") return { color: "red", reason: parkedReason[facts.parked] }
-  if (facts.capEnded !== undefined) return { color: "red", reason: `stopped: ${facts.capEnded}` }
+  if (facts.stoppedBy !== undefined) return { color: "red", reason: limitReason(facts.stoppedBy) }
   if (answers === undefined) return { color: "gray", reason: "health unavailable" }
   const confident = Object.values(answers).some((answer) => Classifier.confidence(answer) >= confidenceFloor)
   if (!confident) return { color: "gray", reason: "health uncertain" }

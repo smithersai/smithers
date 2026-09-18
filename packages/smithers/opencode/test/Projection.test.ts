@@ -1,13 +1,16 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as AgentEvents from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Option } from "effect"
+import { Cause, Option } from "effect"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
-import type * as Health from "../src/Health.ts"
+import * as EngineDriver from "../src/EngineDriver.ts"
+import * as Health from "../src/Health.ts"
 import * as Ids from "../src/Ids.ts"
 import * as Projection from "../src/Projection.ts"
 import * as Protocol from "../src/Protocol.ts"
@@ -309,27 +312,23 @@ describe("Projection", () => {
       name: "UnknownError",
       data: { message: "boom" }
     })
+    // The only `Aborted` the harness emits is the interrupt one CellTurn
+    // sends from `Effect.onInterrupt`; it carries no provider code, so the
+    // dot stays gray and the reason reaches the header verbatim.
     const aborted = Projection.fold(
       ctx,
       start.state,
-      new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "quota" })
+      new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "Cell frame interrupted" })
     )
     expect(aborted.events.map((event) => event.type).slice(0, 3)).toEqual([
       "session.updated",
       "message.part.updated",
       "message.updated"
     ])
-    expect((aborted.events[2]!.properties["info"] as Protocol.AssistantMessage).error?.data.message).toBe("quota")
-    // A discipline cap that ended the run is red, with the reason on the card.
-    const capped = Projection.fold(
-      ctx,
-      start.state,
-      new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "The read-only cap ended the run" })
+    expect((aborted.events[0]!.properties["info"] as Protocol.Session).title.startsWith("⚪ ")).toBe(true)
+    expect((aborted.events[2]!.properties["info"] as Protocol.AssistantMessage).error?.data.message).toBe(
+      "Cell frame interrupted"
     )
-    expect((capped.events[0]!.properties["info"] as Protocol.Session).title.startsWith("🔴 ")).toBe(true)
-    expect((capped.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
-      title: "stopped: The read-only cap ended the run"
-    })
     // A turn stopped mid-call: the open cell and the open call read as errors
     // carrying why, so nothing stays running in the stream or after a reload.
     const events = scriptEvents()
@@ -382,6 +381,68 @@ describe("Projection", () => {
     expect(errorOf(noCredit)).toEqual({
       name: "UnknownError",
       data: { message: "quota_exceeded (HTTP 429) from openai:gpt: no credits" }
+    })
+  })
+
+  it("reads a usage limit that ended the run off the provider's code, never off its words", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    /**
+     * The closing a refused model call actually reaches the projection as:
+     * the driver's own `failedOutcome`, over the `HarnessError`-wrapped
+     * `ModelError` the cell controller raises.
+     */
+    const refused = (code: ModelError["code"], message: string, httpStatus: number): Projection.Closing => {
+      const outcome = EngineDriver.failedOutcome(
+        "openai:gpt",
+        Cause.fail(
+          new HarnessError({
+            code: "model_failed",
+            message: "The cell frame failed",
+            cause: new ModelError({ code, message, httpStatus })
+          })
+        )
+      )
+      if (outcome._tag !== "failed") throw new Error(`the driver reported ${outcome._tag}`)
+      return outcome
+    }
+    const dotOf = (step: Projection.Step): string =>
+      (step.events[0]!.properties["info"] as Protocol.Session).title.slice(0, 2).trim()
+    const cardOf = (step: Projection.Step): string => {
+      const state = (step.events[1]!.properties["part"] as Protocol.ToolPart).state
+      return state.status === "completed" ? state.title : `the health card is ${state.status}`
+    }
+    // An account at its cap: red, naming the seat the operator has to raise.
+    const noQuota = Projection.close(
+      ctx,
+      start.state,
+      refused("quota_exceeded", "You exceeded your current quota, please check your plan and billing details.", 429)
+    )
+    expect([dotOf(noQuota), cardOf(noQuota)]).toEqual(["🔴", "stopped: openai:gpt is out of quota"])
+    // A rate-limit window is the same fault class: a limit stopped the run.
+    const limited = Projection.close(ctx, start.state, refused("rate_limited", "Rate limit reached for gpt", 429))
+    expect([dotOf(limited), cardOf(limited)]).toEqual(["🔴", "stopped: openai:gpt is rate limited"])
+    // A provider that broke is gray: health is unknown, not bad.
+    const broke = Projection.close(ctx, start.state, refused("provider_internal", "Internal server error", 500))
+    expect([dotOf(broke), cardOf(broke)]).toEqual(["⚪", "failed"])
+    // And the words are not the contract: a refusal whose sentence says "cap"
+    // and whose code says otherwise is that same ordinary failure.
+    const capInProse = Projection.close(
+      ctx,
+      start.state,
+      refused("provider_internal", "The concurrency cap for this account was hit", 503)
+    )
+    expect(capInProse.state.facts.stoppedBy).toBeUndefined()
+    expect([dotOf(capInProse), cardOf(capInProse)]).toEqual(["⚪", "failed"])
+    // The rule replays the same decision off the facts the projection kept,
+    // so a reload and the live stream read the same dot.
+    expect(Health.decide(noQuota.state.facts, undefined)).toEqual({
+      color: "red",
+      reason: "stopped: openai:gpt is out of quota"
+    })
+    expect(Health.decide(capInProse.state.facts, undefined)).toEqual({
+      color: "gray",
+      reason: "health unavailable"
     })
   })
 

@@ -1,7 +1,26 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import type * as Driver from "../src/Driver.ts"
 import * as Health from "../src/Health.ts"
+
+/**
+ * A refusal shaped the way `EngineDriver.failedOutcome` shapes one: the seat,
+ * the normalized `ModelError` code, the HTTP status, and the provider's words
+ * verbatim. `Projection.test.ts` pins that the driver really builds this, and
+ * that the projection turns it into the fact below.
+ */
+const refusal = (code: string, message: string, status: number): Driver.ProviderFailure => ({
+  seat: "openai:gpt",
+  providerID: "openai",
+  code,
+  status,
+  message
+})
+
+const outOfQuota = Health.limitReached(
+  refusal("quota_exceeded", "You exceeded your current quota, please check your plan and billing details.", 429)
+)!
 
 const facts = (extra: Partial<Health.Facts> = {}): Health.Facts => ({
   task: "Fix the flaky test",
@@ -14,7 +33,7 @@ const facts = (extra: Partial<Health.Facts> = {}): Health.Facts => ({
   parked: "none",
   lastTransition: "continue",
   demandThisFrame: false,
-  capEnded: undefined,
+  stoppedBy: undefined,
   ...extra
 })
 
@@ -56,7 +75,20 @@ describe("Health", () => {
       ["parked on a permission", facts({ parked: "permission" }), answers(), "red", "waiting for approval"],
       ["parked on a question", facts({ parked: "question" }), answers(), "red", "waiting for an answer"],
       ["parked on quota", facts({ parked: "quota" }), answers(), "red", "waiting for quota"],
-      ["a cap ended the run", facts({ capEnded: "read-only cap" }), answers(), "red", "stopped: read-only cap"],
+      [
+        "a usage limit ended the run",
+        facts({ stoppedBy: outOfQuota }),
+        answers(),
+        "red",
+        "stopped: openai:gpt is out of quota"
+      ],
+      [
+        "a rate-limit window ended the run",
+        facts({ stoppedBy: Health.limitReached(refusal("rate_limited", "Rate limit reached for gpt", 429)) }),
+        answers(),
+        "red",
+        "stopped: openai:gpt is rate limited"
+      ],
       [
         "needs a person",
         facts(),
@@ -113,11 +145,24 @@ describe("Health", () => {
       // under the floor: waiting for approval needs no judgment.
       ["parked with no answers", facts({ parked: "permission" }), undefined, "red", "waiting for approval"],
       [
-        "a cap ended the run with no answers",
-        facts({ capEnded: "read-only cap" }),
+        "a usage limit ended the run with no answers",
+        facts({ stoppedBy: outOfQuota }),
         undefined,
         "red",
-        "stopped: read-only cap"
+        "stopped: openai:gpt is out of quota"
+      ],
+      // The provider's sentence is not a contract: a refusal that is not one
+      // of the limit codes is an ordinary failure, whatever words it carries.
+      [
+        "a refusal whose words say cap but whose code does not",
+        facts({
+          stoppedBy: Health.limitReached(
+            refusal("provider_internal", "The concurrency cap for this account was hit", 503)
+          )
+        }),
+        undefined,
+        "gray",
+        "health unavailable"
       ],
       [
         "parked with every answer under the floor",
@@ -277,7 +322,8 @@ describe("Health", () => {
   it("prices Jev calls by input tokens and carries the state without the server-only facts", () => {
     expect(Health.jevCost(undefined)).toBe(0)
     expect(Health.jevCost({ inputTokens: 1_000_000, outputTokens: 5 })).toBeCloseTo(0.042)
-    expect(Health.toState(facts({ demandThisFrame: true, capEnded: "x" }))).not.toHaveProperty("capEnded")
+    expect(Health.toState(facts({ demandThisFrame: true, stoppedBy: outOfQuota }))).not.toHaveProperty("stoppedBy")
+    expect(Health.limitReached(undefined)).toBeUndefined()
     expect(Health.classifier.id).toBe("harness/health")
     expect(Object.keys(Health.classifier.questions)).toEqual(["progress", "stuck", "needsHuman"])
     expect(Health.recordType).toBe("flows.opencode.health.v1")
