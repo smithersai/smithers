@@ -85,6 +85,12 @@ and performs bounded owner correction. A separate `coding/prototype` entry
 produces a disposable [source prototype](poc.md) without implementation or
 landing. A real fix does not require a prototype first.
 
+The [`coding/dispatch`](dispatch.md) entry runs exactly one agent turn: a
+prompt, a bounded session window, the seat role and model for that request,
+and the assistant messages the turn produced. It is registered
+unconditionally, because unlike `coding/request` it needs no project
+configuration, no memory and no check table.
+
 `planning.ts` provides `PreparePlan`: bounded source gathering, request review,
 optional durable clarification, a model draft, and source verification before
 binding the existing `Plan` schema. See [planning.md](planning.md) for context

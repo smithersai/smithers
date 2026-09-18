@@ -40,7 +40,6 @@ export const wikiFlows = (actions: CommandActions & Partial<LibrarianRunsControl
     summary: "Create Wiki in the background",
     args: "<owner/repo>",
     requires: ["signed-in"],
-    capabilities: ["outbound:launch"],
     confirm: "create the repository Wiki",
     input: Schema.Struct({ repo: Schema.NonEmptyString }),
     /* Typed owner/repo, with the loaded repositories offered: the grammar reads only that shape. */

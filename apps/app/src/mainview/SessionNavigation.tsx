@@ -4,7 +4,7 @@ import { ChromeDock } from "./ChromeDock"
 import { useController } from "./ControllerContext"
 import { KeyboardNavigation } from "./KeyboardNavigation"
 import { WORDMARK } from "./Wordmark"
-import { flowAction } from "./flows/FlowAction"
+import { flowAction, flowSelector } from "./flows/FlowAction"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
 import { bindPressActions } from "./runtime/PressActions"
 
@@ -28,7 +28,7 @@ export function SessionNavigation() {
       controller.dismissHint("chat")
       if (controller.store.session().paletteOpen) {
         controller.closePalette(controller.store.session().draft)
-        requestAnimationFrame(() => doc.querySelector<HTMLButtonElement>('.app-chat-controls [data-flow="chat.open"]')?.focus())
+        requestAnimationFrame(() => doc.querySelector<HTMLButtonElement>(`.app-chat-controls ${flowSelector("chat.open")}`)?.focus())
       }
       else {
         controller.runCommand('chat.open')

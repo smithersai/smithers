@@ -1,6 +1,7 @@
 import { createRecoveryDownload } from "./state/BrowserStorageRecovery"
 import { createStorageRecoveryAction } from "./state/StorageRecoveryAction"
 import type { StorageRecoveryHost } from "./state/StorageRecoveryAction"
+import { applyFlow } from "./flows/FlowAction"
 import {
   RECOVERY_DOWNLOAD_LABEL,
   RECOVERY_PRIVATE_WARNING,
@@ -30,7 +31,7 @@ export const createStartupRecovery = (
   warning.textContent = RECOVERY_PRIVATE_WARNING
   const button = documentTarget.createElement("button")
   button.type = "button"
-  button.dataset.flow = STORAGE_RECOVERY_EXPORT
+  applyFlow(button, STORAGE_RECOVERY_EXPORT)
   /*
    * The second door out of a failed boot. A profile too large to load could
    * only ever download itself; now it can also start over, without the human
@@ -38,7 +39,7 @@ export const createStartupRecovery = (
    */
   const reset = documentTarget.createElement("button")
   reset.type = "button"
-  reset.dataset.flow = STORAGE_RECOVERY_RESET
+  applyFlow(reset, STORAGE_RECOVERY_RESET)
   const status = documentTarget.createElement("p")
   status.setAttribute("role", "status")
   status.setAttribute("aria-live", "polite")

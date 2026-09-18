@@ -265,8 +265,15 @@ export interface Options<
    * opaque string here: the resolver owns the vocabulary, so
    * `anthropic:claude-sonnet-4-5`, a bare model id, and a logical name like
    * `reviewer` are all legal declarations.
+   *
+   * A function is read once per execution, before the first ask, against the
+   * decoded payload. That is what a dispatched step needs: the caller names
+   * the role and, when it has one, the exact model for *this* request, and
+   * neither is a fact the declaration can know. It changes nothing else — the
+   * answer is still one opaque seat id the host's resolver owns, and a
+   * declaration that writes a constant is the same declaration it was.
    */
-  readonly seat: string
+  readonly seat: string | ((payload: PayloadSchemaOf<Payload>["Type"]) => string)
   /** The task, built from the decoded payload. */
   readonly prompt: (payload: PayloadSchemaOf<Payload>["Type"]) => string
   /** Stable system teaching for this step, after the host's and before the schema's. */
@@ -521,7 +528,10 @@ export const make = <
         onNone: () => (_event: AgentEvent.AgentEvent): Effect.Effect<void> => Effect.void,
         onSome: (service) => service.emit
       })
-      const seat = yield* seats.resolve(options.seat)
+      // One resolution per execution: the declared seat may be a function of
+      // the payload, and every later rung compares against the id it chose.
+      const seatId = typeof options.seat === "function" ? options.seat(payload) : options.seat
+      const seat = yield* seats.resolve(seatId)
       const quota = yield* QuotaPolicy.current
       const maxParks = host.maxQuotaParks ?? QuotaPolicy.defaultMaxParks
       const task = options.prompt(payload)
@@ -631,7 +641,7 @@ export const make = <
         session: string,
         prompt: string,
         teaching: ReadonlyArray<string>,
-        seatId: string,
+        askSeat: string,
         correction: number | undefined
       ): Effect.Effect<
         string,
@@ -648,7 +658,7 @@ export const make = <
         waitOutQuota(
           session,
           Effect.gen(function*() {
-            const resolved = seatId === options.seat ? seat : yield* seats.resolve(seatId)
+            const resolved = askSeat === seatId ? seat : yield* seats.resolve(askSeat)
             const outcome = yield* agent.run({
               contextWindowTokensFor: contextWindowResolver(seats),
               session,
@@ -713,7 +723,7 @@ export const make = <
             ...declaredRepair.system,
             StructuredOutput.instructions(options.output)
           ],
-          declaredRepair.seat ?? options.seat,
+          declaredRepair.seat ?? seatId,
           // The repair is not a rung of the ladder: it is the one ask that
           // follows the ladder's exhaustion, and numbering it `limit + 1`
           // would present it as a correction the policy never allowed.
@@ -744,7 +754,7 @@ export const make = <
         | Evaluator.Evaluator
         | Output["DecodingServices"]
       > =>
-        ask(`${instance.executionId}/${tag}#${correction}`, prompt, system, options.seat, correction).pipe(
+        ask(`${instance.executionId}/${tag}#${correction}`, prompt, system, seatId, correction).pipe(
           Effect.flatMap((answer) =>
             StructuredOutput.decode(options.output, answer, { corrections: correction, limit })
           ),

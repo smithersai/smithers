@@ -15,14 +15,11 @@ const createAppController = scopedControllers()
  * the flow ran, the payload was correct, and the admin saw nothing.
  */
 
-const agentWithGrants = (revoked: { count: number }): AgentPort => ({
+const debugAgent = (): AgentPort => ({
   available: true,
   startTurn: async () => ({ status: "started" }),
   cancelTurn: async () => {},
-  subscribe: () => () => {},
-  revokeGrants: async () => {
-    revoked.count += 1
-  }
+  subscribe: () => () => {}
 })
 
 /** The only session the debug plugin registers for. */
@@ -45,7 +42,7 @@ const bodies = (store: AppStore): string[] => [...store.collections.messages.val
 describe("the debug reads render for the human", () => {
   test("/debug.backend answers the human", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, agentWithGrants({ count: 0 }), {
+    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -53,7 +50,7 @@ describe("the debug reads render for the human", () => {
     await settled()
     await settled()
     expect(store.collections.messages.size).toBe(before + 1)
-    expect(bodies(store).at(-1)).toContain("agent backend: chain")
+    expect(bodies(store).at(-1)).toContain("agent backend: http")
   })
 
   test.each([
@@ -63,7 +60,7 @@ describe("the debug reads render for the human", () => {
     ["debug.net", "Network tap"]
   ])("/%s appends its payload to the transcript", async (flow, title) => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, agentWithGrants({ count: 0 }), {
+    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -76,22 +73,9 @@ describe("the debug reads render for the human", () => {
     expect(rendered).toContain("```json")
   })
 
-  test("/debug.grants.reset states that the grants are gone", async () => {
-    const revoked = { count: 0 }
-    const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, agentWithGrants(revoked), {
-      fetchImpl: async () => new Response("{}", { status: 200 })
-    })
-    controller.send("/debug.grants.reset")
-    await settled()
-    await settled()
-    expect(revoked.count).toBe(1)
-    expect(bodies(store).at(-1)).toContain("session grants are revoked")
-  })
-
   test("the agent's own invocation renders nothing and still reads the value", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, agentWithGrants({ count: 0 }), {
+    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -103,7 +87,7 @@ describe("the debug reads render for the human", () => {
 
   test("the dev-tools panel's read never dispatches", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, agentWithGrants({ count: 0 }), {
+    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size

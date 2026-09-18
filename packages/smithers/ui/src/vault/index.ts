@@ -10,7 +10,8 @@ export {
   wikilinksToMarkdown,
   type Wikilink,
 } from "./wikilinks";
-export type { VaultAdapter, VaultLink, VaultNoteMeta } from "./types";
+export type { VaultAdapter, VaultDataAttributes, VaultLink, VaultNoteMeta, VaultRowProps } from "./types";
+export { vaultDataAttributes } from "./types";
 export {
   GRAPH_FOLDER_TINTS,
   HUB_LABEL_MIN_DEGREE,

@@ -1,6 +1,6 @@
 import { ViewSkeleton } from "./ViewSkeleton"
 import { MarkdownEditorSurface, KnowledgeGraphSurface } from "./ViewModules"
-import { flowAction } from "./flows/FlowAction"
+import { flowAction, flowProps } from "./flows/FlowAction"
 import { Badge, Button, EmptyState, FileTree } from "@smthrs/ui"
 import { BacklinksPanel, OutlineView } from "@smthrs/ui/vault"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -8,7 +8,6 @@ import { BookOpen, Plus, Trash2, Waypoints } from "lucide-react"
 import { Suspense, useMemo } from "react"
 import { activeRepositoryId } from "./state/RepoContext"
 import { useController } from "./ControllerContext"
-import { stampFlows } from "./FlowStamp"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "./state/AppState"
 import type { WorldDocument } from "./state/AppState"
 import { SurfaceHeader } from "./SurfaceChrome"
@@ -79,7 +78,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
         <Button
           variant="ghost"
           size="sm"
-          data-flow="wiki.graph"
+          {...flowProps("wiki.graph")}
           data-testid="wiki-graph"
           aria-pressed={graphMode}
           onClick={() =>
@@ -99,7 +98,7 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
           aria-label={`${WIKI_DISPLAY_NAME} notes`}
         >
           <FileTree
-            nodeProps={() => ({ "data-flow": "wiki.select" })}
+            nodeProps={() => flowProps("wiki.select")}
             nodes={notes}
             selected={selectedPath}
             onSelect={(path) => {
@@ -115,7 +114,6 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
               className="world-graph"
               aria-label={`${WIKI_DISPLAY_NAME} graph`}
               data-testid="wiki-graph-pane"
-              ref={stampFlows([["button", "wiki.open"]])}
             >
               <div className="world-document-meta">
                 <span data-testid="wiki-pane-graph-scope">
@@ -196,17 +194,18 @@ export function WorldSurface({ documents }: { readonly documents: ReadonlyArray<
               className="world-rail"
               aria-label={`${selected.title} links and outline`}
               data-testid="wiki-rail"
-              ref={stampFlows([['[data-slot="vault-outline"] button', "wiki.heading"], ["button", "wiki.open"]])}
             >
               <BacklinksPanel
                 backlinks={[...links.backlinks]}
                 linksOut={[...links.linksOut]}
                 onOpenNote={(path) => controller.runCommand("wiki.open", path)}
+                linkProps={(path) => flowProps("wiki.open", path)}
               />
               {/* Each heading is the button door of wiki.heading: the editor scrolls to its source line. */}
               <OutlineView
                 markdown={selected.body}
                 onHeadingClick={(line) => controller.runCommand("wiki.heading", String(line))}
+                headingProps={(heading) => flowProps("wiki.heading", String(heading.line))}
               />
             </aside>
           ) :

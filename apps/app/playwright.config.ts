@@ -34,7 +34,16 @@ export default defineConfig({
     timeout: 240_000,
     env: {
       SMITHERS_LOCAL_PORT: String(PORT),
-      SMITHERS_CHAT_STUB: CHAT_STUB
+      SMITHERS_CHAT_STUB: CHAT_STUB,
+      /*
+       * Wiki is a default-off release flag read at BUILD time
+       * (state/KnowledgeFeatures.ts), and the tier builds the SPA once for
+       * every spec, so it cannot be turned on per test. Passing it through
+       * lets `VITE_SMITHERS_WIKI=true pnpm --filter smithers-app test:e2e`
+       * run the Wiki specs (wiki.spec.ts, wiki-affordances.spec.ts), which
+       * skip themselves otherwise. The default tier is unchanged.
+       */
+      VITE_SMITHERS_WIKI: process.env.VITE_SMITHERS_WIKI ?? ""
     }
   }
 })

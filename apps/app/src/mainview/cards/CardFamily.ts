@@ -23,6 +23,17 @@ import type { AppStore } from "../state/AppStore"
  */
 export type RunCommand = (name: FlowName, args?: string) => void
 
+/**
+ * The same act for a flow whose name only exists at RUNTIME: a repository's
+ * own flow leaf, a catalog row the registry projected, a search payload
+ * replayed from storage. The dispatch checks the name anyway — one no flow
+ * answers to runs nothing — so a card that legitimately forwards such a name
+ * declares this seam instead of pretending it holds a FlowName. Cards keep
+ * declaring `RunCommand`; only the few that forward a name they were handed
+ * widen to this one.
+ */
+export type RunDynamicCommand = (name: string, args?: string) => void
+
 /** The card of one kind. */
 export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
 
@@ -62,7 +73,7 @@ export interface CardActions {
    * notifications, env, import): every in-card act names its command and
    * routes through the registry at the App.tsx binding site.
    */
-  readonly onRunCommand: RunCommand
+  readonly onRunCommand: RunDynamicCommand
   /*
    * Lane runs — the session's verbose flag, so the run card's Events tab (the
    * raw journal, a debug surface) exists only where verbose does.

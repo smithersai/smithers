@@ -25,7 +25,6 @@ const recordingAgent = (overrides: Partial<AgentPort> = {}) => {
       return overrides.startTurn?.(request) ?? { status: "started" }
     },
     cancelTurn: overrides.cancelTurn ?? (async () => {}),
-    resolveApproval: overrides.resolveApproval,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -272,43 +271,5 @@ describe("turn continuation ownership", () => {
       }
     })
 
-    for (const next of ["send", "retry"] as const) {
-      test(`a late ${failure} resume error cannot fail a newer ${next}`, async () => {
-        const store = await signedInStore()
-        const resume = deferred<StartAgentTurnResult>()
-        const { agent, launches, answer } = recordingAgent({
-          startTurn: async () => launches.length === 2 ? resume.promise : { status: "started" },
-          resolveApproval: async () => true
-        })
-        const controller = createAppController(store, unavailableRepositories, agent)
-        try {
-          controller.send("original question")
-          const lineage = launches[0]!.runId
-          answer(lineage, "approval needed")
-          store.dispatch({ type: "card.upsert", actor: "system", card: {
-            id: "approval", kind: "approval", title: "Approval needed", status: "active",
-            createdAt: Date.now(), ordinal: 10,
-            payload: { capability: "read the repository", runId: lineage, chain: true }
-          } })
-          controller.decideApproval("approval", "approved")
-          await settled()
-          expect(launches).toHaveLength(2)
-          controller.stop()
-          if (next === "send") controller.send("new question")
-          else await controller.commands.run("chat.retry")
-          await settled()
-          expect(launches).toHaveLength(3)
-          const runId = launches[2]!.runId
-          if (failure === "resolved") resume.resolve({ status: "error", message: "old resume failed" })
-          else resume.reject(new Error("old resume failed"))
-          await settled()
-          expect(store.session().phase).toBe("responding")
-          answer(runId, "new turn survived")
-          expect(store.collections.messages.get(`message-${runId}-smithers`)?.text).toBe("new turn survived")
-        } finally {
-          await controller.dispose()
-        }
-      })
-    }
   }
 })

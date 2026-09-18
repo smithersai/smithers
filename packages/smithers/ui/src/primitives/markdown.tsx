@@ -84,8 +84,8 @@ const isHeading = (line: string) => /^#{1,6}\s+/.test(line);
  *
  * A table is one of the shapes a model reaches for most — "which repos, how
  * many issues" is a table — and without a rule here every `|` and every
- * `---|---` lands on screen as literal text inside one paragraph
- * (LIBRARY-CHANGE-REQUESTS §5). The shape is a header row, a delimiter row
+ * `---|---` lands on screen as literal text inside one paragraph.
+ * The shape is a header row, a delimiter row
  * whose column count matches it, then rows until a line that is not a row.
  */
 

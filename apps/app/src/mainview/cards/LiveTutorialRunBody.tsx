@@ -1,6 +1,6 @@
 import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
 import { Button,Markdown } from "@smthrs/ui"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { runSourceCommand } from "../flows/RunCommand"
 import { GuideButton } from "../onboarding/GuideButton"
@@ -22,8 +22,8 @@ export function LiveTutorialRunBody({ card, onRunCommand }: { card: Extract<Card
   const facet=card.payload.facet??"steps"
   const scoped=runSourceCommand(card.id,onRunCommand)
   const views=<div className="flow-run-tabs" role="tablist" aria-label="Run views">
-    <Button size="sm" variant={facet === "steps" ? "default" : "outline"} type="button" role="tab" aria-selected={facet==="steps"} data-flow="runs.steps" onClick={()=>scoped("runs.steps",card.payload.runId)}>Trace</Button>
-    <Button size="sm" variant={facet === "transcript" ? "default" : "outline"} type="button" role="tab" aria-selected={facet==="transcript"} data-flow="runs.logs" onClick={()=>scoped("runs.logs",card.payload.runId)}>Transcript</Button>
+    <Button size="sm" variant={facet === "steps" ? "default" : "outline"} type="button" role="tab" aria-selected={facet==="steps"} {...flowProps("runs.steps")} onClick={()=>scoped("runs.steps",card.payload.runId)}>Trace</Button>
+    <Button size="sm" variant={facet === "transcript" ? "default" : "outline"} type="button" role="tab" aria-selected={facet==="transcript"} {...flowProps("runs.logs")} onClick={()=>scoped("runs.logs",card.payload.runId)}>Transcript</Button>
   </div>
   if(facet==="transcript"){
     const rows=card.payload.follow&&run?liveTutorialTranscript(run):card.payload.transcriptRows??[]

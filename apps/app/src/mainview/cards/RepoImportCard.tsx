@@ -1,5 +1,5 @@
 import { flowArgs } from "../flows/FlowArgs"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 /*
  * The repo-import card: one upserted job card, phase starting → running →
  * done | failed. The frame's StatusPill wears the coarse state; the body
@@ -75,7 +75,7 @@ export const RepoImportCardBody = ({
             <Button
               size="sm"
               variant="outline"
-              data-flow={jobId !== null ? "repos.import.retry" : "repos.import"}
+              {...flowProps(jobId !== null ? "repos.import.retry" : "repos.import")}
               disabled={heldUntil !== null}
               onClick={() => (jobId !== null ? onRunCommand("repos.import.retry", jobId) : onRunCommand("repos.import", repo))}
             >

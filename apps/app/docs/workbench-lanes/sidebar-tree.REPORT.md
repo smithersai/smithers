@@ -26,8 +26,7 @@ names, plus two pass-throughs the laws require:
 
 Existing consumers (`App.tsx` World sidebar, `ConversationCards.tsx`) are
 untouched and keep the uncontrolled behavior. One CSS rule
-(`.sui-file-tree-note`) in `uiCss.ts`; exports in `index.ts`;
-`LIBRARY-CHANGE-REQUESTS.md` §3 records the landing.
+(`.sui-file-tree-note`) in `uiCss.ts`; exports in `index.ts`.
 
 ### `apps/app` state
 

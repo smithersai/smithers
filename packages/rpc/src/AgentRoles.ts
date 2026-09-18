@@ -344,7 +344,7 @@ export const agentRoleTitle = (role: AgentRole): string => `${role.label} · ${r
 /**
  * What a harness needs to launch a role: its binary name and the flag that
  * takes a model id (`claude --model`, `codex -m`, `opencode --model`). The
- * Bun host's harness table (apps/app/src/bun/Harnesses.ts) states these,
+ * harness table (@smthrs/harness-detect) states these,
  * verified against each installed binary's `--help`; this module only
  * composes with them.
  * @since 1.0.0

@@ -221,7 +221,6 @@ const PRE_SPLIT_ADMIN: ReadonlyArray<string> = [
   "debug.events",
   "debug.chain",
   "debug.net",
-  "debug.grants.reset",
   "debug.seams",
   "admin.allowlist.add",
   "admin.allowlist.remove",

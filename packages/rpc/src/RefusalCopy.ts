@@ -805,9 +805,9 @@ const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*) — /u
  * The fault the model should be told, for a refusal that reached the agent
  * boundary as a STRING rather than as an object.
  *
- * A seam's refusal travels through the flow harness, whose failure channel
- * carries a message and nothing else (`CallResult`; see
- * LIBRARY-CHANGE-REQUESTS.md, which already asks for more). So the verdict is
+ * A seam's refusal travels through the flow harness as one string: the
+ * harness classifies a call with `CallResult.code`, but a seam's own verdict
+ * is not in that closed set, so it rides in the text. The verdict is therefore
  * recovered from the one machine token the app itself put at the front of that
  * message, looked up in the two closed registries — never inferred from the
  * English around it. A string with no code in that position gets no note, and

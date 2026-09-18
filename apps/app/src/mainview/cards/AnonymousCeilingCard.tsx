@@ -11,6 +11,7 @@ import { timeLabel } from "../Timestamps"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import type { CardFamily } from "./CardFamily"
+import { flowProps } from "../flows/FlowAction"
 
 type AnonymousCeilingCard = Extract<Card, { kind: "anonymous-ceiling" }>
 
@@ -40,7 +41,7 @@ export const AnonymousCeilingCardBody = ({
     <p className="smithers-card-note" data-testid="anonymous-ceiling-reset">{resetLine(card.payload.retryAt)}</p>
     <div className="flow-run-actions">
       {card.status === "acted" ? <p role="status">Signed in with GitHub.</p> :
-      <Button size="sm" data-flow="auth.sign-in" onClick={() => onConnectGitHub()}>
+      <Button size="sm" {...flowProps("auth.sign-in")} onClick={() => onConnectGitHub()}>
         Sign in with GitHub
       </Button>}
     </div>

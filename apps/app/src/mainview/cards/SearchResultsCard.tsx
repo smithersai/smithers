@@ -1,5 +1,5 @@
 import { fileArgs, parseFileArgs } from "../flows/FileArgs"
-import { flowAction } from "../flows/FlowAction"
+import { dynamicFlowAction } from "../flows/FlowAction"
 /*
  * The search-results card (Search and Command Palette Spec 2026-09-07 §3,
  * §6): the rows one `search.*` flow answered, embedded in the chat at
@@ -13,14 +13,13 @@ import type { SearchAction, SearchItem, SearchItemKind } from "@smthrs/rpc/Cards
 import { Button } from "@smthrs/ui"
 import { GROUP_LABELS, KIND_ORDER } from "../flows/SearchQuery"
 import type { Card } from "../state/AppState"
-import type { CardFamily, RunCommand } from "./CardFamily"
+import type { CardFamily, RunDynamicCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
-import { runtimeFlowName } from "../flows/FlowName"
 
 type SearchResultsCard = Extract<Card, { kind: "search-results" }>
 
 export interface SearchResultsCardActions {
-  readonly onRunCommand: RunCommand
+  readonly onRunCommand: RunDynamicCommand
 }
 
 /** The items grouped by kind, in the ranking's kind order, each group in the answer's order. */
@@ -53,7 +52,7 @@ const ActionButton = ({ action, onRunCommand }: { readonly action: SearchAction 
     size="sm"
     data-role={action.role}
     data-testid={`search-action-${action.flow}`}
-    {...flowAction(onRunCommand, runtimeFlowName(action.flow), action.args)}
+    {...dynamicFlowAction(onRunCommand, action.flow, action.args)}
   >
     {action.label}
   </Button>
@@ -73,7 +72,7 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
           variant="ghost"
           size="sm"
           data-testid="search-results-rerun"
-          {...flowAction(onRunCommand, runtimeFlowName(payload.flow), payload.args)}
+          {...dynamicFlowAction(onRunCommand, payload.flow, payload.args)}
         >
           Search again
         </Button>

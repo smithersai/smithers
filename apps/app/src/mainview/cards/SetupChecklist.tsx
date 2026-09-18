@@ -1,12 +1,11 @@
 import type { RepositoryJob } from "@smthrs/rpc/RepositorySetup"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
-import { flowAction } from "../flows/FlowAction"
-import { runtimeFlowName } from "../flows/FlowName"
+import { dynamicFlowAction } from "../flows/FlowAction"
 import { visible, type CatalogItem } from "../flows/registry"
 import { activeRepositoryId } from "../state/RepoContext"
 import { repositoryJobOf, repositoryJobStates } from "../state/RepositoryJobs"
-import type { RunCommand } from "./CardFamily"
+import type { RunDynamicCommand } from "./CardFamily"
 import { FIRST_RUN_JOBS } from "./FirstRunActions"
 import "./SetupChecklist.css"
 
@@ -74,11 +73,11 @@ export function resolveJobs(commands: readonly CatalogItem[], states: Partial<Re
 export function SetupChecklistCard({ steps, jobs = [], onRunCommand }: {
   steps: ReadonlyArray<ResolvedStep>
   jobs?: ReadonlyArray<ResolvedJob>
-  onRunCommand: RunCommand
+  onRunCommand: RunDynamicCommand
 }) {
   const done = steps.filter(step => step.complete).length
   const row = jobs.length === 0 ? null : <section className="setup-checklist-jobs" data-testid="repository-jobs" aria-label="Repository jobs">
-    {jobs.map(job => <button type="button" key={job.flow} {...flowAction(onRunCommand, runtimeFlowName(job.flow), job.repo)}>{job.label}{job.state === undefined ? "" : ` · ${job.state}`}</button>)}
+    {jobs.map(job => <button type="button" key={job.flow} {...dynamicFlowAction(onRunCommand, job.flow, job.repo)}>{job.label}{job.state === undefined ? "" : ` · ${job.state}`}</button>)}
   </section>
   if (done === steps.length) return row
   return <section className="setup-checklist" data-testid="setup-checklist" aria-label="Set up Smithers">
@@ -88,7 +87,7 @@ export function SetupChecklistCard({ steps, jobs = [], onRunCommand }: {
       {steps.map(step => <li key={step.id} data-complete={step.complete || undefined}>
         {step.complete ? step.id === "set-up-job" && row !== null ? row : <><span aria-hidden="true">✓</span>{step.label}</> :
           step.flow !== undefined ?
-            <button type="button" {...flowAction(onRunCommand, runtimeFlowName(step.flow), step.args)}>{step.label}</button> :
+            <button type="button" {...dynamicFlowAction(onRunCommand, step.flow, step.args)}>{step.label}</button> :
             step.label}
       </li>)}
     </ol>

@@ -4,7 +4,6 @@ import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
 import { Effect } from "effect"
-import { createChainPolicy } from "../../chain/Policy"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
@@ -284,11 +283,9 @@ describe("feature.prototype", () => {
     const { store, controller } = await fixture(relay.routes)
     identity(store, "signed-out")
     await settled()
-    // Reach the onboarding handler under an explicit outbound decision.
-    // The registry now refuses an unscoped protected agent invocation first.
-    const policy = createChainPolicy()
-    policy.resolve("onboarding", "approved", { name: "feature.prototype", claim: "outbound:launch" })
-    const authorize = await Effect.runPromise(Authorize.Authorize.pipe(Effect.provide(policy.layerFor("onboarding"))))
+    // Reach the onboarding handler as an authorized agent invocation: the host
+    // injects the authority, the flow declaration claims nothing.
+    const authorize = Authorize.make({ authorize: () => Effect.void })
     const outcome = await controller.commands.runForAgent("feature.prototype", "a dark mode toggle", {
       authorize, slot: { chain: "", link: 1, ordinal: 0 }, refused: () => {}
     })

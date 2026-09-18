@@ -31,7 +31,6 @@ export const featureFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     summary: "Prototype a feature request as a run: exploration only, never promoted",
     runtime: ["cloud"],
     args: "<what it should do> [owner/repo]",
-    capabilities: ["outbound:launch"],
     input: Schema.Struct({ request: Schema.String, repo: Schema.optional(Schema.String) }),
     handler: ({ request, repo }) => actions.prototypeFeature(request, repo)
   })

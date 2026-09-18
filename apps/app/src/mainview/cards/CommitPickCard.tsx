@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 
@@ -27,7 +27,7 @@ export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPi
                   type="checkbox"
                   checked={on}
                   disabled={row.locked}
-                  data-flow="change.pick"
+                  {...flowProps("change.pick")}
                   aria-keyshortcuts={String(row.index)}
                   onChange={() => onRunCommand("change.pick", String(row.index))}
                 />

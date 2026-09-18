@@ -1,6 +1,6 @@
 /*
- * The Wiki's keyword scorer, lifted out of chain/Worldview.ts (Librarian L5)
- * so the chain's `recall` entry and the wiki flows rank notes the same way.
+ * The Wiki's keyword scorer (Librarian L5): one ranking for every door into
+ * the worldview notes.
  * A hit carries the note's confidence and freshness beside its score: the
  * caller answers "how sure and how old", never a bare number.
  */

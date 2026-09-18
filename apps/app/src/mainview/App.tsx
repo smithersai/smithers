@@ -26,7 +26,7 @@ import { ConnectorsSurface } from "./ConnectorsSurface"
 import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
 import { ChatHint,FirstSightHint } from "./FirstSightHint"
-import { flowAction } from "./flows/FlowAction"
+import { dynamicFlowAction, flowProps } from "./flows/FlowAction"
 import { FlowsSurface } from "./FlowsSurface"
 import { InputModeMenu } from "./InputModeMenu"
 import type { InitMessage } from "./Onboarding"
@@ -399,7 +399,7 @@ function AppContent() {
             suggestion={suggestion.label}
             title={suggestion.why}
             disabled={typing}
-            {...flowAction(controller.runCommand, suggestion.flow, suggestion.args)}
+            {...dynamicFlowAction(controller.runCommand, suggestion.flow, suggestion.args)}
           >
             <Sparkles size={12} />
             {suggestion.label}
@@ -538,7 +538,7 @@ function AppContent() {
             (
               <Button
                 className="auth-shortcut"
-                {...flowAction(controller.runCommand, authAction.flow)}
+                {...dynamicFlowAction(controller.runCommand, authAction.flow)}
               >
                 {authAction.label}
               </Button>
@@ -611,7 +611,7 @@ function AppContent() {
         {composerWrap}
       </div>
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} data-flow="chat.open" onClick={() => {
+        <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}>Chat</GuideButton></FirstSightHint>

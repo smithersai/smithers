@@ -4,7 +4,6 @@ import type { AgentTurnBatch,AgentTurnCursor,AgentTurnJournalDelivery,AgentTurnJ
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { afterEach,expect,test } from "bun:test"
-import { createAgentSeat } from "../chain/ChainRuntime"
 import { createWebAgent } from "../native/WebAgent"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
@@ -403,7 +402,7 @@ test("the production agent seat, AppController and actual WebAgent share the dur
       headers: { "x-smithers-turn-journal": "1", "content-type": "application/x-ndjson" }
     })
   } })
-  const controller = controllerFor(store, createAgentSeat(agent))
+  const controller = controllerFor(store, agent)
   controller.send("Hello")
   await until(() => requests.length === 1 && store.session().phase === "idle")
   expect(requests).toEqual([TURN_PATH])
@@ -460,7 +459,7 @@ test.each([
   await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Hello", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
   await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
   const restored = await open(storage), urls: string[] = []
-  controllerFor(restored, createAgentSeat(createWebAgent({ fetchImpl: async url => { urls.push(String(url)); return Response.json(body, { status }) } })))
+  controllerFor(restored, createWebAgent({ fetchImpl: async url => { urls.push(String(url)); return Response.json(body, { status }) } }))
   await until(() => restored.session().phase === "idle")
   expect(urls).toHaveLength(1)
   expect(urls).not.toContain(TURN_PATH)
@@ -474,11 +473,11 @@ test.each(["network", "503", "storage_failed"])("recovery keeps an accepted turn
   await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "Hello", retry: false, journal: { version: 1, legId: "leg", token } }).isPersisted.promise
   await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
   const restored = await open(storage), urls: string[] = []
-  const controller = controllerFor(restored, createAgentSeat(createWebAgent({ fetchImpl: async url => {
+  const controller = controllerFor(restored, createWebAgent({ fetchImpl: async url => {
     urls.push(String(url))
     if (failure === "network") throw new Error("Offline")
     return Response.json(failure === "503" ? { message: "Unavailable" } : { status: "error", code: "storage_failed" }, { status: 503 })
-  } })))
+  } }))
   await until(() => urls.length === 1)
   await controller.dispose()
   expect(restored.collections.httpTurns.get("attempt")?.status).toBe("active")

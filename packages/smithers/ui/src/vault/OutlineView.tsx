@@ -2,6 +2,7 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { cn } from "../cn";
 import { stepFence, type Fence } from "./fence";
+import type { VaultRowProps } from "./types";
 import { useVaultCss } from "./useVaultCss";
 
 /** One heading in a markdown document, 1-based line numbered. */
@@ -42,6 +43,13 @@ export type OutlineViewProps = {
   markdown: string;
   /** Click handler receiving the heading's 1-based source line. */
   onHeadingClick?: (line: number) => void;
+  /**
+   * Extra attributes for each heading row — the host's own binding
+   * (`data-flow`, a test id, a title). Anything it sets wins over this
+   * component's attribute of the same name, except the roving `tabIndex` and
+   * the ref the tree's arrow keys need to move focus.
+   */
+  headingProps?: (heading: OutlineHeading) => VaultRowProps;
   className?: string;
   style?: CSSProperties;
   /** Copy shown when the document has no headings. */
@@ -52,6 +60,7 @@ export type OutlineViewProps = {
 export function OutlineView({
   markdown,
   onHeadingClick,
+  headingProps,
   className,
   style,
   emptyLabel = "No headings",
@@ -98,12 +107,13 @@ export function OutlineView({
           type="button"
           role="treeitem"
           aria-level={heading.depth}
-          tabIndex={index === current ? 0 : -1}
           data-depth={heading.depth}
           className="sui-vault-outline-item"
           style={{ paddingLeft: 8 + (heading.depth - 1) * 14 }}
           onFocus={() => setActiveIndex(index)}
           onClick={() => onHeadingClick?.(heading.line)}
+          {...headingProps?.(heading)}
+          tabIndex={index === current ? 0 : -1}
         >
           {heading.text}
         </button>

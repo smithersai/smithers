@@ -2,7 +2,7 @@ import { TerminalView } from "../tabs/TerminalView"
 import { Copy } from "lucide-react"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { ViewSkeleton } from "../ViewSkeleton"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import { fileArgs, parseFileArgs } from "../flows/FileArgs"
 /*
  * The workspace card (lane citc, ADR 0002; completed by lane L3): one
@@ -651,7 +651,7 @@ export const WorkspaceCardBody = ({
             variant={name === facet ? "default" : "outline"}
             role="tab"
             aria-selected={name === facet}
-            data-flow={name === "desktop" ? "workspace.desktop" : "workspace.facet"}
+            {...flowProps(name === "desktop" ? "workspace.desktop" : "workspace.facet")}
             onClick={() =>
               name === "desktop"
                 ? onRunCommand("workspace.desktop", payload.workspaceId)
@@ -688,7 +688,7 @@ export const WorkspaceCardBody = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="workspace.delete"
+          {...flowProps("workspace.delete")}
           onClick={() => setDeleteDraft((draft) => (draft === null ? "" : null))}
         >
           <Trash2 size={12} aria-hidden="true" /> Delete

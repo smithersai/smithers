@@ -18,7 +18,6 @@ import { Authorize } from "@smthrs/chain"
 import { canonicalCommandName } from "./CommandName"
 import { FlowCancellation } from "./FlowCancellation"
 import type { AgentInvocation } from "./AgentInvocation"
-import { createChainPolicy } from "../chain/Policy"
 import { formFlows } from "./entries/form"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
@@ -214,9 +213,8 @@ const callFor = (entry: FlowEntry, payload: Record<string, unknown>, invocation?
 /*
  * FlowBinding frames a handler refusal for the cell that will read it next
  * ("Flow x failed: …"). The app surfaces the same refusal to a human, where the
- * frame is noise, so the deterministic prefix comes back off. See
- * LIBRARY-CHANGE-REQUESTS.md — the honest fix is for CallResult to carry the
- * raw message beside the framed one.
+ * frame is noise, so the deterministic prefix comes back off. The honest fix is
+ * for CallResult to carry the failure as typed data instead of a sentence.
  */
 const unframe = (name: string, message: string | undefined): string => {
   if (message === undefined || message === `Flow ${name} failed.`) return `/${name} failed`
@@ -233,14 +231,15 @@ const valueOf = (value: unknown): string | undefined => {
 }
 
 export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions, lifecycle?: CommandLifecycle): CommandRegistry => {
-  const defaultPolicy = createChainPolicy().layerFor("app")
+  /*
+   * The app's own invocation carries no host authority. Approval is a
+   * host-injected decorator over typed capabilities (a GrantStore the cell
+   * loop will hand in), never something a flow declaration claims, so an
+   * invocation nobody scoped is authorized by nobody and passes.
+   */
   const unscopedInvocation: AgentInvocation = {
     slot: { chain: "app", link: 0, ordinal: 0 },
-    authorize: Authorize.make({
-      authorize: (request) => Effect.flatMap(Authorize.Authorize, (service) => service.authorize(request)).pipe(
-        Effect.provide(defaultPolicy)
-      )
-    }),
+    authorize: Authorize.make({ authorize: () => Effect.void }),
     refused: () => {}
   }
   const base = baseFlows(actions)

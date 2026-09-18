@@ -1,8 +1,8 @@
 /** @jsxImportSource react */
-// The three library changes apps/app asked for (LIBRARY-CHANGE-REQUESTS §3-§5),
-// each proven at the boundary the app reaches for: pass-through attributes on
-// the buttons ChatComposer and FileTree render, Tab leaving MarkdownEditor,
-// and a GitHub-flavored table rendered as a table.
+// Every seam a host needs so it never reaches into a component's rendered DOM,
+// proven at the boundary the host reaches for: pass-through attributes on the
+// buttons ChatComposer and FileTree render, Tab leaving MarkdownEditor, and a
+// GitHub-flavored table rendered as a table.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

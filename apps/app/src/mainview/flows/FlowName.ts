@@ -108,7 +108,6 @@ export const FLOW_NAMES = [
   "debug.chain",
   "debug.errors",
   "debug.events",
-  "debug.grants.reset",
   "debug.net",
   "debug.reset",
   "debug.seams",
@@ -231,6 +230,8 @@ export const FLOW_NAMES = [
   "setup.work",
   "smithers.who",
   "storage.recovery",
+  "storage.recovery.export",
+  "storage.recovery.reset",
   "sync.ops.show-more",
   "system.recommend",
   "tab.card",
@@ -319,11 +320,3 @@ export const FLOW_NAMES = [
 
 /** The name of one declared flow: what the card seam and the tabs may raise. */
 export type FlowName = (typeof FLOW_NAMES)[number]
-
-/**
- * A flow name known only at RUNTIME as the seam's name: a registry name a card
- * payload carries, or a repository's own flow leaf, which the union cannot
- * name. The dispatch checks it anyway — a name no flow answers to runs nothing
- * (AppController.runCommand) — so this is the honest widening, not a bypass.
- */
-export const runtimeFlowName = (name: string): FlowName => name as FlowName

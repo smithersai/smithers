@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
+import type { DataAttributes } from "../data-attributes";
 import { useInjectUiCss } from "../styles";
 
 /** Mirrors the PromptInput lifecycle (minus "error"): busy is submitted|streaming. */
@@ -51,15 +52,15 @@ export type ChatComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "onErr
    * A host whose affordances must name the act behind them — a `data-flow`
    * binding, an analytics id, a test hook — otherwise has to reach into this
    * component's rendered DOM from outside, which is the exact coupling a
-   * pass-through prop exists to prevent (LIBRARY-CHANGE-REQUESTS §3).
+   * pass-through prop exists to prevent.
    * Anything set here wins over this component's own attribute of the same
    * name, so a host can also correct one.
    */
   /** Extra attributes for the Send button. */
-  submitProps?: ComponentProps<"button">;
+  submitProps?: ComponentProps<"button"> & DataAttributes;
   /** Extra attributes for the Stop button. */
-  stopProps?: ComponentProps<"button">;
-  textareaProps?: Omit<ComponentProps<"textarea">, "value" | "onChange" | "disabled" | "placeholder">;
+  stopProps?: ComponentProps<"button"> & DataAttributes;
+  textareaProps?: Omit<ComponentProps<"textarea">, "value" | "onChange" | "disabled" | "placeholder"> & DataAttributes;
 };
 
 /** Controlled glass chat composer. Enter submits and Shift+Enter inserts a line. */

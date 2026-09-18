@@ -26,6 +26,7 @@ import type { CodeLineAnnotation, CodeTokenPosition } from "@smthrs/ui/adapters/
 import { useMemo, useRef } from "react"
 import type { Card } from "../state/AppState"
 import type { RunCommand } from "./CardFamily"
+import { flowGestureProps } from "../flows/FlowAction"
 
 type FilePayload = Extract<Card, { kind: "file" }>["payload"]
 type Diagnostic = NonNullable<FilePayload["diagnostics"]>[number]
@@ -104,7 +105,7 @@ export const CodeSurface = ({
    */
   const bound = codeIntel && intel?.state !== "missing" && intel?.state !== "unavailable"
   return (
-    <div className="code-surface" data-flow={bound ? "code.hover" : undefined} data-flow-activate={bound ? "code.definition" : undefined}>
+    <div className="code-surface" {...(bound ? flowGestureProps("code.hover", "code.definition") : {})}>
       <CodeFileView
         name={path}
         contents={content}

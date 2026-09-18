@@ -5,6 +5,7 @@ import { INPUT_MODES, inputModeLabel, type InputMode } from './state/InputMode'
 import { bindPressActions, type PressAction } from './runtime/PressActions'
 import { dictationAvailable, DICTATION_UNAVAILABLE } from './state/controller/dictation'
 import './InputModeMenu.css'
+import { flowProps } from "./flows/FlowAction"
 
 export function InputModeMenu({ mode, onChange, placement = 'above' }: {
   mode: InputMode; onChange: (mode: InputMode) => void; placement?: 'above' | 'below'
@@ -47,7 +48,7 @@ export function InputModeMenu({ mode, onChange, placement = 'above' }: {
     {open && <div id={id} ref={mount} className="input-mode-menu" role="menu" aria-label="Input mode">
       {INPUT_MODES.map(value => <button key={value} type="button" role="menuitemradio" aria-checked={mode === value}
         aria-disabled={value === 'dictation' && !speechSupported || undefined}
-        aria-describedby={value === 'dictation' && !speechSupported ? `${id}-dictation-reason` : undefined} data-flow="input.mode"
+        aria-describedby={value === 'dictation' && !speechSupported ? `${id}-dictation-reason` : undefined} {...flowProps("input.mode")}
         onClick={() => { if (value === 'dictation' && !speechSupported) return; latest.current.onChange(value); close() }}>
         <span>{inputModeLabel(value)}</span>{mode === value && <Check size={14} aria-hidden="true" />}
       </button>)}

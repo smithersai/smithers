@@ -3,6 +3,7 @@ import { BookOpen, Box, Check, Compass, Factory, History, KeyRound, Library, Puz
 import type { ReactNode } from "react"
 import { shelfOrder } from "./catalog"
 import type { PluginIcon, PluginManifest } from "./AppPlugin"
+import { flowProps } from "../flows/FlowAction"
 
 /*
  * The Library: the shelf a person browses before this workspace can do
@@ -126,7 +127,7 @@ export function PluginGallery({ installed, onInstall, onRemove, asked }: PluginG
                           <Button
                             variant="ghost"
                             size="sm"
-                            data-flow="plugins.remove"
+                            {...flowProps("plugins.remove")}
                             data-testid={`plugin-remove-${manifest.id}`}
                             onClick={() => onRemove(manifest.id)}
                           >
@@ -138,7 +139,7 @@ export function PluginGallery({ installed, onInstall, onRemove, asked }: PluginG
                   (
                     <Button
                       size="sm"
-                      data-flow="plugins.install"
+                      {...flowProps("plugins.install")}
                       data-testid={`plugin-install-${manifest.id}`}
                       aria-label={`Install the ${manifest.name}`}
                       onClick={() => onInstall(manifest.id)}

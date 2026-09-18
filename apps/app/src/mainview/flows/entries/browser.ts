@@ -19,7 +19,6 @@ export const browserFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     summary: "Open a web page as a card Smithers can read",
     runtime: ["agent", "browser.read"] as const,
     args: "<url>",
-    capabilities: ["session:net-read"],
     input: Schema.Struct({ url: Schema.String }),
     handler: ({ url }: { readonly url: string }) => actions.openBrowser(url)
   }

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { commandEntries, disclosedEntries } from "../chain/FlowCatalog"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
@@ -24,8 +23,8 @@ describe("app diagnostics without a repository", () => {
     const controller = createAppController(store, unavailableRepositories, silentAgent)
     await toast(store, "Billing service unavailable")
     expect(store.collections.repositories.size).toBe(0)
-    expect(commandEntries(controller.commands).map(row => row.name)).toContain("debug.errors")
-    expect(disclosedEntries(controller.commands).map(row => row.name)).toContain("debug.errors")
+    expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).toContain("debug.errors")
+    expect(controller.commands.disclosed().map(command => command.name)).toContain("debug.errors")
     expect(controller.commands.find("debug.snapshot")).toBeUndefined()
     const before = store.collections.messages.size
     const result = await read(controller)

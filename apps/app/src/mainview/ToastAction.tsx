@@ -2,6 +2,7 @@ import { Button } from "@smthrs/ui"
 import type { Toast } from "./state/AppState"
 import type { PressAction } from "./runtime/PressActions"
 import { createPressActions } from "./runtime/PressActions"
+import { dynamicFlowProps } from "./flows/FlowAction"
 
 export type ToastAction = NonNullable<Toast["action"]>
 
@@ -15,7 +16,7 @@ export function ToastActionButton({ toast, onAction }: {
   if (!action) return null
   const signIn = action.flow === "auth.sign-in" || action.flow === "cloud.sign-in"
   const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
-  return <Button type="button" size="sm" className="toast-action" data-flow={action.flow}
+  return <Button type="button" size="sm" className="toast-action" {...dynamicFlowProps(action.flow)}
     data-toast-action={toast.updatedAt}
     aria-keyshortcuts={signIn ? "Meta+Shift+G Control+Shift+G" : undefined}
     onClick={() => onAction(action)}>

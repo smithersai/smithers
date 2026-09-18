@@ -952,3 +952,79 @@ describe("AgentAction event sink", () => {
     expect(seen).toContain("transition-applied")
   })
 })
+
+describe("AgentAction payload-chosen seats", () => {
+  /** A step whose caller, not its declaration, decides which model answers. */
+  const Dispatched = AgentAction.make("agent/test/Dispatched", {
+    payload: { diff: Schema.String, model: Schema.String },
+    output: Review,
+    seat: ({ model }) => model,
+    prompt: ({ diff }) => `Review this diff:\n${diff}`
+  })
+  const DispatchedFlow = Flow.make("agent/test/DispatchedFlow", {
+    payload: { diff: Schema.String, model: Schema.String },
+    success: Review,
+    error: AgentAction.AgentFailure,
+    body: (input) => Dispatched.call(input)
+  })
+
+  /** Records every seat id the step asked the host's resolver for. */
+  const recordingSeats = (model: Model.Model, asked: Array<string>): Layer.Layer<SeatResolver.SeatResolver> =>
+    SeatResolver.layer({
+      resolve: (id) => {
+        asked.push(id)
+        return Effect.succeed(Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 }))
+      }
+    })
+
+  it("resolves the seat the payload names, once, and asks for no other", async () => {
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const result = await Effect.runPromise(
+      DispatchedFlow.execute({ diff: "-  old\n+  new", model: "anthropic:caller-chosen" }, {
+        executionId: "payload-seat"
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(Dispatched.layer, Interpreter.layer(DispatchedFlow)).pipe(
+            Layer.provideMerge(AgentAction.layerHost(host)),
+            Layer.provideMerge(recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)),
+            Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+            Layer.provideMerge(Safety.layer),
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(FlowEngine.layerMemory),
+            Layer.provideMerge(NodeCrypto.layer)
+          )
+        )
+      )
+    )
+
+    expect(result.approved).toBe(true)
+    // One resolution for the whole execution, and it is the caller's model.
+    expect(asked).toEqual(["anthropic:caller-chosen"])
+    expect(requests).toHaveLength(1)
+  })
+
+  it("lets a second call of the same step run on a different model", async () => {
+    const asked: Array<string> = []
+    const requests: Array<string> = []
+    const stack = Layer.mergeAll(Dispatched.layer, Interpreter.layer(DispatchedFlow)).pipe(
+      Layer.provideMerge(AgentAction.layerHost(host)),
+      Layer.provideMerge(
+        recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)
+      ),
+      Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+      Layer.provideMerge(Safety.layer),
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+    for (const [index, model] of ["anthropic:first", "anthropic:second"].entries()) {
+      await Effect.runPromise(
+        DispatchedFlow.execute({ diff: "-  old\n+  new", model }, { executionId: `payload-seat-${index}` }).pipe(
+          Effect.provide(stack)
+        )
+      )
+    }
+    expect(asked).toEqual(["anthropic:first", "anthropic:second"])
+  })
+})

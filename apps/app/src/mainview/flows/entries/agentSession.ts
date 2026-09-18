@@ -32,7 +32,6 @@ export const agentSessionFlows = (actions: CommandActions): ReadonlyArray<FlowEn
     },
     summary: "Start a cloud agent session (Codex, Claude, or Smithers) on a repository: Smithers Cloud runs it in a sandbox, and the session card streams its transcript",
     runtime: ["cloud"],
-    capabilities: ["outbound:launch"],
     confirm: (payload) => `start a ${String(payload.provider)} agent session on ${String(payload.repo)}`,
     args: "<owner/repo> <provider> <task…>",
     requires: ["signed-in"],

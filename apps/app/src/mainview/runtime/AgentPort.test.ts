@@ -16,7 +16,7 @@ describe("agent port placement", () => {
   })
 
   test("every implementation binds the contract from the runtime module", () => {
-    for (const file of ["./Runtime.ts", "../native/WebAgent.ts", "../chain/ChainRuntime.ts"]) {
+    for (const file of ["./Runtime.ts", "../native/WebAgent.ts"]) {
       const implementation = source(file)
       expect(implementation).toContain("AgentPort")
       expect(implementation).not.toMatch(importsAgentFromBridge)

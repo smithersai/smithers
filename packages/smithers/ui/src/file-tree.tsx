@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type ComponentProps, type ReactNode, useState } from "react";
 import { cn } from "./cn";
+import type { DataAttributes } from "./data-attributes";
 import { useInjectUiCss } from "./styles";
 
 /** One entry in the flat list a {@link FileTree} groups into a nested tree. */
@@ -14,13 +15,7 @@ export type FileTreeNode = {
 /** A node accepted by {@link FileTree}: a full `FileTreeNode` or a bare path string. */
 export type FileTreeItem = FileTreeNode | string;
 
-/*
- * `data-*` attributes, typed. JSX accepts them on any element, but an object
- * literal typed as button props does not know them, so a host passing only
- * `{ "data-flow": "…" }` would trip TypeScript's weak-type check — and naming
- * the act behind a button (`data-flow`) is the point of the pass-through.
- */
-export type DataAttributes = { [attribute: `data-${string}`]: string | number | boolean | undefined; };
+export type { DataAttributes };
 /** Pass-through attributes for a leaf row button; the structural attributes stay the component's. */
 export type FileTreeNodeProps = Omit<ComponentProps<"button">, "type" | "data-slot"> & DataAttributes;
 /** Pass-through attributes for a directory toggle; its type, slot, and expanded state stay the component's. */
@@ -64,7 +59,7 @@ export type FileTreeProps = Omit<ComponentProps<"div">, "onSelect" | "onToggle">
    * A host whose affordances must name the act behind them — a `data-flow`
    * binding, an analytics id, a test hook — otherwise has to reach into this
    * component's rendered DOM from outside, which is the exact coupling a
-   * pass-through prop exists to prevent (LIBRARY-CHANGE-REQUESTS §3).
+   * pass-through prop exists to prevent.
    */
   nodeProps?: (node: FileTreeNode) => FileTreeNodeProps;
   /** The same pass-through for the directory toggles, keyed by directory path. */

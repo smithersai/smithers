@@ -1,6 +1,8 @@
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@smthrs/ui"
 import { X } from "lucide-react"
 import type { ReactNode } from "react"
+import { flowProps } from "./flows/FlowAction"
+import type { FlowName } from "./flows/FlowName"
 
 export function SurfaceHeader({
   icon,
@@ -20,7 +22,7 @@ export function SurfaceHeader({
    * legible in the DOM (data-flow), which is the surface the launch
    * checklist reads.
    */
-  readonly closeCommand: string
+  readonly closeCommand: FlowName
   readonly onClose: () => void
   readonly children?: ReactNode
 }) {
@@ -38,7 +40,7 @@ export function SurfaceHeader({
         <Button
           variant="ghost"
           size="icon"
-          data-flow={closeCommand}
+          {...flowProps(closeCommand)}
           aria-label="Back to the conversation"
           title="Back to the conversation"
           onClick={onClose}

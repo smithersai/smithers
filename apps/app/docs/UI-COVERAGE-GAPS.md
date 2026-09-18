@@ -95,7 +95,7 @@ Priority: P0 blocks the workbench or a daily task; P1 next; P2 later. Effort S/M
 ### approvals · Approval scope once|run|remembered and remembered bulk grants (Control Approve scope, installBulkGrant)
 
 - Source: smithers · coverage: partial · effort: S
-- Exists: approval card decides approve/deny with a fixed scope (packages/rpc/src/Cards.ts:108; Flows.ts:596-617); debug.grants.reset is admin-only and revokes everything (Flows.ts:1548).
+- Exists: approval card decides approve/deny with a fixed scope (packages/rpc/src/Cards.ts:108; Flows.ts:596-617). There is no grant store: the in-page chain policy that held session grants was deleted on 2026-09-18, so a scope control needs the host-injected GrantStore first.
 - UI: approval card gains a segmented control `this time · this run · remember` beside Approve; a `grants` card lists remembered grants (capability · flow · granted at) with Revoke.
 - Flows: `approval.approve <cardId> [once|run|remembered]; grants.list; grants.revoke <id>`
 
@@ -222,7 +222,7 @@ Priority: P0 blocks the workbench or a daily task; P1 next; P2 later. Effort S/M
 
 - Source: smithers · coverage: none · effort: M
 - Exists: launch plans, approves scope `run`, and runs in one motion with no card between (apps/app/src/mainview/state/controller/gateway.ts:120-150); the `plan` card is a chat checklist (packages/rpc/src/Cards.ts:103).
-- UI: No new card: the existing approval card (packages/rpc/src/Cards.ts:108, with decision approved/denied, decidedAt, pending, error) gains a target `Plan` variant whose detail rows are the PlanCard envelope (capabilities, callable flows, budget, host/deploy class), digest, and node rows with a cached|run glyph; Approve launches and Deny is the plan-level deny, both through approval.approve/approval.deny (capability approve:self). flow.plan renders it; flow.run invoked by the agent renders it and waits when the envelope exceeds the session grant.
+- UI: No new card: the existing approval card (packages/rpc/src/Cards.ts:108, with decision approved/denied, decidedAt, pending, error) gains a target `Plan` variant whose detail rows are the PlanCard envelope (capabilities, callable flows, budget, host/deploy class), digest, and node rows with a cached|run glyph; Approve launches and Deny is the plan-level deny, both through approval.approve/approval.deny (user-only, like every approval). flow.plan renders it; flow.run invoked by the agent renders it and waits when the envelope exceeds what the host granted.
 - Flows: `flow.plan <name> [key=value...] [owner/repo]; approval.approve <cardId> [once|run|remembered]; approval.deny <cardId>`
 
 ### runs · Run diagnosis facts: verdict, seat, elapsed, tokens, calls/failed, edits, refusals, cause, cancellation attribution, unblock and next act (`smithers status|why`, run-summary projection, Cancellation projection; plue compact status)

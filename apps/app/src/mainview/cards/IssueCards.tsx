@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 /*
  * The issues cards: the list ("issue-list") and the detail ("issue"), laid out
  * like GitHub's Issues (ported from multi src/issues: IssuesListView's
@@ -179,7 +179,7 @@ const IssueCommentForm = ({ repo, number, onRunCommand }: { readonly repo: strin
         }}
       />
       <div className="ghc-composer-actions">
-        <Button type="submit" size="sm" data-flow="issues.comment" disabled={trimmed === ""}>Comment</Button>
+        <Button type="submit" size="sm" {...flowProps("issues.comment")} disabled={trimmed === ""}>Comment</Button>
       </div>
     </form>
   )

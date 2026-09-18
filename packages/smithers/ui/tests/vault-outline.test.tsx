@@ -188,3 +188,26 @@ describe("OutlineView", () => {
     }
   });
 });
+
+describe("OutlineView pass-through attributes", () => {
+  test("stamps the host's attributes on each heading, per heading", () => {
+    const html = renderToStaticMarkup(
+      <OutlineView
+        markdown={"# One\n\n## Two"}
+        headingProps={(heading) => ({ "data-flow": "wiki.heading", "data-line": heading.line })}
+      />,
+    );
+    expect(html.match(/data-flow="wiki\.heading"/g)).toHaveLength(2);
+    expect(html).toContain('data-line="1"');
+    expect(html).toContain('data-line="3"');
+  });
+
+  test("the roving tab stop stays the component's, whatever the host passes", () => {
+    const html = renderToStaticMarkup(
+      <OutlineView markdown={"# One\n\n## Two"} headingProps={() => ({ tabIndex: 5 })} />,
+    );
+    expect(html.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(html.match(/tabindex="-1"/g)).toHaveLength(1);
+    expect(html).not.toContain('tabindex="5"');
+  });
+});

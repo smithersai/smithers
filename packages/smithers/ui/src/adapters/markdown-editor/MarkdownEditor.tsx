@@ -117,8 +117,8 @@ export type MarkdownEditorProps = {
    * inserting indentation. Defaults to true.
    *
    * ProseMirror binds Tab to "insert indentation", which makes the editor a
-   * focus trap: a keyboard user who reaches it can never leave (an accessibility
-   * bar, and LIBRARY-CHANGE-REQUESTS §4). Indentation stays available on the
+   * focus trap: a keyboard user who reaches it can never leave, which fails
+   * the accessibility bar. Indentation stays available on the
    * editor's own list and block commands, which is what every editor that
    * ships inside a form does. Set this to false to restore ProseMirror's
    * binding for a surface where the editor is the whole page.

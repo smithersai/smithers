@@ -14,6 +14,7 @@ import { atomDelegate, atomFlows, atomOperations, EditAtom } from "./atoms.ts"
 import { checkDelegate, checkLayers } from "./checks.ts"
 import { NativeCoding, nativeActions, nativeLayer, type NativeOptions } from "./native.ts"
 import { registration, RunPlan } from "./registration.ts"
+import { dispatchLayers, dispatchModels, RunDispatch } from "./dispatch.ts"
 import * as Snapshots from "./snapshots.ts"
 import * as CodingFileSystem from "./filesystem.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
@@ -101,6 +102,9 @@ const configured = (options: Options) => {
 export const roleResolver = (base: SeatResolver.Service, implementationModel: string,
   models: Pick<Options, "planningModel" | "pocModel" | "wikiModel"> = {}): SeatResolver.Service => {
   const roles: Readonly<Record<string, string>> = { "coding/implement": implementationModel,
+    // A dispatched turn that names no model runs on the implementation seat,
+    // because that is the seat this host was configured to write code with.
+    "coding/dispatch": implementationModel,
     "coding/plan": models.planningModel ?? implementationModel,
     "coding/poc": models.pocModel ?? implementationModel,
     "wiki/reviewer": models.wikiModel ?? implementationModel,
@@ -174,6 +178,9 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       changeLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       evidenceOnly(Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, changeModelLayers), new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...changeModelNames])))
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,
+      // A dispatched turn keeps the host's registry and capability envelope:
+      // it is expected to edit the workspace, so it is not evidence-only.
+      dispatchLayers({ repositoryPath: options.repositoryPath }), dispatchModels,
       checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }))
       .pipe(Layer.provideMerge(nativeLayer(options)),
@@ -182,7 +189,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // Loading verified declaration bytes reserves a sibling temporary module.
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
-    const catalog = Layer.unwrap(repositoryCatalog({ delegates: [RunPlan, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
+    const catalog = Layer.unwrap(repositoryCatalog({ delegates: [RunPlan, RunDispatch, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
       ...(options.planning === undefined ? [] : [RunRequest, RunPrototype]), ...(wikiEnabled ? [wikiCheckDelegate] : []),
       ...(options.landing === undefined || options.planning === undefined ? [] : [RunVibe])] }, builtins.load).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
@@ -192,7 +199,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     )).pipe(Layer.orDie)
     const modules = registration.pipe(Layer.provideMerge(catalog), Layer.tap(context => Effect.gen(function*() {
       const built = Context.get(context, Executable.Catalog)
-      for (const [name, delegate] of [["coding", RunPlan._tag], ["coding/implementation", atomDelegate._tag],
+      for (const [name, delegate] of [["coding", RunPlan._tag], ["coding/dispatch", RunDispatch._tag], ["coding/implementation", atomDelegate._tag],
         ...(options.planning === undefined ? [] : [["coding/request", RunRequest._tag]]),
         ...(options.landing === undefined || options.planning === undefined ? [] : [["coding/vibe", RunVibe._tag]]),
         ["repository/setup", RunSetup._tag], ["repository/trigger", RunTrigger._tag], ["repository-jobs/issues", RunJob._tag]]) {
@@ -211,7 +218,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
-        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "repository-jobs/v1", "repository-source/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
+        capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
           ...(options.landing === undefined || options.planning === undefined ? [] : ["coding-vibe/v1"])])] }, bind, root)
     }))).pipe(Layer.provideMerge(host))
   }).pipe(Effect.provide(platform.host))))

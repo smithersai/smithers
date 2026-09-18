@@ -292,9 +292,7 @@ export const absentDoor = (metadata: FlowMetadata, bootstrap: AppBootstrap): Mis
  * declare `modelInvocable: false`, so they never reach the agent's catalog and
  * the model can neither invoke them nor promise them.
  */
-export const modelInvocable = (entry: FlowEntry): boolean =>
-  entry.binding.descriptor.modelInvocable &&
-  !entry.binding.descriptor.capabilities.some((claim) => claim.startsWith("approve:"))
+export const modelInvocable = (entry: FlowEntry): boolean => entry.binding.descriptor.modelInvocable
 
 /**
  * A prerequisite a flow can declare via `requires`. The registry resolves

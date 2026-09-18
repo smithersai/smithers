@@ -21,7 +21,7 @@ import {
   type VaultGraphEdge,
   type VaultGraphNode,
 } from "./graphModel";
-import type { VaultLink, VaultNoteMeta } from "./types";
+import { vaultDataAttributes, type VaultLink, type VaultNoteMeta, type VaultRowProps } from "./types";
 
 const WIDTH = GRAPH_VIEWPORT_WIDTH;
 const HEIGHT = GRAPH_VIEWPORT_HEIGHT;
@@ -44,6 +44,14 @@ export type KnowledgeGraphProps = {
   notes: VaultNoteMeta[];
   links: VaultLink[];
   onOpenNote?: (path: string) => void;
+  /**
+   * Extra attributes for each node affordance — the host's own binding
+   * (`data-flow`, a test id, a title). The hub rows of the no-physics
+   * fallback take all of them; the rendered SVG node takes their `data-*`
+   * half, which is all an SVG group can carry. The zoom controls are this
+   * component's own chrome and never take them.
+   */
+  nodeProps?: (node: VaultGraphNode) => VaultRowProps;
   /** Container height for the SVG (number = px). */
   height?: number | string;
   className?: string;
@@ -71,6 +79,7 @@ export function KnowledgeGraph({
   notes,
   links,
   onOpenNote,
+  nodeProps,
   height = 480,
   className,
   style,
@@ -173,7 +182,7 @@ export function KnowledgeGraph({
         </Eyebrow>
         <p className="sui-vault-graph-meta">Graph physics unavailable — the vault’s hub notes instead.</p>
         {hubs.map((node) => (
-          <RowButton key={node.id} onClick={() => onOpenNote?.(node.id)}>
+          <RowButton key={node.id} onClick={() => onOpenNote?.(node.id)} {...nodeProps?.(node)}>
             <span className="sui-vault-link-label">{node.label}</span>
             <Badge variant="secondary">{node.degree}</Badge>
           </RowButton>
@@ -275,6 +284,7 @@ export function KnowledgeGraph({
                 key={node.id}
                 className="sui-vault-graph-node"
                 data-tint={folderTint(node.folder)}
+                {...vaultDataAttributes(nodeProps?.(node))}
                 transform={`translate(${node.x ?? 0} ${node.y ?? 0})`}
               >
                 <circle

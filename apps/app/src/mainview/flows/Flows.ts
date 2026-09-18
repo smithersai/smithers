@@ -2,20 +2,17 @@ import { guideFlows } from "./entries/guide"
 /*
  * Every interactive capability in the app, as a flow.
  *
- * A capability is a `Flow.make` declaration — name, description, capability
- * claims, and typed payload/success schemas — paired with the controller call
+ * A capability is a `Flow.make` declaration — name, description, and typed
+ * payload/success schemas — paired with the controller call
  * that runs it through `FlowBinding.make`. The pair is the whole capability:
  * the projected `FlowDescriptor` is what the agent's catalog discloses, and the
  * binding's `run` is what answers the call, so the catalog shown to the model
  * and the code that executes cannot drift apart.
  *
- * Two axes live on the declaration rather than on the UI wrapper:
- *  - capability claims (DESIGN.md §14's three-tier policy): `outbound:*` always
- *    asks, `session:*` asks once per session, `approve:*` is structurally denied
- *    to the agent, and the `app:act` default is free;
- *  - the trigger axis, as `modelInvocable`. A user-only flow is browser
- *    mechanics the human clicks (sign-in, theme, stop, send, maximize); the
- *    descriptor says so, so it never reaches the agent's catalog.
+ * The trigger axis lives on the declaration rather than on the UI wrapper, as
+ * `modelInvocable`. A user-only flow is browser mechanics the human clicks
+ * (sign-in, theme, stop, send, maximize); the descriptor says so, so it never
+ * reaches the agent's catalog.
  *
  * Handlers take a DECODED payload. No handler parses argument text: the slash
  * boundary turns `/name <text>` into the flow's payload once, in SlashPayload.ts.
@@ -107,7 +104,6 @@ export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly 
   { name: "billing.portal", why: "external billing portal; the human clicks" },
   { name: "admin.devtools", why: "admin panel presentation toggle" },
   { name: "debug.backend", why: "admin diagnostics presentation" },
-  { name: "debug.grants.reset", why: "admin-only grant wipe" },
   { name: "cloud.sign-in", why: "external browser OAuth on the human's account; the human clicks" },
   { name: "cloud.sign-out", why: "drops the human's cloud credential; the human clicks" },
   { name: "auth.sign-in", why: "the GitHub OAuth redirect yanks the page; the human clicks (auth.prompt is the agent's door)" },

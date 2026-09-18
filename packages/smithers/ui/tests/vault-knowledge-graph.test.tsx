@@ -316,3 +316,49 @@ describe("KnowledgeGraph (reduced motion)", () => {
   });
 
 });
+
+describe("KnowledgeGraph pass-through attributes", () => {
+  test("the rendered SVG node carries the host's data-* and the zoom chrome does not", () => {
+    const html = renderToStaticMarkup(
+      <KnowledgeGraph
+        notes={NOTES}
+        links={HUB_LINKS}
+        nodeProps={(node) => ({ "data-flow": "wiki.open", "data-path": node.id })}
+      />,
+    );
+    // One per note, and never on the component's own +/−/Reset buttons.
+    expect(html.match(/data-flow="wiki\.open"/g)).toHaveLength(NOTES.length);
+    expect(html).toContain('data-path="People/Ada.md"');
+    const zoomIn = /<button[^>]*aria-label="Zoom in"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(zoomIn).not.toContain("data-flow");
+  });
+
+  test("the no-physics hub rows take the host's attributes too", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(
+          <KnowledgeGraph
+            notes={NOTES}
+            links={HUB_LINKS}
+            nodeProps={(node) => ({ "data-flow": "wiki.open", "data-path": node.id })}
+            loadPhysics={() => Promise.reject(new Error("d3-force unavailable"))}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-slot="row-button"]'));
+      expect(rows.length).toBe(NOTES.length);
+      expect(rows.map((row) => row.getAttribute("data-flow"))).toEqual(NOTES.map(() => "wiki.open"));
+      expect(rows[0]!.getAttribute("data-path")).toBe("People/Ada.md");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+})

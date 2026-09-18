@@ -82,15 +82,6 @@ export const debugFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     handler: () => actions.debugNet()
   }),
   flow({
-    /* The session tier's revocation (§14): drop every chain grant. */
-    name: "debug.grants.reset",
-    summary: "Revoke the chain's session grants",
-    userOnly: true,
-    userOnlyReason: "revokes the chain's own session grants; the operator's act",
-    input: NoPayload,
-    handler: () => actions.resetGrants()
-  }),
-  flow({
     name: "debug.seams",
     summary: "Probe seam and upstream health",
     input: NoPayload,

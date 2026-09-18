@@ -2,7 +2,6 @@ import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
 import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import { createAgentSeat } from "./chain/ChainRuntime"
 import { nativeOpenExternal, nativeRepositories, nativeShellAvailable } from "./native/NativeBridge"
 import { createAppFetch } from "./runtime/LocalSession"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
@@ -25,10 +24,9 @@ const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
  * Browser-only boot. Promise-shaped factories enter the Effect program at
  * this boundary.
  *
- * The local app's chat is the HTTP agent against the local origin
- * (LOCAL-APP.md). The in-page chain runtime is NOT bound: it spends a model
- * through the login-gated /api/model/stream, which the local origin does not
- * serve, so binding it would route every anonymous turn to a dead seam.
+ * The app's chat is the host's agent: the HTTP agent against the app origin
+ * (LOCAL-APP.md), or the unavailable adapter when this runtime has no agent
+ * capability. There is no second, in-page loop to choose between.
  */
 /** How the one boot runs; AppMount.tsx sets it before the first render. */
 export interface ControllerBootOptions {
@@ -58,7 +56,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       nativeRepositories,
       ...(nativeShellAvailable ? { nativeOpenExternal } : {})
     }))
-    const agent = yield* Effect.sync(() => createAgentSeat(runtime.backend.agent ?? unavailableAgent()))
+    const agent = yield* Effect.sync(() => runtime.backend.agent ?? unavailableAgent())
     const controller = yield* Effect.sync(() =>
       createAppController(
         store,

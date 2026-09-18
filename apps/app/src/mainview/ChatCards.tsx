@@ -1,5 +1,5 @@
 import { ViewSkeleton } from "./ViewSkeleton"
-import { flowAction } from "./flows/FlowAction"
+import { flowAction, flowProps } from "./flows/FlowAction"
 /*
  * The card shell: header (title and actionable status), the maximize and
  * frame controls, and the body from the kind's family renderer.
@@ -34,7 +34,7 @@ export class CardBodyBoundary extends Component<{ readonly cardId: string; reado
     return (
       <div className="world-card-empty" role="alert" data-card-error="">
         <p>{chunk ? "This card's viewer did not load; the app was updated. Reload the app to see it." : `This card could not be shown: ${error.message}`}</p>
-        {chunk && <Button type="button" size="sm" variant="outline" data-flow="chat.reload"
+        {chunk && <Button type="button" size="sm" variant="outline" {...flowProps("chat.reload")}
           onClick={() => this.props.onRunCommand("chat.reload")}>Reload app</Button>}
       </div>
     )
@@ -182,7 +182,7 @@ export const CardView = memo(function CardView({
                     <Button
                       variant="ghost"
                       size="icon"
-                      data-flow="frame.back"
+                      {...flowProps("frame.back")}
                       data-testid="frame-back"
                       aria-label="Previous frame"
                       title="Previous frame"
@@ -193,7 +193,7 @@ export const CardView = memo(function CardView({
                     <Button
                       variant="ghost"
                       size="icon"
-                      data-flow="frame.forward"
+                      {...flowProps("frame.forward")}
                       data-testid="frame-forward"
                       aria-label="Next frame"
                       title="Next frame"
@@ -206,7 +206,7 @@ export const CardView = memo(function CardView({
                 <Button
                   variant="ghost"
                   size="icon"
-                  data-flow="frame.fork"
+                  {...flowProps("frame.fork")}
                   data-testid="frame-fork"
                   aria-label="Fork frame"
                   title="Fork frame"
@@ -219,7 +219,7 @@ export const CardView = memo(function CardView({
                   variant="ghost"
                   size="icon"
                   className="card-maximize-btn"
-                  data-flow="tab.card"
+                  {...flowProps("tab.card")}
                   data-testid={`card-open-in-tab-${card.id}`}
                   aria-label="Open in tab"
                   title="Open in tab"
@@ -242,7 +242,7 @@ export const CardView = memo(function CardView({
                   variant="ghost"
                   size="sm"
                   className="card-minimize-btn"
-                  data-flow="card.minimize"
+                  {...flowProps("card.minimize")}
                   data-testid={`card-minimize-${card.id}`}
                   aria-label="Restore"
                   title="Restore"
@@ -259,7 +259,7 @@ export const CardView = memo(function CardView({
                 variant="ghost"
                 size="icon"
                 className="card-maximize-btn"
-                data-flow="card.maximize"
+                {...flowProps("card.maximize")}
                 data-testid={`card-maximize-${card.id}`}
                 aria-label="Maximize card"
                 title="Maximize card"

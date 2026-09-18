@@ -64,9 +64,6 @@ export type CommandActions =
  */
 export const Ack = Schema.Struct({ value: Schema.optional(Schema.String) })
 
-/** The default claim: acting on the app the human is already looking at. */
-const APP_ACT: ReadonlyArray<string> = ["app:act"]
-
 /**
  * Runs a controller call as the flow's handler.
  *
@@ -114,8 +111,6 @@ export interface Declaration<I extends Payload> extends FlowMetadata {
   /** The call identity is available for destination-side idempotency. */
   readonly prepare?: (payload: I["Type"]) => void | Promise<void>
   readonly handler: (payload: I["Type"], signal: AbortSignal, call: Cell.Call, gesture?: CommandGesture) => CommandResult | Promise<CommandResult>
-  /** Capability claims; the free `app:act` default when omitted. */
-  readonly capabilities?: ReadonlyArray<string>
   /**
    * The human's alone: never disclosed to, or callable by, the model. An
    * enumerated exception under the three-door law (AGENTS.md) for a gesture
@@ -136,7 +131,7 @@ export interface Declaration<I extends Payload> extends FlowMetadata {
  * carries the argument hint; `metadata.summary` stays the human's catalog copy.
  */
 export const flow = <I extends Payload>(declaration: Declaration<I>): FlowEntry => {
-  const { name, input, handler, prepare, capabilities, userOnly, ...metadata } = declaration
+  const { name, input, handler, prepare, userOnly, ...metadata } = declaration
   const described = metadata.args === undefined ? metadata.summary : `${metadata.summary} (args: ${metadata.args})`
   let binding: FlowEntry["binding"] | undefined
   return {
@@ -154,8 +149,7 @@ export const flow = <I extends Payload>(declaration: Declaration<I>): FlowEntry 
           name,
           description: described,
           input,
-          output: Ack,
-          capabilities: capabilities ?? APP_ACT
+          output: Ack
         }),
         modelInvocable: userOnly !== true,
         publicError: (message) => typeof message === "string" ? message : undefined,

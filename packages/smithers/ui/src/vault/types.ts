@@ -3,6 +3,7 @@
  * a `VaultAdapter` serves — an Obsidian directory, a gateway extension, a git
  * repo of markdown — without knowing which.
  */
+import type { DataAttributes } from "../data-attributes";
 
 /** One note in the vault, as metadata (no body content). */
 export type VaultNoteMeta = {
@@ -49,3 +50,24 @@ export interface VaultAdapter {
   /** The whole link graph in one shot (the KnowledgeGraph payload). */
   graph?(): Promise<{ notes: VaultNoteMeta[]; links: VaultLink[] }>;
 }
+
+/*
+ * `data-*` attributes, typed. JSX accepts them on any element, but an object
+ * literal typed as button props does not know them, so a host passing only
+ * `{ "data-flow": "…" }` would trip TypeScript's weak-type check — and naming
+ * the act behind a row (`data-flow`) is the point of a pass-through hook.
+ */
+export type VaultDataAttributes = DataAttributes;
+
+/**
+ * Pass-through attributes for one vault row button — a graph node, a backlink,
+ * an outline heading. The row's own structural attributes (`type`, its slot,
+ * its roving `tabIndex`) stay the component's; everything else is the host's.
+ */
+export type VaultRowProps = Omit<import("react").ComponentProps<"button">, "type"> & VaultDataAttributes;
+
+/** The `data-*` subset of a host's row props, for an element that is not a button (an SVG node). */
+export const vaultDataAttributes = (props: VaultRowProps | undefined): VaultDataAttributes =>
+  props === undefined ?
+    {} :
+    Object.fromEntries(Object.entries(props).filter(([key]) => key.startsWith("data-"))) as VaultDataAttributes;

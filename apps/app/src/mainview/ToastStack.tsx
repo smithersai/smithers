@@ -3,6 +3,7 @@ import { Check, X } from "lucide-react"
 import { ModalPopover } from "./ModalPopover"
 import type { Toast } from "./state/AppState"
 import { bindToastShortcut, ToastActionButton, type ToastAction } from "./ToastAction"
+import { flowProps } from "./flows/FlowAction"
 
 /*
  * The one shared toast surface (the 300ms law): a corner stack over the chat,
@@ -51,7 +52,7 @@ export function ToastStack({
                 variant="ghost"
                 size="icon"
                 className="toast-dismiss"
-                data-flow="toast.dismiss"
+                {...flowProps("toast.dismiss")}
                 aria-label={`Dismiss: ${toast.title}`}
                 title="Dismiss"
                 onClick={() => onDismiss(toast.id)}

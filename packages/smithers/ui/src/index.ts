@@ -257,6 +257,7 @@ export {
   PAGINATE_VISIBLE,
   type ParseUnifiedFileOverrides,
 } from "./diff-paginate";
+export type { DataAttributes } from "./data-attributes";
 export {
   FileTree,
   type FileTreeDirectoryProps,

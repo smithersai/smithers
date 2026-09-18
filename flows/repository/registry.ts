@@ -15,7 +15,7 @@ import { TriggerOutcome } from "./triggers.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
 const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "intake.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
-  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
+  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {
     if (!/^[0-9a-f]{64}$/.test(__SMITHERS_CODING_ARTIFACT_DIGEST__)) return yield* Effect.fail(new Error("Invalid repository host fingerprint"))
@@ -38,6 +38,7 @@ export const provisionBuiltins = (stateRoot: string, policy: string) => Effect.g
     ...(["issues", "review", "ci", "feature", "chores"] as const).map(job => ({ name: `repository-jobs/${job}`,
       delegate: "repository/RunJob", description: `Run the reviewed ${job} responsibility with recorded evidence.` })),
     { name: "coding", delegate: "coding/RunPlan", description: "Execute a native coding plan with its required checks." },
+    { name: "coding/dispatch", delegate: "coding/RunDispatch", description: "Run one dispatched agent turn in this workspace." },
     { name: "coding/implementation", delegate: "coding/Implement", description: "Implement one native coding atom." }
   ]
   const modules = new Map<string, { body: string; declaration: unknown }>()

@@ -1219,77 +1219,6 @@ export const createTurnController = (
     const card = store.approvalRequest(id)
     if (card?.kind !== "approval" || displayed?.kind !== "approval" || displayed.status === "acted") return
     if (displayed.payload.pending === true || displayed.payload.decision !== undefined) return
-    /*
-     * A chain approval park (DESIGN.md §14): the decision resolves against
-     * the runtime's pending ask, the card freezes, and the SAME lineage
-     * resumes — approved converges under the grant, denied surfaces as an
-     * observation the model routes around. Both decisions resume.
-     */
-    if (card.payload.chain === true && card.payload.runId !== undefined) {
-      const lineage = card.payload.runId
-      if (agent.resolveApproval === undefined) {
-        store.dispatch({
-          type: "card.approval.decision.failed",
-          actor: "system",
-          id,
-          message: "This backend cannot resolve approvals."
-        })
-        return
-      }
-      /*
-       * A turn-lineage decision needs the turn seat free before anything
-       * is consumed: resolving first would burn the one-shot record and
-       * freeze the card while resumeChainTurn no-ops, stranding the park.
-       */
-      if (
-        card.payload.background !== true &&
-        (store.session().phase !== "idle" || ctx.activeTurn !== undefined)
-      ) {
-        store.dispatch({
-          type: "card.approval.decision.failed",
-          actor: "system",
-          id,
-          message: "Finish or stop the current turn first, then decide this approval."
-        })
-        return
-      }
-      // The persisted card reconstructs the ask after a reload.
-      const ask = card.payload.flow === undefined
-        ? undefined
-        : { name: card.payload.flow, claim: card.payload.capability }
-      const pending = store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
-      void pending.isPersisted.promise.then(() => ownershipCurrent(generation) ? agent.resolveApproval!(lineage, decision, ask) : false).then((resolved) => {
-        if (!ownershipCurrent(generation)) return
-        if (!resolved) {
-          store.dispatch({
-            type: "card.approval.decision.failed",
-            actor: "system",
-            id,
-            message: "That approval is no longer pending."
-          })
-          return
-        }
-        store.dispatch({
-          type: "card.approval.decided",
-          actor: "user",
-          id,
-          decision,
-          decidedAt: Date.now()
-        })
-        // A background lineage resumed inside the runtime; only a turn
-        // lineage re-enters the turn lifecycle here.
-        if (card.payload.background !== true) resumeChainTurn(lineage)
-      }).catch(() => {
-        if (!ownershipCurrent(generation)) return
-        store.dispatch({
-          type: "card.approval.decision.failed",
-          actor: "system",
-          id,
-          message: "The decision could not reach the chain. Nothing was recorded — try again."
-        })
-      })
-      return
-    }
     const { runId, requestId, approval } = card.payload
     if (runId === undefined || requestId === undefined || approval === undefined) {
       // A card without a run identity has no backend to decide against —
@@ -1318,55 +1247,6 @@ export const createTurnController = (
       if (!ownershipCurrent(generation) || !isCurrentApprovalAnswer(store.collections.runtimeApprovals.get(input.id), input)) return
       commitApprovalDecision(id, decision, answer)
     }).catch(() => {})
-  }
-
-  /*
-   * Resume a parked chain lineage (DESIGN.md §14): same turn id, fresh
-   * startTurn — the chain replays its settled prefix and re-asks the seam
-   * under the recorded decision. The turn re-enters the ordinary frame
-   * lifecycle, so rendering and settlement need no special path.
-   */
-  const resumeChainTurn = (lineage: string): void => {
-    if (ctx.disposed || store.session().phase !== "idle" || ctx.activeTurn !== undefined) return
-    ctx.activeTurn = ownTurn({
-      id: lineage,
-      receivedText: true,
-      toolLegs: 0,
-      toolItems: [],
-      pendingCall: undefined,
-      runLaunch: undefined,
-      askClass: undefined,
-      claimBuffer: ""
-    })
-    const turn = ctx.activeTurn
-    store.dispatch({ type: "chain.turn.resumed", actor: "system", turnId: lineage })
-    void agent
-      .startTurn({ runId: lineage, messages: contextMessages(), instructions: "" })
-      .then((result) => {
-        if (!isCurrentTurn(turn)) {
-          if (result.status === "started" && revokedTurn(turn) && ctx.activeTurn?.id !== turn.id) cancelTurn(turn.id)
-          return
-        }
-        if (result.status === "error") {
-          ctx.activeTurn = undefined
-          store.dispatch({
-            type: "message.response.failed",
-            actor: "system",
-            turnId: lineage,
-            message: result.message
-          })
-        }
-      })
-      .catch(() => {
-        if (!isCurrentTurn(turn)) return
-        ctx.activeTurn = undefined
-        store.dispatch({
-          type: "message.response.failed",
-          actor: "system",
-          turnId: lineage,
-          message: "The chain could not resume. Try the approval again."
-        })
-      })
   }
 
   /*

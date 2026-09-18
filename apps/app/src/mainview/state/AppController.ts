@@ -412,8 +412,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * so nothing has to parse that string back into a shape it restates.
    */
   readonly netTapEntries: () => ReadonlyArray<NetEntry>
-  /** Drop every chain grant and pending denial (admin /debug.grants.reset). */
-  readonly resetGrants: () => Promise<string | { readonly value: string }>
   /**
    * The tapped fetch, exposed so the chain runtime's model-relay traffic
    * records into the same ring as every controller seam.
@@ -940,7 +938,6 @@ export const createAppController = (
     netTap,
     netTapEntries,
     debugNet,
-    resetGrants,
     debugSeams,
     openBrowser,
     toggleTheme,
@@ -1695,7 +1692,6 @@ export const createAppController = (
     debugNet,
     netTap,
     netTapEntries,
-    resetGrants,
     debugSeams,
     toggleTheme,
     setPalette,

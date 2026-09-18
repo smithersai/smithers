@@ -99,7 +99,6 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     runtime: ["cloud"],
     args: "[sourceCard=id] <runId>",
     requires: ["signed-in"],
-    capabilities: ["outbound:launch"],
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String }),
     handler: ({ runId, sourceCard }) => actions.rerunRun(runId, sourceCard)
   }),

@@ -50,7 +50,6 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     },
     summary: "Open (create or reuse) a Linux workspace in Smithers Cloud on a bookmark: a real machine with a terminal, files, and services the user can use",
     runtime: ["cloud"],
-    capabilities: ["outbound:launch"],
     /* ADR 0002: three sandbox kinds share one option surface, and the kind is the choice. */
     args: "[bookmark] [owner/repo] [--kind container|vm|desktop]",
     requires: ["signed-in"],
@@ -223,7 +222,6 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     },
     summary: "Open a desktop box on a bookmark and stream its screen into the card: create or reuse it, wait for it, and start the stream",
     runtime: ["cloud"],
-    capabilities: ["outbound:launch"],
     confirm: (payload) => `open a desktop box on ${desktopRepo(actions, payload) ?? "the selected repository"}`,
     /*
      * The confirmation carries the repository this ask resolved, never the
@@ -293,7 +291,6 @@ export const workspaceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry
     },
     summary: "Open a desktop box on a bookmark and stream its screen into the card",
     runtime: ["cloud"],
-    capabilities: ["outbound:launch"],
     confirm: (payload) => `open a desktop box on ${desktopRepo(actions, payload) ?? "the selected repository"}`,
     confirmArgs: (payload) => {
       const repo = desktopRepo(actions, payload)

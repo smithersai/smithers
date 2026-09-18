@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
 /*
  * The workflow cards: the embedded run card (run-trace) with its trace body
@@ -108,13 +108,13 @@ export const WorkflowRunCardBody = ({
       {phase === "quiet" ?
         (
           <div className="flow-run-actions">
-            <Button size="sm" data-flow="flow.run.retry" onClick={() => onRetryRun(card.id)}>
+            <Button size="sm" {...flowProps("flow.run.retry")} onClick={() => onRetryRun(card.id)}>
               Check again
             </Button>
             <Button
               size="sm"
               variant="outline"
-              data-flow="flow.run.stop"
+              {...flowProps("flow.run.stop")}
               onClick={() => onStopRun(card.id)}
             >
               Stop watching
@@ -123,7 +123,7 @@ export const WorkflowRunCardBody = ({
         ) :
         null}
       {TERMINAL_RUN_PHASES.has(phase) && (error !== undefined || observationError !== undefined || card.payload.events?.some((event) => event.kind === "control.engine.projection-gap")) && !planOnly ? (
-        <Button size="sm" data-flow="flow.run.retry" onClick={() => onRetryRun(card.id)}>
+        <Button size="sm" {...flowProps("flow.run.retry")} onClick={() => onRetryRun(card.id)}>
           Check again
         </Button>
       ) : null}
@@ -193,7 +193,7 @@ export const WorkflowRunCardBody = ({
                 <Button
                   size="sm"
                   variant="outline"
-                  data-flow="flow.run.stop"
+                  {...flowProps("flow.run.stop")}
                   data-testid={`flow-run-stop-${runId}`}
                   onClick={() => onStopRun(card.id)}
                 >
@@ -287,7 +287,7 @@ const RunSteerRow = ({
         <Button
           size="sm"
           variant="outline"
-          data-flow="runs.steer"
+          {...flowProps("runs.steer")}
           disabled={message.trim() === ""}
           onClick={() => {
             if (message.trim() === "") return
@@ -388,7 +388,7 @@ const WorkflowRepoCardBody = ({
               aria-selected={position === index}
               data-highlighted={position === index}
               className="workflow-repo-row"
-              data-flow="flow.repo.choose"
+              {...flowProps("flow.repo.choose")}
               onMouseEnter={() => setHighlighted(position)}
               onClick={() => onChooseWorkflowRepo(repo)}
             >
@@ -429,13 +429,13 @@ export const WorkflowListCardBody = ({
               {workflow.prompt ? <Markdown className="smithers-card-markdown" content={workflow.prompt} /> : null}
             </div>
             {issueContext && (workflow.key === "issue.repro" || workflow.key === "issue/repro") ?
-              <Button size="sm" variant="outline" data-flow="issue.repro" onClick={() => sendRunCommand("issue.repro", flowArgs("issue.repro", { number: issueContext.number, repo }))}>Run repro</Button> :
+              <Button size="sm" variant="outline" {...flowProps("issue.repro")} onClick={() => sendRunCommand("issue.repro", flowArgs("issue.repro", { number: issueContext.number, repo }))}>Run repro</Button> :
               <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", { name: workflow.key, input: issueContext ? { args: JSON.stringify({ issue: issueContext }) } : undefined }))}>Run</Button>}
           </li>
         ))}
       </ul>
       {research ? <Markdown className="smithers-card-markdown" content={research} /> : null}
-      {issueContext ? <Button size="sm" variant="outline" data-flow="issue.add-flow" onClick={() => sendRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number: issueContext.number, repo }))}>Add flow</Button> : null}
+      {issueContext ? <Button size="sm" variant="outline" {...flowProps("issue.add-flow")} onClick={() => sendRunCommand("issue.add-flow", flowArgs("issue.add-flow", { number: issueContext.number, repo }))}>Add flow</Button> : null}
     </div>
   )
 }

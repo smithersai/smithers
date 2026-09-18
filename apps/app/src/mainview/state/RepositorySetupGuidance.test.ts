@@ -4,7 +4,6 @@ import { AgentRuntimeContextSchema, AgentRuntimeSetupDraftSchema, composeAgentIn
 import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { agentVisibleCatalog } from "../flows/agentTools"
 import { flowArgs } from "../flows/FlowArgs"
-import { disclosedEntries } from "../chain/FlowCatalog"
 import type { StorageApi } from "@tanstack/db"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
@@ -95,7 +94,6 @@ test("cloud setup controls are discoverable to the model and stay out of the hum
     expect(controls.every((command: { args?: string }) => typeof command.args === "string")).toBe(true)
     expect(agentVisibleCatalog(t.controller.commands.callable()).filter(command => command.name.startsWith("setup.")).map(command => command.name)).toEqual(setupNames)
     expect(t.controller.commands.disclosed().filter(command => command.name.startsWith("setup.")).map(command => command.name)).toEqual(setupNames)
-    expect(disclosedEntries(t.controller.commands).filter(command => command.name.startsWith("setup.")).map(command => command.name)).toEqual(setupNames)
     expect(t.controller.commands.slashItems("setup.").some(item => setupNames.includes(item.flow.name))).toBe(false)
     // The question flow is the app's own act: invocable so the controller can
     // render the form, never offered to the model or to the slash menu.

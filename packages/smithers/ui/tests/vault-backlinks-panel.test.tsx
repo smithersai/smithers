@@ -34,3 +34,24 @@ describe("BacklinksPanel", () => {
     expect(html).toContain("<button");
   });
 });
+
+describe("BacklinksPanel pass-through attributes", () => {
+  test("stamps the host's attributes on each link row, per path", () => {
+    const html = renderToStaticMarkup(
+      <BacklinksPanel
+        backlinks={["Areas/Marketing.md"]}
+        linksOut={["HQ.md"]}
+        onOpenNote={() => {}}
+        linkProps={(path) => ({ "data-flow": "wiki.open", "data-path": path })}
+      />,
+    );
+    expect(html.match(/data-flow="wiki\.open"/g)).toHaveLength(2);
+    expect(html).toContain('data-path="Areas/Marketing.md"');
+    expect(html).toContain('data-path="HQ.md"');
+  });
+
+  test("renders without the hook, exactly as before", () => {
+    const html = renderToStaticMarkup(<BacklinksPanel backlinks={["Inbox.md"]} />);
+    expect(html).not.toContain("data-flow");
+  });
+});

@@ -1,4 +1,4 @@
-import { flowAction } from "./flows/FlowAction"
+import { dynamicFlowAction, flowAction, flowProps } from "./flows/FlowAction"
 import { Button, ChatMessage, Markdown, Marker, Reasoning } from "@smthrs/ui"
 import { CheckCircle2, Copy, HelpCircle, RotateCcw } from "lucide-react"
 import { useState } from "react"
@@ -28,7 +28,7 @@ function CopyMessageButton({
       variant="ghost"
       size="icon"
       className="message-action"
-      data-flow="chat.copy-message"
+      {...flowProps("chat.copy-message")}
       aria-label={copied ? "Copied" : "Copy message"}
       title={copied ? "Copied" : "Copy message"}
       onClick={() => {
@@ -140,7 +140,7 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
           <Button
             className="message-cta"
             autoFocus={entry.message.id === "auth-state"}
-            {...flowAction(controller.runCommand, entry.message.action?.flow ?? "", entry.message.action?.args)}
+            {...dynamicFlowAction(controller.runCommand, entry.message.action?.flow ?? "", entry.message.action?.args)}
           >
             {entry.message.action.label}
           </Button>

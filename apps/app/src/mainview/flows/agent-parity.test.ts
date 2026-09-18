@@ -91,13 +91,12 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "billing.portal": "the external billing portal; the human clicks",
   "admin.devtools": "the admin panel's presentation toggle",
   "debug.backend": "admin diagnostics; the agent must never reason about its engine",
-  "debug.grants.reset": "revokes the chain's own session grants; the operator's act",
-  "admin.grant.confirm": "a grant confirmation is the operator's own answer (approve:self)",
+  "admin.grant.confirm": "a grant confirmation is the operator's own answer",
   "admin.grant.cancel": "a confirm-dialog answer is the human's",
   "approval.approve": "approvals belong to the human",
   "triggers.approve": "approvals belong to the human",
   "approval.deny": "approvals belong to the human",
-  "admin.queue.approve": "approving an access request is the operator's own decision (approve:self)"
+  "admin.queue.approve": "approving an access request is the operator's own decision"
 }
 
 /** The policy table's agent rows (agent-parity.md): the args exercised and whether the act confirms. */

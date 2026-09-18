@@ -534,7 +534,10 @@ describe("discovery over the project flows directory", () => {
       }),
     );
 
-    const modules = ["checks/wiki", "coding", "coding/implementation", "coding/request", "coding/vibe", "release", "release-content", "tutorial-change", "wiki"];
+    // Every module declaration under flows/. `coding/dispatch` is the
+    // single-turn door; `coding/prototype` is the disposable POC entry, which
+    // this list had never carried even though discovery has always found it.
+    const modules = ["checks/wiki", "coding", "coding/dispatch", "coding/implementation", "coding/prototype", "coding/request", "coding/vibe", "release", "release-content", "tutorial-change", "wiki"];
     // The librarian host registers these declarations explicitly. Their
     // aliased Declaration.make defaults are outside static discovery's
     // Flow.make syntax, so discovery reports them without inventing entries.
@@ -545,7 +548,7 @@ describe("discovery over the project flows directory", () => {
       [
         ...EXPECTED_FLOWS.filter((name) => name.startsWith("checks/")).map((name) => `${code} at ${name}/flow.mdx: ${message}`),
         ...modules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`),
-        ...["checks/wiki", "tutorial-change", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
+        ...["checks/wiki", "coding/prototype", "tutorial-change", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
         ...registeredModules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Could not statically read the default Flow.make or Flow.agent declaration`),
         ...registeredModules.map((name) => `missing_description at ${name}/flow.ts: Module flows require a literal description in the default Flow.make or Flow.agent value`),
       ].sort(),

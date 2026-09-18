@@ -130,7 +130,6 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     hidden: true,
     runtime: ["cloud"],
     requires: ["signed-in"],
-    capabilities: ["approve:self"],
     userOnly: true,
     userOnlyReason: "approvals belong to the human",
     grammar: carried("triggers.approve"),

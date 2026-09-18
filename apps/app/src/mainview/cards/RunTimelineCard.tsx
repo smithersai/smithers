@@ -13,6 +13,7 @@ import type { NodeTiming } from "@smthrs/rpc/TargetGraph"
 import { durationLabel, timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
+import { flowProps } from "../flows/FlowAction"
 
 /** The shared axis: the earliest start to the latest end the payload knows. */
 export const timelineExtent = (nodes: ReadonlyArray<NodeTiming>): { readonly start: number; readonly end: number } => {
@@ -137,7 +138,7 @@ export const RunTimelineCardBody = ({
               value={cursor}
               aria-label="Replay cursor"
               data-testid={`run-timeline-scrubber-${runId}`}
-              data-flow="target.run.scrub"
+              {...flowProps("target.run.scrub")}
               onInput={(event) => scrub((event.target as HTMLInputElement).value)}
               onChange={(event) => scrub(event.target.value)}
             />

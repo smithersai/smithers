@@ -287,6 +287,21 @@ Every visible capability still follows the same presentation law: its first outp
 
 ## 14. Agent Chain integration (decided 2026-08-11; supersedes §13's cell vocabulary, keeps its boundary)
 
+**Retirement amendment (2026-09-18):** the in-page chain loop is deleted.
+`chain/ChainRuntime.ts`, `chain/Policy.ts`, `chain/FlowCatalog.ts`,
+`chain/StreamModel.ts`, `chain/RelayProtocol.ts`, `chain/HostPrompt.ts` and
+`chain/Worldview.ts` are gone, and the controller holds the host's agent
+directly — the HTTP agent against the app origin, or the unavailable adapter.
+The three-tier approval policy below, and the capability claims
+(`app:act`, `session:*`, `outbound:*`, `approve:*`) app flows declared to key
+it on, are gone with it: capabilities are typed and injected, and approval is
+a host-injected decorator (a GrantStore) that arrives with the harness cell
+loop, never a string a flow declaration claims. What survives in `chain/` is
+app persistence — the storage, schema-version, journal and recovery modules —
+plus the read-only debug folds. Every paragraph below that describes the
+in-webview loop, its relay seat, its catalog adapter or its approval tiers is
+history, not current behaviour.
+
 **1.0 review amendment (2026-09-04, R7/R8; supersedes the earlier clear/sweep rule):**
 `/chat.clear` is an offline-capable local archive/start-new operation, not a
 model-dependent deletion. `/chat.clear --summarize` explicitly requests additive

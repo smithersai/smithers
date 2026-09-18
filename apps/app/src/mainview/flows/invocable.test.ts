@@ -85,7 +85,7 @@ describe("every listed flow is a tool call", () => {
     const entries = controller.commands.entries()
     const visibleNames = new Set(visible(controller.commands.all()).map((item) => item.name))
     // These register only in the admin plugin; their reasons stay listed below.
-    const adminRegistered = ["admin.reset", "admin.devtools", "debug.backend", "debug.grants.reset", "billing.upgrade", "billing.portal"]
+    const adminRegistered = ["admin.reset", "admin.devtools", "debug.backend", "billing.upgrade", "billing.portal"]
     for (const { name } of USER_ONLY_VISIBLE.filter((e) => !adminRegistered.includes(e.name))) {
       const entry = entries.find((candidate) => candidate.binding.descriptor.name === name)
       expect(`${name} registered`).toBe(`${name} ${entry === undefined ? "missing" : "registered"}`)

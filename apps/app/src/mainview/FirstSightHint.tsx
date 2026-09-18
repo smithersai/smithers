@@ -1,6 +1,7 @@
 import { useCallback,useSyncExternalStore,type ReactNode } from "react"
 import { useController } from "./ControllerContext"
 import { HelpBubble } from "./HelpBubble"
+import { flowProps } from "./flows/FlowAction"
 type AppStore = ReturnType<typeof useController>["store"]
 
 /** Visibility is a projection of mounted controls and durable dismissal receipts. */
@@ -51,7 +52,7 @@ export function FirstSightHint({ id, content, children, placement }: { id: strin
   return <div data-first-sight-hint={id} onClickCapture={event => {
     if ((event.target as Element).closest("button, a[href]")) dismiss()
   }}>
-    <HelpBubble id={`hint-${id}`} open={open} placement={placement} dismissOnEscape={false} restoreFocusOnDismiss={false} content={content} onDismiss={dismiss} dismissBinding={{ "data-flow": "app.hint.dismiss", "data-flow-args": id }}>{children}</HelpBubble>
+    <HelpBubble id={`hint-${id}`} open={open} placement={placement} dismissOnEscape={false} restoreFocusOnDismiss={false} content={content} onDismiss={dismiss} dismissBinding={flowProps("app.hint.dismiss", id)}>{children}</HelpBubble>
   </div>
 }
 

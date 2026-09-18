@@ -51,7 +51,6 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     runtime: ["cloud"],
     args: "<description> [owner/repo]",
     requires: ["signed-in"],
-    capabilities: ["outbound:launch"],
     input: Schema.Struct({
       description: Schema.String,
       repo: Schema.optional(Schema.String)
@@ -132,7 +131,6 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     runtime: ["cloud"],
     args: "[sourceCard=id] <name> [owner/repo] [JSON object]",
     requires: ["signed-in"],
-    capabilities: ["outbound:launch"],
     input: Schema.Struct({
       name: Schema.String,
       repo: Schema.optional(Schema.String),
@@ -189,7 +187,6 @@ export const repositoryFlowLeaves = (
         summary: row.summary ?? firstLine(row.description),
         runtime: ["cloud"],
         requires: ["signed-in"],
-        capabilities: ["outbound:launch"],
         args: "[owner/repo] [JSON object]",
         grammar: (args) => payloadFor("flow.run", line(row.id, args)),
         form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },

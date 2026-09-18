@@ -17,7 +17,6 @@ const declaration = Flow.make({
   description: "Prepare a private local recovery download",
   input,
   output: Schema.Struct({}),
-  capabilities: ["app:act"]
 })
 
 /** One declaration/binding factory for startup, slash, button and agent refusal. */
@@ -45,7 +44,6 @@ const resetDeclaration = Flow.make({
   description: "Erase this browser's saved Smithers data and reload",
   input,
   output: Schema.Struct({}),
-  capabilities: ["app:act"]
 })
 
 /**

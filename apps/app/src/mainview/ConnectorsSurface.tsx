@@ -1,4 +1,4 @@
-import { flowAction } from "./flows/FlowAction"
+import { dynamicFlowProps, flowAction } from "./flows/FlowAction"
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Separator } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { FolderGit2, GitPullRequest, HardDrive, Plug, Server, Trash2 } from "lucide-react"
@@ -182,7 +182,7 @@ export function ConnectorsSurface() {
                   <Button
                     size="sm"
                     variant="outline"
-                    data-flow={row.action.flow}
+                    {...dynamicFlowProps(row.action.flow)}
                     data-row-action
                     disabled={row.action.disabled === true}
                     loading={row.action.flow === "connector.add" && selecting}

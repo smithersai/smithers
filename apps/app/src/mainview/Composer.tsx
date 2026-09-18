@@ -21,7 +21,7 @@ import type { KeyboardEvent,ReactNode,RefObject } from "react"
 import { useId,useRef,useState } from "react"
 import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
-import { flowAction } from "./flows/FlowAction"
+import { dynamicFlowProps, flowAction, flowProps } from "./flows/FlowAction"
 import { actionForKey } from "./flows/SearchQuery"
 import { SELECT_REPO_LABEL } from "./Onboarding"
 import { rovingKeyDown } from "./RovingKeyDown"
@@ -35,18 +35,14 @@ import { workingCopyLabel } from "./state/WorkspaceViews"
 const COMPOSER_INPUT_TEST_ID: Record<string, string> = { "data-testid": "composer-input" }
 
 /* Send and Stop are `chat.send` and `chat.stop`'s doors, named through
- * ChatComposer's own pass-through props. Typed as records for the same reason
- * COMPOSER_INPUT_TEST_ID is: a bag of only `data-*` keys has no property in
- * common with `ComponentProps<"button">`. */
+ * ChatComposer's own pass-through props. The names come from `flowProps`, so
+ * the registry — not this file — decides that they exist. */
 
-/** The Send button's flow marker, and Playwright's handle on it. */
-const COMPOSER_SEND_PROPS: Record<string, string> = {
-  "data-flow": "chat.send",
-  "data-testid": "composer-send"
-}
+/** The Send button's flow binding, and Playwright's handle on it. */
+const COMPOSER_SEND_PROPS = { ...flowProps("chat.send"), "data-testid": "composer-send" }
 
 /** The Stop button is `chat.stop`'s door. */
-const COMPOSER_STOP_PROPS: Record<string, string> = { "data-flow": "chat.stop" }
+const COMPOSER_STOP_PROPS = flowProps("chat.stop")
 
 type Surface = "chat" | "world" | "connectors" | "flows" | "plugins"
 
@@ -182,7 +178,7 @@ function ComposerMenu({
         variant="ghost"
         size="sm"
         className="composer-action composer-menu-trigger composer-pill"
-        data-flow="chat.surfaces"
+        {...flowProps("chat.surfaces")}
         data-testid="composer-surface-trigger"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -206,7 +202,7 @@ function ComposerMenu({
                 }}
                 role="menuitem"
                 className="composer-menu-item"
-                data-flow={entry.flow}
+                {...dynamicFlowProps(entry.flow)}
                 data-active={entry.active}
                 aria-pressed={entry.active}
                 tabIndex={index === highlighted ? 0 : -1}
@@ -392,7 +388,7 @@ function ComposerAdd({
         variant="ghost"
         size="icon"
         className="composer-action composer-add-trigger"
-        data-flow="composer.add"
+        {...flowProps("composer.add")}
         data-testid="composer-add"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -424,7 +420,7 @@ function ComposerAdd({
                 }}
                 role="menuitem"
                 className="composer-menu-item"
-                data-flow={entry.flow}
+                {...dynamicFlowProps(entry.flow)}
                 data-testid={entry.testId}
                 disabled={entry.disabled}
                 onClick={() => {
@@ -701,7 +697,7 @@ function ComposerConnect({
         variant="ghost"
         size="sm"
         className="composer-action composer-connect-trigger"
-        data-flow="connect"
+        {...flowProps("connect")}
         data-connected={connected}
         data-testid="composer-repo-trigger"
         aria-haspopup="menu"
@@ -731,7 +727,7 @@ function ComposerConnect({
                 }}
                 role="menuitem"
                 className="composer-menu-item"
-                data-flow={entry.flow}
+                {...dynamicFlowProps(entry.flow)}
                 data-testid={entry.testId}
                 data-active={entry.active === true ? "true" : undefined}
                 disabled={entry.disabled}

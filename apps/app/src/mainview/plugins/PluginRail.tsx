@@ -1,6 +1,7 @@
 import { BookOpen, Box, Compass, Factory, History, KeyRound, Library, Puzzle, RadioTower } from "lucide-react"
 import type { ReactNode } from "react"
 import type { PluginIcon, RailEntry } from "./AppPlugin"
+import { dynamicFlowProps } from "../flows/FlowAction"
 
 /*
  * What the installed plugins put on the workspace: one button per rail entry,
@@ -37,7 +38,7 @@ export function PluginRail({
         <button
           key={entry.flow}
           type="button"
-          data-flow={entry.flow}
+          {...dynamicFlowProps(entry.flow)}
           data-testid={`plugin-rail-${entry.flow}`}
           onClick={() => onOpen(entry.flow)}
         >

@@ -1,5 +1,5 @@
 import { DiffSurface } from "../ViewModules"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import type React from "react"
 /*
  * The change and diff cards (lane change, ADR 0003 — the change is the
@@ -230,7 +230,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
           <div className="world-card-row change-pins">
             <select
               aria-label="Diff from"
-              data-flow="change.pins"
+              {...flowProps("change.pins")}
               value={from}
               onChange={(event) => onRunCommand("change.pins", flowArgs("change.pins", { changeId: payload.changeId, from: event.target.value, to }))}
             >
@@ -240,7 +240,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
             <span className="world-card-path">→</span>
             <select
               aria-label="Diff to"
-              data-flow="change.pins"
+              {...flowProps("change.pins")}
               value={to}
               onChange={(event) => onRunCommand("change.pins", flowArgs("change.pins", { changeId: payload.changeId, from, to: event.target.value }))}
             >
@@ -339,7 +339,7 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
             <span className="world-card-path">at</span>
             <select
               aria-label="Checks at revision"
-              data-flow="change.checks"
+              {...flowProps("change.checks")}
               value={at === null ? "" : String(at)}
               onChange={(event) => onRunCommand("change.checks", `${payload.changeId} ${event.target.value}`)}
             >

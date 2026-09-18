@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 /*
  * The graph card (docs/LOCAL-APP.md "Cards: target graph"): the repository's
  * typed dependency DAG on the shared @smthrs/ui WorkflowCanvas, laid out
@@ -228,7 +228,7 @@ export const GraphNodeDrawer = ({
         <Button
           variant="ghost"
           size="icon"
-          data-flow="target.graph.focus"
+          {...flowProps("target.graph.focus")}
           aria-label="Close the graph focus details"
           onClick={() => onDismissDrawer()}
         >
@@ -381,14 +381,14 @@ export const GraphCardBody = ({
           value={search}
           placeholder="Filter labels…"
           aria-label="Filter graph labels"
-          data-flow="target.graph.filter"
+          {...flowProps("target.graph.filter")}
           onInput={(event) => onRunCommand("target.graph.filter", `${repoId} query=${event.currentTarget.value}`)}
         />
         <label className="graph-card-private-toggle">
           <input
             type="checkbox"
             checked={showPrivate}
-            data-flow="target.graph.filter"
+            {...flowProps("target.graph.filter")}
             onChange={(event) => onRunCommand("target.graph.filter", `${repoId} private=${event.target.checked ? "on" : "off"}`)}
           />
           Private nodes

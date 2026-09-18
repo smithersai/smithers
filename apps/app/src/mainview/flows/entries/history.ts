@@ -31,7 +31,6 @@ export const historyFlows = (actions: CommandActions & Partial<LibrarianRunsCont
     summary: "Create Mythical history in the background",
     args: "<owner/repo>",
     requires: ["signed-in"],
-    capabilities: ["outbound:launch"],
     confirm: "create the repository mythical history",
     input: Schema.Struct({ repo: Schema.NonEmptyString }),
     /* Typed owner/repo, with the loaded repositories offered: the grammar reads only that shape. */

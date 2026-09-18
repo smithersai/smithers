@@ -21,6 +21,7 @@ import type { SlashRow } from "./flows/registry"
 import { actionForKey, prefixRow } from "./flows/SearchQuery"
 import type { PrefixRow } from "./flows/SearchQuery"
 import type { PaletteAnswer } from "./state/seams/SearchSeam"
+import { dynamicFlowProps } from "./flows/FlowAction"
 
 /** One selectable row of the overlay. */
 export type PaletteRow =
@@ -250,7 +251,7 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
             return (
               <Fragment key={flow.name}>
                 {heading}
-                <button {...common} data-gold={recommended} data-flow={flow.name} className="slash-menu-item" onClick={() => onChoose(row)}>
+                <button {...common} data-gold={recommended} {...dynamicFlowProps(flow.name)} className="slash-menu-item" onClick={() => onChoose(row)}>
                   <span className="slash-menu-name">/{flow.name}</span>
                   <span className="slash-menu-description">{flow.summary}</span>
                 </button>
@@ -279,7 +280,7 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
           if (row.kind === "action") {
             const { action } = row
             return (
-              <button {...common} key={`action:${action.flow}:${action.args ?? ""}`} data-flow={action.flow} data-role={action.role} className="slash-menu-item" onClick={() => onChoose(row)}>
+              <button {...common} key={`action:${action.flow}:${action.args ?? ""}`} {...dynamicFlowProps(action.flow)} data-role={action.role} className="slash-menu-item" onClick={() => onChoose(row)}>
                 <span className="slash-menu-name">/{action.flow}</span>
                 <span className="slash-menu-description">{action.label}</span>
                 <span className="slash-menu-count">{roleWord(action.role)}</span>

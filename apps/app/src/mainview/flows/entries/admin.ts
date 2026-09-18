@@ -93,9 +93,8 @@ export const adminOperatorFlows = (actions: CommandActions): ReadonlyArray<FlowE
     runtime: ["identity"],
     hidden: true,
     args: "<cardId>",
-    capabilities: ["approve:self"],
     userOnly: true,
-    userOnlyReason: "a grant confirmation is the operator's own answer (approve:self)",
+    userOnlyReason: "a grant confirmation is the operator's own answer",
     input: CardTarget,
     handler: ({ cardId }) => actions.adminGrantConfirm(cardId)
   }),
@@ -123,9 +122,8 @@ export const adminOperatorFlows = (actions: CommandActions): ReadonlyArray<FlowE
     runtime: ["identity"],
     hidden: true,
     args: "<login>",
-    capabilities: ["approve:self"],
     userOnly: true,
-    userOnlyReason: "approving an access request is the operator's own decision (approve:self)",
+    userOnlyReason: "approving an access request is the operator's own decision",
     input: Schema.Struct({ login: Schema.String }),
     handler: ({ login }) => actions.adminQueueApprove(login)
   }),

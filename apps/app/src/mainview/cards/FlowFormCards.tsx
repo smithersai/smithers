@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowOf, flowProps } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
 import { useCallback, useContext, useRef, type KeyboardEvent } from "react"
 import { ControllerContext } from "../ControllerContext"
@@ -104,7 +104,7 @@ export const FlowFormCardBody = ({
       return
     }
     if (card.payload.via !== "user") return
-    const fromButton = active?.getAttribute("data-flow") === flow
+    const fromButton = flowOf(active) === flow
     if ((!requested && !fromButton) || (active !== null && node.contains(active))) return
     // The human has moved on when focus rests on some other control; <body> and
     // the composer (hidden once its slash ran) are where the slash door left it.
@@ -236,7 +236,7 @@ export const FlowFormCardBody = ({
           }}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" data-flow="form.submit" data-testid="flow-form-submit" disabled={!complete || busy}>
+          <Button type="submit" size="sm" {...flowProps("form.submit")} data-testid="flow-form-submit" disabled={!complete || busy}>
             {card.payload.submitLabel ?? "Submit"}
           </Button>
         </div>

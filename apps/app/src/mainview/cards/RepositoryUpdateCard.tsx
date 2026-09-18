@@ -12,6 +12,7 @@ import type { CardFamily } from "./CardFamily"
 import { flowArgs } from "../flows/FlowArgs"
 import { issueDisplay, LabelPill, prDisplay, repoLabel, StateIcon } from "./GithubParts"
 import { Octicon } from "./Octicon"
+import { flowProps } from "../flows/FlowAction"
 
 type UpdateItem = Extract<Card, { kind: "repo-update" }>["payload"]["items"][number]
 
@@ -76,7 +77,7 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
               </>
               return <li key={item.id} className="ghc-row repo-update-item" data-read={item.read} data-kind={item.kind} data-state={item.state}>
                 {viewFlow !== undefined && item.number !== undefined ?
-                  <button type="button" className="ghc-row-btn" data-flow={viewFlow}
+                  <button type="button" className="ghc-row-btn" {...flowProps(viewFlow)}
                     onClick={() => actions.onRunCommand(viewFlow, viewFlow === "issues.view"
                       ? flowArgs("issues.view", { number: item.number!, repo, source: issueSource(item) })
                       : flowArgs("prs.view", { number: item.number!, repo }))}>{body}</button> :
@@ -89,10 +90,10 @@ export const repositoryUpdateCardFamily: CardFamily<"repo-update"> = {
             <summary aria-label="Activity details">Details</summary>
             <dl><dt>Checked</dt><dd><time dateTime={new Date(checkedAt).toISOString()}>{timeLabel(checkedAt)}</time></dd></dl>
           </details>
-          <Button size="sm" variant="outline" data-flow="repo.overview" onClick={() => actions.onRunCommand("repo.overview", repo)}>
+          <Button size="sm" variant="outline" {...flowProps("repo.overview")} onClick={() => actions.onRunCommand("repo.overview", repo)}>
             <RefreshCw size={14} aria-hidden="true" /> Refresh
           </Button>
-          {unread > 0 && <Button size="sm" data-flow="notifications.read-update"
+          {unread > 0 && <Button size="sm" {...flowProps("notifications.read-update")}
             onClick={() => actions.onRunCommand("notifications.read-update", card.id)}>
             <Octicon name="check" /> Mark all read
           </Button>}

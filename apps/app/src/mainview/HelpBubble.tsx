@@ -1,11 +1,12 @@
 import { useCallback, useRef, type ReactNode } from "react"
 import { Lightbulb, X } from "lucide-react"
 import "./HelpBubble.css"
+import { type FlowBindingProps } from "./flows/FlowAction"
 
 export type HelpBubbleProps = {
   /** The content ID can be included in the target control's aria-describedby. */
   id: string
-  dismissBinding?: { "data-flow": string; "data-flow-args"?: string }
+  dismissBinding?: FlowBindingProps
   dismissOnEscape?: boolean
   restoreFocusOnDismiss?: boolean
   open: boolean

@@ -1,7 +1,7 @@
 import { ViewSkeleton } from "../ViewSkeleton"
 import { MarkdownEditorSurface } from "../ViewModules"
 import { flowArgs } from "../flows/FlowArgs"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import { Badge, Button, FileTree } from "@smthrs/ui"
 import { ExternalLink, GitPullRequest, HardDrive, Server } from "lucide-react"
 import { Suspense, useId, useContext } from "react"
@@ -45,7 +45,7 @@ export const ConnectCardBody = ({
       {card.payload.github.connected ?
         <Badge variant="success">Connected ✓ as {card.payload.github.login ?? "you"}</Badge> :
         (
-          <Button size="sm" data-flow="auth.sign-in" onClick={() => onConnectGitHub()}>
+          <Button size="sm" {...flowProps("auth.sign-in")} onClick={() => onConnectGitHub()}>
             Connect
           </Button>
         )}
@@ -60,7 +60,7 @@ export const ConnectCardBody = ({
             <strong>Local repository</strong>
             <span>A repository on this machine, read directly.</span>
           </span>
-          <Button size="sm" variant="outline" data-flow="connector.add" onClick={() => onConnectLocal()}>
+          <Button size="sm" variant="outline" {...flowProps("connector.add")} onClick={() => onConnectLocal()}>
             Connect
           </Button>
         </li>

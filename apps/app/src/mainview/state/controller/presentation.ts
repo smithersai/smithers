@@ -28,7 +28,6 @@ export interface PresentationController {
   readonly netTapEntries: () => ReadonlyArray<NetEntry>
   readonly netTap: () => string
   readonly debugNet: () => { readonly value: string }
-  readonly resetGrants: () => Promise<string | { readonly value: string }>
   readonly debugSeams: () => Promise<string | void | { readonly value: string }>
   readonly openBrowser: (url: string) => Promise<string | void | { readonly value: string }>
   readonly toggleTheme: () => void
@@ -196,7 +195,7 @@ export const createPresentationController = (
    * checklist quotes it, so drift between what runs and what is claimed shows
    * up as a failing row rather than as a confident wrong sentence.
    */
-  const AGENT_BACKEND = "chain (in-browser Agent Chain over /api/model/stream)"
+  const AGENT_BACKEND = "http (the host agent over /api/agent/turn)"
 
   /*
    * DESIGN.md §14: what drives a turn. A read, not a switch — Smithers has one
@@ -323,20 +322,6 @@ export const createPresentationController = (
   const netTap = (): string => JSON.stringify(netTapEntries())
 
   const debugNet = (): { readonly value: string } => surfaceDebugRead("Network tap", netTap())
-
-  const resetGrants = async (): Promise<string | { readonly value: string }> => {
-    if (ctx.agent.revokeGrants === undefined) return "this backend holds no grants"
-    await ctx.agent.revokeGrants()
-    // A revocation the human cannot see is a revocation they cannot trust.
-    if (ctx.commandActor !== "smithers") {
-      ctx.store.dispatch({
-        type: "message.appended",
-        actor: "system",
-        text: "The chain's session grants are revoked — the next tool call asks for permission again."
-      })
-    }
-    return { value: "chain grants revoked" }
-  }
 
   const debugSeams = async (): Promise<string | void | { readonly value: string }> => {
     // admin.health is a VIEW over this same read, not a separate path.
@@ -546,7 +531,6 @@ export const createPresentationController = (
     netTapEntries,
     netTap,
     debugNet,
-    resetGrants,
     debugSeams,
     openBrowser,
     toggleTheme,

@@ -1,4 +1,4 @@
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowProps } from "../flows/FlowAction"
 import { Badge, Button, Input, KpiStat, Skeleton, StatusPill } from "@smthrs/ui"
 import type { TargetDetail, TargetRunState, TargetsViewMode } from "@smthrs/rpc/Cards"
 import { TARGET_RUN_STATES, TARGETS_VIEW_MODES } from "@smthrs/rpc/Cards"
@@ -364,7 +364,7 @@ export const TargetsCardBody = ({
           placeholder="Filter by label or workspace"
           aria-label="Filter targets"
           value={view?.query ?? ""}
-          data-flow="target.filter"
+          {...flowProps("target.filter")}
           data-testid="targets-filter-query"
           onChange={(event) => onRunCommand("target.filter", flowArgs("target.filter", { repoId, query: event.currentTarget.value }))}
         />
@@ -373,7 +373,7 @@ export const TargetsCardBody = ({
             <select
               className="targets-workspace"
               aria-label="Workspace"
-              data-flow="target.filter"
+              {...flowProps("target.filter")}
               data-testid="targets-filter-workspace"
               value={view?.workspace ?? "*"}
               onChange={(event) => onRunCommand("target.filter", flowArgs("target.filter", { repoId, workspace: event.currentTarget.value }))}
@@ -689,7 +689,7 @@ export const TargetsCardBody = ({
                           <input
                             type="checkbox"
                             className="targets-pick-box"
-                            data-flow="target.pick"
+                            {...flowProps("target.pick")}
                             data-testid={`targets-pick-${member.target.label}`}
                             aria-label={`Pick ${member.target.label}`}
                             checked={chosen}

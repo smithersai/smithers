@@ -14,16 +14,32 @@ import ts from "typescript"
 
 const read = (relative: string): string => {
   let source = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
-  // Inspect the shared binding as its equivalent JSX, keeping every existing
-  // command and affordance check applicable to both binding spellings.
+  // Inspect the shared bindings (flows/FlowAction.ts) as the JSX they spell
+  // out, keeping every existing command and affordance check applicable to
+  // both binding spellings — the attribute is written in one place now, so a
+  // literal `data-flow="…"` no longer appears in a surface file at all.
   const tree = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const edits: Array<{ start: number; end: number; text: string }> = []
+  /** The attribute this call spells out, as JSX: `"x.y"` stays a literal, anything else stays an expression. */
+  const attribute = (prop: string, node: ts.Expression): string =>
+    `${prop}=${ts.isStringLiteral(node) ? JSON.stringify(node.text) : `{${node.getText(tree)}}`}`
   const visit = (node: ts.Node) => {
-    if (ts.isJsxSpreadAttribute(node) && ts.isCallExpression(node.expression) && node.expression.expression.getText(tree) === "flowAction") {
-      const [run, name, args] = node.expression.arguments
-      if (!run || !name) throw new Error("A flow binding needs its dispatcher and command")
-      const label = ts.isStringLiteral(name) ? JSON.stringify(name.text) : `{${name.getText(tree)}}`
-      edits.push({ start: node.getStart(tree), end: node.end, text: `data-flow=${label} onClick={() => ${run.getText(tree)}(${name.getText(tree)}${args ? `, ${args.getText(tree)}` : ""})}` })
+    if (ts.isJsxSpreadAttribute(node) && ts.isCallExpression(node.expression)) {
+      const callee = node.expression.expression.getText(tree)
+      const written = (text: string) => edits.push({ start: node.getStart(tree), end: node.end, text })
+      if (callee === "flowAction" || callee === "dynamicFlowAction") {
+        const [run, name, args] = node.expression.arguments
+        if (!run || !name) throw new Error("A flow binding needs its dispatcher and command")
+        written(`${attribute("data-flow", name)} onClick={() => ${run.getText(tree)}(${name.getText(tree)}${args ? `, ${args.getText(tree)}` : ""})}`)
+      } else if (callee === "flowProps" || callee === "dynamicFlowProps") {
+        const [name] = node.expression.arguments
+        if (!name) throw new Error("A flow binding needs its command")
+        written(attribute("data-flow", name))
+      } else if (callee === "flowGestureProps") {
+        const [name, activate] = node.expression.arguments
+        if (!name || !activate) throw new Error("A gesture binding needs its rest and activation commands")
+        written(`${attribute("data-flow", name)} ${attribute("data-flow-activate", activate)}`)
+      }
     }
     ts.forEachChild(node, visit)
   }

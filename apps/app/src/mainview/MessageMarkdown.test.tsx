@@ -7,8 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server"
  *
  * `RichMarkdown` used to split tables out of the source and hand the cells to
  * `TableCell` as plain strings, so a `**total**` in a cell reached the screen
- * with its asterisks (LIBRARY-CHANGE-REQUESTS §5). `Markdown` renders the same
- * table with its own inline rule, and the fence rule still wins over it, so a
+ * with its asterisks. `Markdown` renders the same table with its own inline rule, and the fence rule still wins over it, so a
  * pipe inside a fence stays data. These are the cases the deleted
  * RichMarkdown.test.ts covered, asserted against the renderer App.tsx uses.
  */
