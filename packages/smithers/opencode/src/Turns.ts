@@ -530,5 +530,17 @@ type Job = Open | Event | Close | Emit | HealthJob
  * @category predicates
  * @since 1.0.0
  */
-export const isLocked = (error: Store.StoreError): boolean =>
-  /database is locked|LockTimeoutError/.test(String(error.cause))
+export const isLocked = (error: Store.StoreError): boolean => {
+  // `effect/sql` wraps the driver's failure as `SqlError { reason }`, and
+  // `String(cause)` renders only the outer message, never the lock.
+  const reason = (error.cause as { readonly reason?: LockReason } | undefined)?.reason
+  if (reason?._tag === "LockTimeoutError") return true
+  return /database is locked|SQLITE_BUSY/i.test(String(reason?.cause?.message ?? reason?.message ?? error.cause))
+}
+
+/** The shape of an `SqlError` reason, as far as the lock predicate reads it. */
+interface LockReason {
+  readonly _tag?: unknown
+  readonly message?: unknown
+  readonly cause?: { readonly message?: unknown } | undefined
+}

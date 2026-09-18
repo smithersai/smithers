@@ -2,6 +2,7 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as AgentEvents from "@smthrs/harness/AgentEvent"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Option } from "effect"
+import * as SqlError from "effect/unstable/sql/SqlError"
 import { afterAll, describe, expect, it } from "vitest"
 import * as DemoScript from "../src/DemoScript.ts"
 import * as Driver from "../src/Driver.ts"
@@ -308,6 +309,79 @@ describe("Turns", () => {
     expect(result.status).toEqual({})
     expect(result.aborted).toBe(true)
     expect(Turns.promptText([{ type: "text", text: "a" }, { type: "file" }, { type: "text", text: "b" }])).toBe("a\nb")
+  })
+
+  it("reads a lock off the SqlError reason and retries the write until it lands", async () => {
+    const locked = new Store.StoreError({
+      message: "The part could not be stored",
+      cause: new SqlError.SqlError({
+        reason: new SqlError.LockTimeoutError({
+          cause: new Error("database is locked"),
+          message: "Failed to execute statement"
+        })
+      })
+    })
+    // `String(cause)` never says "locked": the lock is on the reason.
+    expect(String(locked.cause)).not.toContain("locked")
+    expect(Turns.isLocked(locked)).toBe(true)
+    expect(
+      Turns.isLocked(
+        new Store.StoreError({
+          message: "x",
+          cause: new SqlError.SqlError({
+            reason: new SqlError.UnknownError({ cause: new Error("database is locked") })
+          })
+        })
+      )
+    ).toBe(true)
+    expect(
+      Turns.isLocked(
+        new Store.StoreError({ message: "x", cause: { reason: { _tag: "UnknownError", message: "SQLITE_BUSY" } } })
+      )
+    ).toBe(true)
+    expect(Turns.isLocked(new Store.StoreError({ message: "x", cause: new Error("database is locked") }))).toBe(true)
+    expect(Turns.isLocked(new Store.StoreError({ message: "refused" }))).toBe(false)
+
+    let refusals = 0
+    const flaky: Layer.Layer<Store.Store, Store.StoreError> = Layer.effect(
+      Store.Store,
+      Effect.map(Store.make, (store) => ({
+        ...store,
+        // The first two part writes find the database held; the retry lands them.
+        apply: (event) =>
+          Effect.suspend(() => {
+            if (event.type !== "message.part.updated" || refusals >= 2) return store.apply(event)
+            refusals += 1
+            return Effect.fail(locked)
+          })
+      }))
+    ).pipe(
+      Layer.provide(
+        (await import("@smthrs/database/node/NodeDatabase")).layer({ filename: `${scratch.directory}/locked.sqlite` })
+      )
+    )
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const lockedStack = Layer.mergeAll(Turns.layer(options), flaky, hub).pipe(
+      Layer.provideMerge(Layer.mergeAll(scripted, flaky, hub, Evaluator.layerUnavailable()))
+    )
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session("ses_lock"))
+        yield* turns.prompt({ sessionID: "ses_lock", parts: [{ type: "text", text: "Read package.json" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_lock"), (list) => list.length === 1)))
+        )
+        const messages = yield* store.listMessages("ses_lock")
+        return { messages, published: (yield* hub.replay()).map((envelope) => envelope.payload.type) }
+      }).pipe(Effect.provide(lockedStack))
+    )
+    expect(refusals).toBe(2)
+    // The user's text part was the first write refused: it is stored, and published after it was.
+    expect(result.messages[0]!.parts.map((part) => part.type)).toEqual(["text"])
+    expect(result.published.filter((type) => type === "message.part.updated").length).toBeGreaterThan(2)
   })
 
   it("keeps the dot and the card when a health decision cannot be recorded", async () => {

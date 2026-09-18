@@ -645,6 +645,8 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(messages.busy).toEqual({ ses_m: { type: "busy" } })
     expect(messages.list.map((message) => message.info.role)).toEqual(["user", "assistant"])
     expect(bashCards(messages.list).length).toBe(1)
+    // The card settled: a store write the engine's own transaction refused was retried, not dropped.
+    expect((bashCards(messages.list)[0] as Protocol.ToolPart).state.status).toBe("completed")
     expect(script.calls).toBe(1)
   })
   it("binds classify to the host's evaluator: refused without one, answered with a scripted one", async () => {
