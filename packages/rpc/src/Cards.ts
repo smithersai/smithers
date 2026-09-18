@@ -1,4 +1,3 @@
-import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 /**
  * Cards rendered from agent, code-intelligence, and repository events.
  *
@@ -6,6 +5,7 @@ import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
  */
 import { z } from "zod"
 import { AGENT_ROLES, AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
+import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 import {
   ChangeAnalyzerRunSchema,
   ChangeCheckSchema,
@@ -25,13 +25,13 @@ import {
   RevisionPinSchema
 } from "./Changes.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
-import { RepositorySetupSchema } from "./RepositorySetup.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
 import { HARNESS_IDS, RepoSchema, TargetSchema } from "./LocalApp.ts"
 import { LSP_DIAGNOSTICS_CAP, LspDiagnosticSchema, LspHoverSchema } from "./LocalLsp.ts"
 import { PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import { REFUSAL_ORIGINS } from "./Refusal.ts"
+import { RepositorySetupSchema } from "./RepositorySetup.ts"
 import {
   AffectedCardPayloadSchema,
   CiMatrixCardPayloadSchema,
@@ -2392,8 +2392,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
 
-
-
   /*
    * The anonymous turn ceiling's refusal (factory mock 22): a signed-out
    * visitor's turn the Worker refused with 429 turn_rate_limited. `message`
@@ -2467,33 +2465,75 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
 ])
 /** Retired UI records keep their identity, without retaining executable forms or feature data. */
 const retiredFlows = new Set([
-  "repo.welcome", "repo.explore", "repo.contribute", "repo.maintain", "repo.home", "factory.show",
-  "workspace.fork", "workspace.snapshot", "workspace.snapshot.delete", "workspace.snapshot.fork", "workspace.template",
-  "change.open-computer", "agent.create", "agent.edit", "agent.models", "agent.new", "agent.remove",
-  "issues.link-linear", "issues.unlink-linear", "sync.retry", "sync.ops.load-older"
+  "repo.welcome",
+  "repo.explore",
+  "repo.contribute",
+  "repo.maintain",
+  "repo.home",
+  "factory.show",
+  "workspace.fork",
+  "workspace.snapshot",
+  "workspace.snapshot.delete",
+  "workspace.snapshot.fork",
+  "workspace.template",
+  "change.open-computer",
+  "agent.create",
+  "agent.edit",
+  "agent.models",
+  "agent.new",
+  "agent.remove",
+  "issues.link-linear",
+  "issues.unlink-linear",
+  "sync.retry",
+  "sync.ops.load-older"
 ])
 const retiredKinds = new Set(["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form"])
+/**
+ * One persisted card, decoded by kind. The preprocessor retires a kind or a flow
+ * the product no longer serves before the union sees it, so a frame stored by an
+ * older build still parses instead of failing the whole snapshot.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 export const CardSchema = Object.assign(
   z.preprocess((value: unknown) => {
     if (typeof value !== "object" || value === null) return value
     const row = value as Record<string, unknown>
     const payload = row.payload as Record<string, unknown> | undefined
     const flow = payload?.flow
-    if (retiredKinds.has(String(row.kind)) ||
+    if (
+      retiredKinds.has(String(row.kind)) ||
       (row.kind === "connector-setup" && payload?.connector === "linear") ||
       (row.kind === "sync-ops" && payload?.source === "linear") ||
-      (row.kind === "flow-form" && typeof flow === "string" && (retiredFlows.has(flow) || flow.startsWith("linear.")))) {
+      (row.kind === "flow-form" && typeof flow === "string" && (retiredFlows.has(flow) || flow.startsWith("linear.")))
+    ) {
       const { body: _body, ...base } = row
       return { ...base, kind: "retired", title: "", loading: false, status: "acted", payload: {} }
     }
     if (row.kind === "agents" && Array.isArray(payload?.agents)) {
-      return { ...row, payload: { ...payload, agents: payload.agents.flatMap((entry: unknown) => {
-        if (typeof entry !== "object" || entry === null) return []
-        const saved = entry as Record<string, unknown>
-        const role = AGENT_ROLES.find(candidate => candidate.id === saved.id)
-        return role === undefined ? [] : [{ ...saved, id: role.id, label: role.label,
-          purpose: role.purpose, harness: role.harness, model: role.model, builtin: true }]
-      }) } }
+      return {
+        ...row,
+        payload: {
+          ...payload,
+          agents: payload.agents.flatMap((entry: unknown) => {
+            if (typeof entry !== "object" || entry === null) return []
+            const saved = entry as Record<string, unknown>
+            const role = AGENT_ROLES.find((candidate) => candidate.id === saved.id)
+            return role === undefined ?
+              [] :
+              [{
+                ...saved,
+                id: role.id,
+                label: role.label,
+                purpose: role.purpose,
+                harness: role.harness,
+                model: role.model,
+                builtin: true
+              }]
+          })
+        }
+      }
     }
     if (row.kind === "workspace" && payload?.facet === "snapshots") {
       return { ...row, payload: { ...payload, facet: "terminal" } }

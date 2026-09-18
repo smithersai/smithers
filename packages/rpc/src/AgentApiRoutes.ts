@@ -351,6 +351,17 @@ export const CHAT_CANCEL_PATH = "/api/chat/cancel"
  */
 export const HEALTH_PATH = "/api/health"
 
-/** Billing overview and user-owned plan catalog. */
+/**
+ * The account's current billing standing: its plan key, its caps, and today's spend.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const BILLING_OVERVIEW_PATH = "/api/billing"
+/**
+ * The catalog of plans this account may move to, including the one it is on.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const BILLING_PLANS_PATH = "/api/billing/plans"
