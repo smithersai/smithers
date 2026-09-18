@@ -500,9 +500,12 @@ export const layer = (options: Options) =>
         Agent.layer.pipe(Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({})))),
         options.host.seats,
         options.host.registry,
-        evaluator,
-        NotificationQueue.layer
-      ])
+        evaluator
+      ]),
+      // The queue the body drains steers from is built inside the engine and
+      // carried out with the registration, so the driver admits steers into
+      // the same queue instead of building a second engine to reach one.
+      Layer.provideMerge(NotificationQueue.layer)
     )
 
     const engine = NodeRuntime.layer(
@@ -736,8 +739,8 @@ export const layer = (options: Options) =>
       })
     )
 
-    return driver.pipe(
-      Layer.provideMerge(store),
-      Layer.provide(Layer.mergeAll(engine, NotificationQueue.layer.pipe(Layer.provide(engine))))
-    )
+    // One engine over the file. `NodeRuntime.layer` is fresh on every use,
+    // so naming `engine` twice would open two connections with a zero busy
+    // timeout and run two coordinators over one set of rows.
+    return driver.pipe(Layer.provideMerge(store), Layer.provide(engine))
   }))

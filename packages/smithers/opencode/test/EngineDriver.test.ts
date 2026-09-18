@@ -182,6 +182,15 @@ const engineRow = (
   }
 }
 
+/** How many descriptors this process holds open on the engine database file. */
+const connections = (directory: string): number => {
+  const file = join(directory, ".smithers", "opencode.sqlite")
+  return execFileSync("lsof", ["-p", String(process.pid)], { encoding: "utf8" })
+    .split("\n")
+    .filter((line) => line.endsWith(file))
+    .length
+}
+
 /** Whether a process whose command line carries the marker is alive. */
 const alive = (marker: string): boolean => {
   try {
@@ -240,6 +249,17 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(await Effect.runPromise(EngineDriver.inertJj.snapshot())).toEqual({ changeId: "opencode" })
     expect(await Effect.runPromise(EngineDriver.inertJj.restore())).toBeUndefined()
     expect(await Effect.runPromise(EngineDriver.inertJj.diff())).toBe("")
+  })
+
+  it("opens the engine database once, for the engine, the queue, and the store together", async () => {
+    const directory = scratch()
+    const opened = await process_(directory, (_driver, store) =>
+      Effect.gen(function*() {
+        // A store read and a queue-backed steer both go through the one connection.
+        yield* store.listTurns()
+        return connections(directory)
+      }))
+    expect(opened).toBe(1)
   })
 
   it("remembers Allow always for the session, across turns and across a restart", async () => {
