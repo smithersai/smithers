@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { Review } from "../../src/workflow/reviewFlow.ts";
-import { layerMemory } from "../../src/workflow/reviewLayer.ts";
+import { layerMemory, scriptedEvaluator } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
 
 const tempDirs: string[] = [];
@@ -105,7 +105,7 @@ const runReview = (
     Review.execute({ repo, ...input } as Parameters<typeof Review.execute>[0], {
       executionId: `review-test-${Math.random()}`,
     }).pipe(
-      Effect.provide(layerMemory(scriptedSeats(answer))),
+      Effect.provide(layerMemory(scriptedSeats(answer), process.env, scriptedEvaluator())),
       Effect.orDie,
     ),
   );
@@ -220,7 +220,7 @@ describe("the review flow", () => {
           signal.addEventListener("abort", () => { active -= 1; interrupted += 1; }, { once: true });
           started();
           return new Promise<never>(() => {});
-        }))),
+        }), process.env, scriptedEvaluator())),
         Effect.forkScoped,
       );
       yield* Effect.promise(() => entered);

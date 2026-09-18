@@ -45,7 +45,7 @@ export const TutorialAgent = Flow.make("tutorial/agent-flow",{
 })
 
 const transport = (proxy:TutorialProxySettings) => Layer.effect(RequestExecutor.RequestExecutor)(RequestExecutor.make.pipe(Effect.map(executor=>throughProxy(executor,proxy)))).pipe(Layer.provide(KernelHttpClient.layer),Layer.provide(GrantStore.layerNoop),Layer.provide(NodeHttpClient.layerUndici))
-export function agentLayer(filename:string,settings:TutorialModelSettings, suppliedSeats?:Layer.Layer<SeatResolver.SeatResolver>,proxy?:TutorialProxySettings) {
+export function agentLayer(filename:string,settings:TutorialModelSettings, suppliedSeats?:Layer.Layer<SeatResolver.SeatResolver>,proxy?:TutorialProxySettings,suppliedEvaluator?:Layer.Layer<Evaluator.Evaluator>) {
   if(!suppliedSeats&&!proxy)throw new Error("Live tutorial models require the Cloudflare provider proxy")
   const forbidden=()=>Effect.die(new Error("The tutorial model cannot mutate coordinator files; mutations belong to its isolated executor."))
   const noSnapshots=Layer.succeed(Jj.Jj,Jj.make({snapshot:forbidden,restore:forbidden,diff:forbidden,workspaceAdd:forbidden,workspaceForget:forbidden,status:forbidden}))
@@ -55,7 +55,7 @@ export function agentLayer(filename:string,settings:TutorialModelSettings, suppl
     Layer.provideMerge(Layer.mergeAll(host,suppliedSeats??Layer.effect(SeatResolver.SeatResolver)(modelSeats(settings)).pipe(Layer.provide(transport(proxy!))),Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(),Budget.layer({tokens:{max:32000,onExceeded:"fail"},latency:{maxMillis:120000,onExceeded:"fail"}}))),
     Layer.provideMerge(Agent.layerDefaults),Layer.provideMerge(Action.layerImplementations),Layer.provideMerge(durable),
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(suppliedEvaluator??Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
   )
 }
 export const runAgent = (filename:string,settings:TutorialModelSettings,executionId:string,instructions:string,context:unknown,proxy:TutorialProxySettings) => {

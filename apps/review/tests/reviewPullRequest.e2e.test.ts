@@ -10,7 +10,7 @@ import { listPullRequestFiles } from "../src/github/listPullRequestFiles.ts";
 import { resolvePullRequest } from "../src/github/resolvePullRequest.ts";
 import { runGh } from "../src/github/runGh.ts";
 import { Review } from "../src/workflow/reviewFlow.ts";
-import { layerMemory } from "../src/workflow/reviewLayer.ts";
+import { layerMemory, scriptedEvaluator } from "../src/workflow/reviewLayer.ts";
 import { reviewSeatResolver } from "../src/workflow/reviewSeatResolver.ts";
 import { resolveReviewSeats } from "../src/workflow/reviewSeats.ts";
 import { GH_CREDENTIAL_REASON, ghCredentialsAvailable, liveSuiteGate } from "./support/liveSuite.ts";
@@ -172,7 +172,7 @@ describe.skipIf(!enabled)("review a real pull request (live GitHub)", () => {
           out,
         } as never,
         { executionId: `review-pr-e2e-${pr.number}-${Date.now()}` },
-      ).pipe(Effect.provide(layerMemory(seats(anchors))), Effect.orDie),
+      ).pipe(Effect.provide(layerMemory(seats(anchors), process.env, scriptedEvaluator())), Effect.orDie),
     );
 
     console.log(

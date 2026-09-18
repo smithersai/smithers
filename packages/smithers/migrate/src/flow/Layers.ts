@@ -645,7 +645,12 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(evaluatorFor(validated))
+      // The model is scripted, so the judge is too: the completion brake
+      // never falls back, and a scripted composition that reached for a
+      // gateway key would either fail every unit or leave the shell.
+      Layer.provideMerge(
+        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      )
     )
   }))
 

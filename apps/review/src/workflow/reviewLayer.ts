@@ -150,6 +150,17 @@ const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
   Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
 
 /**
+ * The judge an offline case binds: a reading that lets the claim stand, so a
+ * scripted seat's completion is judged by the same brake without reaching a
+ * gateway. A case about the brake itself binds `Evaluator.layerUnavailable()`.
+ *
+ * @since 1.0.0
+ * @category layers
+ */
+export const scriptedEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+
+/**
  * Builds the review workflow over a caller-supplied seat resolver and the
  * in-process engine.
  *
@@ -162,7 +173,8 @@ const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
  */
 export const layerMemory = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,
-  environment: Readonly<Record<string, string | undefined>> = process.env
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  judge: Layer.Layer<Evaluator.Evaluator> = evaluator(environment)
 ) =>
   declarations.pipe(
     Layer.provideMerge(Layer.mergeAll(agentHost(environment), seats, Agent.layer)),
@@ -171,7 +183,7 @@ export const layerMemory = (
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(evaluator(environment))
+    Layer.provideMerge(judge)
   )
 
 /**
@@ -197,6 +209,8 @@ export const layerNode = (options: {
   readonly seats: Layer.Layer<SeatResolver.SeatResolver>
   /** The environment the reachable model hosts are read from. */
   readonly environment?: Readonly<Record<string, string | undefined>>
+  /** The completion brake's judge; read from `environment` when omitted. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator>
 }) => {
   const environment = options.environment ?? process.env
   return NodeRuntime.layerHost(
@@ -211,7 +225,7 @@ export const layerNode = (options: {
       Layer.provideMerge(agentPolicy),
       Layer.provideMerge(Agent.layerDefaults),
       Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(evaluator(environment))
+      Layer.provideMerge(options.evaluator ?? evaluator(environment))
     )
   )
 }

@@ -15,7 +15,7 @@ import { Effect } from "effect";
 import { ReviewFile } from "../../../src/workflow/reviewAgentActions.ts";
 import { RenderWalkthrough } from "../../../src/workflow/reviewActions.ts";
 import { Review } from "../../../src/workflow/reviewFlow.ts";
-import { layerNode } from "../../../src/workflow/reviewLayer.ts";
+import { layerNode, scriptedEvaluator } from "../../../src/workflow/reviewLayer.ts";
 import { reviewSeatResolver } from "../../../src/workflow/reviewSeatResolver.ts";
 import { resolveReviewSeats } from "../../../src/workflow/reviewSeats.ts";
 
@@ -147,6 +147,10 @@ try {
           filename,
           seats: reviewSeatResolver(resolveReviewSeats(environment), environment),
           environment,
+          // Offline: the seats are scripted, so the completion brake's judge
+          // is too. It never falls back, and a fixture that reached for a
+          // gateway key would fail every review at its first completion.
+          evaluator: scriptedEvaluator(),
         }),
       ),
       Effect.scoped,
