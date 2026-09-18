@@ -27,6 +27,8 @@ export interface RepositorySetupController {
   readonly viewRepositorySetup: (cardId: string, view: RepositorySetup["view"], step?: string) => Result
   readonly prepareRepositoryWork: (cardId: string, stepId: string, field?: "prompt" | "source" | "number", value?: unknown) => Result
   readonly runRepositorySetup: (cardId: string, operation: Operation, manual?: SetupManualRequest) => Result
+  /** Ask the human to confirm the discard; the confirmation's own door performs it. */
+  readonly askRepositorySetupDiscard: (cardId: string) => Result
   /** Return the candidate to the enabled registration's configuration. */
   readonly discardRepositorySetupDraft: (cardId: string) => Result
   readonly retryRepositorySetup: (cardId: string) => Result
@@ -567,6 +569,21 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     void recover(id)
     return { value: `${REPOSITORY_JOB_TITLES[card.payload.job]} requested.` }
   })
+  /**
+   * What the discard doors owe before anything moves: the honest refusal, or
+   * `"recover"` when this account's enabled registration has not recorded the
+   * configuration to return to yet. The ask and the act share it, so the
+   * question is never posted for a setup that would refuse it.
+   */
+  const discardBlocked = (id: string): string | "recover" | undefined => {
+    const card = get(id)
+    if (!card) return "Open the setup first."
+    if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
+    if (!card.payload.active?.enabled) return "This setup is not enabled."
+    if (card.payload.active.owned === false) return "This registration belongs to another maintainer."
+    if (!card.payload.active.draft) return "recover"
+    return undefined
+  }
   const runRepositorySetup = (cardId: string, operation: Operation, manual?: SetupManualRequest): Result => edit(cardId, async () => {
     const card = get(cardId)
     if (!card) return "Open the setup first."
@@ -734,6 +751,23 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     }),
     runRepositorySetup,
     /*
+     * The door every trigger reaches. The discard destroys authored prompts,
+     * checks and eval cases with no undo, so it asks through the same
+     * confirmation an agent invocation gets — the question is the message,
+     * its button is setup.discard.confirm, and nothing moves until they press
+     * it. The app renders its own question this way already (askSetupQuestion).
+     */
+    askRepositorySetupDiscard: async id => {
+      const blocked = discardBlocked(id)
+      if (blocked === "recover") return requestRecovery(id)
+      if (blocked !== undefined) return blocked
+      const outcome = await ctx.commands.runAsAgent("setup.discard.confirm", id)
+      if (outcome.status === "failed") return outcome.error
+      // The confirmation's own sentence, so a model that asked reads that
+      // nothing has happened yet. A human's door surfaces no value.
+      if (outcome.status === "executed" && outcome.value !== undefined) return { value: outcome.value }
+    },
+    /*
      * The way back from a draft that cannot pass its trial. Manual work on an
      * enabled job requires an active revision/digest match (ENGINEERING.md;
      * the host refuses a dispatch that does not "retain the exact active
@@ -741,12 +775,9 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
      * registration's own revision returns with its draft.
      */
     discardRepositorySetupDraft: async id => {
-      const card = get(id)
-      if (!card) return "Open the setup first."
-      if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
-      if (!card.payload.active?.enabled) return "This setup is not enabled."
-      if (card.payload.active.owned === false) return "This registration belongs to another maintainer."
-      if (!card.payload.active.draft) return requestRecovery(id)
+      const blocked = discardBlocked(id)
+      if (blocked === "recover") return requestRecovery(id)
+      if (blocked !== undefined) return blocked
       return edit(id, async () => {
         const latest = get(id), active = latest?.payload.active
         if (!latest || !active?.enabled || !active.draft) return "This setup is not enabled."

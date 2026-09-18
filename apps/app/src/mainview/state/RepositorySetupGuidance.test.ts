@@ -593,3 +593,33 @@ test("every string the summary emits is one line, including a step name and a ga
   expect(summary.trigger).toBe('cron 0 9 * * 1 UTC, on issues labeled "needs investigation"')
   expect(summary.gate).toBe("Resolve eval: A weekly tidy.")
 })
+
+/*
+ * R88 follow-up 3: the button and the slash are the same act as the agent's
+ * door, so the human's own invocation posts the confirmation the model's
+ * invocation posts, and the draft survives until they answer it.
+ */
+test("the human's own discard door confirms before the draft goes", async () => {
+  const t = await fixture()
+  try {
+    const applied = t.setup().draft
+    const active = { revision: t.setup().revision, digest: setupCandidate(t.setup()), registrationId: "active-1",
+      sourceRevision: "commit-1", enabled: true, owned: true, draft: applied }
+    const card = t.store.collections.cards.get(id)!
+    await t.store.dispatch({ type: "card.upsert", actor: "system",
+      card: { ...card, kind: "repository-setup", payload: { ...t.setup(), active } } }).isPersisted.promise
+    await t.controller.commands.run("setup.configure", JSON.stringify({ cardId: id, field: "budgetMinutes", value: 30 }))
+    const edited = t.setup()
+    expect(edited.revision).toBe(active.revision + 1)
+    const outcome = await t.controller.commands.run("setup.discard", id)
+    expect(outcome).toEqual({ status: "executed", value: expect.stringContaining("nothing has happened yet") })
+    expect(t.setup()).toEqual(edited)
+    const confirmation = [...t.store.collections.messages.values()].find(message => message.action?.flow === "setup.discard.confirm")
+    expect(confirmation?.text).toBe("Discard the draft and keep the enabled configuration?")
+    expect(confirmation?.action?.args).toBe(id)
+    await t.controller.commands.run(confirmation!.action!.flow, confirmation!.action!.args)
+    expect(t.setup().revision).toBe(active.revision)
+    expect(t.setup().draft).toEqual(applied)
+    expect(t.untouched()).toBe(true)
+  } finally { await t.close() }
+})

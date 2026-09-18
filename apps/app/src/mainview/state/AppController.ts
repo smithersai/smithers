@@ -458,10 +458,11 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Record one settled flow invocation (every trigger) — the verbose trace's source. */
   readonly traceFlow: (record: Extract<AppTransition, { type: "flow.invoked" }>) => void
   /**
-   * A `confirm` flow asked for by the MODEL: post the confirmation message
-   * whose action button runs the flow as the user (Commands.ts runAs).
+   * A `confirm` flow asked for: post the confirmation message whose action
+   * button runs the flow as the user (Commands.ts runAs). `question` replaces
+   * the model's sentence when the act's own door did the asking.
    */
-  readonly requestFlowConfirmation: (name: string, args: string | null, label: string) => void
+  readonly requestFlowConfirmation: (name: string, args: string | null, label: string, question?: string) => void
   /** The `recommend` flow: regenerate the next-step pills for the current state (Recommend.ts). */
   readonly recommend: () => Promise<void>
   /** The `explain` flow: one side turn on the explainer role, answered as an embedded card (controller/explain.ts). */
@@ -1254,17 +1255,18 @@ export const createAppController = (
   }
 
   /*
-   * A `confirm` flow the MODEL asked for: the act is consequential (land a
-   * PR, remove a credential), so the agent's invocation never runs the
-   * handler — it posts this message, and the button runs the flow as the
-   * user. The honest middle between "user-only" (the agent cannot even ask,
-   * the refusal Will read as a bug) and silent execution.
+   * A `confirm` flow asked for: the act is consequential (land a PR, remove a
+   * credential, discard a draft), so the invocation never runs the handler —
+   * it posts this message, and the button runs the flow as the user. The
+   * honest middle between "user-only" (the agent cannot even ask, the refusal
+   * Will read as a bug) and silent execution. An act whose own door asks
+   * (setup.discard) names the question the human answers.
    */
-  const requestFlowConfirmation = (name: string, args: string | null, label: string): void => {
+  const requestFlowConfirmation = (name: string, args: string | null, label: string, question?: string): void => {
     store.dispatch({
       type: "message.appended",
       actor: "system",
-      text: `Smithers wants to ${label}${args === null ? "" : ` (${args})`}. It runs when you confirm.`,
+      text: question ?? `Smithers wants to ${label}${args === null ? "" : ` (${args})`}. It runs when you confirm.`,
       action: {
         flow: name,
         ...(args === null ? {} : { args }),

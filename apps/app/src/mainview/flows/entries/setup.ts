@@ -45,8 +45,17 @@ export const setupFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({ name: "setup.ask", summary: "Answer the setup guide's question", hidden: true, form: jsonForm,
     input: Schema.Struct({ cardId: Schema.String, questionId: Schema.String, revision: Schema.Number, digest: Schema.String, choice: Schema.String }),
     handler: ({ cardId, questionId, revision, digest, choice }) => actions.answerRepositorySetupQuestion(cardId, questionId, revision, digest, choice) }),
+  /*
+   * A discard destroys the prompts, checks and eval cases the person wrote,
+   * with no undo, so it confirms whoever invokes it (apps/app/AGENTS.md
+   * three-door law: the button is the same act as the agent's door). This is
+   * the door every trigger reaches; it asks, and the answer discards.
+   */
   flow({ name: "setup.discard", summary: "Return a repository job draft to its enabled configuration", hidden: true, discloseToAgent: true, args: "<cardId>", input: CardTarget,
+    handler: ({ cardId }) => actions.askRepositorySetupDiscard(cardId) }),
+  flow({ name: "setup.discard.confirm", summary: "Discard the draft and keep the enabled configuration", hidden: true, args: "<cardId>", input: CardTarget,
     confirm: "discard this repository setup draft",
+    confirmQuestion: "Discard the draft and keep the enabled configuration?",
     handler: ({ cardId }) => actions.discardRepositorySetupDraft(cardId) }),
   flow({ name: "setup.retry", summary: "Retry the setup request", hidden: true, discloseToAgent: true, args: "<cardId>", input: CardTarget,
     confirm: "retry this repository setup operation",

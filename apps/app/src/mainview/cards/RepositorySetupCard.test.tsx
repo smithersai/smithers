@@ -2,7 +2,8 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { initialSetup, setupCandidate, type RepositoryJob, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupCandidate, type RepositoryJob, type SetupReceipt, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
+import { projectRecoveredSetup } from "../state/controller/repositorySetup"
 import { flowArgs } from "../flows/FlowArgs"
 import { payloadFor } from "../flows/SlashPayload"
 import type { CardOf } from "./CardFamily"
@@ -473,5 +474,32 @@ test("an enabled job keeps its applied configuration one click away from an unap
     t.render(card)
     expect(t.button("Discard draft")).toBeUndefined()
     expect(t.calls).toHaveLength(1)
+  } finally { t.close() }
+})
+
+/*
+ * R88 follow-up 1: a card applied before the registration recorded its own
+ * configuration hides the door, and the boot recovery every setup card gets
+ * (state/controller/repositorySetup.ts requestRecovery on resume) records
+ * `active.draft`, so the button is there on the next render.
+ */
+test("a card applied before the discard door existed finds it once recovery records the configuration", () => {
+  const card = makeCard("feature")
+  const applied = card.payload.draft
+  card.payload.revision = 6
+  card.payload.active = { revision: 6, digest: setupCandidate(card.payload), registrationId: "259ef97c", sourceRevision: "fb8c7b08", enabled: true }
+  card.payload.revision = 11
+  card.payload.draft = { ...applied, budgetMinutes: 30 }
+  const t = mount(card)
+  try {
+    expect(t.button("Discard draft")).toBeUndefined()
+    card.payload.recovery = { id: "recover", baseRevision: 11, baseDigest: setupCandidate(card.payload), state: "requested", registrationState: "unknown" }
+    const recovered: SetupRecoveryResponse = { owner: "maintainer", repo: card.payload.repo, job: card.payload.job,
+      registration: { state: "known", active: { registrationId: "259ef97c", workspaceId: "de29f26b-e593-4ec2-99fc-583d4711f20a",
+        revision: 6, digest: card.payload.active.digest, sourceRevision: "fb8c7b08", enabled: true, owned: true, draft: applied } },
+      setup: { state: "none" } }
+    t.render({ ...card, payload: projectRecoveredSetup(card.payload, recovered) })
+    expect(t.button("Discard draft")).toBeDefined()
+    expect(t.calls).toEqual([])
   } finally { t.close() }
 })

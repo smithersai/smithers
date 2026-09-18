@@ -1534,3 +1534,34 @@ test("recovery records the enabled registration's own configuration so the way b
   expect(projected.active?.draft).toEqual(initial.draft)
   expect(setupCandidate({ ...projected, revision: policy.revision, draft: projected.active!.draft! })).toBe(policy.digest)
 })
+
+/*
+ * R88 follow-up 3: discarding destroys the prompts, checks and eval cases the
+ * person wrote, with no undo. A consequential act confirms whoever invokes it
+ * (apps/app/AGENTS.md three-door law), so the door the button and the slash
+ * reach asks the same confirmation the model's invocation gets, and only the
+ * human's answer discards.
+ */
+test("the discard door asks first, and only the confirmation's own door discards", async () => {
+  const t = await fixture(async body => response(body))
+  try {
+    expect(await t.setup.askRepositorySetupDiscard("absent")).toBe("Open the setup first.")
+    expect(await t.setup.askRepositorySetupDiscard("setup")).toBe("This setup is not enabled.")
+    expect(t.asked).toEqual([])
+    const active = { revision: 1, digest: setupCandidate(t.state()), registrationId: "active-1", sourceRevision: "commit-1",
+      enabled: true, owned: true, draft: t.state().draft }
+    const card = t.store.collections.cards.get("setup")!
+    await t.store.dispatch({ type: "card.upsert", actor: "system",
+      card: { ...card, kind: "repository-setup", payload: { ...t.state(), active } } }).isPersisted.promise
+    await t.setup.configureRepositorySetup("setup", "budgetMinutes", 30)
+    const edited = t.state()
+    expect(await t.setup.askRepositorySetupDiscard("setup")).toBeUndefined()
+    expect(t.asked).toEqual([{ name: "setup.discard.confirm", args: "setup" }])
+    // Cancelling is not answering: nothing the person wrote has moved.
+    expect(t.state()).toEqual(edited)
+    expect(await t.setup.discardRepositorySetupDraft("setup")).toEqual({ value: "Draft discarded." })
+    expect(t.state().revision).toBe(active.revision)
+    expect(t.state().draft).toEqual(active.draft)
+    expect(t.calls).toEqual([])
+  } finally { await t.close() }
+})

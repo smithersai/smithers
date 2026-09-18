@@ -223,6 +223,7 @@ export const FLOW_NAMES = [
   "setup.ask",
   "setup.configure",
   "setup.discard",
+  "setup.discard.confirm",
   "setup.guide",
   "setup.retry",
   "setup.run",

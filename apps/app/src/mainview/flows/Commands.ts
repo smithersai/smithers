@@ -621,7 +621,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
        * confirmation cannot drift to a different target while it waits.
        */
       const bound = target.metadata.confirmArgs?.(parsed.payload) ?? args
-      acting.requestFlowConfirmation(nameOf(target), bound ?? null, confirmation)
+      acting.requestFlowConfirmation(nameOf(target), bound ?? null, confirmation, target.metadata.confirmQuestion)
       trace(invoker, name, bound, startedAt, "confirm-requested", confirmation)
       return {
         status: "executed",

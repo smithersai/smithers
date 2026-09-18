@@ -130,6 +130,13 @@ export interface FlowMetadata {
    */
   readonly confirm?: string | ((payload: Record<string, unknown>) => string | undefined)
   /**
+   * The sentence the confirmation asks, when "Smithers wants to <label>" is
+   * not what happened: an act whose own door asks (the human's button and
+   * slash reach a door that posts this confirmation) states the question
+   * itself. Absent keeps the model's sentence.
+   */
+  readonly confirmQuestion?: string
+  /**
    * The slash line the confirmation carries, when the raw one the agent typed
    * would not name the act.
    *
