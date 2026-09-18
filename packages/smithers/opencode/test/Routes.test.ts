@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Driver from "../src/Driver.ts"
+import * as Health from "../src/Health.ts"
 import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Routes from "../src/Routes.ts"
@@ -33,6 +34,53 @@ const get = async (path: string): Promise<unknown> => {
   const response = await served.handler(new Request(`http://test${path}`))
   expect(response.status).toBe(200)
   return response.json()
+}
+
+type Seen = Array<{ type: string; properties: Record<string, unknown> }>
+
+/** Tails `/global/event` into a list, from `server.connected` on. */
+const watch = async (): Promise<Seen> => {
+  const stream = await served.handler(new Request("http://test/global/event"))
+  const reader = stream.body!.getReader()
+  const decoder = new TextDecoder()
+  const seen: Seen = []
+  let buffered = ""
+  void (async () => {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return
+      buffered += decoder.decode(value)
+      const frames = buffered.split("\n\n")
+      buffered = frames.pop() ?? ""
+      for (const frame of frames) {
+        if (frame.startsWith("data: ")) seen.push(JSON.parse(frame.slice(6)).payload)
+      }
+    }
+  })()
+  await until(async () => seen.some((event) => event.type === "server.connected"))
+  return seen
+}
+
+/** The permission the session's turn parked on. */
+const parkedPermission = async (seen: Seen, sessionID: string): Promise<Protocol.PermissionRequest> => {
+  const asked = () =>
+    seen.find((event) => event.type === "permission.asked" && event.properties["sessionID"] === sessionID)
+  await until(async () => asked() !== undefined)
+  return asked()!.properties as unknown as Protocol.PermissionRequest
+}
+
+/** Waits until the session's turn is idle and its last health decision landed. */
+const settled = async (seen: Seen, sessionID: string): Promise<void> => {
+  await until(async () =>
+    seen.some((event) => event.type === "session.idle" && event.properties["sessionID"] === sessionID)
+  )
+  await until(async () =>
+    seen.filter((event) =>
+      event.type === "message.part.updated" && event.properties["sessionID"] === sessionID &&
+      (event.properties["part"] as Part).type === "tool" &&
+      (event.properties["part"] as Extract<Part, { type: "tool" }>).tool === "health"
+    ).length === 3
+  )
 }
 
 describe("Routes through the OpenCode SDK client", () => {
@@ -580,6 +628,94 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(unmounted.status).toBe(404)
     expect(unmounted.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
     expect(await unmounted.json()).toEqual({ name: "NotFoundError", data: { message: "Route not found" } })
+  })
+
+  it("keeps a rename made while the turn runs on every later session.updated and on the session", async () => {
+    const sdk = client()
+    const session = (await sdk.session.create({ query: { directory: served.directory }, body: {} })).data!
+    const seen = await watch()
+    await sdk.session.promptAsync({
+      path: { id: session.id },
+      body: {
+        messageID: "msg_0000000000030000000000000u",
+        parts: [{ type: "text", text: "Read package.json and tell me the name field." }]
+      }
+    })
+    const asked = await parkedPermission(seen, session.id)
+    // The rename lands while the turn is parked: the answer carries it
+    // behind the dot the turn already set.
+    const renamed = (await sdk.session.update({ path: { id: session.id }, body: { title: "Renamed mid-turn" } }))
+      .data!
+    expect(Health.strip(renamed.title)).toBe("Renamed mid-turn")
+    expect(Health.colorOf(renamed.title)).toBeDefined()
+    const renamedAt = seen.length
+    await sdk.postSessionIdPermissionsPermissionId({
+      path: { id: session.id, permissionID: asked.id },
+      body: { response: "once" }
+    })
+    await settled(seen, session.id)
+    // Every session.updated after the rename, and the session itself, carry
+    // the new title with one dot in front of it.
+    const later = seen.slice(renamedAt).filter((event) =>
+      event.type === "session.updated" && (event.properties["info"] as Session).id === session.id
+    ).map((event) => (event.properties["info"] as Session).title)
+    expect(later.length).toBeGreaterThan(0)
+    for (const title of later) {
+      expect(Health.strip(title)).toBe("Renamed mid-turn")
+      expect(title).toBe(Health.dotted(title, Health.colorOf(title)!))
+    }
+    const after = (await sdk.session.get({ path: { id: session.id } })).data!
+    expect(Health.strip(after.title)).toBe("Renamed mid-turn")
+    expect(after.title).toBe(Health.dotted(after.title, Health.colorOf(after.title)!))
+    expect((await get("/session")) as Array<Session>).toContainEqual(expect.objectContaining({ id: session.id }))
+  })
+
+  it("keeps an archive made while the turn runs on every later session.updated and on the session", async () => {
+    const sdk = client()
+    const session = (await sdk.session.create({ query: { directory: served.directory }, body: {} })).data!
+    const seen = await watch()
+    await sdk.session.promptAsync({
+      path: { id: session.id },
+      body: {
+        messageID: "msg_0000000000040000000000000u",
+        parts: [{ type: "text", text: "Read package.json and tell me the name field." }]
+      }
+    })
+    const asked = await parkedPermission(seen, session.id)
+    const patched = await served.handler(
+      new Request(`http://test/session/${session.id}`, {
+        method: "PATCH",
+        body: `{"time":{"archived":1234}}`,
+        headers: { "content-type": "application/json" }
+      })
+    )
+    expect(patched.status).toBe(200)
+    const archived = (await patched.json()) as Protocol.Session
+    expect(archived.time.archived).toBe(1234)
+    expect(Health.colorOf(archived.title)).toBeUndefined()
+    const archivedAt = seen.length
+    await sdk.postSessionIdPermissionsPermissionId({
+      path: { id: session.id, permissionID: asked.id },
+      body: { response: "once" }
+    })
+    await settled(seen, session.id)
+    // The archive stamp stays on every later session.updated and on the
+    // session; an archived session carries no dot, the way the archive
+    // route answered.
+    const later = seen.slice(archivedAt).filter((event) =>
+      event.type === "session.updated" && (event.properties["info"] as Protocol.Session).id === session.id
+    ).map((event) => (event.properties["info"] as Protocol.Session))
+    expect(later.length).toBeGreaterThan(0)
+    for (const info of later) {
+      expect(info.time.archived).toBe(1234)
+      expect(Health.colorOf(info.title)).toBeUndefined()
+    }
+    const after = (await get(`/session/${session.id}`)) as Protocol.Session
+    expect(after.time.archived).toBe(1234)
+    expect(Health.colorOf(after.title)).toBeUndefined()
+    // Archived: the turn's tokens still landed on the session.
+    expect(after.tokens.input).toBeGreaterThan(0)
+    expect((await get("/session")) as Array<Session>).not.toContainEqual(expect.objectContaining({ id: session.id }))
   })
 
   it("answers 500 with a typed error when the store fails", async () => {

@@ -19,6 +19,14 @@
 
 ### Fixed
 
+- A rename or an archive made while a turn runs stays. `PATCH /session/:id`
+  is applied on the turn's own queue and folded into the open turn
+  (`Turns.update`, `Projection.adopt`), so the turn's next `session.updated`
+  carries the new title behind one dot, or the archive stamp, instead of the
+  title the turn opened with. The projection wrote the session from the
+  title it captured when the turn opened, so a rename mid-turn answered
+  with the new title and was gone on the next event (day-one drive, step
+  k2, finding health-classify-6).
 - Aborting a turn that is parked on a permission card takes the card down and
   leaves nothing spinning. `Turns.abort` now answers every pending request of
   the session with `permission.replied` and the reply `reject`, which is what

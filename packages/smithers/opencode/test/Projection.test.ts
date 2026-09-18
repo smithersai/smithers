@@ -1196,6 +1196,35 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect((next.events[2]!.properties["info"] as Protocol.Session).title).toBe("🟢 Kept")
   })
 
+  it("adopts the stored title and archive stamp, and nothing else", () => {
+    const ctx: Projection.Context = { directory, now: clock().now }
+    const { state } = Projection.open(ctx, opened())
+    // The store holds what the turn wrote: nothing to adopt, the same state.
+    expect(Projection.adopt(state, { ...state.session, tokens: { ...Protocol.noTokens, input: 9 } })).toBe(state)
+    // A rename: the title, and only the title.
+    const renamed = Projection.adopt(state, { ...state.session, title: "🔴 Renamed", cost: 5 })
+    expect(renamed.session).toEqual({ ...state.session, title: "🔴 Renamed" })
+    expect(Projection.sessionNow(renamed, 2000).title).toBe("🔴 Renamed")
+    // A decision after the rename dots the new title, once.
+    const marked = Projection.decided(ctx, renamed, { color: "green", reason: "ok" }, undefined)
+    expect(marked.state.session.title).toBe("🟢 Renamed")
+    // An archive: the stamp lands, the title loses its dot on the next decision.
+    const archived = Projection.adopt(marked.state, {
+      ...marked.state.session,
+      title: "Renamed",
+      time: { ...marked.state.session.time, archived: 1234 }
+    })
+    expect(archived.session.time.archived).toBe(1234)
+    expect(archived.session.title).toBe("Renamed")
+    const still = Projection.decided(ctx, archived, { color: "red", reason: "stuck" }, undefined)
+    expect(still.state.session.title).toBe("Renamed")
+    expect(still.state.session.time.archived).toBe(1234)
+    // An un-archive: the stamp goes.
+    const restored = Projection.adopt(still.state, { ...still.state.session, time: { created: 1000, updated: 1000 } })
+    expect(restored.session.time).not.toHaveProperty("archived")
+    expect(restored.session.time).toEqual({ created: 1000, updated: still.state.session.time.updated })
+  })
+
   it("carries the seat's cost when a price is known, and the tokens either way", () => {
     const pricing: Projection.Pricing = { inputPerMillion: 1, outputPerMillion: 2, cacheReadPerMillion: 0.5 }
     expect(

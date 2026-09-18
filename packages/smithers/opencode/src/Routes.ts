@@ -494,18 +494,20 @@ export const layer = (
         "/session/:id",
         (request) =>
           Effect.flatMap(sessionParam, (id) =>
-            withSession(id, (session) =>
-              Effect.gen(function*() {
-                const input = yield* body(request)
-                const time = isRecord(input["time"]) ? input["time"] : {}
-                const archived = typeof time["archived"] === "number" ? time["archived"] : undefined
-                // A rename keeps the health dot in front of the person's
-                // words, and drops the dot the app echoes back at the front
-                // of them; an archive drops the dot.
-                const renamed = typeof input["title"] === "string"
-                  ? Health.retitle(session.title, input["title"])
-                  : session.title
-                const updated: Protocol.Session = {
+            Effect.gen(function*() {
+              const input = yield* body(request)
+              const time = isRecord(input["time"]) ? input["time"] : {}
+              const archived = typeof time["archived"] === "number" ? time["archived"] : undefined
+              const title = typeof input["title"] === "string" ? input["title"] : undefined
+              // The edit is applied to the session as stored when its turn
+              // reaches it, so a rename during a turn is not written over
+              // by the turn's next session.updated. A rename keeps the
+              // health dot in front of the person's words, and drops the
+              // dot the app echoes back at the front of them; an archive
+              // drops the dot.
+              const updated = yield* turns.update(id, (session) => {
+                const renamed = title === undefined ? session.title : Health.retitle(session.title, title)
+                return {
                   ...session,
                   title: archived === undefined ? renamed : Health.strip(renamed),
                   time: {
@@ -514,10 +516,9 @@ export const layer = (
                     ...(archived === undefined ? {} : { archived })
                   }
                 }
-                yield* store.putSession(updated)
-                yield* hub.publish({ type: "session.updated", properties: { sessionID: id, info: updated } })
-                return json(updated)
-              })))
+              })
+              return Option.isNone(updated) ? notFound(`Session ${id} not found`) : json(updated.value)
+            }).pipe(Effect.catchTag("@smthrs/opencode/StoreError", onStoreError)))
       )
       yield* router.add(
         "DELETE",

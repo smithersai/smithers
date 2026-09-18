@@ -10,10 +10,13 @@
  * message and steered into the running turn. A permission answer is
  * published as `permission.replied` and handed to the driver, which resumes
  * the parked execution. An abort answers every pending card `reject` on the
- * stream, then interrupts the driver, whose exit closes the projection. At
- * boot the driver re-drives every turn that was open
- * when the process last stopped, and the projection of each is re-opened
- * so the replay updates the cards the app already shows.
+ * stream, then interrupts the driver, whose exit closes the projection. A
+ * rename or an archive from the app is applied on the same queue as the
+ * turn's own writes and folded into the open turn, so a title set mid-turn
+ * is what the turn's next `session.updated` carries. At boot the driver
+ * re-drives every turn that was open when the process last stopped, and the
+ * projection of each is re-opened so the replay updates the cards the app
+ * already shows.
  *
  * Health runs beside the fold: when a folded event hands out facts, an
  * evaluation is forked on its own fiber with the `Evaluator` the host
@@ -92,6 +95,16 @@ export interface Service {
   readonly prompt: (input: PromptInput) => Effect.Effect<void, TurnsError | Store.StoreError>
   readonly abort: (sessionID: string) => Effect.Effect<boolean>
   readonly permission: (input: Driver.PermissionInput) => Effect.Effect<void, TurnsError | Store.StoreError>
+  /**
+   * Applies the app's edit to a session (`PATCH /session/:id`: a rename, an
+   * archive) in order with the turn's own writes, and folds it into the
+   * open turn, so the turn's next `session.updated` carries it. `None` when
+   * the session does not exist.
+   */
+  readonly update: (
+    sessionID: string,
+    edit: (session: Protocol.Session) => Protocol.Session
+  ) => Effect.Effect<Option.Option<Protocol.Session>, Store.StoreError>
   /** The status of every session that is not idle. */
   readonly status: () => Effect.Effect<Record<string, Protocol.SessionStatus>>
 }
@@ -190,15 +203,7 @@ export const make = (
     const emit = (events: ReadonlyArray<Protocol.Emitted>) =>
       Effect.forEach(
         events,
-        (event) =>
-          Effect.andThen(
-            Effect.retry(store.apply(event), {
-              while: isLocked,
-              schedule: Schedule.spaced(storeRetryDelay),
-              times: storeRetries
-            }),
-            hub.publish(event)
-          ),
+        (event) => Effect.andThen(whileLocked(store.apply(event)), hub.publish(event)),
         { discard: true }
       )
 
@@ -251,6 +256,28 @@ export const make = (
       )
 
     /**
+     * One edit from the app (a rename, an archive), in order with the turn's
+     * own writes: the edit is applied to the session as the store holds it
+     * now, folded into the open turn's state so every `session.updated` the
+     * turn emits from here carries it, then stored and published. The
+     * answer, or the store failure, goes back to the route.
+     */
+    const edit = (job: Update): Effect.Effect<void> =>
+      whileLocked(store.getSession(job.sessionID)).pipe(
+        Effect.flatMap((stored) =>
+          Option.isNone(stored) ? Effect.succeed(stored) : Effect.gen(function*() {
+            const edited = job.edit(stored.value)
+            const state = states.get(job.sessionID)
+            if (state !== undefined) states.set(job.sessionID, Projection.adopt(state, edited))
+            yield* emit([{ type: "session.updated", properties: { sessionID: job.sessionID, info: edited } }])
+            return Option.some(edited)
+          })
+        ),
+        Effect.exit,
+        Effect.flatMap((exit) => Deferred.done(job.result, exit))
+      )
+
+    /**
      * The projection runs on a fiber of its own, fed in order by a queue.
      * The driver's sink runs inside the engine's frame, which holds the
      * write transaction the store needs, so a write from there would either
@@ -264,6 +291,7 @@ export const make = (
         const job = yield* Queue.take(jobs)
         const state = states.get(job.sessionID)
         if (job._tag === "open") yield* apply(job.sessionID, job.step)
+        else if (job._tag === "update") yield* edit(job)
         else if (job._tag === "emit") {
           yield* emit(job.events).pipe(
             Effect.catchCause((cause) => Effect.logError({ message: "The event could not be stored", cause }))
@@ -504,6 +532,13 @@ export const make = (
         )
       })
 
+    const update: Service["update"] = (sessionID, edit) =>
+      Effect.gen(function*() {
+        const result = yield* Deferred.make<Option.Option<Protocol.Session>, Store.StoreError>()
+        yield* Queue.offer(jobs, { _tag: "update", sessionID, edit, result })
+        return yield* Deferred.await(result)
+      })
+
     const status: Service["status"] = () =>
       Effect.sync(() => {
         const out: Record<string, Protocol.SessionStatus> = {}
@@ -547,7 +582,7 @@ export const make = (
       Effect.catchCause((cause) => Effect.logError({ message: "Open turns could not be resumed", cause }))
     )
 
-    return { prompt, abort, permission, status }
+    return { prompt, abort, permission, update, status }
   })
 
 /**
@@ -617,6 +652,15 @@ interface Emit {
   readonly done?: Deferred.Deferred<void> | undefined
 }
 
+/** An edit from the app, answered once it is stored. */
+interface Update {
+  readonly _tag: "update"
+  readonly sessionID: string
+  readonly edit: (session: Protocol.Session) => Protocol.Session
+  readonly result: Deferred.Deferred<Option.Option<Protocol.Session>, Store.StoreError>
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
 /** A health decision coming back from its fiber. */
 interface HealthJob {
   readonly _tag: "health"
@@ -627,7 +671,17 @@ interface HealthJob {
   readonly done?: Deferred.Deferred<void> | undefined
 }
 
-type Job = Open | Event | Close | Emit | HealthJob
+type Job = Open | Event | Close | Emit | Update | HealthJob
+
+/**
+ * Retries a store call while the database is held by another writer, on
+ * the `storeRetryDelay` and `storeRetries` schedule.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const whileLocked = <A>(effect: Effect.Effect<A, Store.StoreError>): Effect.Effect<A, Store.StoreError> =>
+  Effect.retry(effect, { while: isLocked, schedule: Schedule.spaced(storeRetryDelay), times: storeRetries })
 
 /**
  * Whether a store failure is the database being held by another writer,

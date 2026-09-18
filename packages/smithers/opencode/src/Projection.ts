@@ -1445,6 +1445,33 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
 }
 
 /**
+ * The state with the session fields the person edits as the store holds
+ * them now: the title and the archive stamp a `PATCH /session/:id` set
+ * while the turn ran. A `session.updated` the turn emits is built from
+ * this state, so a rename or an archive made mid-turn stays on the session
+ * instead of being written over by the title the turn opened with. The
+ * turn's own fields (tokens, cost, agent, model) stay the projection's:
+ * the stored copy of those is what the projection last wrote.
+ *
+ * @param stored the session as the store holds it now
+ * @category combinators
+ * @since 1.0.0
+ */
+export const adopt = (state: State, stored: Protocol.Session): State => {
+  const archived = stored.time.archived
+  if (state.session.title === stored.title && state.session.time.archived === archived) return state
+  const { archived: _, ...unarchived } = state.session.time
+  return {
+    ...state,
+    session: {
+      ...state.session,
+      title: stored.title,
+      time: archived === undefined ? unarchived : { ...state.session.time, archived }
+    }
+  }
+}
+
+/**
  * Folds a decision in: the session title gets the dot, and a `health` card
  * is emitted when the color changed, with the reason as its title and the
  * answers as its output, sorted under the frame the decision judged. A
@@ -1467,9 +1494,12 @@ export const decided = (
   if (state.closed) return { state, events: [] }
   if (state.health?.color === decision.color) return { state: { ...state, health: decision }, events: [] }
   const now = ctx.now()
+  // An archived session carries no dot, the way the archive route answered.
   const session: Protocol.Session = {
     ...state.session,
-    title: Health.dotted(state.session.title, decision.color)
+    title: state.session.time.archived === undefined
+      ? Health.dotted(state.session.title, decision.color)
+      : Health.strip(state.session.title)
   }
   const next: State = { ...state, session, health: decision, healthCards: state.healthCards + 1 }
   const part: Protocol.ToolPart = {
