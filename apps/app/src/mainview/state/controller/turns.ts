@@ -46,6 +46,8 @@ import { createHttpTurnDriver } from "./httpTurns"
  * looping forever on a model that keeps calling tools.
  */
 const MAX_TOOL_LEGS = 8
+/** How many of this conversation's cards a turn describes, the boundary's own maximum (AgentContext recentCards). */
+const RECENT_CARD_WINDOW = 12
 /**
  * The chain's own doors (DESIGN.md §14): calls that ARE the surface — the
  * author seat and the transcript doors — rather than acts on the app, so
@@ -229,7 +231,8 @@ export const createTurnController = (
 
   const agentRuntimeContext = (
     worldBodyBudget: number = WORLD_BODY_BUDGET,
-    setupDrafts: number = Number.POSITIVE_INFINITY
+    setupDrafts: number = Number.POSITIVE_INFINITY,
+    cardLines: number = RECENT_CARD_WINDOW
   ): AgentRuntimeContext => {
     const snapshot = store.agentContextSnapshot()
     const current = store.session()
@@ -246,9 +249,22 @@ export const createTurnController = (
     const selected = ctx.services.features?.wiki !== true || current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
-    const recent = [...store.collections.cards.values()]
+    const windowed = [...store.collections.cards.values()]
       .filter(card => inConversation(card, conversationTabIdOf(current)) && knowledgeCardAvailable(card.kind, ctx.services.features))
-      .sort((a, b) => a.ordinal - b.ordinal).slice(-12)
+      .sort((a, b) => a.ordinal - b.ordinal).slice(-RECENT_CARD_WINDOW)
+    /*
+     * The card lines that give way when the turn does not fit are the ones that
+     * are ONLY a line, oldest first; a setup card keeps its place because its
+     * draft is what a question asked beside it is answered from. Twelve lines at
+     * production's card ids spend the whole budget on their own (canary walk run
+     * 3, B3 step 3: every draft shed and the turn still refused, HTTP 400).
+     */
+    let surplus = windowed.length - cardLines
+    const recent = surplus <= 0 ? windowed : windowed.filter(card => {
+      if (surplus <= 0 || card.kind === "repository-setup") return true
+      surplus -= 1
+      return false
+    })
     /*
      * The open setup's own draft. Asked "what will run automatically?" beside an
      * issues card whose research, duplicates and reproduce steps were all
@@ -472,15 +488,15 @@ export const createTurnController = (
    * still exceeds the cap, the World bodies give way (each cut note says so
    * in the context, and the pane still holds it); only when even bodiless
    * notes do not fit does the catalog fall to stage 3 (namespaces and
-   * counts, every name behind the list action). Under that floor the open
-   * setups' drafts give way, oldest card first. A turn fails on size only past
-   * that: a context whose tabs and repositories alone pass the cap, which no
-   * session has produced.
+   * counts, every name behind the list action). Under that floor the oldest
+   * card lines that carry no draft give way, then the open setups' drafts,
+   * oldest card first. A turn fails on size only past that: a context whose
+   * tabs and repositories alone pass the cap, which no session has produced.
    */
   const composeInstructions = (): { readonly context: AgentRuntimeContext; readonly instructions: string } => {
     const limit = CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES
-    const render = (worldBodyBudget: number, lastStage: InstructionStage = 2, setupDrafts?: number) => {
-      const context = agentRuntimeContext(worldBodyBudget, setupDrafts)
+    const render = (worldBodyBudget: number, lastStage: InstructionStage = 2, setupDrafts?: number, cardLines?: number) => {
+      const context = agentRuntimeContext(worldBodyBudget, setupDrafts, cardLines)
       const instructions = turnInstructions(context, lastStage)
       return { context, instructions, over: bytesOf(composeAgentInstructions(instructions, context)) - limit }
     }
@@ -496,12 +512,27 @@ export const createTurnController = (
     let fit = render(0)
     const lastStage = fit.over > 0 ? 3 : 2
     let setupDrafts: number | undefined
+    let cardLines: number | undefined
     if (lastStage === 3) {
       // The namespace-count floor frees room. Refill the note bodies under
       // that same cap instead of carrying the zero-budget probe into the turn.
       const floorWhole = render(WORLD_BODY_BUDGET, lastStage)
       if (floorWhole.over <= 0) return { context: floorWhole.context, instructions: floorWhole.instructions }
       fit = render(0, lastStage)
+      if (fit.over > 0) {
+        /*
+         * Twelve card lines at production's card ids spend the whole budget on
+         * their own, so the oldest of them give way next, oldest first, keeping
+         * the setup cards whose drafts answer questions asked beside them: a
+         * repeated `flow-run@<repo>@<workspace>@run-N` line is worth less than
+         * the draft the person is looking at.
+         */
+        for (let keep = (fit.context.recentCards ?? []).length - 1; keep > 0; keep -= 1) {
+          cardLines = keep
+          fit = render(0, lastStage, undefined, keep)
+          if (fit.over <= 0) break
+        }
+      }
       if (fit.over > 0) {
         /*
          * The drafts are the last thing to give, and the newest card keeps its
@@ -513,7 +544,7 @@ export const createTurnController = (
          */
         for (let keep = (fit.context.recentCards ?? []).filter(card => card.setup !== undefined).length - 1; keep >= 0; keep -= 1) {
           setupDrafts = keep
-          fit = render(0, lastStage, keep)
+          fit = render(0, lastStage, keep, cardLines)
           if (fit.over <= 0) break
         }
         if (fit.over > 0) return { context: fit.context, instructions: fit.instructions }
@@ -523,7 +554,7 @@ export const createTurnController = (
     let high = WORLD_BODY_BUDGET
     for (let round = 0; round < 8 && high - low > 16; round += 1) {
       const middle = Math.floor((low + high) / 2)
-      const candidate = render(middle, lastStage, setupDrafts)
+      const candidate = render(middle, lastStage, setupDrafts, cardLines)
       if (candidate.over <= 0) {
         low = middle
         fit = candidate

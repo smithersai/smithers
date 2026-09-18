@@ -39,10 +39,22 @@ const NATIVE_EVERYTHING = {
   sandbox: null
 }
 
+/** The web app the alpha ships: the cloud Worker's bootstrap, no local capability. */
+const CLOUD_HOST = {
+  apiVersion: 1 as const,
+  host: "cloud" as const,
+  version: "0",
+  buildSha: "x",
+  capabilities: ["identity"] as const,
+  authFlow: "redirect" as const,
+  sandbox: null
+}
+
 /** The largest session the app builds a prompt for: a repository open, every local capability on, and whatever the test adds to the store. */
-const capturedTurn = async (prepare: (store: Awaited<ReturnType<typeof createAppStore>>) => void) => {
+const capturedTurn = async (prepare: (store: Awaited<ReturnType<typeof createAppStore>>) => void, host: typeof NATIVE_EVERYTHING | typeof CLOUD_HOST = NATIVE_EVERYTHING, message = "hi") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  store.dispatch({
+  // A cloud session has no local checkout to list; only a native host does.
+  if ((host.capabilities as readonly string[]).includes("local.repositories")) store.dispatch({
     type: "repos.loaded",
     actor: "system",
     repos: [{
@@ -65,8 +77,8 @@ const capturedTurn = async (prepare: (store: Awaited<ReturnType<typeof createApp
     cancelTurn: async () => {},
     subscribe: () => () => {}
   }
-  const controller = createAppController(store, repositories, agent, { bootstrap: { ...NATIVE_EVERYTHING, capabilities: [...NATIVE_EVERYTHING.capabilities] } })
-  await controller.send("hi")
+  const controller = createAppController(store, repositories, agent, { bootstrap: { ...host, capabilities: [...host.capabilities] } })
+  await controller.send(message)
   await new Promise((resolve) => setTimeout(resolve, 50))
   const instructions = captured?.instructions ?? ""
   // What the seam actually measures is the COMPOSED string the Bun side sends: prompt plus the rendered runtime context.
@@ -182,13 +194,76 @@ describe("the instructions budget", () => {
       }
     })
     /*
-     * Twelve card lines alone spend this fixture's headroom (16 062 bytes with
-     * no draft at all), so nothing is left to carry one and none is sent: the
-     * turn stays inside the seam's cap and setup.guide still reads the draft.
+     * Twelve card lines alone spent this fixture's headroom (16 062 bytes with
+     * no draft at all, and past the limit the composer then sent anyway), so
+     * the ten plain card lines are what gives way now: the oldest leave, the
+     * setup cards keep their place, and the drafts that fit in the room they
+     * free ride the turn.
      */
-    expect(bytes(busy.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES)
-    expect(drafted(busy)).toEqual([])
-    console.info(`instructions budget: the same setups behind ten cards carry ${drafted(busy).length} drafts (${bytes(busy.composed)} composed)`)
+    expect(bytes(busy.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    expect((busy.context?.recentCards ?? []).length).toBeLessThan(12)
+    expect(drafted(busy)).toEqual(["setup:will:will%2Fcanary:review", "setup:will:will%2Fcanary:ci"])
+    console.info(`instructions budget: the same setups behind ten cards carry ${drafted(busy).length} drafts in ${(busy.context?.recentCards ?? []).length} card lines (${bytes(busy.composed)} composed)`)
+  })
+
+  /*
+   * Canary walk run 3, B3 step 3 (ACTUAL PRODUCTION, 11:23:04Z): "what will run
+   * automatically?" asked in the conversation B3-20's receipt lists card by card
+   * — an issues setup, nine repository/setup run cards, the setup question form
+   * and a review setup — answered "I couldn't complete that turn. The model
+   * service refused this turn (HTTP 400)." / "Turn failed". Twelve card lines
+   * spend the whole budget: every draft is shed AND the composition still
+   * passes the app's own limit, which the composer used to send anyway.
+   */
+  test("the canary's twelve-card conversation composes under the cap and still answers from the open setups' drafts", async () => {
+    const repo = "codeplanesmithers/canary-sandbox"
+    const workspaceId = "af1e3bc5-6388-419e-98cc-e13372a89646"
+    const setupId = (job: RepositoryJob) => `setup:codeplanesmithers:${encodeURIComponent(repo)}:${job}`
+    const turn = await capturedTurn((store) => {
+      store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
+      store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "codeplanesmithers", ownerKind: "user", name: "canary-sandbox", head: null }] })
+      const setupCard = (job: RepositoryJob) => store.dispatch({ type: "card.upsert", actor: "user", card: {
+        id: setupId(job), kind: "repository-setup", title: REPOSITORY_JOB_TITLES[job], status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
+        payload: { ...initialSetup(repo, job, "codeplanesmithers"), inspectedAt: 1234 } } })
+      setupCard("issues")
+      for (const runId of ["run-1", "run-2", "run-3", "run-4", "run-5", "run-7", "run-8", "run-10", "run-11"]) {
+        store.dispatch({ type: "card.upsert", actor: "user", card: {
+          id: `flow-run@${encodeURIComponent(repo)}@${workspaceId}@${runId}`, kind: "run-trace",
+          title: `repository/setup — ${repo}`, status: "active", createdAt: 2, ordinal: store.nextOrdinal(),
+          payload: { repo, workspaceId, runId, workflow: "repository/setup", phase: "completed", steps: [], result: null, lastSeq: 0 } } })
+      }
+      store.dispatch({ type: "card.upsert", actor: "user", card: {
+        id: `form-setup.ask:${setupId("issues")}`, kind: "flow-form", title: "Keep issue research, duplicate lookup and bug reproduction automatic?",
+        status: "active", createdAt: 3, ordinal: store.nextOrdinal(),
+        payload: { flow: "setup.ask", via: "agent", fields: [], draft: {}, given: {} } } })
+      setupCard("review")
+    }, CLOUD_HOST, "what will run automatically?")
+    const cards = turn.context?.recentCards ?? []
+    expect(bytes(turn.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    // The draft is what an ordinary question beside the card is answered from.
+    expect(cards.filter((card) => card.setup !== undefined).map((card) => card.id)).toEqual([setupId("issues"), setupId("review")])
+    expect(turn.composed).toContain("- Research issue: automatic |")
+    expect(turn.composed).toContain("- Find duplicates: automatic |")
+    expect(turn.composed).toContain("- Reproduce bugs: automatic |")
+    console.info(`instructions budget: the canary's twelve-card conversation carries ${cards.filter((card) => card.setup !== undefined).length} drafts in ${cards.length} card lines (${bytes(turn.composed)} composed)`)
+  })
+
+  /*
+   * The floor under every stage. A card title is bounded at 250 characters
+   * (controller/turns.ts), so a full window of them is a state the product
+   * itself allows: it must cost card lines, never the turn.
+   */
+  test("a card window whose titles alone pass the cap loses card lines, not the turn", async () => {
+    const turn = await capturedTurn((store) => {
+      for (let index = 0; index < 12; index += 1) {
+        store.dispatch({ type: "card.upsert", actor: "user", card: {
+          id: `file-${index}`, kind: "file", title: `Card ${index} `.padEnd(260, "long title "), status: "active",
+          createdAt: 2, ordinal: store.nextOrdinal(), payload: { repo: "will/canary", path: `file-${index}.md`, content: "Source", truncated: false } } })
+      }
+    })
+    expect(bytes(turn.composed)).toBeLessThanOrEqual(CHAT_INSTRUCTIONS_CAP_BYTES - INSTRUCTIONS_HEADROOM_BYTES)
+    expect((turn.context?.recentCards ?? []).length).toBeLessThan(12)
+    console.info(`instructions budget: a window of 250-character titles keeps ${(turn.context?.recentCards ?? []).length} card lines (${bytes(turn.composed)} composed)`)
   })
 
   test("code intelligence is stated only where its flows are registered", async () => {
