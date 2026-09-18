@@ -1,6 +1,6 @@
 ---
 title: "Give a run capabilities"
-description: "Bind the standard capability flows (filesystem, shell, tests, memory, durable wait, approval), order them with plugin contributions, and gate calls with authorize."
+description: "Bind the standard capability flows (filesystem, shell, tests, memory, durable wait, approval, classify), order them with plugin contributions, and gate calls with authorize."
 sidebar:
   order: 5
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/docs/guides/capabilities.md"
@@ -29,19 +29,21 @@ const run = agent.run({
     StandardFlows.shell(shellServices), // ChildProcessSpawner | Path
     StandardFlows.tests(testServices), // ChildProcessSpawner | TestRunner
     StandardFlows.memory(memoryServices), // MemoryStore | Recall
+    StandardFlows.classify(evaluatorServices), // Evaluator
     ChildFlows.source(children)
   ]
 })
 ```
 
-| Helper       | Flows bound                                                  | Context it takes                        |
-| ------------ | ------------------------------------------------------------ | --------------------------------------- |
-| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `FileSystem \| Path`                    |
-| `shell`      | `bash`                                                       | `ChildProcessSpawner \| Path`           |
-| `tests`      | the project's test runner                                    | `ChildProcessSpawner \| TestRunner`     |
-| `memory`     | `remember`, `recall`                                         | `MemoryStore \| Recall`                 |
-| `clock`      | `wait`                                                       | `Crypto \| FlowRuntime \| FlowInstance` |
-| `approval`   | `ask`                                                        | an `Asker` port, not a context          |
+| Helper       | Flows bound                                                                             | Context it takes                        |
+| ------------ | --------------------------------------------------------------------------------------- | --------------------------------------- |
+| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`                            | `FileSystem \| Path`                    |
+| `shell`      | `bash`                                                                                  | `ChildProcessSpawner \| Path`           |
+| `tests`      | the project's test runner                                                               | `ChildProcessSpawner \| TestRunner`     |
+| `memory`     | `remember`, `recall`                                                                    | `MemoryStore \| Recall`                 |
+| `clock`      | `wait`                                                                                  | `Crypto \| FlowRuntime \| FlowInstance` |
+| `approval`   | `ask`                                                                                   | an `Asker` port, not a context          |
+| `classify`   | `classify`, `classify/triage/relevance`, `classify/check/verdict`, `classify/edit/risk` | `Evaluator`                             |
 
 All seven filesystem flows are bound, not just `read` and `write`: a host that
 offers whole-file writes and nothing else forces every edit through "read the
@@ -62,6 +64,21 @@ gates the call in `Agent.Options.authorize`, so the park stays in the typed
 error channel where the cell can neither see nor swallow it. `AgentSession`
 wires its `ask` through the control plane this way; see
 [Run the agent as a control-plane run](/guides/control-plane-runs/#the-approval-gate).
+
+## Jev needs a transport
+
+`classify` binds the cell's doors to Jev: the ad-hoc `classify` flow, which
+takes any JSON state and model-authored questions, and one `classify/<id>` flow
+per curated classifier, which takes the classifier's own state. The one service
+is the `Evaluator` from [`@smthrs/model`](https://model.smithers.sh/reference/api/). A host with a Vercel AI
+Gateway key binds `Evaluator.layerVercelGateway({ apiKey })`; a host without
+one binds `Evaluator.layerUnavailable()`, and every classify call then resolves
+in the cell as `{ ok: false, error }` with a message beginning `unreachable:`,
+so the cell carries on instead of hanging. Grant `model:call:*` in the
+capability envelope beside `fs:read:/**` and the rest, or the boundary refuses
+the call before it reaches the transport. Pass `{ classifiers: [] }` to offer
+the ad-hoc door alone, or your own `Classifier.make` declarations to add doors
+the catalog describes by name.
 
 ## How the catalog is composed
 

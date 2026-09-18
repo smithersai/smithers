@@ -117,7 +117,7 @@ from `@smthrs/agent/<Module>`:
 | `QuotaPolicy`                                  | Classifies a provider refusal as a wait with a deadline, so a run parks instead of failing.                        |
 | `Budget`                                       | Accumulates what a run spends across its model calls and refuses past the approved ceiling.                        |
 | `EventSink`                                    | An optional tap that receives each agent event while a step runs.                                                  |
-| `StandardFlows`                                | The built-in capabilities as flows: filesystem, shell, tests, memory, durable wait, approval.                      |
+| `StandardFlows`                                | The built-in capabilities as flows: filesystem, shell, tests, memory, durable wait, approval, classify.            |
 | `ChildFlows`, `EngineChildren`                 | Detached child agents: the `agent/spawn`, `agent/send`, and `agent/await` flows plus the durable port behind them. |
 | `CellPlugin`                                   | The cell hooks of the shared plugin kernel: registry, flows, and model-request waterfalls.                         |
 | `PromoteFlows`, `FlowStore`                    | Saving the script a run wrote as a discoverable flow, and the store its files land in.                             |

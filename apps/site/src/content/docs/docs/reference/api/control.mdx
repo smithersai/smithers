@@ -633,6 +633,27 @@ and failure backoff. `defaultPolicy` uses 5s/2s/20s/120s respectively and caps
 backoff at 60s. Defaults report unknown semantic activity; no checker output grants
 approval or authorizes a remedy.
 
+## JevSessionChecker
+
+The one registered checker that reads semantic activity, bound by the ID
+`jev.session`. See [Configure observational health](https://control.smithers.sh/guides/observe-health/).
+
+`makeJevSessionChecker(options)` builds it over an explicit `env`, `fetch`, `url`,
+and `timeoutMs`; `jevSessionChecker` is the instance `makeRegistry` admits, reading
+the host process. The probe asks Jev, through the Vercel AI Gateway at
+`jevEvaluationUrl` as model `jevModelId`, one choice question over `working`,
+`idle`, and `needs-input` and one boolean question about whether the output ends
+waiting for a person. State is the session's `alive`, `exitCode`, and the newest
+`jevStateTailCharacters` of output, sent with zero data retention.
+
+An answer becomes a report only at confidence `jevConfidenceFloor` or above:
+`needs-input` reports reason `prompt-detected`, `working` and `idle` report `ok`.
+A missing `AI_GATEWAY_API_KEY`, an unexposed output tail, a session that is not
+alive, and every gateway refusal, timeout, or unreadable answer return the
+lifecycle report `{ activity: "unknown", reason: "ok" }`. `jevRequestTimeoutMs`
+is the deadline on the call and `jevProbeTimeoutMs` the wider probe budget this
+checker asks a binding for.
+
 ## Monitor
 
 Run health over the control plane. See
