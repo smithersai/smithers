@@ -91,7 +91,33 @@ describe("Projection", () => {
     if (process.env["UPDATE_GOLDEN"] === "1") writeFileSync(goldenPath, `${rendered}\n`)
     expect(rendered).toBe(readFileSync(goldenPath, "utf8").trimEnd())
     expect(state.closed).toBe(true)
-    expect(state.session.tokens.input).toBe(812 + 1240 + 812 + 1240)
+    // The park replays both frames' model steps; the session counts each frame once.
+    expect(state.session.tokens.input).toBe(812 + 1240)
+  })
+
+  it("reports the last model step's tokens on the assistant message, the way OpenCode does", () => {
+    const ctx = { directory, now: clock().now }
+    const { emitted, state } = foldAll(scriptEvents(), ctx)
+    const headers = emitted
+      .filter((event) => event.type === "message.updated")
+      .map((event) => event.properties["info"] as Protocol.Message)
+      .filter((info): info is Protocol.AssistantMessage => info.role === "assistant")
+    // The header before any model step, one per model settlement (four:
+    // two frames, replayed once), and the finished header.
+    expect(headers.map((header) => header.tokens.input)).toEqual([0, 812, 1240, 812, 1240, 1240])
+    const final = headers[headers.length - 1]!
+    expect(final.finish).toBe("stop")
+    expect(final.tokens).toEqual({ input: 1240, output: 88, reasoning: 0, cache: { read: 0, write: 0 } })
+    // What the app's context tooltip computes from the header
+    // (packages/app/src/components/session/session-context-metrics.ts:
+    // input + output + reasoning + cache.read + cache.write over the model's
+    // context limit) is the last step's size, not the turn's sum.
+    const total = final.tokens.input + final.tokens.output + final.tokens.reasoning + final.tokens.cache.read +
+      final.tokens.cache.write
+    expect(Math.round((total / 8192) * 100)).toBe(16)
+    // The session and the summary keep the turn's totals, each frame once.
+    expect(state.session.tokens).toEqual({ input: 2052, output: 184, reasoning: 0, cache: { read: 0, write: 0 } })
+    expect(state.tokens).toEqual(state.session.tokens)
   })
 
   it("names the same parts when a frame is replayed after a park", () => {
@@ -399,7 +425,8 @@ describe("Projection", () => {
         durationMillis: 1
       })
     )
-    expect(settledWithoutProse.events.map((event) => event.type)).toEqual(["session.updated"])
+    // Even without prose, a settlement updates the session's totals and the header's context tokens.
+    expect(settledWithoutProse.events.map((event) => event.type)).toEqual(["session.updated", "message.updated"])
     const settledWithProse = Projection.fold(
       ctx,
       frame.state,
@@ -410,7 +437,12 @@ describe("Projection", () => {
         durationMillis: 1
       })
     )
-    expect((settledWithProse.events[1]!.properties["part"] as Protocol.ReasoningPart).text).toBe("Plain prose")
+    expect(settledWithProse.events.map((event) => event.type)).toEqual([
+      "session.updated",
+      "message.updated",
+      "message.part.updated"
+    ])
+    expect((settledWithProse.events[2]!.properties["part"] as Protocol.ReasoningPart).text).toBe("Plain prose")
 
     const source = Cell.source("throw new Error('x')")
     const produced = Projection.fold(
@@ -1066,13 +1098,14 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     ).toBeCloseTo(6)
     const ctx = { directory, now: clock().now, pricing }
     const { emitted, state } = foldAll(scriptEvents(), ctx)
-    expect(state.cost).toBeCloseTo(((812 + 1240) * 2 * 1 + (96 + 88) * 2 * 2) / 1_000_000)
+    // The park replays both frames; the cost counts each frame once.
+    expect(state.cost).toBeCloseTo(((812 + 1240) * 1 + (96 + 88) * 2) / 1_000_000)
     const sessions = emitted.filter((event) => event.type === "session.updated")
       .map((event) => event.properties["info"] as Protocol.Session)
     // Every model settlement updates the session's tokens and cost.
     expect(sessions.length).toBeGreaterThanOrEqual(5)
     expect(sessions[sessions.length - 1]!.cost).toBeCloseTo(state.cost)
-    expect(sessions[sessions.length - 1]!.tokens.input).toBe((812 + 1240) * 2)
+    expect(sessions[sessions.length - 1]!.tokens.input).toBe(812 + 1240)
     const header = emitted.filter((event) => event.type === "message.updated")
       .map((event) => event.properties["info"] as Protocol.Message)
       .find((info) => info.role === "assistant" && info.finish === "stop") as Protocol.AssistantMessage

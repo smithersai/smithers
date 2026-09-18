@@ -142,7 +142,13 @@ export interface AssistantMessage {
   readonly mode: string
   readonly agent: string
   readonly path: { readonly cwd: string; readonly root: string }
+  /** The seat's cost over the whole turn. */
   readonly cost: number
+  /**
+   * The last model step's tokens, the way OpenCode reports them: the size of
+   * the context the model was last sent, which the app's context tooltip
+   * divides by the model's limit. The turn's total is on the session.
+   */
   readonly tokens: Tokens
   readonly finish?: string
   readonly error?: MessageError

@@ -263,6 +263,39 @@
     }
   },
   {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 812,
+          "output": 96,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -853,6 +886,39 @@
     }
   },
   {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 1240,
+          "output": 88,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      }
+    }
+  },
+  {
     "type": "message.part.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -1112,8 +1178,8 @@
         },
         "cost": 0,
         "tokens": {
-          "input": 2864,
-          "output": 280,
+          "input": 2052,
+          "output": 184,
           "reasoning": 0,
           "cache": {
             "read": 0,
@@ -1123,6 +1189,39 @@
         "time": {
           "created": 1000,
           "updated": 1030
+        }
+      }
+    }
+  },
+  {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 812,
+          "output": 96,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
         }
       }
     }
@@ -1702,8 +1801,8 @@
         },
         "cost": 0,
         "tokens": {
-          "input": 4104,
-          "output": 368,
+          "input": 2052,
+          "output": 184,
           "reasoning": 0,
           "cache": {
             "read": 0,
@@ -1713,6 +1812,39 @@
         "time": {
           "created": 1000,
           "updated": 1048
+        }
+      }
+    }
+  },
+  {
+    "type": "message.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "msg_0000000010020000000000000b",
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "role": "assistant",
+        "time": {
+          "created": 1001
+        },
+        "parentID": "msg_0000000010010000000000000a",
+        "modelID": "demo",
+        "providerID": "scripted",
+        "mode": "smithers",
+        "agent": "smithers",
+        "path": {
+          "cwd": "/repo",
+          "root": "/repo"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 1240,
+          "output": 88,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
         }
       }
     }
@@ -2018,8 +2150,8 @@
         },
         "cost": 0,
         "tokens": {
-          "input": 4104,
-          "output": 368,
+          "input": 1240,
+          "output": 88,
           "reasoning": 0,
           "cache": {
             "read": 0,
@@ -2068,8 +2200,8 @@
         },
         "cost": 0,
         "tokens": {
-          "input": 4104,
-          "output": 368,
+          "input": 2052,
+          "output": 184,
           "reasoning": 0,
           "cache": {
             "read": 0,

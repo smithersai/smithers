@@ -9,7 +9,10 @@
  * part carrying the frame's tokens. A discipline demand is a `demand` tool
  * part. A permission park is `permission.asked`. `Resolved` streams the
  * final answer as a text part and ends the turn: the assistant header gets
- * its finish, the session its tokens, and the status goes idle.
+ * its finish, the session its tokens, and the status goes idle. The
+ * assistant header carries the last model step's tokens, the way OpenCode
+ * reports them (the app reads them as the context size); the session
+ * carries the turn's totals, each frame counted once across a replay.
  *
  * Every part id is derived from the assistant message and a sort key
  * (`Ids.part`), so a frame replayed after a park names the same parts and
@@ -141,8 +144,16 @@ export interface State {
   readonly createdAt: number
   /** The current frame, zero-based; minus one before the first `turn-opened`. */
   readonly frame: number
+  /** The turn's tokens, each frame counted once: what the session totals and the cost are made of. */
   readonly tokens: Protocol.Tokens
+  /** The current frame's tokens, for its `step-finish`. */
   readonly frameTokens: Protocol.Tokens
+  /**
+   * The last model step's tokens: the current context size, which the
+   * assistant header reports the way OpenCode does (the app divides its sum
+   * by the model's context limit for the usage tooltip).
+   */
+  readonly context: Protocol.Tokens
   readonly reasoning: { readonly partID: string; readonly text: string; readonly start: number } | undefined
   readonly cell:
     | {
@@ -653,7 +664,7 @@ const assistantHeader = (
   agent: state.agent,
   path: { cwd: ctx.directory, root: ctx.directory },
   cost: state.cost,
-  tokens: state.tokens,
+  tokens: state.context,
   ...extra
 })
 
@@ -867,6 +878,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
     frame: -1,
     tokens: Protocol.noTokens,
     frameTokens: Protocol.noTokens,
+    context: Protocol.noTokens,
     reasoning: undefined,
     cell: undefined,
     calls: {},
@@ -971,28 +983,38 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
     }
     case "model-settled": {
       const frameTokens = tokensOf(event.usage)
+      // The journal replays a frame's model step after a park with the same
+      // usage; the turn's total and the cost count each frame once.
+      const counted = `model:${state.frame}` in state.counted
       const next: State = {
         ...state,
         frameTokens,
-        tokens: addTokens(state.tokens, frameTokens),
-        cost: state.cost + costOf(frameTokens, ctx.pricing)
+        context: frameTokens,
+        tokens: counted ? state.tokens : addTokens(state.tokens, frameTokens),
+        cost: counted ? state.cost : state.cost + costOf(frameTokens, ctx.pricing),
+        counted: { ...state.counted, [`model:${state.frame}`]: true }
       }
-      const usage = sessionEvent(sessionNow(next, ctx.now()))
+      // The session carries the totals; the header carries this step's
+      // tokens, so the app's context usage follows the run.
+      const usage: Array<Protocol.Emitted> = [
+        sessionEvent(sessionNow(next, ctx.now())),
+        { type: "message.updated", properties: { sessionID: next.session.id, info: assistantHeader(next, ctx) } }
+      ]
       const text = prose(event.message)
-      if (next.reasoning === undefined && text === "") return { state: next, events: [usage] }
+      if (next.reasoning === undefined && text === "") return { state: next, events: usage }
       if (next.reasoning === undefined) {
         const now = ctx.now()
         const partID = Ids.part(next.assistantMessageID, { frame: next.frame, slot: slots.reasoning, ordinal: 0 })
         return {
           state: next,
           events: [
-            usage,
+            ...usage,
             partEvent({ ...base(next), id: partID, type: "reasoning", text, time: { start: now, end: now } }, now)
           ]
         }
       }
       const finished = finishReasoning(next, ctx, text)
-      return { state: finished.state, events: [usage, ...finished.events] }
+      return { state: finished.state, events: [...usage, ...finished.events] }
     }
     case "model-retried":
       return {

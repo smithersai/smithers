@@ -91,6 +91,13 @@
   nothing twice, a park no longer consumes the demand flag the parked frame
   reads when it settles, and a turn closed while parked marks the last
   frame that opened.
+- The assistant message reports the last model step's tokens, the way
+  OpenCode does, and a `message.updated` follows every model settlement
+  with them. The header summed every frame's tokens, so the app's context
+  tooltip, which divides the message's tokens by the model's context limit,
+  read `Usage 372%` after a long turn. The session keeps the turn's totals
+  for cost, and a frame the journal replays after a park is counted once:
+  every park doubled the tokens and the cost of the frames before it.
 
 ### Added
 
