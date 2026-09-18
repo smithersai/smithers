@@ -122,7 +122,11 @@ export function projectRecoveredSetup(current: RepositorySetup, recovered: Setup
     next = { ...next, draft: policy.draft, revision: policy.revision,
       ...(policy.owned && !next.workspaceId ? { workspaceId: policy.workspaceId } : {}) }
   }
-  if (policy?.owned && next.workspaceId && policy.workspaceId !== next.workspaceId) throw Error("The recovered registration belongs to another workspace.")
+  // Cloud binds one repository-jobs workspace per person and repository, so an
+  // owned registration on a different box means the pinned one was replaced.
+  // Follow it; a recovered result names the newer binding and keeps its own.
+  if (policy?.owned && next.workspaceId && policy.workspaceId !== next.workspaceId
+    && (setup.state !== "found" || setup.result.workspaceId === undefined)) next = { ...next, workspaceId: policy.workspaceId }
   if (registration.state === "known") {
     const active = registration.active
     next.active = active ? { revision: active.revision, digest: active.digest, registrationId: active.registrationId,

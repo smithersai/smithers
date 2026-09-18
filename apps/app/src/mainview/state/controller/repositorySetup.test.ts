@@ -1134,11 +1134,12 @@ test("retrying a setup its workspace outlived reruns the operation instead of re
  * receipt is the card's only evidence that the attempt is over.
  */
 const SETTLED_REQUEST = "896394a9-7bc3-442a-a2f7-b5d6a4f858eb"
+const deadPin = "f387bca6-6c93-4e22-9a5a-dbe0b455d51d"
 const settledWorkspaceGone = (): SetupRecoveryResponse => {
   const base = initialSetup("example/repo", "issues", "maintainer")
   const digest = setupCandidate({ ...base, revision: 5 })
   const input = { requestId: SETTLED_REQUEST, operation: "inspect" as const, repo: base.repo, job: base.job,
-    revision: 5, digest, draft: base.draft, workspaceId: "f387bca6-6c93-4e22-9a5a-dbe0b455d51d" }
+    revision: 5, digest, draft: base.draft, workspaceId: deadPin }
   const receipt = { requestId: SETTLED_REQUEST, operation: "inspect" as const, revision: 5, digest,
     phase: "failed" as const, updatedAt: 1789685252210, results: [], evidence: [], error: WORKSPACE_GONE }
   return { owner: "maintainer", repo: base.repo, job: base.job,
@@ -1162,5 +1163,31 @@ test("retrying a settled failure recovered after a reload starts a new request i
     expect(t.calls[0]?.body.workspaceId).toBeUndefined()
     expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
     expect(setupCard(t).payload.previousReceipts.find(item => item.requestId === SETTLED_REQUEST)?.error).toBe(WORKSPACE_GONE)
+  } finally { await t.close() }
+})
+
+test("a browser pinned to the deleted workspace adopts the registration's live one instead of refusing recovery", async () => {
+  const t = await fixture(async body => {
+    const value = await response(body, "completed", "inspect").json() as Record<string, unknown>
+    return Response.json({ ...value, workspaceId: replacement })
+  })
+  t.recovery.answer = async () => Response.json(settledWorkspaceGone())
+  try {
+    await t.store.dispatch({ type: "card.upsert", actor: "user", card: { id: "setup:maintainer:example%2Frepo:issues",
+      kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
+      payload: { ...initialSetup("example/repo", "issues", "maintainer"), workspaceId: deadPin, inspectedAt: 1 } } }).isPersisted.promise
+    await t.setup.openRepositorySetup("issues", "example/repo"); await Promise.all(t.background)
+    const card = setupCard(t)
+    expect(card.payload.recovery).toMatchObject({ state: "completed", registrationState: "known" })
+    expect(card.payload.recovery?.error).toBeUndefined()
+    expect(card.payload.workspaceId).toBe(replacement)
+    expect(card.payload.request).toMatchObject({ id: SETTLED_REQUEST, state: "failed", error: WORKSPACE_GONE })
+    expect(t.calls).toEqual([])
+    await t.setup.retryRepositorySetup(card.id); await Promise.all(t.background)
+    expect(t.calls.map(call => call.method)).toEqual(["POST"])
+    expect(t.calls[0]?.body.requestId).not.toBe(SETTLED_REQUEST)
+    expect(t.calls[0]?.body.workspaceId).toBe(replacement)
+    expect(setupCard(t).payload.request).toMatchObject({ operation: "inspect", state: "completed" })
+    expect(setupCard(t).payload.workspaceId).toBe(replacement)
   } finally { await t.close() }
 })
