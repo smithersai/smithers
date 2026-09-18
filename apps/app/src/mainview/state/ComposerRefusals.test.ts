@@ -88,6 +88,40 @@ describe("a flow typed into the composer states its refusal", () => {
   })
 
   /*
+   * Canary D-4: `/flow.create <description>` answered `POST
+   * /api/workflow/provision 200` and one `POST /api/workflow/rpc 200`, and
+   * then nothing — no line, no toast, no card, no flow. One rpc is the
+   * shape of a refused `Plan`: the gateway's launch plans, approves and runs,
+   * so a door that stopped after one call never got past the plan. The
+   * workspace's own sentence was returned, toasted for four seconds and lost.
+   */
+  test("a flow-authoring door the workspace refuses says so in the transcript", async () => {
+    const store = await signedInStore()
+    const rpc: Array<string> = []
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async (input, init) => {
+        const path = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
+          "https://app.test"
+        ).pathname
+        if (path === "/api/workflow/provision") return json(200, { status: "ready" })
+        if (path === "/api/workflow/rpc") {
+          rpc.push(String(JSON.parse(String(init?.body ?? "{}")).procedure))
+          return json(200, { ok: false, error: { message: 'No flow "create-workflow" is registered on this workspace.' } })
+        }
+        return json(404, { message: `no stub for ${path}` })
+      }
+    })
+    controller.send("/flow.create a nightly lint flow codeplanesmithers/canary-sandbox")
+    await settled()
+    await settled()
+    /* One rpc: the launch stopped at its plan, so no run was ever started. */
+    expect(rpc).toEqual(["Plan"])
+    expect([...store.collections.messages.values()].map((message) => message.text))
+      .toContain('No flow "create-workflow" is registered on this workspace.')
+  })
+
+  /*
    * The persistent door is the transcript step, not the toast. A toast is a
    * notification and may auto-dismiss; the sign-in step stays in the
    * transcript with its button, and the button is bound to the flow THIS host

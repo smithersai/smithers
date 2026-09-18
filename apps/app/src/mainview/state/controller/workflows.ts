@@ -383,12 +383,29 @@ export const createWorkflowController = (
     return createWorkflow(card.payload.description, fullName)
   }
 
+  /*
+   * A refused authoring attempt, said where it stays.
+   *
+   * The string a flow returns reaches the person as the command-failure
+   * toast, which states itself and dismisses after four seconds. On
+   * production that made this door look inert: it provisioned, the workspace
+   * refused its plan, and by the time anyone looked there was no line, no
+   * toast and no card — a door that created nothing and said nothing. The
+   * refusing party's own sentence goes to the transcript, which is the half
+   * of the answer that is still there afterwards.
+   */
+  const refuseCreate = (message: string): string => {
+    store.dispatch({ type: "message.appended", actor: "system", text: message })
+    return message
+  }
+
   const createWorkflow = async (
     rawDescription: string,
     repoArg?: string
   ): Promise<string | void | { readonly value: string }> => {
     const guard = workflowIdentityGuard()
-    if (guard !== undefined) return guard
+    if (guard !== undefined) return refuseCreate(guard)
+    /* The zero-balance refusal is already an embedded message; a second one would say it twice. */
     const balanceGuard = zeroBalanceGuard()
     if (balanceGuard !== undefined) return balanceGuard
     // §2: `flow.create <description> [owner/repo]` — one argument string
@@ -397,15 +414,15 @@ export const createWorkflowController = (
       ? splitDescriptionAndRepo(rawDescription)
       : { description: rawDescription.trim(), repo: repoArg }
     const description = split.description
-    if (description === "") return "flow.create needs a description of what the flow should do"
+    if (description === "") return refuseCreate("flow.create needs a description of what the flow should do")
     const target = workflowTargetRepoOrAsk(split.repo)
-    if ("error" in target) return target.error
+    if ("error" in target) return refuseCreate(target.error)
     if ("ask" in target) return askWhichRepo(description, target.ask)
     const repo = target.repo
     const binding = gatewayBindingFor(store, repo)
-    if ("error" in binding) return binding.error
+    if ("error" in binding) return refuseCreate(binding.error)
     const provisioned = await provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
+    if (provisioned !== true) return refuseCreate(provisioned)
     /*
      * No pre-flight `listWorkflows` gate here. The live gateway populates
      * its global pack LAZILY — a cold `listWorkflows` answers with only the
@@ -421,7 +438,7 @@ export const createWorkflowController = (
       input: { prompt: description },
       title: `Creating a flow: ${repo}`
     })
-    if ("message" in launched) return launched.message
+    if ("message" in launched) return refuseCreate(launched.message)
     /*
      * Wave 12 §1: a MINIMAL machine acknowledgment. Wave 11's paragraph of
      * warnings was the model's only evidence and it rounded up anyway, so the
