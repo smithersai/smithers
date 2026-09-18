@@ -6,7 +6,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
 import { setupCandidate } from "../../packages/rpc/src/RepositorySetup.ts"
 import { CodingError } from "../coding/schema.ts"
-import { checkExecutionFailed, recordedChecks } from "./checks.ts"
+import { checkExecutionFailed, recordedChecks, reviewCheckId, unavailableCheck } from "./checks.ts"
 import { CaptureRepository, currentExecutionId } from "./inspection.ts"
 import { Investigate } from "./jobs.ts"
 import { EvalCase, EvalResult, Event, JobInput, JobResult, RepositoryEvidence, SetupInput } from "./schema.ts"
@@ -58,17 +58,20 @@ const capturedCause = (error: unknown): string => {
 }
 const pointer = (value: unknown, path: string): unknown => path.slice(1).split("/").reduce<unknown>((current, token) =>
   current !== null && typeof current === "object" ? (current as Record<string, unknown>)[token.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined, value)
-const executionFailed = (step: JobResult["results"][number], sourceRevision: string): boolean => {
+/** Why this step did not complete its evaluated work, or undefined when it did. */
+const executionFailed = (step: JobResult["results"][number], sourceRevision: string, job: JobResult["job"]): string | undefined => {
   try {
     const checks = recordedChecks(step, sourceRevision)
-    if (checks === undefined) return step.status === "error"
-    if (checks.some(checkExecutionFailed)) return true
+    const reviewed = job === "review" && step.stepId !== "checks" ? reviewCheckId(step.stepId) : undefined
+    if (checks === undefined) return step.status === "error" ? step.summary : undefined
+    const unavailable = checks.find(check => checkExecutionFailed(check, reviewed))
+    if (unavailable) return unavailableCheck(unavailable, reviewed)?.summary ?? unavailable.step.summary
     const final = checks.at(-1)
     // A baseline-only early refusal can be judged as such. A completed or
     // policy-blocked candidate must actually have its own final check.
     return (step.status === "completed" || step.status === "error") &&
-      (final?.phase !== "candidate" || step.status !== final.step.status)
-  } catch { return true }
+      (final?.phase !== "candidate" || step.status !== final.step.status) ? step.summary : undefined
+  } catch (error) { return error instanceof CodingError ? error.message : step.summary }
 }
 export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, score: typeof Score.Type) => {
   const refs = evidenceReferences(observed)
@@ -79,7 +82,11 @@ export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, sco
   const substituted = decoded.value.sourceRevision === observed.sourceRevision ? ""
     : ` (the case's pinned commit ${decoded.value.sourceRevision.slice(0, 12)} was not held by this workspace; scored against ${observed.sourceRevision.slice(0, 12)})`
   const row = (status: (typeof EvalResult.Type)["status"], reason: string) => ({ status, observed: `${reason}${substituted}`, evidence })
-  if (!observed.results.length || observed.results.some(step => executionFailed(step, observed.sourceRevision))) return row("error", "The production flow did not complete its evaluated work.")
+  const incomplete = observed.results.flatMap(step => {
+    const reason = executionFailed(step, observed.sourceRevision, observed.job)
+    return reason === undefined ? [] : [`: step ${step.stepId} ${step.status}${reason ? ` — ${reason.slice(0, 400)}` : ""}`]
+  })
+  if (!observed.results.length || incomplete.length) return row("error", `The production flow did not complete its evaluated work${incomplete[0] ?? "."}`)
   const mismatch = decoded.value.assertions.find(assertion => JSON.stringify(pointer(observed, assertion.path)) !== JSON.stringify(assertion.equals))
   if (mismatch) return row("failed", `Assertion failed at ${mismatch.path}. ${score.reason}`)
   if (!score.evidenceIds.length || score.evidenceIds.some(id => !Number.isSafeInteger(id) || id < 0 || refs[id] === undefined)) return row("review", "The evaluator did not cite the recorded execution evidence.")

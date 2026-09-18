@@ -34,9 +34,10 @@ export const CheckOutput = Schema.Struct({ base: Commit, candidate: Schema.NonEm
 const Finding = Schema.Struct({ path: Schema.NonEmptyString, line: Schema.Int.check(Schema.isGreaterThan(0)), message: Schema.NonEmptyString })
 export const SemanticVerdict = Schema.Struct({ verdict: Schema.Literals(["pass", "fail", "uncertain"]),
   summary: Schema.NonEmptyString, examinedPaths: Schema.Array(Schema.String), findings: Schema.Array(Finding).check(Schema.isMaxLength(40)) })
-/** Shared by review execution and its trial verifier. */
+/** Shared by review execution, its trial verifier and the evaluator. */
+export const reviewCheckId = (stepId: string): string => `review-${stepId}`
 export const reviewCheck = (step: typeof Step.Type): typeof Check.Type => ({
-  id: `review-${step.id}`, name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required"
+  id: reviewCheckId(step.id), name: step.name, kind: "ai", rule: step.prompt, paths: [], policy: "required"
 })
 export interface RecordedCheck {
   readonly step: typeof StepResult.Type
@@ -73,11 +74,17 @@ export const recordedChecks = (step: typeof StepResult.Type, sourceRevision: str
   })
 }
 /** A valid failed required check is a policy finding. It is not an unavailable
- * execution. Report-only model/tool errors still invalidate eval/trial proof. */
-export const checkExecutionFailed = ({ step, output }: RecordedCheck): boolean => {
-  if (output.results.some(check => check.status === "error")) return true
-  const blocked = output.results.some(check => check.policy === "required" && check.status === "failed")
-  return output.gate !== (blocked ? "blocked" : "passed") || step.status !== (blocked ? "error" : "completed")
+ * execution. Report-only model/tool errors still invalidate eval/trial proof.
+ * A reviewed step's own check is the review itself: what the checker recorded
+ * against this exact source is substance to judge, however it concluded. Its
+ * gate must still agree, and a check that never reached its source refuses. */
+export const unavailableCheck = ({ output }: RecordedCheck, reviewedId?: string): typeof CheckResult.Type | undefined =>
+  output.results.find(check => check.status === "error" && !(check.checkId === reviewedId &&
+    check.evidence.includes(`execution:${check.executionId}`) && check.evidence.includes(`source:${output.candidate}`)))
+export const checkExecutionFailed = (recorded: RecordedCheck, reviewedId?: string): boolean => {
+  if (unavailableCheck(recorded, reviewedId)) return true
+  const blocked = recorded.output.results.some(check => check.policy === "required" && check.status !== "passed" && check.status !== "skipped")
+  return recorded.output.gate !== (blocked ? "blocked" : "passed") || recorded.step.status !== (blocked ? "error" : "completed")
 }
 /** Only the owned trial receipt uses this gate. Unrelated live events may skip. */
 export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">, result: JobResult): void => {
@@ -90,7 +97,7 @@ export const verifyTrialChecks = (configuration: Pick<Draft, "checks" | "steps">
   if (checks.some(check => !check.id) || new Set(checks.map(check => check.id)).size !== checks.length) throw invalid("AI trial checks need unique configured IDs")
   const outputs = result.results.flatMap(step => {
     const recorded = recordedChecks(step, result.sourceRevision)
-    if (recorded?.some(checkExecutionFailed)) throw invalid("The trial contains an unavailable or inconsistent check execution")
+    if (recorded?.some(check => checkExecutionFailed(check))) throw invalid("The trial contains an unavailable or inconsistent check execution")
     const final = recorded?.at(-1)
     return final?.phase === "candidate" && final.step.status === "completed" && final.output.gate === "passed" ? [final.output] : []
   })
