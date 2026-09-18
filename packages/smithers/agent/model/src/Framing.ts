@@ -117,16 +117,20 @@ export const makeSse = (limits: Limits = {}): Framing<string> => ({
   frame: (stream) =>
     Stream.suspend(() => {
       let frames: Array<string> = []
+      // `bounded` owns the record budget: it counts every line of the event in
+      // UTF-8 bytes and fails upstream, while the parser's own cap counts only
+      // the data values in UTF-16 units, so that cap can never fire first. It
+      // stays off rather than leave a failure path no input reaches.
       const parser = Sse.makeParser((event) => {
         if (event._tag === "Event" && event.data !== "" && event.data !== "[DONE]") frames.push(event.data)
-      }, { maxEventSize: limits.maxRecordBytes ?? defaultMaxRecordBytes })
+      }, { maxEventSize: Number.POSITIVE_INFINITY })
       return bounded(stream, true, limits).pipe(
         Stream.decodeText,
-        Stream.mapEffect((text) => {
-          const error = parser.feed(text)
+        Stream.map((text) => {
+          parser.feed(text)
           const emitted = frames
           frames = []
-          return error === undefined ? Effect.succeed(emitted) : Effect.fail(error)
+          return emitted
         }),
         Stream.flattenIterable
       )
