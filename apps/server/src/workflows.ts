@@ -57,15 +57,34 @@ export const requireWorkflowSession = (request: Request): Effect.Effect<Validate
 
 /** The typed, non-gateway answers a gateway call can produce, in one place. */
 const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status: "ok" }>): Response => {
-  if (call.status === "plan_limit_exceeded") return json(402, { ...call.refusal, code: "plan_limit_exceeded", fault: "user", message: call.detail })
-  if (call.status === "provisioning") return json(200, { status: "provisioning", message: call.detail })
-  if (call.status === "no_capacity") return json(200, { status: "no-capacity", message: call.detail })
-  // The user's own box cap, not the fleet's: a separate wire state so the
-  // product never tells someone at their limit that the infrastructure failed.
-  if (call.status === "quota_exceeded") return json(200, { status: "quota-exceeded", message: call.detail })
-  if (call.status === "no_cloud_token") return json(200, { status: "no-cloud-identity", message: call.detail })
-  if (call.status === "no_cloud_repo") return json(200, { status: "no-cloud-repo", message: call.detail })
-  return refuse("upstream_refused", call.detail)
+  switch (call.status) {
+    case "plan_limit_exceeded":
+      return json(402, { ...call.refusal, code: "plan_limit_exceeded", fault: "user", message: call.detail })
+    case "provisioning":
+      return json(200, { status: "provisioning", message: call.detail })
+    case "no_capacity":
+      return json(200, { status: "no-capacity", message: call.detail })
+    // The user's own box cap, not the fleet's: a separate wire state so the
+    // product never tells someone at their limit that the infrastructure failed.
+    case "quota_exceeded":
+      return json(200, { status: "quota-exceeded", message: call.detail })
+    case "no_cloud_token":
+      return json(200, { status: "no-cloud-identity", message: call.detail })
+    case "no_cloud_repo":
+      return json(200, { status: "no-cloud-repo", message: call.detail })
+    // The pinned workspace is gone, which is its own registered code (409,
+    // infra). Under `upstream_refused` the person reads "retry creates a new
+    // one" beneath a 502 dependency headline.
+    case "workspace_gone":
+      return refuse("workspace_gone", call.detail)
+    case "unknown_outcome":
+    case "unavailable":
+      return refuse("upstream_refused", call.detail)
+    default: {
+      const exhaustive: never = call
+      return exhaustive
+    }
+  }
 }
 
 /*
@@ -119,8 +138,16 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
       case "no_cloud_repo":
         // §4: a watched repo with no Cloud counterpart — a state of its own.
         return json(200, { status: "no-cloud-repo", message: outcome.detail })
-      default:
+      case "workspace_gone":
+        // The repository is on Cloud and the pinned box is not: an unbound
+        // caller asks again and gets a new one, which is what 409 infra says.
+        return refuse("workspace_gone", outcome.detail)
+      case "unavailable":
         return refuse("upstream_refused", outcome.detail)
+      default: {
+        const exhaustive: never = outcome
+        return exhaustive
+      }
     }
   })
 

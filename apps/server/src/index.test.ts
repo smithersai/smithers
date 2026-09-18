@@ -19,6 +19,7 @@ import {
 import type { ClientErrorRecord } from "./clientErrorLog"
 import { memoryStorage as memoryObjectStorage, storageLayer } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
+import { WORKSPACE_GONE_REFUSAL } from "./gateway"
 import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
 import { memoryDurableObjects } from "./memoryDurableObjects"
@@ -4520,6 +4521,39 @@ describe("wave 11 — the /api/workflow/* routes", () => {
         expect(response.status).toBe(200)
         expect(calls.at(-1)?.url).toContain(`/api/gateways/${first}/`)
       })
+    })
+
+    /*
+     * Smithers Cloud answers a call bound to a workspace it no longer has with
+     * `404 {"code":"not_found"}`. That is the registered infra code
+     * `workspace_gone` (409), and the person reads its sentence — "retry
+     * creates a new one". Answering it as `upstream_refused` puts that sentence
+     * under a 502 dependency headline, which tells them the wrong thing to do.
+     */
+    test("a relay 404 not_found on a pinned call is workspace_gone, not a dependency failure", async () => {
+      await withRelay(
+        { provision, gateway: () => json(404, { code: "not_found", fault: "user", message: "workspace not found" }) },
+        async () => {
+          const response = await worker.fetch(signedIn("/api/workflow/rpc", {
+            method: "POST", body: JSON.stringify({ repo, workspaceId: first, procedure: "List", payload: { _tag: "flows" } })
+          }), env())
+          expect(response.status).toBe(409)
+          expect(await response.json()).toEqual({ status: "error", code: "workspace_gone", message: WORKSPACE_GONE_REFUSAL })
+        }
+      )
+    })
+
+    test("a provision 404 not_found on a pinned workspace is workspace_gone, not a dependency failure", async () => {
+      await withRelay(
+        { provision: () => json(404, { code: "not_found", fault: "user", message: "workspace not found" }) },
+        async () => {
+          const response = await worker.fetch(signedIn("/api/workflow/provision", {
+            method: "POST", body: JSON.stringify({ repo, workspaceId: second })
+          }), env())
+          expect(response.status).toBe(409)
+          expect(await response.json()).toEqual({ status: "error", code: "workspace_gone", message: WORKSPACE_GONE_REFUSAL })
+        }
+      )
     })
 
     test("rejects malformed bindings before provisioning", async () => {
