@@ -559,6 +559,41 @@ export const layerScripted = (script: Script): Layer.Layer<Evaluator> =>
   )
 
 /**
+ * The environment variable every host reads its gateway key from.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const environmentKey = "AI_GATEWAY_API_KEY"
+
+/**
+ * The evaluator a host binds from its own environment: Jev through the
+ * Vercel gateway when {@link environmentKey} is set, and
+ * {@link layerUnavailable} when it is not.
+ *
+ * Every host that runs an agent loop binds this one, because the harness's
+ * completion brake never falls back: a claim nothing could judge fails the
+ * run as `completion_unjudged`. So a host without the key does not quietly
+ * lose its sixth brake — it fails at its first completion, naming
+ * `unreachable`, which is the outcome a missing key is supposed to have.
+ *
+ * The layer needs the kernel `HttpClient` only on the configured arm, and
+ * the unconfigured arm needs nothing; both are typed as needing it so one
+ * call site serves both and a host provides its own client once.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerFromEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<Evaluator, never, KernelHttpClient.HttpClient> => {
+  const apiKey = environment[environmentKey]
+  return apiKey === undefined || apiKey === ""
+    ? layerUnavailable()
+    : layerVercelGateway({ apiKey: Redacted.make(apiKey) })
+}
+
+/**
  * An evaluator with no transport behind it: every request fails as
  * `unreachable`. A host without a gateway key installs this so a classifier
  * reports the missing transport instead of hanging or inventing an answer.

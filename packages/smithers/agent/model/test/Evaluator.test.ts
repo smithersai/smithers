@@ -381,6 +381,27 @@ describe("Evaluator.layerUnavailable", () => {
   })
 })
 
+describe("Evaluator.layerFromEnvironment", () => {
+  it("reaches the gateway with the key the environment carries", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerFromEnvironment({ [Evaluator.environmentKey]: "vck_env" }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+
+    expect(success(await evaluate(layer)).answers).toEqual(recorded.answers)
+    expect((sent as [Sent])[0].request.headers).toMatchObject({ authorization: "Bearer vck_env" })
+  })
+
+  it.each([
+    ["no key at all", {}],
+    ["an empty key", { [Evaluator.environmentKey]: "" }]
+  ])("is unavailable with %s, so a run fails at its first judgement rather than skipping it", async (_, env) => {
+    const layer = Evaluator.layerFromEnvironment(env).pipe(Layer.provide(httpLayer([], () => json(recorded))))
+
+    expect(failure(await evaluate(layer))).toMatchObject({ code: "unreachable" })
+  })
+})
+
 describe("Evaluator.Question", () => {
   const decode = Schema.decodeUnknownResult(Evaluator.Question)
 
