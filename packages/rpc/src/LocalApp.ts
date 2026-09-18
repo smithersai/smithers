@@ -453,7 +453,6 @@ export const PtyOutputResponseSchema = z.object({
  */
 export type PtyOutputResponse = z.infer<typeof PtyOutputResponseSchema>
 
-
 export {
   CLOUD_AUTH_SESSION_PATH,
   CLOUD_AUTH_SIGN_OUT_PATH,

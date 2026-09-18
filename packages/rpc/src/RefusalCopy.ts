@@ -720,10 +720,13 @@ export const refusalCopy = (refusal: Refusal): RefusalCopyRow => {
    * about our fleet, which is exactly what we cannot know here.
    */
   if (refusal.origin === "client") return BY_ORIGIN.client
-  if (refusal.rawCode === "plan_limit_exceeded") return {
-    lead: "Your plan is at its sandbox limit.",
-    agent: "fault=user: the account reached its sandbox plan limit. Offer billing.plans so the human can upgrade, or suspend a sandbox. Do not retry automatically.",
-    doors: ["upgrade"]
+  if (refusal.rawCode === "plan_limit_exceeded") {
+    return {
+      lead: "Your plan is at its sandbox limit.",
+      agent:
+        "fault=user: the account reached its sandbox plan limit. Offer billing.plans so the human can upgrade, or suspend a sandbox. Do not retry automatically.",
+      doors: ["upgrade"]
+    }
   }
   const base = REFUSAL_COPY[refusal.fault]
   /*
