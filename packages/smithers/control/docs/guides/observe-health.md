@@ -74,13 +74,29 @@ agreement with a human rater, so a Jev that is merely leaning is a coin flip
 dressed as a reading: a false `needs-input` pages a person who is not needed, and
 a false `idle` retires an agent that is still working. `needs-input` carries the
 reason `prompt-detected`, which the rollup turns into `attention: "needs-input"`.
+A reading below the floor is Jev's own answer and stays `unknown`.
 
-The key is `AI_GATEWAY_API_KEY`, read from the host process by
-`Health.registeredCheckers`' instance, or passed explicitly to
-`JevSessionChecker.makeJevSessionChecker({ env, fetch })`. A host without the key
-never opens a connection. A bad key, a plan refusal, a rate limit, a dead socket,
-and the call's own 1.5 s deadline are all the same fact to a monitor, so each one
-returns the lifecycle report rather than inventing activity.
+## When Jev cannot answer
+
+There is no fallback. A host that binds `jev.session` must supply
+`AI_GATEWAY_API_KEY`, read from the host process by `Health.registeredCheckers`'
+instance or passed explicitly to
+`JevSessionChecker.makeJevSessionChecker({ env, fetch })`. Without it the probe
+opens no connection and fails with `JevProbeError({ reason: "unconfigured" })`,
+so the subject reads `probe-error`, not healthy.
+
+A bad key, a plan refusal, a rate limit, a dead socket, an unreadable body and
+the call's own 1.5 s deadline fail the probe the same way, with the reason that
+names the fault: `http` carrying the gateway's status, `unreachable`, `timeout`,
+or `malformed`. `Health.evaluate` records any failing probe as `outcome: "error"`
+with reason `probe-error` and no report, so the rollup reads the subject `stale`
+with activity `unknown`, health `unknown`, and reason `probe-error`, and the
+binding's `backoff` spaces the retries from five up to sixty seconds. A monitor
+that cannot see is worse when it looks calm, so it says so.
+
+Two cases are not Jev failing and keep the lifecycle answer: a session that is no
+longer alive, and a session whose output tail the host did not expose. There is
+nothing to ask about either one.
 
 The native host admits at most 128 subjects and eight simultaneous probes by
 default. It scans every five seconds, checks each subject every five seconds,

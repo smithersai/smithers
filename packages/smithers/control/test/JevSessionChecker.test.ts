@@ -37,15 +37,138 @@ const decided = (activity: string, confidence: number, waiting = 0.9) => ({
   providerMetadata: { typesafe: { confidence: { activity: confidence, question: waiting } } }
 })
 
+const observe = (checker: Health.HealthChecker, probeContext: Health.ProbeContext) =>
+  Effect.runPromise(Health.evaluate(resolved(checker), probeContext, stamp))
+
 const report = (checker: Health.HealthChecker, probeContext: Health.ProbeContext) =>
-  Effect.runPromise(Health.evaluate(resolved(checker), probeContext, stamp)).then((observation) => observation.report)
+  observe(checker, probeContext).then((observation) => observation.report)
+
+/** The typed failure the probe raised, read before `Health.evaluate` erases it. */
+const refusal = (checker: Health.HealthChecker, probeContext: Health.ProbeContext) =>
+  Effect.runPromise(Effect.flip(checker.probe(probeContext, undefined)))
+
+/** What a status surface renders for this subject after one observation. */
+const subject = async (checker: Health.HealthChecker, probeContext: Health.ProbeContext) => {
+  const observation = await observe(checker, probeContext)
+  return Health.rollup({
+    subjectId: probeContext.subjectId,
+    state: probeContext.state,
+    incarnation: stamp.incarnation,
+    latest: { observation, sequence: 1 },
+    now: observation.observedAt,
+    updatedAt: observation.observedAt
+  })
+}
+
+const rejecting = (transport: typeof globalThis.fetch): typeof globalThis.fetch =>
+  vi.fn<typeof globalThis.fetch>(transport)
 
 describe("Jev session checker", () => {
-  it("answers the lifecycle result without calling the gateway when no key is configured", async () => {
+  it("fails the probe without calling the gateway when no key is configured", async () => {
     const fetch = answering(decided("needs-input", 0.99))
     const checker = JevSessionChecker.makeJevSessionChecker({ env: {}, fetch })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
+    expect(await refusal(checker, context(prompt))).toMatchObject({
+      _tag: "JevProbeError",
+      reason: "unconfigured"
+    })
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("never sends the key or the terminal tail to a host that did not configure one", async () => {
+    const fetch = answering(decided("working", 0.9))
+    const checker = JevSessionChecker.makeJevSessionChecker({ env: { OTHER: "gateway-key" }, fetch })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "unconfigured" })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("fails the probe when the configured key is empty", async () => {
+    const fetch = answering(decided("working", 0.9))
+    const checker = JevSessionChecker.makeJevSessionChecker({ env: { AI_GATEWAY_API_KEY: "" }, fetch })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "unconfigured" })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([401, 403, 429, 500])("fails the probe on a %d refusal, carrying the status", async (status) => {
+    const checker = JevSessionChecker.makeJevSessionChecker({
+      env: key,
+      fetch: answering({ error: "refused" }, { status })
+    })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "http", status })
+  })
+
+  it("fails the probe when the socket dies", async () => {
+    const checker = JevSessionChecker.makeJevSessionChecker({
+      env: key,
+      fetch: rejecting(() => Promise.reject(new Error("socket hang up")))
+    })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "unreachable" })
+  })
+
+  it("fails the probe when the gateway never answers, and asks only once", async () => {
+    const fetch = rejecting((_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
+      })
+    )
+    const checker = JevSessionChecker.makeJevSessionChecker({ env: key, fetch, timeoutMs: 10 })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "timeout" })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ["the body is not JSON", () => Promise.resolve(new Response("<html>gateway</html>", { status: 200 }))],
+    ["no question was answered", () => Promise.resolve(new Response(JSON.stringify({ answers: {} })))],
+    [
+      "the answer is not a choice",
+      () => Promise.resolve(new Response(JSON.stringify({ answers: { activity: { type: "boolean" } } })))
+    ],
+    [
+      "the choice is not a string",
+      () => Promise.resolve(new Response(JSON.stringify({ answers: { activity: { type: "choice", choice: 7 } } })))
+    ]
+  ])("fails the probe when %s", async (_name, transport) => {
+    const checker = JevSessionChecker.makeJevSessionChecker({ env: key, fetch: rejecting(transport) })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "malformed" })
+  })
+
+  it("fails the probe on an option the questions never offered", async () => {
+    const checker = JevSessionChecker.makeJevSessionChecker({
+      env: key,
+      fetch: answering(decided("rebooting", 0.99))
+    })
+    expect(await refusal(checker, context(prompt))).toMatchObject({ reason: "malformed" })
+  })
+
+  it.each([
+    ["no key is configured", JevSessionChecker.makeJevSessionChecker({ env: {} })],
+    [
+      "the gateway refuses",
+      JevSessionChecker.makeJevSessionChecker({ env: key, fetch: answering({ error: "refused" }, { status: 403 }) })
+    ],
+    [
+      "the socket dies",
+      JevSessionChecker.makeJevSessionChecker({
+        env: key,
+        fetch: rejecting(() => Promise.reject(new Error("socket hang up")))
+      })
+    ],
+    [
+      "the body is unreadable",
+      JevSessionChecker.makeJevSessionChecker({
+        env: key,
+        fetch: rejecting(() => Promise.resolve(new Response("<html>gateway</html>")))
+      })
+    ]
+  ])("reads probe-error, never healthy, when %s", async (_name, checker) => {
+    const observation = await observe(checker, context(prompt))
+    expect(observation).toMatchObject({ outcome: "error", reason: "probe-error" })
+    expect(observation.report).toBeUndefined()
+    expect(await subject(checker, context(prompt))).toMatchObject({
+      activity: "unknown",
+      health: "unknown",
+      freshness: "stale",
+      reason: "probe-error"
+    })
   })
 
   it.each([
@@ -87,51 +210,12 @@ describe("Jev session checker", () => {
     expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
   })
 
-  it("refuses a choice the gateway reported no confidence for", async () => {
+  it("treats a choice the gateway reported no confidence for as an answer below the floor", async () => {
     const checker = JevSessionChecker.makeJevSessionChecker({
       env: key,
       fetch: answering({ answers: { activity: { type: "choice", choice: "needs-input" } } })
     })
     expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-  })
-
-  it("refuses an option the questions never offered", async () => {
-    const checker = JevSessionChecker.makeJevSessionChecker({
-      env: key,
-      fetch: answering(decided("rebooting", 0.99))
-    })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-  })
-
-  it.each([401, 403, 429, 500])("degrades a %d refusal to the lifecycle result", async (status) => {
-    const checker = JevSessionChecker.makeJevSessionChecker({
-      env: key,
-      fetch: answering({ error: "refused" }, { status })
-    })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-  })
-
-  it.each([
-    ["a transport failure", () => Promise.reject(new Error("socket hang up"))],
-    ["an unreadable body", () => Promise.resolve(new Response("<html>gateway</html>", { status: 200 }))],
-    ["an answer for no question asked", () => Promise.resolve(new Response(JSON.stringify({ answers: {} })))]
-  ])("degrades %s to the lifecycle result", async (_name, transport) => {
-    const checker = JevSessionChecker.makeJevSessionChecker({
-      env: key,
-      fetch: vi.fn<typeof globalThis.fetch>(transport)
-    })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-  })
-
-  it("abandons a gateway that never answers, without failing the probe", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
-      })
-    )
-    const checker = JevSessionChecker.makeJevSessionChecker({ env: key, fetch, timeoutMs: 10 })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it("sends one zero-retention evaluation carrying the clipped tail and both questions", async () => {
@@ -169,13 +253,6 @@ describe("Jev session checker", () => {
     expect(body.questions["question"]?.type).toBe("boolean")
   })
 
-  it("never sends the key or the terminal tail to a host that did not configure one", async () => {
-    const fetch = answering(decided("working", 0.9))
-    const checker = JevSessionChecker.makeJevSessionChecker({ env: { OTHER: "gateway-key" }, fetch })
-    expect(await report(checker, context(prompt))).toEqual({ activity: "unknown", reason: "ok" })
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
   it("reads the host's own key, gateway and deadline when nothing is injected", async () => {
     vi.stubEnv("AI_GATEWAY_API_KEY", "ambient-key")
     const ambient = vi.fn<typeof globalThis.fetch>(() =>
@@ -204,7 +281,7 @@ describe("Jev session checker", () => {
     expect(Health.makeRegistry({}, "run").resolve("anything").checker.id).toBe("lifecycle.run")
   })
 
-  it("leaves the probe budget above the request deadline so its own abort is what degrades", () => {
+  it("leaves the probe budget above the request deadline so the typed failure is what surfaces", () => {
     expect(JevSessionChecker.jevSessionChecker.defaults?.timeoutMs).toBeGreaterThan(
       JevSessionChecker.jevRequestTimeoutMs
     )

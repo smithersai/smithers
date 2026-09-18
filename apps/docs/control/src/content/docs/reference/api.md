@@ -642,11 +642,24 @@ waiting for a person. State is the session's `alive`, `exitCode`, and the newest
 
 An answer becomes a report only at confidence `jevConfidenceFloor` or above:
 `needs-input` reports reason `prompt-detected`, `working` and `idle` report `ok`.
-A missing `AI_GATEWAY_API_KEY`, an unexposed output tail, a session that is not
-alive, and every gateway refusal, timeout, or unreadable answer return the
-lifecycle report `{ activity: "unknown", reason: "ok" }`. `jevRequestTimeoutMs`
-is the deadline on the call and `jevProbeTimeoutMs` the wider probe budget this
-checker asks a binding for.
+A reading below the floor is Jev's own answer and reports
+`{ activity: "unknown", reason: "ok" }`.
+
+There is no fallback to another model or to a healthy-looking answer. An
+unexposed output tail and a session that is not alive keep the lifecycle report,
+because there is nothing to ask about. Every other way the probe cannot ask
+fails it with `JevProbeError`, whose `reason` is `unconfigured` (no
+`AI_GATEWAY_API_KEY`), `http` (with the gateway's `status`), `timeout`,
+`unreachable`, or `malformed` (a body that does not answer the question asked).
+`Health.evaluate` records a failing probe as `outcome: "error"` with reason
+`probe-error` and no report, so `rollup` reads the subject `stale`, activity
+`unknown`, health `unknown`, reason `probe-error` — never healthy — and
+`CheckPolicy.backoff` spaces the retries. A host that binds `jev.session` must
+supply the key.
+
+`jevRequestTimeoutMs` is the deadline on the call and `jevProbeTimeoutMs` the
+wider probe budget this checker asks a binding for, so the typed `timeout`
+failure surfaces instead of a bare `probe-timeout`.
 
 ## Monitor
 

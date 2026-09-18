@@ -9,15 +9,39 @@
  *
  * The state is the session's own lifecycle plus the newest bytes of its output.
  * The answer is a `ProbeReport` and nothing else: a checker's output never
- * authorizes a control mutation, and an unreachable, refused, slow, or
- * unreadable gateway degrades to the lifecycle answer rather than inventing
- * activity. The monitor's job is to notice a person is blocked, so a probe that
- * cannot tell must say it cannot tell.
+ * authorizes a control mutation. There is no fallback. An unconfigured key and
+ * an unreachable, refused, slow, or unreadable gateway fail the probe with a
+ * {@link JevProbeError}, which `Health.evaluate` records as reason
+ * `probe-error`; a stale `probe-error` never establishes activity and never
+ * reads healthy. A host that binds `jev.session` is asserting Jev answers for
+ * it, and a silent degrade would let that host page nobody while believing it
+ * was watched.
+ *
+ * Two cases are not Jev failing. A session that is no longer alive and a
+ * session whose output tail the host did not expose leave nothing to ask about,
+ * so they keep the lifecycle answer. An answer below
+ * {@link jevConfidenceFloor} is Jev's own decision that it does not know, and
+ * stays `unknown`.
  *
  * @since 1.0.0
  */
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import type { CheckPolicy, HealthChecker, ProbeContext, ProbeReport } from "./Health.ts"
+
+/** The probe could not ask Jev, or could not read what came back.
+ *
+ * `reason` is the fault class an operator acts on: `unconfigured` is a missing
+ * `AI_GATEWAY_API_KEY` and the host's own to fix, `http` carries the gateway's
+ * `status`, `timeout` is this call's deadline, `unreachable` is the transport,
+ * and `malformed` is a body that is not the answer to the question asked.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class JevProbeError extends Schema.TaggedError<JevProbeError>()("JevProbeError", {
+  reason: Schema.Literals(["unconfigured", "http", "timeout", "unreachable", "malformed"]),
+  status: Schema.optional(Schema.Number)
+}) {}
 
 /** The Vercel AI Gateway route that serves evaluation models.
  * @category constants
@@ -55,8 +79,8 @@ export const jevRequestTimeoutMs = 1_500
 /** The probe budget this checker asks a binding for.
  *
  * It sits above {@link jevRequestTimeoutMs} so this checker's own abort, which
- * degrades to the lifecycle answer, fires before `Health.evaluate` records a
- * bare `probe-timeout` that says nothing about the session.
+ * fails with a `timeout` reason of its own, fires before `Health.evaluate`
+ * records a bare `probe-timeout` that says nothing about which call was slow.
  *
  * @category constants
  * @since 1.0.0
@@ -91,7 +115,7 @@ export interface JevSessionCheckerOptions {
   readonly timeoutMs?: number | undefined
 }
 
-/** What the lifecycle session checker answers, and what every degradation here returns. */
+/** What the lifecycle session checker answers, for the two states with nothing to ask about. */
 const lifecycleReport: ProbeReport = { activity: "unknown", reason: "ok" }
 
 /** The options Jev chooses between, and what each one means to a reader of terminal output. */
@@ -122,14 +146,19 @@ const confidenceOf = (payload: unknown, id: string): number => {
   return typeof metadata === "number" ? metadata : 0
 }
 
-/** One evaluation, or `undefined` for every way the gateway can fail to answer one. */
+/** Whether the gateway answered the question this checker asked. */
+const offered = (choice: string): choice is keyof typeof activityCriteria => Object.hasOwn(activityCriteria, choice)
+
+/** One evaluation's decoded body, or the typed failure that says why there is none. */
 const evaluate = async (
   options: JevSessionCheckerOptions,
   key: string,
   state: { readonly alive: boolean; readonly exitCode: number | null; readonly outputTail: string }
 ): Promise<unknown> => {
+  const signal = AbortSignal.timeout(options.timeoutMs ?? jevRequestTimeoutMs)
+  let response: Response
   try {
-    const response = await (options.fetch ?? globalThis.fetch)(options.url ?? jevEvaluationUrl, {
+    response = await (options.fetch ?? globalThis.fetch)(options.url ?? jevEvaluationUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
@@ -141,26 +170,35 @@ const evaluate = async (
       },
       // Session output is the operator's terminal. It is read for one decision and never retained.
       body: JSON.stringify({ state, questions, providerOptions: { gateway: { zeroDataRetention: true } } }),
-      signal: AbortSignal.timeout(options.timeoutMs ?? jevRequestTimeoutMs)
+      signal
     })
-    if (!response.ok) {
-      await response.body?.cancel()
-      return undefined
-    }
+  } catch {
+    // A dead socket, a refused connection, a bad name and this call's own
+    // deadline all land here; only the signal knows which one it was.
+    return new JevProbeError({ reason: signal.aborted ? "timeout" : "unreachable" })
+  }
+  if (!response.ok) {
+    await response.body?.cancel()
+    // A bad key, a plan refusal and a rate limit differ to the operator who has
+    // to fix them, so the status travels with the failure.
+    return new JevProbeError({ reason: "http", status: response.status })
+  }
+  try {
     return await response.json()
   } catch {
-    // A bad key, a plan refusal, a rate limit, a dead socket and this call's own
-    // deadline are all the same fact to a monitor: nobody looked at the session.
-    return undefined
+    return new JevProbeError({ reason: "malformed" })
   }
 }
 
 /** Build a Jev session checker over an explicit environment and transport.
  *
- * The probe reads `AI_GATEWAY_API_KEY`. Without a key, without an exposed
- * output tail, or against a session that is no longer alive it answers exactly
- * what `Health.lifecycleSessionChecker` answers and never opens a connection,
- * so a host that has not configured Jev pays nothing for the binding.
+ * Without an exposed output tail, or against a session that is no longer
+ * alive, the probe answers exactly what `Health.lifecycleSessionChecker`
+ * answers and never opens a connection. Everything else that stops Jev from
+ * answering fails the probe with a {@link JevProbeError}, starting with a
+ * missing `AI_GATEWAY_API_KEY`: binding this checker is a promise that the key
+ * is there, and a host that breaks the promise must read `probe-error` rather
+ * than a clean unknown.
  *
  * @category constructors
  * @since 1.0.0
@@ -174,7 +212,7 @@ export const makeJevSessionChecker = (options: JevSessionCheckerOptions = {}): H
       const tail = session?.outputTail
       if (session === undefined || !session.alive || tail === undefined || tail === "") return lifecycleReport
       const key = (options.env ?? ambientEnvironment())["AI_GATEWAY_API_KEY"]
-      if (key === undefined || key === "") return lifecycleReport
+      if (key === undefined || key === "") return yield* Effect.fail(new JevProbeError({ reason: "unconfigured" }))
       const payload = yield* Effect.promise(() =>
         evaluate(options, key, {
           alive: session.alive,
@@ -182,22 +220,28 @@ export const makeJevSessionChecker = (options: JevSessionCheckerOptions = {}): H
           outputTail: tail.length > jevStateTailCharacters ? tail.slice(-jevStateTailCharacters) : tail
         })
       )
+      if (payload instanceof JevProbeError) return yield* Effect.fail(payload)
       const answer = (payload as { answers?: Record<string, { type?: string; choice?: unknown }> })?.answers?.[
         "activity"
       ]
-      if (answer?.type !== "choice" || typeof answer.choice !== "string") return lifecycleReport
+      const choice = answer?.type === "choice" && typeof answer.choice === "string" ? answer.choice : undefined
+      // A missing answer, a wrong-typed one, and an option the questions never
+      // offered are the gateway breaking the contract, not Jev deciding.
+      if (choice === undefined || !offered(choice)) {
+        return yield* Effect.fail(new JevProbeError({ reason: "malformed" }))
+      }
       // The boolean rides along for free and is recorded as evidence only. It
       // has to be scored against the choice before it earns a vote in it. A
       // boolean answer carries its probability directly and no confidence.
       const waiting = (payload as { answers?: Record<string, { probability?: unknown }> })?.answers?.["question"]
         ?.probability
       yield* Effect.annotateCurrentSpan({ "jev.waiting": typeof waiting === "number" ? waiting : -1 })
+      // Below the floor Jev has answered, and the answer is that it does not
+      // know. That is the decision, not a fallback around a broken gateway.
       if (confidenceOf(payload, "activity") < jevConfidenceFloor) return lifecycleReport
-      return answer.choice === "needs-input"
+      return choice === "needs-input"
         ? { activity: "needs-input", reason: "prompt-detected" }
-        : answer.choice === "working" || answer.choice === "idle"
-        ? { activity: answer.choice, reason: "ok" }
-        : lifecycleReport
+        : { activity: choice, reason: "ok" }
     })
 })
 

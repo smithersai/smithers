@@ -57,6 +57,11 @@ signature, is on the [API reference](https://control.smithers.sh/reference/api/)
 | `Migrations`                                        | The package's namespaced migration set and the layer that runs it.                                     |
 | `SystemFlows`                                       | The reserved CLI verb to flow-id catalog.                                                              |
 
+A host that binds `jev.session` must supply `AI_GATEWAY_API_KEY`. There is no
+fallback: without the key, or when the gateway refuses, times out, or answers
+something else, the probe fails with `JevProbeError` and the subject reads
+`probe-error`, never healthy.
+
 ```ts
 import { Control } from "@smthrs/control"
 import { Effect } from "effect"

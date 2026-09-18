@@ -89,7 +89,15 @@ session's 4 KiB output tail is sent to the Vercel AI Gateway with zero data
 retention and Jev answers whether the agent is working, idle, or waiting on a
 person. Without the key nothing is bound and the lifecycle default keeps
 answering unknown activity. A binding supplied in `LocalServerOptions.health`
-wins for its own subject.
+wins for its own subject, and a caller that binds `jev.session` itself must
+supply the key.
+
+There is no fallback to another model. Once the checker is bound, a missing key,
+a gateway refusal, a timeout, a dead socket, or a body that does not answer the
+question fails the probe with a typed `JevProbeError`, which the host records as
+`outcome: "error"` with reason `probe-error`. The subject then reads stale with
+unknown activity and unknown health rather than healthy, and the binding's
+backoff spaces the retries.
 
 The daemon stamps owner incarnation, observation time, expiry, and evidence
 cursor. It discards a report if the process changes lifecycle while its check
