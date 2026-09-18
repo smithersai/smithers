@@ -49,7 +49,7 @@ export const name = "classify"
  * @since 1.0.0
  */
 export const description =
-  "Ask Jev typed questions about any JSON state: boolean, choice (named options), or score (ordered rubric). Answers are probabilities and confidence, never text. Batch with states to judge many at once."
+  "Ask Jev typed questions about any JSON state: boolean, choice (named options), or score (ordered rubric). Answers are values with probabilities and confidence, never text. Batch with states."
 
 /**
  * The most states one call may carry.
@@ -95,7 +95,7 @@ const atLeastOneQuestion = Schema.makeFilter<Readonly<Record<string, unknown>>>(
  * @since 1.0.0
  */
 export const State = Schema.Json.annotate({
-  description: "The JSON value the questions are about, at most 32 KiB"
+  description: "The JSON value the questions are about, at most 32 KiB; returns { answers, confidence, latencyMs }"
 }).pipe(Schema.check(withinStateBytes))
 
 /**
@@ -106,7 +106,7 @@ export const State = Schema.Json.annotate({
  */
 export const Questions = Schema.Record(Schema.String, Classifier.Question).annotate({
   description:
-    "Questions keyed by id: { type: \"boolean\", instructions, criteria?: { true, false } }, { type: \"choice\", instructions, criteria: { option: meaning } }, or { type: \"score\", instructions, criteria: [rung, ...] }"
+    "Questions keyed by id, each answered under answers[id] with confidence[id] from 0 to 1: { type: \"boolean\", instructions, criteria?: { true, false } } answers { value, probability }; { type: \"choice\", instructions, criteria: { option: meaning } } answers { value, probabilities, confidence }; { type: \"score\", instructions, criteria: [rung, ...] } answers { value, label, probabilities, confidence }"
 }).pipe(Schema.check(atLeastOneQuestion))
 
 /**
@@ -116,7 +116,8 @@ export const Questions = Schema.Record(Schema.String, Classifier.Question).annot
  * @since 1.0.0
  */
 export const States = Schema.Array(State).annotate({
-  description: "Up to 64 states to judge with the same questions, one result each"
+  description:
+    "Up to 64 states to judge with the same questions; returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] } in the order given"
 }).check(Schema.isMinLength(1), Schema.isMaxLength(MAX_STATES))
 
 /**
@@ -367,6 +368,34 @@ export interface Curated {
   readonly run: (input: unknown) => Effect.Effect<Output, Classifier.ClassifierError, Evaluator.Evaluator>
 }
 
+/**
+ * What one answer looks like for a question of each shape, as the cell reads
+ * it back: the choice options and score rungs are spelled out so the catalog
+ * says which `value` can come back.
+ */
+const answerShape = (question: Classifier.Question): string =>
+  question.type === "boolean"
+    ? "boolean { value, probability }"
+    : question.type === "choice"
+    ? `choice ${Object.keys(question.criteria).join("|")} { value, probabilities, confidence }`
+    : `score ${question.criteria.join("<")} { value, label, probabilities, confidence }`
+
+const batchContract =
+  "Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }."
+
+/**
+ * The answer contract of one curated classifier, derived from its declared
+ * questions so the catalog can never drift from the ids and shapes a cell
+ * reads under `answers`.
+ *
+ * @category descriptions
+ * @since 1.0.0
+ */
+export const answerContract = (questions: Classifier.Questions): string =>
+  `Answers: ${
+    Object.entries(questions).map(([id, question]) => `${id} ${answerShape(question)}`).join("; ")
+  }. ${batchContract}`
+
 const isBatch = (input: unknown): input is { readonly states: ReadonlyArray<unknown> } =>
   typeof input === "object" && input !== null && Array.isArray((input as { readonly states?: unknown }).states)
 
@@ -380,7 +409,9 @@ const declaresStates = (state: Schema.Top): boolean => {
  *
  * The input is the classifier's state schema, or `{ states }` for a batch of
  * them, each held to {@link MAX_STATE_BYTES}; the description is the
- * classifier's; the output is the same shape as the ad-hoc flow's. The state
+ * classifier's followed by its {@link answerContract}, so a cell can write
+ * `answers.<id>.value` from the catalog alone; the output is the same shape
+ * as the ad-hoc flow's. The state
  * is encoded through the classifier's schema before it is sent, exactly as
  * `Classifier.evaluate` encodes it. A state schema that itself declares a
  * `states` field would make the two input shapes indistinguishable, so it is
@@ -413,7 +444,7 @@ export const curated = (classifier: AnyClassifier): Curated => {
     )
   const flow = Flow.make({
     name,
-    description: classifier.description,
+    description: `${classifier.description} ${answerContract(classifier.questions)}`,
     input,
     output: Output,
     capabilities,

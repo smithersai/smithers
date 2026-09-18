@@ -202,10 +202,32 @@ describe("Classify.curated", () => {
   it("names the flow after the classifier and carries its description and digest", () => {
     expect(curated.name).toBe("classify/triage/relevance")
     expect(curated.flow.name).toBe("classify/triage/relevance")
-    expect(curated.flow.description).toBe(Classifiers.relevance.description)
+    expect(curated.flow.description).toContain(Classifiers.relevance.description)
     expect(curated.digest).toBe(Classifiers.relevance.digest)
     expect(curated.flow.capabilities).toEqual(Classify.capabilities)
     expect(curated.flow.effects).toBe(Classify.effects)
+  })
+
+  it("tells the catalog every question id, each answer's shape, and the batch shape", () => {
+    // A cell writes `c.answers.role.value` from the catalog alone; the ids
+    // and shapes come from the declared questions, so they cannot drift.
+    expect(curated.flow.description).toBe(
+      `${Classifiers.relevance.description} Answers: relevant boolean { value, probability }; role choice implementation|fixture|unrelated { value, probabilities, confidence }; risk score none<low<medium<high { value, label, probabilities, confidence }. Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }.`
+    )
+    for (const classifier of Classifiers.all) {
+      const description = Classify.curated(classifier).flow.description ?? ""
+      for (const id of Object.keys(classifier.questions)) expect(description, classifier.id).toContain(`${id} `)
+    }
+    // The ad-hoc door keeps a short description (Tiers pins 200 characters)
+    // and says the shapes on the input schema the catalog prints instead.
+    const adHoc = JSON.stringify(Schema.toJsonSchemaDocument(Classify.Input, { onExcessProperty: "error" }))
+    expect(adHoc).toContain("answers { value, probability }")
+    expect(adHoc).toContain("answers { value, probabilities, confidence }")
+    expect(adHoc).toContain("answers { value, label, probabilities, confidence }")
+    expect(adHoc).toContain(
+      "returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }"
+    )
+    expect(adHoc).toContain("returns { answers, confidence, latencyMs }")
   })
 
   it("accepts the classifier's state or a batch of them, and refuses anything else", () => {

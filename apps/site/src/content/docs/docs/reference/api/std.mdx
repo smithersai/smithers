@@ -51,16 +51,16 @@ The modules are `ApplyPatch`, `Bash`, `Classify`, `Edit`, `Explore`, `Fetch`,
 
 Some of them export more than the common nine:
 
-| Module         | Additional exports                                                                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                                                                                                     |
-| `Classify`     | `MAX_STATES`, `MAX_STATE_BYTES`, `CONCURRENCY`, `State`, `Questions`, `States`, `Verdict`, `BatchResult`, `ask`, `askAll`, `curated`; `run` fails with `ClassifierError` |
-| `Explore`      | `make(options: { model?: string })`, and no `run`                                                                                                                        |
-| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                                                                                                 |
-| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE`                                                                              |
-| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                                                                                                 |
-| `UpdatePlan`   | `StepStatus`, `Plan`                                                                                                                                                     |
-| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                                                                                                 |
+| Module         | Additional exports                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                                                                                                                       |
+| `Classify`     | `MAX_STATES`, `MAX_STATE_BYTES`, `CONCURRENCY`, `State`, `Questions`, `States`, `Verdict`, `BatchResult`, `ask`, `askAll`, `answerContract`, `curated`; `run` fails with `ClassifierError` |
+| `Explore`      | `make(options: { model?: string })`, and no `run`                                                                                                                                          |
+| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                                                                                                                   |
+| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE`                                                                                                |
+| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                                                                                                                   |
+| `UpdatePlan`   | `StepStatus`, `Plan`                                                                                                                                                                       |
+| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                                                                                                                   |
 
 ## Manifest
 
@@ -121,7 +121,9 @@ schema and atomic questions.
 
 `Classify.curated(classifier)` turns any of them, or a host's own, into a
 `{ name, digest, flow, run }` whose input is the classifier's state or
-`{ states }`. See [Judge state with classify](https://std.smithers.sh/guides/classify-with-jev/).
+`{ states }` and whose description ends with `Classify.answerContract`, the
+answer ids and shapes derived from the questions. See
+[Judge state with classify](https://std.smithers.sh/guides/classify-with-jev/).
 
 ## Probe
 

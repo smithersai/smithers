@@ -144,7 +144,8 @@ describe("the standard capability catalog", () => {
     )
     const curated = bindings[1]!.descriptor
     expect(curated.name).toBe("classify/check/verdict")
-    expect(curated.description).toBe(Classifiers.checkVerdict.description)
+    expect(curated.description).toContain(Classifiers.checkVerdict.description)
+    expect(curated.description).toContain("rightReason boolean { value, probability }")
     expect(curated.body.contentDigest).toBe(Classifiers.checkVerdict.digest)
     expect(curated.effects.tier).toBe("sealed")
     expect(curated.capabilities).toEqual(["model:call:*"])

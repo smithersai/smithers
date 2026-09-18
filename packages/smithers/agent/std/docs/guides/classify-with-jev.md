@@ -69,8 +69,11 @@ or score's largest probability.
 
 A host can declare classifiers once, with `Classifier.make`, and bind each as
 its own flow named `classify/<id>`. The catalog then shows the model what each
-one judges, its input is the classifier's own state schema, and the questions
-never cross the wire from the cell. Three ship in `Classifiers`:
+one judges and, derived from the declared questions, every answer id with its
+shape (`role choice implementation|fixture|unrelated { value, probabilities,
+confidence }`), so a cell writes `answers.role.value` without a frame spent
+printing the result. Its input is the classifier's own state schema, and the
+questions never cross the wire from the cell. Three ship in `Classifiers`:
 
 | Flow                        | State                                 | Answers                                                                        |
 | --------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
