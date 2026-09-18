@@ -1,7 +1,7 @@
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -322,17 +322,30 @@ describe("unified root command dispatch", () => {
     const directory = mkdtempSync(join(tmpdir(), "smithers-opencode-cli-"))
     const before = process.cwd()
     ports.serveHost.mockImplementation(() => Effect.void)
+    const written: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      written.push(String(chunk))
+      return true
+    })
     try {
-      await host(
-        { directory, port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 7, scripted: true },
-        { credential: undefined, environment: {} },
-        { quiet: true }
-      )
+      const serve = () =>
+        host(
+          { directory, port: 4096, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 7, scripted: true },
+          { credential: undefined, environment: {} },
+          { quiet: true }
+        )
+      // A clean directory: the guard runs before the driver creates the database.
+      await serve()
+      expect(existsSync(join(directory, ".smithers", "opencode.sqlite"))).toBe(true)
+      // The next boot finds the database and still says nothing about 0.x state.
+      await serve()
     } finally {
+      stderr.mockRestore()
       process.chdir(before)
       rmSync(directory, { recursive: true, force: true })
     }
-    expect(ports.serveHost).toHaveBeenCalledOnce()
+    expect(written.filter((line) => line.includes("0.x state"))).toEqual([])
+    expect(ports.serveHost).toHaveBeenCalledTimes(2)
     expect(ports.serveHost.mock.calls[0]![0]).toMatchObject({ directory, seat: "scripted:demo", maxFrames: 7 })
     // The scripted seat has no price; a starter seat's price rides along the same way.
     expect(ports.serveHost.mock.calls[0]![0]).toHaveProperty("pricing", undefined)

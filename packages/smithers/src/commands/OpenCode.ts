@@ -161,6 +161,9 @@ export const host = async (
   if (!connection.quiet) process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}.\n`)
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
+      // The guard samples the directory before the driver creates
+      // `.smithers/opencode.sqlite` under it, so a clean checkout is never
+      // told it holds 0.x state.
       yield* Globals.guard(globals)
       return yield* Serve.host({
         directory,
@@ -169,9 +172,8 @@ export const host = async (
         seat,
         maxFrames: options.maxFrames,
         pricing: Pricing.pricingOf(seat)
-      })
+      }).pipe(Effect.provide(driver))
     }).pipe(
-      Effect.provide(driver),
       Effect.provide(RedactedLogger.layer()),
       Effect.provideService(Logger.LogToStderr, true)
     ),

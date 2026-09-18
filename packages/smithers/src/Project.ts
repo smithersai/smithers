@@ -192,15 +192,31 @@ export const legacyDatabases = (
 
 const buildDefinitionFiles = new Set(["WORKSPACE.ts", "FACTORY.ts", "factory.json", "home.json", "target-index.json"])
 
-const onlyBuildDefinitions = (directory: string, exists: (path: string) => boolean): boolean => {
-  if (!exists(join(directory, "WORKSPACE.ts")) || !exists(join(directory, "FACTORY.ts"))) return false
+/**
+ * The 1.0 databases `smithers opencode` keeps under `.smithers`: a current
+ * server's state, not a 0.x run store, so they never make the directory
+ * legacy state.
+ */
+const currentDatabaseFiles = new Set(["opencode.sqlite", "opencode.sqlite-wal", "opencode.sqlite-shm"])
+
+/**
+ * Whether a `.smithers` directory holds only what 1.0 writes there: the
+ * current build definitions, the opencode database, or both. An empty
+ * directory, an unknown file, a subdirectory and unreadable metadata all
+ * still read as 0.x state.
+ */
+const onlyCurrentState = (directory: string, exists: (path: string) => boolean): boolean => {
+  let entries: Array<{ readonly name: string; readonly isFile: () => boolean }>
   try {
-    return readdirSync(directory, { withFileTypes: true }).every((entry) =>
-      entry.isFile() && buildDefinitionFiles.has(entry.name)
-    )
+    entries = readdirSync(directory, { withFileTypes: true })
   } catch {
     return false
   }
+  if (!entries.every((entry) => entry.isFile())) return false
+  const rest = entries.filter((entry) => !currentDatabaseFiles.has(entry.name))
+  if (rest.length === 0) return entries.length > 0
+  if (!exists(join(directory, "WORKSPACE.ts")) || !exists(join(directory, "FACTORY.ts"))) return false
+  return rest.every((entry) => buildDefinitionFiles.has(entry.name))
 }
 
 /**
@@ -210,8 +226,9 @@ const onlyBuildDefinitions = (directory: string, exists: (path: string) => boole
  * nothing: a repository mid-migration would otherwise print the notice on
  * every command forever.
  *
- * A `.smithers` directory containing only current build definitions is also
- * excluded. Unknown files, subdirectories and unreadable metadata remain
+ * A `.smithers` directory containing only current build definitions, only
+ * the `opencode.sqlite` database `smithers opencode` keeps there, or both, is
+ * also excluded. Unknown files, subdirectories and unreadable metadata remain
  * legacy markers.
  *
  * @category getters
@@ -227,7 +244,7 @@ export const legacyState = (
     if (!exists(join(directory, ".flows"))) {
       for (const marker of legacyMarkers) {
         const candidate = join(directory, marker)
-        if (exists(candidate) && !(marker === ".smithers" && onlyBuildDefinitions(candidate, exists))) {
+        if (exists(candidate) && !(marker === ".smithers" && onlyCurrentState(candidate, exists))) {
           found.push(candidate)
         }
       }

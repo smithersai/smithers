@@ -37,6 +37,17 @@ it("distinguishes current build definitions from legacy run state without hiding
   writeFileSync(join(root, ".smithers", "runs.sqlite"), "")
   expect(Project.legacyState(root)).toEqual([join(root, ".smithers")])
   rmSync(join(root, ".smithers", "runs.sqlite"))
+  // The opencode server's own database is 1.0 state, beside build definitions or alone.
+  for (const file of ["opencode.sqlite", "opencode.sqlite-wal", "opencode.sqlite-shm"]) {
+    writeFileSync(join(root, ".smithers", file), "")
+  }
+  expect(Project.legacyState(root)).toEqual([])
+  const served = project(".smithers/", ".smithers/opencode.sqlite")
+  expect(Project.legacyState(served)).toEqual([])
+  writeFileSync(join(served, ".smithers", "runs.db"), "")
+  expect(Project.legacyState(served)).toEqual([join(served, ".smithers")])
+  const empty = project(".smithers/")
+  expect(Project.legacyState(empty)).toEqual([join(empty, ".smithers")])
   mkdirSync(join(root, ".smithers", "unknown-state"))
   expect(Project.legacyState(root)).toEqual([join(root, ".smithers")])
   rmSync(join(root, ".smithers"), { recursive: true })

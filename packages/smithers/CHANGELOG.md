@@ -10,6 +10,18 @@
   which replays the recorded turn instead of running a model; every other turn
   runs on the durable engine driver under `<directory>/.smithers`.
 
+### Fixed
+
+- `smithers opencode` no longer prints the 0.x state notice for its own
+  `.smithers/opencode.sqlite`: the guard samples the directory before the
+  driver creates the database, and the database is not a 0.x marker.
+- `smithers opencode` passes `--max-frames` to the server as well as the
+  engine, so health evaluations and records report the budget the engine
+  enforces, and passes the seat's price so the header's cost is not `$0.00`.
+- A seat the provider refuses (a key with no credit, a bad key) is logged
+  with the seat, the provider's message, and the hint to pass `--seat` or
+  set `SMITHERS_SEAT`.
+
 ### Changed
 
 - Breaking: default MCP discovery and dispatch exclude approval/denial and
