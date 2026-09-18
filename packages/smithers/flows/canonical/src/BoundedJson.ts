@@ -214,12 +214,12 @@ const walk = (
       const prototype = strict ? Object.getPrototypeOf(value) : undefined
       if (Array.isArray(value)) {
         if (strict && prototype !== Array.prototype) return refuse("object", "must be an ordinary array")
-        const descriptor = strict ? undefined : Object.getOwnPropertyDescriptor(value, "length")
-        const length = strict
-          ? value.length
-          : descriptor !== undefined && "value" in descriptor
-          ? descriptor.value
-          : undefined
+        // `length` is always an own, non-configurable data property of an
+        // array, and a Proxy that reports it as absent or as an accessor
+        // throws rather than being believed, which lands in the `inspection`
+        // refusal below. A Proxy may still report a bogus numeric value, so
+        // the value itself is checked; its presence needs no check.
+        const length = strict ? value.length : Object.getOwnPropertyDescriptor(value, "length")!.value
         if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
           return refuse("arrayLength", "has an invalid array length")
         }
@@ -285,7 +285,7 @@ const walk = (
           if (!strict.boundedText && reservedKeys.has(key)) {
             return refuse("key", "uses a reserved property name", [...path, key])
           }
-          if (keyBytes > (limits.maxKeyBytes ?? Infinity)) {
+          if (keyBytes > limits.maxKeyBytes!) {
             return refuse("key", `exceeds the ${limits.maxKeyBytes}-byte key limit`, at)
           }
           if (reservedKeys.has(key)) return refuse("key", "uses a reserved property name", [...path, key])

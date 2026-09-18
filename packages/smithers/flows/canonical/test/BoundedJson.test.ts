@@ -396,6 +396,81 @@ describe("shared canonical and strict tree admission", () => {
       .toMatchObject({ ok: false, path: "$[key:0]", complaint: "has an ill-formed property name" })
   })
 
+  it("refuses strict array members that are not enumerable own data properties", () => {
+    const accessor = Object.defineProperty([1], "0", { get: () => 1, enumerable: true, configurable: true })
+    expect(BoundedJson.admitStrict(accessor, strictLimits))
+      .toMatchObject({ ok: false, path: "$[0]", complaint: "must be an enumerable data property" })
+    const hidden = Object.defineProperty([1], "0", { enumerable: false })
+    expect(BoundedJson.admitStrict(hidden, strictLimits))
+      .toMatchObject({ ok: false, path: "$[0]", complaint: "must be an enumerable data property" })
+    // A hole whose slot is paid for by an unrelated own key passes the
+    // key-count check and is caught by the per-index descriptor preflight.
+    const disguised: Array<unknown> = []
+    disguised.length = 1
+    Object.defineProperty(disguised, "name", { value: 1, enumerable: true })
+    expect(BoundedJson.admitStrict(disguised, strictLimits))
+      .toMatchObject({ ok: false, path: "$[0]", complaint: "must be an enumerable data property" })
+  })
+
+  it("refuses strict records carrying symbol keys before reading any member", () => {
+    let reads = 0
+    const value = Object.defineProperty({}, Symbol("hidden"), { enumerable: true, get: () => ++reads })
+    expect(BoundedJson.admitStrict(value, strictLimits))
+      .toMatchObject({ ok: false, path: "$", complaint: "must not contain symbol keys" })
+    expect(reads).toBe(0)
+    expect(BoundedJson.admit(value, strictLimits)).toMatchObject({ ok: false, code: "symbol" })
+  })
+
+  it("refuses over-budget keys by position under bounded text and by name without it", () => {
+    // `boundedText` preflights the UTF-16 length, so an over-long key is
+    // refused before its bytes are counted and is named by position only.
+    const long = "k".repeat(65)
+    expect(BoundedJson.admitStrict({ [long]: 1 }, strictLimits, { boundedText: true }))
+      .toMatchObject({ ok: false, path: "$[key:0]", complaint: "exceeds the 64-byte key limit" })
+    expect(BoundedJson.admitStrict({ [long]: 1 }, strictLimits))
+      .toMatchObject({ ok: false, path: `$.${long}`, complaint: "exceeds the 64-byte key limit" })
+    // 63 two-byte characters are inside the 64-unit length but encode to 128 bytes.
+    const wide = "é".repeat(63)
+    expect(BoundedJson.admitStrict({ [wide]: 1 }, strictLimits))
+      .toMatchObject({ ok: false, path: `$[${JSON.stringify(wide)}]`, complaint: "exceeds the 64-byte key limit" })
+    expect(BoundedJson.admitStrict({ [wide]: 1 }, strictLimits, { boundedText: true }))
+      .toMatchObject({ ok: false, path: "$[key:0]", complaint: "exceeds the 64-byte key limit" })
+  })
+
+  it("refuses reserved property names whether or not text is preflighted", () => {
+    for (const boundedText of [false, true]) {
+      expect(BoundedJson.admitStrict({ ["__proto__"]: 1 }, strictLimits, { boundedText }))
+        .toMatchObject({ ok: false, path: "$.__proto__", complaint: "uses a reserved property name" })
+    }
+  })
+
+  it("names the configured limit in every strict budget refusal", () => {
+    expect(BoundedJson.admitStrict("hello", { ...strictLimits, maxBytes: 3 }))
+      .toMatchObject({ ok: false, path: "$", complaint: "exceeds the 3-byte limit" })
+    expect(BoundedJson.admitStrict([1, 2, 3], { ...strictLimits, maxMembers: 2 }))
+      .toMatchObject({ ok: false, path: "$", complaint: "exceeds the 2-member limit" })
+    expect(BoundedJson.admitStrict([1, 2, 3], { ...strictLimits, maxNodes: 2 }))
+      .toMatchObject({ ok: false, path: "$[1]", complaint: "exceeds the 2-node limit" })
+    const wide = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`k${index}`, 0]))
+    expect(BoundedJson.admitStrict(wide, strictLimits))
+      .toMatchObject({ ok: false, path: "$", complaint: "exceeds the 16-member limit" })
+  })
+
+  it("requires ordinary containers that can be inspected without running user code", () => {
+    expect(BoundedJson.admitStrict(Object.setPrototypeOf([1], null), strictLimits))
+      .toMatchObject({ ok: false, path: "$", complaint: "must be an ordinary array" })
+    expect(BoundedJson.admitStrict(new Date(0), strictLimits))
+      .toMatchObject({ ok: false, path: "$", complaint: "must be an ordinary record" })
+    const hostile = new Proxy({}, {
+      ownKeys: () => {
+        throw new Error("inspection would run user code")
+      }
+    })
+    expect(BoundedJson.admitStrict(hostile, strictLimits))
+      .toMatchObject({ ok: false, path: "$", complaint: "could not be inspected without executing user code" })
+    expect(BoundedJson.admit(hostile, strictLimits)).toMatchObject({ ok: false, code: "inspection" })
+  })
+
   it("honors configured deep limits without depending on the JavaScript call stack", () => {
     let value: unknown = null
     for (let depth = 0; depth < 2_000; depth++) value = [value]
