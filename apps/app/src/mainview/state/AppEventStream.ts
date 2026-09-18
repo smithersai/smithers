@@ -13,7 +13,13 @@ import { validateAppTransition } from "./AppTransitionValidation"
 import { freezeProjectionValue, isImmutableProjectionValue } from "./ImmutableProjection"
 
 export const APP_EVENT_FORMAT_VERSION = 1
-// Bump whenever APP_PROJECTION_SCHEMAS row shapes or the transition set change.
+/*
+ * Bump whenever an already-persisted row would reproject differently: a field
+ * removed, renamed or retyped, or a changed transition set. A bump retires the
+ * stream and clears the event log (AppStore.ts, "projector-upgrade"), so an
+ * added OPTIONAL field owes none — every stored row still parses to the same
+ * bytes and the same hash, which AppStore.events.test.ts pins per field.
+ */
 export const APP_PROJECTOR_VERSION = 9
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([

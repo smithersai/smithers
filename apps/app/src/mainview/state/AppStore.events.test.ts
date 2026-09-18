@@ -438,6 +438,30 @@ describe("the live store's authoritative event path", () => {
     expect(envelopeRows(storage)).toEqual(before)
   })
 
+  test("a dispatcher row persisted before slug joined it replays on this projector, unchanged and unupgraded", async () => {
+    const storage = memoryStorage()
+    const before = await open(storage)
+    const triggers = [{ id: "trg-1", flowId: "librarian/wiki", cron: "0 * * * *", timezone: "UTC", enabled: true }]
+    await before.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "trigger-list", kind: "trigger-list", title: "Dispatcher", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "alpha/one", live: true, triggers }
+    } }).isPersisted.promise
+    const written = await before.eventHistory()
+    expect((await before.verifyState()).valid).toBe(true)
+    await before.dispose?.()
+    opened.splice(opened.indexOf(before), 1)
+    const restored = await open(storage)
+    const replayed = await restored.eventHistory()
+    expect(replayed.checkpoint.reason).not.toBe("projector-upgrade")
+    expect(replayed.head.streamId).toBe(written.head.streamId)
+    expect(replayed.head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    const card = restored.collections.cards.get("trigger-list")!
+    if (card.kind !== "trigger-list") throw new Error("Missing dispatcher card")
+    expect(card.payload.triggers).toEqual(triggers)
+    expect(card.payload.triggers[0]).not.toHaveProperty("slug")
+  })
+
   test("a failed upgrade commit preserves the old authority for retry", async () => {
     const inner = memoryStorage()
     await installProjectorFixture(inner, 1)
