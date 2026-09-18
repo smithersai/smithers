@@ -16,7 +16,7 @@ importable as `@smthrs/harness/<Module>`.
 | Module | Public exports | Description |
 | --- | --- | --- |
 | `HarnessError` | `HarnessErrorCode`, `HarnessError` | Stable failures reported at the harness translation boundary. |
-| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
+| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
 | `Plan` | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent` | Local structural plan nodes used at the harness-to-engine boundary. |
 | `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
@@ -27,7 +27,7 @@ importable as `@smthrs/harness/<Module>`.
 | `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
 | `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
 | `Sandbox` | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome` | The deterministic script sandbox port. |
-| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `make`, `teach`, `run` | The cell-first controller. |
+| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `make`, `teach`, `run` | The cell-first controller. |
 | `CellHistory` | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop` | The source of every cell the current turn executed. |
 | `CellCalls` | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make` | Registry-backed resolution for the flow calls a cell makes. |
 | `FlowBinding` | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry` | The executable-flow binding contract. |
@@ -37,7 +37,8 @@ importable as `@smthrs/harness/<Module>`.
 | `NarrowedCheck` | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger` | The narrowing ledger: which checks this run has run, and over which tree. |
 | `CellValidation` | `Validation`, `normalize`, `validate` | Cell validation at the boundary. |
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
-| `UnresolvedFailure` | `exitStatusKey`, `failed`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
+| `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
+| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `Check`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `reason`, `newest`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
@@ -81,6 +82,7 @@ Serializable events emitted by harness adapters.
 | `UnmovedDemanded` | class | events | The controller refusing one completion with no change behind it. |
 | `UnresolvedDemanded` | class | events | The controller refusing one completion that stepped around a failing check. |
 | `NarrowOnlyDemanded` | class | events | The controller refusing one completion that holds a single reading. |
+| `ClaimDemanded` | class | events | What Jev read off one completion claim, whether or not it braked. |
 | `SufficiencyObserved` | class | events | The controller telling a run that its own evidence is complete. |
 | `VacuousVerificationObserved` | class | events | The controller telling a run that its stored proof was already green. |
 | `MutationObserved` | class | events | What one frame did to the workspace, and how the controller knows. |
@@ -586,11 +588,37 @@ The failing check a completion stepped around.
 | --- | --- | --- | --- |
 | `exitStatusKey` | const | identifiers | The reserved key a flow reports its subject's exit status under. |
 | `failed` | const | predicates | Whether a settled call's result reports a failing exit status. |
+| `exitStatus` | const | getters | The exit status a settled call's result reports about its subject. |
 | `passed` | const | predicates | Whether a settled call's result reports a passing exit status. |
 | `Displaced` | interface | models | A failing check, paired with the reading the run took in its place. |
 | `revisits` | const | predicates | Whether a later check asks about the same subject as an earlier one. |
 | `find` | const | conversions | Finds the failing check a completion replaced rather than answered. |
 | `demand` | const | constructors | States which reading failed, which one replaced it, and what ends it. |
+
+## CompletionClaim
+
+`import * as CompletionClaim from "@smthrs/harness/CompletionClaim"`
+
+The completion nothing in the record contradicts.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `outputBytes` | const | constants | The most of one check's result the brake sends, in UTF-8 bytes. |
+| `proseBytes` | const | constants | The most of the task and the claim the brake sends, in UTF-8 bytes each. |
+| `disprovenAt` | const | constants | At or below this probability of "complete", the claim is handed back. |
+| `overclaimedAt` | const | constants | At or above this probability of "overclaims", the claim is handed back. |
+| `Check` | const | models | The last check the completing frame ran, as the brake states it. |
+| `Evidence` | const | schemas | Everything the brake sends, and the whole of it. |
+| `classifier` | const | classifiers | The one classifier this brake asks, declared once. |
+| `Probabilities` | interface | models | The two probabilities one evaluation came back with. |
+| `Reading` | interface | models | One reading, and what asking for it cost. |
+| `find` | const | conversions | Whether one reading is confident enough to hand the completion back. |
+| `reason` | const | getters | Which of the two failures a reading is about. |
+| `newest` | const | conversions | The newest `outputBytes` of a check's result, stating what it dropped. |
+| `read` | const | conversions | Asks Jev about one completion, or says nothing at all. |
+| `demand` | const | constructors | States what the evidence does not show, and names the two ways out. |
+| `quote` | const | conversions | The canonical JSON of a value, which is how this brake quotes one. |
+| `prose` | const | conversions | The head of a prose field, bounded by `proseBytes`. |
 
 ## Sufficiency
 

@@ -15,6 +15,7 @@ import { ModelRequest } from "@smthrs/model"
 import { Result, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type * as Cell from "./Cell.ts"
+import * as CompletionClaim from "./CompletionClaim.ts"
 import type * as EngineLike from "./EngineLike.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as DemandText from "./internal/demandText.ts"
@@ -195,6 +196,7 @@ const decodeNarrowedDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowedDem
 const decodeNarrowOnlyDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowOnlyDemanded)
 const decodeUnmovedDemanded = Schema.decodeUnknownResult(AgentEvent.UnmovedDemanded)
 const decodeUnresolvedDemanded = Schema.decodeUnknownResult(AgentEvent.UnresolvedDemanded)
+const decodeClaimDemanded = Schema.decodeUnknownResult(AgentEvent.ClaimDemanded)
 
 const transcriptMessage = (
   message: ModelRequest.AssistantMessage
@@ -405,6 +407,16 @@ export const projectStateResult = (
         const decoded = decode(decodeUnresolvedDemanded, entry)
         if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
         appendDemand(DemandText.unresolved(decoded.success.flow, decoded.success.failed, decoded.success.instead))
+        break
+      }
+      case eventType.claimDemanded: {
+        const decoded = decode(decodeClaimDemanded, entry)
+        if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
+        // The reading that let a completion through was journaled too, and it
+        // put nothing in front of the model, so only a firing is replayed.
+        if (decoded.success.demanded) {
+          appendDemand(DemandText.claim(CompletionClaim.reason(decoded.success)))
+        }
         break
       }
       case eventType.cellSettled: {

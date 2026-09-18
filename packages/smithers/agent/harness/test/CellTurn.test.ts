@@ -7,6 +7,7 @@
  */
 import { Capability, Permission } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, Option, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
@@ -3504,5 +3505,130 @@ describe("CellTurn context ordering", () => {
     // No counters, no timestamps, no unordered keys anywhere in the span.
     const spans = model.recorder.requests.map(stable)
     expect(new Set(spans).size).toBe(1)
+  })
+})
+
+/**
+ * The sixth brake, through a whole run.
+ *
+ * `CompletionClaim.test.ts` pins the decision rule and the precedence on one
+ * call of `judgeCompletion`; this is the loop proving the two things only a
+ * run can show — that a reading which lets the completion through is
+ * journaled and puts nothing in front of the model, and that a reading which
+ * does not is handed to the next frame like every other demand.
+ */
+describe("CellTurn unsupported claim", () => {
+  const shell = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
+
+  /** The fixture window plus the task, where `Agent` puts it. */
+  const tasked = ContextWindow.make({
+    modelId: "test-model",
+    segments: [
+      { kind: "system", zone: "prefix", content: [ModelRequest.SystemPart.make({ text: "cell contract" })] },
+      {
+        kind: "instructions",
+        zone: "prefix",
+        content: [ModelRequest.SystemPart.make({ text: "The task for this run:\n\nKeep the query string." })]
+      },
+      { kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("start")] }
+    ]
+  })
+
+  const claiming = (
+    cells: ReadonlyArray<string>,
+    calls: ReadonlyArray<ScriptedEngine.CallStep>,
+    answers: Readonly<Record<string, Evaluator.ScriptedAnswer>>,
+    overrides: { readonly maxFrames?: number } = {}
+  ) => {
+    const asked: Array<Evaluator.Request> = []
+    return run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: overrides.maxFrames ?? cells.length,
+        repeatCap: 0
+      }),
+      flows: [shell, editor],
+      script: cells.map(emits),
+      calls,
+      tree: "a.py=base",
+      evaluator: Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return answers
+      })
+    }).then((settled) => ({ ...settled, asked }))
+  }
+
+  const editing = `await ctx.call("edit", { path: "a.py", text: "fix" })
+     console.log("edited")`
+  const finishing = (command: string, output: string) =>
+    `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
+     ctx.done(${JSON.stringify(output)})`
+
+  const edited: ScriptedEngine.CallStep = { _tag: "Success", value: null, tree: "a.py=fixed" }
+  const green: ScriptedEngine.CallStep = { _tag: "Success", value: { exitCode: 0, stdout: "4 passed" } }
+
+  it("journals the reading of a completion it lets through, and says nothing to the model", async () => {
+    const { asked, events, model } = await claiming(
+      [editing, finishing("check src/a.py", "kept the query string; the suite is green")],
+      [edited, green],
+      { complete: { probability: 0.94 }, overclaims: { probability: 0.03 } },
+      // A frame the run never needs: a brake with nowhere to hand the frame
+      // back to is not consulted at all, so a run at its last frame would
+      // prove nothing about what the reading does.
+      { maxFrames: 3 }
+    )
+
+    expect(of(events, "claim-demanded")).toEqual([
+      expect.objectContaining({ complete: 0.94, overclaims: 0.03, demanded: false, currentDigest: "a.py=fixed" })
+    ])
+    // A passing reading is a journal line and nothing else: the run resolved
+    // on the frame it completed on, and no frame after it was ever asked for.
+    expect(of(events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: "kept the query string; the suite is green" })
+    ])
+    expect(model.recorder.requests).toHaveLength(2)
+    expect(JSON.stringify(model.recorder.requests)).not.toContain("Unsupported claim")
+
+    // What the brake sent: the task the person stated, the sentence the run
+    // wrote, the tree fact, and the one check the completing frame ran.
+    expect(asked[0]?.state).toEqual({
+      task: "The task for this run:\n\nKeep the query string.",
+      claim: "kept the query string; the suite is green",
+      treeMoved: true,
+      lastCheck: {
+        command: "{\"command\":\"check src/a.py\",\"mode\":\"unhermetic\"}",
+        exitCode: 0,
+        output: "{\"exitCode\":0,\"stdout\":\"4 passed\"}"
+      }
+    })
+  })
+
+  it("hands back a completion the record does not support, and takes the next answer as written", async () => {
+    const { events, model } = await claiming(
+      [
+        editing,
+        finishing("check src/a.py", "rewrote the redirect handler and every caller of it"),
+        finishing("check src/a.py", "only the redirect handler changed; check src/a.py is green")
+      ],
+      [edited, green, green],
+      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } }
+    )
+
+    // One reading, and one only: the cap is spent before the request, so the
+    // frame written to answer the demand is neither judged nor paid for.
+    expect(of(events, "claim-demanded")).toEqual([
+      expect.objectContaining({ demanded: true, nextFrame: 2, complete: 0.6, overclaims: 0.88 })
+    ])
+    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unsupported claim")
+    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unsupported claim")
+    expect(of(events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: "only the redirect handler changed; check src/a.py is green" })
+    ])
   })
 })

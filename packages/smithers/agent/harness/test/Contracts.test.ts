@@ -187,6 +187,15 @@ describe("AgentEvent", () => {
         currentDigest: "digest-after",
         nextFrame: 7
       }),
+      new AgentEvent.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.12,
+        overclaims: 0.91,
+        latencyMs: 480,
+        demanded: true,
+        currentDigest: "digest-after",
+        nextFrame: 7
+      }),
       new AgentEvent.Resolved({
         eventType: "flows.harness.resolved.v1",
         message: assistantMessage

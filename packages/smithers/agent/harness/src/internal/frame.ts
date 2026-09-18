@@ -13,10 +13,11 @@
  * @private
  */
 import { ModelRequest } from "@smthrs/model"
-import { Option, type Schema } from "effect"
+import { Effect, Option, type Schema } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import * as CallLedger from "../CallLedger.ts"
 import type { State } from "../CellTurn.ts"
+import * as CompletionClaim from "../CompletionClaim.ts"
 import type * as ContextWindow from "../ContextWindow.ts"
 import type * as EngineLike from "../EngineLike.ts"
 import * as NarrowedCheck from "../NarrowedCheck.ts"
@@ -195,6 +196,16 @@ export interface Accounting {
   readonly workspaceDigest: string
   /** This frame's readings of the live tree, in the order they settled. */
   readonly frameChecks: ReadonlyArray<NarrowedCheck.Check>
+  /**
+   * Every call the frame settled, verbatim, in the order they settled.
+   *
+   * The ledgers above are what a run carries forward, and they are bounded
+   * and lossy on purpose: a durable check entry keeps a clipped label and two
+   * exit-status flags, never a result. This is the one place the whole result
+   * of a call still exists, and it exists for one frame. `CompletionClaim`
+   * quotes the last check out of it; nothing else reads it.
+   */
+  readonly calls: ReadonlyArray<ObservedCall>
   /** The frame's own broken probes, stated once for whichever exit it takes. */
   readonly probeNotice: string | undefined
   /**
@@ -333,6 +344,7 @@ export const account = (options: {
 
   return {
     mutated,
+    calls,
     observed: new AgentEvent.MutationObserved({
       eventType: eventType.mutationObserved,
       basis: covered ? "observed" : measured ? "partial" : "declared",
@@ -428,6 +440,7 @@ export interface CompletionDemand {
     | AgentEvent.UnresolvedDemanded
     | AgentEvent.NarrowedDemanded
     | AgentEvent.NarrowOnlyDemanded
+    | AgentEvent.ClaimDemanded
   /** The in-frame observation the next frame answers. */
   readonly note: string
   /** The cap the demand spends. */
@@ -435,72 +448,90 @@ export interface CompletionDemand {
 }
 
 /**
- * Whether a `complete` transition stands, or which demand hands it back.
+ * What judging one completion produced: at most one demand, and at most one
+ * reading to journal whichever way it went.
  *
- * The completion's own evidence, judged once per demand. A run gets exactly
- * one frame wrong for free — the last one — and four things can be wrong with
- * it, each read off measurements the controller already took, under three
- * caps:
- *
- * 1. `UnmovedTree`: the tree it is completing on is the tree it opened on, so
- *    there is no change for any evidence to be about;
- * 2. `UnresolvedFailure`: a check over this exact tree reported a failing exit
- *    status and the run answered it with a different reading of the same
- *    subject rather than with the check itself;
- * 3. `NarrowedCheck.find`: this frame's check repeats an earlier, broader one
- *    and adds conditions to it, run after a change the broader one never saw;
- * 4. `NarrowedCheck.findOnly`: the check this frame ended on is the run's only
- *    reading of what it names — nothing broader was ever taken, so there was
- *    no broader check for (3) to find — and it carries a condition the run
- *    itself added, one taught neither by the prefix this harness wrote nor by
- *    the run's own other checks.
- *
- * The last two share one cap. They are two readings of one question — whether
- * the evidence covers what it looks like it covers — and a run that answers
- * either has answered the question; a second bounce would be the loop asking it
- * twice in different words.
- *
- * At most one is named, in that order, because they are in descending order of
- * how fundamental the missing thing is: there is nothing to check, then the
- * check said no, then the check said less than it looks like it said. Naming
- * two at once would ask the run to answer a question it has not been given a
- * frame for.
- *
- * The loop names what is missing and hands the frame back; it does not re-run
- * anything, and it does not judge the answer that comes back.
- *
- * Asking costs the run a frame it can answer in, so a demand is issued only
- * where that frame exists, and three separate things take it away:
- *
- * - the frame budget, which has no frame left to spend, and turning a
- *   completion into an exhausted budget would lose the run's answer to make a
- *   point about it;
- * - the read-only cap, which is the other budget that ends a run and ends it as
- *   a typed failure carrying nothing. A run that changed nothing is exactly the
- *   run `UnmovedTree` fires on, so a completion one frame short of twice the
- *   cap would be bounced, spend that frame reading, and die as `read_only_cap`
- *   with the answer it had already written discarded — a demand turning a
- *   finished run into a failure, which is the one outcome none of these may
- *   produce;
- * - a demand this run has already answered. Each demand ends by promising that
- *   what comes back next is the answer that stands, and three of them fire on
- *   one transition, so the frame written to answer one is never judged by the
- *   next. See `State.demandedFrame`.
+ * `observed` exists for the sixth brake alone. The five before it are derived
+ * from measurements the journal already carries, so a grader recomputes them
+ * and there is nothing to write when they stay silent; the claim brake asks a
+ * model, and a reading nobody records is a reading nobody can grade. It is set
+ * only where that brake ran and issued no demand — when it does demand, the
+ * same event travels on `demand.event`, so exactly one `claim-demanded` is
+ * written per evaluation.
  *
  * @since 1.0.0-rc.0
  * @private
  */
-export const judgeCompletion = (
+export interface CompletionJudgement {
+  /** The claim brake's reading, when it ran and let the completion through. */
+  readonly observed: AgentEvent.ClaimDemanded | undefined
+  /** The demand that hands the completion back, when one of the six issued. */
+  readonly demand: CompletionDemand | undefined
+}
+
+/** Nothing to say about this completion: it stands. */
+const stands: CompletionJudgement = { observed: undefined, demand: undefined }
+
+/** One demand, with no separate reading to journal beside it. */
+const handBack = (demand: CompletionDemand): CompletionJudgement => ({ observed: undefined, demand })
+
+/**
+ * The prose the harness itself put in front of the run as its task.
+ *
+ * The `instructions` segments of the prefix zone and nothing else: `Agent`
+ * writes the task there, and the host's memory when it has one, while the cell
+ * contract and the flow catalog go in as `system` and the transcript goes in
+ * the tail. So this is the closest thing the controller holds to the task as
+ * the person stated it, and it cannot pick up a sentence the model wrote.
+ */
+const taskText = (window: ContextWindow.ContextWindow): string =>
+  window.segments
+    .filter((segment) => segment.zone === "prefix" && segment.kind === "instructions")
+    .flatMap((segment) => segment.content)
+    .map((part) => "text" in part && typeof part.text === "string" ? part.text : "")
+    .filter((text) => text !== "")
+    .join("\n\n")
+
+/**
+ * The last reading of the completing frame that reported an exit status.
+ *
+ * The run's durable check ledger keeps a label, a digest and the two exit-
+ * status flags, and deliberately keeps no output — it lives in journaled
+ * controller state. The verbatim result exists for exactly one frame, the one
+ * being judged, so that is the check the brake can quote, and a completing
+ * frame that ran none sends none rather than sending a description of one.
+ */
+const lastCheck = (calls: ReadonlyArray<ObservedCall>): CompletionClaim.Check | undefined => {
+  for (let index = calls.length - 1; index >= 0; index--) {
+    const call = calls[index]!
+    if (!call.ok || call.mutates) continue
+    const status = UnresolvedFailure.exitStatus(call.value)
+    if (status === undefined) continue
+    return {
+      command: CompletionClaim.quote(call.input),
+      exitCode: status,
+      output: CompletionClaim.newest(CompletionClaim.quote(call.value))
+    }
+  }
+  return undefined
+}
+
+/**
+ * The four demands a completion's own measurements produce, in precedence
+ * order, or nothing. Every fact read here was taken by the frame that is
+ * completing or by an earlier one, so this is a pure function of the state
+ * and the accounting and it is what `judgeCompletion` consults first.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+const measuredDemand = (
   state: State,
   accounting: Accounting,
-  contextWindow: ContextWindow.ContextWindow
+  contextWindow: ContextWindow.ContextWindow,
+  nextFrame: number
 ): CompletionDemand | undefined => {
   const { facts, frameChecks, workspaceDigest } = accounting
-  const room = hasNextFrame(state) &&
-    (state.readOnlyCap === 0 || facts.readOnlyFrames + 1 < state.readOnlyCap * 2) &&
-    state.demandedFrame !== state.frame
-  if (!room) return undefined
-  const nextFrame = state.frame + 1
   if (state.unmovedDemands < state.unmovedCap) {
     const unmoved = UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest })
     if (unmoved !== undefined) {
@@ -571,6 +602,125 @@ export const judgeCompletion = (
     spent
   }
 }
+
+/**
+ * Whether a `complete` transition stands, or which demand hands it back.
+ *
+ * The completion's own evidence, judged once per demand. A run gets exactly
+ * one frame wrong for free — the last one — and five things can be wrong with
+ * it, four of them read off measurements the controller already took, under
+ * four caps:
+ *
+ * 1. `UnmovedTree`: the tree it is completing on is the tree it opened on, so
+ *    there is no change for any evidence to be about;
+ * 2. `UnresolvedFailure`: a check over this exact tree reported a failing exit
+ *    status and the run answered it with a different reading of the same
+ *    subject rather than with the check itself;
+ * 3. `NarrowedCheck.find`: this frame's check repeats an earlier, broader one
+ *    and adds conditions to it, run after a change the broader one never saw;
+ * 4. `NarrowedCheck.findOnly`: the check this frame ended on is the run's only
+ *    reading of what it names — nothing broader was ever taken, so there was
+ *    no broader check for (3) to find — and it carries a condition the run
+ *    itself added, one taught neither by the prefix this harness wrote nor by
+ *    the run's own other checks.
+ *
+ * Demands 3 and 4 share one cap. They are two readings of one question —
+ * whether the evidence covers what it looks like it covers — and a run that
+ * answers either has answered the question; a second bounce would be the loop
+ * asking it twice in different words.
+ *
+ * 5. `CompletionClaim`: the last brake and the only one that is not a
+ *    measurement. The four above have said nothing, which means the tree
+ *    moved, no check was stepped around, and whatever the run checked it
+ *    checked whole — and none of that reads the sentence the run wrote. So
+ *    the claim, the task, the tree fact and the frame's last check go to Jev,
+ *    and a confident "not done" or "says more than this shows" hands the
+ *    frame back from a cap of its own. It is last because it is the only one
+ *    that costs a request, and because a run one of the four already named
+ *    has a demand to answer: asking a model to add a second one would hand
+ *    the frame two questions. It is silent on any host that binds no
+ *    `Evaluator`, so a loop without one behaves exactly as it did before.
+ *
+ * At most one is named, in that order, because they are in descending order of
+ * how fundamental the missing thing is: there is nothing to check, then the
+ * check said no, then the check said less than it looks like it said, then
+ * nothing in the record matches what the run said it did. Naming two at once
+ * would ask the run to answer a question it has not been given a frame for.
+ *
+ * The loop names what is missing and hands the frame back; it does not re-run
+ * anything, and it does not judge the answer that comes back.
+ *
+ * Asking costs the run a frame it can answer in, so a demand is issued only
+ * where that frame exists, and three separate things take it away:
+ *
+ * - the frame budget, which has no frame left to spend, and turning a
+ *   completion into an exhausted budget would lose the run's answer to make a
+ *   point about it;
+ * - the read-only cap, which is the other budget that ends a run and ends it as
+ *   a typed failure carrying nothing. A run that changed nothing is exactly the
+ *   run `UnmovedTree` fires on, so a completion one frame short of twice the
+ *   cap would be bounced, spend that frame reading, and die as `read_only_cap`
+ *   with the answer it had already written discarded — a demand turning a
+ *   finished run into a failure, which is the one outcome none of these may
+ *   produce;
+ * - a demand this run has already answered. Each demand ends by promising that
+ *   what comes back next is the answer that stands, and three of them fire on
+ *   one transition, so the frame written to answer one is never judged by the
+ *   next. See `State.demandedFrame`.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const judgeCompletion = (
+  state: State,
+  accounting: Accounting,
+  contextWindow: ContextWindow.ContextWindow,
+  claim: string
+): Effect.Effect<CompletionJudgement> =>
+  Effect.gen(function*() {
+    const { calls, facts, workspaceDigest } = accounting
+    const room = hasNextFrame(state) &&
+      (state.readOnlyCap === 0 || facts.readOnlyFrames + 1 < state.readOnlyCap * 2) &&
+      state.demandedFrame !== state.frame
+    if (!room) return stands
+    const nextFrame = state.frame + 1
+    const measured = measuredDemand(state, accounting, contextWindow, nextFrame)
+    if (measured !== undefined) return handBack(measured)
+
+    // The sixth brake, and the only one that leaves this package to decide.
+    // The cap is read before the request so a run that has already been
+    // handed one claim demand is never asked a second time, and so the
+    // gateway is not paid for an answer nothing could act on.
+    if (state.claimDemands >= state.claimCap) return stands
+    const task = CompletionClaim.prose(taskText(contextWindow))
+    const check = lastCheck(calls)
+    const reading = yield* CompletionClaim.read({
+      task,
+      claim: CompletionClaim.prose(claim),
+      // The `UnmovedTree` fact, read the other way round. An unmeasured tree
+      // reads as moved, which is the reading that asks for nothing: the
+      // brake above owns the unmoved case and has already passed on it.
+      treeMoved: UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest }) === undefined,
+      ...(check === undefined ? {} : { lastCheck: check })
+    })
+    if (reading === undefined) return stands
+    const found = CompletionClaim.find(reading)
+    const event = new AgentEvent.ClaimDemanded({
+      eventType: eventType.claimDemanded,
+      complete: reading.complete,
+      overclaims: reading.overclaims,
+      latencyMs: reading.latencyMs,
+      demanded: found !== undefined,
+      currentDigest: workspaceDigest,
+      nextFrame
+    })
+    if (found === undefined) return { observed: event, demand: undefined }
+    return handBack({
+      event,
+      note: CompletionClaim.demand(found),
+      spent: { claimDemands: state.claimDemands + 1 }
+    })
+  })
 
 /**
  * The interventions one ordinary continuing frame hands to the next.

@@ -186,6 +186,27 @@ export const defaultUnmovedDemands = 1
 export const defaultUnresolvedDemands = 1
 
 /**
+ * Default number of completions a run may have bounced for a claim its own
+ * record does not support.
+ *
+ * One, for the reason every other completion cap is one: the sanctioned shape
+ * for a control that judges a completion is demand-then-continue, and a second
+ * bounce would be the loop arguing with the run — here, arguing on behalf of a
+ * model that agrees with frontier-model labels 76% of the time on its vendor's
+ * own evaluations.
+ *
+ * Arming it costs nothing on a host that binds no `Evaluator`, which is the
+ * default: the control asks nobody and writes nothing. See `CompletionClaim`
+ * for the two thresholds and why both are strict.
+ *
+ * Zero disarms the demand.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultClaimDemands = 1
+
+/**
  * Default number of times one frame may answer its own unparseable cell.
  *
  * A cell that does not parse never ran, so nothing about the world has changed
@@ -462,6 +483,20 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
+   * Completions this run may have bounced for a claim its own record does not
+   * support. Zero disarms the demand. See {@link defaultClaimDemands} and
+   * `CompletionClaim`.
+   */
+  claimCap: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(defaultClaimDemands)),
+    Schema.withDecodingDefaultKey(Effect.succeed(defaultClaimDemands))
+  ),
+  /** Completions this run has already had bounced for such a claim. */
+  claimDemands: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
    * Trees this run may pin with `ctx.checkpoint()`. Zero disarms minting.
    *
    * See {@link defaultMaxCheckpoints}. `ctx.base` is not minted and is
@@ -717,6 +752,13 @@ export const make = (options: {
    */
   readonly unresolvedCap?: number | undefined
   /**
+   * Caps how many completions may be bounced for a claim the run's own record
+   * does not support. Omitted takes {@link defaultClaimDemands}; zero disarms
+   * it. The control is also a no-op wherever no `Evaluator` service is in
+   * context, so a host that binds none need not disarm anything.
+   */
+  readonly claimCap?: number | undefined
+  /**
    * Whether a human can answer this run. Omitted or false refuses a `park`
    * transition and answers it in-frame; only a host that has wired somewhere
    * for an answer to come from may claim true.
@@ -760,6 +802,8 @@ export const make = (options: {
     unmovedDemands: 0,
     unresolvedCap: options.unresolvedCap ?? defaultUnresolvedDemands,
     unresolvedDemands: 0,
+    claimCap: options.claimCap ?? defaultClaimDemands,
+    claimDemands: 0,
     openingDigest: "",
     checks: [],
     callLedger: [],
@@ -2503,9 +2547,14 @@ const frame = (
     }
     if (transition._tag === "complete") {
       // The completion's own evidence, judged once per demand; see
-      // `Frame.judgeCompletion` for the four demands, their order, and the
+      // `Frame.judgeCompletion` for the five demands, their order, and the
       // three things that leave no frame to ask in.
-      const demanded = Frame.judgeCompletion(state, accounting, contextWindow)
+      const judged = yield* Frame.judgeCompletion(state, accounting, contextWindow, transition.output)
+      // The claim brake's reading when it let the completion through. It is
+      // the one demand whose passing readings are journaled, because it is
+      // the one a grader cannot recompute; see `AgentEvent.ClaimDemanded`.
+      if (judged.observed !== undefined) yield* emit(judged.observed)
+      const demanded = judged.demand
       if (demanded !== undefined) {
         yield* emit(demanded.event)
         yield* close(exit, "continue")
@@ -2619,6 +2668,7 @@ export const run = (
             narrowingCap: current.narrowingCap,
             unmovedCap: current.unmovedCap,
             unresolvedCap: current.unresolvedCap,
+            claimCap: current.claimCap,
             revalidations: current.revalidations,
             ...limits
           })

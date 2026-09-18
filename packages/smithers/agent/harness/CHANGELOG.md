@@ -22,6 +22,26 @@
 
 ### Added
 
+- Added `CompletionClaim`, a sixth brake on a completion and the first that is
+  not a measurement. Once the five deterministic demands have found nothing,
+  `judgeCompletion` sends the task, the completion message, whether the tree
+  moved and the last check the completing frame ran to the `Evaluator` service
+  and asks Jev two questions: does the evidence show the task as stated is
+  done, and does the claim assert something the evidence does not show. A
+  probability of 0.3 or below on the first, or 0.8 or above on the second,
+  hands the frame back once from the new `claimCap` (`CellTurn.make`'s
+  `claimCap` option, `CellTurn.defaultClaimDemands`, default 1). It is a brake
+  only: a confident "complete" ends no run and bypasses no other demand. Every
+  reading is journaled as `AgentEvent.ClaimDemanded`, demand or not, with both
+  probabilities, the evaluator latency and a `demanded` flag, so a wave can be
+  read for agreement and not only for firings. A host that binds no
+  `Evaluator` service gets no request, no event, and the behaviour it had
+  before. `judgeCompletion` now returns an `Effect` of a judgement carrying
+  the demand and that reading.
+- Added `UnresolvedFailure.exitStatus`, the one reader of `exitStatusKey`.
+  `failed` and `passed` are defined through it, and `CompletionClaim` quotes
+  the number itself.
+
 - Added `Transcript.controlEventPrefix` and `Transcript.ControlEventType`.
   `Transcript.validateJournal` selects the entries it validates by that prefix,
   and the session that writes them lives in `@smthrs/agent`; typing the writer

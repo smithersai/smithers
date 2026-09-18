@@ -802,7 +802,8 @@ export const demandOrdinals = {
   narrowed: 2,
   unmoved: 3,
   unresolved: 4,
-  "narrow-only": 5
+  "narrow-only": 5,
+  claim: 6
 } as const
 
 /** The decision a session title already carries, so a follow-up turn starts from the last color. */
@@ -1300,6 +1301,20 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         `narrow-only · ${event.flow}`,
         `${event.flow} ${event.check} covers ${event.targets.join(", ")} alone. Run a broader check.`
       )
+    case "claim-demanded":
+      // A reading that let the completion through is a journal line and not a
+      // card: nothing was asked of the run, so a card would report a demand
+      // that never happened.
+      return event.demanded
+        ? demandCard(
+          demanded(state, "claim", event.nextFrame),
+          ctx,
+          event.nextFrame,
+          demandOrdinals.claim,
+          "claim",
+          "The completion is not supported by what this run's record shows. Complete again and state the working."
+        )
+        : { state, events: [] }
     case "permission-required": {
       const request = event.request
       const meta: Record<string, unknown> = request.meta

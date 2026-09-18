@@ -244,6 +244,32 @@ describe("trace", () => {
         }
       ],
       [
+        "claim-demanded",
+        new AgentEvent.ClaimDemanded({
+          eventType: "flows.harness.claim-demanded.v1",
+          complete: 0.11,
+          overclaims: 0.93,
+          latencyMs: 412,
+          demanded: true,
+          currentDigest: "tree-after",
+          nextFrame: 12
+        }),
+        {
+          eventType: "control.agent.claim-demanded",
+          // Both probabilities and the latency, because this is the one
+          // demand a grader cannot recompute: it is a model's answer, and
+          // `demanded` is what separates a firing from a reading that agreed.
+          payload: {
+            complete: 0.11,
+            overclaims: 0.93,
+            latencyMs: 412,
+            demanded: true,
+            currentDigest: "tree-after",
+            nextFrame: 12
+          }
+        }
+      ],
+      [
         "unresolved-demanded",
         new AgentEvent.UnresolvedDemanded({
           eventType: "flows.harness.unresolved-demanded.v1",

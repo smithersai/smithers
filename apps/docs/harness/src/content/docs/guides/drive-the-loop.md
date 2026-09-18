@@ -68,6 +68,7 @@ Everything else is a budget with a default; every budget's zero disarms it:
 | `narrowingCap`    | 1 (`CellTurn.defaultNarrowingDemands`)  | Completions bounced for narrowed evidence.                                                                                                |
 | `unmovedCap`      | 1 (`CellTurn.defaultUnmovedDemands`)    | Completions bounced for an unmoved tree.                                                                                                  |
 | `unresolvedCap`   | 1 (`CellTurn.defaultUnresolvedDemands`) | Completions bounced for a displaced failing check.                                                                                        |
+| `claimCap`        | 1 (`CellTurn.defaultClaimDemands`)      | Completions bounced for a claim the run's own record does not support.                                                                    |
 | `revalidations`   | 1 (`CellTurn.defaultRevalidations`)     | In-frame answers to an unparseable cell.                                                                                                  |
 | `checkpointCap`   | 8 (`CellTurn.defaultMaxCheckpoints`)    | Trees one run may pin with `ctx.checkpoint()`.                                                                                            |
 | `approvalChannel` | `false`                                 | Whether a human can answer this run; `false` refuses a `park` and answers it in-frame.                                                    |
@@ -162,10 +163,26 @@ Every decision the controller makes is an `AgentEvent`, journaled in order:
 `CellCallSettled` per call, `CellPrinted`, `CellSettled`, and
 `TransitionApplied`. Interventions journal as `ReadOnlyDemandIssued`,
 `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`,
-`NarrowOnlyDemanded`, `SufficiencyObserved`, and `MutationObserved`. A run
+`NarrowOnlyDemanded`, `ClaimDemanded`, `SufficiencyObserved`, and
+`MutationObserved`. A run
 ends on `TurnClosed` with its outcome, beside `Resolved`, `Suspended`, or
 `Aborted`. `AgentEvent.eventType` maps every tag to its journal event type.
 The full list is in the [`AgentEvent` reference](/reference/api/#agentevent).
+
+`ClaimDemanded` is the sixth brake on a completion and the only one that is
+not a measurement. Once the five deterministic demands have found nothing, the
+controller sends the task, the completion message, whether the tree moved, and
+the last check the completing frame ran to the `Evaluator` service, and Jev
+answers two questions: does the evidence show the task as stated is done, and
+does the claim assert something the evidence does not show. A probability of
+0.3 or below on the first, or 0.8 or above on the second, hands the frame back
+once, from `claimCap`, exactly as `UnmovedDemanded` does. It is a brake only: a
+confident "complete" ends no run and bypasses no other demand, and it is never
+consulted when one of the five already spoke. Every reading is journaled,
+demand or not, with both probabilities and the evaluator latency, so a wave can
+be read for agreement rather than only for firings. A host that binds no
+`Evaluator` gets no request, no event, and the behaviour it had before, so
+nothing needs disarming. See [`CompletionClaim`](/reference/api/#completionclaim).
 
 `SufficiencyObserved` pairs a remembered failure with a later passing check of
 the same flow, with identical or broader inputs, after a workspace mutation.

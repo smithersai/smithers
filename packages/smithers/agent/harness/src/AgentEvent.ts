@@ -92,6 +92,21 @@ export class DisciplineArmed extends Schema.TaggedClass<DisciplineArmed>(
    * rather than answered; zero disarms.
    */
   unresolvedCap: Schema.Number,
+  /**
+   * Completions this run may have bounced for a claim its own record does not
+   * support; zero disarms.
+   *
+   * Journaled with the other completion caps, and it says less than they do on
+   * its own: the control it arms is also a no-op wherever no `Evaluator` is
+   * bound, so an armed cap and no `claim-demanded` event anywhere in a run
+   * means either that nothing was asked or that everything asked came back
+   * inside the thresholds. Defaulted so journals written before this control
+   * existed decode unchanged. See `CompletionClaim`.
+   */
+  claimCap: Schema.Number.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
   /** Maximum calls per cell, when this binding can enforce one. */
   calls: Schema.optional(Schema.Number),
   /** Maximum sandbox heap, when this binding can enforce one. */
@@ -527,6 +542,47 @@ export class NarrowOnlyDemanded extends Schema.TaggedClass<NarrowOnlyDemanded>(
 }) {}
 
 /**
+ * What Jev read off one completion claim, whether or not it braked.
+ *
+ * The only demand event written on every evaluation rather than only on a
+ * firing, and it is written that way on purpose: the other five demands are
+ * derived from facts a grader can recompute from the journal, and this one is
+ * a model's reading that exists nowhere else. Without the passing readings the
+ * record would answer "how often did it fire" and could never answer "how
+ * often did it agree", which is the only question that says whether arming it
+ * was right. `demanded` is the field that separates the two, and a reading
+ * with `demanded: false` cost the run nothing and changed nothing.
+ *
+ * `complete` and `overclaims` are the transport's probabilities for the
+ * classifier's two questions, verbatim, so a grader can re-apply any
+ * threshold to a whole wave without re-asking. `latencyMs` is what the
+ * evaluation cost in wall clock on the hot path of a completion. No event is
+ * written at all where no evaluator is bound, where the transport failed, or
+ * where the cap was already spent: nothing was read, so there is nothing to
+ * record. See `CompletionClaim`.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
+  "flows/harness/AgentEvent/ClaimDemanded"
+)("claim-demanded", {
+  eventType: Schema.Literal("flows.harness.claim-demanded.v1"),
+  /** Probability the transport gave to "the task as stated is done". */
+  complete: Schema.Number,
+  /** Probability it gave to "the claim asserts what the evidence does not show". */
+  overclaims: Schema.Number,
+  /** Wall-clock milliseconds the evaluation took. */
+  latencyMs: Schema.Int,
+  /** Whether this reading handed the completion back. */
+  demanded: Schema.Boolean,
+  /** Workspace digest the completing frame closed on; empty when unmeasured. */
+  currentDigest: Schema.String,
+  /** The frame the demand was attached to, which is the one that must answer it. */
+  nextFrame: Schema.Int
+}) {}
+
+/**
  * The controller telling a run that its own evidence is complete.
  *
  * The one control that is not a brake, and the only one written for a frame
@@ -813,6 +869,7 @@ export const AgentEvent = Schema.Union([
   NarrowOnlyDemanded,
   UnmovedDemanded,
   UnresolvedDemanded,
+  ClaimDemanded,
   SufficiencyObserved,
   VacuousVerificationObserved,
   Suspended,
@@ -856,6 +913,7 @@ export const eventType = {
   cellRejectedInFrame: "flows.harness.cell-rejected-in-frame.v1",
   cellSettled: "flows.harness.cell-settled.v1",
   checkpointMinted: "flows.harness.checkpoint-minted.v1",
+  claimDemanded: "flows.harness.claim-demanded.v1",
   compactionSettled: "flows.harness.compaction-settled.v1",
   disciplineArmed: "flows.harness.discipline-armed.v1",
   modelDelta: "flows.harness.model-delta.v1",

@@ -77,9 +77,25 @@ export const exitStatusKey = "exitCode"
  * @since 0.1.0
  */
 export const failed = (value: Schema.Json): boolean => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
+  const status = exitStatus(value)
+  return status !== undefined && status !== 0
+}
+
+/**
+ * The exit status a settled call's result reports about its subject, or
+ * nothing where it reports none.
+ *
+ * The one reader of {@link exitStatusKey}, so the two predicates below and
+ * every caller that wants the number itself agree by construction rather than
+ * by three copies of the same shape test.
+ *
+ * @category getters
+ * @since 1.0.0-rc.0
+ */
+export const exitStatus = (value: Schema.Json): number | undefined => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined
   const status = (value as Record<string, unknown>)[exitStatusKey]
-  return typeof status === "number" && status !== 0
+  return typeof status === "number" ? status : undefined
 }
 
 /**
@@ -94,10 +110,7 @@ export const failed = (value: Schema.Json): boolean => {
  * @category predicates
  * @since 0.1.0
  */
-export const passed = (value: Schema.Json): boolean => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
-  return (value as Record<string, unknown>)[exitStatusKey] === 0
-}
+export const passed = (value: Schema.Json): boolean => exitStatus(value) === 0
 
 /**
  * A failing check, paired with the reading the run took in its place.

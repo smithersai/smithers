@@ -500,6 +500,26 @@ describe("Transcript", () => {
         targets: ["tests/a.py", "tests/b.py"],
         currentDigest: "after",
         nextFrame: 18
+      }),
+      // The reading that let a completion through is journaled and put
+      // nothing in front of the model, so the replay must skip it.
+      new AgentEvent.ClaimDemanded({
+        eventType: AgentEvent.eventType.claimDemanded,
+        complete: 0.92,
+        overclaims: 0.06,
+        latencyMs: 310,
+        demanded: false,
+        currentDigest: "after",
+        nextFrame: 19
+      }),
+      new AgentEvent.ClaimDemanded({
+        eventType: AgentEvent.eventType.claimDemanded,
+        complete: 0.14,
+        overclaims: 0.2,
+        latencyMs: 402,
+        demanded: true,
+        currentDigest: "after",
+        nextFrame: 20
       })
     ]
 
@@ -511,7 +531,8 @@ describe("Transcript", () => {
       ModelRequest.Message.user(DemandText.narrowed("bash", "pytest tests", "pytest tests -k one")),
       ModelRequest.Message.user(
         DemandText.narrowOnly("bash", "pytest tests/a.py tests/b.py -k one", ["tests/a.py", "tests/b.py"])
-      )
+      ),
+      ModelRequest.Message.user(DemandText.claim("incomplete"))
     ])
   })
 
@@ -802,7 +823,8 @@ describe("Transcript", () => {
     "flows.harness.narrowed-demanded.v1",
     "flows.harness.narrow-only-demanded.v1",
     "flows.harness.unmoved-demanded.v1",
-    "flows.harness.unresolved-demanded.v1"
+    "flows.harness.unresolved-demanded.v1",
+    "flows.harness.claim-demanded.v1"
   ])("rejects malformed %s evidence", (eventType) => {
     const result = Transcript.projectStateResult([entry(1, eventType, { eventType })])
     expect(Result.isFailure(result) && result.failure.code).toBe("projection_failed")

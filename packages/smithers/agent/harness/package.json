@@ -45,6 +45,7 @@
     "./CellTurn": "./src/CellTurn.ts",
     "./CellValidation": "./src/CellValidation.ts",
     "./Compaction": "./src/Compaction.ts",
+    "./CompletionClaim": "./src/CompletionClaim.ts",
     "./ContextWindow": "./src/ContextWindow.ts",
     "./EngineLike": "./src/EngineLike.ts",
     "./FlowBinding": "./src/FlowBinding.ts",
@@ -174,6 +175,16 @@
         "require": {
           "types": "./dist/cjs/Compaction.d.ts",
           "default": "./dist/cjs/Compaction.js"
+        }
+      },
+      "./CompletionClaim": {
+        "import": {
+          "types": "./dist/esm/CompletionClaim.d.ts",
+          "default": "./dist/esm/CompletionClaim.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CompletionClaim.d.ts",
+          "default": "./dist/cjs/CompletionClaim.js"
         }
       },
       "./ContextWindow": {

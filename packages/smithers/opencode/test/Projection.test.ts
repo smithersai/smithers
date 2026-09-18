@@ -745,6 +745,15 @@ describe("Projection", () => {
         currentDigest: "b",
         nextFrame: 1
       }),
+      new AgentEvents.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.08,
+        overclaims: 0.4,
+        latencyMs: 380,
+        demanded: true,
+        currentDigest: "b",
+        nextFrame: 1
+      }),
       new AgentEvents.ReadOnlyDemanded({
         eventType: "flows.harness.read-only-demanded.v1",
         streak: 3,
@@ -767,8 +776,27 @@ describe("Projection", () => {
       "unmoved",
       "unresolved · bash",
       "narrow-only · bash",
+      "claim",
       "read-only · 3/3 · park"
     ])
+
+    // The reading that let a completion through asked the run for nothing, so
+    // it renders no card at all.
+    expect(
+      Projection.fold(
+        ctx,
+        state,
+        new AgentEvents.ClaimDemanded({
+          eventType: "flows.harness.claim-demanded.v1",
+          complete: 0.95,
+          overclaims: 0.02,
+          latencyMs: 300,
+          demanded: false,
+          currentDigest: "b",
+          nextFrame: 2
+        })
+      ).events
+    ).toEqual([])
 
     // A permission without a call identity still asks, without a card.
     const script = DemoScript.script({ sessionID, messageID: assistantMessageID, prompt: "p" })

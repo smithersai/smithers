@@ -6,7 +6,7 @@
  * call rather than inferred from a journal.
  */
 import { ModelRequest } from "@smthrs/model"
-import { Option } from "effect"
+import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
@@ -155,35 +155,45 @@ describe("judgeCompletion", () => {
     subject: "pytest tests -k parser",
     input: { command: "pytest tests -k parser" }
   })
+  // Judged with no `Evaluator` in context, which is what these four cases are
+  // about: the deterministic precedence, unchanged by the sixth brake, which
+  // asks nobody on a host that binds no transport. `CompletionClaim.test.ts`
+  // is where that brake is driven.
   const judge = (judged: CellTurn.State) =>
-    Frame.judgeCompletion(
-      judged,
-      account({ state: judged, calls: [narrow], opened: tree("t0"), closed: tree("t0") }),
-      judged.contextWindow
+    Effect.runSync(
+      Frame.judgeCompletion(
+        judged,
+        account({ state: judged, calls: [narrow], opened: tree("t0"), closed: tree("t0") }),
+        judged.contextWindow,
+        "done"
+      )
     )
 
   it("names an unmoved tree before a narrowed check, and spends only its own cap", () => {
-    const demand = judge(reverted())
+    const { demand } = judge(reverted())
     expect(demand?.event._tag).toBe("unmoved-demanded")
     expect(demand?.spent).toEqual({ unmovedDemands: 1 })
   })
 
   it("falls through to the narrowed check once the unmoved cap is spent", () => {
-    const demand = judge(reverted({ unmovedDemands: 1 }))
+    const { demand } = judge(reverted({ unmovedDemands: 1 }))
     expect(demand?.event).toMatchObject({ _tag: "narrowed-demanded", nextFrame: 1 })
     expect(demand?.spent).toEqual({ narrowingDemands: 1 })
   })
 
   it("demands nothing once every cap it could spend is spent", () => {
-    expect(judge(reverted({ unmovedDemands: 1, narrowingDemands: 1 }))).toBeUndefined()
+    expect(judge(reverted({ unmovedDemands: 1, narrowingDemands: 1 }))).toEqual({
+      observed: undefined,
+      demand: undefined
+    })
   })
 
   it("demands nothing without a frame to answer in", () => {
-    expect(judge(reverted({ frame: 9 }))).toBeUndefined()
+    expect(judge(reverted({ frame: 9 })).demand).toBeUndefined()
     // One read-only frame short of twice the cap: the bounce would end the run.
-    expect(judge(reverted({ readOnlyCap: 2, readOnlyFrames: 2 }))).toBeUndefined()
+    expect(judge(reverted({ readOnlyCap: 2, readOnlyFrames: 2 })).demand).toBeUndefined()
     // The frame a demand was handed to is not judged again.
-    expect(judge(reverted({ frame: 3, demandedFrame: 3 }))).toBeUndefined()
+    expect(judge(reverted({ frame: 3, demandedFrame: 3 })).demand).toBeUndefined()
   })
 })
 

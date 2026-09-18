@@ -1,5 +1,6 @@
 import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, type Layer, Option, Stream } from "effect"
 import type * as AgentEvent from "../../src/AgentEvent.ts"
@@ -159,6 +160,12 @@ export interface Options {
    * host that offers no way to save a flow, which binds none.
    */
   readonly history?: CellHistory.Service | undefined
+  /**
+   * The transport the claim brake asks. Omitted is the host that binds none,
+   * which is what every case written before that brake existed expects: the
+   * control asks nobody and writes nothing. See `CompletionClaim`.
+   */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
 }
 
 /**
@@ -212,6 +219,7 @@ export const run = async (options: Options): Promise<Run> => {
       options.history === undefined
         ? effect
         : Effect.provideService(effect, CellHistory.CellHistory, options.history),
+    (effect) => options.evaluator === undefined ? effect : Effect.provide(effect, options.evaluator),
     Effect.result,
     Effect.exit,
     Effect.runPromise

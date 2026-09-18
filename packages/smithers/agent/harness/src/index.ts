@@ -18,6 +18,12 @@ export * as HarnessError from "./HarnessError.ts"
 export * as AgentEvent from "./AgentEvent.ts"
 
 /**
+ * @category controls
+ * @since 1.0.0-rc.0
+ */
+export * as CompletionClaim from "./CompletionClaim.ts"
+
+/**
  * @category models
  * @since 0.1.0
  */

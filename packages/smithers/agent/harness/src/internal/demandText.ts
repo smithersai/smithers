@@ -110,3 +110,33 @@ export const narrowOnly = (flow: string, check: string, targets: ReadonlyArray<s
 - what it names: ${targets.join(", ")}
 
 Every one of those this run has looked at somewhere else, but no other call it made covers them all, so nothing in this run says what they report on their own. Any term this check carries beyond them — a filter, a selector, a subset of cases, a flag that stops early — is a condition you have never taken off, and what a condition hides is exactly where a change breaks something that was passing. Run ${flow} over the same subjects with those conditions removed and complete once you have seen what it prints; or complete and state in your output that it carries no condition and the reading is already whole. Nothing re-runs it for you, and what you return next is the answer that stands.`
+
+/**
+ * Renders the claim-not-supported completion intervention.
+ *
+ * It names the one thing that fired and nothing else. The reader is asked
+ * only for the working behind its own sentence — which call, what it printed,
+ * why that shows what the task asked for — because that is the whole of what
+ * the judgement is missing, and because a demand that named the model doing
+ * the judging would invite the run to argue with it instead of answering it.
+ *
+ * The task is not quoted back. It is in the run's prefix on every frame, so a
+ * quote would buy nothing and cost the window the run has to answer in, and
+ * leaving it out is also what lets this text be rebuilt from the event alone.
+ * No probability is quoted either: a number is journal material for a grader,
+ * and in front of a model it is a score to negotiate.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const claim = (reason: "incomplete" | "overclaimed"): string =>
+  `Unsupported claim — read against this run's own record, your completion does not show the task being done.
+
+${
+    reason === "overclaimed"
+      ? "What is missing: your completion states something this run's record does not show."
+      : "What is missing: nothing in the record reaches the behaviour the task asks for."
+  }
+
+Nothing re-checks this and nothing grades the answer you give it. Complete again and state the working: the exact call whose result establishes the behaviour the task names, what it printed, and why that is the behaviour asked for rather than a nearby one. If the work is not finished, finish it instead of restating it. If you believe it is finished and the record simply does not carry the evidence, make the one call that would carry it and complete on that. What you return next is the answer that stands.`

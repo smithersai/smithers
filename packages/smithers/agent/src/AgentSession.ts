@@ -579,6 +579,23 @@ export const trace = (
           nextFrame: event.nextFrame
         }
       }
+    case "claim-demanded":
+      // Both probabilities and the latency, on every reading rather than only
+      // on a firing, because this is the one demand a grader cannot recompute
+      // from the journal: it is a model's answer, and the passing answers are
+      // what say whether arming the control was right. `demanded` separates
+      // the two. See `CompletionClaim`.
+      return {
+        eventType: "control.agent.claim-demanded",
+        payload: {
+          complete: event.complete,
+          overclaims: event.overclaims,
+          latencyMs: event.latencyMs,
+          demanded: event.demanded,
+          currentDigest: event.currentDigest,
+          nextFrame: event.nextFrame
+        }
+      }
     case "vacuous-verification-observed":
       // The stored check travels with the identity the controller matched it
       // by, because the whole judgement is that this exact call had already
