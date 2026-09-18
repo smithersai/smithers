@@ -30,6 +30,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { make as makeModel, type Model, type ModelFailure } from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -479,7 +480,15 @@ export const runCachedModelTest = async <P, O>(
     sandbox: flow.sandbox,
     tools: flow.tools,
     seats: { resolve: () => Effect.succeed({ model, route: { prepare: () => Effect.succeed(preparedRequest) } }) },
-    crypto: NodeCrypto.layer
+    crypto: NodeCrypto.layer,
+    // The model here is recorded or live-under-record, and the completion
+    // brake never falls back: a claim nothing could judge fails the run. The
+    // judge is scripted so this harness reaches no gateway and a recorded
+    // completion replays exactly as it was recorded.
+    evaluator: Evaluator.layerScripted(() => ({
+      complete: { probability: 0.99 },
+      overclaims: { probability: 0.01 }
+    }))
   })
   const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow)).pipe(
     Layer.provideMerge(host)

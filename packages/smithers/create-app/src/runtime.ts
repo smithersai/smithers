@@ -121,6 +121,11 @@ export interface LayerOptions {
   readonly crypto: Layer.Layer<Crypto.Crypto>
   readonly sandboxVariant?: Layer.Layer<QuickJSSandbox.Variant> | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /**
+   * The judge behind the completion brake, where the host has one already or
+   * scripts it. Omitted, it is read from {@link LayerOptions.environment}.
+   */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
 }
 
 /**
@@ -266,9 +271,8 @@ export const layerFor = (options: LayerOptions) => {
   // browser and workerd all have. Without `AI_GATEWAY_API_KEY` in
   // `options.environment` this is `layerUnavailable()` and the turn fails at
   // its first completion.
-  const evaluator = Evaluator.layerFromEnvironment(options.environment ?? {}).pipe(
-    Layer.provide(FetchHttpClient.layer)
-  )
+  const evaluator = options.evaluator ??
+    Evaluator.layerFromEnvironment(options.environment ?? {}).pipe(Layer.provide(FetchHttpClient.layer))
   return Layer.mergeAll(host, seats, Agent.layer).pipe(
     Layer.provideMerge(agentPolicy),
     Layer.provideMerge(defaults),
