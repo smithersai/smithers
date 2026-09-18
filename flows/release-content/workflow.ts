@@ -5,8 +5,9 @@ import type * as Planned from "@smthrs/plan/Planned"
 import { Schema } from "effect"
 import {
   Analysis, Artifact, Brief, ContentInput, ContentResult, Copy, Draft, Evidence,
-  ReleaseError, Review, Thread
+  Outline, ReleaseError, Review, Thread
 } from "../release-support/schema.ts"
+import { ReleaseTemplate, TemplatePick } from "./jev-template.ts"
 
 const system = [
   "You write Smithers release materials. Smithers is a workflows product built on Flow.make, Action.make and Effect.",
@@ -27,9 +28,19 @@ export const Analyze = AgentAction.make("release-content/analyze", {
   payload: context, output: Analysis, seat: "release/analyst", system,
   prompt: (value) => `Analyze this release. Build a claim ledger whose sources are exact entries in evidence.sources. Include migration risks and distinguish shipped behavior from proposals.\n${JSON.stringify(value)}`
 })
-export const ChooseTemplate = AgentAction.make("release-content/choose-template", {
-  payload: { ...context, analysis: Analysis }, output: Brief, seat: "release/writer", system,
-  prompt: (value) => `Choose a release narrative (feature deep dive, migration guide, reliability report, or release roundup) that fits the evidence, then outline it.\n${JSON.stringify(value)}`
+/** Which of four write-ups the release calls for is an enumerated choice, so
+ * Jev makes it and its answer is the brief's narrative. An answer below the
+ * floor and an evaluator that could not answer at all both fail this action
+ * with a typed `ReleaseError`. There is no second model behind it. */
+export const PickTemplate = Action.make("release-content/pick-template", {
+  payload: { ...context, analysis: Analysis }, success: TemplatePick, error: ReleaseError,
+  nondeterministic: true
+})
+/** The seat outlines the narrative it was handed. Its output has no narrative
+ * field, so the only writer of `brief.template` is `PickTemplate`. */
+export const OutlineTemplate = AgentAction.make("release-content/outline-template", {
+  payload: { ...context, analysis: Analysis, template: ReleaseTemplate }, output: Outline, seat: "release/writer", system,
+  prompt: (value) => `Outline the ${value.template} this release calls for. The narrative is already decided; outline it against the evidence rather than proposing another.\n${JSON.stringify(value)}`
 })
 export const DraftChangelog = AgentAction.make("release-content/draft-changelog", {
   payload: writing, output: Copy, seat: "release/writer", system,
@@ -90,13 +101,16 @@ type Requirements = Action.Requirement<(
   typeof Score | typeof Check | typeof Revise | typeof QualityGate | typeof Preview |
   typeof RecordApproval | typeof PublishFiles | typeof PostThread | typeof CommitFiles | typeof Outcome
 )["name"]>
+/** The brief the drafting steps read: Jev's narrative beside the seat's
+ * outline, assembled by the flow rather than produced by one step. */
+type PlannedBrief = Action.PlannedPayload<typeof Brief.Type>
 type Failure = ReleaseError | AgentAction.AgentFailure | HumanTask.HumanTaskFailed
 
 const reviewRound = (
   input: ContentInput,
   evidence: Planned.Planned<Evidence>,
   analysis: Planned.Planned<Analysis>,
-  brief: Planned.Planned<typeof Brief.Type>,
+  brief: PlannedBrief,
   draft: Planned.Planned<Draft>,
   round: number
 ): Node.Node<ContentResult, Failure, Requirements> =>
@@ -115,7 +129,7 @@ const finish = (
   input: ContentInput,
   evidence: Planned.Planned<Evidence>,
   analysis: Planned.Planned<Analysis>,
-  brief: Planned.Planned<typeof Brief.Type>,
+  brief: PlannedBrief,
   draft: Planned.Planned<Draft>,
   review: Planned.Planned<Review>
 ): Node.Node<ContentResult, Failure, Requirements> =>
@@ -147,15 +161,21 @@ export const ReleaseContent = Flow.make("smithers/ReleaseContent", {
   error: Schema.Union([ReleaseError, AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
   body: (input) => Node.bindPlanned(Collect.call({ version: input.version, from: input.from }), (collected) => {
     const compose = (evidence: Planned.Planned<Evidence>) => Node.bindPlanned(Analyze.call({ input, evidence }), (analysis) =>
-      Node.bindPlanned(ChooseTemplate.call({ input, evidence, analysis }), (brief) =>
-        Node.bindPlanned(Node.all({
-          changelog: input.channels.changelog ? DraftChangelog.call({ input, evidence, analysis, brief }) : Node.succeed(emptyCopy),
-          thread: input.channels.thread ? DraftThread.call({ input, evidence, analysis, brief }) : Node.succeed({ tweets: [] }),
-          blog: input.channels.blog
-            ? Node.bindPlanned(OutlineBlog.call({ input, evidence, analysis, brief }), (outline) =>
-              DraftBlog.call({ input, evidence, analysis, brief, outline }))
-            : Node.succeed(emptyCopy)
-        }), (draft) => reviewRound(input, evidence, analysis, brief, draft, 0))))
+      Node.bindPlanned(PickTemplate.call({ input, evidence, analysis }), (picked) =>
+        Node.bindPlanned(OutlineTemplate.call({ input, evidence, analysis, template: picked.template }), (outlined) => {
+          // Jev's narrative beside the seat's outline. The seat has no
+          // template field, so this is the only place the brief's narrative
+          // is written.
+          const brief: PlannedBrief = { template: picked.template, angle: outlined.angle, outline: outlined.outline }
+          return Node.bindPlanned(Node.all({
+            changelog: input.channels.changelog ? DraftChangelog.call({ input, evidence, analysis, brief }) : Node.succeed(emptyCopy),
+            thread: input.channels.thread ? DraftThread.call({ input, evidence, analysis, brief }) : Node.succeed({ tweets: [] }),
+            blog: input.channels.blog
+              ? Node.bindPlanned(OutlineBlog.call({ input, evidence, analysis, brief }), (outline) =>
+                DraftBlog.call({ input, evidence, analysis, brief, outline }))
+              : Node.succeed(emptyCopy)
+          }), (draft) => reviewRound(input, evidence, analysis, brief, draft, 0))
+        })))
     return input.recording ? Node.bindPlanned(RecordUi.call({ input, evidence: collected }), compose) : compose(collected)
   })
 })

@@ -50,7 +50,7 @@ export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxTo
     }
   })).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
   return Layer.mergeAll(
-    Content.Analyze.layer, Content.ChooseTemplate.layer, Content.DraftChangelog.layer,
+    Content.Analyze.layer, Content.OutlineTemplate.layer, Content.DraftChangelog.layer,
     Content.DraftThread.layer, Content.OutlineBlog.layer, Content.DraftBlog.layer,
     Content.Score.layer, Content.Revise.layer, Release.AuditDocs.layer
   ).pipe(

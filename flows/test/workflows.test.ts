@@ -16,7 +16,7 @@ import { commandRunner } from "../release-support/io.ts"
 import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
 import { ReleaseError, type Candidate } from "../release-support/schema.ts"
-import { evidence, repository, scriptedSeats } from "./fixtures.ts"
+import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
@@ -60,7 +60,7 @@ test("real agents draft, revise, and park; a fresh SQLite host resumes without r
   const engine = () => NodeRuntime.layerHost({
     filename, workspaceRoot: fixture.root, owner: { hostId: "release-content-test" }, signals: []
   }, Layer.mergeAll(
-    actionLayers({ root: fixture.root, run: async (command, args, opts) => {
+    actionLayers({ root: fixture.root, evaluator: scriptedTemplate, run: async (command, args, opts) => {
       if (command === "git" && args[0] === "log") collections++
       return commandRunner(fixture.root)(command, args, opts)
     } }),
@@ -94,7 +94,7 @@ test("exhausted quality reviews fail before preview or publication", { timeout: 
     filename: join(fixture.root, ".flows", "engine.db"), workspaceRoot: fixture.root,
     owner: { hostId: "release-quality-test" }, signals: []
   }, Layer.mergeAll(
-    actionLayers({ root: fixture.root }),
+    actionLayers({ root: fixture.root, evaluator: scriptedTemplate }),
     agentLayers(scriptedSeats(counts, { failReviews: 99 }), 250_000),
     HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
@@ -113,7 +113,7 @@ for (const decision of [true, false] as const) {
       filename: join(fixture.root, ".flows", "engine.db"), workspaceRoot: fixture.root,
       owner: { hostId: "release-prepare-test" }, signals: []
     }, Layer.mergeAll(
-      actionLayers({ root: fixture.root, run: async (command, args, options) => {
+      actionLayers({ root: fixture.root, evaluator: scriptedTemplate, run: async (command, args, options) => {
         if (command === "git") return commandRunner(fixture.root)(command, args, options)
         commands.push([command, ...args].join(" "))
         return ""

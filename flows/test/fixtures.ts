@@ -1,8 +1,10 @@
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Effect, Stream } from "effect"
+import { templates } from "../release-content/jev-template.ts"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -20,7 +22,17 @@ export const analysis: Analysis = {
   highlights: ["Resume approval after restart"], risks: [], migration: [],
   claims: [{ id: "approval", text: "Approvals resume after restart", sources: ["README.md"] }]
 }
-export const brief = { template: "reliability report", angle: "Durable approvals", outline: ["Resume an approval"] }
+export const outline = { angle: "Durable approvals", outline: ["Resume an approval"] }
+/** Jev's narrative beside the writer's outline, the way the flow assembles it. */
+export const brief = { template: "reliability report", ...outline }
+/** A scripted Jev that confidently names the fixture's narrative, so a flow
+ * test exercises the real pick step without a gateway key. */
+export const scriptedTemplate = Evaluator.layerScripted(() => ({
+  template: {
+    choice: brief.template,
+    probabilities: Object.fromEntries(templates.map((name) => [name, name === brief.template ? 0.95 : 0.05 / 3]))
+  }
+}))
 export const copy = { text: "Release approvals resume after a process restart.", claimIds: ["approval"] }
 export const draft: Draft = { changelog: copy, blog: copy, thread: { tweets: [copy] } }
 export const review = { passed: true, score: 0.95, feedback: [] }
@@ -44,17 +56,21 @@ export const repository = async (test: TestContext) => {
 }
 
 /** Real AgentAction/QuickJS loop; only the provider stream is scripted. */
-export const scriptedSeats = (counts: Record<string, number>, options: { failReviews?: number; allChannels?: boolean } = {}) => {
+export const scriptedSeats = (
+  counts: Record<string, number>,
+  options: { failReviews?: number; allChannels?: boolean; prompts?: string[] } = {}
+) => {
   const model = Model.make({
     stream: (request) => Stream.suspend(() => {
       const asked = [
         ...request.system.map((part) => part.text),
         ...request.messages.flatMap((message) => message.content.flatMap((part) => part.type === "text" ? [part.text] : []))
       ].join("\n")
+      options.prompts?.push(asked)
       let stage: string
       let output: unknown
       if (asked.includes("Analyze this release.")) { stage = "analyze"; output = analysis }
-      else if (asked.includes("Choose a release narrative")) { stage = "brief"; output = brief }
+      else if (asked.includes("this release calls for")) { stage = "outline-template"; output = outline }
       else if (asked.includes("Draft the user-facing changelog")) { stage = "changelog"; output = copy }
       else if (asked.includes("Draft an X thread")) { stage = "thread"; output = draft.thread }
       else if (asked.includes("Outline a technical release blog")) { stage = "outline"; output = brief }

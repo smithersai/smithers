@@ -120,10 +120,18 @@ export const Analysis = Schema.Struct({
 })
 export type Analysis = typeof Analysis.Type
 
-export const Brief = Schema.Struct({
-  template: Schema.String,
+/**
+ * What the writer seat produces once the narrative is settled. The narrative
+ * itself is not in here: Jev picks it and the caller writes it, so the seat
+ * has no field to overwrite it with.
+ */
+export const Outline = Schema.Struct({
   angle: Schema.String,
   outline: Schema.Array(Schema.String)
+})
+export const Brief = Schema.Struct({
+  template: Schema.String,
+  ...Outline.fields
 })
 export const Copy = Schema.Struct({ text: Schema.String, claimIds: Schema.Array(Schema.String) })
 export const Thread = Schema.Struct({ tweets: Schema.Array(Copy) })

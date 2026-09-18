@@ -1,3 +1,4 @@
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Schema } from "effect"
 import { readFile, mkdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
@@ -7,7 +8,9 @@ import { readWorkspaceManifests } from "../../scripts/pack-release.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../../scripts/set-release-version.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../../scripts/publish-release.mjs"
 import { releaseGateArgs, releaseGateSetForHost } from "../../scripts/release-gates.mjs"
+import { chooseTemplate } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
+import { evaluatorLayer } from "../repository/jev-checks.ts"
 import * as Release from "../release/workflow.ts"
 import { changelogNarrative, checkContent, digest, renderCard } from "./content.ts"
 import { atomicWrite, commandRunner, inside, json, maybeRead, postTweet, type RunCommand } from "./io.ts"
@@ -510,10 +513,20 @@ const attempt = <A>(step: string, work: (signal: AbortSignal) => Promise<A>) => 
   return result
 })
 
-export const actionLayers = (options: Options) => {
+/**
+ * Jev through the Vercel gateway when `AI_GATEWAY_API_KEY` is set, else one
+ * that answers `unreachable`. The key is required to choose a release
+ * narrative at all: without it the step fails instead of letting a writer seat
+ * pick one. A test supplies its own scripted evaluator.
+ */
+export const actionLayers = (options: Options & {
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+}) => {
   const ops = operations(options)
   return Layer.mergeAll(
     Content.Outcome.toLayer(Effect.succeed),
+    Content.PickTemplate.toLayer(({ input, evidence, analysis }) => chooseTemplate(input, evidence, analysis))
+      .pipe(Layer.provide(options.evaluator ?? evaluatorLayer(process.env))),
     Release.Outcome.toLayer(Effect.succeed),
     Content.Collect.toLayer((value) => attempt("collect", (signal) => ops.collect(value, signal))),
     Content.RecordUi.toLayer(({ input, evidence }) => input.recording === null ? Effect.succeed(evidence) : attempt("record-ui", (signal) => recordUi(options.root, input.recording!, evidence, signal))),

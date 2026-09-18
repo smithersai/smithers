@@ -58,6 +58,27 @@ enforce claim sources, enabled channels, tweet lengths, and promotional-language
 rules. `minScore` defaults to 0.86; `maxRevisions` defaults to 2 and is capped at
 3. A failed quality gate stops before approval or publication.
 
+Jev selects the narrative, and it is the only model that selects it. Which of
+four write-ups a release calls for is a closed choice, so
+[`jev-template.ts`](release-content/jev-template.ts) sends one state, the claim
+ledger beside the commit subjects, changed paths and documentation excerpts it
+was built from plus the operator's own notes, all clipped in proportion so the
+state stays under 32 KiB, and asks one question: does this release call for a
+feature deep dive, a migration guide, a reliability report or a release
+roundup? Each criterion names the job that write-up does, and the answer is the
+brief's narrative. `release-content/pick-template` is its only writer, so the
+writer seat, which is now asked to outline the narrative it was handed rather
+than to choose one, has no field to overwrite it with. An answer below 0.8
+confidence is Jev saying the evidence does not point at one write-up: the step
+fails with a typed `ReleaseError` naming the distribution, because announcing a
+release as the wrong kind of thing is worse than not announcing it yet and a
+house default would publish a claim about the release that nothing in the
+evidence supports. Sharpen the evidence or say what the release is for in
+`notes`, then run again. An evaluator that is unconfigured, unreachable,
+refused, timed out or malformed fails the same step with the evaluator's own
+code and message. There is no fallback, so `AI_GATEWAY_API_KEY` is required to
+draft release content at all.
+
 Previews contain the drafts, review, proposed destination files, an optional
 SVG release card, and any UI recording. They live in
 `.flows/releases/content/<version>/<digest>/`. Inspect `bundle.json` and the

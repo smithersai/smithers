@@ -9,7 +9,7 @@ import { ReleaseContent } from "../release-content/workflow.ts"
 import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
-import { scriptedSeats } from "./fixtures.ts"
+import { scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 
 const root = process.argv[2]!
 const phase = process.argv[3]!
@@ -19,7 +19,7 @@ const input = contentInput({ dryRun: false, from: "v0.35.0", channels: { blog: f
 const host = NodeRuntime.layerHost({
   filename: join(root, ".flows", "engine.db"), workspaceRoot: root, owner: { hostId: "release-subprocess" }, signals: []
 }, Layer.mergeAll(
-  actionLayers({ root }), agentLayers(scriptedSeats(counts), 250_000),
+  actionLayers({ root, evaluator: scriptedTemplate }), agentLayers(scriptedSeats(counts), 250_000),
   HumanTask.layer, Interpreter.layer(ReleaseContent)
 ).pipe(Layer.provideMerge(Action.layerImplementations)))
 const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
