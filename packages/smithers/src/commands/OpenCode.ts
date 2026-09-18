@@ -7,21 +7,30 @@
  * `OPENCODE_SERVER_PASSWORD`. The server changes into the directory it
  * serves, because a shell call inherits the process working directory.
  *
- * Until the engine driver lands, `--scripted` is the only driver: it
- * replays a recorded turn so the hosted app can be driven end to end
- * without a model.
+ * Every turn runs on the durable engine under `<directory>/.smithers`, on
+ * the seat `--seat` names, else `SMITHERS_SEAT`, else the first provider
+ * whose key is set. `--scripted` replays a recorded turn instead, so the
+ * hosted app can be driven end to end without a model.
  *
  * @since 1.0.0
  */
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
+import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Auth from "@smthrs/opencode/Auth"
-import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
+import type * as Driver from "@smthrs/opencode/Driver"
+import * as EngineDriver from "@smthrs/opencode/EngineDriver"
+import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
-import { Cause, Effect, Exit, Logger } from "effect"
+import * as Store from "@smthrs/opencode/Store"
+import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { resolve } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as CliError from "../CliError.ts"
+import * as NodeControl from "../NodeControl.ts"
+import * as Providers from "../Providers.ts"
 import { packageVersion } from "../Version.ts"
 import * as Globals from "./Globals.ts"
 
@@ -65,6 +74,47 @@ export const bind = (options: Options, environment: Readonly<Record<string, stri
 })
 
 /**
+ * The seat a turn runs on: `--seat`, else `SMITHERS_SEAT`, else the starter
+ * seat of the first provider whose key is set, else nothing.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const seatOf = (
+  options: Pick<Options, "seat">,
+  environment: Readonly<Record<string, string | undefined>>
+): string | undefined => {
+  const named = options.seat ?? environment["SMITHERS_SEAT"]
+  if (named !== undefined && named !== "") return named
+  return Providers.starterSeats.find(([variable]) => (environment[variable] ?? "") !== "")?.[1]
+}
+
+/**
+ * The host the engine driver runs turns on: the CLI's guarded platform over
+ * the directory, its seat resolver over the environment, and the project's
+ * flow registry.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const nodeHost = (
+  directory: string,
+  environment: Readonly<Record<string, string | undefined>>
+): EngineDriver.Host => {
+  const platform = NodeControl.layerGuardedPlatform(directory)
+  return {
+    platform: KernelChildProcessSpawner.layer.pipe(
+      Layer.provide(NodeControl.layerGrantStore(directory)),
+      Layer.provideMerge(platform)
+    ),
+    seats: NodeControl.layerSeatResolver(environment).pipe(
+      Layer.provide(RequestExecutor.layer.pipe(Layer.provide(NodeHttpClient.layerUndici)))
+    ),
+    registry: NodeControl.layerRegistry(directory)
+  }
+}
+
+/**
  * Serves the directory until the process is interrupted.
  *
  * @category constructors
@@ -81,27 +131,39 @@ export const host = async (
       message: "opencode serves the directory on this host; --remote is not supported"
     })
   }
-  if (!options.scripted) {
-    throw new CliError.UnsupportedError({
-      message: "The engine driver is not available yet: pass --scripted to serve the recorded turn."
+  const environment = config.environment ?? globals.environment ?? process.env
+  const seat = options.scripted ? scriptedSeat : seatOf(options, environment)
+  if (seat === undefined) {
+    throw new CliError.UsageError({
+      message:
+        "No model seat: pass --seat provider:model, set SMITHERS_SEAT or a provider key such as CEREBRAS_API_KEY, or pass --scripted to replay the recorded turn."
     })
   }
-  const environment = config.environment ?? process.env
   const requested = bind(options, environment)
   const refused = Serve.refusal(requested)
   if (refused !== undefined) throw new CliError.UnsupportedError({ message: refused })
   const directory = resolve(options.directory ?? process.cwd())
-  const seat = options.seat ?? scriptedSeat
   // A shell call inherits the process working directory (composition brief,
   // trap 6); one server serves one directory, so it moves there once.
   process.chdir(directory)
-  if (!connection.quiet) process.stderr.write(`${Serve.banner(requested, directory)}\n`)
+  const driver: Layer.Layer<Driver.Driver | Store.Store, unknown> = options.scripted
+    ? Layer.mergeAll(
+      ScriptedDriver.layer({ script: DemoScript.script }),
+      Store.layerSqlite(Serve.databasePath(directory))
+    )
+    : EngineDriver.layer({
+      directory,
+      seat,
+      maxFrames: options.maxFrames,
+      host: nodeHost(directory, environment)
+    })
+  if (!connection.quiet) process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}.\n`)
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
       yield* Globals.guard(globals)
       return yield* Serve.host({ directory, bind: requested, version: packageVersion, seat })
     }).pipe(
-      Effect.provide(ScriptedDriver.layer({ script: DemoScript.script })),
+      Effect.provide(driver),
       Effect.provide(RedactedLogger.layer()),
       Effect.provideService(Logger.LogToStderr, true)
     ),
