@@ -410,13 +410,27 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(outcome.status).toBe("no_capacity")
   })
 
-  test("an unexplained 500 carries the upstream's first 240 characters", async () => {
+  test("an unexplained 500 names this seam and its status, bounded", async () => {
     const { fetch } = relay({ provision: () => new Response(`  ${"boom ".repeat(100)}`, { status: 500 }) })
     const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
     expect(outcome.status).toBe("unavailable")
     if (outcome.status !== "unavailable") return
-    expect(outcome.detail.startsWith("Provisioning the workspace answered HTTP 500: boom boom")).toBe(true)
-    expect(outcome.detail.length).toBeLessThanOrEqual("Provisioning the workspace answered HTTP 500: ".length + 240)
+    expect(outcome.detail).toBe("The workspace gateway is having trouble right now (HTTP 500).")
+  })
+
+  /*
+   * Walk run 3, D3-N1: `/flow.create` provisioned unpinned, plue answered
+   * `500 {"code":"internal","fault":"bug","message":"internal server error"}`,
+   * and the Worker pasted that object into the sentence a person reads. Only
+   * an upstream's own prose may cross this boundary (UpstreamProse.ts).
+   */
+  test("a coded upstream refusal crosses as its prose, never as its body", async () => {
+    const { fetch } = relay({ provision: () => json(500, { code: "internal", fault: "bug", message: "internal server error" }) })
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))
+    expect(outcome.status).toBe("unavailable")
+    if (outcome.status !== "unavailable") return
+    expect(outcome.detail).toBe("internal server error")
+    expect(outcome.detail).not.toContain("\"code\"")
   })
 
   test("402 plan limit preserves upgrade metadata and never retries provisioning", async () => {

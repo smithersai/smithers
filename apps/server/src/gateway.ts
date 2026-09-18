@@ -1,5 +1,5 @@
 import { WORKER_REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
-import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
+import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -784,7 +784,7 @@ const provisionGateway = (
       return {
         status: "unavailable",
         ...(response.status >= 500 ? { retryable: true } : {}),
-        detail: `Provisioning the workspace answered HTTP ${response.status}${detail === "" ? "." : `: ${detail}`}`
+        detail: upstreamRefusalMessage("The workspace gateway", response.status, detail)
       } as const
     }
     const body = (yield* readJsonOrUndefined(response)) as

@@ -8,7 +8,9 @@ import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { runCardIdFor, runScopeFromCard } from "../RunReference"
-import { gatewayBindingFor, resolveTargetRepo } from "../RepoContext"
+import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../RepoContext"
+import { repositoryJobWorkspace } from "../RepositoryJobs"
+import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
 import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
@@ -200,7 +202,7 @@ export const createWorkflowController = (
           if (failure.refusal.rawCode === "plan_limit_exceeded") {
             return renderPlanLimit(store, failure.refusal, ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, ctx.commandActor)
           }
-          return failure.error
+          return refusalSentence(failure.refusal)
         }
         body = (await response.json().catch(() => undefined)) as typeof body
         if (!current()) return "The account changed while the workspace was being prepared."
@@ -399,6 +401,24 @@ export const createWorkflowController = (
     return message
   }
 
+  /**
+   * The box a flow is authored on: whatever the person selected, and otherwise
+   * the one this repository's reviewed jobs already run on, as the register
+   * door reads it (`TriggersSeam.jobWorkspace`). A relay call that names no
+   * workspace reaches the repository's product host, which carries neither
+   * `create-workflow` nor the registrar.
+   */
+  const flowAuthoringBinding = (repo: string): GatewayBinding => {
+    const selected = gatewayBindingFor(store, repo)
+    if ("error" in selected || selected.workspaceId !== undefined) return selected
+    const jobs = repositoryJobWorkspace(
+      store.collections.cards.values(),
+      repo,
+      store.collections.identitySessions.get("identity")?.login ?? null
+    )
+    return jobs === undefined ? selected : { workspaceId: jobs }
+  }
+
   const createWorkflow = async (
     rawDescription: string,
     repoArg?: string
@@ -419,7 +439,7 @@ export const createWorkflowController = (
     if ("error" in target) return refuseCreate(target.error)
     if ("ask" in target) return askWhichRepo(description, target.ask)
     const repo = target.repo
-    const binding = gatewayBindingFor(store, repo)
+    const binding = flowAuthoringBinding(repo)
     if ("error" in binding) return refuseCreate(binding.error)
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return refuseCreate(provisioned)

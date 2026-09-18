@@ -1,0 +1,104 @@
+/*
+ * Walk run 3, defect D3-N1: `/flow.create` provisions the wrong box.
+ *
+ * The register door names the repository's job workspace (L89,
+ * `TriggersSeam.jobWorkspace`); the flow-authoring door named none, so its
+ * provision reached the product host and answered `502 upstream_refused`,
+ * which the door then read out as the Worker's bare words. Both halves are
+ * pinned here: which box the provision asks for, and what a refusal says.
+ * That the Worker sends prose rather than plue's JSON is pinned beside it, in
+ * `apps/server/src/gateway.test.ts`.
+ */
+import { expect, test } from "bun:test"
+import { initialSetup } from "@smthrs/rpc/RepositorySetup"
+import { scopedControllers } from "./ControllerTestScope"
+import type { AppServices } from "./AppController"
+import { createAppStore } from "./AppStore"
+import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
+
+const REPO = "codeplanesmithers/canary-sandbox"
+const JOB_WORKSPACE = "af1e3bc5-6388-419e-98cc-e13372a89646"
+
+/* What the Worker answers for a refused provision: `refuse("upstream_refused", <the upstream's own prose>)`. */
+const UPSTREAM_500 = {
+  status: "error",
+  code: "upstream_refused",
+  message: "internal server error"
+}
+
+const relay = (options: { readonly provisionStatus?: number; readonly provision?: () => unknown } = {}) => {
+  const calls: Array<{ path: string; method: string; body: { repo?: string; workspaceId?: string } | undefined }> = []
+  const services: AppServices = {
+    workflowPollMs: 1,
+    toastDebounceMs: 0,
+    toastAutoDismissMs: 10_000,
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const absolute = new URL(url, "https://app.test")
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      calls.push({ path: absolute.pathname, method: init?.method ?? "GET", body })
+      if (absolute.pathname === "/api/workflow/provision") {
+        return json(options.provisionStatus ?? 200, options.provision?.() ?? { status: "ready", repo: body?.repo, gatewayId: "gw-1", workspaceId: body?.workspaceId })
+      }
+      if (absolute.pathname === "/api/workflow/rpc") {
+        const procedure = String(body?.procedure)
+        if (procedure === "List") return json(200, { ok: true, payload: { _tag: "flows", items: [{ flowId: "create-workflow", description: "" }] } })
+        if (procedure === "Plan") {
+          return json(200, { ok: true, payload: { planId: "plan-1", flowId: "create-workflow", digest: "d", envelope: { capabilities: [], flows: [], budget: {} }, inputSummary: "", deployClass: false, nodes: [] } })
+        }
+        if (procedure === "Run") return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: "run-1" } })
+        return json(200, { ok: false, error: { message: `no ${procedure}` } })
+      }
+      return json(404, { status: "error", message: `no stub for ${absolute.pathname}` })
+    }
+  }
+  return { services, calls }
+}
+
+const signedInStore = async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+    login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{
+    id: REPO, org: REPO.split("/")[0] ?? "", ownerKind: "user", name: REPO.split("/")[1] ?? "", head: null
+  }] })
+  /* The job workspace as the repository's own setups recorded it — the register door's only source. */
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: `setup:codeplanesmithers:${encodeURIComponent(REPO)}:feature`, kind: "repository-setup", title: "Build a feature",
+    status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
+    payload: { ...initialSetup(REPO, "feature", "codeplanesmithers"), workspaceId: JOB_WORKSPACE }
+  } }).isPersisted.promise
+  await settle(2)
+  return store
+}
+
+const said = (outcome: { status: string; value?: string; error?: string }): string =>
+  outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
+
+test("the flow-authoring door provisions the box the repository's jobs run on", async () => {
+  const store = await signedInStore()
+  const double = relay()
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  try {
+    await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    const provisions = double.calls.filter(call => call.path === "/api/workflow/provision")
+    expect(provisions).toHaveLength(1)
+    expect(provisions[0]?.body).toEqual({ repo: REPO, workspaceId: JOB_WORKSPACE })
+    expect(double.calls.filter(call => call.path === "/api/workflow/rpc").every(call => call.body?.workspaceId === JOB_WORKSPACE)).toBe(true)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
+
+test("a refused provision reaches the person as its registered refusal, with its fault class", async () => {
+  const store = await signedInStore()
+  const double = relay({ provisionStatus: 502, provision: () => UPSTREAM_500 })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  try {
+    const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    const answer = said(outcome)
+    expect(answer).toBe("upstream_refused — internal server error. Something Smithers depends on refused that. Not your doing.")
+    /* The refusal stays where the person is looking after the toast goes. */
+    expect([...store.collections.messages.values()].map(message => message.text)).toContain(answer)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
