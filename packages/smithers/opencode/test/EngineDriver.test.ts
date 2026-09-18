@@ -843,22 +843,33 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     expect(answer(refused.events)).toContain("refused")
     expect(answer(refused.events)).toContain("unreachable")
 
-    // Nothing named at all: the driver reads the process environment. The
-    // turn completes whatever that environment holds.
+    // Nothing named at all: the driver reads the process environment, held
+    // to no key here so the unit suite never reaches the gateway and the
+    // refusal is what the cell reads.
     const ambientDirectory = scratch()
     const ambient = recorder()
     script.replies = [classifyCell]
-    await process_(
-      ambientDirectory,
-      (driver) =>
-        Effect.gen(function*() {
-          yield* driver.start(input("ses_e", "msg_e"), ambient.sink)
-          yield* wait(() => ambient.outcomes.length === 1)
-        }),
-      { evaluator: undefined }
-    )
+    const ambientKey = process.env["AI_GATEWAY_API_KEY"]
+    delete process.env["AI_GATEWAY_API_KEY"]
+    try {
+      await process_(
+        ambientDirectory,
+        (driver) =>
+          Effect.gen(function*() {
+            yield* driver.start(input("ses_e", "msg_e"), ambient.sink)
+            yield* wait(() => ambient.outcomes.length === 1)
+          }),
+        { evaluator: undefined }
+      )
+    } finally {
+      if (ambientKey !== undefined) process.env["AI_GATEWAY_API_KEY"] = ambientKey
+    }
     expect(ambient.outcomes).toEqual([{ _tag: "completed" }])
-    expect(settledCalls(ambient.events, "classify").length).toBe(1)
+    const ambientCalls = settledCalls(ambient.events, "classify")
+    expect(ambientCalls.length).toBe(1)
+    expect(ambientCalls[0]!.result.outcome).toBe("failure")
+    expect(ambientCalls[0]!.result.message).toContain("unreachable")
+    expect(answer(ambient.events)).toContain("refused")
 
     // A scripted evaluator: the ad-hoc door and a curated door both answer.
     const answeredDirectory = scratch()
