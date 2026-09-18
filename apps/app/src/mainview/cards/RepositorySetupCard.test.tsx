@@ -390,3 +390,22 @@ test("a probe that found nothing is its own evidence row, in the words a person 
     expect(t.host.textContent).not.toContain("· missing")
   } finally { t.close() }
 })
+
+test("a settled refusal the person must answer reads as the host's sentence, not as its verdict line", () => {
+  /* .artifacts/mvp-canary-walk-20260917/B-18-state-trial-terminal.json, receipt run-3. */
+  const raw = "failed — invalid_receipt: Run evals for this exact candidate before continuing"
+  const card = makeCard()
+  card.payload.request = { id: "a05c520e", operation: "trial", revision: card.payload.revision,
+    digest: setupCandidate(card.payload), state: "failed", error: raw }
+  const t = mount(card)
+  try {
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("Run evals for this exact candidate before continuing")
+    card.payload.request = { ...card.payload.request, error: "failed — invalid_receipt: Setup output failed the shared response contract" }
+    t.render(card)
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("failed — invalid_receipt: Setup output failed the shared response contract")
+    card.payload.recovery = { id: "recover", baseRevision: 1, baseDigest: setupCandidate(card.payload), state: "failed",
+      registrationState: "unavailable", error: "The workspace behind this setup is gone." }
+    t.render(card)
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("The workspace behind this setup is gone.")
+  } finally { t.close() }
+})

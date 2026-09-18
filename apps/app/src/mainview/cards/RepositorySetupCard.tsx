@@ -2,6 +2,7 @@ import { setupActivationProblems, setupCandidate, type RepositoryJob, type Repos
 import { useLiveQuery } from "@tanstack/react-db"
 import { flowArgs } from "../flows/FlowArgs"
 import { repositoryCiConfigured, repositoryJobState } from "../state/RepositoryJobs"
+import { setupRefusal } from "../state/RunFailure"
 import { setupTrialPr } from "../state/RepositorySetupTrial"
 import { isPracticeRepo } from "../state/practice/PracticeRepository"
 import type { CardFamily, CardOf, CardProjectionAuthority, RunCommand } from "./CardFamily"
@@ -144,7 +145,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
       </div>}
     </>}
     {receipt && runAccess(receipt)}
-    {(state.request?.state === "failed" || state.recovery?.state === "failed") && <div role="alert" className="setup-error"><p>{state.recovery?.error ?? state.request?.error}</p>{canRun && <button type="button" disabled={recovering} onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
+    {(state.request?.state === "failed" || state.recovery?.state === "failed") && <div role="alert" className="setup-error"><p>{state.recovery?.error ?? setupRefusal(state.request?.error) ?? state.request?.error}</p>{canRun && <button type="button" disabled={recovering} onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
     <footer className="setup-actions" aria-live="polite">
       {preview ? <button type="button" onClick={() => onRunCommand("auth.prompt")}>Sign in</button> : practice ? <button type="button" onClick={() => onRunCommand("repo.choose")}>Choose repository</button> : <>
         {pending && <span>{recovering ? "Requested" : receipt?.phase === "waiting" ? "Waiting" : receipt?.phase === "running" ? "Running" : receipt?.phase === "queued" ? "Queued" : "Requested"}</span>}

@@ -1377,3 +1377,24 @@ test("a card with no pin adopts the host's workspace even where the registration
     expect(t.calls[0]?.body.workspaceId).toBe(unowned)
   } finally { await t.close() }
 })
+
+test("the toast a settled setup refusal leaves states the host's sentence while the card keeps the verdict", async () => {
+  const REFUSAL = "Run evals for this exact candidate before continuing"
+  /* The 300ms law: only work that outlives the debounce leaves a toast, and a real setup run does. */
+  const gate = deferred()
+  const t = await fixture(async body => {
+    await gate.promise
+    const value = await response(body, "failed", "trial").json() as { receipt: Record<string, unknown> }
+    return Response.json({ ...value, receipt: { ...value.receipt, error: `failed — invalid_receipt: ${REFUSAL}` } })
+  })
+  try {
+    await t.setup.runRepositorySetup("setup", "trial")
+    await until(() => [...t.store.collections.toasts.values()].some(toast => toast.status === "running"))
+    gate.release()
+    await Promise.all(t.background)
+    expect(t.state().request?.state).toBe("failed")
+    expect(t.state().request?.error).toBe(`failed — invalid_receipt: ${REFUSAL}`)
+    const toasts = [...t.store.collections.toasts.values()].filter(toast => toast.status === "failed")
+    expect(toasts.map(toast => toast.detail)).toEqual([REFUSAL])
+  } finally { await t.close() }
+})

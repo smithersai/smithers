@@ -49,6 +49,9 @@ export const SETUP_REFUSALS: ReadonlySet<string> = new Set([
 /** `<code>: <sentence>`, the pair agent/internal/FailureSummary.ts writes on a journalled failure's first line. */
 const JOURNALLED = /^([a-z][a-z0-9_]*): (\S.*)$/
 
+/** The same pair behind the run's status, which is how a settled receipt's error reads. */
+const SETTLED = /^[a-z]+ — ([a-z][a-z0-9_]*): (\S.*)$/
+
 /** The first line of the cause the run itself journalled, which is where the code sits. */
 const journalledCause = (events: ReadonlyArray<Record<string, unknown>> = []): string | undefined => {
   const failed = events.filter(event => event.kind === "control.run.failed").at(-1)
@@ -70,6 +73,21 @@ const journalledCause = (events: ReadonlyArray<Record<string, unknown>> = []): s
 const journalledFault = (workflow: string, code: string, sentence: string): PlueFault | undefined =>
   code !== "invalid_receipt" ? undefined
     : workflow === REGISTRAR_FLOW || (workflow === SETUP_FLOW && SETUP_REFUSALS.has(sentence)) ? "user" : undefined
+
+/**
+ * The setup bridge's own refusal, read from the settled receipt the setup card
+ * and its toast render instead of a run's journal.
+ *
+ * A receipt carries one string: the status and the pair behind it, exactly as
+ * the host wrote them. So the decision is the same one the run card makes, on
+ * the same typed pair; an error line the bridge did not refuse answers nothing
+ * and its copy stays what it was.
+ */
+export const setupRefusal = (error: string | undefined): string | undefined => {
+  const settled = SETTLED.exec(error?.split(/[\r\n]/, 1)[0] ?? "")
+  if (settled === null) return undefined
+  return journalledFault(SETUP_FLOW, settled[1] ?? "", settled[2] ?? "") === "user" ? settled[2] : undefined
+}
 
 /**
  * A failed run's copy, framed at render time from what the card already
