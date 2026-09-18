@@ -1,7 +1,7 @@
 import { setupActivationProblems, setupCandidate, type RepositoryJob, type RepositorySetup, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
 import { useLiveQuery } from "@tanstack/react-db"
 import { flowArgs } from "../flows/FlowArgs"
-import { repositoryCiConfigured } from "../state/RepositoryJobs"
+import { repositoryCiConfigured, repositoryJobState } from "../state/RepositoryJobs"
 import { setupTrialPr } from "../state/RepositorySetupTrial"
 import { isPracticeRepo } from "../state/practice/PracticeRepository"
 import type { CardFamily, CardOf, CardProjectionAuthority, RunCommand } from "./CardFamily"
@@ -59,7 +59,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
     {observed.jobRunId && <button type="button" onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { runId: observed.jobRunId!, repo: state.repo, sourceCard: card.id }))}>Job run</button>}
   </div>
   return <div className="repository-setup" data-testid={`setup-${state.job}`}>
-    <div className="setup-heading"><span>{state.repo}</span><span>{unknown ? "" : state.active?.enabled ? state.active.revision === state.revision ? "Enabled" : "Enabled · draft changes" : state.active ? "Paused" : state.recovery?.trialRegistration ? state.recovery.trialRegistration.enabled ? "Trial" : "Paused" : "Off"}</span></div>
+    <div className="setup-heading"><span>{state.repo}</span><span>{repositoryJobState(state) ?? ""}</span></div>
     <nav className="setup-tabs" aria-label="Setup views">{views.map(tab => <button type="button" key={tab.id} aria-current={state.view === tab.id ? "page" : undefined} onClick={() => view(tab.id)}>{tab.name}</button>)}</nav>
     {state.view === "flows" && <>
       {draft.steps.map(step => <div className="setup-step" key={step.id}>

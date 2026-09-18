@@ -1,4 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { afterAll,expect,test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
@@ -56,6 +57,12 @@ test("flow buttons dispatch once and dismissal survives the next render and relo
   const buttons = host.querySelectorAll<HTMLButtonElement>("section > button[data-flow]")
   expect(buttons.length).toBe(5)
   flushSync(() => host.querySelector<HTMLButtonElement>('[data-flow="issues.setup"]')!.click())
+  await store.settled?.()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  render()
+  expect(calls).toEqual([["issues.setup", undefined]])
+  expect(host.querySelector('[data-testid="first-run-actions"]')).not.toBeNull()
+  flushSync(() => host.querySelector<HTMLButtonElement>('[data-flow="app.first-run.dismiss"]')!.click())
   await store.settled?.()
   await new Promise(resolve => setTimeout(resolve, 20))
   render()
@@ -123,6 +130,59 @@ test("the live catalog keeps unavailable runtime and admin plugin flows out", as
     await controller.dispose()
     await store.dispose?.()
   }
+})
+
+/** A repository whose first job exists: the state the canary walk lost the other four jobs in. */
+const configuredHome = async (calls: Array<[string, string | undefined]>) => {
+  const data = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) },
+  } })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
+  store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "pending" } })
+  store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "ready" } })
+  const card = (job: "issues" | "review", enabled?: boolean) => {
+    const payload = initialSetup("will/demo", job, "will")
+    return { id: `setup:will:will%2Fdemo:${job}`, kind: "repository-setup" as const, title: job, status: "active" as const, createdAt: 1, ordinal: 1,
+      payload: enabled === undefined ? payload : { ...payload, active: { revision: payload.revision, digest: setupCandidate(payload), registrationId: "reg", sourceRevision: "f4d4814e", enabled } } }
+  }
+  store.dispatch({ type: "card.upsert", actor: "system", card: card("issues") })
+  store.dispatch({ type: "card.upsert", actor: "system", card: card("review", false) })
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, dismissFirstRun: () => store.dispatch({ type: "first-run.dismissed", actor: "user" }), dismissHint: () => {}, commands: { all: () => commands }, runCommand: (name: string, args?: string) => { calls.push([name, args]) } } as unknown as AppController}><FirstRunActions /></ControllerContext>))
+  render()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  return { store, host, root, render, jobs: () => [...host.querySelectorAll<HTMLButtonElement>('section[aria-label="Repository jobs"] > button')],
+    settle: async () => { await store.settled?.(); await new Promise(resolve => setTimeout(resolve, 20)); render() },
+    dispose: async () => { flushSync(() => root.unmount()); host.remove(); await store.dispose?.() } }
+}
+
+test("every job stays one button away after the first job exists; only the dismissal closes the card", async () => {
+  const calls: Array<[string, string | undefined]> = []
+  const home = await configuredHome(calls)
+  try {
+    home.jobs()[0]!.click()
+    await home.settle()
+    expect(calls).toEqual([["issues.setup", "will/demo"]])
+    expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+    home.jobs()[1]!.click()
+    await home.settle()
+    expect(calls[1]).toEqual(["review.setup", "will/demo"])
+    expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+    home.host.querySelector<HTMLButtonElement>('[aria-label="Dismiss recommended actions"]')!.click()
+    await home.settle()
+    expect(home.host.querySelector('[data-testid="first-run-actions"]')).toBeNull()
+    expect(calls.length).toBe(2)
+  } finally { await home.dispose() }
+})
+
+test("a configured job's button reads the state its card reads", async () => {
+  const home = await configuredHome([])
+  try {
+    expect(home.jobs().map(button => button.textContent)).toEqual(["Handle issues · Off", "Review PRs · Paused", "Set up CI", "Build a feature", "Automate a chore"])
+  } finally { await home.dispose() }
 })
 
 test("first arrival binds every setup action to the explicit repository before catalog inspection finishes", () => {

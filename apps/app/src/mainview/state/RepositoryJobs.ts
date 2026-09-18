@@ -1,3 +1,4 @@
+import { RepositoryJobSchema, type RepositoryJob, type RepositorySetup } from "@smthrs/rpc/RepositorySetup"
 import type { Card } from "./AppState"
 
 /** A saved draft is not an enabled repository responsibility. */
@@ -14,4 +15,32 @@ export const repositoryJobWorkspace = (cards: Iterable<Card>, repo: string, owne
   const recorded = new Set([...cards].flatMap(card => card.kind === "repository-setup" && card.payload.repo === repo
     && card.payload.owner === owner && card.payload.workspaceId !== undefined ? [card.payload.workspaceId] : []))
   return recorded.size === 1 ? [...recorded][0] : undefined
+}
+
+/**
+ * A job's registered state, in the setup card's own words. Undefined until the
+ * host has answered what is registered: an unread registration is not "Off".
+ */
+export const repositoryJobState = (setup: Pick<RepositorySetup, "revision" | "active" | "recovery">): string | undefined =>
+  setup.recovery !== undefined && setup.recovery.registrationState !== "known" ? undefined
+    : setup.active?.enabled ? setup.active.revision === setup.revision ? "Enabled" : "Enabled · draft changes"
+    : setup.active ? "Paused"
+    : setup.recovery?.trialRegistration ? setup.recovery.trialRegistration.enabled ? "Trial" : "Paused"
+    : "Off"
+
+/** {@link repositoryJobState} for every job this account configured on one repository. */
+export const repositoryJobStates = (cards: Iterable<Card>, repo: string, owner: string | null): Partial<Record<RepositoryJob, string>> => {
+  const states: Partial<Record<RepositoryJob, string>> = {}
+  for (const card of cards) {
+    if (card.kind !== "repository-setup" || card.payload.repo !== repo || card.payload.owner !== owner) continue
+    const state = repositoryJobState(card.payload)
+    if (state !== undefined) states[card.payload.job] = state
+  }
+  return states
+}
+
+/** The job a `<job>.setup` flow configures. */
+export const repositoryJobOf = (flow: string): RepositoryJob | undefined => {
+  const parsed = RepositoryJobSchema.safeParse(flow.replace(/\.setup$/, ""))
+  return parsed.success ? parsed.data : undefined
 }
