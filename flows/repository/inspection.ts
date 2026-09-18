@@ -33,24 +33,26 @@ export const repositorySourceReader = (root: string, fs: FileSystem.FileSystem):
     return yield* source.read(relative)
   }) }
 })
-export const captureRepository = (options: InspectionOptions, input: typeof CaptureRepository.payloadSchema.Type, mode: "snapshot" | "immutable" = "snapshot") => Effect.gen(function*() {
-  const remote = yield* Effect.serviceOption(RepositoryRemote)
-  if (Option.isSome(remote) && remote.value.repo !== input.repo) return yield* unavailable("This host belongs to a different repository")
-  if (mode === "snapshot") yield* (yield* Jj.Jj).snapshot("repository automation inspection")
-  const native = yield* NativeCoding, before = yield* native.read([], mode === "snapshot" ? 50 : undefined)
-  if (before.head.kind !== "resolved") return yield* unavailable("Resolve native source conflicts before repository setup")
-  const readFiles = (root: string) => Effect.gen(function*() {
+/** The paths the prompt names, this repository's own CI workflow files, and its
+ * standing guidance and manifests, each read through the same sandboxed reader. */
+export const readRepositorySources = (options: InspectionOptions, root: string, prompt: string) => Effect.gen(function*() {
   const path = yield* Path.Path, fs = options.fs
   const sourceReader = yield* repositorySourceReader(root, fs)
   const directory = yield* fs.realPath(path.join(root, ".github/workflows")).pipe(Effect.orElseSucceed(() => ""))
   const ciNames = directory.startsWith(root + path.sep)
     ? yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => [] as string[])) : []
   const ciPaths = ciNames.filter(name => /^[^/\\]+\.(?:yml|yaml)$/.test(name)).sort().slice(0, 12).map(name => `.github/workflows/${name}`)
-  const first = yield* collectSources(sourceReader, [...extractPaths(input.prompt), ...ciPaths, ...(yield* repositoryContextPaths(sourceReader))])
-  const files = yield* collectSources(sourceReader, [...first.sources.map(file => file.path), ...first.missing,
+  const first = yield* collectSources(sourceReader, [...extractPaths(prompt), ...ciPaths, ...(yield* repositoryContextPaths(sourceReader))])
+  return yield* collectSources(sourceReader, [...first.sources.map(file => file.path), ...first.missing,
     ...extractPaths(...first.sources.map(file => file.text))])
-  return files
-  })
+})
+export const captureRepository = (options: InspectionOptions, input: typeof CaptureRepository.payloadSchema.Type, mode: "snapshot" | "immutable" = "snapshot") => Effect.gen(function*() {
+  const remote = yield* Effect.serviceOption(RepositoryRemote)
+  if (Option.isSome(remote) && remote.value.repo !== input.repo) return yield* unavailable("This host belongs to a different repository")
+  if (mode === "snapshot") yield* (yield* Jj.Jj).snapshot("repository automation inspection")
+  const native = yield* NativeCoding, before = yield* native.read([], mode === "snapshot" ? 50 : undefined)
+  if (before.head.kind !== "resolved") return yield* unavailable("Resolve native source conflicts before repository setup")
+  const readFiles = (root: string) => readRepositorySources(options, root, input.prompt)
   // A held-out revision outlives the workspace that recorded it, and a replaced
   // workspace never held that commit. Current source is what this host can capture,
   // and only a lookup that answered "absent" may substitute it: a refused or
