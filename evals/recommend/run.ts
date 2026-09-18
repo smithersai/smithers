@@ -18,7 +18,9 @@
  *   report, never in the baseline.
  * - `--live`: pulls the log from a deployment's admin surface, scores it, and
  *   prints the table, followed by a second table with one line per model the
- *   rows name. `SMITHERS_ORIGIN` names the deployment (default
+ *   rows name and a third splitting the rows by the door that made them:
+ *   the composer's pills, and the front door's routed and fell-through
+ *   reads (apps/server frontDoor.ts). `SMITHERS_ORIGIN` names the deployment (default
  *   `https://smithers.sh`) and `SMITHERS_ADMIN_TOKEN` is the bearer the admin
  *   routes accept. The token is read from the environment and never printed.
  *
@@ -41,6 +43,7 @@ import { join } from "node:path";
 import {
   parseLog,
   RecommendLogError,
+  renderFrontDoor,
   renderPerModel,
   renderTable,
   scoreLog,
@@ -222,7 +225,10 @@ export async function main(argv: readonly string[] = process.argv.slice(2), host
     const rows = await pullRows(host);
     if (rows === undefined) return 3;
     report(scoreLog(rows), json, host);
-    if (!json) host.stdout(renderPerModel(rows));
+    if (!json) {
+      host.stdout(renderPerModel(rows));
+      host.stdout(renderFrontDoor(rows));
+    }
     return 0;
   }
 

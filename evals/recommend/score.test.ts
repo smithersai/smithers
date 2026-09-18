@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   count,
+  FELL_THROUGH_BUCKET,
   NO_MODEL,
   NO_REPO,
   parseLog,
   percent,
+  PILL_BUCKET,
   RecommendLogError,
+  renderFrontDoor,
   renderPerModel,
   renderTable,
+  ROUTED_BUCKET,
   scoreLog,
   type RecommendLogRow,
 } from "./score.ts";
@@ -198,6 +202,40 @@ describe("rendering", () => {
     expect(lines[4]).toMatch(/^jev-latest\s+2\s+2\s+100\.0%\s+50\.0%\s+50\.0%$/);
     expect(lines[5]).toContain(NO_MODEL);
     expect(lines.length).toBe(6);
+  });
+
+  test("the door table reads the front door's routed turns apart from the composer's pills", () => {
+    const table = renderFrontDoor([
+      row("a/b", ["flow.list"], "flow.list"),
+      row("a/b", ["runs.list"], null, {
+        model: "typesafe-ai/jev",
+        frontDoor: { confidence: 0.97, impossible: "none", routed: true },
+      }),
+      row("a/b", [], null, {
+        model: "typesafe-ai/jev",
+        frontDoor: { confidence: 0.4, impossible: "email", routed: false },
+      }),
+    ]);
+    const lines = table.trimEnd().split("\n");
+    expect(lines[0]).toBe("recommend eval by door");
+    expect(lines[3]).toContain(PILL_BUCKET);
+    expect(lines[4]).toContain(ROUTED_BUCKET);
+    expect(lines[5]).toContain(FELL_THROUGH_BUCKET);
+    expect(lines.length).toBe(6);
+  });
+
+  test("a front-door field a deployment never wrote, or wrote malformed, reads as an ordinary pill row", () => {
+    const rows = parseLog(
+      [
+        JSON.stringify({ ...row("a/b", ["flow.list"], null), frontDoor: { confidence: "high" } }),
+        JSON.stringify({
+          ...row("a/b", ["flow.list"], null),
+          frontDoor: { confidence: 0.9, impossible: "none", routed: true },
+        }),
+      ].join("\n"),
+    );
+    expect(rows[0].frontDoor).toBeUndefined();
+    expect(rows[1].frontDoor).toEqual({ confidence: 0.9, impossible: "none", routed: true });
   });
 
   test("an empty log renders as empty", () => {

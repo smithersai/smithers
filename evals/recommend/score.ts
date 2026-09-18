@@ -45,8 +45,28 @@ export interface RecommendLogRow {
   readonly commandCount: number;
   readonly commands: ReadonlyArray<string>;
   readonly model: string;
+  /**
+   * Present only on a FRONT-DOOR row: the turn route asked Jev whether the
+   * user's message simply IS a command, instead of the composer asking which
+   * pill to show. Both kinds share one log, so `--live` reads them apart here
+   * rather than through a second store.
+   */
+  readonly frontDoor?: FrontDoorDecision;
   readonly outcome: RecommendOutcome | null;
 }
+
+/** What one front-door read decided, as apps/server frontDoor.ts logs it. */
+export interface FrontDoorDecision {
+  readonly confidence: number;
+  readonly impossible: string;
+  /** Whether the Worker answered the turn itself, or fell through to the chat upstream. */
+  readonly routed: boolean;
+}
+
+/** The bucket a row is scored under in the front-door table. */
+export const PILL_BUCKET = "composer pill";
+export const ROUTED_BUCKET = "front door (routed)";
+export const FELL_THROUGH_BUCKET = "front door (fell through)";
 
 /** The counts and rates for one bucket of rows. */
 export interface BucketScore {
@@ -108,6 +128,16 @@ export function asLogRow(value: unknown, line: number): RecommendLogRow {
     }
     outcome = { command: value.outcome.command, at: value.outcome.at };
   }
+  /*
+   * A front-door row is read leniently: the scorer's own numbers never depend
+   * on it, so a deployment that predates the field, or one whose field is
+   * malformed, reads as an ordinary pill row rather than failing the pull.
+   */
+  const door = value.frontDoor;
+  const frontDoor: FrontDoorDecision | undefined = isRecord(door) && typeof door.confidence === "number" &&
+      typeof door.impossible === "string" && typeof door.routed === "boolean"
+    ? { confidence: door.confidence, impossible: door.impossible, routed: door.routed }
+    : undefined;
   return {
     id: value.id,
     at: typeof value.at === "string" ? value.at : "",
@@ -116,6 +146,7 @@ export function asLogRow(value: unknown, line: number): RecommendLogRow {
     commandCount: typeof value.commandCount === "number" ? value.commandCount : 0,
     commands: value.commands as ReadonlyArray<string>,
     model: typeof value.model === "string" ? value.model : "",
+    ...(frontDoor === undefined ? {} : { frontDoor }),
     outcome,
   };
 }
@@ -231,6 +262,33 @@ export function renderPerModel(rows: ReadonlyArray<RecommendLogRow>): string {
   const names = [...byModel.keys()].filter((name) => name !== NO_MODEL).sort((left, right) => left.localeCompare(right));
   if (byModel.has(NO_MODEL)) names.push(NO_MODEL);
   return renderBuckets("recommend eval by model", RECOMMENDATION_LIMIT, names.map((name) => [name, scoreBucket(byModel.get(name)!)]));
+}
+
+/**
+ * The same table, split by which door made the row: the composer's pills, the
+ * turns the front door answered itself, and the turns it read and let through
+ * to the chat upstream. A live pull needs those apart — a routed turn replaced
+ * an LLM turn, a pill only offered one — and the scorer's own numbers stay
+ * untouched, exactly as the per-model table leaves them.
+ *
+ * @since 1.0.0
+ */
+export function renderFrontDoor(rows: ReadonlyArray<RecommendLogRow>): string {
+  const bucketOf = (row: RecommendLogRow): string =>
+    row.frontDoor === undefined ? PILL_BUCKET : row.frontDoor.routed ? ROUTED_BUCKET : FELL_THROUGH_BUCKET;
+  const byDoor = new Map<string, RecommendLogRow[]>();
+  for (const row of rows) {
+    const key = bucketOf(row);
+    const bucket = byDoor.get(key);
+    if (bucket === undefined) byDoor.set(key, [row]);
+    else bucket.push(row);
+  }
+  const order = [PILL_BUCKET, ROUTED_BUCKET, FELL_THROUGH_BUCKET].filter((name) => byDoor.has(name));
+  return renderBuckets(
+    "recommend eval by door",
+    RECOMMENDATION_LIMIT,
+    order.map((name) => [name, scoreBucket(byDoor.get(name)!)]),
+  );
 }
 
 function renderBuckets(headline: string, k: number, buckets: ReadonlyArray<[string, BucketScore]>): string {
