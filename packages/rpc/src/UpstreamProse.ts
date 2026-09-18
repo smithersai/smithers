@@ -15,6 +15,7 @@
  *
  * @since 1.0.0
  */
+import { plueFailureCode } from "./Refusal.ts"
 
 /**
  * The prose inside an upstream error body, or undefined when the body was
@@ -92,6 +93,49 @@ export const machineReadableRefusal = (
       : {})
   }
 }
+
+/**
+ * The sentence plue's scope gate writes, verbatim.
+ *
+ * It is a constant of OUR service, not a phrase we hope a 403 contains:
+ * `RequireScope` in plue internal/middleware/scope.go builds it at one line
+ * (`errors.Forbidden("insufficient token scope")`) and plue's own suite pins
+ * the string (internal/routes/regression_test.go, internal/middleware/
+ * admin_test.go). Reading it is still reading a sentence, which is why it is
+ * only ever consulted INSIDE a body that already carried plue's typed
+ * `forbidden` verdict — see `isCloudScopeRefusal`.
+ */
+const CLOUD_SCOPE_REFUSAL = "insufficient token scope"
+
+/**
+ * Whether a 403 body from Smithers Cloud is the scope refusal a degraded
+ * session exists for.
+ *
+ * Both hosts ask Cloud the same question at sign-in — the Cloudflare Worker in
+ * apps/server/src/cloudSession.ts, the desktop app's native host in
+ * apps/app/src/bun/CloudAuth.ts — by probing GET /api/user/workspaces with the
+ * caller's Cloud PAT. A 403 that means "this token's scopes are short" leaves
+ * the person signed in with `scopes: "degraded"`; any other 403 must not.
+ * Reading that answer is one rule, so it lives here rather than once per host.
+ *
+ * The verdict comes off the wire: plue serializes `code` first and clients
+ * branch on it, never on `message` (plue pkg/errors/errors.go `APIError`). A
+ * body with no plue code — Cloudflare's own block page, another proxy's
+ * envelope, a string that merely reads like a scope complaint — cannot publish
+ * a signed-in session, whatever English it contains.
+ *
+ * plue's taxonomy has no code for "this token's scopes are short": the scope
+ * gate, the workspaces feature flag, and the repository-bound-token gate all
+ * answer `forbidden`, so the code alone cannot separate them and the pinned
+ * sentence above picks the scope one out. That is the producer's gap, and
+ * fixing it is a change in plue: give `RequireScope` its own registry code
+ * (pkg/errors/registry.go) and this function becomes the code test alone.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const isCloudScopeRefusal = (body: string): boolean =>
+  plueFailureCode(machineReadableRefusal(body).code) === "forbidden" && upstreamProse(body) === CLOUD_SCOPE_REFUSAL
 
 /**
  * One sentence a reader can act on for a named upstream that refused, when its

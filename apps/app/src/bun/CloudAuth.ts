@@ -16,13 +16,14 @@
  * The login explicitly requests ADR 0001's app scopes. Legacy restored
  * credentials can still lack workspace/agent/approval scopes, so
  * the probe (GET /api/user/workspaces) runs once, before the session reports
- * signed-in; a 403 whose body says insufficient scope marks the session
+ * signed-in; a 403 carrying Cloud's own scope refusal marks the session
  * `scopes: "degraded"`. The session never reports signed-in without its scope
  * verdict, so a reader that polls for the state gets one consistent answer.
  */
 import type { Server } from "bun"
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import type { CloudSession } from "@smthrs/rpc/LocalApp"
+import { isCloudScopeRefusal } from "@smthrs/rpc/UpstreamProse"
 
 /** What the login callback posts; the keychain entry serializes exactly this. */
 export interface CloudCredentials {
@@ -209,9 +210,13 @@ export const createCloudAuth = async (options: CloudAuthOptions): Promise<CloudA
       credentials !== null && !expired(credentials) ? credentials.token : undefined
 
   /*
-   * The one probe (ADR 0001): a 403 that says insufficient scope means the
-   * legacy token set — workspace/agent/approval acts degrade to "sign in
-   * again to enable" instead of failing silently.
+   * The one probe (ADR 0001): Cloud's own scope refusal means the legacy token
+   * set — workspace/agent/approval acts degrade to "sign in again to enable"
+   * instead of failing silently. Which 403 that is comes from Cloud's typed
+   * verdict, never from the English in the body (`isCloudScopeRefusal`, shared
+   * with the Worker that runs the same probe): a degraded session is still a
+   * signed-in one, so a Cloudflare block page or another proxy's envelope must
+   * not be able to publish one.
    */
   const probeScopes = async (bearer: string): Promise<{ degraded: boolean; valid: boolean }> => {
     try {
@@ -223,8 +228,9 @@ export const createCloudAuth = async (options: CloudAuthOptions): Promise<CloudA
         await response.body?.cancel()
         return { degraded: false, valid: response.status !== 401 }
       }
+      // An unreadable body carries no verdict, so it degrades nothing.
       const text = await response.text().catch(() => "")
-      return { degraded: /insufficient/i.test(text) && /scope/i.test(text), valid: true }
+      return { degraded: isCloudScopeRefusal(text), valid: true }
     } catch {
       // A failed probe says nothing about scope; the session stays undegraded.
       return { degraded: false, valid: true }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { Server } from "bun"
-import { CLOUD_AUTH_BODY_LIMIT, createCloudAuth, parseCloudCredentials } from "./CloudAuth"
+import { CLOUD_AUTH_BODY_LIMIT, CLOUD_KEYCHAIN_SERVICE, createCloudAuth, parseCloudCredentials } from "./CloudAuth"
 import type { CloudAuth, CloudKeychain } from "./CloudAuth"
 
 /*
@@ -37,6 +37,46 @@ const CREDENTIALS = {
   email: "will@codeplane.app",
   expiresAt: at(24 * 60 * 60 * 1000)
 }
+
+/**
+ * Smithers Cloud's refusal envelope in its own wire order: the machine-readable
+ * verdict first, the sentence after (plue pkg/errors/errors.go `APIError`).
+ * Every 403 fixture here is a body plue can really put on
+ * GET /api/user/workspaces.
+ */
+const cloudRefusal = (code: string, message: string): Response =>
+  new Response(JSON.stringify({ code, fault: "user", message }), { status: 403, headers: { "content-type": "application/json" } })
+
+/** The scope refusal itself: plue's `RequireScope` (internal/middleware/scope.go). */
+const cloudScopeRefusal = () => cloudRefusal("forbidden", "insufficient token scope")
+
+/** A 403 whose body starts arriving and then fails mid-stream. */
+const unreadable = (): Response =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`{"code":"forbidden","fault":"user","message":"insufficient`))
+        controller.error(new Error("connection reset"))
+      }
+    }),
+    { status: 403, headers: { "content-type": "application/json" } }
+  )
+
+/*
+ * The relaunch path: a credential already in the keychain, so `createCloudAuth`
+ * runs its one scope probe and publishes the verdict before it answers. No
+ * browser round-trip and no listener, which is what makes a table of probe
+ * answers cheap to state.
+ */
+const afterRelaunch = async (probe: () => Response) => {
+  const keychain = memoryKeychain()
+  keychain.store.set(`${CLOUD_KEYCHAIN_SERVICE}:cloud.test`, JSON.stringify(CREDENTIALS))
+  auth = await createCloudAuth({ now, api: "https://cloud.test", keychain, fetchImpl: async () => probe() })
+  return auth.session()
+}
+
+/** The session a restored, unrefused credential publishes. */
+const RESTORED = { state: "signed-in", username: "will", expiresAt: CREDENTIALS.expiresAt } as const
 
 /*
  * The fake Smithers Cloud upstream: when the login URL is opened it POSTs the
@@ -232,8 +272,8 @@ describe("cloud sign-in", () => {
     expect(probes[0]?.authorization).toBe(`Bearer ${CREDENTIALS.token}`)
   })
 
-  test("a 403 insufficient-scope probe answer degrades the session", async () => {
-    const fake = fakeUpstream({ probeStatus: 403, probeBody: JSON.stringify({ error: "insufficient token scope" }) })
+  test("a 403 carrying Cloud's scope refusal degrades the session", async () => {
+    const fake = fakeUpstream({ probeStatus: 403, probeBody: JSON.stringify({ code: "forbidden", fault: "user", message: "insufficient token scope" }) })
     upstream = fake.server
     auth = await createCloudAuth({ now, api: fake.origin, keychain: memoryKeychain(), waitTimeoutMs: 5000 })
     const started = await auth.start()
@@ -257,7 +297,7 @@ describe("cloud sign-in", () => {
     // and then watch it degrade; the first signed-in observation carries it.
     const fake = fakeUpstream({
       probeStatus: 403,
-      probeBody: JSON.stringify({ error: "insufficient token scope" }),
+      probeBody: JSON.stringify({ code: "forbidden", fault: "user", message: "insufficient token scope" }),
       probeDelayMs: 300
     })
     upstream = fake.server
@@ -273,19 +313,48 @@ describe("cloud sign-in", () => {
     expect(auth.session().scopes).toBe("degraded")
   })
 
-  test("a 403 that does not name scope does not degrade", async () => {
-    const fake = fakeUpstream({ probeStatus: 403, probeBody: JSON.stringify({ error: "forbidden" }) })
-    upstream = fake.server
-    auth = await createCloudAuth({ now, api: fake.origin, keychain: memoryKeychain(), waitTimeoutMs: 5000 })
-    const started = await auth.start()
-    if ("error" in started) throw new Error(started.error)
-    await fetch(started.url)
-    const deadline = Date.now() + 5000
-    while (auth.session().state !== "signed-in") {
-      if (Date.now() > deadline) throw new Error("the callback never signed the session in")
-      await Bun.sleep(10)
-    }
-    expect(auth.session().scopes).toBeUndefined()
+  test("a restored credential is degraded by Cloud's scope refusal", async () => {
+    expect(await afterRelaunch(cloudScopeRefusal)).toEqual({ ...RESTORED, scopes: "degraded" })
+  })
+
+  /*
+   * Every other 403 this probe can meet. `degraded` is a signed-in session
+   * with reduced powers, so a 403 that does not carry Cloud's own verdict AND
+   * its own sentence must never produce one: two English words in a body
+   * nobody wrote for us used to be enough, which meant a Cloudflare block
+   * page or another proxy's envelope could publish a session Cloud had not
+   * blessed.
+   */
+  for (
+    const [label, probe] of [
+      ["the workspaces feature flag is off", () => cloudRefusal("forbidden", "feature not available")],
+      ["a repository-bound token", () => cloudRefusal("forbidden", "repository-bound token cannot access resources outside its repository")],
+      ["a code from another registry row", () => cloudRefusal("access_not_granted", "insufficient token scope")],
+      ["a bare sentence with no verdict", () => new Response(`{"message":"insufficient token scope"}`, { status: 403 })],
+      ["another party's envelope", () => new Response(`{"error":{"message":"insufficient token scope"}}`, { status: 403 })],
+      ["an edge HTML page", () => new Response(`<!DOCTYPE html><title>403 Forbidden</title><p>insufficient token scope</p>`, { status: 403 })],
+      ["a code from no registry", () => new Response(`{"code":"insufficient_scope","message":"insufficient token scope"}`, { status: 403 })],
+      ["a body that cannot be read", unreadable]
+    ] as const
+  ) {
+    test(`a 403 that is not Cloud's scope refusal leaves the session at full scope: ${label}`, async () => {
+      expect(await afterRelaunch(probe)).toEqual(RESTORED)
+    })
+  }
+
+  test("a 200 probe answer leaves the session at full scope", async () => {
+    expect(await afterRelaunch(() => new Response(`[]`, { status: 200 }))).toEqual(RESTORED)
+  })
+
+  test("a 500 probe answer says nothing about scope", async () => {
+    // Cloud is having trouble, not judging this token; the stored credential
+    // keeps its powers rather than being quietly halved.
+    expect(await afterRelaunch(() => new Response(`{"code":"internal","fault":"bug","message":"insufficient token scope"}`, { status: 500 }))).toEqual(RESTORED)
+  })
+
+  test("a 401 probe answer forgets the restored credential", async () => {
+    expect(await afterRelaunch(() => new Response(`{"code":"unauthorized","fault":"user","message":"token is invalid"}`, { status: 401 })))
+      .toEqual({ state: "signed-out", username: null, expiresAt: null })
   })
 
   test("a callback that never arrives expires the attempt back to signed-out", async () => {

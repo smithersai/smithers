@@ -14,17 +14,17 @@ Shared product contracts for the local host, browser, and server. Import individ
 
 Each route family has one home module, and a route constant is declared only there. A route belongs to the longest family it falls under. Add a route to the module its family names; a new family gets a row here first. `test/RouteOwnership.test.ts` holds every `/api/` constant to this table.
 
-| Family                                                                                                                                                                             | Module                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `/api/harnesses`, `/api/repos`, `/api/repo`, `/api/pty`, `/api/targets/query`, `/api/targets/run`                                                                                  | `LocalApp.ts`              |
-| `/api/lsp`                                                                                                                                                                         | `LocalLsp.ts`              |
-| `/api/cloud`, `/api/cloud-ws`, `/api/cloud-auth`                                                                                                                                   | `CloudTunnel.ts`           |
-| `/api/targets`                                                                                                                                                                     | `TargetGraph.ts`           |
-| `/api/bootstrap`                                                                                                                                                                   | `AppBootstrap.ts`          |
-| `/api/tutorial/live`                                                                                                                                                               | `LiveTutorial.ts`          |
-| `/api/repository-setup`                                                                                                                                                            | `RepositorySetup.ts`       |
-| `/api/tutorial/provider`                                                                                                                                                           | `TutorialProviderProxy.ts` |
-| `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`        |
+| Family                                                                                                                                                                                         | Module                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `/api/harnesses`, `/api/repos`, `/api/repo`, `/api/pty`, `/api/targets/query`, `/api/targets/run`                                                                                              | `LocalApp.ts`              |
+| `/api/lsp`                                                                                                                                                                                     | `LocalLsp.ts`              |
+| `/api/cloud`, `/api/cloud-ws`, `/api/cloud-auth`                                                                                                                                               | `CloudTunnel.ts`           |
+| `/api/targets`                                                                                                                                                                                 | `TargetGraph.ts`           |
+| `/api/bootstrap`                                                                                                                                                                               | `AppBootstrap.ts`          |
+| `/api/tutorial/live`                                                                                                                                                                           | `LiveTutorial.ts`          |
+| `/api/repository-setup`                                                                                                                                                                        | `RepositorySetup.ts`       |
+| `/api/tutorial/provider`                                                                                                                                                                       | `TutorialProviderProxy.ts` |
+| `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/jev`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`        |
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.
 
