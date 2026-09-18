@@ -4,6 +4,7 @@ import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { createChangeSeam, DEGRADED_CHANGE_REFUSAL, NO_REVERT_REFUSAL, NO_SPLIT_REFUSAL } from "./ChangeSeam"
+import { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import type { SeamContext } from "./SeamContext"
 
 /*
@@ -995,6 +996,35 @@ describe("createChangeSeam", () => {
     expect(textOf(await seam.landChange("qupxosqw"))).toBe(
       "No landing request carries qupxosqw on will/smithers — /prs.create opens one."
     )
+  })
+
+  /*
+   * Walk run 3, C3-N8: the door read the repository's landing requests, sent no
+   * land, and put nothing on screen — its sentence reached the person only as a
+   * toast that leaves after four seconds, and the next session could not read it
+   * back. A land that lands writes its card; a land that refuses writes the
+   * sentence, so a door that acted on nothing still says so where the person is
+   * looking.
+   */
+  test("every change.land refusal is in the transcript, not only in a toast that leaves", async () => {
+    const said = (store: AppStore) => [...store.collections.messages.values()].map((message) => message.text)
+
+    const absent = await harness({ [`${REPO}/landings?limit=100`]: json(200, { items: [] }) })
+    await absent.seam.landChange("qupxosqw")
+    expect(said(absent.store)).toEqual(["No landing request carries qupxosqw on will/smithers — /prs.create opens one."])
+
+    const unread = await harness({ [`${REPO}/landings?limit=100`]: json(500, { message: "landings down" }) })
+    await unread.seam.landChange("qupxosqw")
+    expect(said(unread.store)).toEqual(["The landing requests of will/smithers weren't read (landings down) — nothing was landed."])
+
+    const signedOut = await harness({}, { signedIn: false })
+    await signedOut.seam.landChange("qupxosqw")
+    expect(said(signedOut.store)).toEqual([SIGN_OUT_REFUSAL])
+
+    /* A queued land already renders its card; its line is not said twice. */
+    const queued = await harness({ ...viewRoutes, [`PUT ${REPO}/landings/42/land`]: json(202, { status: "queued" }) })
+    await queued.seam.landChange("qupxosqw")
+    expect(said(queued.store)).toEqual([])
   })
 
   test("change.land lands the changeset through its own route when one carries the change", async () => {

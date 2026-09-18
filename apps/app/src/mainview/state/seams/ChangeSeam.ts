@@ -1383,7 +1383,21 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
     }
   }
 
+  /*
+   * Walk run 3, C3-N8: the land door read the repository's landing requests,
+   * sent no land, and left nothing on screen. Its refusal WAS written — to a
+   * toast that leaves after four seconds — so a door that acted on nothing
+   * looked like a door that did nothing, and the next session could not read
+   * back what it had said. A land that lands or queues renders its own card;
+   * a land that refuses states the reason where the person is still looking.
+   */
   const landChange: ChangeSeam["landChange"] = async (changeId, repo) => {
+    const answer = await land(changeId, repo)
+    if (typeof answer === "string") ctx.dispatch({ type: "message.appended", actor: "system", text: answer })
+    return answer
+  }
+
+  const land: ChangeSeam["landChange"] = async (changeId, repo) => {
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const resolved = resolveRepo(changeId, repo)
