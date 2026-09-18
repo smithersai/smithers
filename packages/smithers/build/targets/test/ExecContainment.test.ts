@@ -78,8 +78,13 @@ describe("process inspection", () => {
     expect(identity(process.pid)).toContain(basename(process.execPath))
   })
 
+  // A negative number is not a pid on any POSIX host, so both `ps` families
+  // decline it and say so on stderr. A merely enormous pid is not portable:
+  // BSD `ps` rejects 999999999 as too large, while procps accepts anything
+  // below its own `pid_max` and reports it exactly as it reports a process
+  // that has exited, which is the answer this case must not be given.
   it.skipIf(process.platform === "win32")("refuses a pid that ps declines to inspect", () => {
-    expect(() => identity(999_999_999)).toThrow(/ps -p 999999999 failed/)
+    expect(() => identity(-1)).toThrow(/ps -p -1 failed/)
   })
 })
 
