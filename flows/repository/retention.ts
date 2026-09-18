@@ -27,17 +27,25 @@ export const sourceRequest = (event: typeof Event.Type, capturedPayload: Schema.
     Effect.mapError(() => new CodingError({ code: "source_refused", message: "The repository event has no exact retainable source identity" })))
 })
 
-/** Exit zero with an empty revset is not evidence that JJ knows the object. */
-export const hasSourceCommits = (options: ImmutableSourceOptions, commits: ReadonlyArray<string>, operationId: string) => Effect.gen(function*() {
+const unanswered = () => new CodingError({ code: "source_unavailable", message: "The native source lookup could not complete" })
+/** Exit zero with an empty revset is not evidence that JJ knows the object, and a
+ * lookup that never answered is not evidence that JJ lacks it: that is `undefined`. */
+const lookupSourceCommits = (options: ImmutableSourceOptions, commits: ReadonlyArray<string>, operationId: string) => Effect.gen(function*() {
   if (!commits.length || commits.length > 2 || commits.some(commit => !/^(?!0{40}$)[0-9a-f]{40}$/.test(commit)) || !/^[0-9a-f]{128}$/.test(operationId)) {
     return yield* new CodingError({ code: "source_refused", message: "Source lookup requires full native identities" })
   }
   const result = yield* runSourceProcess(options, ["jj", "--ignore-working-copy", `--at-op=${operationId}`, "log", "--no-graph",
     "-r", commits.map(commit => `commit_id("${commit}")`).join(" | "), "-T", "commit_id ++ \"\\n\""], options.repositoryPath, 30_000)
-  if (result.exitCode !== 0 || result.stdout.truncated || result.stderr.truncated) return false
+  if (result.exitCode !== 0 || result.stdout.truncated || result.stderr.truncated) return undefined
   const found = result.stdout.text.trim().split("\n").filter(Boolean).sort()
   return JSON.stringify(found) === JSON.stringify([...new Set(commits)].sort())
-}).pipe(Effect.mapError(error => error instanceof CodingError ? error : new CodingError({ code: "source_unavailable", message: "The native source lookup could not complete" })))
+}).pipe(Effect.mapError(error => error instanceof CodingError ? error : unanswered()))
+/** Retention imports what the lookup could not find and what it could not read. */
+export const hasSourceCommits = (options: ImmutableSourceOptions, commits: ReadonlyArray<string>, operationId: string) =>
+  lookupSourceCommits(options, commits, operationId).pipe(Effect.map(held => held === true))
+/** Absence is proven only by a lookup that answered; the rest keeps its fault class. */
+export const heldSourceCommits = (options: ImmutableSourceOptions, commits: ReadonlyArray<string>, operationId: string) =>
+  lookupSourceCommits(options, commits, operationId).pipe(Effect.flatMap(held => held === undefined ? Effect.fail(unanswered()) : Effect.succeed(held)))
 
 const stableHead = ({ operationId: _operation, ...identity }: NativeRevision) => identity
 /** Retention may populate object storage during eval/trial, but cannot edit or publish source. */

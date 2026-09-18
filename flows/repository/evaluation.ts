@@ -75,11 +75,15 @@ export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, sco
   const evidence = [...new Set(score.evidenceIds.flatMap(id => Number.isSafeInteger(id) && id >= 0 && refs[id] !== undefined ? [refs[id]!] : []))]
   const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)
   if (Option.isNone(decoded)) return { status: "review" as const, observed: "Define an executable event, source revision, and deterministic assertions.", evidence }
-  if (!observed.results.length || observed.results.some(step => executionFailed(step, observed.sourceRevision))) return { status: "error" as const, observed: "The production flow did not complete its evaluated work.", evidence }
+  // A row scored against substituted source reads like any other pass unless it says so.
+  const substituted = decoded.value.sourceRevision === observed.sourceRevision ? ""
+    : ` (the case's pinned commit ${decoded.value.sourceRevision.slice(0, 12)} was not held by this workspace; scored against ${observed.sourceRevision.slice(0, 12)})`
+  const row = (status: (typeof EvalResult.Type)["status"], reason: string) => ({ status, observed: `${reason}${substituted}`, evidence })
+  if (!observed.results.length || observed.results.some(step => executionFailed(step, observed.sourceRevision))) return row("error", "The production flow did not complete its evaluated work.")
   const mismatch = decoded.value.assertions.find(assertion => JSON.stringify(pointer(observed, assertion.path)) !== JSON.stringify(assertion.equals))
-  if (mismatch) return { status: "failed" as const, observed: `Assertion failed at ${mismatch.path}. ${score.reason}`, evidence }
-  if (!score.evidenceIds.length || score.evidenceIds.some(id => !Number.isSafeInteger(id) || id < 0 || refs[id] === undefined)) return { status: "review" as const, observed: "The evaluator did not cite the recorded execution evidence.", evidence }
-  return { status: score.verdict === "pass" ? "passed" as const : score.verdict === "fail" ? "failed" as const : "review" as const, observed: score.reason, evidence }
+  if (mismatch) return row("failed", `Assertion failed at ${mismatch.path}. ${score.reason}`)
+  if (!score.evidenceIds.length || score.evidenceIds.some(id => !Number.isSafeInteger(id) || id < 0 || refs[id] === undefined)) return row("review", "The evaluator did not cite the recorded execution evidence.")
+  return row(score.verdict === "pass" ? "passed" : score.verdict === "fail" ? "failed" : "review", score.reason)
 }
 export const evaluationLayers = Layer.mergeAll(Interpreter.layer(ScoreExecution), Interpreter.layer(CaptureCase),
   RetainScore.toLayer(({ test, observed, score }) => Effect.gen(function*() {

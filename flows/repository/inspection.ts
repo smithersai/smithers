@@ -6,7 +6,7 @@ import { NativeCoding } from "../coding/native.ts"
 import { collectSources, extractPaths, normalizePath, reader, repositoryContextPaths, type SourceReader } from "../coding/planning-sources.ts"
 import { CodingError } from "../coding/schema.ts"
 import { RepositoryRemote } from "./remote.ts"
-import { hasSourceCommits } from "./retention.ts"
+import { heldSourceCommits } from "./retention.ts"
 import { withCapturedCommit } from "./source.ts"
 import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { RepositoryEvidence } from "./schema.ts"
@@ -52,9 +52,11 @@ export const captureRepository = (options: InspectionOptions, input: typeof Capt
   return files
   })
   // A held-out revision outlives the workspace that recorded it, and a replaced
-  // workspace never held that commit. Current source is what this host can capture.
+  // workspace never held that commit. Current source is what this host can capture,
+  // and only a lookup that answered "absent" may substitute it: a refused or
+  // unreachable lookup fails with its own code instead of scoring other source.
   const pinned = input.sourceRevision !== undefined && input.sourceRevision !== before.head.commitId &&
-    (input.heldOut !== true || (yield* hasSourceCommits(options, [input.sourceRevision], before.operationId).pipe(Effect.orElseSucceed(() => false))))
+    (input.heldOut !== true || (yield* heldSourceCommits(options, [input.sourceRevision], before.operationId)))
     ? input.sourceRevision : undefined
   const captured = mode === "immutable" || pinned !== undefined
     ? yield* withCapturedCommit(options, pinned ?? before.head.commitId, before.operationId, (root, source) => readFiles(root).pipe(Effect.map(files => ({ files, source }))))
