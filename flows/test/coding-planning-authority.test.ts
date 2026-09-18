@@ -9,6 +9,7 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as CoreFlow from "@smthrs/core/Flow"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
@@ -223,6 +224,12 @@ const fixture = async (t: TestContext, contributed = false) => {
       Layer.provideMerge(resolved),
       Layer.provideMerge(observed),
       Layer.provideMerge(Agent.layerDefaults),
+      // Every action here runs to a completion, and the completion brake never
+      // falls back. This suite is offline, so the judge is scripted and lets a
+      // stated completion stand.
+      Layer.provideMerge(
+        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      ),
       Layer.provideMerge(Layer.mergeAll(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
       // This authority test never exercises rollback; the separate native JJ
       // snapshot suite proves compensation. A positive Write still requires an

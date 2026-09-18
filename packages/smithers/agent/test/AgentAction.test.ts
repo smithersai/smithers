@@ -28,6 +28,7 @@ import * as EventSink from "../src/EventSink.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -142,7 +143,7 @@ const run = (
       Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
         Layer.provideMerge(AgentAction.layerHost(host)),
         Layer.provideMerge(seats(scripted(cells, requests))),
-        Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
         Layer.provideMerge(Safety.layer),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
@@ -254,7 +255,7 @@ describe("AgentAction.make", () => {
               Layer.provideMerge(
                 seats(scripted([""], requests))
               ),
-              Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
@@ -302,7 +303,7 @@ const stack = <ROut, RIn>(
   step.pipe(
     Layer.provideMerge(AgentAction.layerHost(host)),
     Layer.provideMerge(seats(model)),
-    Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
     Layer.provideMerge(Safety.layer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -659,7 +660,7 @@ describe("AgentAction refusals that never reach the provider", () => {
             Layer.mergeAll(Checked.layer, Interpreter.layer(CheckedFlow)).pipe(
               Layer.provideMerge(AgentAction.layerHost(host)),
               Layer.provideMerge(seats(scripted([answering(`{"approved":true,"issues":[]}`)], requests))),
-              Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
@@ -687,7 +688,7 @@ describe("AgentAction refusals that never reach the provider", () => {
                   resolve: (id) => Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "No API key" }))
                 })
               ),
-              Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),

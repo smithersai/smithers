@@ -24,6 +24,7 @@ import * as Steering from "../src/Steering.ts"
 import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
 import {
+  confidentEvaluator,
   descriptor,
   emits,
   of,
@@ -497,6 +498,7 @@ console.log(kept)`
       Effect.provide(engine.layer),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator),
       Effect.runPromise
     )
 
@@ -611,6 +613,7 @@ console.log(kept)`
       Effect.provide(engine.layer),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(steering),
+      Effect.provide(confidentEvaluator),
       Effect.runPromise
     )
 
@@ -641,6 +644,7 @@ console.log(kept)`
       Effect.provide(engine.layer),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator),
       Effect.runPromise
     )
 
@@ -695,6 +699,7 @@ console.log(kept)`
       Effect.provide(engine.layer),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator),
       Effect.exit,
       Effect.runPromise
     )
@@ -3630,5 +3635,41 @@ describe("CellTurn unsupported claim", () => {
     expect(of(events, "resolved")[0]?.message.content).toEqual([
       expect.objectContaining({ text: "only the redirect handler changed; check src/a.py is green" })
     ])
+  })
+
+  it("fails the run when nothing could judge the claim, and names the reason", async () => {
+    // What a host without `AI_GATEWAY_API_KEY` binds.
+    const { events, failure, model } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 3,
+        repeatCap: 0
+      }),
+      flows: [shell, editor],
+      script: [editing, finishing("check src/a.py", "kept the query string; the suite is green")].map(emits),
+      calls: [edited, green],
+      tree: "a.py=base",
+      evaluator: Evaluator.layerUnavailable()
+    })
+
+    // The completion does not stand, and the run does not quietly continue:
+    // it ends as a typed failure the way `read_only_cap` ends one.
+    expect(failure).toMatchObject({
+      code: "completion_unjudged",
+      message: expect.stringContaining("unreachable")
+    })
+    expect(of(events, "resolved")).toHaveLength(0)
+    // No reading to journal, because no reading was taken.
+    expect(of(events, "claim-demanded")).toEqual([])
+    // The run ends here rather than spending the frame it had left, so the
+    // failure is what a reader sees and not a second answer.
+    expect(of(events, "turn-closed").map((event) => event.outcome)).toEqual(["continue"])
+    expect(model.recorder.requests).toHaveLength(2)
   })
 })

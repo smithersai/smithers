@@ -71,6 +71,15 @@ resolvable seat is refused rather than run:
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+An agent run also needs `AI_GATEWAY_API_KEY`. The loop's last brake on a
+completion asks Jev whether the claim the run wrote matches the evidence the
+run produced, and it never falls back, so without the key a run fails at its
+first completion with `completion_unjudged`:
+
+```bash
+export AI_GATEWAY_API_KEY=vck_...
+```
+
 Confirm the flow is discoverable:
 
 ```bash

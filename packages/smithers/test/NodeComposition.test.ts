@@ -5,6 +5,7 @@
  * binds that must stay confined to loopback.
  */
 import { NodeServices } from "@effect/platform-node"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import { Control as ControlService } from "@smthrs/control"
@@ -14,7 +15,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Path from "@smthrs/kernel/Path"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Registry } from "@smthrs/registry"
 import * as Container from "@smthrs/std/Container"
 import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Option } from "effect"
@@ -437,9 +438,15 @@ describe("NodeControl.testRunner", () => {
         const bound = yield* Effect.forEach(offered, (source) => source.bindings())
         return bound.flat().map((binding) => binding.descriptor.name)
       }).pipe(
-        // The judge the flow attributes a non-zero exit with. A host without
-        // `AI_GATEWAY_API_KEY` binds exactly this one.
-        Effect.provide(Layer.merge(NodeServices.layer, NodeControl.evaluator({}))),
+        // The judge the flow attributes a non-zero exit with, built the one
+        // way every host builds it. A host without `AI_GATEWAY_API_KEY` binds
+        // exactly this, and the completion brake asks the same binding.
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Evaluator.layerFromEnvironment({}).pipe(Layer.provide(NodeHttpClient.layerUndici))
+          )
+        ),
         Effect.orDie
       ) as Effect.Effect<ReadonlyArray<string>>
     )

@@ -8,8 +8,12 @@
  * things a brake wired into an ordered list can get wrong.
  *
  * Nothing here reaches a network: every evaluation is answered by
- * `Evaluator.layerScripted`, and the "no evaluator" case runs with no layer at
- * all, which is what a host that never binds one gives the harness.
+ * `Evaluator.layerScripted`, and the cases about a transport that cannot
+ * answer bind `Evaluator.layerUnavailable()` or script a failure.
+ *
+ * The rule the cases pin: the brake never falls back. A completion nothing
+ * could judge fails the turn as `completion_unjudged` naming the reason, the
+ * way `read_only_cap` fails it, rather than standing.
  */
 import { ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -19,6 +23,7 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as CompletionClaim from "../src/CompletionClaim.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import { HarnessError } from "../src/HarnessError.ts"
 import * as Frame from "../src/internal/frame.ts"
 
 const task = "Make AdminSite.catch_all_view() preserve the query string on an APPEND_SLASH redirect."
@@ -91,7 +96,20 @@ const judge = (options: {
     state.contextWindow,
     claim
   )
-  return Effect.runPromise(options.layer === undefined ? judged : Effect.provide(judged, options.layer))
+  return Effect.provide(judged, options.layer ?? Evaluator.layerUnavailable())
+}
+
+/** One judgement, which must not fail. */
+const settled = (options: Parameters<typeof judge>[0] = {}) => Effect.runPromise(judge(options))
+
+/**
+ * The typed failure one judgement ended in. A success here is the brake
+ * falling back, which is the thing this file exists to refuse.
+ */
+const unjudged = async (options: Parameters<typeof judge>[0] = {}): Promise<HarnessError> => {
+  const outcome = await Effect.runPromise(Effect.result(judge(options)))
+  if (outcome._tag !== "Failure") throw new Error("the claim stood where nothing could judge it")
+  return outcome.failure
 }
 
 /** A scripted evaluator that also records what it was asked. */
@@ -114,16 +132,23 @@ const refusing = (error: Evaluator.EvaluatorError) => {
 }
 
 describe("the claim brake", () => {
-  it("changes nothing on a host that binds no evaluator", async () => {
-    const judged = await judge()
+  it("fails the turn on a host that binds no evaluator, naming it unconfigured", async () => {
+    const error = await unjudged({ layer: Layer.empty as Layer.Layer<Evaluator.Evaluator> })
 
-    expect(judged.demand).toBeUndefined()
-    expect(judged.observed).toBeUndefined()
+    expect(error.code).toBe("completion_unjudged")
+    expect(error.message).toContain("unconfigured")
+  })
+
+  it("fails the turn when the bound evaluator has no transport behind it", async () => {
+    const error = await unjudged()
+
+    expect(error.code).toBe("completion_unjudged")
+    expect(error.message).toContain("unreachable")
   })
 
   it("hands back a completion Jev reads as unproven, once, and spends its own cap", async () => {
     const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.4 } })
-    const judged = await judge({ layer: jev.layer })
+    const judged = await settled({ layer: jev.layer })
 
     expect(judged.demand?.event).toMatchObject({
       _tag: "claim-demanded",
@@ -146,7 +171,7 @@ describe("the claim brake", () => {
 
   it("journals the reading of a claim it lets through, and demands nothing", async () => {
     const jev = scripted({ complete: { probability: 0.9 }, overclaims: { probability: 0.2 } })
-    const judged = await judge({ layer: jev.layer })
+    const judged = await settled({ layer: jev.layer })
 
     expect(judged.demand).toBeUndefined()
     expect(judged.observed).toMatchObject({
@@ -159,35 +184,44 @@ describe("the claim brake", () => {
 
   it("hands back a claim that asserts more than the evidence shows, however complete it looks", async () => {
     const jev = scripted({ complete: { probability: 0.5 }, overclaims: { probability: 0.85 } })
-    const judged = await judge({ layer: jev.layer })
+    const judged = await settled({ layer: jev.layer })
 
     expect(judged.demand?.event).toMatchObject({ _tag: "claim-demanded", demanded: true })
   })
 
   it("asks nothing once the cap is spent, so one run is never asked twice", async () => {
     const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.9 } })
-    const judged = await judge({ layer: jev.layer, changes: { claimDemands: 1 } })
+    const judged = await settled({ layer: jev.layer, changes: { claimDemands: 1 } })
 
     expect(judged.demand).toBeUndefined()
     expect(judged.observed).toBeUndefined()
     expect(jev.asked).toEqual([])
   })
 
-  it("lets the run continue when the evaluator refuses, times out, or is unreachable", async () => {
-    for (const code of ["refused", "timeout", "unreachable"] as const) {
+  it("fails the turn when the evaluator refuses, times out, or is unreachable, naming which", async () => {
+    for (const code of ["refused", "timeout", "unreachable", "empty", "invalid_answer"] as const) {
       const jev = refusing(new Evaluator.EvaluatorError({ code, message: `scripted ${code}` }))
-      const judged = await judge({ layer: jev.layer })
+      const error = await unjudged({ layer: jev.layer })
 
-      expect(judged.demand, code).toBeUndefined()
-      expect(judged.observed, code).toBeUndefined()
+      expect(error.code, code).toBe("completion_unjudged")
+      expect(error.message, code).toContain(code)
+      // The transport's own words survive into the journal line.
+      expect(error.message, code).toContain(`scripted ${code}`)
       expect(jev.asked, code).toHaveLength(1)
     }
+  })
+
+  it("carries the transport's error as the cause, so nothing is laundered", async () => {
+    const failure = new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "gateway down" })
+    const error = await unjudged({ layer: refusing(failure).layer })
+
+    expect((error.cause as Record<string, unknown> | undefined)?.["code"]).toBe("refused")
   })
 
   it("is never consulted when a deterministic brake already named something", async () => {
     const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.9 } })
     // The tree the run was handed is the tree it is completing on.
-    const judged = await judge({ layer: jev.layer, closed: "t0" })
+    const judged = await settled({ layer: jev.layer, closed: "t0" })
 
     expect(judged.demand?.event._tag).toBe("unmoved-demanded")
     expect(judged.demand?.spent).toEqual({ unmovedDemands: 1 })
@@ -196,7 +230,7 @@ describe("the claim brake", () => {
 
   it("sends the task, the claim, the tree fact and the last check, and no ledger", async () => {
     const jev = scripted({ complete: { probability: 0.9 }, overclaims: { probability: 0.1 } })
-    await judge({
+    await settled({
       layer: jev.layer,
       calls: [
         call({ ordinal: 1, input: { command: "grep -rn catch_all_view" }, value: { matches: 2 } }),
@@ -268,7 +302,7 @@ describe("the claim brake", () => {
 
   it("quotes the newest check that reported an exit status, past a write and a failure", async () => {
     const jev = scripted({ complete: { probability: 0.9 }, overclaims: { probability: 0.1 } })
-    await judge({
+    await settled({
       layer: jev.layer,
       calls: [
         call({
@@ -294,7 +328,7 @@ describe("the claim brake", () => {
 
   it("omits the last check when the completing frame reported no exit status", async () => {
     const jev = scripted({ complete: { probability: 0.9 }, overclaims: { probability: 0.1 } })
-    await judge({
+    await settled({
       layer: jev.layer,
       calls: [call({ input: { path: "admin.py" }, value: { text: "..." }, failing: false, passing: false })]
     })

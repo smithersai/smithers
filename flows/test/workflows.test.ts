@@ -18,6 +18,7 @@ import { agentLayers } from "../release-support/runtime.ts"
 import { ReleaseError, type Candidate } from "../release-support/schema.ts"
 import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
+import * as Evaluator from "@smthrs/model/Evaluator"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
@@ -64,7 +65,7 @@ test("real agents draft, revise, and park; a fresh SQLite host resumes without r
       if (command === "git" && args[0] === "log") collections++
       return commandRunner(fixture.root)(command, args, opts)
     } }),
-    agentLayers(scriptedSeats(counts, { failReviews: 1 }), 250_000),
+    agentLayers(scriptedSeats(counts, { failReviews: 1 }), 250_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))),
     HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
 
@@ -95,7 +96,7 @@ test("exhausted quality reviews fail before preview or publication", { timeout: 
     owner: { hostId: "release-quality-test" }, signals: []
   }, Layer.mergeAll(
     actionLayers({ root: fixture.root, evaluator: scriptedTemplate }),
-    agentLayers(scriptedSeats(counts, { failReviews: 99 }), 250_000),
+    agentLayers(scriptedSeats(counts, { failReviews: 99 }), 250_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))),
     HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
   await assert.rejects(Effect.runPromise(Effect.scoped(Content.ReleaseContent.execute(input, { executionId: "quality" }).pipe(Effect.provide(engine)))), /score|Explain restart behavior/)
@@ -118,7 +119,7 @@ for (const decision of [true, false] as const) {
         commands.push([command, ...args].join(" "))
         return ""
       } }),
-      agentLayers(scriptedSeats(counts), 250_000), HumanTask.layer, Interpreter.layer(Release.Release)
+      agentLayers(scriptedSeats(counts), 250_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))), HumanTask.layer, Interpreter.layer(Release.Release)
     ).pipe(Layer.provideMerge(Action.layerImplementations)))
     const token = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       yield* Release.Release.execute(input, { executionId: "prepare", discard: true })

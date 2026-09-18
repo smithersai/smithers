@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 
 const decoder = new TextDecoder()
 
@@ -143,6 +144,7 @@ const turn = (
         })
       ),
       Effect.provide(QuickJSSandbox.layer),
+      Effect.provide(confidentEvaluator),
       Effect.provideService(Steering.Source, Steering.makeNoop()),
       Effect.provideService(EngineLike.EngineLike, port)
     )

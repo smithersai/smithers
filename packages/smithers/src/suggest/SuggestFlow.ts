@@ -34,6 +34,7 @@ import type * as Sandbox from "@smthrs/harness/Sandbox"
 import { Capability, GrantStore, Permission, Workspace } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
@@ -264,7 +265,23 @@ const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = Layer.su
   diff: () => Effect.succeed(undefined)
 })
 
-const composed = (root: string, seats: Layer.Layer<SeatResolver.SeatResolver>) =>
+/**
+ * The judge behind the completion brake, read off the host's environment.
+ *
+ * The brake never falls back: a claim nothing could judge fails the run
+ * instead of standing. Without `AI_GATEWAY_API_KEY` this is
+ * `layerUnavailable()` and the run fails at its first completion.
+ */
+const evaluatorFrom = (
+  environment: Readonly<Record<string, string | undefined>>
+): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
+
+const composed = (
+  root: string,
+  seats: Layer.Layer<SeatResolver.SeatResolver>,
+  evaluator: Layer.Layer<Evaluator.Evaluator>
+) =>
   layer.pipe(
     Layer.provideMerge(Layer.mergeAll(hostFor(root), seats, Agent.layer)),
     Layer.provideMerge(agentPolicy),
@@ -273,7 +290,8 @@ const composed = (root: string, seats: Layer.Layer<SeatResolver.SeatResolver>) =
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(layerSnapshotBoundary),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(evaluator)
   )
 
 /**
@@ -311,7 +329,7 @@ export const layerNode = (config: NodeConfig) =>
         return SeatResolver.make({ resolve: () => resolver.resolve(config.seat) })
       })
     ).pipe(Layer.provide(executor))
-    return composed(config.root, seats)
+    return composed(config.root, seats, evaluatorFrom(config.environment))
   }))
 
 /**
@@ -388,7 +406,14 @@ export const layerScripted = (config: { readonly root: string; readonly script: 
           })
         )
     })
-    return composed(config.root, seats)
+    // The model is scripted, so the judge is too: this composition reaches
+    // no network, and a reading that lets the claim stand keeps the brake
+    // out of the way of what these cases are about.
+    return composed(
+      config.root,
+      seats,
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+    )
   }))
 
 /**

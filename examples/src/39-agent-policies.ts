@@ -10,6 +10,7 @@
  * structured-output rejection. No provider credentials are needed.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -19,6 +20,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -155,7 +157,11 @@ const policies = (calls: Array<string>) =>
         // Under `fail` the same ceiling would end the step instead.
         Budget.layer({ tokens: { max: 500, onExceeded: "warn" } })
       )
-    )
+    ),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. Without `AI_GATEWAY_API_KEY` the run fails at its first
+    // completion with `completion_unjudged`.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici)))
   )
 
 const engine = (filename: string, hostId: string, calls: Array<string>) =>

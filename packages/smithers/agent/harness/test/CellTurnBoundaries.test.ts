@@ -11,6 +11,7 @@ import { type KeyMaterial, Placement } from "@smthrs/core"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Capability, Permission } from "@smthrs/kernel"
 import { CanonicalJson, Model, ModelEvent, ModelRequest } from "@smthrs/model"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Descriptor } from "@smthrs/registry"
 import { Effect, Layer, Option, Result, Schema, Stream } from "effect"
@@ -26,7 +27,7 @@ import * as Notifications from "../src/Notifications.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
-import { descriptor, emits, of, pattern, prose } from "./fixtures/cellTurn.ts"
+import { confidentEvaluator, descriptor, emits, of, pattern, prose } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -122,6 +123,12 @@ const collect = async (
     readonly engine: Layer.Layer<EngineLike.EngineLike>
     readonly sandbox?: Layer.Layer<Sandbox.Sandbox> | undefined
     readonly steering?: Layer.Layer<Steering.Source> | undefined
+    /**
+     * The transport the claim brake asks. The brake fails a completion it
+     * could not put to a model, so the default is a Jev that lets the claim
+     * stand; a case about the failure binds its own.
+     */
+    readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   }
 ): Promise<Observed> => {
   const events: Array<AgentEvent.AgentEvent> = []
@@ -130,6 +137,7 @@ const collect = async (
     Effect.provide(layers.engine),
     Effect.provide(layers.sandbox ?? QuickJSSandbox.layer),
     Effect.provide(layers.steering ?? Steering.layerNoop()),
+    Effect.provide(layers.evaluator ?? confidentEvaluator),
     Effect.result,
     Effect.exit,
     Effect.runPromise
@@ -853,6 +861,7 @@ describe("CellTurn park without a human", () => {
       Effect.provide(engine.layer),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator),
       Effect.result,
       Effect.runPromise
     )
@@ -2164,6 +2173,7 @@ describe("CellTurn delivery through the durable notification queue", () => {
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
           Effect.provide(engine.layer),
           Effect.provide(QuickJSSandbox.layer),
+          Effect.provide(confidentEvaluator),
           Effect.provideService(Steering.Source, source)
         )
         return yield* queue.pending("run")

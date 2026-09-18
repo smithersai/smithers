@@ -1,7 +1,6 @@
 /** Shared native agent equipment; the platform supplies its request executor.
  * @since 1.0.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
@@ -9,7 +8,7 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as ModelError from "@smthrs/model/ModelError"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
@@ -307,27 +306,6 @@ export const checkpointStore = (
 }
 
 /**
- * The judge the `test` flow attributes a non-zero exit with.
- *
- * Jev through the Vercel gateway when `AI_GATEWAY_API_KEY` names a key, and a
- * transport that refuses every evaluation when it does not. The refusal is
- * what a `test` call fails with, which is the honest answer: a host that
- * cannot say whether a failing command failed about itself has no reading of
- * that run to report.
- *
- * @category layers
- * @since 0.1.0
- */
-export const evaluator = (
-  environment: Readonly<Record<string, string | undefined>>
-): Layer.Layer<Evaluator.Evaluator> => {
-  const key = Environment_.read(environment, "AI_GATEWAY_API_KEY")?.trim()
-  return key === undefined || key === ""
-    ? Evaluator.layerUnavailable()
-    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
-}
-
-/**
  * The `test` flow's binding source, or none when this host declares no runner.
  *
  * Named rather than spread inline because the r91 wave's whole finding about
@@ -338,8 +316,9 @@ export const evaluator = (
  *
  * The runner's container is added to the same context, so the suite reaches the
  * image through the transport `bash` already uses. The `Evaluator` comes in
- * with it: the flow attributes a non-zero exit with Jev, and this host builds
- * that judge with {@link evaluator}.
+ * with it: the flow attributes a non-zero exit with Jev, and the host builds
+ * that judge once, with `Evaluator.layerFromEnvironment`, for this flow and
+ * for the completion brake alike.
  *
  * @category constructors
  * @since 0.1.0

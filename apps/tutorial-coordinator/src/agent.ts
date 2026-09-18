@@ -14,6 +14,7 @@ import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Jj } from "@smthrs/kernel"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Ownership } from "@smthrs/run-store"
@@ -54,6 +55,7 @@ export function agentLayer(filename:string,settings:TutorialModelSettings, suppl
     Layer.provideMerge(Layer.mergeAll(host,suppliedSeats??Layer.effect(SeatResolver.SeatResolver)(modelSeats(settings)).pipe(Layer.provide(transport(proxy!))),Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(),Budget.layer({tokens:{max:32000,onExceeded:"fail"},latency:{maxMillis:120000,onExceeded:"fail"}}))),
     Layer.provideMerge(Agent.layerDefaults),Layer.provideMerge(Action.layerImplementations),Layer.provideMerge(durable),
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
   )
 }
 export const runAgent = (filename:string,settings:TutorialModelSettings,executionId:string,instructions:string,context:unknown,proxy:TutorialProxySettings) => {

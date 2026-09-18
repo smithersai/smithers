@@ -803,8 +803,8 @@ export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/H
 ```
 
 `HarnessErrorCode` is `assembly_failed`, `incompatible_journal`,
-`render_failed`, `model_failed`, `engine_failed`, `read_only_cap`, or
-`suspended`. The set is closed to codes this package and `@smthrs/agent`
+`render_failed`, `model_failed`, `engine_failed`, `read_only_cap`,
+`completion_unjudged`, or `suspended`. The set is closed to codes this package and `@smthrs/agent`
 actually raise, and `test/Contracts.test.ts` pins every member to a
 construction site; a foreign CLI adapter declares its own family beside the
 adapter rather than borrowing this one. Interrupting a run raises no
@@ -1037,8 +1037,9 @@ already holds: the task as the person stated it, the completion message,
 whether the tree moved, and the last check the completing frame ran, with its
 result clipped to the newest `outputBytes` (4 KiB). It asks Jev two questions
 through the `Evaluator` service. Does the evidence show the task as stated is
-done, and does the claim assert something the evidence does not show? `read` asks and returns both probabilities with the latency, or nothing
-where no evaluator is bound, no task or claim exists, or the transport failed;
+done, and does the claim assert something the evidence does not show? `read` asks and returns both probabilities with the latency; it returns nothing
+only where there is no task and no claim to form a question about, and fails
+with `completion_unjudged` for every other reason it could not get an answer;
 `find` decides, and demands only at `disprovenAt` (0.3) or below on the first
 question, or `overclaimedAt` (0.8) or above on the second; `reason` says which
 of the two a reading is about and `demand` renders the prose the next frame
@@ -1051,9 +1052,21 @@ It never passes a claim on its own. A confident "complete" ends no run,
 bypasses no other demand, and does nothing but write a journal line;
 `judgeCompletion` consults it only once the five deterministic demands have
 found nothing, and it spends `claimCap` (1) like the other completion caps.
-Without an `Evaluator` service in context it is a no-op: no request, no
-`ClaimDemanded` event, and behaviour identical to the harness before it
-existed.
+
+**It never falls back.** A completion Jev could not judge fails the turn as
+`completion_unjudged`, carrying the reason — `unconfigured` where the host
+delivered no transport, and the evaluator's own `unreachable`, `refused`,
+`timeout`, `empty`, `invalid_answer` or `invalid_question` otherwise. So
+`Evaluator.Evaluator` is a **required service** of `read`, of
+`judgeCompletion`, of `CellTurn.run` and of `Agent.run` above them, and every
+host binds one. A host without `AI_GATEWAY_API_KEY` binds
+`Evaluator.layerUnavailable()` and its runs fail at their first completion,
+by design: a brake that goes quiet when its model is down is a brake that is
+only there when it is not needed. Bind the transport with
+`Evaluator.layerFromEnvironment(process.env)` from `@smthrs/model/Evaluator`,
+which reads `AI_GATEWAY_API_KEY` and falls to `layerUnavailable()` when it is
+unset. A claim one of the five deterministic brakes bounced never reaches
+Jev, so a host without a key still gets all five.
 
 ## Sufficiency
 

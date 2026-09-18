@@ -422,6 +422,7 @@ describe("HarnessError", () => {
       "model_failed",
       "engine_failed",
       "read_only_cap",
+      "completion_unjudged",
       "suspended"
     ] as const
 

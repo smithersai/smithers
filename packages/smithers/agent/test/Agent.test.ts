@@ -39,6 +39,7 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import type * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -295,7 +296,7 @@ const collect = (options: {
       maxFrames: options.maxFrames ?? 3
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-      Effect.provide(Agent.layerDefaults)
+      Effect.provide(Layer.merge(Agent.layerDefaults, confidentEvaluator))
     )
     if (options.activeSeatSamples !== undefined) {
       const state = yield* Metric.value(ObservabilityMetric.activeSeats)
@@ -447,7 +448,7 @@ describe("Agent.run", () => {
           limits: { calls: 8 }
         }).pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-          Effect.provide(Agent.layerDefaults)
+          Effect.provide(Layer.merge(Agent.layerDefaults, confidentEvaluator))
         )
         return events
       }).pipe(Effect.provide(Agent.layer))

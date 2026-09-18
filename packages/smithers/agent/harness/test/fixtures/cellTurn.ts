@@ -1,6 +1,6 @@
 import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, type Layer, Option, Stream } from "effect"
 import type * as AgentEvent from "../../src/AgentEvent.ts"
@@ -161,12 +161,32 @@ export interface Options {
    */
   readonly history?: CellHistory.Service | undefined
   /**
-   * The transport the claim brake asks. Omitted is the host that binds none,
-   * which is what every case written before that brake existed expects: the
-   * control asks nobody and writes nothing. See `CompletionClaim`.
+   * The transport the claim brake asks. The brake never falls back, so a
+   * turn that reaches a completion without one fails as
+   * `completion_unjudged`; omitted is therefore {@link confidentEvaluator},
+   * the reading that lets a claim stand, which is what every case written
+   * before that brake existed expects. A case about the failure binds
+   * `Evaluator.layerUnavailable()` or a refusing script instead. See
+   * `CompletionClaim`.
    */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
 }
+
+/**
+ * A Jev that reads every claim as done and modest, so the sixth brake lets
+ * the completion stand and journals the reading it stood on.
+ *
+ * This is the fixture default because the brake fails a completion it could
+ * not put to a model, and almost every case here is about something else.
+ * A case about the brake itself scripts its own probabilities.
+ *
+ * @category fixtures
+ * @since 0.1.0
+ */
+export const confidentEvaluator: Layer.Layer<Evaluator.Evaluator> = Evaluator.layerScripted(() => ({
+  complete: { probability: 0.99 },
+  overclaims: { probability: 0.01 }
+}))
 
 /**
  * Everything one scripted run published, and the doubles it ran against.
@@ -219,7 +239,7 @@ export const run = async (options: Options): Promise<Run> => {
       options.history === undefined
         ? effect
         : Effect.provideService(effect, CellHistory.CellHistory, options.history),
-    (effect) => options.evaluator === undefined ? effect : Effect.provide(effect, options.evaluator),
+    Effect.provide(options.evaluator ?? confidentEvaluator),
     Effect.result,
     Effect.exit,
     Effect.runPromise

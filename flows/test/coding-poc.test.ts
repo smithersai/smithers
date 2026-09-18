@@ -13,6 +13,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, DurableDeferred, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
@@ -124,6 +125,7 @@ test("real native source, QuickJS drafting and SQLite replay retain a discarded 
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(binding),
     Layer.provideMerge(AgentAction.layerHost({ registry: Registry.makeNoop(), limits: { calls: 4 }, maxFrames: 2, defaultCorrections: 0 })),
     Layer.provideMerge(resolved), Layer.provideMerge(Agent.layer), Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))),
     Layer.provideMerge(Layer.mergeAll(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())))
   const make = () => ManagedRuntime.make(runtime.layer({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "poc-acceptance" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registrations).pipe(

@@ -72,7 +72,7 @@ test("incremental wiki reuses exact terminal receipts after restart and reviews 
   const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
   const host = () => runtime.layerHost({ filename: join(root, ".flows/engine.db"), workspaceRoot: root, owner: { hostId: "wiki-reuse-test" }, signals: [],
     rules: [[rule("fs:read", root), rule("fs:read", `${root}/**`), rule("fs:write", `${root}/.flows/**`)]]
-  }, Layer.mergeAll(actionLayers({ root, output, evaluator: citationsSupported }), reuseLayers({ root, output }), agentLayers(seats, 60_000), Interpreter.layer(Wiki), Interpreter.layer(SectionsProbe)).pipe(Layer.provideMerge(Action.layerImplementations)))
+  }, Layer.mergeAll(actionLayers({ root, output, evaluator: citationsSupported }), reuseLayers({ root, output }), agentLayers(seats, 60_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))), Interpreter.layer(Wiki), Interpreter.layer(SectionsProbe)).pipe(Layer.provideMerge(Action.layerImplementations)))
   const input: Input = { pages, mode: "verified", reviewer: "scripted-wiki-reuse" }
   const first = await Effect.runPromise(Effect.scoped(Wiki.execute(input, { executionId: "wiki-original" }).pipe(Effect.provide(host()))))
   assert.equal(first.verification, "verified")

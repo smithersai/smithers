@@ -236,7 +236,6 @@ const websocketLayer = (remote: string, credential: string | undefined) => {
 export type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
 export {
   checkpointStore,
-  evaluator,
   layerSeatResolver,
   seatResolver,
   testFlows,

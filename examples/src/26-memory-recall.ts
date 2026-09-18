@@ -11,6 +11,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -25,6 +26,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -268,6 +270,13 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                 // eslint-disable-next-line no-restricted-syntax -- these offline runs have no approved envelope
                 Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
                 Layer.provideMerge(Agent.layerDefaults),
+                // The completion brake judges every claim through Jev and
+                // never falls back to the model. Without `AI_GATEWAY_API_KEY`
+                // a run fails at its first completion with
+                // `completion_unjudged`.
+                Layer.provideMerge(
+                  Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))
+                ),
                 Layer.provideMerge(Action.layerImplementations)
               )
             )

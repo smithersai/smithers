@@ -96,17 +96,19 @@ realm's `ctx.flows` catalog.
 `AgentEvent`s:
 
 ```ts
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Stream } from "effect"
 
 const program = CellTurn.run({ state, flows }).pipe(
   Stream.runForEach((event) => Effect.sync(() => record(event))),
   Effect.provide(engineLayer),
   Effect.provide(QuickJSSandbox.layer),
-  Effect.provide(Steering.layerNoop())
+  Effect.provide(Steering.layerNoop()),
+  Effect.provide(Evaluator.layerFromEnvironment(process.env))
 )
 ```
 
-The stream requires three services:
+The stream requires four services:
 
 - `EngineLike.EngineLike`: the durable engine port, covered next.
 - `Sandbox.Sandbox`: the script realm; provide `QuickJSSandbox.layer` or
@@ -115,6 +117,12 @@ The stream requires three services:
   `Steering.layerNoop()` provides an empty one; `Notifications.layer`
   adapts the durable notification queue of
   [`@smthrs/notifications`](https://notifications.smithers.sh/reference/api/) for one run lineage.
+- `Evaluator.Evaluator` from [`@smthrs/model`](https://model.smithers.sh/reference/api/): the transport the
+  completion brake asks. **`AI_GATEWAY_API_KEY` is required to run an
+  agent.** `Evaluator.layerFromEnvironment(process.env)` reads it and falls
+  to `Evaluator.layerUnavailable()` when it is unset, and a run without the
+  key then fails at its first completion with `completion_unjudged`, because
+  the brake never falls back. A test binds `Evaluator.layerScripted` instead.
 
 The controller also reads `CellHistory.CellHistory` optionally: provide the
 service when the host offers a way to save a flow, and the controller appends
@@ -180,9 +188,13 @@ once, from `claimCap`, exactly as `UnmovedDemanded` does. It is a brake only: a
 confident "complete" ends no run and bypasses no other demand, and it is never
 consulted when one of the five already spoke. Every reading is journaled,
 demand or not, with both probabilities and the evaluator latency, so a wave can
-be read for agreement rather than only for firings. A host that binds no
-`Evaluator` gets no request, no event, and the behaviour it had before, so
-nothing needs disarming. See [`CompletionClaim`](/reference/api/#completionclaim).
+be read for agreement rather than only for firings. It never falls back: a
+completion Jev could not judge, whether the host bound no transport or the
+gateway refused, timed out or answered something that does not decode, fails
+the run as `completion_unjudged` naming the reason, rather than standing
+unjudged. The five deterministic brakes run first and unchanged, so a claim
+they bounced never reaches Jev. See
+[`CompletionClaim`](/reference/api/#completionclaim).
 
 `SufficiencyObserved` pairs a remembered failure with a later passing check of
 the same flow, with identical or broader inputs, after a workspace mutation.

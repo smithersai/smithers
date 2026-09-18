@@ -104,6 +104,7 @@ The controller's own failures are `HarnessError`s, with
 | `model_failed`         | The sealed model step failed.                                                                                                                |
 | `engine_failed`        | The engine boundary failed, including a realm that could not open.                                                                           |
 | `read_only_cap`        | The run spent its read-only budget: the cap demanded an edit or a justification, and twice the cap stops the run.                            |
+| `completion_unjudged`  | The completion brake could not reach Jev, so nothing judged the claim. Set `AI_GATEWAY_API_KEY`; the message names the reason.               |
 | `suspended`            | The run parked: a permission requirement, a durable wait, or an engine suspension.                                                           |
 
 Interrupting a run raises no `HarnessError`: the stream ends with an

@@ -74,6 +74,12 @@ A cell is handed exactly one authority: `ctx.call(flowName, input)`. There is no
 
 `@smthrs/agent/Agent` is the assembled production entry point that composes all of this over the durable engine.
 
+## Running an agent needs `AI_GATEWAY_API_KEY`
+
+The sixth brake on a completion asks Jev, TypeSafe's decision model, whether the claim the run wrote matches the evidence the run produced, through the `Evaluator` service of [`@smthrs/model`](https://model.smithers.sh). It never falls back. A completion nothing could judge fails the turn as `HarnessError` `completion_unjudged` carrying the reason, the way `read_only_cap` fails it, rather than standing unjudged: a brake that goes quiet when its model is down is a brake that is only there when it is not needed.
+
+So `Evaluator.Evaluator` is a required service of `CellTurn.run` and of `Agent.run` above it, and every host binds one. `Evaluator.layerFromEnvironment(process.env)` reads `AI_GATEWAY_API_KEY` and binds `Evaluator.layerUnavailable()` when it is unset, so a run without the key fails at its first completion, by design. The five deterministic brakes run first and unchanged, and a claim they bounced never reaches Jev.
+
 ## Public API
 
 The root entry point exports one namespace per module; each is also importable from `@smthrs/harness/<Module>`. `QuickJSSandbox` is deliberately _not_ re-exported from the root: it carries an embedded WebAssembly build, so it is imported from its own subpath by hosts that want it.

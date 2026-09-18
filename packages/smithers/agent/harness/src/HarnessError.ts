@@ -26,6 +26,7 @@ export const HarnessErrorCode = Schema.Literals([
   "model_failed",
   "engine_failed",
   "read_only_cap",
+  "completion_unjudged",
   "suspended"
 ])
 

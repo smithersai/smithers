@@ -27,6 +27,7 @@ import * as Agent from "../src/Agent.ts"
 import * as FlowStore from "../src/FlowStore.ts"
 import * as PromoteFlows from "../src/PromoteFlows.ts"
 import * as Seat from "../src/Seat.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const call = (flowName: string, input: unknown): Cell.Call =>
@@ -301,9 +302,10 @@ describe("flows/write-flow", () => {
           )))
         yield* engine.execute(flow, { executionId: "promotion", payload: {} })
       })).pipe(Effect.provide(
-        Layer.mergeAll(Agent.layer, Agent.layerDefaults, FlowEngine.layerMemory, NodeCrypto.layer).pipe(
-          Layer.provideMerge(Safety.layer)
-        )
+        Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator, FlowEngine.layerMemory, NodeCrypto.layer)
+          .pipe(
+            Layer.provideMerge(Safety.layer)
+          )
       ))
     )
 

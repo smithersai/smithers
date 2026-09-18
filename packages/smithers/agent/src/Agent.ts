@@ -52,6 +52,7 @@ import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import type * as MemorySource from "@smthrs/memory/Source"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
@@ -351,6 +352,12 @@ export interface Service {
     | Steering.Source
     | Budget.Budget
     | QuotaPolicy.QuotaClassifier
+    // The completion brake never falls back: a claim nothing could judge
+    // fails the run. So every host that runs a loop binds a transport, and
+    // one without `AI_GATEWAY_API_KEY` binds `Evaluator.layerUnavailable()`
+    // and fails at its first completion. See `@smthrs/harness`'s
+    // `CompletionClaim`.
+    | Evaluator.Evaluator
   >
 }
 

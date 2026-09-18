@@ -20,6 +20,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow } from "@smthrs/flow"
 import type * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Crypto from "effect/Crypto"
@@ -27,6 +28,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import type * as Schema from "effect/Schema"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import {
   type AgentSpec,
   type AnyFlowSpec,
@@ -104,6 +106,10 @@ export interface SeatProvider {
  * host gets the single-file build, which Node and a browser compile from bytes
  * and Cloudflare's workerd refuses; see {@link layerFor}.
  *
+ * `environment` is where the host's `AI_GATEWAY_API_KEY` is read from: a
+ * Worker's bindings object, or a process environment. Omitted, the app runs
+ * with no evaluator behind the completion brake; see {@link layerFor}.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -114,6 +120,7 @@ export interface LayerOptions {
   readonly seats: SeatProvider
   readonly crypto: Layer.Layer<Crypto.Crypto>
   readonly sandboxVariant?: Layer.Layer<QuickJSSandbox.Variant> | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
 }
 
 /**
@@ -254,12 +261,21 @@ export const layerFor = (options: LayerOptions) => {
   const defaults = options.sandboxVariant === undefined
     ? Agent.layerDefaults
     : Agent.layerDefaultsWithVariant.pipe(Layer.provide(options.sandboxVariant))
+  // The completion brake never falls back, so a claim nothing could judge
+  // fails the turn instead of standing. The client is `fetch`, which Node, a
+  // browser and workerd all have. Without `AI_GATEWAY_API_KEY` in
+  // `options.environment` this is `layerUnavailable()` and the turn fails at
+  // its first completion.
+  const evaluator = Evaluator.layerFromEnvironment(options.environment ?? {}).pipe(
+    Layer.provide(FetchHttpClient.layer)
+  )
   return Layer.mergeAll(host, seats, Agent.layer).pipe(
     Layer.provideMerge(agentPolicy),
     Layer.provideMerge(defaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(options.crypto)
+    Layer.provideMerge(options.crypto),
+    Layer.provideMerge(evaluator)
   )
 }
 

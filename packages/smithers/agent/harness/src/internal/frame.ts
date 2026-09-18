@@ -13,6 +13,7 @@
  * @private
  */
 import { ModelRequest } from "@smthrs/model"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Option, type Schema } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import * as CallLedger from "../CallLedger.ts"
@@ -20,6 +21,7 @@ import type { State } from "../CellTurn.ts"
 import * as CompletionClaim from "../CompletionClaim.ts"
 import type * as ContextWindow from "../ContextWindow.ts"
 import type * as EngineLike from "../EngineLike.ts"
+import type * as HarnessError from "../HarnessError.ts"
 import * as NarrowedCheck from "../NarrowedCheck.ts"
 import * as Sufficiency from "../Sufficiency.ts"
 import * as TruncatedOutput from "../TruncatedOutput.ts"
@@ -638,8 +640,12 @@ const measuredDemand = (
  *    frame back from a cap of its own. It is last because it is the only one
  *    that costs a request, and because a run one of the four already named
  *    has a demand to answer: asking a model to add a second one would hand
- *    the frame two questions. It is silent on any host that binds no
- *    `Evaluator`, so a loop without one behaves exactly as it did before.
+ *    the frame two questions. It never falls back: a completion Jev could
+ *    not judge — no evaluator on the host, a refusal, a deadline, an answer
+ *    that does not decode — fails the turn as `completion_unjudged` carrying
+ *    the reason, the way `read_only_cap` ends a run, rather than standing.
+ *    `Evaluator` is therefore a required service of this function and of
+ *    every turn above it.
  *
  * At most one is named, in that order, because they are in descending order of
  * how fundamental the missing thing is: there is nothing to check, then the
@@ -676,7 +682,7 @@ export const judgeCompletion = (
   accounting: Accounting,
   contextWindow: ContextWindow.ContextWindow,
   claim: string
-): Effect.Effect<CompletionJudgement> =>
+): Effect.Effect<CompletionJudgement, HarnessError.HarnessError, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     const { calls, facts, workspaceDigest } = accounting
     const room = hasNextFrame(state) &&

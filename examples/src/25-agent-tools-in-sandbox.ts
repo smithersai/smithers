@@ -13,6 +13,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -23,6 +24,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -289,6 +291,10 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // The QuickJS sandbox the cell's code runs in, and the steering source it
       // drains. Both are browser-safe defaults.
       Layer.provideMerge(Agent.layerDefaults),
+      // The completion brake judges every claim through Jev and never falls
+      // back to the model. Without `AI_GATEWAY_API_KEY` the run fails at its
+      // first completion with `completion_unjudged`.
+      Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
     )

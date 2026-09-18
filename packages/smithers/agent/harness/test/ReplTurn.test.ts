@@ -18,7 +18,7 @@ import { HarnessError } from "../src/HarnessError.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
-import { descriptor, emits, of, pattern } from "./fixtures/cellTurn.ts"
+import { confidentEvaluator, descriptor, emits, of, pattern } from "./fixtures/cellTurn.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
 const flows = [
@@ -140,6 +140,7 @@ const run = async (options: {
       ? Effect.provide(QuickJSSandbox.layer)
       : Effect.provide(Sandbox.layer(options.sandbox)),
     Effect.provide(Steering.layerNoop()),
+    Effect.provide(confidentEvaluator),
     Effect.result,
     Effect.runPromise
   )
@@ -416,6 +417,7 @@ describe("CellTurn repl completion, behind the check that decides it", () => {
       ),
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator),
       Effect.result,
       Effect.runPromise
     )

@@ -131,7 +131,9 @@ it("resumes a prior wire declaration from reopened SQLite under the same Effect 
           .all("persisted-v1")
       ).toEqual([{
         // AttemptStore indexes SHA-256 of the complete key, including key1_.
-        step_key_digest: "421c9915fbaced34780a3a08b053c6f36520e9313f0036ddf4cba9b06e412492",
+        // Moves with `V1.effect115Key`, which moved when `HarnessErrorCode`
+        // gained `completion_unjudged`.
+        step_key_digest: "257d80cd81ca60b17d5134af148178c05d638b74c042721a379e413139d3ffc4",
         state: "succeeded"
       }])
     } finally {

@@ -9,6 +9,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as Registry from "@smthrs/registry/Registry"
@@ -41,6 +42,7 @@ const layers = (live: Model.Model, policy: Budget.Policy) => agentRuntime(
     route: { prepare: () => Effect.succeed({ routeId: "test", protocolId: "test", method: "POST", url: "http://127.0.0.1", publicHeaders: {}, body: new Uint8Array(), bodyText: "" }) }
   }) }, "anthropic:test"))),
   Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+  Layer.provideMerge(Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))),
   Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)

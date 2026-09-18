@@ -196,8 +196,14 @@ describe("the sealed model step key", () => {
     // RELEASE_SUPPORT.md). Old runs must finish with their original lockfile.
     // The key still includes the prepared request, harness declaration, and
     // cache environment's composition token.
+    //
+    // It moved a second time when the completion brake stopped falling back
+    // and `HarnessErrorCode` gained `completion_unjudged`: the harness
+    // declaration in this preimage spells out the whole error union, so a new
+    // member is a new key. Same rule as above for runs already in flight.
     expect(observed.host).not.toBe("key1_b5b3584a4ab3f2df73c684edccbb962e95e5497a4c33ac14d7f6601a4b3b043f")
-    expect(observed.host).toBe("key1_a577eb74c0f86b94bec571cfe4ee22fc88b149a371652057677c28fb49effebe")
+    expect(observed.host).not.toBe("key1_a577eb74c0f86b94bec571cfe4ee22fc88b149a371652057677c28fb49effebe")
+    expect(observed.host).toBe("key1_46a73bc13be2fe77a111e193fb0f1fafbaab470fb6c2a5c36a86dce446e027f5")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -218,7 +224,8 @@ describe("the sealed cell-call key", () => {
     // of that prefix, or a change to how the layer set is digested, moves this
     // string while leaving the sealed model key above untouched.
     expect(observed.host).not.toBe("key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9")
-    expect(observed.host).toBe("key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef")
+    expect(observed.host).not.toBe("key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef")
+    expect(observed.host).toBe("key1_dac0642a1dac92f2089981c1ae3c0625b5b63455c38e9695d15c713098aa2a00")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

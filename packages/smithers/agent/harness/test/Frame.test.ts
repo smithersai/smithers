@@ -6,6 +6,7 @@
  * call rather than inferred from a journal.
  */
 import { ModelRequest } from "@smthrs/model"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CellTurn from "../src/CellTurn.ts"
@@ -155,10 +156,11 @@ describe("judgeCompletion", () => {
     subject: "pytest tests -k parser",
     input: { command: "pytest tests -k parser" }
   })
-  // Judged with no `Evaluator` in context, which is what these four cases are
-  // about: the deterministic precedence, unchanged by the sixth brake, which
-  // asks nobody on a host that binds no transport. `CompletionClaim.test.ts`
-  // is where that brake is driven.
+  // Judged against an evaluator that would fail every request. These four
+  // cases are about the deterministic precedence, and the brake that could
+  // reach a transport is the sixth: a claim one of the four bounced never
+  // gets there, and one none of them bounced has no task text to ask about.
+  // `CompletionClaim.test.ts` is where that brake is driven.
   const judge = (judged: CellTurn.State) =>
     Effect.runSync(
       Frame.judgeCompletion(
@@ -166,7 +168,7 @@ describe("judgeCompletion", () => {
         account({ state: judged, calls: [narrow], opened: tree("t0"), closed: tree("t0") }),
         judged.contextWindow,
         "done"
-      )
+      ).pipe(Effect.provide(Evaluator.layerUnavailable()))
     )
 
   it("names an unmoved tree before a narrowed check, and spends only its own cap", () => {

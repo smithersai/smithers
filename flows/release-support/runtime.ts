@@ -7,6 +7,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { rebuildableTransport, seatResolver } from "@smthrs/cli/NodeControl"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, type Scope } from "effect"
@@ -36,7 +37,19 @@ export const liveSeats = (model: string) => Layer.effect(SeatResolver.SeatResolv
     return SeatResolver.make({ resolve: () => resolver.resolve(model) })
   }))
 
-export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxTokens: number) => {
+/** The evaluator a host runs with when it names none: Jev through the gateway
+ * when `AI_GATEWAY_API_KEY` is set, and the unavailable transport when it is
+ * not. The completion brake never falls back, so without the key a writer run
+ * fails at its first completion instead of standing unjudged. An offline test
+ * names a scripted one. */
+export const hostEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))
+
+export const agentLayers = (
+  seats: Layer.Layer<SeatResolver.SeatResolver>,
+  maxTokens: number,
+  evaluator: Layer.Layer<Evaluator.Evaluator> = hostEvaluator()
+) => {
   // Writers receive a bounded evidence snapshot. They have no shell, network,
   // filesystem or publication tools; deterministic actions own that work.
   const host = Layer.effect(AgentAction.Host, Effect.gen(function*() {
@@ -56,7 +69,8 @@ export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxTo
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({ tokens: { max: maxTokens, onExceeded: "fail" } }))),
-    Layer.provideMerge(Agent.layerDefaults)
+    Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(evaluator)
   )
 }
 

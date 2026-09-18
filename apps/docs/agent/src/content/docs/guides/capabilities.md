@@ -67,6 +67,19 @@ wires its `ask` through the control plane this way; see
 
 ## Jev needs a transport
 
+**`AI_GATEWAY_API_KEY` is required to run an agent.** The harness's sixth
+brake on a completion asks Jev whether the claim the run wrote matches the
+evidence the run produced, and it never falls back: a completion nothing
+could judge fails the run as `HarnessError` `completion_unjudged` carrying the
+reason. `Agent.run` and every `AgentAction` layer therefore require
+`Evaluator.Evaluator`, so a composition that binds none does not compile.
+Bind `Evaluator.layerFromEnvironment(process.env)`; without the key that is
+`Evaluator.layerUnavailable()` and every run fails at its first completion, by
+design. See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
+
+The same service answers the cell's own classify doors, which fail softly
+instead:
+
 `classify` binds the cell's doors to Jev: the ad-hoc `classify` flow, which
 takes any JSON state and model-authored questions, and one `classify/<id>` flow
 per curated classifier, which takes the classifier's own state. The one service

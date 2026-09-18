@@ -228,7 +228,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const seats = SeatResolver.layer({ resolve: (id) => Effect.succeed(Seat.make({ id, modelId: "scripted-wiki", model, contextWindowTokens: 200_000,
     route: { prepare: () => Effect.succeed({ routeId: "wiki-test", protocolId: "wiki-test", method: "POST", url: "https://example.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) }
   })) })
-  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000), Interpreter.layer(Wiki)).pipe(
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), agentLayers(seats, 10_000, Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))), Interpreter.layer(Wiki)).pipe(
     Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const input = { pages: [f.spec], mode: "verified" as const, reviewer: "scripted-test" }

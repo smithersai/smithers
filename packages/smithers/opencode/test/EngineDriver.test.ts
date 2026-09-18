@@ -156,12 +156,30 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
+/**
+ * A Jev that reads every completion claim as done and modest, and answers
+ * nothing else.
+ *
+ * The harness's completion brake never falls back: a claim nothing could
+ * judge fails the turn as `completion_unjudged`, so a case about anything
+ * else needs a transport that lets the completion stand. Every other
+ * question still fails as `unreachable`, which is what a host with no
+ * gateway key gives the cell's own classify doors.
+ */
+const judging = Evaluator.layerScripted((request) =>
+  "complete" in request.questions && "overclaims" in request.questions
+    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+    : Effect.fail(
+      new Evaluator.EvaluatorError({ code: "unreachable", message: "No evaluator is installed on this host" })
+    )
+)
+
 const options = (directory: string, extra: Partial<EngineDriver.Options> = {}): EngineDriver.Options => ({
   directory,
   seat: "scripted:test",
   host,
   maxFrames: 4,
-  evaluator: Evaluator.layerUnavailable(),
+  evaluator: judging,
   ...extra
 })
 
@@ -809,7 +827,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
           Layer.mergeAll(
             Events.layer({ directory, project: "p" }),
             EngineDriver.layer(options(directory, extra)),
-            Evaluator.layerUnavailable()
+            judging
           )
         )
       )
@@ -861,7 +879,9 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
 const c = await ctx.call("classify/triage/relevance", { task: "t", file: "f", excerpt: "x" })
 console.log(JSON.stringify(r))
 ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers.yes.value + " " + c.answers.role.value)`
-    // No key: every call settles as a failure the cell reads, and the turn completes.
+    // No key: every classify call settles as a failure the cell reads, and
+    // then the turn itself fails, because the completion brake asks the same
+    // transport and never falls back.
     const refusedDirectory = scratch()
     const refused = recorder()
     script.replies = [classifyCell]
@@ -875,13 +895,14 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
         }),
       { evaluator: undefined, environment: {} }
     )
-    expect(refused.outcomes).toEqual([{ _tag: "completed" }])
+    expect(refused.outcomes).toEqual([{
+      _tag: "failed",
+      message: expect.stringContaining("A completion no evaluator could judge")
+    }])
     const refusedCalls = settledCalls(refused.events, "classify")
     expect(refusedCalls.length).toBe(1)
     expect(refusedCalls[0]!.result.outcome).toBe("failure")
     expect(refusedCalls[0]!.result.message).toContain("unreachable")
-    expect(answer(refused.events)).toContain("refused")
-    expect(answer(refused.events)).toContain("unreachable")
 
     // Nothing named at all: the driver reads the process environment, held
     // to no key here so the unit suite never reaches the gateway and the
@@ -904,12 +925,14 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     } finally {
       if (ambientKey !== undefined) process.env["AI_GATEWAY_API_KEY"] = ambientKey
     }
-    expect(ambient.outcomes).toEqual([{ _tag: "completed" }])
+    expect(ambient.outcomes).toEqual([{
+      _tag: "failed",
+      message: expect.stringContaining("A completion no evaluator could judge")
+    }])
     const ambientCalls = settledCalls(ambient.events, "classify")
     expect(ambientCalls.length).toBe(1)
     expect(ambientCalls[0]!.result.outcome).toBe("failure")
     expect(ambientCalls[0]!.result.message).toContain("unreachable")
-    expect(answer(ambient.events)).toContain("refused")
 
     // A scripted evaluator: the ad-hoc door and a curated door both answer.
     const answeredDirectory = scratch()
@@ -926,6 +949,8 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
         evaluator: Evaluator.layerScripted((request) =>
           "yes" in request.questions
             ? { yes: { probability: 0.9 } }
+            : "complete" in request.questions
+            ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
             : {
               relevant: { probability: 0.8 },
               role: { choice: "fixture", probabilities: { implementation: 0.1, fixture: 0.8, unrelated: 0.1 } },

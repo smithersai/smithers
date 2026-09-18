@@ -40,6 +40,7 @@ import { Capability, GrantStore, Permission, Workspace } from "@smthrs/kernel"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import type * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -385,17 +386,26 @@ const hostFor = (
 }
 
 /**
- * The two agent policies this tool decides for itself.
+ * The two agent policies this tool decides for itself, and the judge that
+ * joins them in each composition below.
  *
- * `Agent.layer` requires both, and requiring them is the point: a composition
- * that omits one used to reach a no-op and spend without a ceiling or park.
- * Migration takes the real classifier, so a provider that names a reset instant
- * parks the unit and resumes there rather than failing it. The budget is
- * unbounded because a migration carries no approved envelope to derive one
- * from, and inventing a ceiling here would refuse a repair round on a number
- * nobody chose. That is a decision, spelled out, not a default.
+ * `Agent.layer` requires all three, and requiring them is the point: a
+ * composition that omits one used to reach a no-op and spend without a ceiling
+ * or park. Migration takes the real classifier, so a provider that names a
+ * reset instant parks the unit and resumes there rather than failing it. The
+ * budget is unbounded because a migration carries no approved envelope to
+ * derive one from, and inventing a ceiling here would refuse a repair round on
+ * a number nobody chose. The evaluator is the completion brake's judge, and the
+ * brake never falls back: a claim nothing could judge fails the unit instead of
+ * standing, so a host without `AI_GATEWAY_API_KEY` binds
+ * `Evaluator.layerUnavailable()` and fails at its first completion. Those are
+ * decisions, spelled out, not defaults.
  */
 const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
+
+/** The judge, read from the same environment the seat resolver reads. */
+const evaluatorFor = (config: ValidatedConfig): Layer.Layer<Evaluator.Evaluator, never, never> =>
+  Evaluator.layerFromEnvironment(config.environment ?? {}).pipe(Layer.provide(NodeHttpClient.layerUndici))
 
 // The credentialed half answers to the same store as the filesystem and the
 // shell, for the reason `hostFor` gives: a second store is a fail-open the
@@ -441,7 +451,8 @@ export const layerNode = (config: NodeConfig) =>
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(evaluatorFor(validated))
     )
   }))
 
@@ -633,7 +644,8 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(evaluatorFor(validated))
     )
   }))
 

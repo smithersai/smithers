@@ -49,6 +49,7 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -254,7 +255,7 @@ const incarnation = (
     return Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
       Layer.provideMerge(AgentAction.layerHost(composition)),
       Layer.provideMerge(seats(model)),
-      Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
       Layer.provideMerge(classifier),
       Layer.provideMerge(Budget.layerUnbounded()),
       Layer.provideMerge(Action.layerImplementations),
@@ -273,7 +274,7 @@ const memory = (model: Model.Model, classifier: Layer.Layer<QuotaPolicy.QuotaCla
   Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
     Layer.provideMerge(AgentAction.layerHost(host)),
     Layer.provideMerge(seats(model)),
-    Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
     Layer.provideMerge(classifier),
     Layer.provideMerge(Budget.layerUnbounded()),
     Layer.provideMerge(Action.layerImplementations),

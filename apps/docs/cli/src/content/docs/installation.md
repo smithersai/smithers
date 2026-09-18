@@ -52,6 +52,11 @@ downgrade to a 0.x `latest`.
   which of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
   `MOONSHOT_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `CEREBRAS_API_KEY` are set, and names any that are exported but empty. The
   doctor check reports presence without printing credential values.
+- `AI_GATEWAY_API_KEY`, to run an agent. The agent loop's last brake on a
+  completion asks Jev whether the claim the run wrote matches the evidence the
+  run produced, and it never falls back: without the key every run fails at its
+  first completion with `completion_unjudged`. Flows that call no agent do not
+  need it.
 
 ## Runners
 

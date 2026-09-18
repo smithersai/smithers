@@ -26,6 +26,7 @@ import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Seat from "../src/Seat.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -136,7 +137,7 @@ describe("a durable wait nested inside a cell action", () => {
           maxFrames: 3
         }).pipe(
           Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
-          Effect.provide(Agent.layerDefaults)
+          Effect.provide(Layer.merge(Agent.layerDefaults, confidentEvaluator))
         )
         return collected
       }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))

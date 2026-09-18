@@ -23,11 +23,17 @@
  * into a finished run, and nothing here runs before the deterministic five:
  * a run this module contradicts is a run they had nothing to say about.
  *
- * It is also a no-op wherever no `Evaluator` is bound. A host that never
- * installs one gets the five brakes it had, byte for byte, with no request
- * made and no event written. That is the arm `VacuousVerification`'s header
- * asks for, turned the other way round: this control ships wired, and the
- * absence of a transport — not a comment — is what leaves it off.
+ * It never falls back. A completion this brake could not put to Jev is a
+ * completion nothing judged, and an unjudged completion ends the run as a
+ * typed `completion_unjudged` failure rather than standing. No evaluator on
+ * the host, a gateway that refused, a deadline, an empty body, an answer that
+ * does not decode: every one of them fails the turn and names its reason in
+ * the journal. The alternative — letting the claim through whenever the
+ * transport is down — is the brake being loudest exactly when it works and
+ * silent exactly when it does not, which is the shape of a control nobody can
+ * rely on. So `Evaluator` is a required service of this module and of every
+ * turn above it, and a host without `AI_GATEWAY_API_KEY` binds
+ * `Evaluator.layerUnavailable()` and fails at its first completion, by design.
  *
  * @since 1.0.0-rc.0
  */
@@ -38,6 +44,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
@@ -262,31 +269,71 @@ export const newest = (text: string): string => {
 }
 
 /**
- * Asks Jev about one completion, or says nothing at all.
+ * Why one completion went unjudged.
  *
- * `undefined` is returned for every reason the brake has to stay silent, and
- * they are deliberately the same value: no evaluator bound on this host, no
- * task or no claim to judge, and any failure the transport reports —
- * unreachable, refused, a timeout, an answer that does not decode. A control
- * that cannot reach its model has nothing to say about the run, and turning a
- * gateway outage into a bounced completion would make the harness less
- * reliable than the harness without it.
+ * `unconfigured` is the host that delivered no `Evaluator` at all; every
+ * other member is {@link Evaluator.EvaluatorErrorCode} verbatim, so the
+ * journal carries the transport's own word for what went wrong rather than a
+ * harness paraphrase of it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
+
+/**
+ * The failure an unjudged completion ends the turn with.
+ *
+ * One code, `completion_unjudged`, and a message that opens with the reason
+ * so a journal line, a `Transcript` projection and a test all read the same
+ * word. `cause` carries the transport's own error where there was one.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const unjudged = (
+  reason: UnjudgedReason,
+  detail: string,
+  cause?: unknown
+): HarnessError =>
+  new HarnessError({
+    code: "completion_unjudged",
+    message: `A completion no evaluator could judge (${reason}): ${detail}`,
+    ...(cause === undefined ? {} : { cause })
+  })
+
+/**
+ * Asks Jev about one completion, and fails the turn when it cannot.
+ *
+ * `undefined` means one thing only: there was no claim and no task to judge,
+ * which is not a transport failure and not a completion anybody could form a
+ * question about. Everything else that stops the brake reaching an answer
+ * fails, because a brake that goes quiet when its model is down is a brake
+ * that is only there when it is not needed. See the module header.
  *
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const read = (evidence: Evidence): Effect.Effect<Reading | undefined> =>
+export const read = (
+  evidence: Evidence
+): Effect.Effect<Reading | undefined, HarnessError, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     if (evidence.task.trim() === "" || evidence.claim.trim() === "") return undefined
+    // The service is required above, so a `None` here is a host that
+    // satisfied the type and delivered nothing — the defence that outlives
+    // the compiler, and the one that says `unconfigured`.
     const bound = yield* Effect.serviceOption(Evaluator.Evaluator)
-    if (Option.isNone(bound)) return undefined
+    if (Option.isNone(bound)) {
+      return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host"))
+    }
     const settled = yield* classifier.evaluate(evidence).pipe(
       Effect.provideService(Evaluator.Evaluator, bound.value),
       Effect.timed,
-      Effect.option
+      // `ClassifierError.code` is `EvaluatorErrorCode` verbatim, so the
+      // reason a journal reads is the transport's own.
+      Effect.mapError((error) => unjudged(error.code, error.message, error))
     )
-    if (Option.isNone(settled)) return undefined
-    const [elapsed, answers] = settled.value
+    const [elapsed, answers] = settled
     return {
       complete: answers.complete.probability,
       overclaims: answers.overclaims.probability,

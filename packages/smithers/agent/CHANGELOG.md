@@ -8,6 +8,16 @@
 
 ### Changed
 
+- **`Agent.run` and every `AgentAction` layer now require
+  `Evaluator.Evaluator`** from `@smthrs/model`. The harness's sixth brake on a
+  completion never falls back: a claim nothing could judge fails the run as
+  `HarnessError` `completion_unjudged` rather than standing, so a host that
+  binds no transport does not compile instead of quietly losing the brake.
+  Bind `Evaluator.layerFromEnvironment(process.env)`; a host without
+  `AI_GATEWAY_API_KEY` gets `Evaluator.layerUnavailable()` and its runs fail
+  at their first completion, by design. `Agent.layerDefaults` is unchanged and
+  still supplies only the sandbox and the steering source: the evaluator is a
+  decision about where the host's key comes from, not a default.
 - `SeatResolver.contextWindowTokensFor` now re-exports
   `ModelCatalog.contextWindowTokensFor` from `@smthrs/model`, where the provider
   window table now lives. The resolved numbers are unchanged.

@@ -31,7 +31,12 @@ export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/Cal
 // the rc.115 fixture pins that complete representation independently.
 export const key = "key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9"
 
-export const effect115Key = "key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef"
+// Moved again when `HarnessErrorCode` gained `completion_unjudged`: the
+// wire declaration folded into the preimage carries the whole error union,
+// so a new member is a new declaration digest and a new sealed key. That is
+// what the digest is for. In-flight runs finish under the declaration they
+// started on; a new run is keyed under this one.
+export const effect115Key = "key1_dac0642a1dac92f2089981c1ae3c0625b5b63455c38e9695d15c713098aa2a00"
 
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.

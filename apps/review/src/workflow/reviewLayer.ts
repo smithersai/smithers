@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -18,6 +19,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
@@ -137,6 +139,17 @@ export const agentHost = (environment: Readonly<Record<string, string | undefine
 const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
 
 /**
+ * The judge behind the completion brake, read from the same environment the
+ * seats and the envelope read.
+ *
+ * The brake never falls back, so a claim nothing could judge fails the run
+ * rather than standing. Without `AI_GATEWAY_API_KEY` this is
+ * `Evaluator.layerUnavailable()` and the review fails at its first completion.
+ */
+const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
+  Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
+
+/**
  * Builds the review workflow over a caller-supplied seat resolver and the
  * in-process engine.
  *
@@ -157,7 +170,8 @@ export const layerMemory = (
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(evaluator(environment))
   )
 
 /**
@@ -196,7 +210,8 @@ export const layerNode = (options: {
       Layer.provideMerge(Layer.mergeAll(agentHost(environment), options.seats, Agent.layer)),
       Layer.provideMerge(agentPolicy),
       Layer.provideMerge(Agent.layerDefaults),
-      Layer.provideMerge(Action.layerImplementations)
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(evaluator(environment))
     )
   )
 }

@@ -34,10 +34,25 @@
   only: a confident "complete" ends no run and bypasses no other demand. Every
   reading is journaled as `AgentEvent.ClaimDemanded`, demand or not, with both
   probabilities, the evaluator latency and a `demanded` flag, so a wave can be
-  read for agreement and not only for firings. A host that binds no
-  `Evaluator` service gets no request, no event, and the behaviour it had
-  before. `judgeCompletion` now returns an `Effect` of a judgement carrying
-  the demand and that reading.
+  read for agreement and not only for firings. `judgeCompletion` now returns
+  an `Effect` of a judgement carrying the demand and that reading.
+
+  **The brake never falls back.** A completion Jev could not judge fails the
+  turn with the new `HarnessError` code `completion_unjudged`, carrying the
+  reason: `unconfigured` where the host delivered no transport, and the
+  evaluator's own `unreachable`, `refused`, `timeout`, `empty`,
+  `invalid_answer` or `invalid_question` otherwise. `Evaluator.Evaluator` is
+  therefore a **required service** of `CompletionClaim.read`,
+  `judgeCompletion` and `CellTurn.run`, so a composition that binds none does
+  not compile; a host without `AI_GATEWAY_API_KEY` binds
+  `Evaluator.layerUnavailable()` and its runs fail at their first completion,
+  by design. The five deterministic brakes run first and unchanged, so a
+  claim they bounced never reaches Jev.
+
+  Adding `completion_unjudged` to `HarnessErrorCode` moves every sealed step
+  key that folds the harness wire declaration into its preimage, because the
+  declaration spells out the whole error union. Runs already in flight finish
+  under the declaration they started on.
 - Added `UnresolvedFailure.exitStatus`, the one reader of `exitStatusKey`.
   `failed` and `passed` are defined through it, and `CompletionClaim` quotes
   the number itself.

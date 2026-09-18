@@ -52,7 +52,13 @@ import { FlowEngine } from "../../packages/smithers/flows/engine/src/index.ts"
 import { Action, Flow, FlowRuntime, Interpreter } from "../../packages/smithers/flows/flow/src/index.ts"
 import type { AgentEvent } from "../../packages/smithers/agent/harness/src/index.ts"
 import { FlowBinding } from "../../packages/smithers/agent/harness/src/index.ts"
-import { Model, ModelEvent, type ModelRequest, type Route } from "../../packages/smithers/agent/model/src/index.ts"
+import {
+  Evaluator,
+  Model,
+  ModelEvent,
+  type ModelRequest,
+  type Route
+} from "../../packages/smithers/agent/model/src/index.ts"
 import { Node } from "../../packages/smithers/flows/plan/src/index.ts"
 import { Registry } from "../../packages/smithers/agent/registry/src/index.ts"
 
@@ -71,6 +77,15 @@ const hostCrypto = Layer.succeed(
 // suite also has no approved plan envelope from which to derive a spend cap.
 // eslint-disable-next-line no-restricted-syntax -- offline evals have no approved envelope
 const offlinePolicy = Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())
+
+// The completion brake never falls back: a claim nothing judged fails the run
+// as `completion_unjudged`. This suite is offline, so the judge is scripted and
+// answers the `completion/claim` classifier's two questions with the confidence
+// a stated completion has always carried here.
+const offlineEvaluator = Evaluator.layerScripted(() => ({
+  complete: { probability: 0.99 },
+  overclaims: { probability: 0.01 }
+}))
 
 /**
  * What one scenario run reports, and the only thing the scorers read.
@@ -419,6 +434,7 @@ export const runAction = (options: ActionOptions): Effect.Effect<Observation> =>
         ),
         Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
         Layer.provideMerge(offlinePolicy),
+        Layer.provideMerge(offlineEvaluator),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
         Layer.provideMerge(hostCrypto)
@@ -498,7 +514,7 @@ export const runAgent = (options: AgentOptions): Effect.Effect<Observation> =>
         ...(options.readOnlyCap === undefined ? {} : { readOnlyCap: options.readOnlyCap })
       }).pipe(
         Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
-        Effect.provide(Agent.layerDefaults)
+        Effect.provide(Layer.merge(Agent.layerDefaults, offlineEvaluator))
       )
       const answer = resolvedText(collected)
       return answer === undefined ? yield* Effect.fail(new Error("the run resolved with no answer")) : answer

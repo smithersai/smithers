@@ -19,6 +19,7 @@ import { Effects, type KeyMaterial, Placement } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import { Capability, CapabilitySet, Permission } from "@smthrs/kernel"
 import { CanonicalJson, type Model, ModelCatalog, ModelEvent, ModelRequest } from "@smthrs/model"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
@@ -2221,7 +2222,7 @@ const frame = (
   realm: Sandbox.Realm,
   steering: Steering.Source,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
-): Effect.Effect<Step, HarnessError | Sandbox.SandboxError | Model.ModelFailure> =>
+): Effect.Effect<Step, HarnessError | Sandbox.SandboxError | Model.ModelFailure, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
     // is the one the sealed step is actually keyed on.
@@ -2631,12 +2632,12 @@ export const run = (
 ): Stream.Stream<
   AgentEvent.AgentEvent,
   HarnessError,
-  EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source
+  EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source | Evaluator.Evaluator
 > =>
   Stream.callback<
     AgentEvent.AgentEvent,
     HarnessError,
-    EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source
+    EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source | Evaluator.Evaluator
   >((queue) => {
     const emit = (event: AgentEvent.AgentEvent): Effect.Effect<void> => Effect.asVoid(Queue.offer(queue, event))
     const loop = Effect.gen(function*() {

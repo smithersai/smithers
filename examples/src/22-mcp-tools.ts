@@ -11,6 +11,7 @@
  */
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -22,6 +23,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -250,6 +252,12 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // eslint-disable-next-line no-restricted-syntax -- this offline example has no approved envelope
               Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
               Layer.provideMerge(Agent.layerDefaults),
+              // The completion brake judges every claim through Jev and never
+              // falls back to the model. Without `AI_GATEWAY_API_KEY` the run
+              // fails at its first completion with `completion_unjudged`.
+              Layer.provideMerge(
+                Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))
+              ),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(durableEngine(filename, "examples-mcp"))
             )

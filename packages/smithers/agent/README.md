@@ -68,6 +68,7 @@ stream, journals it, or ignores it.
 import { Agent, Budget, ChildFlows, QuotaPolicy, SeatResolver, StandardFlows } from "@smthrs/agent"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import type * as Path from "@smthrs/kernel/Path"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Stream } from "effect"
 import type * as FileSystem from "effect/FileSystem"
 
@@ -102,7 +103,11 @@ const run = Effect.gen(function*() {
   // This direct host should park reset-bearing refusals. It has no approved
   // plan envelope from which to derive a spend ceiling.
   Effect.provide(QuotaPolicy.layerDefault()),
-  Effect.provide(Budget.layerUnbounded())
+  Effect.provide(Budget.layerUnbounded()),
+  // The completion brake never falls back, so every host binds a transport.
+  // Without `AI_GATEWAY_API_KEY` this is `Evaluator.layerUnavailable()` and
+  // the run fails at its first completion.
+  Effect.provide(Evaluator.layerFromEnvironment(process.env))
 )
 ```
 
@@ -113,6 +118,15 @@ never by assembling one from a model and a route it happened to hold.
 `Agent.layerDefaults` supplies the two services a run leaves to the host —
 the QuickJS sandbox and an empty steering source — with browser-safe defaults. A
 host that accepts mid-run messages provides its own `Steering.layer` instead.
+
+The third service a run leaves to the host is the `Evaluator` from
+[`@smthrs/model`](/api/model), and it is not in `layerDefaults` because it is
+a decision about where the host's gateway key comes from. **`AI_GATEWAY_API_KEY`
+is required to run an agent**: the harness's completion brake never falls back,
+so a claim nothing could judge fails the run as `completion_unjudged`.
+`Evaluator.layerFromEnvironment(process.env)` reads the key and binds
+`Evaluator.layerUnavailable()` when it is unset, and runs on that host fail at
+their first completion, by design.
 
 `Agent.layerDefaultsWithVariant` is the same pair over the QuickJS build the
 host names, taken from `QuickJSSandbox.Variant`. A runtime that refuses to
@@ -325,6 +339,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Agent, AgentAction, Budget, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
@@ -347,6 +362,10 @@ const layer = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
   // The QuickJS sandbox a cell runs in and the steering source it drains.
   Layer.provideMerge(Agent.layerDefaults),
+  // The transport the completion brake asks. It never falls back, so without
+  // `AI_GATEWAY_API_KEY` this is unavailable and a run fails at its first
+  // completion.
+  Layer.provideMerge(Evaluator.layerFromEnvironment(process.env)),
   // Ordinary flow composition: action implementations, a durable engine, crypto.
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),

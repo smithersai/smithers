@@ -29,6 +29,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
@@ -156,6 +157,10 @@ export const liveLayer = (baseUrl: string) =>
     // eslint-disable-next-line no-restricted-syntax -- this standalone smoke has no approved envelope
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. A local provider does not change that: without
+    // `AI_GATEWAY_API_KEY` this run fails at its first completion.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

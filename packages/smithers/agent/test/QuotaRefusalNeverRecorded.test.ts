@@ -50,6 +50,7 @@ import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -259,7 +260,7 @@ const refusedThenReopened = (
     const wiring = Layer.mergeAll(Step.layer, Interpreter.layer(OneStep)).pipe(
       Layer.provideMerge(AgentAction.layerHost(host)),
       Layer.provideMerge(seats(model)),
-      Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
       Layer.provideMerge(quota),
       Layer.provideMerge(Budget.layerUnbounded()),
       Layer.provideMerge(Action.layerImplementations),
@@ -332,7 +333,7 @@ describe("a quota refusal under a sealed model step", () => {
         const wiring = Layer.mergeAll(Step.layer, Interpreter.layer(OneStep)).pipe(
           Layer.provideMerge(AgentAction.layerHost(host)),
           Layer.provideMerge(seats(provider(1, rateLimited, calls))),
-          Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+          Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
           // A one-millisecond window: the park is real and durable, and the
           // wake is immediate, so the case measures the recovery rather than
           // the wait.
@@ -370,7 +371,7 @@ describe("a quota refusal under a sealed model step", () => {
         const wiring = Layer.mergeAll(Step.layer, Interpreter.layer(OneStep)).pipe(
           Layer.provideMerge(AgentAction.layerHost(host)),
           Layer.provideMerge(seats(provider(1, dialectRefusal, calls))),
-          Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+          Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
           Layer.provideMerge(dialectClassifier()),
           Layer.provideMerge(Budget.layerUnbounded()),
           Layer.provideMerge(Action.layerImplementations),

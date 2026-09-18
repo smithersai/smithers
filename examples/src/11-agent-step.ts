@@ -11,6 +11,7 @@
  * credential.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -19,6 +20,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -188,6 +190,10 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // are browser-safe defaults; a host that accepts mid-run messages provides
     // its own `Steering.layer` instead.
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. Without `AI_GATEWAY_API_KEY` the run fails at its first
+    // completion with `completion_unjudged`.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

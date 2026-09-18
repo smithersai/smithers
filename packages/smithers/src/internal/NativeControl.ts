@@ -1,6 +1,7 @@
 /** One private control/executor composition over existing native platform adapters.
  * @since 1.0.0
  */
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -46,7 +47,7 @@ import type * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import type { NotificationQueue } from "@smthrs/notifications"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
@@ -78,7 +79,7 @@ import * as HealthHost from "./HealthHost.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
-import { cellLimits, checkpointStore, evaluator, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
+import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 /** Captured durable control services shared by native consumers.
@@ -109,6 +110,7 @@ export type ModuleRegistration = Layer.Layer<
   | Budget.Budget
   | QuotaPolicy.QuotaClassifier
   | NotificationQueue.NotificationQueue
+  | Evaluator.Evaluator
 >
 
 /** Everything the production executor is configured with beyond its stores.
@@ -587,6 +589,12 @@ export const make = (
       // eslint-disable-next-line no-restricted-syntax -- no envelope exists until AgentSession starts a run
       Layer.provide(Layer.mergeAll(quotaPolicy, Budget.layerUnbounded()))
     )
+    // The one judge this host builds, for the two readers that ask one:
+    // the completion brake, which never falls back, so a claim nothing could
+    // judge fails the run instead of standing; and the `test` flow, which
+    // attributes a non-zero exit with it. Without `AI_GATEWAY_API_KEY` this
+    // is `layerUnavailable()` and both say so.
+    const evaluator = Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
     // The dispatcher must live as long as the executor. A model captures this
     // service and uses it after seat resolution has returned.
     //
@@ -647,6 +655,7 @@ export const make = (
             Layer.provide(Budget.layerUnbounded()),
             Layer.provide(Action.layerImplementations),
             Layer.provide(AgentAction.layerHost(actionHost)),
+            Layer.provide(evaluator),
             Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
             Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
             Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
@@ -757,10 +766,12 @@ export const make = (
         // between a run that can prove fails-before without reverting its own
         // work and one that cannot.
         Checkpoints.layerGit(checkpointStore(environment, workspaceRoot)),
-        // Jev, which the `test` flow attributes a non-zero exit with. Without
-        // `AI_GATEWAY_API_KEY` every evaluation is refused and a `test` call
-        // fails saying so, rather than reporting a run nothing judged.
-        evaluator(environment),
+        // Jev. One binding answers both readers: the `test` flow attributes a
+        // non-zero exit with it, and the completion brake judges every claim
+        // with it. Without `AI_GATEWAY_API_KEY` every evaluation is refused,
+        // so a `test` call fails saying so and a run fails at its first
+        // completion, rather than either reporting something nothing judged.
+        evaluator,
         seats(environment).pipe(Layer.provide(requestExecutor))
       ])
     )

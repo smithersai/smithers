@@ -53,6 +53,7 @@ import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as Steering from "@smthrs/harness/Steering"
 import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
@@ -405,6 +406,7 @@ export interface AgentAction<
     | Crypto.Crypto
     | Budget.Budget
     | QuotaPolicy.QuotaClassifier
+    | Evaluator.Evaluator
     | Payload["DecodingServices"]
     | Payload["EncodingServices"]
     | Output["DecodingServices"]
@@ -641,6 +643,7 @@ export const make = <
         | Crypto.Crypto
         | Budget.Budget
         | QuotaPolicy.QuotaClassifier
+        | Evaluator.Evaluator
       > =>
         waitOutQuota(
           session,
@@ -697,6 +700,7 @@ export const make = <
         | Crypto.Crypto
         | Budget.Budget
         | QuotaPolicy.QuotaClassifier
+        | Evaluator.Evaluator
         | Output["DecodingServices"]
       > => {
         const declaredRepair = options.repair
@@ -737,6 +741,7 @@ export const make = <
         | Crypto.Crypto
         | Budget.Budget
         | QuotaPolicy.QuotaClassifier
+        | Evaluator.Evaluator
         | Output["DecodingServices"]
       > =>
         ask(`${instance.executionId}/${tag}#${correction}`, prompt, system, options.seat, correction).pipe(
