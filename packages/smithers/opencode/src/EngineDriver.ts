@@ -79,6 +79,7 @@ import { hostname } from "node:os"
 import { join, resolve } from "node:path"
 import * as Driver from "./Driver.ts"
 import * as Health from "./Health.ts"
+import * as Projection from "./Projection.ts"
 import * as Store from "./Store.ts"
 
 /**
@@ -298,14 +299,28 @@ export const refusing = (
 interface Running {
   readonly input: Driver.StartInput
   readonly sink: Driver.Sink
-  /** The permission the execution is parked on, when it is. */
-  parked: { readonly requestID: string; readonly flow: string } | undefined
+  /** The permission the execution is parked on, when it is, with the `always` key Allow always grants. */
+  parked: { readonly requestID: string; readonly flow: string; readonly always: string } | undefined
   /** The body's exit for the drive in flight. */
   settled: Deferred.Deferred<Driver.Outcome>
   driving: boolean
 }
 
-const grantKey = (sessionID: string, flow: string): string => `${sessionID}\u0000${flow}`
+const grantKey = (sessionID: string, key: string): string => `${sessionID}\u0000${key}`
+
+/**
+ * The key an Allow always on a call grants: the flow and the card's `always`
+ * pattern, `bash echo *` for `echo one`, so a later `rm -rf` asks again.
+ * What the app shows on the card is what the answer covers.
+ *
+ * @param directory the served directory, which the card's input is relative to
+ * @param flow the flow the call asked for
+ * @param input the call's input
+ * @category constructors
+ * @since 1.0.0
+ */
+export const alwaysKey = (directory: string, flow: string, input: Schema.Json): string =>
+  `${flow} ${Projection.permissionPatterns(flow, Projection.toolInput(directory, flow, input)).always[0]}`
 
 /**
  * The message of a failure: an error's own, or the `message` of the JSON
@@ -387,11 +402,18 @@ export const layer = (options: Options) =>
 
     const authorize = (instance: FlowRuntime.FlowInstance["Service"], sessionID: string) => (call: Cell.Call) =>
       Effect.gen(function*() {
-        if (!asks.has(call.flowName) || grants.always.has(grantKey(sessionID, call.flowName))) return
+        if (!asks.has(call.flowName)) return
+        const always = alwaysKey(directory, call.flowName, call.input)
+        // A card that showed `*` (or a park re-driven with no stored card)
+        // granted the whole flow.
+        if (
+          grants.always.has(grantKey(sessionID, always)) ||
+          grants.always.has(grantKey(sessionID, `${call.flowName} *`))
+        ) return
         const id = requestID(instance.executionId, call.identity)
         if (grants.once.has(id) || grants.denied.has(id)) return
         const running = executions.get(instance.executionId)
-        if (running !== undefined) running.parked = { requestID: id, flow: call.flowName }
+        if (running !== undefined) running.parked = { requestID: id, flow: call.flowName, always }
         yield* Effect.provideService(
           FlowRuntime.annotateWaiting({ reason: "approval", token: id }),
           FlowRuntime.FlowInstance,
@@ -699,7 +721,7 @@ export const layer = (options: Options) =>
               })
             }
             const grant: Store.Grant = input.response === "always"
-              ? { sessionID: input.sessionID, kind: "always", key: running.parked.flow }
+              ? { sessionID: input.sessionID, kind: "always", key: running.parked.always }
               : {
                 sessionID: input.sessionID,
                 kind: input.response === "once" ? "once" : "reject",
@@ -765,8 +787,9 @@ export const layer = (options: Options) =>
                 // and the person's answer re-drives it.
                 const token = waiting.value.token
                 const pending = yield* Effect.orDie(stored.listPermissions(turn.sessionID))
-                const flow = pending.find((request) => request.id === token)?.permission ?? "bash"
-                running.parked = { requestID: token, flow }
+                const request = pending.find((candidate) => candidate.id === token)
+                const flow = request?.permission ?? "bash"
+                running.parked = { requestID: token, flow, always: `${flow} ${request?.always[0] ?? "*"}` }
                 continue
               }
               yield* Effect.forkDetach(drive(running, "resume"))

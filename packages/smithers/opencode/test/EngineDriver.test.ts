@@ -262,21 +262,27 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(opened).toBe(1)
   })
 
-  it("remembers Allow always for the session, across turns and across a restart", async () => {
+  it("remembers Allow always for the card's pattern, across turns and across a restart", async () => {
     const directory = scratch()
     const first = recorder()
     const second = recorder()
-    script.replies = [bashCell("echo one"), bashCell("echo two")]
+    const other = recorder()
+    script.replies = [bashCell("echo one"), bashCell("echo two"), bashCell("rm -rf /tmp/nonexistent-smithers-xyz")]
     await process_(directory, (driver) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_b", "msg_1"), first.sink)
         yield* driver.permission({ sessionID: "ses_b", permissionID: permissionOf(first.events), response: "always" })
         yield* driver.start(input("ses_b", "msg_2"), second.sink)
+        // The answer covered `echo *`, what the card showed: another command asks again.
+        yield* driver.start(input("ses_b", "msg_rm"), other.sink)
+        yield* driver.permission({ sessionID: "ses_b", permissionID: permissionOf(other.events), response: "reject" })
       }))
     expect(first.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "completed" }])
     expect(second.outcomes).toEqual([{ _tag: "completed" }])
     expect(second.events.some((event) => event._tag === "permission-required")).toBe(false)
     expect(answer(second.events)).toBe("ran two")
+    expect(other.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "completed" }])
+    expect(answer(other.events)).toBe("refused capability_refused")
 
     const third = recorder()
     script.replies = [bashCell("echo three")]
@@ -287,7 +293,13 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
       }))
     expect(third.outcomes).toEqual([{ _tag: "completed" }])
     expect(answer(third.events)).toBe("ran three")
-    expect(grants).toEqual([{ sessionID: "ses_b", kind: "always", key: "bash" }])
+    expect(grants).toEqual([
+      { sessionID: "ses_b", kind: "always", key: "bash echo *" },
+      { sessionID: "ses_b", kind: "reject", key: permissionOf(other.events) }
+    ])
+    expect(EngineDriver.alwaysKey(directory, "bash", { command: "  cat package.json" })).toBe("bash cat *")
+    expect(EngineDriver.alwaysKey(directory, "bash", { command: "" })).toBe("bash *")
+    expect(EngineDriver.alwaysKey(directory, "read", { path: `${directory}/a.txt` })).toBe("read *")
   })
 
   it("settles a rejected call as a failure the cell reads, and the turn goes on", async () => {
@@ -496,7 +508,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(answer(second.events)).toBe("scripted")
     expect(secondOther.outcomes).toEqual([{ _tag: "completed" }])
     expect(answer(secondOther.events)).toBe("ran also")
-    expect(grants).toEqual([{ sessionID: "ses_o", kind: "always", key: "bash" }])
+    expect(grants).toEqual([{ sessionID: "ses_o", kind: "always", key: "bash *" }])
   })
 
   it("lets the engine re-drive a released turn on its own, then settles it at the next boot", async () => {

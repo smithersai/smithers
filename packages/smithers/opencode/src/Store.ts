@@ -60,8 +60,9 @@ export interface MessageWithParts {
 
 /**
  * A permission decision the operator made for a session: `always` for a
- * flow name, `once` or `reject` for one request id. Kept so a decision made
- * before a restart still answers the call the resumed turn asks about.
+ * flow and the pattern the card showed (`bash echo *`), `once` or `reject`
+ * for one request id. Kept so a decision made before a restart still
+ * answers the call the resumed turn asks about.
  *
  * @category models
  * @since 1.0.0
@@ -69,7 +70,7 @@ export interface MessageWithParts {
 export interface Grant {
   readonly sessionID: string
   readonly kind: "always" | "once" | "reject"
-  /** The flow name for `always`, the request id otherwise. */
+  /** The flow and its `always` pattern for `always`, the request id otherwise. */
   readonly key: string
 }
 
