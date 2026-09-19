@@ -206,10 +206,13 @@ export const runFailureOf = (payload: {
   }
   /*
    * The run's own typed cause, for any flow: the harness and the model each
-   * declare a closed vocabulary, and a code from either one says what happened
-   * without anything being read off the sentence beside it. The two flow
-   * vocabularies above are answered first, so a code they both spell keeps the
-   * reading its own flow gives it.
+   * declare a closed vocabulary, and a code only one of them spells says what
+   * happened without anything being read off the sentence beside it. A code a
+   * second vocabulary also spells — every one of the model's, since
+   * `flows/librarian` re-declares them — gets no sentence and the fault's lead
+   * stands (`RunCause.SHARED_CODES`). The two flow vocabularies above are
+   * answered first, so a code they both spell keeps the reading its own flow
+   * gives it.
    *
    * The journal is preferred and the verdict stands in for it, because the two
    * carry the same first line and only one of them survives the run: the
