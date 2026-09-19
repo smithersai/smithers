@@ -95,7 +95,7 @@ export interface TraceGoal { readonly id: string; readonly title: string; readon
 /** Only these direct runner forms establish command checks. Shell programs and unknown runners do not. */
 const checkSelection = (flow: string, input: unknown): ReadonlyArray<string> | undefined => {
   const p = record(input)
-  if (flow === "test") return p.against === "base" ? undefined : strings(p.selection)
+  if (flow === "test") return strings(p.selection)
   if (flow === "target.run") return text(p.label) === undefined ? undefined : [p.label as string]
   if (flow !== "bash" || typeof p.command !== "string" || /[;&|`$<>\n]/.test(p.command)) return undefined
   const tokens = p.command.match(/"[^"\n]*"|'[^'\n]*'|[^\s]+/g)?.map(token => token.replace(/^(['"])(.*)\1$/, "$2")) ?? []
@@ -111,8 +111,11 @@ const match = (selection: ReadonlyArray<string> | undefined, target: string): "f
   const exact = selection.includes(target)
   const child = !target.startsWith("//") && selection.some(value => value.startsWith(`${target}/`) || value.startsWith(`${target}::`))
   if (!exact && !child) return undefined
-  // Unknown flags cannot establish full verification. Preserve the narrower evidence without ticking the goal.
-  return child || selection.some(token => token.startsWith("-")) ? "narrowed" : "full"
+  const flags = selection.filter(token => token.startsWith("-"))
+  const narrowing = new Set(["-k", "-t", "-m", "--filter", "--grep", "--test-name-pattern", "--testNamePattern", "--testPathPattern", "--onlyFailures"])
+  // An unknown flag establishes neither full coverage nor narrowing.
+  if (flags.some(flag => !narrowing.has(flag.split("=")[0]!))) return undefined
+  return child || flags.length > 0 ? "narrowed" : "full"
 }
 
 const relativePath = (value: string): string | undefined => {

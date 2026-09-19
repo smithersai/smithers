@@ -126,4 +126,9 @@ describe("recorded goal progress", () => {
     expect(checkState([...passed, event(3, "agent.mutation-observed", { basis: "declared", mutated: true })])).toBe("passed")
     expect(checkState([...passed, event(3, "agent.narrowed-demanded", { flow: "test", broader: { selection: ["tests/memory"] }, narrower: { selection: ["tests/memory/one"] } })])).toBe("narrowed")
   })
+  test("a baseline comparison uses the workspace result and unknown runner options make no scope claim", () => {
+    expect(checkState(call(1, "test", { selection: ["tests/memory"], against: "base" }, { exitCode: 1, base: { exitCode: 0 } }))).toBe("failed")
+    expect(checkState(call(1, "bash", { command: "bun test tests/memory --unknown-option" }))).toBe("pending")
+    expect(checkState(call(1, "bash", { command: "bun test tests/memory --help" }))).toBe("pending")
+  })
 })
