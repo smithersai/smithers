@@ -193,6 +193,12 @@ three probabilities and the evaluator latency, so a wave can be read for
 agreement rather than only for firings. A replay uses the recorded reading
 without another evaluator request.
 
+The task evidence includes accepted steering, with later instructions taking
+precedence. The controller retains the newest 4 KiB from recorded drains
+separately from the transcript, including through compaction. Tool output and
+model summaries cannot add instructions to this evidence, and replay does not
+substitute a newer, undelivered notification.
+
 The first question judges the newest request when the task includes labeled
 conversation history. A conversational answer needs no workspace activity.
 The demand asks the agent to answer the current request in the requested

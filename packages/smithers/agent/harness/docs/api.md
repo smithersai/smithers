@@ -1060,11 +1060,24 @@ current request in its requested format, and support only the actions and
 results actually claimed. It does not allege invented work merely because
 the completeness reading was low.
 
-`CellTurn` records a completion reading at an engine boundary keyed by the
-session, frame, cell digest and classifier digest. Replay uses that recorded
-reading, so a resumed turn keeps its previous decision without asking Jev
-again. Provider refusals retain their code, HTTP status when present and
-detail through the journal's error schema.
+The controller bounds original task evidence to 8 KiB, keeping both ends so
+a long history or task cannot silently discard the newest request at the end.
+
+`CellTurn` includes later accepted instructions in the task evidence, in
+admission order, with later changes taking precedence. It labels this block
+with the same `The person now says:` marker used to identify the newest
+request, so the original request's marker does not continue to select a
+superseded instruction. It keeps the newest
+4 KiB of steering separately from tool output and conversation summaries, so
+compacting a transcript cannot erase the recorded change of task. Replay
+rebuilds this bounded evidence from recorded steering drains; a pending,
+undelivered instruction cannot change a replayed completion.
+
+`CellTurn` records the whole completion decision at an engine boundary keyed
+by the session, frame and cell digest. Replay uses that decision, including
+the classifier reading and usage, so a resumed turn keeps its previous
+decision without asking Jev again. Provider refusals retain their code, HTTP
+status when present and detail through the journal's error schema.
 
 **All three ask; only the third refuses.** `find` hands the completion back at
 any of three heights, `disprovenAt` (0.3) or below on the first question,

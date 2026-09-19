@@ -431,6 +431,33 @@ describe("the claim brake", () => {
     expect(Object.keys(jev.asked[0]?.questions ?? {}).sort()).toEqual(["complete", "invented", "overclaims"])
   })
 
+  it("keeps the newest request at the end of a long original task", async () => {
+    const jev = reading({})
+    const current = "The person now says: reply with only A."
+    await settled({
+      layer: jev.layer,
+      claim: "A",
+      changes: {
+        contextWindow: ContextWindow.make({
+          modelId: "test-model",
+          segments: [{
+            kind: "instructions",
+            zone: "prefix",
+            content: [ModelRequest.SystemPart.make({
+              text: `The conversation so far:\n${"earlier detail ".repeat(1600)}\n${current}`
+            })]
+          }]
+        })
+      }
+    })
+    const evidence = jev.asked[0]?.state as { readonly task: string; readonly claim: string }
+    expect(evidence.task).toContain("The conversation so far:")
+    expect(evidence.task).toContain(current)
+    expect(evidence.task).toContain("elided")
+    expect(new TextEncoder().encode(evidence.task).byteLength).toBeLessThanOrEqual(CompletionClaim.proseBytes)
+    expect(evidence.claim).toBe("A")
+  })
+
   it("reads the task off the instructions text and off nothing else", async () => {
     const jev = reading({ complete: 0.9, overclaims: 0.1, invented: 0.05 })
     const mixed = ContextWindow.make({

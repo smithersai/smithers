@@ -176,9 +176,9 @@ export const outputBytes = 4096
 /**
  * The most of the task and the claim the brake sends, in UTF-8 bytes each.
  *
- * Both are bounded for the reason the output is, and both keep their *head*:
- * a task states what is wanted in its first paragraph and a completion states
- * what was done in its first sentence.
+ * Both are bounded for the reason the output is. The controller keeps both
+ * ends of a task because a host may put prior conversation before the newest
+ * request. `prose` keeps a completion's head, where it states what was done.
  *
  * @category constants
  * @since 1.0.0-rc.0

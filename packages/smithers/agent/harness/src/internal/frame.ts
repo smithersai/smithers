@@ -28,7 +28,9 @@ import * as TruncatedOutput from "../TruncatedOutput.ts"
 import * as UnmovedTree from "../UnmovedTree.ts"
 import * as UnresolvedFailure from "../UnresolvedFailure.ts"
 import * as VariablesPanel from "../VariablesPanel.ts"
+import * as bytes from "./bytes.ts"
 import * as DemandText from "./demandText.ts"
+import * as elide from "./elide.ts"
 
 /** The one journal-event-type table; see `AgentEvent.eventType`. */
 const eventType = AgentEvent.eventType
@@ -817,7 +819,16 @@ export const judgeCompletion = (
     // `claimCap` of zero disarms it: no request, no event, no failure, which
     // is what a host that does not want a model in this path asks for.
     if (state.claimCap === 0) return stands
-    const task = CompletionClaim.prose(taskText(contextWindow))
+    // A host may put prior conversation before the current request. Keep
+    // both ends of the task; clipping its head alone can leave only history.
+    // Reserve the elision notice inside the task's byte budget.
+    const originalTask = taskText(contextWindow).trim()
+    const recallTask = "the run record has the whole task"
+    const task = elide.middle(
+      originalTask,
+      CompletionClaim.proseBytes - elide.noticeCost(bytes.size(originalTask), recallTask),
+      recallTask
+    )
     const check = lastCheck(calls)
     const reading = yield* read({
       task,

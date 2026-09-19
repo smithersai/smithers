@@ -28,6 +28,7 @@ import * as Cell from "./Cell.ts"
 import * as CellHistory from "./CellHistory.ts"
 import * as CellValidation from "./CellValidation.ts"
 import * as Compaction from "./Compaction.ts"
+import * as CompletionClaim from "./CompletionClaim.ts"
 import * as ContextWindow from "./ContextWindow.ts"
 import * as EngineLike from "./EngineLike.ts"
 import { HarnessError } from "./HarnessError.ts"
@@ -2155,6 +2156,24 @@ const evaluate = (
   })
 
 /**
+ * Accepted steering changes the task the completion is judged against. Keep
+ * its provenance separate from the transcript: cell prints are also user
+ * messages, and a compacted summary is not an instruction from the person.
+ * The original task keeps both ends so a long history cannot displace its
+ * newest request. Steering keeps the newest bytes, in admission order.
+ */
+const completionTask = (task: string, instructions: string): string =>
+  instructions === ""
+    ? task
+    : `${elide.middle(task, 3584, "the run record has the whole task")}
+
+The person now says:
+
+Later instructions accepted during this run, oldest first. Apply these changes to the task above; later changes take precedence:
+
+${instructions}`
+
+/**
  * Everything an exit of one frame reads, fixed once the frame knows what it did.
  *
  * Every field is settled before the first exit is taken and none is written
@@ -2305,7 +2324,8 @@ const frame = (
   sandbox: Sandbox.Sandbox,
   realm: Sandbox.Realm,
   steering: Steering.Source,
-  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  readCompletion: typeof CompletionClaim.read
 ): Effect.Effect<Step, HarnessError | Sandbox.SandboxError | Model.ModelFailure, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
@@ -2645,7 +2665,13 @@ const frame = (
         success: RecordedCompletion,
         // A replay uses the entire original decision. Re-evaluating even an
         // accepted claim can invent a demand and execute additional work.
-        execute: Frame.judgeCompletion(state, accounting, contextWindow, transition.output).pipe(
+        execute: Frame.judgeCompletion(
+          state,
+          accounting,
+          contextWindow,
+          transition.output,
+          readCompletion
+        ).pipe(
           Effect.provideContext(services),
           Effect.map((decision) => ({
             observed: decision.observed ?? null,
@@ -2756,9 +2782,26 @@ export const run = (
     HarnessError,
     EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source | Evaluator.Evaluator
   >((queue) => {
+    // A replay re-emits its recorded drains before reaching an unjudged
+    // completion. This private evidence follows those admissions, including
+    // through compaction, without changing public State or model-step keys.
+    // The observer finishes its checkpoint before any evidence or frame advances.
+    let instructions = ""
     const emit = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
-      Effect.flatMap(AgentEvent.Observer, (observe) =>
-        Effect.andThen(observe(event), Effect.asVoid(Queue.offer(queue, event))))
+      Effect.flatMap(AgentEvent.Observer, (observe) => observe(event)).pipe(
+        Effect.andThen(Effect.sync(() => {
+          if (event._tag !== "steering-drained") return
+          const text = event.messages.flatMap<ModelRequest.ContentPart>((message) => message.content)
+            .filter((part): part is ModelRequest.TextPart => part.type === "text")
+            .map((part) => part.text)
+            .join("\n\n")
+          if (text !== "") instructions = CompletionClaim.newest(`${instructions}\n\n${text}`.trim())
+        })),
+        Effect.andThen(Queue.offer(queue, event)),
+        Effect.asVoid
+      )
+    const readCompletion: typeof CompletionClaim.read = (evidence) =>
+      CompletionClaim.read({ ...evidence, task: completionTask(evidence.task, instructions) })
     const loop = Effect.gen(function*() {
       const engine = yield* EngineLike.EngineLike
       const sandbox = yield* Sandbox.Sandbox
@@ -2843,9 +2886,7 @@ export const run = (
           // prefix and the accumulated transcript. Rebuild before compaction
           // so token accounting and the sealed request use this snapshot too.
           const previous = teach(ContextWindow.empty(current.contextWindow.modelId), flows)
-          const digests = new Set(previous.segments.map((segment) =>
-            segment.digest
-          ))
+          const digests = new Set(previous.segments.map((segment) => segment.digest))
           current = advance(current, {
             contextWindow: teach(
               ContextWindow.make({
@@ -2857,7 +2898,15 @@ export const run = (
           })
           flows = refreshed
         }
-        const step = yield* frame({ ...input, state: current, flows }, engine, sandbox, realm, steering, emit).pipe(
+        const step = yield* frame(
+          { ...input, state: current, flows },
+          engine,
+          sandbox,
+          realm,
+          steering,
+          emit,
+          readCompletion
+        ).pipe(
           Effect.catch((error) => {
             const request = permissionRequired(error)
             if (request === undefined) {
