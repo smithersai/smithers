@@ -11,6 +11,7 @@ import { FlowCancellation } from "../FlowCancellation"
 import { FlowGesture, type CommandGesture } from "../CommandGesture"
 import type { RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import type { AppController } from "../../state/AppController"
+import { lostActRefusal } from "../../state/BrowserWriteFailure"
 import type { CommandState, FlowEntry, FlowMetadata } from "../registry"
 
 /**
@@ -152,7 +153,18 @@ export const flow = <I extends Payload>(declaration: Declaration<I>): FlowEntry 
           output: Ack
         }),
         modelInvocable: userOnly !== true,
-        publicError: (message) => typeof message === "string" ? message : undefined,
+        /*
+         * A returned refusal is the handler's own words and travels as it is.
+         * A THROWN one used to render as nothing, which reached the person as
+         * "/runs.open failed" — the flow's own name, no cause, no next act,
+         * for a press whose durable write this browser had refused. The throw
+         * is still typed here, one frame before the cell boundary erases it,
+         * so it is classified here: a recognized write fault gets that fault's
+         * sentence, a stopped act says it was stopped, and anything else is
+         * this app's bug and says so. Host-authored text over a closed set,
+         * never a thrown message; `cause` still rides to the error taps.
+         */
+        publicError: (failure: string | { readonly cause: unknown }) => typeof failure === "string" ? failure : lostActRefusal(failure.cause),
         handler: (payload, call) => Effect.flatMap(FlowCancellation, (cancellation) =>
           Effect.flatMap(FlowGesture, gesture => act((signal) => handler(payload, cancellation ?? signal, call, gesture))))
       })

@@ -10,6 +10,7 @@
  * nowhere stays `unknown-command`.
  */
 import { createCommandRegistry } from "./Commands"
+import { lostActRefusal } from "../state/BrowserWriteFailure"
 import type { CommandActions } from "./Flows"
 import { Effect } from "effect"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -128,6 +129,9 @@ const signOut = (store: AppStore): void => {
 const messages = (store: AppStore) =>
   [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal)
 
+const APP_BUG =
+  "Smithers hit a bug of its own, so that didn't finish. Not your fault, and nothing about what you did would have avoided it. Reload the page to see where it got to, then make the change again."
+
 const CARD_TEXT =
   "That is not in the web app. Local repositories, terminals, build targets and local agents need the native app."
 const CARD_ACTION = { flow: "app.download", label: "Download the app" }
@@ -139,7 +143,15 @@ const ORIGIN_REFUSAL = "/workspace.terminal is not available on this origin yet.
 const downloadCards = (store: AppStore) =>
   messages(store).filter((message) => message.action?.flow === "app.download")
 
-test("app flows publish returned refusals but withhold thrown host errors", async () => {
+/*
+ * A thrown host error publishes nothing OF ITS OWN — not its message, not the
+ * headers it was carrying. What it publishes instead is this app's sentence
+ * for the class of failure it is, chosen from a closed table by the error's
+ * TYPE. Publishing nothing at all was the silence: the caller rendered it as
+ * "/test failed", the flow's own name with no cause and no next act, which is
+ * what a person got when a press's durable write was refused.
+ */
+test("app flows publish returned refusals, and a thrown host error's class but never its words", async () => {
   const make = (handler: () => string) => flow({ name: "test", input: NoPayload, summary: "Test", handler })
   const refusal = await invokeStartupRecovery(make(() => "Choose an available command."))
   expect(refusal.message).toBe("Flow test failed: Choose an available command.")
@@ -149,9 +161,13 @@ test("app flows publish returned refusals but withhold thrown host errors", asyn
     { headers: { Authorization: "SYNTHETIC_HOST_SECRET" } }
   ]) {
     const failed = await invokeStartupRecovery(make(() => { throw cause }))
-    expect(failed.message).toBe("Flow test failed.")
+    expect(failed.message).toBe(`Flow test failed: ${APP_BUG}`)
     expect(JSON.stringify(failed)).not.toContain("SYNTHETIC_HOST_SECRET")
   }
+  // A recognized storage fault keeps its own words, because a person can act on them.
+  const full = await invokeStartupRecovery(make(() => { throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" }) }))
+  expect(full.message).toBe(`Flow test failed: ${lostActRefusal(Object.assign(new Error("x"), { name: "QuotaExceededError" }))}`)
+  expect(JSON.stringify(full)).not.toContain("quota")
 })
 
 test("app flows retain thrown causes for host error inspection", async () => {
@@ -169,7 +185,9 @@ test("app flows retain thrown causes for host error inspection", async () => {
     const result = await invokeStartupRecovery(entry)
     expect(observed).toEqual({ cause })
     expect((observed as { cause: unknown }).cause).toBe(cause)
-    expect(result.message).toBe("Flow test failed.")
+    // The cause still rides to the host's error tap; only its words stop here.
+    expect(result.message).toBe(`Flow test failed: ${APP_BUG}`)
+    expect(JSON.stringify(result)).not.toContain("SYNTHETIC_HOST_SECRET")
   } finally {
     make.mockRestore()
   }

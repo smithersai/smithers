@@ -58,7 +58,7 @@ const flakyStorage = (): StorageApi & { refuseCommit: (skip: number) => void; re
  * `AppController.runCommand` → registry → `configureRepositorySetup` →
  * `upsert` → the persisted payload, with nothing doubled in between.
  */
-async function walk(options: { readonly explodeAfterCardWrite?: boolean } = {}) {
+async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonly observedRun?: boolean } = {}) {
   const storage = flakyStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
   /*
@@ -94,15 +94,62 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean } = {}) 
     }
   } as typeof store
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maintainer", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  /*
+   * A finished inspection whose host receipt names the run it produced. That
+   * is what renders this card's `Run` button, the door `runs.open` hangs on.
+   */
+  const observed = options.observedRun === true
+  if (observed) {
+    // The person's own repository list: without it the run's trailing owner/repo
+    // is not a repository the door recognises, and the press renders a form.
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+      { id: "example/repo", org: "example", ownerKind: "user", name: "repo", head: null }
+    ] }).isPersisted.promise
+  }
+  /*
+   * The card's own background watch reads this run once when it mounts. The
+   * press under test is the SECOND read, and its summary carries a word of its
+   * own so the commit that records it can be picked out from the first.
+   */
+  let runReads = 0
   await store.dispatch({ type: "card.upsert", actor: "user", card: {
     id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
-    payload: { ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1234 }
+    payload: {
+      ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1234,
+      ...(observed ? {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        request: { id: "request-1", operation: "inspect" as const, revision: 1, digest: "digest-1", state: "completed" as const },
+        receipt: {
+          requestId: "request-1", runId: "run-1", revision: 1, operation: "inspect" as const, phase: "completed" as const,
+          digest: "digest-1", updatedAt: 2, results: [], evidence: []
+        }
+      } : {})
+    }
   } }).isPersisted.promise
   const controller = createAppController(controllerStore, unavailableRepositories, recordingAgent([]), {
-    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
-    fetchImpl: async (input) => String(input).includes("/repository-setup/state?")
-      ? Response.json({ owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "known" }, setup: { state: "none" } })
-      : Response.json({}, { status: 404 })
+    workflowPollMs: 1,
+    toastDebounceMs: 0,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input instanceof Request ? input.url : input), "https://app.test")
+      if (url.pathname.endsWith("/repository-setup/state")) {
+        return Response.json({ owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "known" }, setup: { state: "none" } })
+      }
+      if (url.pathname === "/api/workflow/provision") return Response.json({ status: "ready", repo: "example/repo", gatewayId: "gateway-1" })
+      if (url.pathname === "/api/workflow/rpc") {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) as { procedure?: string; payload?: { selector?: { _tag?: string } } } : undefined
+        if (body?.procedure === "Projection.Snapshot" && body.payload?.selector?._tag === "run-summary") {
+          runReads += 1
+          return Response.json({ ok: true, payload: { cursor: { projection: "run-summary", runId: null, value: runReads }, rows: [{
+            runId: "run-1", flowId: "issues", status: "completed", createdAt: 1, updatedAt: 2, turns: 0, calls: 0, callsFailed: 0,
+            editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "completed",
+            diagnosis: runReads === 1 ? "Verdict   done." : "Verdict   read again."
+          }] } })
+        }
+        return Response.json({ ok: false, error: { message: `no ${body?.procedure ?? "procedure"}` } })
+      }
+      return Response.json({}, { status: 404 })
+    },
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null }
   })
   await waitFor(() => { const card = store.collections.cards.get(id); return card?.kind === "repository-setup" && card.payload.recovery?.state === "completed" })
 
@@ -128,6 +175,11 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean } = {}) 
     const button = [...host.querySelectorAll("button")].find(node => node.textContent === label)!
     button.dispatchEvent(new Event("click", { bubbles: true }))
   }
+  /** The run button the receipt renders, which is bound to `runs.open`. */
+  const pressRunAccess = () => {
+    const button = [...host.querySelectorAll<HTMLButtonElement>(".setup-actions button")].find(node => node.textContent === "Run")!
+    button.dispatchEvent(new Event("click", { bubbles: true }))
+  }
   const setup = () => (store.collections.cards.get(id) as { payload: RepositorySetup }).payload
   const transcript = () => [...store.collections.messages.values()].map(message => (message as { text?: string }).text ?? "")
   const toastDetails = () => [...store.collections.toasts.values()].map(toast => (toast as { detail?: string }).detail ?? "")
@@ -143,9 +195,15 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean } = {}) 
     await Promise.resolve(controller.dispose()).catch(() => {})
     await Promise.resolve(store.dispose?.()).catch(() => {})
   }
+  /*
+   * Refuse the commit that records the run the PRESS read: the second read's
+   * summary is the one carrying "read again", so the commit that stores it is
+   * the commit `runs.open` awaits.
+   */
+  const refuseObservationWrite = () => { storage.refuseCommitNaming("read again") }
   /** The next card write lands, and the step that runs after it throws. */
   const explodeAfterNextCardWrite = () => { arming = true }
-  return { store, controller, pick, press, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, explodeAfterNextCardWrite, close }
+  return { store, controller, pick, press, pressRunAccess, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, refuseObservationWrite, explodeAfterNextCardWrite, close }
 }
 
 /*
@@ -296,5 +354,30 @@ test("a bug after the pick is durable never tells the person the pick was lost",
     // The bug stays a bug. It reaches this app's own error channel rather
     // than the person's transcript wearing a storage fault's words.
     expect(settled).toMatchObject({ error: expect.any(TypeError) })
+  } finally { await t.close() }
+})
+
+/*
+ * The door the first sweep missed, on this same card. `Run` opens the run the
+ * inspection produced, and opening it records what this browser just read:
+ * a durable write, refused the same way every other write on this card can be
+ * refused. Its rejection never reached the person's own words — the command
+ * harness relabelled it "The command did not finish. Check its result before
+ * trying again", a sentence with no cause, no next act, and nothing in the
+ * transcript. A door does not have to be on the list to owe the sentence.
+ */
+test("a run this browser did not record says why, not that something did not finish", async () => {
+  const t = await walk({ observedRun: true })
+  try {
+    t.refuseObservationWrite()
+    t.pressRunAccess()
+    await t.settle(600)
+    // The press is still lost. That is honest; saying nothing about why was not.
+    expect(t.transcript()).toEqual([STORAGE_FULL])
+    expect(t.toastDetails()).toEqual([STORAGE_FULL])
+    // Not an internal id, not a storage boundary key, not a raw decode message.
+    expect(t.transcript()[0]).not.toContain("run-1")
+    expect(t.transcript()[0]).not.toContain("gateway.run.observed")
+    expect(t.transcript()[0]).not.toContain("quota")
   } finally { await t.close() }
 })

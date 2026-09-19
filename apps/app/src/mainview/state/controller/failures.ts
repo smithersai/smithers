@@ -1,5 +1,6 @@
 import type { CommandOutcome } from "../../flows/Commands"
 import type { Toast } from "../AppState"
+import { spokenLostAct } from "../BrowserWriteFailure"
 import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import type { ControllerContext } from "./context"
 
@@ -267,9 +268,25 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
      * cannot be the only word for that: the sentence goes to the transcript
      * too, where they are still looking a minute later when the draft they
      * edited submits the value they replaced (walk run 3, B3-N5).
+     *
+     * The flag is what a door sets when it classified the failure itself. The
+     * second test covers every door that did not: a handler's throw is
+     * classified at the flow boundary and arrives here as one of this app's
+     * own lost-act sentences, with no flag to carry it. Recognizing our own
+     * sentence keeps that rule from depending on each door remembering it.
+     *
+     * Said once. The doors on the repository setup card put their own sentence
+     * in the transcript as they refuse, and this act's line is theirs if it is
+     * already the last thing in it — a second identical line reads as a second
+     * failure that did not happen.
      */
-    if (outcome.writeRefused === true) {
-      ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
+    if (outcome.writeRefused === true || spokenLostAct(outcome.error)) {
+      const latest = [...ctx.store.collections.messages.values()]
+        .reduce<{ readonly ordinal: number; readonly text?: string } | undefined>(
+          (held, message) => held === undefined || message.ordinal > held.ordinal ? message : held, undefined)
+      if (latest?.text !== outcome.error) {
+        ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
+      }
     }
     const key = `command.failed.${name}`
     // A seam can refuse before the requirement axis knows the session is gone.
