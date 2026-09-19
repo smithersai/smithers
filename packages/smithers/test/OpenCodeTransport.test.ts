@@ -23,6 +23,8 @@
 import { MockAgent } from "@effect/platform-node/Undici"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import { CapabilityPattern } from "@smthrs/capability/Capability"
+import { attenuate } from "@smthrs/kernel/CapabilitySet"
 import { Effect, Stream } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -62,6 +64,39 @@ const prompt = {
 } as never
 
 describe("smithers opencode model transport", () => {
+  it("checks the model capability ceiling before sending, including after pool replacement", async () => {
+    const acquired: Array<MockAgent> = []
+    const acquire = Effect.gen(function*() {
+      const agent = new MockAgent()
+      agent.disableNetConnect()
+      if (acquired.length > 0) {
+        agent.get("https://api.cerebras.ai").intercept({ method: "POST", path: "/v1/chat/completions" })
+          .reply(200, answer, { headers: { "content-type": "text/event-stream" } })
+      }
+      acquired.push(agent)
+      yield* Effect.addFinalizer(() => Effect.promise(() => agent.close()))
+      return agent as unknown as Undici.Dispatcher
+    })
+    const host = OpenCode.nodeHost(scratch(), { CEREBRAS_API_KEY: "test-key" }, acquire)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const seats = yield* SeatResolver.SeatResolver
+        const seat = yield* seats.resolve("cerebras:gpt-oss-120b")
+        const turn = () => Effect.scoped(Stream.runCollect(seat.model.stream(prompt)))
+        const forbidden = () =>
+          turn().pipe(
+            attenuate([new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/other-model" })]),
+            Effect.flip
+          )
+        expect(yield* forbidden()).toMatchObject({ code: "permission_denied", reason: "outside capability ceiling" })
+        expect(yield* Effect.flip(turn())).toMatchObject({ code: "transport" })
+        expect(yield* forbidden()).toMatchObject({ code: "permission_denied", reason: "outside capability ceiling" })
+        expect(acquired).toHaveLength(2)
+        expect(Array.from(yield* turn())).toContainEqual({ type: "text-delta", id: "text-0", text: "back" })
+      }).pipe(Effect.provide(host.seats), Effect.scoped)
+    )
+  }, 60_000)
+
   it("answers the turn after the one whose connection pool died", async () => {
     const acquired: Array<MockAgent> = []
     const closed: Array<MockAgent> = []

@@ -57,7 +57,8 @@
     "./RequestExecutor": "./src/RequestExecutor.ts",
     "./Route": "./src/Route.ts",
     "./ToolStream": "./src/ToolStream.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./RebuildableHttpClient": "./src/RebuildableHttpClient.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -296,6 +297,16 @@
         "require": {
           "types": "./dist/cjs/ModelCatalog.d.ts",
           "default": "./dist/cjs/ModelCatalog.js"
+        }
+      },
+      "./RebuildableHttpClient": {
+        "import": {
+          "types": "./dist/esm/RebuildableHttpClient.d.ts",
+          "default": "./dist/esm/RebuildableHttpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RebuildableHttpClient.d.ts",
+          "default": "./dist/cjs/RebuildableHttpClient.js"
         }
       }
     }

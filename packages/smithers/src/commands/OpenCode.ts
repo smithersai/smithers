@@ -30,6 +30,9 @@
 import type * as Undici from "@effect/platform-node/Undici"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Auth from "@smthrs/opencode/Auth"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
 import type * as Driver from "@smthrs/opencode/Driver"
@@ -120,7 +123,7 @@ export const seatOf = (
  * that on 2026-09-19 while a third on the same key and the same machine
  * answered normally, and only Ctrl-C fixed them.
  *
- * `NodeControl.layerRebuildableRequestExecutor` gives the executor a pool it
+ * `NodeControl.rebuildableTransport` gives the executor a pool it
  * can throw away. Three consecutive transport failures are one `execute`, and
  * the next one is made on a pool the host built fresh, so the model step's own
  * ladder meets a working transport on its second rung and the turn that found
@@ -129,6 +132,9 @@ export const seatOf = (
  * `dispatcher` is how that pool is built. The default reads the served
  * environment, so a proxy the operator exported is honoured here exactly as it
  * is for `smithers run`; a test passes a scripted dispatcher.
+ * Each pool is wrapped in the kernel HTTP guard over the same grant store as
+ * the filesystem and shell, so model identity, destination and the active
+ * capability ceiling are checked before every request and redirect.
  *
  * @category constructors
  * @since 1.0.0
@@ -138,14 +144,35 @@ export const nodeHost = (
   environment: Readonly<Record<string, string | undefined>>,
   dispatcher: Effect.Effect<Undici.Dispatcher, never, Scope.Scope> = NodeControl.environmentDispatcher(environment)
 ): EngineDriver.Host => {
-  const platform = NodeControl.layerGuardedPlatform(directory)
+  const grants = NodeControl.layerGrantStore(directory)
+  const platform = NodeControl.layerGuardedPlatform(directory, grants)
+  const executor = Layer.effect(
+    RequestExecutor.RequestExecutor,
+    Effect.gen(function*() {
+      const store = yield* GrantStore.GrantStore
+      const transport = yield* NodeControl.rebuildableTransport(dispatcher)
+      // Guard each pool, including replacements, with the same store as the
+      // filesystem and shell. Model identity and the fiber's ceiling are read
+      // when the request runs, not when the server acquires its pool.
+      const guard = (client: KernelHttpClient.HttpClient) =>
+        KernelHttpClient.HttpClient.pipe(
+          Effect.provide(KernelHttpClient.layer),
+          Effect.provideService(KernelHttpClient.HttpClient, client),
+          Effect.provideService(GrantStore.GrantStore, store)
+        )
+      return yield* RequestExecutor.makeWith({
+        client: yield* guard(transport.client),
+        rebuild: transport.rebuild.pipe(Effect.flatMap(guard))
+      })
+    })
+  ).pipe(Layer.provide(grants))
   return {
     platform: KernelChildProcessSpawner.layer.pipe(
-      Layer.provide(NodeControl.layerGrantStore(directory)),
+      Layer.provide(grants),
       Layer.provideMerge(platform)
     ),
     seats: NodeControl.layerSeatResolver(environment).pipe(
-      Layer.provide(NodeControl.layerRebuildableRequestExecutor(dispatcher))
+      Layer.provide(executor)
     ),
     registry: NodeControl.layerRegistry(directory)
   }

@@ -16,10 +16,14 @@
  * @since 1.0.0
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import type * as Undici from "@effect/platform-node/Undici"
 import type * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as RebuildableHttpClient from "@smthrs/model/RebuildableHttpClient"
 import { Clock, Duration, Effect, Layer, Redacted, Schema } from "effect"
+import type * as Scope from "effect/Scope"
+import * as HttpClient from "effect/unstable/http/HttpClient"
 import type * as Driver from "./Driver.ts"
 
 /**
@@ -814,12 +818,18 @@ export const retrying = (
  *   the deadline now has a second chance to answer, which turns a gray dot
  *   into a real color instead of losing the frame.
  *
+ * The gateway client replaces its scoped pool after a transport failure.
+ * The next retry or completion acquires a fresh pool before closing the old
+ * one, so a destroyed session cannot poison the rest of the server's life.
+ *
  * @param environment where the key is read from
+ * @param dispatcher acquires each pool; tests may supply a scripted dispatcher
  * @category layers
  * @since 1.0.0
  */
 export const evaluatorLayer = (
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  dispatcher: Effect.Effect<Undici.Dispatcher, never, Scope.Scope> = NodeHttpClient.makeDispatcher
 ): Layer.Layer<Evaluator.Evaluator> => {
   const key = environment["AI_GATEWAY_API_KEY"]
   if (key === undefined || key === "") {
@@ -832,7 +842,12 @@ export const evaluatorLayer = (
   const gateway = Evaluator.layerVercelGateway({
     apiKey: Redacted.make(key),
     timeoutMs: evaluatorRetry.deadlineMs
-  }).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  }).pipe(Layer.provide(Layer.effect(
+    HttpClient.HttpClient,
+    RebuildableHttpClient.make(NodeHttpClient.makeUndici.pipe(
+      Effect.provideServiceEffect(NodeHttpClient.Dispatcher, dispatcher)
+    ))
+  )))
   return retryingLayer(gateway)
 }
 
