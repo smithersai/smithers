@@ -8,11 +8,12 @@ import type { StorageApi } from "@tanstack/db"
 import { ENVELOPE_STORAGE_KEY, parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { AgentPort } from "../runtime/AgentPort"
 import { setupContextSummary, setupQuestionCardId } from "./controller/repositorySetup"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf } from "./Instructions"
 import { memoryStorage, recordingAgent, scriptedToolAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
+const createAppController = scopedControllers()
 const id = "setup:maintainer:example%2Frepo:issues"
 // The digest the build before the trial's test request left the candidate computed for the canary's
 // `feature` draft at revision 6, and the one its enabled registration still carries in the registry

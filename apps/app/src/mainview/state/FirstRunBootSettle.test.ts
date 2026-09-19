@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { selectFirstRunRepository } from "./FirstRunRepository"
 import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
 import { PRACTICE_CARD } from "./practice/PracticeRepository"
+
+const createAppController = scopedControllers()
 
 /*
  * The boot seam, not selectFirstRunRepository by hand: every test here drives

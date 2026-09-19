@@ -5,13 +5,14 @@ import { createRoot } from "react-dom/client"
 import { initialSetup, type RepositorySetup } from "@smthrs/rpc/RepositorySetup"
 import type { StorageApi } from "@tanstack/db"
 import { RepositorySetupCard } from "../cards/RepositorySetupCard"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { recordingAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
 
+const createAppController = scopedControllers()
 const id = "setup:maintainer:example%2Frepo:issues"
 const fixModeOf = (payload: RepositorySetup) => payload.draft.steps.find(step => step.id === "fix")?.mode
 const STORAGE_FULL =

@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test"
 import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { memoryStorage, recordingAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
+const createAppController = scopedControllers()
 const id = "setup:maintainer:example%2Frepo:issues"
 
 async function fixture() {
