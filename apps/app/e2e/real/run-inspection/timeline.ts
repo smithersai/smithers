@@ -128,10 +128,10 @@ export const readBands = (trace: Locator): Promise<ReadonlyArray<RenderedBand>> 
 
 /** A pin renders no seq of its own; the select flow's third argument is the seq it scrubs to. */
 export const readPins = (trace: Locator): Promise<ReadonlyArray<RenderedPin>> =>
-  phasePins(trace).evaluateAll((nodes) => nodes.map((node) => {
+  phaseStrip(trace).locator('.run-phase-pins button[data-flow]').evaluateAll((nodes) => nodes.map((node) => {
     const args = node.getAttribute("data-flow-args")
     return {
-      label: (node.textContent ?? "").trim(),
+      label: (node.querySelector("span")?.textContent ?? "").trim(),
       seq: Number((args ?? "").trim().split(/\s+/).pop()),
       reached: node.getAttribute("data-reached"),
       current: node.getAttribute("aria-current"),
