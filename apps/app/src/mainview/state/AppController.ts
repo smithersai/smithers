@@ -740,8 +740,17 @@ export const createAppController = (
   if (tabCard && !knowledgeCardAvailable(tabCard.kind, features)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome) => {
-    // Storage recovery owns this failure; a toast would itself be another failed write.
-    if (ctx.disposed || (outcome.status === "failed" && outcome.persistenceFailed)) return
+    if (ctx.disposed) return
+    /*
+     * A superseded act says nothing: storage recovery owns a store that has
+     * stopped taking writes, and a notice for work that was thrown away is
+     * the silent-lie shape. A write this browser REFUSED is the opposite
+     * case — the person acted, the control snapped back to the value it
+     * already had, and nothing anywhere told them why. That one is surfaced,
+     * and if the store is broken enough to lose the sentence too, it was
+     * already lost under the old rule.
+     */
+    if (outcome.status === "failed" && outcome.persistenceFailed && !outcome.writeRefused) return
     surfaceFailure(name, outcome)
   }
   ctx.withToast = withToast

@@ -134,7 +134,10 @@ describe("durable command intent at the active shared door", () => {
     const controller = controllerFor(store, { fetchImpl: async () => { effects++; return Response.json({ status: 200, text: "read" }) } })
     fail = true
     const outcome = await controller.commands.run("browser.open", "https://example.test")
-    expect(outcome).toMatchObject({ status: "failed", persistenceFailed: true, error: expect.stringContaining("did not run") })
+    // The refusal names the browser's own fault class and the act that clears
+    // it, never the thrown message ("disk failed") and never the flow's id.
+    expect(outcome).toMatchObject({ status: "failed", persistenceFailed: true, writeRefused: true,
+      error: "This browser did not save that change. Not your fault, and nothing about the change would have avoided it. Make it again; if it fails twice, reload the page." })
     expect(effects).toBe(0)
     expect(store.collections.commandIntents.size).toBe(0)
   })

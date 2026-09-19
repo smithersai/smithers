@@ -1,4 +1,5 @@
 import { decideApprovalAnswerInput } from "../ApprovalAnswerState"
+import { browserWriteRefusal } from "../BrowserWriteFailure"
 import { decideFormFieldInput } from "./forms"
 import { reserveBrowserCommandGesture } from "../../flows/CommandGesture"
 import { digest } from "@smthrs/core/Digest"
@@ -84,9 +85,16 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       }
       onAccepted?.(request)
       return { receipt: { id, actor: request.actor, acceptedRevision: accepted.acceptedRevision }, ...(pendingInput === undefined ? {} : { pendingInput }) }
-    } catch {
+    } catch (error) {
       pendingInput?.clear()
-      return { refusal: "The command could not be saved, so it did not run.", persistenceFailed: true }
+      /*
+       * The act reached nothing durable because this BROWSER would not take
+       * the write, which is a different thing from the act being refused and
+       * a different thing again from a bug. "The command could not be saved"
+       * was true and unactionable: it named no cause, no next step, and for
+       * two of these faults it left the reader to assume it was theirs.
+       */
+      return { refusal: browserWriteRefusal(error), persistenceFailed: true, writeRefused: true }
     }
   },
   canExecute: (receipt, request) => {

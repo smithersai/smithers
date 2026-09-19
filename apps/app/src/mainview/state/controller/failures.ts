@@ -259,6 +259,18 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
       if (card.kind === "run-trace" && activeLiveTutorialLimit(card)
         && card.payload.observationError === outcome.error) return
     }
+    /*
+     * A lost write is never silent. `writeRefused` means this browser would
+     * not take the person's act, so the control they used snaps back to the
+     * value it already had — exactly as a refusal makes it snap back, and
+     * indistinguishable from one. A toast that leaves after four seconds
+     * cannot be the only word for that: the sentence goes to the transcript
+     * too, where they are still looking a minute later when the draft they
+     * edited submits the value they replaced (walk run 3, B3-N5).
+     */
+    if (outcome.writeRefused === true) {
+      ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
+    }
     const key = `command.failed.${name}`
     // A seam can refuse before the requirement axis knows the session is gone.
     // Turn its explicit sign-in command into the same human gesture as the prompt.

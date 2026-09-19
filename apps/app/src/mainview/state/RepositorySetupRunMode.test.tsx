@@ -186,3 +186,22 @@ test("a run-mode pick made while an earlier write is still failing still reaches
     expect(t.select().value).toBe("automatic")
   } finally { await t.close() }
 })
+
+/*
+ * The same loss one layer earlier: the browser refuses the commit that records
+ * the command, so the door never runs at all. The pick reaches nothing for a
+ * reason that is not the person's doing, and that also belongs where they are
+ * looking rather than only on a toast.
+ */
+test("a run-mode pick the browser would not even record says so in the transcript", async () => {
+  const t = await walk()
+  try {
+    const before = t.setup().revision
+    t.refuseCommandWrite()
+    t.pick("automatic")
+    await t.settle()
+    expect(fixModeOf(t.setup())).toBe("manual")
+    expect(t.setup().revision).toBe(before)
+    expect(t.transcript()).toEqual([STORAGE_FULL])
+  } finally { await t.close() }
+})

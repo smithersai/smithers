@@ -70,7 +70,7 @@ export type CommandOutcome =
     readonly reason: string
     readonly action: "app.download.prompt" | null
   }
-  | { readonly status: "failed"; readonly error: string; readonly persistenceFailed?: true }
+  | { readonly status: "failed"; readonly error: string; readonly persistenceFailed?: true; readonly writeRefused?: true }
   /**
    * THE FORM LAW (apps/app/AGENTS.md): the invocation lacked required input,
    * so nothing ran and the flow's form card is rendered instead — prefilled
@@ -429,7 +429,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const acceptance = lifecycle === undefined ? undefined : await lifecycle.accept(request, pendingFormInput)
     if (acceptance !== undefined && "receipt" in acceptance) pendingInput = acceptance.pendingInput
     if (acceptance !== undefined && "refusal" in acceptance) return {
-      status: "failed", error: acceptance.refusal, ...(acceptance.persistenceFailed ? { persistenceFailed: true } : {})
+      status: "failed", error: acceptance.refusal, ...(acceptance.persistenceFailed ? { persistenceFailed: true } : {}),
+      ...(acceptance.writeRefused ? { writeRefused: true } : {})
     }
     if (acceptance !== undefined && lifecycle?.canExecute?.(acceptance.receipt, request) === false) {
       return { status: "failed", error: "The command's controller, account, or turn closed before execution.", persistenceFailed: true }

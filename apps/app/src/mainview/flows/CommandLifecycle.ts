@@ -24,7 +24,15 @@ export interface PendingCommandInput { readonly clear: () => void }
 
 export type CommandAcceptance =
   | { readonly receipt: CommandReceipt; readonly pendingInput?: PendingCommandInput }
-  | { readonly refusal: string; readonly persistenceFailed?: true }
+  /**
+   * `persistenceFailed` covers both "nothing durable happened" cases, and they
+   * are not the same thing to a person. A superseded act — the controller,
+   * account or turn moved on — states nothing, because "done" for work that was
+   * thrown away is the silent-lie shape. A `writeRefused` act is the other one:
+   * this BROWSER would not take the write, the person's act reached nothing,
+   * and the control they used snapped back. That one is never silent.
+   */
+  | { readonly refusal: string; readonly persistenceFailed?: true; readonly writeRefused?: true }
 
 /** Durable command records contain metadata only; optional human input is a private pending draft. */
 export interface CommandLifecycle {
