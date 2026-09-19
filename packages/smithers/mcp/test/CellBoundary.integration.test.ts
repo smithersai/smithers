@@ -27,6 +27,7 @@ import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
@@ -56,6 +57,21 @@ const pattern = (declared: string): Capability.CapabilityPattern => {
 
 const unrestricted = [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
 const readOnly = [pattern("fs:read:**")]
+
+/**
+ * A Jev that reads every claim as done and modest.
+ *
+ * `CellTurn.run` requires an `Evaluator` because its completion brake never
+ * falls back: a claim nothing could judge ends the run as
+ * `completion_unjudged`. This case is about the capability boundary, not that
+ * brake, so it binds the same confident reading the harness's own cell-turn
+ * fixtures bind, which lets a completion stand exactly as it did before the
+ * brake existed. See `CompletionClaim`.
+ */
+const confidentEvaluator = Evaluator.layerScripted(() => ({
+  complete: { probability: 0.99 },
+  overclaims: { probability: 0.01 }
+}))
 
 /** One model frame that emits a fenced cell, then settles. */
 const emits = (cell: string): ReadonlyArray<ModelEvent.ModelEvent> => [
@@ -120,7 +136,8 @@ const turn = (
       Stream.runCollect,
       Effect.provide(EngineLike.layer(engine)),
       Effect.provide(QuickJSSandbox.layer),
-      Effect.provide(Steering.layerNoop())
+      Effect.provide(Steering.layerNoop()),
+      Effect.provide(confidentEvaluator)
     )
   })))
 
