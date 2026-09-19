@@ -189,7 +189,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           if (call === undefined) continue
           if (["edit", "write", "apply_patch"].includes(call.flowName) && p.outcome === "success") {
             const input = record(call.input)
-            const patchPaths = typeof input.input === "string" ? [...input.input.matchAll(/^\*\*\* (?:Add|Delete|Update) File: (.+)$/gm)].map(hit => hit[1]!) : []
+            const patchPaths = typeof input.input === "string" ? [...input.input.matchAll(/^\*\*\* (?:(?:Add|Delete|Update) File|Move to): (.+)$/gm)].map(hit => hit[1]!) : []
             invalidate(seq, text(input.path) === undefined ? patchPaths : [input.path as string])
           }
           if (call.match === undefined || call.sequence < resultSequence) continue

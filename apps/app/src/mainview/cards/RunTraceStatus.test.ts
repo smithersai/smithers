@@ -82,6 +82,7 @@ describe("recorded goal progress", () => {
     expect(checkState([...checked, event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["README.md"] })])).toBe("passed")
     const changed = [...checked, event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["src/memory.ts"] })]
     expect(checkState(changed)).toBe("stale")
+    expect(checkState([...checked, ...call(3, "apply_patch", { input: "*** Begin Patch\n*** Update File: README.md\n*** Move to: src/memory.ts\n*** End Patch" })])).toBe("stale")
     expect(checkState(changed, 2)).toBe("passed")
     expect(checkState([...changed, ...call(4, "bash", { command: "bun test tests/memory" })])).toBe("passed")
     expect(checkState([checked[0]!, event(2, "agent.mutation-observed", { basis: "observed", mutated: true }), { ...checked[1]!, sequence: 3 }])).toBe("stale")
