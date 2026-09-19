@@ -2806,7 +2806,9 @@ export const run = (
       // no record of what was asked for is a failure a grader cannot read.
       const realm = yield* Effect.suspend(() => {
         const projections: Record<string, Cell.FlowProjection> = {}
-        for (const descriptor of input.flows) projections[descriptor.name] = Cell.project(descriptor)
+        for (const descriptor of input.flows) {
+          projections[descriptor.name] = Cell.project(descriptor)
+        }
         return sandbox.openRealm === undefined
           ? Effect.fail(Sandbox.realmUnsupported)
           : sandbox.openRealm({ flows: projections, limits: input.limits })
@@ -2841,7 +2843,9 @@ export const run = (
           // prefix and the accumulated transcript. Rebuild before compaction
           // so token accounting and the sealed request use this snapshot too.
           const previous = teach(ContextWindow.empty(current.contextWindow.modelId), flows)
-          const digests = new Set(previous.segments.map((segment) => segment.digest))
+          const digests = new Set(previous.segments.map((segment) =>
+            segment.digest
+          ))
           current = advance(current, {
             contextWindow: teach(
               ContextWindow.make({
