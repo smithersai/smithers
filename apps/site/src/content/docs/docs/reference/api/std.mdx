@@ -112,12 +112,13 @@ The curated classifiers `classify/<id>` flows are declared from, each a
 `Classifier.make` declaration from [`@smthrs/model`](/docs/reference/api/model/) with a state
 schema and atomic questions.
 
-| Export         | Type                            | Meaning                                                                                                  |
-| -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `relevance`    | `Classifier` `triage/relevance` | `{ task, file, excerpt }`: `relevant` boolean, `role` choice, `risk` score.                              |
-| `checkVerdict` | `Classifier` `check/verdict`    | `{ task, command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                    |
-| `editRisk`     | `Classifier` `edit/risk`        | `{ task, path, hunk }`: `risk` score, `reversible` boolean.                                              |
-| `all`          | `ReadonlyArray<AnyClassifier>`  | The three above, in catalog order; what `StandardFlows.classify` binds when a host names no classifiers. |
+| Export             | Type                             | Meaning                                                                                                                    |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `relevance`        | `Classifier` `triage/relevance`  | `{ task, file, excerpt }`: `relevant` boolean, `role` choice, `risk` score.                                                |
+| `checkVerdict`     | `Classifier` `check/verdict`     | `{ task, command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                                      |
+| `editRisk`         | `Classifier` `edit/risk`         | `{ task, path, hunk }`: `risk` score, `reversible` boolean.                                                                |
+| `probeAttribution` | `Classifier` `probe/attribution` | `{ command, exitCode, output }`: `attribution` choice, `executed` boolean. Asked by `Probe.classify`, not bound as a flow. |
+| `all`              | `ReadonlyArray<AnyClassifier>`   | The first three, in catalog order; what `StandardFlows.classify` binds when a host names no classifiers.                   |
 
 `Classify.curated(classifier)` turns any of them, or a host's own, into a
 `{ name, digest, flow, run }` whose input is the classifier's state or
@@ -130,24 +131,37 @@ answer ids and shapes derived from the questions. See
 Telling an invalid probe from a failing check. A non-zero exit is a runner's
 verdict about the code it ran, not about the command it was handed.
 
-| Export         | Type                                                                  | Meaning                                                                                     |
-| -------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `key`          | `"invalidProbe"`                                                      | The reserved output key a flow reports one under.                                           |
-| `Reason`       | `Schema.Literals` and the matching type                               | `unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`, `unknown-environment`. |
-| `InvalidProbe` | `Schema.Struct` and the matching type                                 | `{ reason, evidence, message }`.                                                            |
-| `classify`     | `(result: { exitCode, stdout, stderr }) => InvalidProbe \| undefined` | Classifies one command result.                                                              |
+| Export             | Type                                                                                         | Meaning                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `key`              | `"invalidProbe"`                                                                             | The reserved output key a flow reports one under.                                           |
+| `Reason`           | `Schema.Literals` and the matching type                                                      | `unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`, `unknown-environment`. |
+| `InvalidProbe`     | `Schema.Struct` and the matching type                                                        | `{ reason, evidence, message }`.                                                            |
+| `Attribution`      | `{ to, executed?, invalidProbe? }`                                                           | What one result was attributed to: the tree, or one of the five.                            |
+| `CONFIDENCE_FLOOR` | `0.7`                                                                                        | The confidence an attribution needs before it outranks the tree.                            |
+| `MAX_OUTPUT_BYTES` | `32768`                                                                                      | The most output bytes one judgment carries, newest kept.                                    |
+| `posix`            | `(exitCode: number) => InvalidProbe \| undefined`                                            | Reads the shell's own refusal, 126 and 127, from the exit code alone.                       |
+| `classify`         | `(result: { command, exitCode, output }) => Effect<Attribution, ClassifierError, Evaluator>` | Attributes one command result, with Jev.                                                    |
+| `unjudged`         | `(error: ClassifierError) => StdError`                                                       | The standard-flow failure a judge that did not answer is.                                   |
 
 ```ts
 import * as Probe from "@smthrs/std/Probe"
 
-const probe = Probe.classify({ exitCode: 127, stdout: "", stderr: "pytest: command not found" })
-// { reason: "unknown-command", evidence: "pytest: command not found", message: "..." }
+Probe.posix(127)
+// { reason: "unknown-command", evidence: "the command exited 127", message: "..." }
+
+const attribution = yield * Probe.classify({ command: "pytest tests/x.py::nope", exitCode: 4, output })
+// { to: "unknown-test", executed: false, invalidProbe: { reason: "unknown-test", ... } }
 ```
 
-A zero exit is never classified. A runner's own report that it executed tests
-vetoes every wording recogniser, so a genuine reproduction that prints
-`No module named` from inside a test is not suppressed. Exit codes 126 and 127
-are the shell's verdict and are not vetoed.
+The attribution is Jev's: `classify` asks the `probe/attribution` classifier
+through the `Evaluator` service of [`@smthrs/model`](/docs/reference/api/model/), so a host
+needs `AI_GATEWAY_API_KEY` and a bound evaluator. Two things are still decided
+without it, because an exit code is a fact rather than prose: a zero exit is
+never classified, and 126 and 127 are the shell's own refusal to start the
+command. An answer below `CONFIDENCE_FLOOR` is the tree's failure, which leaves
+a genuine reproduction intact. There is no third path: when the judge does not
+answer, `unjudged` turns its failure into the caller's typed failure rather
+than a guess.
 
 ## Search
 
