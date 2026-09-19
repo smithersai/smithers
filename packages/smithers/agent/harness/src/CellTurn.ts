@@ -688,7 +688,7 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    * the silence this package refuses; what it cannot be handed is a second
    * demand. See `Frame.judgeCompletion`.
    */
-  demandedFrame: Schema.optional(NonNegativeSafeInt),
+  demandedFrame: Schema.optionalKey(NonNegativeSafeInt),
   /**
    * Whether a human can answer this run, which is what makes a park honorable.
    *
@@ -1341,6 +1341,29 @@ const mutating = (descriptor: Descriptor.FlowDescriptor, input: Schema.Json): bo
  * an absent record and measuring a tree that has since moved.
  */
 const RecordedObservation = Schema.Option(EngineLike.Observation)
+
+/** The full completion decision, including the classifier reading and its cost. */
+const RecordedCompletion = Schema.Struct({
+  observed: Schema.NullOr(AgentEvent.ClaimDemanded),
+  demand: Schema.NullOr(Schema.Struct({
+    event: Schema.Union([
+      AgentEvent.UnmovedDemanded,
+      AgentEvent.UnresolvedDemanded,
+      AgentEvent.NarrowedDemanded,
+      AgentEvent.NarrowOnlyDemanded,
+      AgentEvent.ClaimDemanded
+    ]),
+    note: Schema.String,
+    keeps: Schema.Boolean,
+    spent: Schema.Struct({
+      unmovedDemands: Schema.optionalKey(NonNegativeSafeInt),
+      unresolvedDemands: Schema.optionalKey(NonNegativeSafeInt),
+      narrowingDemands: Schema.optionalKey(NonNegativeSafeInt),
+      claimDemands: Schema.optionalKey(NonNegativeSafeInt)
+    })
+  })),
+  unproven: Schema.NullOr(HarnessError)
+})
 
 /**
  * Measures the workspace once, through a journaled boundary.
@@ -2611,7 +2634,30 @@ const frame = (
       // The completion's own evidence, judged once per demand; see
       // `Frame.judgeCompletion` for the five demands, their order, and the
       // three things that leave no frame to ask in.
-      const judged = yield* Frame.judgeCompletion(state, accounting, contextWindow, transition.output)
+      const services = yield* Effect.context<Evaluator.Evaluator>()
+      const judged = yield* engine.record({
+        name: "completion-judgement",
+        identity: {
+          session: state.session,
+          frame: state.frame,
+          boundary: `completion-judgement:${cell.digest}`
+        },
+        success: RecordedCompletion,
+        // A replay uses the entire original decision. Re-evaluating even an
+        // accepted claim can invent a demand and execute additional work.
+        execute: Frame.judgeCompletion(state, accounting, contextWindow, transition.output).pipe(
+          Effect.provideContext(services),
+          Effect.map((decision) => ({
+            observed: decision.observed ?? null,
+            demand: decision.demand ?? null,
+            unproven: decision.unproven ?? null
+          }))
+        )
+      }).pipe(Effect.map((decision) => ({
+        observed: decision.observed ?? undefined,
+        demand: decision.demand ?? undefined,
+        unproven: decision.unproven ?? undefined
+      })))
       // The claim brake's reading when it issued no demand. It is the one
       // demand whose non-demanding readings are journaled, because it is the
       // one a grader cannot recompute; see `AgentEvent.ClaimDemanded`. It is
@@ -2710,7 +2756,9 @@ export const run = (
     HarnessError,
     EngineLike.EngineLike | Sandbox.Sandbox | Steering.Source | Evaluator.Evaluator
   >((queue) => {
-    const emit = (event: AgentEvent.AgentEvent): Effect.Effect<void> => Effect.asVoid(Queue.offer(queue, event))
+    const emit = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
+      Effect.flatMap(AgentEvent.Observer, (observe) =>
+        Effect.andThen(observe(event), Effect.asVoid(Queue.offer(queue, event))))
     const loop = Effect.gen(function*() {
       const engine = yield* EngineLike.EngineLike
       const sandbox = yield* Sandbox.Sandbox

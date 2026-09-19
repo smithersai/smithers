@@ -6,10 +6,21 @@
 import * as Permission from "@smthrs/capability/Permission"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import * as EngineLike from "./EngineLike.ts"
 import * as Sandbox from "./Sandbox.ts"
+
+/**
+ * Observes an event before the controller advances or parks. Durable hosts
+ * finish their checkpoint here; stream consumers may lag behind the source.
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export const Observer = Context.Reference<(event: AgentEvent) => Effect.Effect<void>>(
+  "@smthrs/harness/AgentEvent/Observer",
+  { defaultValue: () => () => Effect.void }
+)
 
 /**
  * The loop discipline a run was armed with, journaled once when it starts.

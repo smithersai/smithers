@@ -11,7 +11,7 @@ import { type KeyMaterial, Placement } from "@smthrs/core"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Capability, Permission } from "@smthrs/kernel"
 import { CanonicalJson, Model, ModelEvent, ModelRequest } from "@smthrs/model"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Descriptor } from "@smthrs/registry"
 import { Effect, Layer, Option, Result, Schema, Stream } from "effect"
@@ -2214,4 +2214,64 @@ describe("CellTurn delivery through the durable notification queue", () => {
     expect(model.recorder.requests).toHaveLength(1)
     expect(pending.map((message) => message.id)).toEqual(["follow-up"])
   })
+})
+
+describe("durable completion decisions", () => {
+  it.each(["stands", "bounces", "fails"] as const)(
+    "replays a completion that %s without evaluating again",
+    async (disposition) => {
+      const records = new Map<string, unknown>()
+      let evaluations = 0
+      const attempt = async (replay: boolean) => {
+        const model = ScriptedModel.make([emits("ctx.done(\"The tests pass\")"), emits("ctx.done(\"The tests pass\")")])
+        const engine = ScriptedEngine.make(model.model)
+        const initial = state({
+          maxFrames: disposition === "bounces" ? 2 : 1,
+          contextWindow: ContextWindow.make({
+            modelId: "test-model",
+            segments: [{
+              kind: "instructions",
+              zone: "prefix",
+              content: [ModelRequest.SystemPart.make({ text: "Run the tests" })]
+            }]
+          })
+        })
+        return collect({ state: initial, flows: [] }, {
+          engine: journaled(engine, records),
+          evaluator: Evaluator.layerScripted(() => {
+            evaluations++
+            const accepted = replay ? disposition !== "stands" : disposition === "stands"
+            return {
+              complete: { probability: accepted ? 0.99 : 0.01 },
+              overclaims: { probability: accepted ? 0.01 : 0.99 },
+              invented: { probability: accepted ? 0.01 : 0.99 }
+            }
+          })
+        })
+      }
+      const first = await attempt(false)
+      const firstEvaluations = evaluations
+      expect(firstEvaluations).toBe(disposition === "bounces" ? 2 : 1)
+      expect(of(first.events, "claim-demanded").map((event) => event.demanded)).toEqual(
+        disposition === "bounces" ? [true, false] : [false]
+      )
+      if (disposition === "stands") {
+        expect(first.failure).toBeUndefined()
+        expect(resolvedText(first.events)).toBe("The tests pass")
+      } else {
+        expect(first.failure).toMatchObject({ code: "claim_unproven" })
+      }
+      expect([...records.keys()].filter((key) => key.includes("completion-judgement"))).toHaveLength(firstEvaluations)
+      for (const [key, value] of records) {
+        if (key.includes("completion-judgement")) records.set(key, JSON.parse(JSON.stringify(value)))
+      }
+      const replay = await attempt(true)
+      expect(evaluations).toBe(firstEvaluations)
+      expect(of(replay.events, "claim-demanded")).toEqual(of(first.events, "claim-demanded"))
+      expect(of(replay.events, "transition-applied")).toEqual(of(first.events, "transition-applied"))
+      expect(resolvedText(replay.events)).toBe(resolvedText(first.events))
+      expect(replay.failure === undefined).toBe(first.failure === undefined)
+      if (first.failure !== undefined) expect(replay.failure).toMatchObject({ code: "claim_unproven" })
+    }
+  )
 })
