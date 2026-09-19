@@ -1,7 +1,13 @@
 import type { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
 import * as Projection from "../src/GatewayProjection.ts"
-import { callEventKey, nativeStepEvent, openCallIndex, uniqueCallEvents } from "../src/internal/callEvents.ts"
+import {
+  callEventKey,
+  callScope,
+  nativeStepEvent,
+  openCallIndex,
+  uniqueCallEvents
+} from "../src/internal/callEvents.ts"
 
 const step = {
   stepId: "a".repeat(64),
@@ -47,6 +53,25 @@ const event = (
 })
 
 describe("native step facts", () => {
+  it("ignores missing scopes and non-object step values", () => {
+    const payloads = [
+      undefined,
+      null,
+      "payload",
+      1,
+      false,
+      [],
+      {},
+      { step: undefined },
+      { step: null },
+      { step: "step" },
+      { step: 1 },
+      { step: false },
+      { step: [] }
+    ]
+    for (const payload of payloads) expect(callScope({ payload })).toBeUndefined()
+  })
+
   it("preserves the recorded generation and time when replay republishes the prefix", () => {
     const original = event(1)
     const replay = event(2, undefined, step, 1)
