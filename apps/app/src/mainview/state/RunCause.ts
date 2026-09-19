@@ -11,7 +11,8 @@
  * gateway's verdict repeats that same first line. Nothing on this side read
  * either one, so every code in both vocabularies flattened into the lead.
  *
- * This is the table that answers them. Three rules hold it honest:
+ * This is the table that answers the ones it can. Three rules hold it honest,
+ * and the third is why it answers the harness's codes and none of the model's.
  *
  * - A code is never read off prose, and prose is never rendered at a person.
  *   The harness writes run ids into its own messages (`The agent session
@@ -28,7 +29,11 @@
  *   `_tag`, the package that raised it and the seam it crossed are all gone by
  *   the time a card reads it: a code string does NOT identify its author. Where
  *   two vocabularies spell the same code, this file answers neither — see
- *   {@link SHARED_CODES}.
+ *   {@link SHARED_CODES}. That rule is what leaves this table holding only the
+ *   harness's own codes: `flows/librarian` re-declares the model's entire
+ *   vocabulary under its own tag, so every model code is shared and the
+ *   fault's own lead — true about a union this side cannot split — stands for
+ *   all twelve.
  *
  * @see ../../../../../packages/smithers/agent/harness/src/HarnessError.ts
  * @see ../../../../../packages/smithers/agent/model/src/ModelError.ts
@@ -65,8 +70,16 @@ export type HarnessCode = (typeof HARNESS_CODES)[number]
  * `failureSummary` keeps the INNERMOST typed pair, so a provider refusal under
  * a harness wrapper journals the provider's code rather than the harness's
  * (`packages/smithers/agent/test/FailureSummary.test.ts`, "keeps the provider's
- * typed refusal under the harness wrapper"). That is why both vocabularies are
- * answered here and not just the outer one.
+ * typed refusal under the harness wrapper"). That is why this vocabulary is
+ * swept at all, and not just the outer one.
+ *
+ * None of these twelve has a row. `flows/librarian/runtime.ts` declares
+ * `librarian/ProviderUnavailable` with `code: ModelErrorCode` beside a
+ * `message` — this same closed set, under a second tag — so every one of them
+ * is in {@link SHARED_CODES} and this file answers none of them. They are
+ * listed because the sweep still has to find them: a code the model package
+ * adds tomorrow has to be placed, shared or answered, before it can reach a
+ * person.
  */
 export const MODEL_CODES = [
   "invalid_request",
@@ -108,16 +121,40 @@ export type ModelCode = (typeof MODEL_CODES)[number]
  * conditions. A specific sentence that is false for four of its five possible
  * authors is worse than a general one that is true for all of them.
  *
- * `RunCause.test.ts` derives this map by sweeping every `Schema.TaggedError`
- * in `packages/`, `flows/` and `apps/` that declares a closed `code` set
- * beside a `message` — the exact record shape `failureSummary` reads — so a
- * package that starts spelling one of these codes tomorrow reds that suite
- * rather than reaching a person as somebody else's sentence.
+ * `RunCause.test.ts` derives this map by sweeping every tagged failure class
+ * in the shipped sources under `packages/`, `flows/` and `apps/` that carries
+ * a `code` beside a `message` — the exact record shape `failureSummary` reads
+ * — so a package that starts spelling one of these codes tomorrow reds that
+ * suite rather than reaching a person as somebody else's sentence. The sweep
+ * reads three shapes: an inline `Schema.Literals([...])`, a code schema named
+ * in another file (`librarian/ProviderUnavailable` is `code: ModelErrorCode`,
+ * imported from `@smthrs/model`), and an open `code` resolved from the
+ * literals its own `new` sites pass.
  */
 export const SHARED_CODES = {
   engine_failed: ["/harness/HarnessError", "@smthrs/opencode/DriverError"],
-  invalid_request: ["flows/model/ModelError", "flows/scorers/ScorerError", "@smthrs/sync/SyncError", "coding/Error"],
-  rate_limited: ["flows/model/ModelError", "@smthrs/std/StdError", "@smthrs/time-travel/TimeTravelError"],
+  invalid_request: [
+    "flows/model/ModelError",
+    "flows/scorers/ScorerError",
+    "@smthrs/sync/SyncError",
+    "coding/Error",
+    "librarian/ProviderUnavailable"
+  ],
+  context_overflow: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  no_route: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  authentication: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  rate_limited: [
+    "flows/model/ModelError",
+    "@smthrs/std/StdError",
+    "@smthrs/time-travel/TimeTravelError",
+    "librarian/ProviderUnavailable"
+  ],
+  quota_exceeded: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  content_policy: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  provider_internal: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  transport: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  call_timeout: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
+  invalid_provider_output: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
   unknown: [
     "flows/model/ModelError",
     "flows/registry/DiscoveryError",
@@ -129,7 +166,8 @@ export const SHARED_CODES = {
     "@smthrs/jj/JjError",
     "@smthrs/sync/SyncError",
     "@smthrs/time-travel/TimeTravelError",
-    "@smthrs/step-cache/CacheStoreError"
+    "@smthrs/step-cache/CacheStoreError",
+    "librarian/ProviderUnavailable"
   ]
 } as const satisfies Readonly<Record<string, ReadonlyArray<string>>>
 
@@ -155,8 +193,9 @@ export interface RunCauseRow {
 
 /**
  * The sentence for each code. Total over both vocabularies minus
- * {@link SHARED_CODES}; a code added to either declaration is a red in
- * `RunCause.test.ts` until it is answered or shown to be shared.
+ * {@link SHARED_CODES}, which today leaves the harness's eight sole-authored
+ * codes and nothing from the model's; a code added to either declaration is a
+ * red in `RunCause.test.ts` until it is answered or shown to be shared.
  *
  * Every fault that is not the person's keeps "Not your fault" or "Not your
  * doing" and then ADDS the fact the lead was missing. A fault that is the
@@ -215,70 +254,36 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
   suspended: {
     fault: "infra",
     message: "The run stopped to wait for something that never came. Not your fault — it's worth starting it again."
-  },
-
-  /* The model boundary's vocabulary, which arrives here under a harness wrapper. */
-  /*
-   * `invalid_request` has no row: the model package, `flows/scorers`,
-   * `@smthrs/sync` and the coding flows' `CodingError` all spell it. The setup
-   * bridge's own reading is unaffected — `RunFailure.ts` answers a receipt code
-   * by its flow before this table is consulted — but for every other flow the
-   * four are indistinguishable from one line of `<code>: <message>`.
-   */
-  context_overflow: {
-    fault: "user",
-    message: "The conversation outgrew the model's context window. Ask for something narrower, or start a fresh run."
-  },
-  no_route: {
-    fault: "infra",
-    message: "No model seat was available for this run. Not your fault — it's a setting on Smithers' side."
-  },
-  authentication: {
-    fault: "infra",
-    message:
-      "The model provider rejected Smithers' credentials. Not your fault — the key on this side has to be fixed before the run can finish."
-  },
-  /*
-   * `rate_limited` has no row: `@smthrs/std` raises it when a tool's own
-   * provider throttles a search, and `@smthrs/time-travel` when Smithers' own
-   * rewind limiter refuses. "The model provider is rate limiting Smithers" is
-   * false for both, and the three do not even share a fault class — the
-   * model's and the tool's are a dependency's, the rewind limiter's is
-   * Smithers' own — so there is no honest sentence for the union either.
-   */
-  quota_exceeded: {
-    fault: "dependency",
-    message:
-      "The model provider says this account has no quota left. Not your doing — the account has to be topped up before the run can finish."
-  },
-  content_policy: {
-    fault: "user",
-    message: "The model provider refused this request under its content policy. Ask for something else."
-  },
-  provider_internal: {
-    fault: "dependency",
-    message: "The model provider failed on its own side. Not your doing — it's worth asking again."
-  },
-  transport: {
-    fault: "dependency",
-    message: "The call to the model provider never completed. Not your doing — it's worth asking again."
-  },
-  call_timeout: {
-    fault: "infra",
-    message:
-      "The model took longer than this run allows, and the call was cut off before it answered. Not your fault — it's worth asking again."
-  },
-  invalid_provider_output: {
-    fault: "dependency",
-    message: "The model provider answered with something Smithers couldn't read. Not your doing — it's worth asking again."
   }
   /*
-   * `unknown` has no row, and it is the code that opened this: eleven
-   * vocabularies spell it and the model's is the one that raises it least —
-   * only `RequestExecutor.ts` does, and only when the HTTP classifier returns
-   * nothing — while `jj`, the sandbox, sync, the registry and four stores
-   * raise it routinely. "The model call failed" beside a `run.calls` of 0 is
-   * the lie this table exists to stop telling.
+   * The model boundary's vocabulary has no rows at all, and that is the
+   * shrink this table took rather than keep nine sentences it cannot honestly
+   * claim. `flows/librarian/runtime.ts:13` declares
+   * `librarian/ProviderUnavailable` with `code: ModelErrorCode` beside a
+   * `message` — the model's whole closed set, re-declared under a second tag —
+   * and `surfaceFailure` raises seven of them today. One line of
+   * `<code>: <message>` cannot say which of the two wrote it, so
+   * `no_route: ...` from the librarian would have reached a person as "No
+   * model seat was available for this run" whether or not a seat was the
+   * problem. The fault's own lead is true of both authors; a sentence picked
+   * for one of them is not.
+   *
+   * Three of the twelve were already shared for other reasons, and their
+   * reasons still stand on their own: `invalid_request` with `flows/scorers`,
+   * `@smthrs/sync` and the coding flows' `CodingError` (the setup bridge is
+   * unaffected — `RunFailure.ts` answers a receipt code by its flow before
+   * this table is consulted); `rate_limited` with `@smthrs/std`, which raises
+   * it when a tool's own provider throttles a search, and
+   * `@smthrs/time-travel`, which raises it when Smithers' own rewind limiter
+   * refuses; and `unknown`, the code that opened this, which twelve
+   * vocabularies spell and the model's raises least — only
+   * `RequestExecutor.ts`, and only when the HTTP classifier returns nothing —
+   * while `jj`, the sandbox, sync, the registry and four stores raise it
+   * routinely. "The model call failed" beside a `run.calls` of 0 is the lie
+   * this table exists to stop telling.
+   *
+   * `engine_failed` is the harness's own loss, to
+   * `@smthrs/opencode/DriverError`.
    */
 }
 
