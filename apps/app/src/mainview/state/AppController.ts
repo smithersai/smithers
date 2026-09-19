@@ -1,4 +1,5 @@
 import { createRepositoryReadiness } from "./controller/repositoryReadiness"
+import { lostActRefusal } from "./BrowserWriteFailure"
 import { openRequestedRepo } from "../RepoLink"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
@@ -1860,9 +1861,23 @@ export const createAppController = (
    */
   const commands: CommandRegistry = {
     ...registry,
-    run: (name, args, source) => {
-      if (ctx.disposed) return Promise.resolve({ status: "failed", error: "The controller is closed." })
-      return registry.run(name, args, source)
+    run: async (name, args, source) => {
+      if (ctx.disposed) return { status: "failed", error: "The controller is closed." }
+      try {
+        return await registry.run(name, args, source)
+      } catch (error) {
+        /*
+         * The floor under the person's door. A handler's throw is classified
+         * at the flow boundary, but the steps AROUND it — the durable command
+         * record, the private staging of their edit, the trace — are outside
+         * every flow, and a throw from there used to leave this promise
+         * rejected: `void run(…).then(…)` with no catch, so the control
+         * snapped back, nothing was said, and the reason went to an
+         * `unhandledrejection` handler that reports to maintainers. No gesture
+         * leaves here without an outcome, and a bug says it is a bug.
+         */
+        return { status: "failed", error: lostActRefusal(error), writeRefused: true }
+      }
     }
   }
   ctx.commands = commands

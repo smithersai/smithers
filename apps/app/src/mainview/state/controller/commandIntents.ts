@@ -1,5 +1,5 @@
 import { decideApprovalAnswerInput } from "../ApprovalAnswerState"
-import { browserWriteRefusal } from "../BrowserWriteFailure"
+import { browserWriteRefusal, lostActRefusal } from "../BrowserWriteFailure"
 import { decideFormFieldInput } from "./forms"
 import { reserveBrowserCommandGesture } from "../../flows/CommandGesture"
 import { digest } from "@smthrs/core/Digest"
@@ -67,21 +67,32 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
      * Deciding and staging the human's pending edit happens BEFORE any write
      * and cannot fail the way a browser fails: the recovery record is written
      * through `writeEntityRecovery`, which answers `undefined` rather than
-     * throwing. A throw from here is this app's own bug, so it is deliberately
-     * outside the classifier below — dressed as a lost write it would reach
-     * the person as retry advice that can never work, and put a false line in
+     * throwing. A throw from here is this app's own bug, so it is kept out of
+     * the write classifier below — dressed as a lost write it would reach the
+     * person as retry advice that can never work, and put a false line in
      * their transcript about a write that was never attempted.
+     *
+     * It is still theirs to hear. Every flow form in the app commits each
+     * keystroke through this door, including this card's own setup question,
+     * so a throw left to escape took the field back to the value it already
+     * had and said nothing at all. It is answered as the programming error it
+     * is: its own arm, its own fault class, and a sentence that says so.
      */
     let pendingInput: PendingCommandInput | undefined
-    if (request.actor === "user" && request.name === "form.set" && pendingFormInput !== undefined) {
-      const { cardId, field, value } = pendingFormInput
-      const candidate = ctx.store.collections.cards.get(cardId)
-      const decided = decideFormFieldInput(candidate?.kind === "flow-form" ? candidate : undefined, cardId, field, value)
-      if (!("error" in decided)) pendingInput = ctx.store.stagePendingCardInput(cardId, decided.card, id, field)
-      else {
-        const answer = decideApprovalAnswerInput(ctx.store, cardId, field, value)
-        if (!("error" in answer)) pendingInput = ctx.store.stagePendingApprovalAnswer(answer, id)
+    try {
+      if (request.actor === "user" && request.name === "form.set" && pendingFormInput !== undefined) {
+        const { cardId, field, value } = pendingFormInput
+        const candidate = ctx.store.collections.cards.get(cardId)
+        const decided = decideFormFieldInput(candidate?.kind === "flow-form" ? candidate : undefined, cardId, field, value)
+        if (!("error" in decided)) pendingInput = ctx.store.stagePendingCardInput(cardId, decided.card, id, field)
+        else {
+          const answer = decideApprovalAnswerInput(ctx.store, cardId, field, value)
+          if (!("error" in answer)) pendingInput = ctx.store.stagePendingApprovalAnswer(answer, id)
+        }
       }
+    } catch (error) {
+      pendingInput?.clear()
+      return { refusal: lostActRefusal(error), persistenceFailed: true, writeRefused: true }
     }
     try {
       await ctx.store.dispatch({ type: "command.intent.accepted", actor: request.actor,

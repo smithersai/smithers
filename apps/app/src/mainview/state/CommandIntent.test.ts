@@ -281,13 +281,24 @@ describe("durable command intent at the active shared door", () => {
    * Make it again; if it fails twice, reload the page" — retry advice for
    * something that will never succeed, plus a false line in the transcript
    * about a write that was never attempted.
+   *
+   * Keeping it out of that classifier is half the answer. The other half is
+   * that the person still hears it: an escaped throw left the door with no
+   * outcome at all, which is the silence this whole rule exists to delete.
    */
-  test("a bug in the staged form preparation is not dressed up as a browser that would not save", async () => {
+  test("a bug in the staged form preparation is named as a bug, not as a browser that would not save", async () => {
     const store = await open()
     const controller = controllerFor({ ...store, stagePendingCardInput: () => { throw new TypeError("the form card is not ready") } })
     controller.renderFlowForm({ name: "repo.tree", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String }) })
     await store.settled?.()
-    await expect(controller.commands.run("form.set", "form-repo.tree purpose pending words")).rejects.toThrow(TypeError)
+    const outcome = await controller.commands.run("form.set", "form-repo.tree purpose pending words")
+    // What the person gets: an act that failed, in words that name a bug and
+    // ask for nothing a person could have done differently.
+    expect(outcome).toEqual({ status: "failed", writeRefused: true, persistenceFailed: true, error:
+      "Smithers hit a bug of its own, so that didn't finish. Not your fault, and nothing about what you did would have avoided it. Reload the page to see where it got to, then make the change again." })
+    // Not this browser's saved data, and not the thrown message.
+    expect(outcome.status === "failed" && outcome.error).not.toContain("This browser")
+    expect(outcome.status === "failed" && outcome.error).not.toContain("the form card is not ready")
     // The write was never reached, so nothing was accepted and nothing is owed
     // a sentence about this browser's saved data.
     expect(store.collections.commandIntents.size).toBe(0)

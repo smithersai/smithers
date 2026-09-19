@@ -29,11 +29,35 @@ export type BrowserWriteFault =
   | "storage-full"
   | "storage-unavailable"
 
+/**
+ * Every way an act a person made can end without doing what they asked.
+ *
+ * The five write faults are the ones this browser is answerable for. The other
+ * two are not about storage at all, and they are here because they end the
+ * same way — the control snaps back to the value it already had — so they need
+ * the same vocabulary or they inherit silence:
+ *
+ * - `app-bug`: this app threw where it had no business throwing. Dressed as a
+ *   lost write it becomes retry advice that can never work; left untyped it
+ *   became an unhandled rejection, which is a line only a maintainer reads.
+ * - `cancelled`: the act was stopped before it finished, by the person or by a
+ *   closing controller. Nothing is owed to somebody who already knows.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type LostActFault = BrowserWriteFault | "app-bug" | "cancelled"
+
 interface BrowserWriteCopy {
   /** Whose problem this is, in the same vocabulary every other refusal in the app uses. */
   readonly fault: PlueFault
   /** What the person reads: what did not happen, whose fault it was, and the next act. */
   readonly sentence: string
+  /**
+   * Whether this sentence goes where the person is still looking a minute
+   * later, and not only on a toast that leaves after four seconds.
+   */
+  readonly spoken: boolean
 }
 
 /*
@@ -45,25 +69,51 @@ interface BrowserWriteCopy {
 const BROWSER_WRITE_COPY = {
   "writer-moved": {
     fault: "user",
+    spoken: true,
     sentence: "Smithers moved to another tab of this browser, so that change was not saved. Make it again in that tab, or reload this page to take Smithers back here."
   },
   "writer-held": {
     fault: "user",
+    spoken: true,
     sentence: "Smithers is already open in another tab of this browser, so that change was not saved. Use Smithers in that tab, or close it and reload this page, then make the change again."
   },
   "storage-conflict": {
     fault: "infra",
+    spoken: true,
     sentence: "Another Smithers tab saved over this browser's data first, so that change was not saved. Not your fault. Reload the page to pick up the current state, then make the change again."
   },
   "storage-full": {
     fault: "user",
+    spoken: true,
     sentence: "This browser has no room left for Smithers' saved data, so that change was not saved. Free space for this site in your browser settings, then make the change again."
   },
   "storage-unavailable": {
     fault: "infra",
+    spoken: true,
     sentence: "This browser did not save that change. Not your fault, and nothing about the change would have avoided it. Make it again; if it fails twice, reload the page."
+  },
+  /*
+   * A bug says so. It does not borrow a storage fault's words, because "free
+   * space" and "if it fails twice, reload" are acts that cannot fix code, and
+   * it does not claim the change was not saved, because a bug can just as
+   * easily run after the bytes landed.
+   */
+  "app-bug": {
+    fault: "infra",
+    spoken: true,
+    sentence: "Smithers hit a bug of its own, so that didn't finish. Not your fault, and nothing about what you did would have avoided it. Reload the page to see where it got to, then make the change again."
+  },
+  /*
+   * A stopped act is the one arm nobody is owed a line for: the person (or the
+   * closing tab) is the one who stopped it, and a notice for work that was
+   * deliberately thrown away is the silent-lie shape in reverse.
+   */
+  "cancelled": {
+    fault: "user",
+    spoken: false,
+    sentence: "That was stopped before it finished, so it may not have run. Make it again if you still want it."
   }
-} satisfies Record<BrowserWriteFault, BrowserWriteCopy>
+} satisfies Record<LostActFault, BrowserWriteCopy>
 
 /*
  * The quota rejection is the one failure here that arrives as somebody else's
@@ -77,21 +127,75 @@ const quotaExceeded = (error: unknown): boolean => {
   return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014
 }
 
-/**
- * Classify a thrown durable write. Never reads the failure's prose: each arm
- * is decided by a type this app itself threw, or by the quota spelling the
- * browser used.
- *
- * @since 1.0.0
- * @category constants
+/*
+ * The recognized half of the classification: a fault this app can name by a
+ * type it threw itself, or by the quota spelling the browser used. Never reads
+ * the failure's prose. `undefined` means nothing here recognized it, which is
+ * a different answer at a write than it is anywhere else.
  */
-export const browserWriteFault = (error: unknown): BrowserWriteFault => {
+const writeFault = (error: unknown): BrowserWriteFault | undefined => {
   if (error instanceof WriterMovedToAnotherTabError) return "writer-moved"
   if (error instanceof WriterHeldByAnotherTabError) return "writer-held"
   if (error instanceof DurableStorageConflictError) return "storage-conflict"
   if (quotaExceeded(error)) return "storage-full"
-  return "storage-unavailable"
+  return undefined
 }
+
+/*
+ * A stopped act arrives as the signal's own reason: the abort DOMException
+ * every browser throws from `throwIfAborted`, read by name rather than by its
+ * prose, like the quota spelling above.
+ */
+const aborted = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError"
+
+/**
+ * Classify a thrown durable write. The write is the only thing that ran, so an
+ * unrecognized throw is this browser declining to save, under a spelling this
+ * app has not met.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const browserWriteFault = (error: unknown): BrowserWriteFault => writeFault(error) ?? "storage-unavailable"
+
+/**
+ * Classify anything thrown out of an act a person made.
+ *
+ * The difference from `browserWriteFault` is the default, and the default is
+ * the whole point: at a write, an unrecognized throw IS the write failing, so
+ * it is storage. Anywhere else — a door, a handler, the staging step that runs
+ * before a write — an unrecognized throw is this app's own bug, and calling it
+ * storage would hand the person retry advice for something no retry fixes.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const lostActFault = (error: unknown): LostActFault =>
+  writeFault(error) ?? (aborted(error) ? "cancelled" : "app-bug")
+
+/**
+ * The sentence a person reads for an act that did not do what they asked.
+ * Never carries the thrown message, an internal id, or a decode message.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const lostActRefusal = (error: unknown): string => BROWSER_WRITE_COPY[lostActFault(error)].sentence
+
+/**
+ * Whether this app wrote this sentence about an act that reached nothing, and
+ * owes it to the person where they are still looking.
+ *
+ * The sentences are this app's own closed set, so recognizing one is identity
+ * against that set, not reading prose: a surface that is handed one of them
+ * knows it must speak without every door in between having to carry a flag.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const spokenLostAct = (sentence: string): boolean =>
+  Object.values(BROWSER_WRITE_COPY).some((copy) => copy.spoken && copy.sentence === sentence)
 
 /**
  * The sentence a person reads when a change they made did not reach this
