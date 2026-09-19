@@ -60,6 +60,7 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
   let planned: { flowId: string; input: unknown } | undefined
   /** The engine's own accounting: a steer the gateway took is pending until the next turn. */
   let steeringPending = 0
+  let cancelled = false
   await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   await page.route("**/api/workflow/provision", (route) =>
     route.fulfill(json({ status: "ready", repo: REPO, gatewayId: "gw-1" })))
@@ -100,15 +101,17 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
         return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "ok" } }))
       case "Resume":
       case "Signal":
+        return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "ok" } }))
       case "Cancel":
+        cancelled = true
         return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "ok" } }))
       case "Projection.Snapshot": {
         const selector = (call.payload.selector ?? {}) as { _tag?: string; runId?: string }
         switch (selector._tag) {
           case "workspace-runs":
-            return rows("workspace-runs", [{ ...summaryRow(options.attention ? "failed" : "running"), steeringPending }])
+            return rows("workspace-runs", [{ ...summaryRow(cancelled ? "cancelled" : options.attention ? "failed" : "running"), steeringPending }])
           case "run-summary":
-            return rows("run-summary", [{ ...summaryRow(options.health?.().state ?? (options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running")),
+            return rows("run-summary", [{ ...summaryRow(cancelled ? "cancelled" : options.health?.().state ?? (options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running")),
               ...(options.health === undefined ? {} : { statusRollup: options.health() }),
               ...(options.completedRequest ? { runId: selector.runId ?? RUN_ID, flowId: selector.runId === "vibe-e2e" ? "coding/vibe" : "coding/request" } : {}), steeringPending }])
           case "approvals":
@@ -141,6 +144,7 @@ const send = async (page: Page, text: string): Promise<void> => {
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill(text)
   await page.getByTestId("composer-send").click()
+  await page.keyboard.press("Escape")
 }
 
 /** Exercise workspace flows after the introduction, using its existing command. */
@@ -170,8 +174,7 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
 
   // Launch: /flow.run provisions the workspace, plans, and runs — the card tracks the run.
   await send(page, `/flow.run review-pr ${REPO}`)
-  const runCardId = `flow-run-${RUN_ID}`
-  const card = page.getByTestId(`card-${runCardId}`)
+  const card = page.locator(`[data-kind="run-trace"][data-run-id="${RUN_ID}"]`)
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toContainText("Running on your workspace.")
   expect(rpc.map((call) => call.procedure)).toContain("Run")
@@ -202,7 +205,7 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
   await expect.poll(() => rpc.some((call) => call.procedure === "Cancel")).toBe(true)
   const cancel = rpc.find((call) => call.procedure === "Cancel")!
   expect(cancel.payload.runId).toBe(RUN_ID)
-  await expect(card).toContainText("Cancelled.")
+  await expect(card.getByTestId(`run-outcome-${RUN_ID}`)).toHaveAttribute("data-phase", "cancelled")
 })
 
 
@@ -223,14 +226,16 @@ test("T1: early review feedback opens durable debugger detail through the keyboa
   await page.goto("/")
   await finishGuide(page)
   await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
   await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ prompt: CODING_PLAN.prompt })}`)
   await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  const card = page.locator(`[data-kind="run-trace"][data-run-id="${RUN_ID}"]`)
   const feedback = card.getByLabel("Coding review feedback", { exact: true })
   await expect(feedback).toContainText("Review requested changes. Waiting for the correction result.")
   await expect(feedback).toContainText("Keep the causal revision when merging wiki edits.")
   await expect(card.getByLabel("Coding outcome", { exact: true })).toHaveCount(0)
-  await tabTo(page, page.getByTestId("composer-input"))
+  await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
   await page.keyboard.insertText("/debug.verbose")
   await page.keyboard.press("Enter")
   await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
@@ -246,14 +251,14 @@ test("T1: early review feedback opens durable debugger detail through the keyboa
   const initialScroll = await failure.evaluate(element => element.scrollTop)
   await page.keyboard.press("PageDown")
   await expect.poll(() => failure.evaluate(element => element.scrollTop)).toBeGreaterThan(initialScroll)
-  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=flow-run-run-e2e run-e2e engine:observe:0 .*→ executed/)).toBeVisible()
+  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=\S+ run-e2e engine:observe:0 .*→ executed/)).toBeVisible()
   await page.reload()
   await expect(pane).toContainText("coding/EarlyFeedback")
   await expect(feedback).toContainText("Waiting for the correction result.")
   await page.keyboard.press("Control+k")
   await expect(page.getByTestId("composer-input")).toBeFocused()
   const node = await card.getByRole("region", { name: "Coding plan" }).elementHandle()
-  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
+  await tabTo(page, card.getByRole("button", { name: "Maximize card", exact: true }))
   await page.keyboard.press("Enter")
   await expect(card).toHaveAttribute("data-maximized", "true")
   expect(await card.getByRole("region", { name: "Coding plan" }).evaluate((element, original) => element === original, node)).toBe(true)
@@ -272,9 +277,10 @@ test("T1: real retained prototype source and feedback remain embedded and keyboa
   await page.goto("/")
   await finishGuide(page)
   await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
   await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ prompt: "Add a greeting" })}`)
   await page.keyboard.press("Enter")
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  const card = page.locator(`[data-kind="run-trace"][data-run-id="${RUN_ID}"]`)
   const poc = card.getByRole("region", { name: "Disposable prototype", exact: true })
   await expect(poc).toContainText("Drafted and discarded. No build or tests ran.")
   const preview = poc.getByText("Retained source preview", { exact: true })
@@ -322,6 +328,7 @@ test("T1: bounded long prototype values keep the summary compact and source keyb
   await page.goto("/")
   await finishGuide(page)
   await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
   await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ prompt: "Inspect source bounds" })}`)
   await page.keyboard.press("Enter")
   const poc = page.getByRole("region", { name: "Disposable prototype", exact: true })
@@ -349,7 +356,7 @@ test("health: gateway observations distinguish working, idle and input, then exp
   await page.goto("/")
   await prepareHealthPage(page)
   await sendHealthCommand(page, `/flow.run review-pr ${REPO}`)
-  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  const card = page.locator(`[data-kind="run-trace"][data-run-id="${RUN_ID}"]`)
   const details = card.getByTestId("status-details")
   await expect(details).toHaveText("Running · Working")
   const authorityCallsAtLaunch = rpc.filter((call) => call.procedure === "Approval.Submit" || call.procedure === "Resume").length

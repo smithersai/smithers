@@ -8,11 +8,12 @@ const visible = (element: Element) => {
   return rect.width > 0 && rect.height > 0 && element.checkVisibility()
 }
 
-/** Ignore streamed text and ordinary DOM churn before scanning modal state. */
-const changesDialogs = (record: MutationRecord) => record.type === "attributes"
-  ? record.target instanceof HTMLDialogElement
+const overlaySelector = "dialog, .composer-wrap, .composer-overlay"
+/** Ignore streamed text and ordinary DOM churn before scanning active overlays. */
+const changesOverlays = (record: MutationRecord) => record.type === "attributes"
+  ? record.target instanceof Element && record.target.matches(overlaySelector)
   : [...record.addedNodes, ...record.removedNodes].some(node =>
-    node instanceof Element && (node.matches("dialog") || node.querySelector("dialog") !== null))
+    node instanceof Element && (node.matches(overlaySelector) || node.querySelector(overlaySelector) !== null))
 
 /** A persistent portal that remains interactive above any native modal. */
 export function ModalPopover({ children, className, label, onMount }: {
@@ -28,6 +29,7 @@ export function ModalPopover({ children, className, label, onMount }: {
     host.setAttribute("data-modal-popover", "")
     let opened: HTMLDialogElement[] = []
     let modal: HTMLDialogElement | undefined
+    let surface: Element | undefined
     let measuredContent: Element | undefined
     let frame = 0
     const position = () => {
@@ -35,16 +37,16 @@ export function ModalPopover({ children, className, label, onMount }: {
       frame = 0
       for (const property of ["--toast-x", "--toast-y", "--toast-height"]) node.style.removeProperty(property)
       node.removeAttribute("data-no-toast-space")
-      node.toggleAttribute("data-modal-placement", modal !== undefined)
-      if (!modal) return
+      node.toggleAttribute("data-modal-placement", surface !== undefined)
+      if (!surface) return
       // Ordinary dialogs own their box. Full-viewport shells own a scrim: use
       // their first visible element with a layout box (excluding our portal).
       // All controls are still obstacles, including siblings outside that box.
-      const dialogRect = modal.getBoundingClientRect()
+      const dialogRect = surface.getBoundingClientRect()
       const content = dialogRect.width >= doc.documentElement.clientWidth && dialogRect.height >= doc.documentElement.clientHeight
-        ? [...modal.children].find(child => child !== host && visible(child)) ?? modal : modal
+        ? [...surface.children].find(child => child !== host && visible(child)) ?? surface : surface
       if (content !== measuredContent) {
-        if (measuredContent && measuredContent !== modal) resize.unobserve(measuredContent)
+        if (measuredContent && measuredContent !== surface) resize.unobserve(measuredContent)
         measuredContent = content
         resize.observe(content)
       }
@@ -55,7 +57,7 @@ export function ModalPopover({ children, className, label, onMount }: {
       // landscape window can fit the whole toast below the modal only this way.
       const rect = placeToast({ x: gap, y: top, width: doc.documentElement.clientWidth - gap * 2,
         height: doc.documentElement.clientHeight - top }, node.getBoundingClientRect(), content.getBoundingClientRect(),
-        [...modal.querySelectorAll(controlsSelector)].filter(control => !host.contains(control) && visible(control))
+        [...surface.querySelectorAll(controlsSelector)].filter(control => !host.contains(control) && visible(control))
           .map(control => control.getBoundingClientRect()), gap)
       if (!rect) { node.setAttribute("data-no-toast-space", ""); return }
       node.style.setProperty("--toast-x", `${rect.x}px`)
@@ -63,7 +65,7 @@ export function ModalPopover({ children, className, label, onMount }: {
       node.style.setProperty("--toast-height", `${rect.height}px`)
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(position) }
-    const moved = (event: Event) => { if (modal && event.target instanceof Node && modal.contains(event.target) && !host.contains(event.target)) schedule() }
+    const moved = (event: Event) => { if (surface && event.target instanceof Node && surface.contains(event.target) && !host.contains(event.target)) schedule() }
     const resize = new ResizeObserver(schedule)
     resize.observe(node)
     // A height-limited stack does not resize when another notification arrives.
@@ -88,16 +90,18 @@ export function ModalPopover({ children, className, label, onMount }: {
       // identifies the active dialog even when DOM order differs from open order.
       const focused = doc.activeElement?.closest<HTMLDialogElement>("dialog:modal")
       if (focused && modals.includes(focused)) opened = [...opened.filter(dialog => dialog !== focused), focused]
-      const active = opened.at(-1)
-      if (active !== modal) {
-        modal = active
+      modal = opened.at(-1)
+      // Chat remains usable while background work owns a progress toast.
+      const active = modal ?? [...doc.querySelectorAll(".composer-wrap")].find(visible)
+      if (active !== surface) {
+        surface = active
         resize.disconnect()
         measuredContent = undefined
         resize.observe(node)
         contentChanges.disconnect()
-        if (modal) {
-          resize.observe(modal)
-          contentChanges.observe(modal, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class", "hidden"] })
+        if (surface) {
+          resize.observe(surface)
+          contentChanges.observe(surface, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class", "hidden"] })
         }
       }
       const parent = modal ?? doc.body
@@ -110,10 +114,10 @@ export function ModalPopover({ children, className, label, onMount }: {
     sync()
     const cleanup = onMount?.(node)
     const observer = new MutationObserver(records => {
-      const relevant = records.filter(changesDialogs)
+      const relevant = records.filter(changesOverlays)
       if (relevant.length) sync(relevant)
     })
-    observer.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] })
+    observer.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "hidden"] })
     window.addEventListener("resize", schedule)
     // Scroll and completed transitions can move a box without resizing it.
     doc.addEventListener("scroll", moved, true)

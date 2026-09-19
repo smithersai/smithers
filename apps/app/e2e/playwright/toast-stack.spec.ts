@@ -69,10 +69,10 @@ for (const viewport of viewports) {
     await boot(page)
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await page.getByTestId("composer-input").fill("/files.read README.md smithersai/smithers")
-    // Chat is now a nonmodal bottom dock; it must still leave Send reachable.
-    await expect(page.getByRole("dialog", { name: "Chat", exact: true })).toBeVisible()
+    // The nonmodal composer must leave Send reachable while work is pending.
+    await expect(page.locator(".composer-wrap")).toBeVisible()
     await expect(page.locator('.toast[data-toast-status="failed"]')).toBeVisible()
-    await expect.poll(() => modalOverlaps(page, '[role="dialog"][aria-label="Chat"]')).toEqual([])
+    await expect.poll(() => modalOverlaps(page, ".composer-wrap")).toEqual([])
     await expect(page.locator('.toast[data-toast-status="failed"]')).toBeVisible()
     const send = page.getByTestId("composer-send")
     await expect(send).toBeEnabled()
