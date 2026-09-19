@@ -228,8 +228,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
   readonly setPalette: (args: string) => string | void
-  /** Opens one hidden mock as a card (experimental/Registry.ts); no flow reaches it without the flag. */
-  readonly openExperimentalPane: (pane: string) => void
   /** Archive locally and start fresh; model-generated notes are opt-in. */
   readonly clearConversation: (options?: { readonly summarize?: boolean }) => Promise<string | void>
   /* The browser tool + surface (§2d/§2d′). */
@@ -685,8 +683,6 @@ export interface AppFeatures {
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
   readonly suggestionPills?: boolean
-  /** The hidden mock namespace (experimental/Registry.ts). */
-  readonly experimental?: boolean
 }
 
 /**
@@ -701,8 +697,7 @@ export const createAppController = (
 ): AppController => {
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
-    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
-    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
+    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
     ...services, features: { ...services.features, ...knowledge }
@@ -915,8 +910,7 @@ export const createAppController = (
     debugSeams,
     openBrowser,
     toggleTheme,
-    setPalette,
-    openExperimentalPane
+    setPalette
   } = actors.pair(ctx, (context, select) => createPresentationController(context, select(adminHealth)))
 
   const {
@@ -1619,7 +1613,6 @@ export const createAppController = (
     debugSeams,
     toggleTheme,
     setPalette,
-    openExperimentalPane,
     adoptSession,
     loadSession,
     signIn,
@@ -1784,7 +1777,6 @@ export const createAppController = (
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
-        experimental: features.experimental,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",
