@@ -9,7 +9,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { recordingAgent, unavailableRepositories } from "./TestFixtures"
 
 /*
- * THE CLASS, ENUMERATED.
+ * WHAT THIS FILE MEASURES, AND WHAT IT DOES NOT.
  *
  * Twice running this lane stated a safety property about EVERY door and
  * measured it at one. "A lost act is never silent" held until a reviewer drove
@@ -18,34 +18,44 @@ import { recordingAgent, unavailableRepositories } from "./TestFixtures"
  * one window. Both sentences were true where they were measured and false one
  * door over, and the report said the class was closed both times.
  *
- * So the class is driven here, from the inventory that defines it
- * (scripts/durable-write-doors.ts): every declared flow whose handler can
- * reach a durable write, found by walking the flow declarations and the write
- * sites rather than by anybody's memory. The test reads that inventory at run
- * time, so a door declared tomorrow is driven tomorrow, and a door that cannot
- * be driven is NAMED in a failure rather than skipped in silence.
- *
- * Two layers, because they answer two different questions.
+ * So this file runs both halves of the lost-act path under every door in the
+ * inventory (scripts/durable-write-doors.ts), read at run time so a door
+ * declared tomorrow is driven tomorrow and a door that cannot be driven is
+ * NAMED in a failure rather than skipped in silence. Read it as a ROLL CALL:
+ * it is coverage, and R104e measured exactly how much each layer is worth.
  *
  *   1. REACHED. Every door is run through the seam every door shares: this
  *      browser refuses the commit that records the command itself
  *      (controller/commandIntents.ts), so the act reaches nothing for a reason
- *      that is not the person's, at a door that needs no card on screen. That
- *      is what makes the inventory's flows real lost acts and not just names.
+ *      that is not the person's, at a door that needs no card on screen.
+ *      WHAT IT MEASURES: that the flow id is registered here and its intent
+ *      write can be refused. That commit happens before any handler runs, so
+ *      nothing about the handler — and nothing about the property that put a
+ *      flow in the inventory, "its handler can reach a durable write" — is
+ *      exercised. R104e ran this same loop over the 201 declared flows the
+ *      inventory EXCLUDES: 194 of them behave identically, and the other 7 are
+ *      simply not registered in this controller. So this layer does NOT
+ *      distinguish the inventory's 78 from the flows it leaves out.
  *
  *   2. COUNTED. Every door's name is then driven through
  *      `surfaceCommandFailure` — the one place that decides whether a lost act
  *      gets a line — in the overlap the reviewer drove: two acts admitted
  *      before either settles, one door speaking its own sentence inside both
- *      windows. Layer 1 cannot stage that overlap, because the store rolls a
- *      refused commit's whole batch back and takes the other door's line with
- *      it; this layer holds the transcript still and asks the question.
+ *      windows.
+ *      WHAT IT MEASURES: one rule, once, under 78 labels. Inside
+ *      controller/failures.ts the door's name reaches only the toast key and
+ *      `ctx.commands.find(name)`, which the fixture below stubs to `undefined`;
+ *      the transcript-line decision never reads it. R104e drove the same
+ *      overlap with `""`, `"not.a.flow"`, `"☃"` and a 500-character name and
+ *      got two lines every time. So the loop bound is NOT evidence that the
+ *      overlap clause holds at 78 doors, and must not be quoted as such.
  *
- * RepositorySetupRunMode.test.tsx drives the same overlap end to end through
- * the real card, two real doors and a real refused write, which is what pins
- * the line this file dispatches to the line a real door speaks.
+ * WHERE THE OVERLAP CLAUSE IS ACTUALLY ESTABLISHED: in the seam, by
+ * controller/spokenLines.test.ts — a door's line is spent when an act takes
+ * it, so it stands in for at most one act — and end to end at TWO real doors
+ * (`setup.configure`, `runs.open`) through the real card and a real refused
+ * write, in RepositorySetupRunMode.test.tsx. Two, not seventy-eight.
  */
-
 const createAppController = scopedControllers({ wiki: true, mythicalHistory: true, pluginLibrary: true })
 
 const STORAGE_FULL =
@@ -166,7 +176,7 @@ test("every door in the inventory can be driven through the lost-write path", as
   expect(undriven).toEqual([])
 }, 600_000)
 
-test("two lost acts at one door each get their own line, at every door", async () => {
+test("two lost acts at one door's admit seam each get their own line, under every door's name", async () => {
   const results = await reached
   const wrong = results.filter(result => result.lines !== 2)
     .map(result => `${result.flow}: ${result.lines} lines for 2 lost acts`)
@@ -229,7 +239,7 @@ const overlap = async (first: string, second: string): Promise<number> => {
   } finally { await t.close() }
 }
 
-test("two lost acts inside one window each get their own line, at every door", async () => {
+test("two lost acts inside one window each get their own line, under every door's name", async () => {
   const wrong: Array<string> = []
   for (const door of durableWriteDoors()) {
     const lines = await overlap(door.flow, door.flow)
@@ -239,7 +249,7 @@ test("two lost acts inside one window each get their own line, at every door", a
   expect(wrong).toEqual([])
 }, 600_000)
 
-test("two lost acts at two different doors inside one window each get their own line", async () => {
+test("two lost acts under two different doors' names inside one window each get their own line", async () => {
   const doors = durableWriteDoors()
   const wrong: Array<string> = []
   for (const [index, door] of doors.entries()) {
@@ -251,7 +261,7 @@ test("two lost acts at two different doors inside one window each get their own 
   expect(wrong).toEqual([])
 }, 600_000)
 
-test("a door that already said it is still not repeated, at every door", async () => {
+test("a door that already said it is still not repeated, under every door's name", async () => {
   const wrong: Array<string> = []
   for (const door of durableWriteDoors()) {
     const t = await surfacing()
@@ -266,7 +276,7 @@ test("a door that already said it is still not repeated, at every door", async (
   expect(wrong).toEqual([])
 }, 600_000)
 
-test("a surface that threads no window repeats a line rather than swallowing one, at every door", async () => {
+test("a surface that threads no window repeats a line rather than swallowing one, under every door's name", async () => {
   const wrong: Array<string> = []
   for (const door of durableWriteDoors()) {
     const t = await surfacing()
@@ -282,7 +292,7 @@ test("a surface that threads no window repeats a line rather than swallowing one
   expect(wrong).toEqual([])
 }, 600_000)
 
-test("a door's sentence from before this act's window never stands in for it", async () => {
+test("a door's sentence from before this act's window never stands in for it, under every door's name", async () => {
   const wrong: Array<string> = []
   for (const door of durableWriteDoors()) {
     const t = await surfacing()

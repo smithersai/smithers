@@ -153,10 +153,13 @@ export const declaredDoors = (): ReadonlyArray<Door> => {
 /**
  * THE ENUMERATION, as a value.
  *
- * The inventory is the class every claim about "every door" is measured
- * against, so the test that drives the class reads it from here rather than
- * from a list somebody typed: a door declared tomorrow is driven tomorrow
- * (state/DurableWriteDoorLines.test.ts).
+ * The roll call of doors a test walks, read from here rather than from a list
+ * somebody typed, so a door declared tomorrow is walked tomorrow
+ * (state/DurableWriteDoorLines.test.ts). It is COVERAGE. It is not by itself
+ * evidence for a property: R104e ran that file's admit-seam drive over the 201
+ * declared flows this filter EXCLUDES and 194 behaved identically, and its
+ * overlap drive never reads the door's name at all. What a walk over this list
+ * is worth is stated per layer in that file's header.
  */
 export const durableWriteDoors = (): ReadonlyArray<Door> =>
   declaredDoors().filter((door) => door.writes.length > 0)

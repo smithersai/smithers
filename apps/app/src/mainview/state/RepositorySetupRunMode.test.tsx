@@ -443,8 +443,14 @@ test("each lost act gets its own line, and a door that already said it is not re
  * read; while it is in flight the person changes `When to run Fix for real`
  * and this browser refuses that write too. The pick's door speaks its own
  * line; the press owes a line of its own, because a door's line stands in for
- * at most one act (controller/spokenLines.ts). The class this stands for is
- * driven at every door in DurableWriteDoorLines.test.ts.
+ * at most one act (controller/spokenLines.ts).
+ *
+ * THIS IS THE CLAUSE'S END-TO-END EVIDENCE, and it is two real doors —
+ * `setup.configure` and `runs.open` — through the real card and a real refused
+ * write. The rule's own unit is controller/spokenLines.test.ts.
+ * DurableWriteDoorLines.test.ts runs the same rule under every door's NAME:
+ * that is a coverage roll call, not a second proof, because the decision it
+ * drives never reads the name (its header says how much each layer is worth).
  */
 test("two lost acts inside one window each get their own line", async () => {
   const t = await walk({ observedRun: true })
