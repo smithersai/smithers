@@ -68,7 +68,11 @@ export interface Options extends NativeOptions {
   readonly planningModel?: string | undefined
   readonly pocModel?: string | undefined
   readonly wikiModel?: string | undefined
-  /** Deployment-owned landing adapter over the reserved repository credential; enables coding/vibe. */
+  /**
+   * Deployment-owned landing adapter over the reserved repository credential.
+   * Repository automation uses it on its own; `coding/vibe` is registered only
+   * when `planning` configures the prompt route as well.
+   */
   readonly landing?: Layer.Layer<Landing> | undefined
   readonly repositoryRemote?: Layer.Layer<RepositoryRemote> | undefined
   /**

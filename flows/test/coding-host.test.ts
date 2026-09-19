@@ -5,7 +5,13 @@ import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as Model from "@smthrs/model/Model"
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { platform } from "../../packages/smithers/src/internal/NodeControlHost.ts"
+import { Landing } from "../coding/landing.ts"
 import { layer, roleResolver } from "../coding/host.ts"
+
+/** Configuration never calls the adapter; every method refuses if a layer is built. */
+const refused = Effect.die("host configuration must not reach the landing adapter")
+const landing = Layer.succeed(Landing, { binding: { repositoryId: 1, workspaceId: "22222222-2222-4222-8222-222222222222" },
+  readMain: refused, prepare: () => refused, create: () => refused, queue: () => refused, observe: () => refused })
 
 test("coding deployment requires an explicit model and owning gateway before opening services", () => {
   const options = { repositoryPath: "/unused", gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "" }
@@ -18,8 +24,11 @@ test("coding deployment requires an explicit model and owning gateway before ope
   }
   assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key" }))
   assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", approvalAuthority: ApprovalAuthority.local }))
-  // A landing binding without the prompt route has no request receipts to vibe.
-  assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key", landing: Layer.empty as never }), /Vibe requires the prompt route/)
+  // A landing binding alone is a supported deployment: repository automation
+  // consumes Landing without the prompt route. `coding/vibe` stays out of the
+  // catalog until the project configuration is present too, so this configures
+  // rather than refuses (b1aebc1a19a6; flows/coding/finalization.md).
+  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key", landing }))
 })
 
 test("the coding role reuses the existing seat resolver and keeps the approved role identity", async () => {
