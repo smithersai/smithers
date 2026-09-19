@@ -58,15 +58,47 @@ const flakyStorage = (): StorageApi & { refuseCommit: (skip: number) => void; re
  * `AppController.runCommand` → registry → `configureRepositorySetup` →
  * `upsert` → the persisted payload, with nothing doubled in between.
  */
-async function walk() {
+async function walk(options: { readonly explodeAfterCardWrite?: boolean } = {}) {
   const storage = flakyStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
+  /*
+   * A bug that runs AFTER the bytes are already durable. `upsert` re-arms this
+   * card's schedule observation once the write has landed, and the only thing
+   * that step can do wrong is throw — at which point the person's change IS
+   * saved. Armed from the persisted promise of the card write itself, so the
+   * throw is guaranteed to land on the far side of a successful commit.
+   */
+  let bombs = 0
+  let arming = false
+  const explode = options.explodeAfterCardWrite === true
+  const cards = store.collections.cards
+  const controllerStore = !explode ? store : {
+    ...store,
+    collections: { ...store.collections, cards: new Proxy(cards, {
+      get: (target, property) => {
+        if (property !== "get") { const held = Reflect.get(target, property); return typeof held === "function" ? held.bind(target) : held }
+        return (key: string) => {
+          if (bombs === 0) return target.get(key)
+          bombs -= 1
+          throw new TypeError("the card projection is not ready")
+        }
+      }
+    }) },
+    dispatch: (transition: Parameters<typeof store.dispatch>[0]) => {
+      const transaction = store.dispatch(transition)
+      if (transition.type !== "card.upsert" || !arming) return transaction
+      arming = false
+      return new Proxy(transaction, { get: (target, property, receiver) => property === "isPersisted"
+        ? { ...target.isPersisted, promise: target.isPersisted.promise.then(value => { bombs = 1; return value }) }
+        : Reflect.get(target, property, receiver) })
+    }
+  } as typeof store
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maintainer", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "card.upsert", actor: "user", card: {
     id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
     payload: { ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1234 }
   } }).isPersisted.promise
-  const controller = createAppController(store, unavailableRepositories, recordingAgent([]), {
+  const controller = createAppController(controllerStore, unavailableRepositories, recordingAgent([]), {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async (input) => String(input).includes("/repository-setup/state?")
       ? Response.json({ owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "known" }, setup: { state: "none" } })
@@ -92,6 +124,10 @@ async function walk() {
     node.value = mode
     node.dispatchEvent(new Event("change", { bubbles: true }))
   }
+  const press = (label: string) => {
+    const button = [...host.querySelectorAll("button")].find(node => node.textContent === label)!
+    button.dispatchEvent(new Event("click", { bubbles: true }))
+  }
   const setup = () => (store.collections.cards.get(id) as { payload: RepositorySetup }).payload
   const transcript = () => [...store.collections.messages.values()].map(message => (message as { text?: string }).text ?? "")
   const toastDetails = () => [...store.collections.toasts.values()].map(toast => (toast as { detail?: string }).detail ?? "")
@@ -107,7 +143,9 @@ async function walk() {
     await Promise.resolve(controller.dispose()).catch(() => {})
     await Promise.resolve(store.dispose?.()).catch(() => {})
   }
-  return { store, controller, pick, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, close }
+  /** The next card write lands, and the step that runs after it throws. */
+  const explodeAfterNextCardWrite = () => { arming = true }
+  return { store, controller, pick, press, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, explodeAfterNextCardWrite, close }
 }
 
 /*
@@ -160,6 +198,31 @@ test("a run-mode pick this browser did not save is named in the transcript, not 
 })
 
 /*
+ * The same loss, one door over on the same card. `Inspect repository` records
+ * the press as a durable request before anything is sent; when this browser
+ * refuses that commit the press reached nothing, and the door rejected rather
+ * than refusing — so the person got one four-second toast carrying the flow's
+ * own summary, no cause, no next act, and an empty transcript. Every door on
+ * this card that writes owes the same sentence in the same place.
+ */
+test("a repository job press this browser did not save is named in the transcript, not only on a toast", async () => {
+  const t = await walk()
+  try {
+    t.refuseOperationWrite("inspect")
+    t.press("Inspect repository")
+    await t.settle()
+    // The press is still lost. That is honest; saying nothing about it was not.
+    expect(t.setup().request).toBeUndefined()
+    expect(t.transcript()).toEqual([STORAGE_FULL])
+    expect(t.toastDetails()).toEqual([STORAGE_FULL])
+    // Not an internal id, not a storage boundary key, not a raw decode message.
+    expect(t.transcript()[0]).not.toContain("setup.run")
+    expect(t.transcript()[0]).not.toContain(id)
+    expect(t.transcript()[0]).not.toContain("quota")
+  } finally { await t.close() }
+})
+
+/*
  * The adjacent hazard. One card's writes are ordered by a promise chain, and
  * `.then(apply)` made a failed write the verdict of the NEXT edit: press
  * `Inspect repository`, have that write fail, set a run mode, and the mode
@@ -177,9 +240,12 @@ test("a run-mode pick made while an earlier write is still failing still reaches
     // card, that overlap is a race; here it is the precondition under test.
     const pressed = t.controller.runRepositorySetup(id, "inspect")
     const picked = t.controller.configureRepositorySetup(id, "step.fix.mode", "automatic")
-    // The press owns its own failure; only the pick's fate is under test here.
-    await expect(pressed).rejects.toThrow()
+    // The press owns its own failure — as a sentence it returns and states in
+    // the transcript, never as a rejection anyone else could inherit. Only the
+    // pick's fate is under test here.
+    expect(await pressed).toBe(STORAGE_FULL)
     expect(await picked).toEqual({ value: "Draft updated." })
+    expect(t.transcript()).toEqual([STORAGE_FULL])
     await t.settle(400)
     expect(t.setup().request).toBeUndefined()
     expect(fixModeOf(t.setup())).toBe("automatic")
@@ -204,5 +270,31 @@ test("a run-mode pick the browser would not even record says so in the transcrip
     expect(fixModeOf(t.setup())).toBe("manual")
     expect(t.setup().revision).toBe(before)
     expect(t.transcript()).toEqual([STORAGE_FULL])
+  } finally { await t.close() }
+})
+
+/*
+ * The other half of the same rule: a sentence must not be spoken about a
+ * change that WAS saved. `upsert` re-arms this card's schedule observation
+ * after the bytes are durable, and that step sat inside the same `try` as the
+ * write — so a bug there told the person their pick "was not saved" about a
+ * pick sitting in the draft. The classifier now sees the write and nothing
+ * else; a bug after it stays a bug.
+ */
+test("a bug after the pick is durable never tells the person the pick was lost", async () => {
+  const t = await walk({ explodeAfterCardWrite: true })
+  try {
+    const before = t.setup().revision
+    t.explodeAfterNextCardWrite()
+    const picked = t.controller.configureRepositorySetup(id, "step.fix.mode", "automatic")
+    const settled = await picked.then(value => ({ value }), (error: unknown) => ({ error }))
+    await t.settle()
+    // The pick landed. Nothing may claim otherwise.
+    expect(fixModeOf(t.setup())).toBe("automatic")
+    expect(t.setup().revision).toBe(before + 1)
+    expect(t.transcript()).toEqual([])
+    // The bug stays a bug. It reaches this app's own error channel rather
+    // than the person's transcript wearing a storage fault's words.
+    expect(settled).toMatchObject({ error: expect.any(TypeError) })
   } finally { await t.close() }
 })

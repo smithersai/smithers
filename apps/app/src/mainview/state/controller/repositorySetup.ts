@@ -273,8 +273,37 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     shared.scheduleTimers.set(card.id, { timer, at, login, accountEpoch, registrationId: active!.registrationId })
     ctx.unref(timer)
   }
+  /** The bytes, and only the bytes: the one step whose failure means the person's change did not land. */
+  const persist = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor): Promise<void> =>
+    ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise.then(() => {})
+  /** What the write implies once it has landed: this card's schedule observation, re-armed. */
+  const refreshed = (id: string) => { const latest = get(id); if (latest) scheduleRefresh(latest) }
   const upsert = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor) =>
-    ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise.then(() => { const latest = get(card.id); if (latest) scheduleRefresh(latest) })
+    persist(card, actor).then(() => refreshed(card.id))
+  /** A sentence the person reads where they are still looking, not only on a toast that leaves. */
+  const speak = (sentence: string): string => {
+    ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence, spoken: true })
+    return sentence
+  }
+  /*
+   * A write whose failure this door owes the person a sentence for. Returns
+   * that sentence, or `undefined` when the bytes landed.
+   *
+   * The `try` covers the persist and NOTHING else. `upsert` also re-arms the
+   * card's schedule observation, which runs only after the bytes are already
+   * durable: a throw from there is a bug in this app, not a browser refusing a
+   * write, and classifying it would tell the person a change that WAS saved
+   * was not. It is left outside, so it surfaces as the programming error it is.
+   */
+  const writeOrRefuse = async (card: SetupCard): Promise<string | undefined> => {
+    try {
+      await persist(card)
+    } catch (error) {
+      return speak(browserWriteRefusal(error))
+    }
+    refreshed(card.id)
+    return undefined
+  }
   /*
    * One card's writes run in order. The queue orders them; it does not decide
    * whether they run. `.then(apply)` alone made the predecessor's rejection
@@ -400,7 +429,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       || (old?.state === "admitted" && openQuestion(card) !== undefined)) return
     const intent = { id: retry ? old.id : crypto.randomUUID(), state: "requested" as const }
     shared.guidanceFailures.delete(intent.id)
-    await upsert({ ...card, payload: { ...card.payload, guidance: intent } })
+    const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, guidance: intent } })
+    if (lost !== undefined) return lost
     if (guidanceCurrent(id, intent.id, login, accountEpoch)) offerGuidance()
   })
   if (dependencies) {
@@ -599,7 +629,10 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       id: crypto.randomUUID(), baseRevision: old?.baseRevision ?? card.payload.revision, baseDigest: old?.baseDigest ?? setupCandidate(card.payload),
       adoptDraft: old?.adoptDraft ?? false, state: "requested", registrationState: "unknown"
     }
-    if (old?.state !== "requested") await upsert({ ...card, payload: { ...card.payload, recovery: intent } })
+    if (old?.state !== "requested") {
+      const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, recovery: intent } })
+      if (lost !== undefined) return lost
+    }
     if (!recoveryCurrent(id, intent.id, login, accountEpoch)) return
     void recover(id)
     return { value: `${REPOSITORY_JOB_TITLES[card.payload.job]} requested.` }
@@ -619,6 +652,15 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     if (!card.payload.active.draft) return "recover"
     return undefined
   }
+  /*
+   * Every press on this card's action row arrives here, and each branch below
+   * records the press as a durable request before anything is sent. A write
+   * that FAILED used to leave this door as a rejected promise, which the flow
+   * harness relabelled `/setup.run failed` and one toast carried for four
+   * seconds: no cause, no next act, nothing in the transcript — the same shape
+   * the run-mode pick had, one door over on the same card. Every write here is
+   * now named the way the configure door names its own.
+   */
   const runRepositorySetup = (cardId: string, operation: Operation, manual?: SetupManualRequest): Result => edit(cardId, async () => {
     const card = get(cardId)
     if (!card) return "Open the setup first."
@@ -650,14 +692,18 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     }
     if (card.payload.recovery && (card.payload.recovery.state !== "completed" || card.payload.recovery.registrationState !== "known")) {
       const accountEpoch = epoch()
-      if (card.payload.recovery.state !== "requested") await upsert({ ...card, payload: { ...card.payload, recovery: { ...card.payload.recovery, state: "requested", error: undefined } } })
+      if (card.payload.recovery.state !== "requested") {
+        const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, recovery: { ...card.payload.recovery, state: "requested", error: undefined } } })
+        if (lost !== undefined) return lost
+      }
       if (!recoveryCurrent(cardId, card.payload.recovery.id, login, accountEpoch)) return
       void recover(cardId)
       return { value: "Setup recovery requested." }
     }
     if (card.payload.request?.observeOnly && !terminal(card.payload.receipt?.phase)) {
       const accountEpoch = epoch()
-      await upsert({ ...card, payload: { ...card.payload, request: { ...card.payload.request, state: "requested", error: undefined } } })
+      const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, request: { ...card.payload.request, state: "requested", error: undefined } } })
+      if (lost !== undefined) return lost
       if (!current(cardId, card.payload.request.id, login, accountEpoch)) return
       void send(cardId)
       return { value: "Setup reconnection requested." }
@@ -677,7 +723,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         const step = card.payload.draft.steps.find(step => step.id === card.payload.selectedStep && step.mode !== "off")
           ?? card.payload.draft.steps.find(step => step.mode !== "off")
         if (!step) return "Choose an enabled step."
-        await upsert({ ...card, payload: { ...card.payload, view: "work", manualDraft: { stepId: step.id, prompt: "", source: "github" } } })
+        const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, view: "work", manualDraft: { stepId: step.id, prompt: "", source: "github" } } })
+        if (lost !== undefined) return lost
         return { value: "Work request is open." }
       }
       if (!manual && prepared) {
@@ -701,7 +748,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     const intent: NonNullable<RepositorySetup["request"]> = { id: retry ? old.id : crypto.randomUUID(), operation,
       revision: card.payload.revision, digest: setupCandidate(card.payload), state: "requested", ...(manual ? { manual } : {}) }
     const accountEpoch = epoch()
-    await upsert({ ...card, status: "active", payload: { ...card.payload, owner: login, workspaceId: livePin(card.payload), request: intent } })
+    const lost = await writeOrRefuse({ ...card, status: "active", payload: { ...card.payload, owner: login, workspaceId: livePin(card.payload), request: intent } })
+    if (lost !== undefined) return lost
     if (!current(cardId, intent.id, login, accountEpoch)) return
     void send(cardId)
     return { value: `${REPOSITORY_JOB_TITLES[card.payload.job]}: ${operation} requested in the background.` }
@@ -713,7 +761,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if ("error" in target) return target.error
       const id = `setup:${encodeURIComponent(owner() ?? "anonymous")}:${encodeURIComponent(target.repo)}:${job}`
       const login = owner(), accountEpoch = epoch()
-      await edit(id, async () => {
+      const opened = await edit(id, async () => {
       if (owner() !== login || epoch() !== accountEpoch) return
       const existing = get(id)
       // A selected computer may run an older host. First setup lets the server
@@ -721,10 +769,14 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       const payload = initialSetup(target.repo, job, login)
       if (login && !isPracticeRepo(target.repo)) payload.recovery = { id: crypto.randomUUID(), baseRevision: payload.revision, baseDigest: setupCandidate(payload), adoptDraft: true, state: "requested", registrationState: "unknown" }
       const card: SetupCard = existing ?? { id, kind: "repository-setup", title: REPOSITORY_JOB_TITLES[job], status: "active", createdAt: Date.now(), ordinal: ctx.store.nextOrdinal(), payload }
-      await upsert(card)
+      return writeOrRefuse(card)
       })
+      // A card this browser would not save has nothing to open onto, and the
+      // sentence for that is already in the transcript.
+      if (typeof opened === "string") return opened
       if (owner() !== login || epoch() !== accountEpoch) return
-      const card = get(id)!
+      const card = get(id)
+      if (!card) return
       if (owner() === null) {
         return { value: `${REPOSITORY_JOB_TITLES[job]} preview is open. Sign in to configure your repository.` }
       }
@@ -751,20 +803,13 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
      * refusal is, and the door never rejects.
      */
     configureRepositorySetup: (id, field, value) => edit(id, async () => {
-      const refuse = (sentence: string) => {
-        ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence, spoken: true })
-        return sentence
-      }
       const card = get(id)
-      if (!card) return refuse("Open the setup first.")
-      if (card.payload.owner !== null && card.payload.owner !== owner()) return refuse("This setup belongs to a different account.")
+      if (!card) return speak("Open the setup first.")
+      if (card.payload.owner !== null && card.payload.owner !== owner()) return speak("This setup belongs to a different account.")
       const applied = applySetupEdit(card.payload.draft, card.payload.job, field, value)
-      if ("error" in applied) return refuse(applied.error)
-      try {
-        await upsert({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
-      } catch (error) {
-        return refuse(browserWriteRefusal(error))
-      }
+      if ("error" in applied) return speak(applied.error)
+      const lost = await writeOrRefuse({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
+      if (lost !== undefined) return lost
       return { value: "Draft updated." }
     }),
     /*
@@ -789,14 +834,15 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         if ("error" in applied) return applied.error
         draft = applied.draft
       }
-      await upsert({ ...card, status: "active", payload: editSetup(card.payload, draft) })
+      const lost = await writeOrRefuse({ ...card, status: "active", payload: editSetup(card.payload, draft) })
+      if (lost !== undefined) return lost
       return { value: "Draft updated." }
     }),
     viewRepositorySetup: (id, view, selectedStep) => edit(id, async () => {
       const card = get(id)
       if (!card) return "Open the setup first."
       if (selectedStep !== undefined && !card.payload.draft.steps.some(step => step.id === selectedStep)) return "That flow is not in this setup."
-      await upsert({ ...card, payload: { ...card.payload, view, ...(selectedStep === undefined ? {} : { selectedStep }) } })
+      return writeOrRefuse({ ...card, payload: { ...card.payload, view, ...(selectedStep === undefined ? {} : { selectedStep }) } })
     }),
     prepareRepositoryWork: (id, stepId, field, value) => edit(id, async () => {
       const card = get(id)
@@ -816,7 +862,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         else if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return "Choose a valid issue or PR number."
         else draft.number = value
       }
-      await upsert({ ...card, payload: { ...card.payload, view: "work", manualDraft: draft } })
+      const lost = await writeOrRefuse({ ...card, payload: { ...card.payload, view: "work", manualDraft: draft } })
+      if (lost !== undefined) return lost
       return { value: "Work request updated." }
     }),
     runRepositorySetup,
@@ -852,7 +899,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         const latest = get(id), active = latest?.payload.active
         if (!latest || !active?.enabled || !active.draft) return "This setup is not enabled."
         if (active.revision === latest.payload.revision && storedSetupCandidate(latest.payload, active.digest)) return { value: "Keeping the current setup." }
-        await upsert({ ...latest, status: "active", payload: discardSetupDraft(latest.payload) })
+        const lost = await writeOrRefuse({ ...latest, status: "active", payload: discardSetupDraft(latest.payload) })
+        if (lost !== undefined) return lost
         return { value: "Draft discarded." }
       })
     },
@@ -868,7 +916,8 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         return edit(id, async () => {
           const latest = get(id), login = owner(), accountEpoch = epoch()
           if (!latest?.payload.request || latest.payload.owner !== login) return "This setup belongs to a different account."
-          await upsert({ ...latest, payload: { ...latest.payload, request: { ...latest.payload.request, state: "requested", error: undefined } } })
+          const lost = await writeOrRefuse({ ...latest, payload: { ...latest.payload, request: { ...latest.payload.request, state: "requested", error: undefined } } })
+          if (lost !== undefined) return lost
           if (!current(id, latest.payload.request.id, login, accountEpoch)) return
           void send(id)
           return { value: "Setup reconnection requested." }
