@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { ServerConfig } from "./Config"
-import { callGateway, ensureGateway, isGatewayWorkspaceId, isRelayRepoName } from "./gateway"
+import { callGateway, ensureGatewayReady, isGatewayWorkspaceId, isRelayRepoName } from "./gateway"
 import type { GatewayCallOutcome, GatewaySessions } from "./gateway"
 import {
   decodeGatewayResponse,
@@ -91,6 +91,11 @@ const gatewayCallResponse = (call: Exclude<GatewayCallOutcome, { readonly status
     // one" beneath a 502 dependency headline.
     case "workspace_gone":
       return refuse("workspace_gone", call.detail)
+    // Its own code, because its own thing happened: the box is coming up.
+    // Under `upstream_refused` a person waiting on a resume reads "Something
+    // Smithers depends on refused that", and nothing refused anything.
+    case "workspace_starting":
+      return refuse("workspace_starting", call.detail)
     case "unknown_outcome":
     case "unavailable":
       return refuse("upstream_refused", call.detail)
@@ -125,7 +130,7 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
     if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
       return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
     }
-    const outcome = yield* ensureGateway(session.login, repo, false, workspaceId)
+    const outcome = yield* ensureGatewayReady(session.login, repo, workspaceId)
     switch (outcome.status) {
       case "ready":
         // The token NEVER leaves the server: the answer names the gateway and
@@ -140,6 +145,16 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
       case "plan_limit_exceeded":
         return json(402, { ...outcome.refusal, code: "plan_limit_exceeded", fault: "user", message: outcome.detail })
       case "provisioning":
+        return json(200, { status: "provisioning", message: outcome.detail })
+      /*
+       * On the wire this is `provisioning`, which is the state the caller
+       * already polls to its own 180s deadline (apps/app controller/workflows
+       * `provisionWorkspaceImpl`). A code of its own here would reach that
+       * loop as an unrecognised body and end the wait as a failure, which is
+       * the opposite of what a starting workspace needs. The typed state pays
+       * off on the rpc route, where nobody is polling.
+       */
+      case "workspace_starting":
         return json(200, { status: "provisioning", message: outcome.detail })
       case "no_capacity":
         return json(200, { status: "no-capacity", message: outcome.detail })

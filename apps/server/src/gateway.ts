@@ -645,6 +645,14 @@ export type ProvisionOutcome =
    * told its repository was never on Smithers Cloud.
    */
   | { readonly status: "workspace_gone"; readonly detail: string }
+  /*
+   * The workspace is there and is not serving yet: a resumed VM whose gateway
+   * process has not bound its port, or a fresh box still booting. A DIFFERENT
+   * fact from `unavailable`, which says an upstream failed us. Here nothing
+   * failed and nothing refused; the answer is "not yet", and the caller's move
+   * is to wait rather than to look for something broken.
+   */
+  | { readonly status: "workspace_starting"; readonly detail: string }
 
 const NO_CAPACITY_DETAIL = "Smithers Cloud has no free workspace capacity right now — nothing was queued; try again in a bit."
 
@@ -937,6 +945,7 @@ export type GatewayCallOutcome =
   | { readonly status: "no_cloud_token"; readonly detail: string }
   | { readonly status: "no_cloud_repo"; readonly detail: string }
   | { readonly status: "workspace_gone"; readonly detail: string }
+  | { readonly status: "workspace_starting"; readonly detail: string }
   | { readonly status: "unavailable"; readonly detail: string }
 
 export interface GatewayCallInit {
@@ -1088,12 +1097,110 @@ export const callGateway = (
      * reported as what it was.
      */
     if ((tunnelFailed || sleeping) && init.replayable === false) {
+      /*
+       * Not `unavailable`: under that status the person reads "Something
+       * Smithers depends on refused that", and nothing refused anything — the
+       * box was asleep and is on its way back.
+       */
       return {
-        status: "unavailable",
-        detail: "Your workspace had gone to sleep. It is awake again — ask me once more."
+        status: "workspace_starting",
+        detail: "Your workspace had gone to sleep. It is starting back up; ask me once more in a moment."
       } as const
     }
     const second = yield* relayAttempt(renewed.record, path, init)
     if (Result.isFailure(second)) return unreachable(second.failure)
     return { status: "ok", response: second.success } as const
+  })
+
+/**
+ * How long the seam waits for a gateway to say it is serving.
+ *
+ * Its own budget, not `upstreamTimeoutMs`: a live gateway answers `/health`
+ * immediately, and this question is asked on the path a person is waiting on.
+ * A box that needs longer than this to answer is not "ready" for the purpose
+ * of the question, whatever it turns out to be doing.
+ */
+const GATEWAY_LIVENESS_DEADLINE_MS = 5_000
+
+/** What the gateway said about itself: serving, not serving yet, or disowned by Cloud. */
+type GatewayLiveness = "live" | "starting" | "gone"
+
+/*
+ * The sentence for a workspace that is coming up. It names the wait and
+ * nothing else — the refusal copy for `workspace_starting` supplies how long.
+ */
+const WORKSPACE_STARTING_DETAIL = "Your workspace isn't answering yet."
+
+/**
+ * Ask the gateway whether it is serving.
+ *
+ * `/health` through the relay, with the record's own credential, bounded. The
+ * three signals that mean "not this box, not yet" are the same three
+ * `callGateway` re-provisions on — a 401, a tunnel failure, and the
+ * authenticated API's sleeping conflict — plus a transport failure, because a
+ * suspended VM's port refuses rather than answering.
+ */
+const gatewayIsServing = (record: GatewayRecord): Effect.Effect<GatewayLiveness, never, Transport | ServerConfig> =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig
+    const answered = yield* Effect.result(fetchWithDeadline(
+      "The workspace gateway",
+      `${record.baseUrl.replace(/\/+$/, "")}/health`,
+      { method: "GET", headers: { authorization: `Bearer ${record.token}` } },
+      Math.min(config.upstreamTimeoutMs, GATEWAY_LIVENESS_DEADLINE_MS)
+    ))
+    if (Result.isFailure(answered)) return "starting"
+    const response = answered.success
+    if (yield* isWorkspaceGone(response, record.workspaceId)) {
+      yield* discardBody(response)
+      return "gone"
+    }
+    const sleeping = yield* isSleepingGateway(response)
+    yield* discardBody(response)
+    return response.ok && !sleeping ? "live" : "starting"
+  })
+
+/**
+ * The readiness question, answered by the gateway instead of by the record.
+ *
+ * `ensureGateway` answers a cached record inside its half-life without asking
+ * anyone, which is right for a relay call (the call itself finds out) and
+ * wrong for the one route whose entire answer is the word "ready": a suspend
+ * writes nothing to that record, so for the rest of the half-life the seam
+ * reported the PRE-SUSPEND state — measured on canary as `ready` in 0s while
+ * the gateway was down for ~3 minutes, followed by rpc timeouts.
+ *
+ * So `ready` here means the gateway answered. Anything else is
+ * `workspace_starting` (or whatever Cloud said instead), and the caller waits
+ * — which is what it already does with `provisioning`, and cannot do with a
+ * `ready` that is not true.
+ */
+export const ensureGatewayReady = (
+  login: string,
+  repo: string,
+  workspaceId?: string
+): Effect.Effect<ProvisionOutcome, never, GatewaySessions | Transport | ServerConfig> =>
+  Effect.gen(function* () {
+    const held = yield* ensureGateway(login, repo, false, workspaceId)
+    if (held.status !== "ready") return held
+    const serving = yield* gatewayIsServing(held.record)
+    if (serving === "live") return held
+    if (serving === "gone") return { status: "workspace_gone", detail: WORKSPACE_GONE_REFUSAL } as const
+    const now = yield* Clock.currentTimeMillis
+    // §5 again: a record minted moments ago has already had its provision, so
+    // a second POST cannot wake anything sooner and would stampede the route.
+    // The honest answer is the wait, and the next poll is the one that asks.
+    if (now - held.record.provisionedAt < FORCED_REPROVISION_FLOOR_MS) {
+      return { status: "workspace_starting", detail: WORKSPACE_STARTING_DETAIL } as const
+    }
+    const woken = yield* ensureGateway(login, repo, "sleeping", workspaceId)
+    if (woken.status !== "ready") return woken
+    // Smithers Cloud probes the gateway's own /health before it hands back a
+    // record (plue internal/services/repo_gateway.go), so this second ask is
+    // usually a formality. It is asked anyway, because the rule is that
+    // `ready` means this seam heard the gateway, with no exception for a
+    // record that looks fresh — that exception is the bug.
+    return (yield* gatewayIsServing(woken.record)) === "live"
+      ? woken
+      : { status: "workspace_starting", detail: WORKSPACE_STARTING_DETAIL } as const
   })

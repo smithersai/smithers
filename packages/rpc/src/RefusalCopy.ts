@@ -641,6 +641,21 @@ export const WORKER_REFUSAL_COPY = {
     agent:
       "fault=infra: the workspace this request was pinned to no longer exists on Smithers Cloud — deleted, or lost with its VM. Not the user's fault and not their request's. Nothing is full, so do NOT say Smithers ran out of infra. Repeating the same operation selects a new workspace, so say plainly that it is worth asking again.",
     doors: ["retry"]
+  },
+  /*
+   * The state a resumed workspace spends its first minutes in, which for a
+   * long time had no sentence of its own and borrowed `upstream_refused`'s.
+   * That lead is the reason this row exists: "something refused that" sends a
+   * reader looking for a broken dependency, when the only thing that happened
+   * is that their box has not finished booting. Nothing refused, nothing is
+   * full, nothing is wrong, and the wait is the whole story, so the sentence
+   * is the wait.
+   */
+  workspace_starting: {
+    lead: "It's still starting up. A workspace takes a minute or two to come up, and nothing refused anything.",
+    agent:
+      "fault=wait: the user's own workspace is BOOTING — resumed from a suspend, or just created. Nothing refused the request, nothing is broken, nothing is full and nobody is at a limit, so do NOT say an upstream refused it, do NOT say Smithers ran out of infra, and do NOT tell them to change what they asked for. Say their workspace is still coming up and that it is worth asking again in a moment.",
+    doors: ["retry"]
   }
 } satisfies Record<WorkerFailureCode, WorkerRefusalCopyRow>
 

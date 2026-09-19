@@ -73,7 +73,8 @@ export const WORKER_FAILURE_CODES = [
   "upstream_refused",
   "upstream_timeout",
   "upstream_unreachable",
-  "workspace_gone"
+  "workspace_gone",
+  "workspace_starting"
 ] as const
 
 /**
@@ -202,7 +203,18 @@ export const WORKER_FAILURES = {
    * unbound request selects a replacement, so asking again gets a new box.
    * Distinct from `no_cloud_repo`, where the repository itself is absent.
    */
-  "workspace_gone": { fault: "infra", status: 409, retryAfter: 0 }
+  "workspace_gone": { fault: "infra", status: 409, retryAfter: 0 },
+  /**
+   * The workspace exists and is coming up: resumed from a suspend, or freshly
+   * created and not serving yet. WAIT, and deliberately none of the three
+   * codes it used to be told under. It is not `upstream_refused`: nothing
+   * refused anything, and a reader told a dependency refused them goes looking
+   * for a broken dependency. It is not `upstream_timeout` or
+   * `upstream_unreachable` either: those say Smithers could not get an answer,
+   * where here Smithers has the answer and the answer is "not yet". The wait
+   * is seconds to a couple of minutes, so the row states one.
+   */
+  "workspace_starting": { fault: "wait", status: 503, retryAfter: 10 }
 } satisfies Record<WorkerFailureCode, WorkerFailureEntry>
 
 /**

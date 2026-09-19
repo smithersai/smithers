@@ -31,6 +31,7 @@ import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import {
   callGateway,
   ensureGateway,
+  ensureGatewayReady,
   fetchCloudToken,
   GatewaySessionRegistry,
   gatewayResolutionsLayer,
@@ -786,6 +787,71 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(calls.filter(entry => entry.url.endsWith("/rpc"))).toHaveLength(1)
   })
 
+  /*
+   * Canary 0068f10c2b35: /workspace.suspend then /workspace.resume, and the
+   * seam answered `ready` in 0s for ~3 minutes while the gateway was down. A
+   * suspend writes nothing to the Durable Object record, and inside its
+   * half-life that record IS the answer — so `ready` was the pre-suspend
+   * state, restated.
+   */
+  test("a suspended workspace is never answered ready off its pre-suspend record", async () => {
+    let serving = false
+    const { calls, fetch } = relay({
+      gateway: () => serving ? undefined : json(409, { code: "conflict", message: "repo gateway is not running" })
+    })
+    const layer = seam(fetch)
+    // The record as a resume leaves it: minted ten minutes ago, half an hour
+    // of half-life left, and no idea that its VM went to sleep.
+    await seed("will", "will/mvp", {
+      gatewayId: "gw-0",
+      baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-0",
+      token: `${GATEWAY_TOKEN}-0`,
+      vmId: "msb_0",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      renewAfter: Date.now() + 30 * 60 * 1000,
+      provisionedAt: Date.now() - 10 * 60 * 1000
+    })
+
+    // `ensureGateway` still answers the record, which is right for a relay
+    // call: the call itself is what finds out.
+    expect((await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(layer)))).status).toBe("ready")
+    expect(calls).toHaveLength(0)
+
+    // The readiness question asks the gateway instead, hears nothing, wakes
+    // the box, and says the true thing about the wait.
+    expect(await run(ensureGatewayReady("will", "will/mvp").pipe(Effect.provide(layer))))
+      .toEqual({ status: "workspace_starting", detail: "Your workspace isn't answering yet." })
+    expect(calls.filter(entry => entry.url.endsWith("/health"))).toHaveLength(2)
+    expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(1)
+
+    // And `ready` returns the moment the gateway is the one saying it.
+    serving = true
+    const woken = await run(ensureGatewayReady("will", "will/mvp").pipe(Effect.provide(layer)))
+    expect(woken.status).toBe("ready")
+    if (woken.status === "ready") expect(woken.record.gatewayId).toBe("gw-1")
+  })
+
+  /*
+   * Walk phase A deletes the fixture workspace and has the product allocate a
+   * replacement, so the fresh path matters as much as the resumed one. It has
+   * no stale record to read, and it can still be not-up: Smithers Cloud hands
+   * back a gateway row before every box behind it is serving.
+   */
+  test("a freshly allocated workspace is answered ready by its gateway too, not by its provision", async () => {
+    const workspaceId = "83e75ae5-0920-4000-8000-000000000042"
+    const { calls, fetch } = relay({
+      provision: (_call, attempt) => freshGateway(attempt, { workspace_id: workspaceId }),
+      gateway: () => json(502, { error: "bad gateway" })
+    })
+    const layer = seam(fetch)
+    expect(await run(ensureGatewayReady("will", "will/mvp", workspaceId).pipe(Effect.provide(layer))))
+      .toEqual({ status: "workspace_starting", detail: "Your workspace isn't answering yet." })
+    // One provision, then the wait: the record is younger than the forced
+    // reprovision floor, so a second POST could not wake anything sooner.
+    expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(1)
+    expect(calls.filter(entry => entry.url.endsWith("/health"))).toHaveLength(1)
+  })
+
   test("a sleeping gateway resumes without replaying a consequential command", async () => {
     const { calls, fetch } = relay({ gateway: () => json(409, {
       code: "conflict", message: "bound workspace is not running at the recorded VM"
@@ -793,7 +859,9 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     const call = await run(callGateway("will", "will/mvp", "/rpc", {
       method: "POST", replayable: false
     }).pipe(Effect.provide(seam(fetch))))
-    expect(call.status).toBe("unavailable")
+    // Not `unavailable`: the box went to sleep, and "Something Smithers
+    // depends on refused that" is the wrong account of a workspace waking up.
+    expect(call.status).toBe("workspace_starting")
     expect(calls.filter(entry => entry.url.endsWith("/gateway"))).toHaveLength(2)
     expect(calls.filter(entry => entry.url.endsWith("/rpc"))).toHaveLength(1)
   })
@@ -972,7 +1040,10 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     )
     // The workspace was resumed for the next attempt; this one is
     // reported as what it was, and the run was never launched twice.
-    expect(call).toEqual({ status: "unavailable", detail: "Your workspace had gone to sleep. It is awake again — ask me once more." })
+    expect(call).toEqual({
+      status: "workspace_starting",
+      detail: "Your workspace had gone to sleep. It is starting back up; ask me once more in a moment."
+    })
     expect(calls.filter((entry) => entry.url.includes("/rpc"))).toHaveLength(1)
     expect(calls.filter((entry) => entry.url.endsWith("/gateway"))).toHaveLength(1)
   })

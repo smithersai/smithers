@@ -80,7 +80,13 @@ describe("supported per-user workflow relay", () => {
               }])
             } else {
               expect(JSON.parse(text)).toMatchObject({ status: "ready", gatewayId: `gateway-${caller}` })
-              expect(seen).toEqual([])
+              // `ready` is the gateway's own answer, so provision asks it —
+              // on the caller's box, with the caller's credential, never the
+              // forged login's.
+              expect(seen).toEqual([{
+                url: `https://gateway.test/${caller}/health`,
+                authorization: `Bearer synthetic-${caller}-token`
+              }])
             }
           }
           expect(text).not.toContain("synthetic-")
