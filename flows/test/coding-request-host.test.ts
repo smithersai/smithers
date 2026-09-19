@@ -13,6 +13,7 @@ import * as NetAddress from "effect/unstable/net/NetAddress"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
 import { NativeCoding, nativeLayer } from "../coding/native.ts"
@@ -147,7 +148,11 @@ for (const wikiEnabled of [false, true]) test(`configured request host ${wikiEna
     route: { prepare: () => Effect.succeed({ routeId: "fixture", protocolId: "fixture", method: "POST" as const,
       url: "https://fixture.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) } }) }
   const listening = await Effect.runPromise(Deferred.make<number>())
-  const observedPlatform: NativeControl.Platform = { ...platform,
+  // One judge for this whole host: the completion brake reads every cell's
+  // claim with it, and it is scripted rather than fetched so this fixture needs
+  // no gateway key. See `fixtures/scripted-judge.ts` for what it answers and
+  // what it still refuses.
+  const observedPlatform: NativeControl.Platform = { ...platform, evaluator: makeHostJudge().layer,
     gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
       const server = Context.get(context, HttpServer.HttpServer)
       if (!NetAddress.isInetAddress(server.address)) throw new Error("expected TCP gateway")

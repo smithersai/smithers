@@ -14,6 +14,8 @@ import * as HttpServer from "effect/unstable/http/HttpServer"
 import * as NetAddress from "effect/unstable/net/NetAddress"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
+import * as CompletionClaim from "../../packages/smithers/agent/harness/src/CompletionClaim.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
 import * as CodingState from "../coding/state.ts"
@@ -109,7 +111,14 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
         flowDigest: Descriptor.executionDigest(descriptor)!, tier, required: true }))))
   }).pipe(Effect.provide(registry), Effect.scoped))
   const listening = await Effect.runPromise(Deferred.make<number>())
-  const observedPlatform: NativeControl.Platform = { ...platform,
+  // The judge this host runs. Without it the platform reads `process.env`,
+  // finds no `AI_GATEWAY_API_KEY`, and installs the transport that refuses
+  // every evaluation, so the completion brake — which never falls back — ends
+  // this scripted cell's run as `completion_unjudged` before any assertion
+  // below is reached. It reads the same evidence a gateway would, and the
+  // assertions at the end of this test drive it with a claim it must refuse.
+  const judge = makeHostJudge()
+  const observedPlatform: NativeControl.Platform = { ...platform, evaluator: judge.layer,
     gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
       const server = Context.get(context, HttpServer.HttpServer)
       if (!NetAddress.isInetAddress(server.address)) throw new Error("expected TCP gateway")
@@ -161,5 +170,20 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   assert.equal(existsSync(join(stateRoot, ".flows", "engine.db")), true)
   assert.doesNotMatch(jj("status"), /\.flows/)
   assert.doesNotMatch(jj("diff", "--stat"), /\.flows/)
+  // The judge above is scripted, not disarmed. `CompletionClaim.read` is the
+  // brake's own seam: the classifier, the wording and the thresholds are the
+  // production ones, and only the transport is this host's. The claim this run
+  // actually made stands, and a claim reporting a command this run's record
+  // does not record is refused at `inventedAt`, which is what ends a run as
+  // `claim_unproven`. A fixture that answered "complete" to everything would
+  // fail this assertion.
+  const judged = (claim: string) => Effect.runPromise(CompletionClaim.read({
+    task: "Write hello.txt", claim, treeMoved: true, checksRun: []
+  }).pipe(Effect.provide(judge.layer)))
+  const stands = await judged(JSON.stringify({ summary: "Wrote and edited hello.txt", reads: ["hello.txt"], writes: ["hello.txt"] }))
+  assert.equal(CompletionClaim.unrecorded(stands!), false, JSON.stringify(stands))
+  const refused = await judged("I ran `node verify.mjs` and every check passed.")
+  assert.equal(CompletionClaim.unrecorded(refused!), true, JSON.stringify(refused))
+  assert.match(CompletionClaim.unproven(refused!, true).message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
   passed = true
 })
