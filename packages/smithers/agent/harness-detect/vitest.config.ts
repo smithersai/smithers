@@ -15,7 +15,7 @@ export default defineConfig({
       provider: "v8",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
-      reportsDirectory: join(tmpdir(), `agent-harness-detect-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-harness-detect-coverage-${process.pid}`),
       include: ["src/**"],
       // Every line here is pure and host-injected, so there is no branch a
       // test cannot enter: the release policy's 100 holds without a ratchet.
