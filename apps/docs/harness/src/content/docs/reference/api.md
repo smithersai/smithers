@@ -63,7 +63,7 @@ behavior and signatures.
 | `CallLedger`                 | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The call ledger: what this run has already asked, rendered every frame.                                  |
 | `NarrowedCheck`              | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                           | The narrowing ledger: which checks this run has run, and over which tree.                                |
 | `CellValidation`             | `Validation`, `normalize`, `validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Cell validation at the boundary.                                                                         |
-| `CompletionClaim`            | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `Check`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `reason`, `newest`, `read`, `demand`, `quote`, `prose`                                                                                                                                                                                                                                                                                                                                                                                                                               | The completion nothing in the record contradicts.                                                        |
+| `CompletionClaim`            | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `Check`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `reason`, `newest`, `unproven`, `read`, `demand`, `quote`, `prose`                                                                                                                                                                                                                                                                                                                                                                                                                   | The completion nothing in the record contradicts.                                                        |
 | `UnmovedTree`                | `Unmoved`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The completion with nothing behind it.                                                                   |
 | `UnresolvedFailure`          | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The failing check a completion stepped around.                                                           |
 | `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The evidence that is already complete.                                                                   |
@@ -242,7 +242,7 @@ Every omitted budget takes its module-level default, and zero disarms it:
 | `defaultNarrowingDemands`  | 1       | Completions bounced for narrowed evidence.         |
 | `defaultUnmovedDemands`    | 1       | Completions bounced for an unmoved tree.           |
 | `defaultUnresolvedDemands` | 1       | Completions bounced for a displaced failing check. |
-| `defaultClaimDemands`      | 1       | Completions bounced for an unsupported claim.      |
+| `defaultClaimDemands`      | 3       | Frames given to prove an unsupported claim.        |
 | `defaultRevalidations`     | 1       | In-frame answers to an unparseable cell.           |
 | `defaultMaxCheckpoints`    | 8       | Trees one run may pin with `ctx.checkpoint()`.     |
 
@@ -805,7 +805,7 @@ export class HarnessError extends Schema.TaggedError<HarnessError>()("/harness/H
 
 `HarnessErrorCode` is `assembly_failed`, `incompatible_journal`,
 `render_failed`, `model_failed`, `engine_failed`, `read_only_cap`,
-`completion_unjudged`, or `suspended`. The set is closed to codes this package and `@smthrs/agent`
+`completion_unjudged`, `claim_unproven`, or `suspended`. The set is closed to codes this package and `@smthrs/agent`
 actually raise, and `test/Contracts.test.ts` pins every member to a
 construction site; a foreign CLI adapter declares its own family beside the
 adapter rather than borrowing this one. Interrupting a run raises no
@@ -1052,10 +1052,23 @@ brakes still ran and the truth bar still judges what they let through.
 It never passes a claim on its own. A confident "complete" ends no run,
 bypasses no other demand, and does nothing but write a journal line;
 `judgeCompletion` consults it only once the five deterministic demands have
-found nothing, and it spends `claimCap` (1) like the other completion caps.
+found nothing.
+
+**It never goes quiet either.** Every completion with a claim is read, and
+`claimCap` (3) is the number of frames the run is _given_ to prove one, not
+the number of completions that are read. The first unproven claim is handed
+back with the demand prose, like any other completion demand; a claim with no
+bounce left, because the cap is spent or because no frame remains to hand it
+back to, fails the turn as `claim_unproven` through `unproven`, carrying the
+reason and both probabilities. A claim demand also clears
+`State.bouncedCompletion`, so the frame-budget notice cannot restore the
+sentence the brake refused. The cap stopped at the bounce until this, and the
+second claim stood unread: on a real seat a run bounced at frame 1 re-claimed
+the identical sentence and finished `stop` on it over a repository whose test
+exits 1. Zero disarms the brake outright: no request, no reading, no failure.
 
 **It never falls back.** A completion Jev could not judge fails the turn as
-`completion_unjudged`, carrying the reason — `unconfigured` where the host
+`completion_unjudged`, carrying the reason: `unconfigured` where the host
 delivered no transport, and the evaluator's own `unreachable`, `refused`,
 `timeout`, `empty`, `invalid_answer` or `invalid_question` otherwise. So
 `Evaluator.Evaluator` is a **required service** of `read`, of

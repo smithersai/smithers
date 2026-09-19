@@ -1067,7 +1067,7 @@ the identical sentence and finished `stop` on it over a repository whose test
 exits 1. Zero disarms the brake outright: no request, no reading, no failure.
 
 **It never falls back.** A completion Jev could not judge fails the turn as
-`completion_unjudged`, carrying the reason — `unconfigured` where the host
+`completion_unjudged`, carrying the reason: `unconfigured` where the host
 delivered no transport, and the evaluator's own `unreachable`, `refused`,
 `timeout`, `empty`, `invalid_answer` or `invalid_question` otherwise. So
 `Evaluator.Evaluator` is a **required service** of `read`, of

@@ -43,7 +43,7 @@ downgrade to a 0.x `latest`.
 
 - Node 22.19+ (Node 22) or 24.11+. The durable engine requires it, `smthrs doctor`
   reports a `fail` outside this range. `Doctor.supportedNodeRange` matches the
-  published manifest; Node 23 and Node 24.0–24.10 are not supported.
+  published manifest; Node 23 and Node 24.0 through 24.10 are not supported.
 - A project directory. Commands that touch durable state resolve a project
   root and write `.flows/` under it. See
   [The project and its state](./concepts/project-and-state.md).

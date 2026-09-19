@@ -256,7 +256,7 @@ terminal, or unset `CI`, if you want the prompts.
 **Symptom.** `smthrs doctor` reports a `fail` on the `node` check, and exits 1.
 
 **Cause.** The running Node does not satisfy `Doctor.supportedNodeRange`.
-This includes Node 23 and Node 24.0–24.10, not just versions below Node 22.19.
+This includes Node 23 and Node 24.0 through 24.10, not just versions below Node 22.19.
 
 **Fix.** Install Node 22.19+ (Node 22) or 24.11+. The CLI's shebang pins Node for every
 installation path, so this is about the Node on your `PATH`, not about the

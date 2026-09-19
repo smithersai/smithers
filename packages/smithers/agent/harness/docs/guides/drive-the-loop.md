@@ -209,7 +209,7 @@ the same flow, with identical or broader inputs, after a workspace mutation.
 Passing readings must be stable: the check has to have read the tree its frame
 closed on. A frame's writes are calls and calls settle in order, so a check
 that ran after the frame's last write is stable and a check that ran before it
-is not — edit and then re-run the check in one frame and the pair completes
+is not. Edit and then re-run the check in one frame and the pair completes
 there, but check and then edit and the reading says nothing. A frame whose
 measurement moved with no call declaring it, such as a shell redirect, places
 nothing and stamps none of its checks.
