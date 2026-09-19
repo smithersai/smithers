@@ -22,7 +22,7 @@
  * WHAT THIS GATE IS ALLOWED TO FAIL FOR. Everything above is the server, and
  * the server is the change under test: a boot that never became healthy, a
  * turn that never went idle, a completion Jev could not judge, a protocol
- * shape that does not hold, a health dot that does not settle green. Each of
+ * shape that does not hold, a health dot that contradicts the terminal rule. Each of
  * those fails on the first attempt and is never retried, because each of them
  * is a defect in the code this gate exists to protect.
  *
@@ -177,7 +177,10 @@ interface ToolPart {
     readonly metadata?: {
       readonly color?: string
       readonly reason?: string
-      readonly answers?: Record<string, { readonly probability?: number; readonly label?: string }>
+      readonly answers?: Record<
+        string,
+        { readonly probability?: number; readonly label?: string; readonly confidence?: number }
+      >
     }
   }
 }
@@ -192,6 +195,36 @@ const assertSettledAttempt = (assistant: Item | undefined): void => {
   expect(assistant, "the turn produced no assistant message").toBeDefined()
   expect(assistant!.info.error, JSON.stringify(assistant!.info.error)).toBeUndefined()
   expect(assistant!.info.finish).toBe("stop")
+}
+
+/** Checks the terminal reading against design section 3.3, independently of server code. */
+const assertFinalHealth = (metadata: ToolPart["state"]["metadata"], spent: boolean): string => {
+  let color = spent ? "red" : "green"
+  let reason = spent ? `stopped: the frame budget of ${maxFrames} is exhausted` : "answered"
+  const answers = metadata?.answers
+  if (!spent && answers !== undefined) {
+    const progress = answers["progress"]
+    const stuck = answers["stuck"]?.probability
+    const needsHuman = answers["needsHuman"]?.probability
+    for (const probability of [progress?.confidence, stuck, needsHuman]) {
+      expect(probability).toBeGreaterThanOrEqual(0)
+      expect(probability).toBeLessThanOrEqual(1)
+    }
+    expect(progress?.label).toBeTypeOf("string")
+    const confident = Math.max(progress!.confidence!, Math.abs(2 * stuck! - 1), Math.abs(2 * needsHuman! - 1)) >= 0.5
+    if (!confident) {
+      color = "gray"
+      reason = "health uncertain"
+    } else if (needsHuman! >= 0.7) {
+      color = "red"
+      reason = `needs you (${Math.round(needsHuman! * 100)}%)`
+    } else {
+      reason = progress!.label!
+    }
+  }
+  expect(metadata?.color, "terminal health color").toBe(color)
+  expect(metadata?.reason, "terminal health reason").toBe(reason)
+  return color
 }
 
 const cleanup: Array<() => void> = []
@@ -366,10 +399,8 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     //    fixed anyway. Reading the budget first names the budget rather than
     //    the file when both went wrong.
     //
-    //    This exempts nothing else from rule 6. The F6 regression this file
-    //    was written against left finished sessions red "waiting for approval"
-    //    and yellow "repeating itself", and neither is the budget reason, so
-    //    both still red on the first attempt.
+    //    The final color is checked separately against the whole ordered rule.
+    //    Stale approval and repetition colors still fail the first attempt.
     const spent = health.map((part) => part.state.metadata?.reason)
       .includes(`stopped: the frame budget of ${maxFrames} is exhausted`)
     const seatFailure = spent
@@ -392,16 +423,15 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     expect(colors.length).toBeGreaterThan(0)
     for (const color of colors) expect(["green", "yellow", "red", "gray"]).toContain(color)
 
-    // 6. The finished session ends green and stays green (design F6). The
+    // 6. The finished session keeps its final decision (design F6 and 3.3). The
     //    live keyed drive that found this left finished, idle sessions red
     //    "waiting for approval" with nothing pending, and others yellow
     //    "repeating itself" over `progress: done`, because the last color
     //    was decided mid-turn on facts the end of the turn had settled.
     const titleNow = async (): Promise<string> =>
       ((await (await ask(`/session/${session.id}`)).json()) as { title: string }).title
-    const reasons = health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
-    expect(colors.at(-1), reasons).toBe(spent ? "red" : "green")
-    const titleDot = spent ? /^\u{1F534}/u : /^\u{1F7E2}/u
+    const finalColor = assertFinalHealth(health.at(-1)?.state.metadata, spent)
+    const titleDot = finalColor === "red" ? /^\u{1F534}/u : finalColor === "gray" ? /^\u{26AA}/u : /^\u{1F7E2}/u
     expect(await titleNow()).toMatch(titleDot)
     await sleep(3000)
     expect(await titleNow()).toMatch(titleDot)
@@ -440,6 +470,53 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
 }
 
 describe("a live turn on a real seat", () => {
+  const uncertain = {
+    progress: { label: "progressing", confidence: 0.48 },
+    stuck: { probability: 0.41 },
+    needsHuman: { probability: 0.37 }
+  }
+
+  it("accepts the documented uncertain reading on a completed turn", () => {
+    expect(assertFinalHealth({ color: "gray", reason: "health uncertain", answers: uncertain }, false)).toBe("gray")
+  })
+
+  it("accepts a confident need for a person before the completion rule", () => {
+    expect(assertFinalHealth({
+      color: "red",
+      reason: "needs you (80%)",
+      answers: { ...uncertain, needsHuman: { probability: 0.8 } }
+    }, false)).toBe("red")
+  })
+
+  it("requires the answered fallback when no health reading arrived", () => {
+    expect(assertFinalHealth({ color: "green", reason: "answered" }, false)).toBe("green")
+    expect(() => assertFinalHealth({ color: "gray", reason: "health unavailable" }, false)).toThrow()
+  })
+
+  it("requires green when a completed turn has confident answers and needs nobody", () => {
+    const answers = { ...uncertain, progress: { label: "done", confidence: 0.89 } }
+    expect(assertFinalHealth({ color: "green", reason: "done", answers }, false)).toBe("green")
+    expect(() => assertFinalHealth({ color: "gray", reason: "health uncertain", answers }, false)).toThrow()
+  })
+
+  it("requires the budget reason when a normally settled turn exhausted its frames", () => {
+    expect(assertFinalHealth({ color: "red", reason: `stopped: the frame budget of ${maxFrames} is exhausted` }, true))
+      .toBe("red")
+    expect(() => assertFinalHealth({ color: "red", reason: "waiting for approval" }, true)).toThrow()
+  })
+
+  it.each([
+    { color: "red", reason: "waiting for approval" },
+    { color: "yellow", reason: "repeating itself (69%)" }
+  ])("refuses a stale terminal reading: $reason", (metadata) => {
+    expect(() =>
+      assertFinalHealth({
+        ...metadata,
+        answers: { ...uncertain, progress: { label: "done", confidence: 0.89 } }
+      }, false)
+    ).toThrow()
+  })
+
   it.each([
     { name: "ProviderAuthError", data: { message: "The seat rejected its key" } },
     { name: "UnknownError", data: { message: "The model connection failed" } },

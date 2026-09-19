@@ -36,7 +36,7 @@
 # both reasons when both attempts leave the bug in place. Nothing else is
 # retried: a boot that never came up, a turn that never went idle, a
 # completion Jev could not judge, a protocol shape that does not hold and a
-# health dot that does not settle green all fail on the first attempt. The
+# health dot that contradicts the ordered terminal rule all fail on the first attempt. The
 # retry is never silent, and the step below turns it into a run annotation.
 #
 # LINTING. PACKAGE.ts names this file in ci.yml's actionlint step, and
