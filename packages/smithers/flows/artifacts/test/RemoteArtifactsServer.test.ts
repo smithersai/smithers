@@ -29,7 +29,7 @@ const digest = sha256(payload)
 
 /** How the server answers a ranged `PUT`. */
 type RangeMode =
-  /** Accepts ranges, and drops the connection once, after `failAfterChunks` chunks. */
+  /** Accepts ranges, then interrupts uploads after `failAfterChunks` until resumed. */
   | { readonly _tag: "Accept"; readonly failAfterChunks?: number }
   /** Refuses ranged bodies with this status, accepting the whole blob instead. */
   | { readonly _tag: "Refuse"; readonly status: 400 | 411 | 416 }
@@ -56,6 +56,8 @@ interface Tier {
   readonly requests: ReadonlyArray<string>
   /** The bytes the server currently holds for `digest`. */
   readonly stored: () => Uint8Array | undefined
+  /** Ends an injected outage without discarding the committed prefix. */
+  readonly resumeUploads: () => void
   readonly close: () => Promise<void>
 }
 
@@ -70,7 +72,7 @@ const startTier = (mode: RangeMode): Promise<Tier> => {
   let prefix = new Uint8Array(0)
   let complete: Uint8Array | undefined
   let chunks = 0
-  let interrupted = false
+  let resumed = false
   const server: Server = createServer((request, response) => {
     const range = request.headers["content-range"]
     requests.push(`${request.method} ${range ?? "-"}`)
@@ -139,10 +141,9 @@ const startTier = (mode: RangeMode): Promise<Tier> => {
       }
       chunks++
       const failAfter = mode._tag === "Accept" ? mode.failAfterChunks : undefined
-      if (failAfter !== undefined && chunks > failAfter && !interrupted) {
-        interrupted = true
+      if (failAfter !== undefined && chunks > failAfter && !resumed) {
         // The transfer dies mid-flight: the prefix the server already committed
-        // survives, which is the whole point of resuming.
+        // survives. Keep the outage active across transport-level retries.
         request.socket.destroy()
         return
       }
@@ -171,6 +172,9 @@ const startTier = (mode: RangeMode): Promise<Tier> => {
         port: typeof address === "object" && address !== null ? address.port : 0,
         requests,
         stored: () => complete,
+        resumeUploads: () => {
+          resumed = true
+        },
         close: () =>
           new Promise((closed) => {
             server.closeAllConnections()
@@ -224,6 +228,8 @@ describe("a real server", () => {
       const first = await Effect.runPromise(Effect.exit(withCrypto(put)))
       expect(first._tag).toBe("Failure")
       expect(tier.stored()).toBeUndefined()
+      const interruptedRequests = tier.requests.length
+      tier.resumeUploads()
 
       // The second one asks what the tier holds, probes, is told `0-3`, and
       // sends the rest: chunk one never travels twice. The closing `HEAD` is
@@ -232,7 +238,8 @@ describe("a real server", () => {
       const resumed = await Effect.runPromise(withCrypto(put))
       expect(resumed).toBe(digest)
       expect(text(tier.stored())).toBe(artifact)
-      expect(tier.requests.slice(4)).toEqual([
+      expect(tier.requests.filter((request) => request === "PUT bytes 0-3/10")).toHaveLength(1)
+      expect(tier.requests.slice(interruptedRequests)).toEqual([
         "HEAD -",
         "PUT bytes */10",
         "PUT bytes 4-7/10",
