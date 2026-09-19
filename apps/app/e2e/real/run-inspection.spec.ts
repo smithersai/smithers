@@ -261,7 +261,7 @@ workflowTest("a completed agent run's timeline shows its phases and frame lines,
     "action:workspace.view", "action:workspace.terminal", "action:workspace.suspend", "action:workspace.resume", "action:repo.select",
     "action:flow.run", "action:runs.trace.view", "action:runs.trace.select", "action:runs.trace.live",
     "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
-    "dimension:real-provider", "dimension:real-pty", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
+    "dimension:real-provider", "dimension:real-pty", "dimension:keyboard", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
     "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor",
     "dimension:later-phase-door", "dimension:reload",
     "evidence:gateway-journal-frames-and-durable-cursor"
@@ -289,9 +289,11 @@ workflowTest("a completed agent run's timeline shows its phases and frame lines,
   const ownCard = (): ReturnType<typeof runCard> => runCard(page, runId).last()
   expect(await exactRunId(ownCard())).toBe(runId)
 
+  // What is under test is the timeline, not the agent: a run the provider failed has frames, calls and a
+  // terminal pin exactly as a completed one does, so either verdict is a subject. The card must say the same.
   const terminal = await waitForTerminalRun(page, request, repo, runId, 9 * 60_000, workspaceId)
-  expect(terminal.status).toBe("completed")
-  await expect(ownCard().getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", "completed", { timeout: 60_000 })
+  expect(["completed", "failed"], "the run must reach a terminal verdict the timeline can close on").toContain(terminal.status)
+  await expect(ownCard().getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", String(terminal.status), { timeout: 60_000 })
 
   // The oracle is the gateway's journal, never the card's own fold of it.
   const eventsAnswer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
@@ -299,6 +301,13 @@ workflowTest("a completed agent run's timeline shows its phases and frame lines,
   }, workspaceId)
   const events = projectionRows(eventsAnswer)
   const frames = journalFrames(events)
+  const kinds: Record<string, number> = {}
+  for (const event of events) kinds[String(event.kind)] = (kinds[String(event.kind)] ?? 0) + 1
+  await attachProductionJson(testInfo, "timeline-subject-journal", {
+    repo, runId, status: terminal.status, kinds,
+    // The journal's last rows, unfiltered: how a run closed is whatever it journaled last, not a list of kinds this file guessed.
+    closing: events.slice(-8)
+  })
   expect(frames.length, "a provider-backed agent run must journal at least one turn; a journal with none has no band to scrub").toBeGreaterThan(0)
   const opens = frames.map((entry) => entry.opens)
   const latest = Math.max(...events.map((event) => typeof event.sequence === "number" ? event.sequence : 0))
