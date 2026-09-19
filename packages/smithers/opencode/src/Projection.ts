@@ -313,6 +313,75 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
 
 /**
+ * What the person reads on a bash card that names no command: the call gives
+ * no subject to approve, and `Bash.run` refuses it as `invalid_input`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const unnameableBash = "a bash call that names no command"
+
+/** The interpreter a script-form bash call runs under when it names none. */
+const defaultInterpreter = "bash"
+
+/** How much of a program's first line a subject line carries. */
+const subjectLineLimit = 120
+
+/**
+ * A program as one line: its first non-blank line, clipped, and how many more
+ * follow. Only called for a program that has one.
+ */
+const programLine = (script: string): string => {
+  const lines = script.split("\n").filter((line) => line.trim() !== "").length
+  const first = script.trim().split("\n", 1).join("").trim()
+  const clipped = first.length > subjectLineLimit ? `${first.slice(0, subjectLineLimit)}...` : first
+  return lines > 1 ? `${clipped} (+${lines - 1} more lines)` : clipped
+}
+
+/**
+ * What a bash call asks for, from any input `@smthrs/agent/std/Bash` accepts:
+ * the one line the person is approving, and the `always` pattern a grant may
+ * cover.
+ *
+ * A command line names its program in its first word, so a grant can cover
+ * that word and nothing else. A script is program text an interpreter reads
+ * on standard input; it has no first word, and the first word of the program
+ * is not the name of anything the shell would run. Such a call therefore
+ * offers no `always` at all: an empty list, which is why no bash answer can
+ * ever grant `*`. The subject names the interpreter and shows the program's
+ * first line, and the card carries the program whole.
+ *
+ * A container is part of what a grant covers, because `pytest` inside a
+ * container and `pytest` on this machine are two different acts.
+ *
+ * @param input the call input, as the cell wrote it or as the card carries it
+ * @category conversions
+ * @since 1.0.0
+ */
+export const bashSubject = (input: Record<string, unknown>): {
+  readonly command: string
+  readonly always: Array<string>
+} => {
+  // The program is read first, and it decides. A card this function already
+  // described carries both fields: the subject it derived in `command`, and
+  // the program in `script`. Reading `command` first would take that derived
+  // line for a command line and hand its first word an always-grant, which is
+  // the hole this order closes.
+  const script = asString(input["script"])
+  if (script !== undefined && script.trim() !== "") {
+    const interpreter = asString(input["interpreter"]) ?? defaultInterpreter
+    return { command: `${interpreter} script: ${programLine(script)}`, always: [] }
+  }
+  const command = asString(input["command"])
+  if (command !== undefined && command.trim() !== "") {
+    const word = command.trim().replace(/\s[\s\S]*$/, "")
+    const container = asString(input["container"])
+    return { command, always: [container === undefined ? `${word} *` : `${word} * in container ${container}`] }
+  }
+  return { command: "", always: [] }
+}
+
+/**
  * The input OpenCode's card for a flow reads, from the input the cell wrote.
  * Paths become absolute because the cards relativize them to the project.
  *
@@ -355,7 +424,18 @@ export const toolInput = (directory: string, flowName: string, input: Schema.Jso
     case "write":
       return { filePath: absolute(raw["path"]), content: asString(raw["content"]) ?? "" }
     case "bash":
-      return { command: asString(raw["command"]) ?? "", ...optional("description", raw["description"]) }
+      // Both clients render this card from `command`, so the subject goes
+      // there whichever form the cell wrote, and the program follows the
+      // short scalars that qualify it.
+      return {
+        command: bashSubject(raw).command,
+        ...optional("description", raw["description"]),
+        ...optional("interpreter", raw["interpreter"]),
+        ...optional("args", raw["args"]),
+        ...optional("container", raw["container"]),
+        ...optional("cwd", raw["cwd"]),
+        ...optional("script", raw["script"])
+      }
     default:
       return raw
   }
@@ -556,7 +636,7 @@ export const toolTitle = (flowName: string, input: Record<string, unknown>): str
     case "grep":
       return asString(input["pattern"]) ?? ""
     case "bash":
-      return asString(input["command"]) ?? ""
+      return bashSubject(input).command
     default:
       return flowName
   }
@@ -618,17 +698,21 @@ export const toolMetadata = (flowName: string, value: Schema.Json): Record<strin
 /**
  * The permission card's patterns and `always` rule for a parked call.
  *
+ * The bash flow never offers `*`: a command line offers its first word, and
+ * a call that names no command a person could read offers nothing, so an
+ * answer to it covers that one call. Every other flow offers the whole flow,
+ * which is what its card says.
+ *
  * @category conversions
  * @since 1.0.0
  */
 export const permissionPatterns = (
   flowName: string,
   input: Record<string, unknown>
-): { readonly patterns: Array<string>; readonly always: Array<string> } => {
+): { readonly patterns: [string]; readonly always: Array<string> } => {
   if (flowName === "bash") {
-    const command = asString(input["command"]) ?? ""
-    const word = command.trim().replace(/\s[\s\S]*$/, "")
-    return { patterns: [command], always: [word === "" ? "*" : `${word} *`] }
+    const subject = bashSubject(input)
+    return { patterns: [subject.command === "" ? unnameableBash : subject.command], always: subject.always }
   }
   const subject = toolTitle(flowName, input)
   return { patterns: [subject === "" ? "*" : subject], always: ["*"] }

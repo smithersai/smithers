@@ -235,8 +235,11 @@ describe("Projection", () => {
       patterns: ["ls -la"],
       always: ["ls *"]
     })
-    expect(Projection.permissionPatterns("bash", { command: "  " })).toEqual({ patterns: ["  "], always: ["*"] })
-    expect(Projection.permissionPatterns("bash", {})).toEqual({ patterns: [""], always: ["*"] })
+    expect(Projection.permissionPatterns("bash", { command: "  " })).toEqual({
+      patterns: [Projection.unnameableBash],
+      always: []
+    })
+    expect(Projection.permissionPatterns("bash", {})).toEqual({ patterns: [Projection.unnameableBash], always: [] })
     expect(Projection.permissionPatterns("edit", { filePath: "/repo/f" })).toEqual({ patterns: ["f"], always: ["*"] })
     expect(Projection.permissionPatterns("clock", {})).toEqual({ patterns: ["clock"], always: ["*"] })
     expect(Projection.permissionPatterns("edit", {})).toEqual({ patterns: ["*"], always: ["*"] })
@@ -253,6 +256,68 @@ describe("Projection", () => {
       "six seven"
     ])
     expect(Projection.chunks("averyveryverylongword", 5)).toEqual(["averyveryverylongword"])
+  })
+
+  it("names the program of a script-form bash call, and offers it no always-grant", () => {
+    // Every input shape `@smthrs/agent/std/Bash` accepts, and what the person
+    // is asked to approve for each. The script form has no first word, so it
+    // offers no `always` at all: allowing it covers the one call.
+    const hermetic = { mode: "hermetic", script: "node -e 'console.log(1)'", reads: ["src/hello.js"], writes: [] }
+    expect(Projection.toolInput(directory, "bash", hermetic)).toEqual({
+      command: "bash script: node -e 'console.log(1)'",
+      script: "node -e 'console.log(1)'"
+    })
+    expect(Projection.bashSubject(hermetic)).toEqual({
+      command: "bash script: node -e 'console.log(1)'",
+      always: []
+    })
+    expect(Projection.permissionPatterns("bash", Projection.toolInput(directory, "bash", hermetic))).toEqual({
+      patterns: ["bash script: node -e 'console.log(1)'"],
+      always: []
+    })
+    expect(Projection.toolTitle("bash", Projection.toolInput(directory, "bash", hermetic)))
+      .toBe("bash script: node -e 'console.log(1)'")
+
+    // The interpreter the call names, its arguments, its working directory and
+    // its container all reach the card; the program is the last field, because
+    // it is the long one.
+    const program = { mode: "unhermetic", interpreter: "python3", script: "import sys\nprint(sys.argv)\n", args: ["a"] }
+    expect(Projection.toolInput(directory, "bash", { ...program, cwd: "sub", container: "ci" })).toEqual({
+      command: "python3 script: import sys (+1 more lines)",
+      interpreter: "python3",
+      args: ["a"],
+      container: "ci",
+      cwd: "sub",
+      script: "import sys\nprint(sys.argv)\n"
+    })
+    expect(Projection.bashSubject(program).always).toEqual([])
+
+    // A program too long for one line is clipped, and the card carries it whole.
+    const long = { mode: "unhermetic", script: `echo ${"x".repeat(200)}` }
+    const clipped = Projection.bashSubject(long)
+    expect(clipped.command.length).toBe("bash script: ".length + 123)
+    expect(clipped.command.endsWith("...")).toBe(true)
+    expect(Projection.toolInput(directory, "bash", long)["script"]).toBe(`echo ${"x".repeat(200)}`)
+
+    // A command line still names its first word, and a container qualifies the
+    // grant so allowing `pytest` in a container never allows it on the host.
+    expect(Projection.bashSubject({ mode: "unhermetic", command: "pytest -q" })).toEqual({
+      command: "pytest -q",
+      always: ["pytest *"]
+    })
+    expect(Projection.bashSubject({ mode: "unhermetic", command: "pytest -q", container: "ci" })).toEqual({
+      command: "pytest -q",
+      always: ["pytest * in container ci"]
+    })
+
+    // An input that names neither, which `Bash.run` refuses as invalid_input,
+    // is shown as what it is and grants nothing.
+    expect(Projection.bashSubject({ mode: "unhermetic", stdin: "text" })).toEqual({ command: "", always: [] })
+    expect(Projection.unnameableBash).toBe("a bash call that names no command")
+    expect(Projection.permissionPatterns("bash", { mode: "unhermetic", script: "   " })).toEqual({
+      patterns: [Projection.unnameableBash],
+      always: []
+    })
   })
 
   it("keeps a title the app already set, and titles a fresh session from the prompt", () => {

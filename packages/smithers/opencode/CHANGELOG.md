@@ -51,6 +51,31 @@
 
 ### Fixed
 
+- A `bash` call the cell wrote as program text no longer asks the person to
+  approve a blank line, and no answer to it hands over the shell. `Bash.ts`
+  takes a command line or a `script` an interpreter reads on standard input,
+  and the projection read only `command`: a live keyed drive parked
+  `{"permission":"bash","patterns":[""],"metadata":{"command":""},"always":["*"]}`
+  for a legitimate hermetic call, so the card was an empty line and "Allow
+  always" granted every command in the session. `Projection.bashSubject` now
+  derives the subject from `script` and `interpreter` when `command` is
+  absent, so the card reads `bash script: node -e 'console.log(1)'` and
+  carries the interpreter, the arguments, the container, the working
+  directory and the program itself. Such a call offers no `always` pattern at
+  all, `EngineDriver.alwaysKey` is `undefined` for it, and an "always" answer
+  is stored as the one request it answered. A containerised command now
+  qualifies its pattern (`pytest * in container ci`), so allowing it in a
+  container never allows it on the host, and a `bash *` row written by an
+  older build matches nothing.
+
+- The person is asked about a rejected call once. After a rejected `pytest -q`
+  the very next frame called `pytest -q` again and parked a second identical
+  card. The turn now remembers the subjects it had rejected, and a call that
+  repeats one settles as `capability_refused` with
+  `EngineDriver.repeatedDenialMessage` instead of parking, so the run reads
+  that it was already refused and the person is not asked twice. The memory
+  belongs to the turn; a new turn asks again.
+
 - Every card this server invents now leads with the one line a reader needs.
   Neither client reads a card's `title` for a tool it does not know: the
   hosted app's `GenericTool` takes its subtitle from `input.description` and

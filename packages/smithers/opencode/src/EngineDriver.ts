@@ -200,6 +200,23 @@ export const deniedMessage = (flow: string): string =>
   `permission_denied: the person rejected this ${flow} call. Do not retry it; do the work another way or explain what you would have run. The generic hint beside this message is about the flow, not this call: the flow stays available for commands the person allows.`
 
 /**
+ * The message a call settles with when this turn already had the same
+ * subject rejected: the person is not asked twice.
+ *
+ * A live drive parked `pytest -q`, was refused, and the very next frame
+ * called `pytest -q` again, which parked a second identical card. The
+ * refusal is the answer now, and it names what was rejected so the cell can
+ * tell it from a fresh denial and stop.
+ *
+ * @param flow the flow the call asked for
+ * @param subject what the rejected card showed, which this call repeats
+ * @category constructors
+ * @since 1.0.0
+ */
+export const repeatedDenialMessage = (flow: string, subject: string): string =>
+  `permission_denied: the person already rejected \`${subject}\` in this turn, so this ${flow} call was refused without asking them again. Do not call it a third time: do the work another way, or say what you would have run.`
+
+/**
  * The capability envelope every turn runs under: the standard flows over
  * the served directory and the shell.
  *
@@ -305,38 +322,47 @@ export const standardFlows = (services: FlowServices): ReadonlyArray<FlowBinding
  * a failure the cell can read instead of failing the frame.
  *
  * @param source the source to wrap
- * @param rejected whether a call was rejected
+ * @param refusal the message a refused call settles with, or `undefined` to run it
  * @category combinators
  * @since 1.0.0
  */
 export const refusing = (
   source: FlowBinding.Source,
-  rejected: (call: Cell.Call) => boolean
+  refusal: (call: Cell.Call) => string | undefined
 ): FlowBinding.Source => ({
   name: source.name,
   bindings: () =>
     Effect.map(source.bindings(), (bindings) =>
-      bindings.map((binding): FlowBinding.Binding => ({
-        descriptor: binding.descriptor,
-        run: (call) =>
-          rejected(call)
-            ? Effect.succeed(
-              new Cell.CallResult({
-                outcome: "failure",
-                value: { permission: "denied", flow: call.flowName },
-                message: deniedMessage(call.flowName),
-                code: "capability_refused"
-              })
-            )
-            : binding.run(call)
-      })))
+      bindings.map((binding): FlowBinding.Binding => {
+        const run: FlowBinding.Binding["run"] = (call) => {
+          const message = refusal(call)
+          return message === undefined ? binding.run(call) : Effect.succeed(
+            new Cell.CallResult({
+              outcome: "failure",
+              value: { permission: "denied", flow: call.flowName },
+              message,
+              code: "capability_refused"
+            })
+          )
+        }
+        return { descriptor: binding.descriptor, run }
+      }))
 })
 
 interface Running {
   readonly input: Driver.StartInput
   readonly sink: Driver.Sink
-  /** The permission the execution is parked on, when it is, with the `always` key Allow always grants. */
-  parked: { readonly requestID: string; readonly flow: string; readonly always: string } | undefined
+  /**
+   * The permission the execution is parked on, when it is: the subject its
+   * card showed, and the key Allow always grants, which is absent when the
+   * card offered no pattern and an answer therefore covers this call alone.
+   */
+  parked: {
+    readonly requestID: string
+    readonly flow: string
+    readonly subject: string
+    readonly always: string | undefined
+  } | undefined
   /** The body's exit for the drive in flight. */
   settled: Deferred.Deferred<Driver.Outcome>
   driving: boolean
@@ -345,9 +371,30 @@ interface Running {
 const grantKey = (sessionID: string, key: string): string => `${sessionID}\u0000${key}`
 
 /**
+ * The subjects one turn had rejected, by execution: what makes a second ask
+ * of a rejected call a refusal the cell reads rather than a second card. The
+ * memory is the turn's, and {@link Options} keeps no state across turns: a
+ * new turn asks the person again, because the answer was about this one.
+ */
+const denials = new Map<string, Set<string>>()
+
+/** The rejected subjects of an execution, empty until one is rejected. */
+const denialsOf = (executionId: string): Set<string> => {
+  const known = denials.get(executionId)
+  if (known !== undefined) return known
+  const fresh = new Set<string>()
+  denials.set(executionId, fresh)
+  return fresh
+}
+
+/**
  * The key an Allow always on a call grants: the flow and the card's `always`
  * pattern, `bash echo *` for `echo one`, so a later `rm -rf` asks again.
  * What the app shows on the card is what the answer covers.
+ *
+ * `undefined` when the card offers no pattern, which is a bash call whose
+ * subject is program text rather than a command line: nothing about it can
+ * be generalised, so Allow always covers that one call and no other.
  *
  * @param directory the served directory, which the card's input is relative to
  * @param flow the flow the call asked for
@@ -355,8 +402,28 @@ const grantKey = (sessionID: string, key: string): string => `${sessionID}\u0000
  * @category constructors
  * @since 1.0.0
  */
-export const alwaysKey = (directory: string, flow: string, input: Schema.Json): string =>
-  `${flow} ${Projection.permissionPatterns(flow, Projection.toolInput(directory, flow, input)).always[0]}`
+export const alwaysKey = (directory: string, flow: string, input: Schema.Json): string | undefined => {
+  const pattern = Projection.permissionPatterns(flow, Projection.toolInput(directory, flow, input)).always[0]
+  return pattern === undefined ? undefined : `${flow} ${pattern}`
+}
+
+/**
+ * What a call's card shows as its subject: the command line of a bash call,
+ * the program of a script-form one, the file of an edit. Two calls with the
+ * same subject ask the person the same question, which is what makes a
+ * second ask of a rejected one a nag rather than a new decision.
+ *
+ * @param directory the served directory, which the card's input is relative to
+ * @param flow the flow the call asked for
+ * @param input the call's input
+ * @category conversions
+ * @since 1.0.0
+ */
+export const cardSubject = (directory: string, flow: string, input: Schema.Json): string =>
+  Projection.permissionPatterns(flow, Projection.toolInput(directory, flow, input)).patterns[0]
+
+/** The key a rejected subject is remembered under for the turn. */
+const deniedKey = (flow: string, subject: string): string => `${flow} ${subject}`
 
 /**
  * The message of a failure: an error's own, or the `message` of the JSON
@@ -528,17 +595,20 @@ export const layer = (options: Options) =>
     const authorize = (instance: FlowRuntime.FlowInstance["Service"], sessionID: string) => (call: Cell.Call) =>
       Effect.gen(function*() {
         if (!asks.has(call.flowName)) return
+        // What the card offered, and nothing wider. Every flow but bash offers
+        // its whole self, so its own key is `<flow> *`; a `bash *` row can only
+        // come from a database written before the bash card stopped offering
+        // one, and it now matches no bash call at all.
         const always = alwaysKey(directory, call.flowName, call.input)
-        // A card that showed `*` (or a park re-driven with no stored card)
-        // granted the whole flow.
-        if (
-          grants.always.has(grantKey(sessionID, always)) ||
-          grants.always.has(grantKey(sessionID, `${call.flowName} *`))
-        ) return
+        if (always !== undefined && grants.always.has(grantKey(sessionID, always))) return
         const id = requestID(instance.executionId, call.identity)
         if (grants.once.has(id) || grants.denied.has(id)) return
+        const subject = cardSubject(directory, call.flowName, call.input)
+        // The same question, already answered no in this turn: the binding
+        // settles it as that refusal instead of parking the card again.
+        if (denialsOf(instance.executionId).has(deniedKey(call.flowName, subject))) return
         const running = executions.get(instance.executionId)
-        if (running !== undefined) running.parked = { requestID: id, flow: call.flowName, always }
+        if (running !== undefined) running.parked = { requestID: id, flow: call.flowName, subject, always }
         yield* Effect.provideService(
           FlowRuntime.annotateWaiting({ reason: "approval", token: id }),
           FlowRuntime.FlowInstance,
@@ -590,7 +660,13 @@ export const layer = (options: Options) =>
               engine: yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>(),
               evaluator: yield* Effect.context<Evaluator.Evaluator>()
             }
-            const rejected = (call: Cell.Call) => grants.denied.has(requestID(instance.executionId, call.identity))
+            const refusal = (call: Cell.Call): string | undefined => {
+              if (grants.denied.has(requestID(instance.executionId, call.identity))) return deniedMessage(call.flowName)
+              const subject = cardSubject(directory, call.flowName, call.input)
+              return denialsOf(instance.executionId).has(deniedKey(call.flowName, subject))
+                ? repeatedDenialMessage(call.flowName, subject)
+                : undefined
+            }
             let output = ""
             yield* agent.run({
               contextWindowTokensFor: SeatResolver.contextWindowResolver(seats),
@@ -598,7 +674,7 @@ export const layer = (options: Options) =>
               seat,
               prompt: task(input),
               registry,
-              flows: flowsOf(services).map((source) => refusing(source, rejected)),
+              flows: flowsOf(services).map((source) => refusing(source, refusal)),
               authorize: authorize(instance, payload.session),
               capabilityEnvelope: patterns(envelope),
               limits,
@@ -748,6 +824,7 @@ export const layer = (options: Options) =>
             if (outcome._tag === "suspended") return
             sessions.delete(running.input.sessionID)
             executions.delete(running.input.messageID)
+            denials.delete(running.input.messageID)
             yield* Effect.ignoreCause(stored.settleTurn(running.input.messageID))
           })
 
@@ -850,13 +927,19 @@ export const layer = (options: Options) =>
                 message: `Permission ${input.permissionID} is not pending`
               })
             }
-            const grant: Store.Grant = input.response === "always"
-              ? { sessionID: input.sessionID, kind: "always", key: running.parked.always }
+            const pattern = running.parked.always
+            // Allow always on a card that offered no pattern buys the one
+            // call it answered: there is nothing to generalise it to.
+            const grant: Store.Grant = input.response === "always" && pattern !== undefined
+              ? { sessionID: input.sessionID, kind: "always", key: pattern }
               : {
                 sessionID: input.sessionID,
-                kind: input.response === "once" ? "once" : "reject",
+                kind: input.response === "reject" ? "reject" : "once",
                 key: input.permissionID
               }
+            if (input.response === "reject") {
+              denialsOf(running.input.messageID).add(deniedKey(running.parked.flow, running.parked.subject))
+            }
             remember(grant)
             yield* Effect.ignoreCause(stored.putGrant(grant))
             running.parked = undefined
@@ -919,7 +1002,15 @@ export const layer = (options: Options) =>
                 const pending = yield* Effect.orDie(stored.listPermissions(turn.sessionID))
                 const request = pending.find((candidate) => candidate.id === token)
                 const flow = request?.permission ?? "bash"
-                running.parked = { requestID: token, flow, always: `${flow} ${request?.always[0] ?? "*"}` }
+                const pattern = request?.always[0]
+                // No stored card means no pattern to generalise: an answer to
+                // this park covers the call it parked, and nothing else.
+                running.parked = {
+                  requestID: token,
+                  flow,
+                  subject: request?.patterns[0] ?? "*",
+                  always: pattern === undefined ? undefined : `${flow} ${pattern}`
+                }
                 continue
               }
               yield* Effect.forkIn(drive(running, "resume"), scope)

@@ -23,6 +23,7 @@ import * as EngineDriver from "../src/EngineDriver.ts"
 import * as Events from "../src/Events.ts"
 import * as Health from "../src/Health.ts"
 import * as Ids from "../src/Ids.ts"
+import * as Projection from "../src/Projection.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
 import * as Turns from "../src/Turns.ts"
@@ -111,6 +112,17 @@ const bashCell = (command: string): string =>
 console.log(JSON.stringify(r))
 ctx.done(r.ok === false ? "refused " + r.error.code : "ran " + r.stdout.trim())`
 
+/** A hermetic call the cell writes as program text, the form that has no first word. */
+const scriptCell = (script: string): string =>
+  `const r = await ctx.call("bash", { mode: "hermetic", script: ${JSON.stringify(script)}, reads: [], writes: [] })
+console.log(JSON.stringify(r))
+ctx.done(r.ok === false ? "refused " + r.error.code : "ran " + r.stdout.trim())`
+
+/** A cell that runs a command and does not finish the turn, so the next frame runs. */
+const nagCell = (command: string): string =>
+  `const r = await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
+console.log("tried " + JSON.stringify(r))`
+
 const doneCell = `ctx.done("done")`
 
 const recorder = () => {
@@ -142,6 +154,29 @@ const answer = (events: ReadonlyArray<AgentEvent.AgentEvent>): string =>
 
 const permissionOf = (events: ReadonlyArray<AgentEvent.AgentEvent>): string =>
   (events.find((event) => event._tag === "permission-required") as AgentEvent.PermissionRequired).request.requestId
+
+/**
+ * The distinct permission cards a turn asked for. The parked call is
+ * announced again when the resumed drive reaches it, under the same request
+ * id, and the app updates the one card: what the person answered is one
+ * question, so the ids are what count here, not the events.
+ */
+const cards = (events: ReadonlyArray<AgentEvent.AgentEvent>): Array<AgentEvent.PermissionRequired> => {
+  const seen = new Set<string>()
+  return events.filter((event): event is AgentEvent.PermissionRequired => {
+    if (event._tag !== "permission-required" || seen.has(event.request.requestId)) return false
+    seen.add(event.request.requestId)
+    return true
+  })
+}
+
+/** The card the app would show for a park: what the person is asked to approve. */
+const card = (directory: string, park: AgentEvent.PermissionRequired): Record<string, unknown> =>
+  Projection.toolInput(
+    directory,
+    "bash",
+    (park.request.meta as { readonly input: Parameters<typeof Projection.toolInput>[2] }).input
+  )
 
 const directories: Array<string> = []
 const scratch = (): string => {
@@ -349,8 +384,90 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
       { sessionID: "ses_b", kind: "reject", key: permissionOf(other.events) }
     ])
     expect(EngineDriver.alwaysKey(directory, "bash", { command: "  cat package.json" })).toBe("bash cat *")
-    expect(EngineDriver.alwaysKey(directory, "bash", { command: "" })).toBe("bash *")
+    // A bash call no pattern can describe buys nothing, so there is no key.
+    expect(EngineDriver.alwaysKey(directory, "bash", { command: "" })).toBeUndefined()
     expect(EngineDriver.alwaysKey(directory, "read", { path: `${directory}/a.txt` })).toBe("read *")
+  })
+
+  it("shows a script-form call its program, and Allow always on it covers that one call", async () => {
+    const directory = scratch()
+    const first = recorder()
+    const again = recorder()
+    const other = recorder()
+    script.replies = [scriptCell("echo one"), scriptCell("echo one"), bashCell("echo two")]
+    const grants = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_p", "msg_p"), first.sink)
+        // The person answers the strongest answer the card offers.
+        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(first.events), response: "always" })
+        // The same program, and an unrelated command: neither is covered.
+        yield* driver.start(input("ses_p", "msg_q"), again.sink)
+        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(again.events), response: "once" })
+        yield* driver.start(input("ses_p", "msg_r"), other.sink)
+        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(other.events), response: "once" })
+        return yield* store.listGrants("ses_p")
+      }))
+    // What the person was asked: the interpreter and the program, never a blank
+    // line, and the program itself on the card.
+    const asked = card(directory, cards(first.events)[0]!)
+    expect(asked["command"]).toBe("bash script: echo one")
+    expect(asked["script"]).toBe("echo one")
+    expect(Projection.permissionPatterns("bash", asked)).toEqual({
+      patterns: ["bash script: echo one"],
+      always: []
+    })
+    // The card offered no pattern, so `always` bought nothing: it is recorded
+    // as the one call it answered, and both later calls ask again.
+    expect(EngineDriver.alwaysKey(directory, "bash", { mode: "hermetic", script: "echo one", reads: [], writes: [] }))
+      .toBeUndefined()
+    expect(grants).toEqual([
+      { sessionID: "ses_p", kind: "once", key: permissionOf(first.events) },
+      { sessionID: "ses_p", kind: "once", key: permissionOf(again.events) },
+      { sessionID: "ses_p", kind: "once", key: permissionOf(other.events) }
+    ])
+    expect(answer(first.events)).toBe("ran one")
+    expect(answer(again.events)).toBe("ran one")
+    expect(answer(other.events)).toBe("ran two")
+  })
+
+  it("asks once for a command the person denied, and answers the re-ask itself", async () => {
+    const directory = scratch()
+    const log = recorder()
+    // Two frames in a row run the same command, which is what the live drive
+    // did after its `pytest -q` was rejected, and then one the person allows.
+    script.replies = [nagCell("echo denied"), nagCell("echo denied"), bashCell("echo allowed")]
+    const grants = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_n", "msg_n"), log.sink)
+        yield* driver.permission({
+          sessionID: "ses_n",
+          permissionID: cards(log.events)[0]!.request.requestId,
+          response: "reject"
+        })
+        yield* wait(() => cards(log.events).length === 2)
+        yield* driver.permission({
+          sessionID: "ses_n",
+          permissionID: cards(log.events)[1]!.request.requestId,
+          response: "once"
+        })
+        return yield* store.listGrants("ses_n")
+      }), { maxFrames: 8 })
+    // The person was asked twice: once for `echo denied`, once for the command
+    // that came after it. The repeat of the rejected one never reached them.
+    expect(cards(log.events).length).toBe(2)
+    expect(card(directory, cards(log.events)[0]!)["command"]).toBe("echo denied")
+    expect(card(directory, cards(log.events)[1]!)["command"]).toBe("echo allowed")
+    expect(printed(log.events)).toContain(EngineDriver.repeatedDenialMessage("bash", "echo denied"))
+    expect(EngineDriver.repeatedDenialMessage("bash", "echo denied")).toBe(
+      "permission_denied: the person already rejected `echo denied` in this turn, so this bash call was refused without asking them again. Do not call it a third time: do the work another way, or say what you would have run."
+    )
+    expect(EngineDriver.cardSubject(directory, "bash", { mode: "unhermetic", command: "echo denied" }))
+      .toBe("echo denied")
+    expect(answer(log.events)).toBe("ran allowed")
+    expect(grants).toEqual([
+      { sessionID: "ses_n", kind: "reject", key: cards(log.events)[0]!.request.requestId },
+      { sessionID: "ses_n", kind: "once", key: cards(log.events)[1]!.request.requestId }
+    ])
   })
 
   it("reports a seat the provider refused with the seat, the code, the status, and the provider's words", async () => {
@@ -772,7 +889,9 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(answer(second.events)).toBe("scripted")
     expect(secondOther.outcomes).toEqual([{ _tag: "completed" }])
     expect(answer(secondOther.events)).toBe("ran also")
-    expect(grants).toEqual([{ sessionID: "ses_o", kind: "always", key: "bash *" }])
+    // The card was never stored, so this park offered no pattern: the answer
+    // covers the call it parked and grants nothing wider than that.
+    expect(grants).toEqual([{ sessionID: "ses_o", kind: "once", key: otherRequest }])
   })
 
   it("lets the engine re-drive a released turn on its own, then settles it at the next boot", async () => {

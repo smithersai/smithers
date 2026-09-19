@@ -255,7 +255,7 @@ classify — Ask Jev typed questions about any JSON state: boolean, choice (name
 <tr><td><code>POST /api/session/:id/interrupt</code></td><td>Interrupts the run fiber; <code>session.execution.interrupted</code>.</td></tr>
 <tr><td><code>POST /api/session/:id/rename</code> / <code>archive</code></td><td>Updates the store; rename keeps the dot prefix.</td></tr>
 <tr><td><code>GET /api/session/:id/message</code></td><td>From the projected message store; cursor = message id.</td></tr>
-<tr><td><code>POST /api/session/:id/permission/:requestID/reply</code></td><td><code>once</code> grants the call; <code>always</code> installs a grant for the flow and pattern for the session; <code>reject</code> fails the call with <code>permission_denied</code> and the cell continues. Then the parked execution is resumed.</td></tr>
+<tr><td><code>POST /api/session/:id/permission/:requestID/reply</code></td><td><code>once</code> grants the call; <code>always</code> installs a grant for the flow and pattern for the session, or, when the card showed no pattern, for that one request; <code>reject</code> fails the call with <code>permission_denied</code>, remembers the subject for the turn, and the cell continues. Then the parked execution is resumed.</td></tr>
 <tr><td><code>POST /api/session/:id/question/:requestID/reply</code></td><td>Steers the text into the parked run and resumes it.</td></tr>
 <tr><td><code>GET /api/event</code></td><td>SSE; first event <code>server.connected</code>; heartbeat comment every 15 s; events for every session of the directory.</td></tr>
 <tr><td>CORS</td><td>Allow <code>https://*.opencode.ai</code>, <code>http://localhost:*</code>, <code>http://127.0.0.1:*</code>, plus <code>--cors</code>.</td></tr>

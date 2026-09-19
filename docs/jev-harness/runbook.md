@@ -78,7 +78,11 @@ The dot sits in front of the session title. One Jev evaluation runs per frame, f
 
 **Allow once** answers this one call. **Allow always** grants for the rest of the session, and the grant is stored, so it survives a restart of the server.
 
-What "always" covers depends on the flow. For `bash` it is the first word of the command: allowing `ls -la` always allows every `ls` in that session, and nothing else. For every other flow it is the whole flow: allowing one `write` always allows every `write` in that session. Grants are per session, so a new session asks again.
+What "always" covers depends on the flow. For `bash` it is the first word of the command: allowing `ls -la` always allows every `ls` in that session, and nothing else. A command that runs inside a container covers that container only, so allowing `pytest` in `ci` never allows `pytest` on your machine. For every other flow it is the whole flow: allowing one `write` always allows every `write` in that session. Grants are per session, so a new session asks again.
+
+A `bash` call is not always a command line. The run can also hand an interpreter a program on standard input, and such a call has no first word to generalise from. Its card names the interpreter and shows the program, for example `bash script: node -e 'console.log(1)'` with the program itself beside it, and it offers no "always" at all: whichever button you press, your answer covers that one call. No answer to a `bash` card ever grants the whole shell.
+
+**Reject** answers the call and the turn. When a later frame asks for the same subject again, the server answers it with the refusal itself rather than asking you a second time, and the run reads `the person already rejected ...`. A new turn asks again, because the answer was about this one.
 
 ## Stop and Ctrl-C
 
