@@ -114,7 +114,7 @@ export type ModelCode = (typeof MODEL_CODES)[number]
  * package that starts spelling one of these codes tomorrow reds that suite
  * rather than reaching a person as somebody else's sentence.
  */
-export const SHARED_CODES: Readonly<Record<string, ReadonlyArray<string>>> = {
+export const SHARED_CODES = {
   engine_failed: ["/harness/HarnessError", "@smthrs/opencode/DriverError"],
   invalid_request: ["flows/model/ModelError", "flows/scorers/ScorerError", "@smthrs/sync/SyncError", "coding/Error"],
   rate_limited: ["flows/model/ModelError", "@smthrs/std/StdError", "@smthrs/time-travel/TimeTravelError"],
@@ -131,13 +131,17 @@ export const SHARED_CODES: Readonly<Record<string, ReadonlyArray<string>>> = {
     "@smthrs/time-travel/TimeTravelError",
     "@smthrs/step-cache/CacheStoreError"
   ]
-}
+} as const satisfies Readonly<Record<string, ReadonlyArray<string>>>
 
-/** One member of {@link SHARED_CODES}. */
+/** One code {@link SHARED_CODES} holds. */
 export type SharedCode = keyof typeof SHARED_CODES
 
-/** A code exactly one failure vocabulary in this repo spells, so the string does identify its author. */
-export type RunCauseCode = Exclude<HarnessCode | ModelCode, "engine_failed" | "invalid_request" | "rate_limited" | "unknown">
+/**
+ * A code exactly one failure vocabulary in this repo spells, so the string
+ * does identify its author. Derived from {@link SHARED_CODES} rather than
+ * restated, so removing a code from there is what opens a row for it.
+ */
+export type RunCauseCode = Exclude<HarnessCode | ModelCode, SharedCode>
 
 /** Whether {@link SHARED_CODES} holds this code, so no sentence here may claim it. */
 export const isSharedCode = (code: string): boolean => Object.hasOwn(SHARED_CODES, code)
