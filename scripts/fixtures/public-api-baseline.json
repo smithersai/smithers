@@ -236,7 +236,7 @@
         "Checkpointed.d.ts": "e2c2bf333e3ff3285316738311a3edbcaa59990f976ef0a62c084323a096eb77",
         "ChildFlows.d.ts": "92064f6baf38d7276a83da5eeb752af68a9881e16a66f1fb6bf82927db4f8fc2",
         "EngineChildren.d.ts": "8a0ff15f1630861a21506bacbe75607c08a8f09cebc59b4a3cfd102acb90ba30",
-        "EventSink.d.ts": "05089e6ce7569d58a45b0a7621480294cfa09f24c19803c5f4deada11e1169ba",
+        "EventSink.d.ts": "f3259c66c4f2d2db533dc5ce681faca7eb4f4da3f30aa3a37a9fc1e3443413a1",
         "FlowEngineLike.d.ts": "1307aa242335121592f7c28bee862902af6c865b5cce1eaed5a4d9171fb076cc",
         "FlowStore.d.ts": "83b66f1a78520e92fa8475343420219fc1954c21e5114fe89d03975f89094aae",
         "InMemoryWorkspaceSandbox.d.ts": "c2bfbb30d9569ad046dfce3e21bd437e1b6580d3d637af41effeaf37ce7f5494",
@@ -252,7 +252,8 @@
         "internal/AgentOutcome.d.ts": "6745af6e2282503553c62574ad7ac9d927eedb9a3c4c79adc300e7bf85ee9e9b",
         "internal/FailureJson.d.ts": "d773aaa8a05693eb7bc51924b515d551b7299d3eb0f9979e3708383c0ccf99a6",
         "internal/FailureSummary.d.ts": "a84d1f32bddf4258b6e5c8f14004c34c849410bcf28e3309dd4f77b7a78753a0",
-        "internal/FlowEngineLike.d.ts": "504ace36df9cddab22eafb3c188f0d93a8199d0ce114797056c44195a7d0167a"
+        "internal/FlowEngineLike.d.ts": "504ace36df9cddab22eafb3c188f0d93a8199d0ce114797056c44195a7d0167a",
+        "internal/StepTrace.d.ts": "423a783a767fb2f84395894ae6932481919a865d163b15455acbe9a075ca6ee7"
       }
     },
     "@smthrs/artifacts": {
@@ -3076,6 +3077,7 @@
         "internal/RunListingError.d.ts": "04a60dfa6e49bd93ef94282f707e05959a598f4b214f8d8997aab4190cdfecbc",
         "internal/RuntimeGraph.d.ts": "2cf1056575304ceb1df9aed1e7926cbf3fc6dfb386768c3dda839e750a00ac7c",
         "internal/SandboxedExecution.d.ts": "e2ec6ecab7b723950e9eb76f70c70156723287ae6412fc07b4d0f7b638490e2a",
+        "internal/StepFacts.d.ts": "854f07dd79d7237908cd2389b97be0c0e6aee3adcb4d824029801acab8fd091c",
         "internal/TypedEvents.d.ts": "e9bbab2dd7ba442b9ec87aecca1958d601f6295514375e715ada4775afe4ba2a",
         "migrations/0001_initial.d.ts": "b88df4e32d8281b8de12ff56c95a604c5329e689bd90ad21cd9da25a2cb4443a",
         "migrations/0002_selection_store.d.ts": "52d92cdb9358c58a31b338f45f9c9ae4c9968e0e3ada0116938aefb63f9f3427",
@@ -3734,7 +3736,7 @@
         }
       },
       "declarations": {
-        "Diagnosis.d.ts": "ded54b03cd9fe967dd3444065533761643608f6b4440b61682e68385ac6ac544",
+        "Diagnosis.d.ts": "bc85966b1e3961ac3c00c769dc9d649a6dcb7b5c78d6ec077c4afe7952553637",
         "GatewayError.d.ts": "9ff82f195f4b7d059c3e85987a1a8c1acbcff12e79b4120bd67442e16e8ad1ed",
         "GatewayProjection.d.ts": "2b7d620657882eced1ec4edc1de473a846a6ddd860b0a3a730a274ae13f09faf",
         "GatewayRpcs.d.ts": "70f6aee884b39f340d5b502c84596e57e5f2ffdd9df9ed692c241f4a562e912f",
@@ -3745,6 +3747,7 @@
         "bun/BunGateway.d.ts": "671b6609c8531de96be591bb3c0de3195766b7b9ebcca22009f6a95e77016019",
         "index.d.ts": "4074144bfd6e7671c9b7adf26450ec2c67df6c4b5d833ce6c72be2db60093932",
         "internal/NativeGateway.d.ts": "2fb4588357da13a3f4793e2f52a5e86e78ec3de3007717fc0c1d557ea1d8214a",
+        "internal/callEvents.d.ts": "6f0862c499c9822e8b3e530650cb008160bdbe78062b1af39ba9579851cda61e",
         "node/NodeGateway.d.ts": "04648c5cc19c6d4b8719906a144f1209c78b1218dd5c62cd21803917cc816b3d",
         "test/TestSuperviseRuntime.d.ts": "bd86fe17643d4353c31356da1c80a44a6dcf7245c63e1d3befeb518d66217bae"
       }
@@ -4046,7 +4049,7 @@
         }
       },
       "declarations": {
-        "AgentEvent.d.ts": "ebbdd30f8747b6cbd8158813554369ca7b6365ec1df82e9f46cb33ba871c9dd3",
+        "AgentEvent.d.ts": "aea2a71bdb731b82b759570eef6f390146b6991d66570751a2b4f802d17b0934",
         "CallLedger.d.ts": "b59a2f50d148be954c0de1fba19139b58828e8308c8d0d7dab2accaaedf4b73f",
         "Cell.d.ts": "4ccac9ef72ccf2d116fff3a91c62d1b5b26820cc3a6282a2a9cdae3bc1427459",
         "CellCalls.d.ts": "ed3f2ea1ad2ed3760773daad392c505bbf3b53b97d23160dc678ff72004e4af1",
@@ -4795,7 +4798,8 @@
         "RedactedLogger.d.ts": "42d215017c09881e48285d3085ebee00f0b42de621a3c9f7ff6190a40c57f904",
         "Redaction.d.ts": "24a85521eecc648a2aaf32785e88406f9ec4689e6bfa85dcebec86e731601c2b",
         "SqlJournal.d.ts": "aa5fc8373791a06b8e1826f84ec1942bc62b7a6f64af7c176f5cfbdf60b566b3",
-        "index.d.ts": "fec64279024d2f424c5dd5babea5c6e3a4a577771fa0f6285c9cba9d606f761b",
+        "StepFact.d.ts": "45a5f3f981f56f2eead5955489156ec6ec73bf8950bf89929f6cdb03b3be9d72",
+        "index.d.ts": "d2a2dea8859d1373d23950b8b842b1dae0f93fab66612de74a7f6da32bcd8a86",
         "internal/startupIndex.d.ts": "8062243bf0dbbaf153ffd4bd11fbc7131bece5ff82e15d05430f8aebef801948",
         "migrations/0001_initial.d.ts": "32322f9b15500ebdac2092e3f4f1c715c86ce4b9aacc9a75ec8462c03567abf8",
         "migrations/0002_checkpoints.d.ts": "c8a4342d52fab3aa1bff3da30c998d693a9ee33f28f4ef6434b1fae83c45da51",

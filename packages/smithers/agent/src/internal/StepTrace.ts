@@ -1,10 +1,17 @@
-/** Source checkpoints for one native agent dispatch. @since 1.0.0 */
+/**
+ * Source checkpoints for one native agent dispatch.
+ * @since 1.0.0
+ */
 import * as Digest from "@smthrs/core/Digest"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { HarnessError } from "@smthrs/harness/HarnessError"
-import { Journal, JournalEvent, StepFact } from "@smthrs/journal"
-import { Clock, Context, Crypto, Effect, Schema } from "effect"
+import { type Journal, JournalEvent, StepFact } from "@smthrs/journal"
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
+import * as Crypto from "effect/Crypto"
+import * as Effect from "effect/Effect"
+import type * as Schema from "effect/Schema"
 import { trace, traceIdentity } from "../AgentSession.ts"
 import type * as EventSink from "../EventSink.ts"
 

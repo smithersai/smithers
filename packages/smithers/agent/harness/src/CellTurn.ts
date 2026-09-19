@@ -688,7 +688,7 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    * the silence this package refuses; what it cannot be handed is a second
    * demand. See `Frame.judgeCompletion`.
    */
-  demandedFrame: Schema.optionalKey(NonNegativeSafeInt),
+  demandedFrame: Schema.optional(NonNegativeSafeInt),
   /**
    * Whether a human can answer this run, which is what makes a park honorable.
    *
