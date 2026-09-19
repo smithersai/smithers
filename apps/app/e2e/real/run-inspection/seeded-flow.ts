@@ -6,7 +6,6 @@ import { cloudRepoPath } from "../repositories-github/production"
 export const SEEDED_FLOW = "timeline-probe"
 export const FAILED_FLOW = "timeline-probe-failed"
 export const MARKER_TEST = "timeline-marker.test.ts"
-export const HOST_HASH_FILE = "timeline-host-sha.txt"
 
 const flowText = (failure: boolean): string => [
   "---",
@@ -40,6 +39,33 @@ export const readWorkspaceText = async (page: Page, request: APIRequestContext, 
   return body.content as string
 }
 
+/** Measure after resume, using a new file so an earlier measurement cannot satisfy the readback. */
+export const measureWorkspaceHost = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string): Promise<string> => {
+  const path = `timeline-host.${crypto.randomUUID()}.txt`
+  let sessionId: string | undefined
+  try {
+    await command(page, `/workspace.terminal ${workspaceId}`)
+    await closeComposer(page)
+    const terminal = page.getByTestId(`card-workspace-${workspaceId}`).locator('[data-testid^="terminal-"]')
+    await expect(terminal).toBeVisible({ timeout: 90000 })
+    sessionId = (await terminal.getAttribute("data-testid"))!.slice("terminal-".length)
+    await terminal.locator(".xterm-helper-textarea").focus()
+    await page.keyboard.insertText(`sha256sum /usr/local/bin/smithers-coding-host > ${path}`)
+    await page.keyboard.press("Enter")
+    let content = ""
+    await expect(async () => {
+      content = await readWorkspaceText(page, request, repo, workspaceId, path)
+      expect(content).toMatch(/^[0-9a-f]{64} /)
+    }).toPass({ timeout: 45000 })
+    return content.split(" ")[0]!
+  } finally {
+    if (sessionId !== undefined) {
+      const response = await realApi(page, request, "POST", `${cloudRepoPath(repo, "/workspace/sessions")}/${encodeURIComponent(sessionId)}/destroy`)
+      expect(response.status()).toBe(204)
+    }
+  }
+}
+
 /** Type real files through the PTY, then verify the bytes through the independent file API. */
 export const writeSeededFlow = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string, marker: string): Promise<void> => {
   const files = new Map([
@@ -62,9 +88,6 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
       await page.keyboard.press("Enter")
       await expect(async () => expect(await readWorkspaceText(page, request, repo, workspaceId, path)).toBe(content)).toPass({ timeout: 45000 })
     }
-    await page.keyboard.insertText(`sha256sum /usr/local/bin/smithers-coding-host > ${HOST_HASH_FILE}`)
-    await page.keyboard.press("Enter")
-    await expect(async () => expect(await readWorkspaceText(page, request, repo, workspaceId, HOST_HASH_FILE)).toMatch(/^[0-9a-f]{64} /)).toPass({ timeout: 45000 })
   } finally {
     if (sessionId !== undefined) {
       const destroyed = await realApi(page, request, "POST", `${sessions}/${encodeURIComponent(sessionId)}/destroy`)

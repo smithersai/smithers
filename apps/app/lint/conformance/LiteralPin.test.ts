@@ -80,6 +80,16 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "flows.harness.call-fact.v1",
+    file: "e2e/real/run-inspection/semantic.ts",
+    reason: "The native call envelope is declared in the packages/smithers harness and gateway, outside the app vocabulary; the independent oracle reads that wire format."
+  },
+  {
+    literal: "flows.harness.call-fact.v1",
+    file: "e2e/real/coverage/timeline-semantic.test.ts",
+    reason: "Native gateway call facts exercise the harness wire format outside the app vocabulary, including cursor positions before duplicate telemetry."
+  },
+  {
     literal: "retired-",
     file: "e2e/packaged/FixtureRun.ts",
     reason: "A temporary fixture-directory prefix used for atomic cleanup, not a persisted card id."

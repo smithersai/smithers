@@ -52,48 +52,84 @@ const renderedLines = async (trace: Locator) => (await readLines(trace)).map(lin
   node: line.node, number: line.number, verb: line.verb.join(""), subject: line.subject.join(""), result: line.result.join("")
 }))
 
-export const compareMeaning = async (card: Locator, trace: Locator, meaning: Meaning, status = meaning.status): Promise<void> => {
+export const compareMeaning = async (card: Locator, trace: Locator, meaning: Meaning, status = meaning.status) => {
   await expect.poll(async () => (await readBands(trace)).map(band => ({ phase: band.phase, seq: band.seq })), { timeout: 60000 }).toEqual(meaning.bands)
   expect(await renderedLines(trace)).toEqual(meaning.lines)
   expect((await readPins(trace)).map(pin => ({ seq: pin.seq, label: pin.label }))).toEqual(meaning.pins)
-  await expect(card.locator(".run-outcome-words")).toHaveText(status)
+  // Retain the failed verdict while allowing the owned run to finish and archive its edit and controls.
+  await expect.soft(card.locator(".run-outcome-words")).toHaveText(status)
   // Prompt subjects record no coding plan. Inventing a goal or a verified state fails here.
   await expect(card.locator("[data-goal]")).toHaveCount(meaning.goals.length)
+  // These subjects request no human decision. A stray action or condition is also a false header.
+  await expect(card.locator(".run-outcome-condition")).toHaveCount(0)
+  await expect(card.locator(".run-outcome").getByRole("button")).toHaveCount(0)
+  return { bands: await readBands(trace), lines: await renderedLines(trace), pins: await readPins(trace),
+    status: await card.locator(".run-outcome-words").textContent(), goals: [] }
 }
 
-/** Observe both an early frame and later calls while the gateway still says running. */
+/** One DOM read captures the header and strip at the same rendered journal boundary. */
+const liveDom = (card: Locator) => card.evaluate(element => {
+  const text = (node: Element | null) => (node?.textContent ?? "").trim()
+  return {
+    through: Number(element.querySelector('[role="slider"]')?.getAttribute("aria-valuemax") ?? -1),
+    status: text(element.querySelector(".run-outcome-words")),
+    phase: element.querySelector(".run-outcome")?.getAttribute("data-phase"),
+    bands: [...element.querySelectorAll("button[data-phase-band]")].map(node => ({ phase: node.getAttribute("data-phase-band"), seq: Number(node.getAttribute("data-seq")) })),
+    lines: [...element.querySelectorAll("button[data-frame-line]")].map(node => ({
+      node: node.getAttribute("data-frame-line"), number: text(node.querySelector(".run-line-number")),
+      verb: text(node.querySelector(".run-line-verb")), subject: text(node.querySelector(".run-line-subject")), result: text(node.querySelector(".run-line-result"))
+    })),
+    pins: [...element.querySelectorAll('.run-phase-pins button[data-flow]')].map(node => ({
+      seq: Number(node.getAttribute("data-flow-args")?.split(" ").at(-1)), label: text(node.querySelector("span"))
+    })),
+    goals: [...element.querySelectorAll("[data-goal]")].map(node => ({ id: node.getAttribute("data-goal"), state: node.getAttribute("data-state") })),
+    conditions: [...element.querySelectorAll(".run-outcome-condition")].map(text),
+    actions: [...element.querySelectorAll(".run-outcome button")].map(text)
+  }
+})
+
+/** Match each DOM snapshot to the independently read journal sequence, then require growth between them. */
 export const inspectRunning = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository,
   subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo): Promise<void> => {
-  const samples: unknown[] = []
+  type Sample = { journal: readonly JournalRow[]; expected: Meaning; rendered: Awaited<ReturnType<typeof liveDom>>; summary: ReturnType<typeof runSummary> }
+  const samples: Sample[] = []
+  const observe = async (previous?: Sample): Promise<Sample> => {
+    let sample: Sample | undefined
+    await expect.poll(async () => {
+      const journal = await readJournal(page, request, owned, subject.runId)
+      const expected = journalMeaning(journal)
+      const callCount = (meaning: Meaning) => meaning.frames.reduce((n, frame) => n + frame.calls.length, 0)
+      if (expected.frames.length <= (previous?.expected.frames.length ?? 0) ||
+        previous !== undefined && callCount(expected) <= callCount(previous.expected)) return false
+      const rendered = await liveDom(subject.card)
+      const through = Math.max(...journal.map(row => Number(row.sequence)))
+      if (rendered.through !== through) return false
+      const summary = runSummary(await gatewayCall(page, request, owned.repo, "Projection.Snapshot", {
+        selector: { _tag: "run-summary", runId: subject.runId }
+      }, owned.workspaceId))
+      expect(summary?.status, "the shared journal boundary is observed while running").toBe("running")
+      sample = { journal, expected, rendered, summary }
+      return true
+    }, { timeout: 180000, intervals: [250, 500, 1000] }).toBe(true)
+    return sample!
+  }
   try {
-    let first: readonly JournalRow[] = []
-    await expect.poll(async () => {
-      first = await readJournal(page, request, owned, subject.runId)
-      return first.filter(({ kind: journalKind }) => journalKind === "control.agent.turn-opened").length
-    }, { timeout: 120000, intervals: [300, 600, 1000] }).toBeGreaterThan(0)
-    const summary = async () => runSummary(await gatewayCall(page, request, owned.repo, "Projection.Snapshot", {
-      selector: { _tag: "run-summary", runId: subject.runId }
-    }, owned.workspaceId))
-    const firstSummary = await summary()
-    expect(firstSummary?.status, "inspection attaches before settlement").toBe("running")
-    await expect(phaseStrip(subject.trace)).toBeVisible()
-    await expect(subject.card.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
-    const earlyBands = await readBands(subject.trace)
-    samples.push({ stage: "first-frame", summary: firstSummary, journal: first, bands: earlyBands,
-      header: await subject.card.locator(".run-outcome-words").textContent() })
-    let later: readonly JournalRow[] = []
-    await expect.poll(async () => {
-      later = await readJournal(page, request, owned, subject.runId)
-      return later.filter(({ kind: journalKind }) => journalKind === "control.agent.cell-call-started").length
-    }, { timeout: 180000, intervals: [500, 1000] }).toBeGreaterThan(1)
-    const laterSummary = await summary()
-    expect(laterSummary?.status, "new calls arrive during inspection").toBe("running")
-    const expected = journalMeaning(later)
-    await compareMeaning(subject.card, subject.trace, expected)
-    expect(expected.frames.length, "a later frame extends the live strip").toBeGreaterThan(1)
-    expect(expected.bands).not.toEqual(earlyBands.map(band => ({ phase: band.phase, seq: band.seq })))
-    samples.push({ stage: "later-running-frame", summary: laterSummary, journal: later, expected,
-      bands: await readBands(subject.trace), header: await subject.card.locator(".run-outcome-words").textContent() })
+    const first = await observe()
+    samples.push(first)
+    const later = await observe(first)
+    samples.push(later)
+    for (const sample of samples) {
+      expect(sample.rendered.bands).toEqual(sample.expected.bands)
+      expect(sample.rendered.lines).toEqual(sample.expected.lines)
+      expect(sample.rendered.pins).toEqual(sample.expected.pins)
+      expect(sample.rendered.goals).toEqual(sample.expected.goals)
+      expect(sample.rendered.conditions).toEqual([])
+      expect(sample.rendered.actions).toEqual([])
+      expect.soft(sample.rendered.status).toBe(sample.expected.status)
+      expect(sample.rendered.phase).toBe("running")
+    }
+    expect(later.rendered.through).toBeGreaterThan(first.rendered.through)
+    expect(later.rendered.bands).not.toEqual(first.rendered.bands)
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-running.png") })
     await testInfo.attach("timeline-running", { path: testInfo.outputPath("timeline-running.png"), contentType: "image/png" })
   } finally { await attachProductionJson(testInfo, "timeline-live-observations", samples) }
@@ -108,16 +144,26 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
   const { trace, card } = subject, whole = journalMeaning(rows), later = requireLaterPhase(whole)
   const steps: unknown[] = []
   const at = async (seq: number, action: string) => {
-    await expect(trace.getByText(`At #${seq}`, { exact: true })).toBeVisible()
-    expect(await renderedLines(trace)).toEqual(journalMeaning(rows, seq).lines)
-    await expect(card.locator(".run-outcome-words")).toHaveText(whole.status)
+    const frame = [...whole.frames].reverse().find(frame => frame.opens <= seq)
+    const selected = frame === undefined ? `run:${subject.runId}` : `frame-${frame.frame}`
+    const current = [...whole.bands].reverse().find(band => band.seq <= seq)?.seq
+    const check = async () => {
+      await expect(trace.getByText(`At #${seq}`, { exact: true })).toBeVisible()
+      await expect(trace.getByRole("slider", { name: "Run position" })).toHaveAttribute("aria-valuenow", String(seq))
+      await expect(trace.locator(`button[data-trace-span="${selected}"]`)).toHaveAttribute("aria-pressed", "true")
+      expect(await renderedLines(trace)).toEqual(journalMeaning(rows, seq).lines)
+      await expect(card.locator(".run-outcome-words")).toHaveText(whole.status)
+      expect((await readBands(trace)).map(band => ({ phase: band.phase, seq: band.seq, reached: band.reached, current: band.current })))
+        .toEqual(whole.bands.map(band => ({ ...band, reached: String(band.seq <= seq), current: band.seq === current ? "location" : null })))
+    }
+    await check()
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(trace.getByText(`At #${seq}`, { exact: true })).toBeVisible()
-    expect(await renderedLines(trace)).toEqual(journalMeaning(rows, seq).lines)
-    expect((await readBands(trace)).map(band => ({ phase: band.phase, seq: band.seq }))).toEqual(whole.bands)
-    steps.push({ action, seq, persisted: true })
+    await check()
+    steps.push({ action, seq, selected, current, persisted: true })
   }
   try {
+    await press(trace.getByRole("button", { name: "Details", exact: true }), "Enter")
+    await expect(trace).toHaveAttribute("data-view", "timeline")
     await press(phaseStrip(trace).locator(`button[data-phase-band][data-seq="${whole.bands[0]!.seq}"]`), "Enter")
     await at(whole.bands[0]!.seq, "first band Enter")
     await press(phaseStrip(trace).locator(`button[data-phase-band][data-seq="${later.seq}"]`), "Space")
@@ -130,6 +176,8 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     }
     await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
+    await press(trace.getByRole("button", { name: "Timeline", exact: true }), "Enter")
+    await expect(trace).toHaveAttribute("data-view", "turns")
     const line = frameLines(trace).filter({ has: trace.page().locator('.run-line-subject', { hasText: "README.md" }) }).first()
     const node = await line.getAttribute("data-frame-line")
     await press(line, "Enter")
@@ -152,7 +200,10 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
       const member = cluster.getByRole("button").first()
       const seq = Number((await member.getAttribute("data-flow-args"))!.split(" ").at(-1))
       await summary.press("Tab"); await expect(member).toBeFocused(); await member.press("Enter")
-      await expect(summary).toBeFocused(); await at(seq, "cluster Enter/Escape/Space/Tab/Enter")
+      await expect(summary).toBeFocused()
+      await press(trace.getByRole("button", { name: "Details", exact: true }), "Enter")
+      await at(seq, "cluster Enter/Escape/Space/Tab/Enter")
+      await press(trace.getByRole("button", { name: "Timeline", exact: true }), "Enter")
     }
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await page.reload({ waitUntil: "domcontentloaded" })

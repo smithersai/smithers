@@ -37,6 +37,14 @@ const pathLabel = (names: string[]): string => names.length === 0 ? "" : `${base
 const subject = (call: Call): string => call.name === "apply_patch" ? pathLabel(paths(call)) :
   typeof call.input.path === "string" ? base(call.input.path) : word(call.input.command) || word(call.input.pattern) ||
   (Array.isArray(call.input.selection) ? call.input.selection.join(" ") : "")
+const activity = (call: Call, settled = false): string => {
+  const names: Record<string, readonly [string, string]> = {
+    read: ["Reading", "Read"], write: ["Writing", "Wrote"], edit: ["Editing", "Edited"], apply_patch: ["Editing", "Patched"],
+    bash: ["Running", "Ran"], test: ["Testing", "Tested"], grep: ["Searching", "Searched"], glob: ["Listing", "Listed"], ls: ["Listing", "Listed"]
+  }
+  const title = settled && call.outcome === "failure" ? `Failed ${call.name}` : names[call.name]![settled ? 1 : 0]
+  return `${title}${subject(call) ? ` ${word(call.input.path) || subject(call)}` : ""}`
+}
 const result = (call: Call): string => {
   if (call.outcome === "failure") return call.message ?? ""
   const value = call.result ?? {}
@@ -51,29 +59,60 @@ const result = (call: Call): string => {
   return ""
 }
 
+/** Read the existing version-one native call records independently of the UI normalizer. */
+const callRecords = (rows: readonly JournalRow[]): readonly JournalRow[] => {
+  const native = new Map<string, JournalRow>()
+  const key = (row: JournalRow): string | undefined => {
+    const { kind: journalKind } = row, p = fields(row.payload)
+    return (journalKind === READ || journalKind === RESULT) && typeof p.callId === "string" ? `${journalKind}:${p.callId}` : undefined
+  }
+  const decoded = rows.map<JournalRow>(row => {
+    const p = fields(row.payload)
+    if (p.eventType !== "flows.harness.call-fact.v1") return row
+    const fact = fields(p.payload), identity = fields(fact.identity)
+    if (word(row.kind) !== "control.engine.event" || p.version !== 1 || fact.version !== 1 ||
+      !/^cell-call-v1:[0-9a-f]{64}$/.test(word(fact.callId)) || identity.runId !== row.runId ||
+      typeof row.runId !== "string" || p.sourceSequence !== 0 ||
+      p.sourceId !== `call-fact-v1:${fact.callId}:${fact.phase}` || !["invoked", "settled"].includes(word(fact.phase))) {
+      throw new TimelineEvidenceError("unsupported-evidence", `Invalid native call record at #${row.sequence}.`)
+    }
+    const normalized = { ...row, kind: fact.phase === "invoked" ? READ : RESULT, payload: fact }
+    native.set(key(normalized)!, normalized)
+    return normalized
+  })
+  const seen = new Set<string>()
+  return decoded.flatMap(row => {
+    const id = key(row)
+    if (id === undefined) return [row]
+    if (seen.has(id)) return []
+    seen.add(id)
+    return [{ ...(native.get(id) ?? row), sequence: row.sequence }]
+  })
+}
+
 /** The bounded fixture uses standard filesystem calls and a direct bun test command. Unknown semantics fail closed. */
 export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinity): Meaning => {
-  const ordered = [...rows].filter(row => Number(row.sequence) <= cursor).sort((a, b) => Number(a.sequence) - Number(b.sequence))
+  const ordered = callRecords([...rows].filter(row => Number(row.sequence) <= cursor).sort((a, b) => Number(a.sequence) - Number(b.sequence)))
   const frames: Frame[] = [], open: Call[] = [], pins: Meaning["pins"] = []
   const written = new Map<Frame, { paths: string[]; pin: Meaning["pins"][number] }>()
-  let status = "Running"
+  let status = "Running", terminalStatus: string | undefined
   for (const row of ordered) {
     const p = fields(row.payload), seq = Number(row.sequence), frame = frames.at(-1), kind = word(row.kind)
     if (kind.includes("PreparePlan") || p.flowName === "coding/PreparePlan" || p.flowName === "coding/PrepareWithWiki" || fields(p.value).plan !== undefined) {
       throw new TimelineEvidenceError("unsupported-evidence", `Recorded plan at #${seq} needs a goal oracle; no goal claim was made.`)
     }
     if (kind === OPEN) { frames.push({ frame: frames.length + 1, opens: seq, calls: [], changed: false, blocked: false }); status = "Thinking" }
-    if (kind === "control.agent.cell-produced") status = "Running code"
+    if (kind === "control.agent.cell-produced" && open.length === 0) status = "Running code"
     if (kind === READ) {
       const name = word(p.flowName)
       if (name === "checkpoint") continue
       if (!Object.hasOwn(verbs, name)) throw new TimelineEvidenceError("unsupported-evidence", `No independent oracle for ${name} at #${seq}.`)
       const call: Call = { name, seq, input: fields(p.input), ...(typeof p.callId === "string" ? { id: p.callId } : {}) }
       frame?.calls.push(call); open.push(call)
-      const title = ({ read: "Reading", write: "Writing", edit: "Editing", apply_patch: "Editing", bash: "Running", test: "Testing", grep: "Searching", glob: "Listing", ls: "Listing" } as Record<string, string>)[name]!
-      status = `${title}${subject(call) ? ` ${word(call.input.path) || subject(call)}` : ""}`
+      status = activity(call)
     }
     if (kind === RESULT) {
+      if (p.outcome !== "success" && p.outcome !== "failure") throw new TimelineEvidenceError("unsupported-evidence", `Missing call outcome at #${seq}.`)
       const index = open.findIndex(call => typeof p.callId === "string" ? call.id === p.callId : call.name === p.flowName)
       if (index < 0) continue
       const call = open.splice(index, 1)[0]!
@@ -89,10 +128,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
           if (owner) written.set(owner, { paths: named, pin })
         }
       }
-      if (open.length === 0) {
-        const title = ({ read: "Read", write: "Wrote", edit: "Edited", apply_patch: "Patched", bash: "Ran", test: "Tested", grep: "Searched", glob: "Listed", ls: "Listed" } as Record<string, string>)[call.name]!
-        status = `${call.outcome === "failure" ? `Failed ${call.name}` : title}${subject(call) ? ` ${word(call.input.path) || subject(call)}` : ""}`
-      }
+      status = open.length === 0 ? activity(call, true) : activity(open.at(-1)!)
     }
     if (kind === "control.agent.mutation-observed" && p.mutated === true && frame) frame.changed = true
     if (kind === "control.agent.permission-required" && frame) { frame.blocked = true; pins.push({ seq, label: "permission" }) }
@@ -106,7 +142,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
     if (Object.hasOwn(notes, kind) && (kind !== "control.agent.claim-demanded" || p.demanded === true)) pins.push({ seq, label: notes[kind]! })
     if (kind === "control.agent.repeat-demanded") throw new TimelineEvidenceError("unsupported-evidence", `Repeat discipline at #${seq} needs a stall oracle.`)
     const terminal = new Map([["control.run.completed", "Finished."], ["control.run.failed", "Failed."], ["control.run.cancelled", "Cancelled."]]).get(kind)
-    if (terminal) { status = terminal; pins.push({ seq, label: kind.split(".").at(-1)! }) }
+    if (terminal) { terminalStatus = terminal; pins.push({ seq, label: kind.split(".").at(-1)! }) }
   }
   const bands: ExpectedBand[] = [], lines: ExpectedLine[] = []
   for (const frame of frames) {
@@ -117,7 +153,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
     if (call) lines.push({ node: `frame-${frame.frame}`, number: String(frame.frame),
       verb: verbs[call.name]![call.outcome === undefined ? 0 : call.outcome === "failure" ? 2 : 1], subject: subject(call), result: result(call) })
   }
-  return { frames, bands, pins: pins.sort((a, b) => a.seq - b.seq), lines, status, goals: [] }
+  return { frames, bands, pins: pins.sort((a, b) => a.seq - b.seq), lines, status: terminalStatus ?? status, goals: [] }
 }
 
 export const requireLaterPhase = (meaning: Meaning): ExpectedBand => {

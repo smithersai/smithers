@@ -21,7 +21,7 @@ import {
   waitForGatewayProcedure,
   workflowRpcPosts
 } from "./run-inspection/ui"
-import { awaitSeededFlow, FAILED_FLOW, HOST_HASH_FILE, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
+import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
 import { captureRevisions, enrichedEvidence } from "./run-inspection/revisions"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
 import { compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
@@ -249,7 +249,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
   capabilities: ["identity", "cloud"],
   coverage: [
     "action:workspace.view", "action:workspace.terminal", "action:workspace.suspend", "action:workspace.resume", "action:repo.select",
-    "action:flow.run", "action:runs.trace.select", "action:runs.trace.live",
+    "action:flow.run", "action:runs.trace.select", "action:runs.trace.live", "action:runs.trace.view",
     "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
     "dimension:real-provider", "dimension:real-pty", "dimension:keyboard", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
     "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor", "dimension:live-run",
@@ -261,15 +261,16 @@ workflowTest("a successful prompt run matches its journal while live and after k
   const { repo, workspaceId } = workflowRepo
   expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
-  const host = await captureRevisions(page, testInfo)
+  await captureRevisions(page, testInfo, "timeline-initial-revisions")
   const marker = fixtureInputText(`s16-timeline-${Date.now().toString(36)}`)
   await writeSeededFlow(page, request, repo, workspaceId!, marker)
-  const measuredHash = (await readWorkspaceText(page, request, repo, workspaceId!, HOST_HASH_FILE)).split(" ")[0]
-  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host })
-  expect(measuredHash, "the executing workspace contains the pinned host artifact").toBe(host.sha256)
   const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
   await restartWorkspaceHost(page, request, repo, workspaceId!)
   await awaitSeededFlow(page, request, repo, workspaceId!)
+  const host = await captureRevisions(page, testInfo)
+  const measuredHash = await measureWorkspaceHost(page, request, repo, workspaceId!)
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host, measuredAfterResume: true })
+  expect(measuredHash, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, SEEDED_FLOW, { args: marker }, testInfo)
@@ -283,8 +284,8 @@ workflowTest("a successful prompt run matches its journal while live and after k
     const expected = journalMeaning(rows)
     requireLaterPhase(expected)
     expect(expected.bands.map(band => band.phase)).toEqual(expect.arrayContaining(["researching", "implementing", "testing"]))
-    await compareMeaning(subject.card, subject.trace, expected)
-    await attachProductionJson(testInfo, "timeline-semantic-comparison", { expected, terminal })
+    const rendered = await compareMeaning(subject.card, subject.trace, expected)
+    await attachProductionJson(testInfo, "timeline-semantic-comparison", { expected, rendered, terminal })
     await inspectKeyboard(page, subject, rows, testInfo)
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-completed.png") })
     await testInfo.attach("timeline-completed", { path: testInfo.outputPath("timeline-completed.png"), contentType: "image/png" })
@@ -308,14 +309,15 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
   const { repo, workspaceId } = workflowRepo
   expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
-  const host = await captureRevisions(page, testInfo)
+  await captureRevisions(page, testInfo, "timeline-initial-revisions")
   await writeSeededFlow(page, request, repo, workspaceId!, fixtureInputText(`failure-${Date.now().toString(36)}`))
-  const measuredHash = (await readWorkspaceText(page, request, repo, workspaceId!, HOST_HASH_FILE)).split(" ")[0]
-  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host })
-  expect(measuredHash).toBe(host.sha256)
   const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
   await restartWorkspaceHost(page, request, repo, workspaceId!)
   await awaitSeededFlow(page, request, repo, workspaceId!)
+  const host = await captureRevisions(page, testInfo)
+  const measuredHash = await measureWorkspaceHost(page, request, repo, workspaceId!)
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host, measuredAfterResume: true })
+  expect(measuredHash, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, FAILED_FLOW, { args: "Observe the declared budget failure." }, testInfo)
@@ -326,13 +328,15 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
     await attachProductionJson(testInfo, "timeline-failed-readback", { repo, workspaceId, runId: subject.runId, terminal, before, after })
     expect(terminal.status).toBe("failed")
     expect(after).toBe(before)
-    expect(rows.some(({ kind: journalKind }) => journalKind === "control.run.failed")).toBe(true)
+    const failure = rows.find(({ kind: journalKind }) => journalKind === "control.run.failed")
+    expect(failure).toBeDefined()
+    expect((failure?.payload as Record<string, unknown>)?.cause, "the failed-run label requires the recorded budget cause").toMatch(/BudgetExceeded|ms budget/)
     const expected = journalMeaning(rows)
     expect(expected.frames.length).toBeGreaterThan(0)
     expect(expected.lines.length).toBeGreaterThan(0)
-    await compareMeaning(subject.card, subject.trace, expected)
+    const rendered = await compareMeaning(subject.card, subject.trace, expected)
     expect(expected.pins).toContainEqual(expect.objectContaining({ label: "failed" }))
-    await attachProductionJson(testInfo, "timeline-failed-semantic-comparison", { expected, terminal })
+    await attachProductionJson(testInfo, "timeline-failed-semantic-comparison", { expected, rendered, terminal })
   } finally {
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
