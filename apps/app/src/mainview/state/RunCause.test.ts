@@ -2,18 +2,9 @@ import { expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import * as ts from "typescript"
 import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
 import { ANSWERED_CODES, HARNESS_CODES, isSharedCode, MODEL_CODES, RUN_CAUSE_COPY, runCause, SHARED_CODES } from "./RunCause"
-
-/** The literal set a package declares, read from the declaration rather than copied. */
-const literals = (path: string, declaration: string): ReadonlyArray<string> => {
-  const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8")
-  const declared = new RegExp(`export const ${declaration} = Schema\\.Literals\\(\\[([\\s\\S]*?)\\]\\)`).exec(source)?.[1] ?? ""
-  return [...declared.matchAll(/"([a-z_]+)"/g)].map((match) => match[1]!)
-}
-
-const HARNESS = "../../../../../packages/smithers/agent/harness/src/HarnessError.ts"
-const MODEL = "../../../../../packages/smithers/agent/model/src/ModelError.ts"
 
 /*
  * The sweep. `failureSummary` prefixes the code of the innermost rendered
@@ -22,19 +13,25 @@ const MODEL = "../../../../../packages/smithers/agent/model/src/ModelError.ts"
  * first journal line. That shape is what this walk looks for, and the tag it
  * is declared under is the author the line does not carry.
  *
- * Nothing here is a list somebody maintains: the roots are walked, the classes
- * are read out of source, and a package that starts spelling one of the two
- * vocabularies' codes tomorrow changes the result of this function without
- * anyone editing it.
+ * Nothing here is a list somebody maintains, and nothing here matches source
+ * text. Four rounds of this file resolved a `code` field with regular
+ * expressions and four rounds missed a spelling the repo already used —
+ * a schema named in another file, `Data.TaggedError("tag")<{…}>`, an open code,
+ * `Schema.Literal("…")` singular, a code built by a helper that defaults it so
+ * no raise site ever writes one. Each miss was closed by adding a branch, and
+ * the next spelling beat the new branch too.
  *
- * Three shapes, because a class that declares a code in any of them can
- * journal it: a `code:` whose literals are written inline, a `code:` that
- * names a schema ANOTHER file declares (`librarian/ProviderUnavailable` is
- * `code: ModelErrorCode`, imported from `@smthrs/model`), and a `code:` left
- * open, whose codes are the literals its own `new` sites pass. Both spellings
- * of a tagged class count — `Schema.TaggedError<T>()("tag", {…})` and
- * `Data.TaggedError("tag")<{…}>` — since `failureSummary` reads the rendered
- * record, not the class.
+ * So this reads the language instead of the formatting. `ts.createSourceFile`
+ * parses every source in the repo, {@link taggedOf} finds a class extending a
+ * tagged-error base through its heritage clause, and {@link resolver} EVALUATES
+ * the `code` member — following identifiers to their declarations, imported
+ * names to the modules that export them, `export { X as Y }` through the
+ * rename, `Schema.Literal`/`Literals`/`Union` to their arguments, `.pipe` and
+ * `.pick` to their receiver, and a call to a helper this repo wrote into that
+ * helper's body with its parameters bound. A spelling nobody has invented yet
+ * resolves because the parser understands the language, not because someone
+ * anticipated it. Where the evaluation cannot close the set the class is open,
+ * and its codes are the literals its own `new` sites pass.
  *
  * Tests are not swept. A class declared inside a `*.test.ts` or a `test/`
  * directory never crosses a seam into a person's run journal, and two such
@@ -42,19 +39,12 @@ const MODEL = "../../../../../packages/smithers/agent/model/src/ModelError.ts"
  * otherwise take `model_failed`, `authentication` and `quota_exceeded` off
  * this table for failures no person can be shown.
  */
-const ROOT = fileURLToPath(new URL("../../../../../", import.meta.url))
-const ROOTS = ["packages", "flows", "apps"]
-const SKIP_DIR = /^(node_modules|dist|build|coverage|test|tests|__tests__|e2e|\.git|\.jj)$/
+const REPO = fileURLToPath(new URL("../../../../../", import.meta.url))
+/* Every root holding this repo's own TypeScript. `crates` is Rust, `docs` is
+ * prose, `patches` is diffs, and `node_modules` is somebody else's. */
+const ROOTS = ["apps", "evals", "examples", "factory", "flows", "packages", "scripts"]
+const SKIP_DIR = /^(node_modules|dist|coverage|out|\.git|\.jj|test|tests|__tests__|e2e)$/
 const SKIP_FILE = /\.(test|spec)\.tsx?$/
-const TAGGED =
-  /class\s+([A-Za-z_$][\w$]*)\s+extends\s+[\w$.]*TaggedError(?:<[^>]*>\(\)\(\s*"([^"]+)"\s*,\s*|\(\s*"([^"]+)"\s*\)\s*<\s*)\{/g
-const NAMED = /(?:^|\n)\s*(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*Schema\.Literals\(/g
-const NEW_SITE = /new\s+(?:[A-Za-z_$][\w$]*\.)*([A-Za-z_$][\w$]*)\s*\(\s*\{/g
-/* A field of the record itself, not a suffix of one: `{`, `,` and a line start all open a field,
- * and a `Data.TaggedError` type argument spells its fields `readonly`. */
-const CODE_FIELD = /(^|[\n,{])[\t ]*(?:readonly[\t ]+)?code:[\t ]*/
-const MESSAGE_FIELD = /(^|[\n,{])[\t ]*(?:readonly[\t ]+)?message:/
-const CODE_LITERAL = /"([a-z][a-z0-9_]*)"/g
 
 const sources = (dir: string, found: Array<string> = []): Array<string> => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -64,119 +54,321 @@ const sources = (dir: string, found: Array<string> = []): Array<string> => {
   return found
 }
 
-/** The text between the bracket at `open` and the one that closes it. */
-const bracketed = (source: string, open: number): string => {
-  const close = source[open] === "{" ? "}" : "]"
-  let depth = 0
-  for (let index = open; index < source.length; index++) {
-    if (source[index] === source[open]) depth++
-    else if (source[index] === close && --depth === 0) return source.slice(open + 1, index)
+const parse = (path: string, text: string): ts.SourceFile =>
+  ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+
+/** Past the wrappers that change a node's type and not its value. */
+const unwrap = (node: ts.Node): ts.Node => {
+  let at = node
+  for (;;) {
+    if (ts.isParenthesizedExpression(at) || ts.isAsExpression(at) || ts.isSatisfiesExpression(at) || ts.isNonNullExpression(at)) at = at.expression
+    else if (ts.isParenthesizedTypeNode(at)) at = at.type
+    else return at
   }
-  return ""
 }
 
-/** The literal set the `Schema.Literals(` call at `at` admits, or `undefined` when it is computed. */
-const literalsAt = (source: string, at: number): ReadonlyArray<string> | undefined => {
-  const paren = source.indexOf("(", at) + 1
-  const open = paren + source.slice(paren).search(/\S/)
-  if (source[open] === "[") return [...bracketed(source, open).matchAll(CODE_LITERAL)].map((match) => match[1]!)
-  const array = /^[A-Za-z_$][\w$]*/.exec(source.slice(open))?.[0]
-  const declared = array === undefined ? null : new RegExp(`(?:const|let) ${array}\\s*=\\s*\\[`).exec(source)
-  return declared === null ? undefined
-    : [...bracketed(source, source.indexOf("[", declared.index)).matchAll(CODE_LITERAL)].map((match) => match[1]!)
+/** The last name in `a.b.c`, which is the one a declaration is keyed by. */
+const name = (node: ts.Node): string | undefined => {
+  const at = unwrap(node)
+  if (ts.isIdentifier(at)) return at.text
+  if (ts.isPropertyAccessExpression(at)) return at.name.text
+  return undefined
 }
 
 /**
- * Every `Schema.Literals` set declared under a name anywhere in the sweep.
+ * Every top-level name a file binds, to EVERY node that defines it.
  *
- * A code schema is imported as often as it is declared in place —
- * `ProviderUnavailable` reuses `@smthrs/model`'s — so resolving a name only in
- * the file that uses it drops the class silently. Where one name is declared
- * twice with different literals, the union stands: over-crediting a class puts
- * a code in `SHARED_CODES`, which costs a sentence, and under-crediting it
- * lets a foreign raiser through, which costs a person a false one.
+ * A schema and its decoded type share a name by convention
+ * (`export const ModelErrorCode = …` beside
+ * `export type ModelErrorCode = typeof ModelErrorCode.Type`), so one node per
+ * name silently drops whichever is written second.
  */
-const declarations = (texts: ReadonlyMap<string, string>): ReadonlyMap<string, ReadonlySet<string>> => {
-  const named = new Map<string, Set<string>>()
-  for (const source of texts.values()) {
-    for (const declared of source.matchAll(NAMED)) {
-      const codes = literalsAt(source, declared.index + declared[0].length - 1)
-      if (codes !== undefined) named.set(declared[1]!, new Set([...(named.get(declared[1]!) ?? []), ...codes]))
-    }
+const bindings = (file: ts.SourceFile): Map<string, Array<ts.Node>> => {
+  const bound = new Map<string, Array<ts.Node>>()
+  const add = (bind: string, node: ts.Node) => bound.set(bind, [...(bound.get(bind) ?? []), node])
+  for (const statement of file.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.initializer !== undefined) add(declaration.name.text, declaration.initializer)
+      }
+    } else if (ts.isFunctionDeclaration(statement) && statement.name !== undefined) add(statement.name.text, statement)
+    else if (ts.isTypeAliasDeclaration(statement)) add(statement.name.text, statement.type)
   }
-  return named
+  return bound
 }
 
-/** Every code a `code:` field admits, or `undefined` when the field is not a closed set. */
-const admitted = (
-  source: string,
-  expression: string,
-  at: number,
-  named: ReadonlyMap<string, ReadonlySet<string>>
-): ReadonlyArray<string> | undefined => {
-  const trimmed = expression.trimStart()
-  if (trimmed.startsWith("Schema.Literals(")) return literalsAt(source, source.indexOf("Schema.Literals(", at))
-  /* A named schema: `code: ProviderErrorCode`. Anything with a call or a string in it is open. */
-  const name = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*/.exec(trimmed)?.[0]
-  if (name === undefined || /[("]/.test(trimmed.slice(0, name.length + 1))) return undefined
-  const local = new RegExp(`(?:const|let) ${name.split(".").at(-1)!}\\s*=\\s*Schema\\.Literals\\(`).exec(source)
-  if (local !== null) return literalsAt(source, local.index)
-  const shared = named.get(name.split(".").at(-1)!)
-  return shared === undefined ? undefined : [...shared]
+/** Where a name can be read: this file's own bindings, plus a call's arguments. */
+interface Scope {
+  readonly file: ts.SourceFile
+  readonly locals: ReadonlyMap<string, ReadonlyArray<ts.Node>>
+  readonly bound?: ReadonlyMap<string, { readonly node: ts.Node; readonly scope: Scope }>
+}
+
+const returned = (block: ts.Block): ts.Expression | undefined => {
+  for (const statement of block.statements) if (ts.isReturnStatement(statement)) return statement.expression
+  return undefined
 }
 
 /**
- * Every class name a `new <name>({ code: "…" })` anywhere in the sweep names,
- * to the literals its sites pass.
+ * An evaluator from a schema expression or a type to the string literals it
+ * admits, over the whole parsed repo.
  *
- * The fallback for a class whose `code` no declaration closes. `undefined`
- * from {@link admitted} used to mean "contributes nothing", which let an open
- * `code: Schema.String` spell an answered code at its raise site and say
- * nothing here.
+ * A name is resolved in this order: a parameter bound by the call being
+ * inlined, then this file's own declarations, then every module that exports
+ * it. The last step is a union rather than a single module because a code
+ * schema is imported as often as it is declared in place and the import
+ * specifier is not followed to disk. Where one name is exported twice with
+ * different literals the union stands: over-crediting a class puts a code in
+ * {@link SHARED_CODES}, which costs a sentence, and under-crediting it lets a
+ * foreign raiser through, which costs a person a false one.
  */
-const raised = (texts: ReadonlyMap<string, string>): ReadonlyMap<string, ReadonlySet<string>> => {
-  const codes = new Map<string, Set<string>>()
-  for (const source of texts.values()) {
-    for (const site of source.matchAll(NEW_SITE)) {
-      const fields = bracketed(source, site.index + site[0].length - 1)
-      const field = CODE_FIELD.exec(fields)
-      if (field === null) continue
-      const literal = /^"([a-z][a-z0-9_]*)"/.exec(fields.slice(field.index + field[0].length))
-      if (literal !== null) codes.set(site[1]!, (codes.get(site[1]!) ?? new Set()).add(literal[1]!))
-    }
+const resolver = (files: ReadonlyArray<ts.SourceFile>) => {
+  const scopes = new Map<ts.SourceFile, Scope>()
+  const scope = (file: ts.SourceFile): Scope => {
+    const found = scopes.get(file)
+    if (found !== undefined) return found
+    const made: Scope = { file, locals: bindings(file) }
+    scopes.set(file, made)
+    return made
   }
-  return codes
-}
-
-/** Every code a tagged failure class in this repo can carry, to the tags that carry it. */
-const vocabularies = (): ReadonlyMap<string, ReadonlySet<string>> => {
-  const texts = new Map<string, string>()
-  for (const root of ROOTS) for (const file of sources(join(ROOT, root))) texts.set(file, readFileSync(file, "utf8"))
-  const named = declarations(texts)
-  const sites = raised(texts)
-  const owners = new Map<string, Set<string>>()
-  for (const source of texts.values()) {
-    for (const declaration of source.matchAll(TAGGED)) {
-      const at = declaration.index + declaration[0].length - 1
-      const fields = bracketed(source, at)
-      /* `failureSummary` reads a record's code only when that record also carries the message. */
-      if (!MESSAGE_FIELD.test(fields)) continue
-      const field = CODE_FIELD.exec(fields)
-      if (field === null) continue
-      const from = field.index + field[0].length
-      const tag = declaration[2] ?? declaration[3]!
-      const closed = admitted(source, fields.slice(from), at + 1 + from, named)
-      for (const code of closed ?? sites.get(declaration[1]!) ?? []) {
-        owners.set(code, (owners.get(code) ?? new Set()).add(tag))
+  /* Every exported name in the repo, to the nodes that define it. */
+  const exported = new Map<string, Array<{ readonly file: ts.SourceFile; readonly node: ts.Node }>>()
+  /* `export { X as Y } from "./elsewhere"`: Y is whatever X is, wherever X is. */
+  const renamed = new Map<string, string>()
+  for (const file of files) {
+    const locals = scope(file).locals
+    const add = (bind: string, node: ts.Node) => exported.set(bind, [...(exported.get(bind) ?? []), { file, node }])
+    for (const statement of file.statements) {
+      const isExported = ts.canHaveModifiers(statement) &&
+        ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true
+      if (isExported && ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          if (ts.isIdentifier(declaration.name) && declaration.initializer !== undefined) add(declaration.name.text, declaration.initializer)
+        }
+      } else if (isExported && ts.isTypeAliasDeclaration(statement)) add(statement.name.text, statement.type)
+      else if (ts.isExportDeclaration(statement) && statement.exportClause !== undefined && ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          const from = (element.propertyName ?? element.name).text
+          const here = locals.get(from)
+          if (here !== undefined) for (const node of here) add(element.name.text, node)
+          else if (element.propertyName !== undefined) renamed.set(element.name.text, from)
+        }
       }
     }
   }
-  return owners
+
+  const sites = (bind: string, at: Scope): ReadonlyArray<{ readonly node: ts.Node; readonly scope: Scope }> => {
+    const parameter = at.bound?.get(bind)
+    if (parameter !== undefined) return [parameter]
+    const local = at.locals.get(bind)
+    if (local !== undefined) return local.map((node) => ({ node, scope: { file: at.file, locals: at.locals } }))
+    const rename = renamed.get(bind)
+    const found = exported.get(bind) ?? (rename === undefined ? undefined : exported.get(rename))
+    return (found ?? []).map((site) => ({ node: site.node, scope: scope(site.file) }))
+  }
+
+  /** The union over every definition of a name that resolves, or undefined when none does. */
+  const named = (bind: string, at: Scope, path: Set<ts.Node>): ReadonlySet<string> | undefined => {
+    const all = new Set<string>()
+    let any = false
+    for (const site of sites(bind, at)) {
+      const found = codes(site.node, site.scope, path)
+      if (found === undefined) continue
+      any = true
+      for (const code of found) all.add(code)
+    }
+    return any ? all : undefined
+  }
+
+  /** The union over every node, or undefined when any one of them is open. */
+  const every = (nodes: ReadonlyArray<ts.Node> | ts.NodeArray<ts.Node>, at: Scope, path: Set<ts.Node>): ReadonlySet<string> | undefined => {
+    const all = new Set<string>()
+    for (const node of nodes) {
+      const found = codes(node, at, path)
+      if (found === undefined) return undefined
+      for (const code of found) all.add(code)
+    }
+    return all
+  }
+
+  const call = (node: ts.CallExpression, at: Scope, path: Set<ts.Node>): ReadonlySet<string> | undefined => {
+    const callee = unwrap(node.expression)
+    const called = name(callee)
+    const receiver = ts.isPropertyAccessExpression(callee) ? callee.expression : undefined
+    /* `Schema.Literal("a")`, `Schema.Literal("a", "b")`, `Schema.Literals([…])` and `Schema.Union([…])`
+     * are all the union of their arguments, whatever shape those arguments are written in. */
+    if (called === "Literal" || called === "Literals" || called === "Union") return every(node.arguments, at, path)
+    /* A pipe keeps its receiver's members whatever it adds — a constructor default is still that
+     * set — and a pick keeps the ones it names. */
+    if (called === "pipe" && receiver !== undefined) return codes(receiver, at, path)
+    if (called === "pick" && receiver !== undefined) {
+      const whole = codes(receiver, at, path)
+      const picked = every(node.arguments, at, path)
+      return whole === undefined || picked === undefined ? undefined : new Set([...picked].filter((code) => whole.has(code)))
+    }
+    /* A helper this repo wrote: evaluate its body with its parameters bound to these arguments. */
+    for (const site of called === undefined ? [] : sites(called, at)) {
+      const fn = unwrap(site.node)
+      if (!ts.isArrowFunction(fn) && !ts.isFunctionDeclaration(fn) && !ts.isFunctionExpression(fn)) continue
+      const bound = new Map<string, { readonly node: ts.Node; readonly scope: Scope }>()
+      fn.parameters.forEach((parameter, index) => {
+        const argument = node.arguments[index]
+        if (argument !== undefined && ts.isIdentifier(parameter.name)) bound.set(parameter.name.text, { node: argument, scope: at })
+      })
+      const body = fn.body === undefined ? undefined : ts.isBlock(fn.body) ? returned(fn.body) : fn.body
+      const found = body === undefined ? undefined : codes(body, { file: site.scope.file, locals: site.scope.locals, bound }, path)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+
+  /** The string literals this expression or type admits, or undefined when the set is not closed. */
+  const codes = (node: ts.Node, at: Scope, path: Set<ts.Node>): ReadonlySet<string> | undefined => {
+    if (path.has(node)) return undefined
+    path.add(node)
+    try {
+      const it = unwrap(node)
+      if (ts.isStringLiteralLike(it)) return new Set([it.text])
+      if (ts.isLiteralTypeNode(it) && ts.isStringLiteralLike(it.literal)) return new Set([it.literal.text])
+      if (ts.isUnionTypeNode(it)) return every(it.types, at, path)
+      if (ts.isArrayLiteralExpression(it)) return every(it.elements, at, path)
+      if (ts.isTupleTypeNode(it)) return every(it.elements, at, path)
+      if (ts.isIdentifier(it)) return named(it.text, at, path)
+      if (ts.isTypeReferenceNode(it)) return named(ts.isQualifiedName(it.typeName) ? it.typeName.right.text : it.typeName.text, at, path)
+      if (ts.isPropertyAccessExpression(it)) return named(it.name.text, at, path)
+      if (ts.isTypeQueryNode(it)) {
+        /* `typeof ModelErrorCode.Type` is the decoded form of the schema of that name. */
+        let entity = it.exprName
+        while (ts.isQualifiedName(entity)) entity = entity.left
+        return named(entity.text, at, path)
+      }
+      if (ts.isIndexedAccessTypeNode(it)) return codes(it.objectType, at, path)
+      if (ts.isCallExpression(it)) return call(it, at, path)
+      return undefined
+    } finally {
+      path.delete(node)
+    }
+  }
+
+  return {
+    scope,
+    /** The literal set a schema expression or type admits, read in one file's scope. */
+    read: (node: ts.Node, file: ts.SourceFile): ReadonlySet<string> | undefined => codes(node, scope(file), new Set()),
+    /** The literal set a name admits, read in one file's scope. */
+    declared: (bind: string, file: ts.SourceFile): ReadonlySet<string> | undefined => named(bind, scope(file), new Set())
+  }
+}
+
+/**
+ * The tag and member container of a class extending a tagged-error base.
+ *
+ * Both spellings this repo uses land here, because the walk follows the call
+ * chain of the heritage clause rather than a shape:
+ * `Schema.TaggedError<T>()("tag", { … })` puts the members in an argument and
+ * `Data.TaggedError("tag")<{ … }>` puts them in a type argument.
+ */
+const taggedOf = (node: ts.ClassLikeDeclaration): { readonly tag: string; readonly members: ts.ObjectLiteralExpression | ts.TypeLiteralNode } | undefined => {
+  const heritage = node.heritageClauses?.find((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]
+  if (heritage === undefined) return undefined
+  let tag: string | undefined
+  let members: ts.ObjectLiteralExpression | ts.TypeLiteralNode | undefined
+  let tagged = false
+  const fromTypes = (nodes: ts.NodeArray<ts.TypeNode> | undefined) => {
+    for (const argument of nodes ?? []) {
+      const type = unwrap(argument)
+      if (ts.isTypeLiteralNode(type) && members === undefined) members = type
+    }
+  }
+  fromTypes(heritage.typeArguments)
+  let at: ts.Node = unwrap(heritage.expression)
+  while (ts.isCallExpression(at)) {
+    if (name(at.expression)?.endsWith("TaggedError") === true) tagged = true
+    for (const argument of at.arguments) {
+      if (ts.isStringLiteralLike(argument) && tag === undefined) tag = argument.text
+      if (ts.isObjectLiteralExpression(argument) && members === undefined) members = argument
+    }
+    fromTypes(at.typeArguments)
+    at = unwrap(at.expression)
+  }
+  return tagged && tag !== undefined && members !== undefined ? { tag, members } : undefined
+}
+
+/** One member of a schema's fields or of a tagged class's type argument. */
+const memberOf = (members: ts.ObjectLiteralExpression | ts.TypeLiteralNode, field: string): ts.Node | undefined => {
+  if (ts.isObjectLiteralExpression(members)) {
+    for (const property of members.properties) {
+      if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === field) return property.initializer
+    }
+    return undefined
+  }
+  for (const member of members.members) {
+    if (ts.isPropertySignature(member) && ts.isIdentifier(member.name) && member.name.text === field) return member.type
+  }
+  return undefined
+}
+
+/**
+ * Every code a tagged failure class in these sources can carry, to the tags
+ * that carry it.
+ *
+ * A class whose `code` no declaration closes falls back to the literals its
+ * own `new` sites pass, so an open `code: Schema.String` cannot spell an
+ * answered code at a raise site and say nothing here.
+ */
+const sweepOf = (files: ReadonlyArray<ts.SourceFile>) => {
+  const read = resolver(files)
+  const raised = new Map<string, Set<string>>()
+  const owners = new Map<string, Set<string>>()
+  for (const file of files) {
+    const visit = (node: ts.Node): void => {
+      if (ts.isNewExpression(node) && node.arguments?.[0] !== undefined) {
+        const fields = unwrap(node.arguments[0])
+        const code = ts.isObjectLiteralExpression(fields) ? memberOf(fields, "code") : undefined
+        const literal = code === undefined ? undefined : unwrap(code)
+        const raiser = name(node.expression)
+        if (literal !== undefined && ts.isStringLiteralLike(literal) && raiser !== undefined) {
+          raised.set(raiser, (raised.get(raiser) ?? new Set()).add(literal.text))
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(file)
+  }
+  for (const file of files) {
+    const visit = (node: ts.Node): void => {
+      if (ts.isClassLike(node)) {
+        const tagged = taggedOf(node)
+        /* `failureSummary` reads a record's code only when that record also carries the message. */
+        const code = tagged === undefined || memberOf(tagged.members, "message") === undefined ? undefined : memberOf(tagged.members, "code")
+        if (tagged !== undefined && code !== undefined) {
+          const closed = read.read(code, file) ?? (node.name === undefined ? undefined : raised.get(node.name.text))
+          for (const one of closed ?? []) owners.set(one, (owners.get(one) ?? new Set()).add(tagged.tag))
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(file)
+  }
+  return { owners: owners as ReadonlyMap<string, ReadonlySet<string>>, read }
+}
+
+const HARNESS = "packages/smithers/agent/harness/src/HarnessError.ts"
+const MODEL = "packages/smithers/agent/model/src/ModelError.ts"
+
+/** The parsed repo, swept once for every test that needs it. */
+let swept: { readonly owners: ReadonlyMap<string, ReadonlySet<string>>; readonly vocabulary: (path: string, of: string) => ReadonlyArray<string> } | undefined
+const repo = () => {
+  if (swept !== undefined) return swept
+  const files = new Map<string, ts.SourceFile>()
+  for (const root of ROOTS) for (const path of sources(join(REPO, root))) files.set(path, parse(path, readFileSync(path, "utf8")))
+  const { owners, read } = sweepOf([...files.values()])
+  swept = { owners, vocabulary: (path, of) => [...read.declared(of, files.get(join(REPO, path))!) ?? []] }
+  return swept
 }
 
 test("every code the harness and the model declare is answered here, and only those", () => {
-  const harness = literals(HARNESS, "HarnessErrorCode")
-  const model = literals(MODEL, "ModelErrorCode")
+  const harness = repo().vocabulary(HARNESS, "HarnessErrorCode")
+  const model = repo().vocabulary(MODEL, "ModelErrorCode")
   expect(harness.length).toBeGreaterThan(0)
   expect(model.length).toBeGreaterThan(0)
   const answered: ReadonlyArray<string> = HARNESS_CODES
@@ -198,11 +390,11 @@ test("every code the harness and the model declare is answered here, and only th
  * sentence and waiting for a reviewer to notice.
  */
 test("a code this table answers is one no other failure vocabulary in the repo spells", () => {
-  const harness = literals(HARNESS, "HarnessErrorCode")
-  const model = literals(MODEL, "ModelErrorCode")
+  const harness = repo().vocabulary(HARNESS, "HarnessErrorCode")
+  const model = repo().vocabulary(MODEL, "ModelErrorCode")
   expect(harness.filter((code) => model.includes(code))).toEqual([])
 
-  const owners = vocabularies()
+  const owners = repo().owners
   /* The sweep finds the two declarations it is judging, so a walk that read nothing cannot pass. */
   for (const code of [...harness, ...model]) expect([...owners.get(code) ?? []]).not.toEqual([])
 
@@ -217,52 +409,97 @@ test("a code this table answers is one no other failure vocabulary in the repo s
   )
   for (const code of Object.keys(shared)) expect(runCause(code)).toBeUndefined()
   for (const code of ANSWERED_CODES) expect(owners.get(code)?.size).toBe(1)
-  /* Three the sweep has to place exactly, so a walk that found only its own file cannot pass either. */
-  expect(owners.get("model_failed")).toEqual(new Set(["/harness/HarnessError"]))
-  /* The cross-file resolution: `code: ModelErrorCode`, declared in a package `flows/librarian` imports. */
-  expect(owners.get("context_overflow")).toEqual(new Set(["flows/model/ModelError", "librarian/ProviderUnavailable"]))
-  /* And the raise-site fallback: `AlertError`'s `code` is open, and only its `new` sites close it. */
-  expect(owners.get("sink_unreachable")).toEqual(new Set(["/notifications/AlertError"]))
 })
 
 /*
- * The three shapes a code can be declared in, read off source rather than off
- * the repo, so a shape stops being recognised here before it stops being
- * caught above. Each was a live blind spot: `ProviderUnavailable` occupied the
- * second one with nine of this table's codes, and the third let an open
- * `code: Schema.String` spell an answered code at its raise site.
+ * Seven declaration shapes, each read off a class that is on the tree today,
+ * so a shape stops being understood here before it stops being caught above.
+ * Every one of them was a live blind spot of some earlier regular expression,
+ * and the parser resolves them all without a branch for any of them.
  */
-test("the sweep reads both spellings of a tagged class, an imported code schema, and an open code", () => {
-  const source = [
-    `export class Inline extends Schema.TaggedError<Inline>()("probe/Inline", {`,
-    `  code: Schema.Literals(["inline_one"]), message: Schema.String`,
-    `}) {}`,
-    `export class Imported extends Schema.TaggedError<Imported>()("probe/Imported", {`,
-    `  code: ImportedCode, message: Schema.String`,
-    `}) {}`,
-    `export class Data_ extends Data.TaggedError("probe/Data")<{`,
-    `  readonly code: string`,
-    `  readonly message: string`,
-    `}> {}`,
-    `const raise = () => new Data_({ code: "open_one", message: "" })`
-  ].join("\n")
-  const named = new Map([["ImportedCode", new Set(["imported_one"])]])
-  const read = [...source.matchAll(TAGGED)].map((declaration) => {
-    const at = declaration.index + declaration[0].length - 1
-    const fields = bracketed(source, at)
-    const field = CODE_FIELD.exec(fields)!
-    const from = field.index + field[0].length
-    return [
-      declaration[2] ?? declaration[3]!,
-      admitted(source, fields.slice(from), at + 1 + from, named)
-        ?? [...raised(new Map([["probe", source]])).get(declaration[1]!) ?? []]
-    ]
+test("every shape this repo declares a failure code in is read off the real tree", () => {
+  const owners = repo().owners
+  const only = (code: string) => [...owners.get(code) ?? []].sort()
+  /* 1. An inline `Schema.Literals([…])`. */
+  expect(only("model_failed")).toEqual(["/harness/HarnessError"])
+  /* 2. A code schema another package declares: `code: ModelErrorCode`, imported from `@smthrs/model`. */
+  expect(only("no_route")).toEqual(["flows/model/ModelError", "librarian/ProviderUnavailable"])
+  /* 3. `Data.TaggedError("tag")<{ readonly code?: WorkerFailureCode; … }>`, members in a type argument. */
+  expect(only("workspace_gone")).toEqual(["SetupStoreError", "TokenError"])
+  /* 4. An open `code`, closed only by the literals its own `new` sites pass. */
+  expect(only("lineage_changed")).toEqual(["@smthrs/sync/SyncError"])
+  /* 5. `Schema.Literal("…")` singular, under a name, one directory from the harness's own error. */
+  expect(only("invalid_compaction_prefix")).toEqual(["flows/harness/ContextWindowError"])
+  /* 6. The same spelling in another package, read through `typeof …Code.Type` as well as the const. */
+  expect(only("entry_limit_exceeded")).toEqual(["@smthrs/engine-store/FileEnumerationError"])
+  /* 7. `constantCode("launch_failed")`, a helper whose constructor default means no raise site
+   * writes a `code:` at all — the shape a raise-site fallback can never rescue. */
+  expect(only("launch_failed")).toEqual(["/control/LaunchFailed"])
+  /* And `AlertError`'s code is a declared set behind a constructor default, not an open one:
+   * all four come off `FailureCode`, not off `layerWebhook` happening to spell them. */
+  expect(only("sink_unreachable")).toEqual(["/notifications/AlertError"])
+  /* The build tree ships and is walked: it holds two vocabularies no earlier sweep ever saw. */
+  expect(only("probe_failed")).toEqual(["smithers-build/RuntimeError"])
+})
+
+/*
+ * The same seven shapes as source rather than as pins, so a regression in the
+ * parser names the shape it lost instead of naming a package that moved.
+ */
+test("the reader resolves each shape from source, including a renamed re-export", () => {
+  const files = [
+    parse("/probe/codes.ts", [
+      `export const Inline = Schema.Literals(["inline_one"])`,
+      `export const Hidden = Schema.Literals(["renamed_one"])`,
+      `export const Singular = Schema.Literal("singular_one")`,
+      `export type Singular = typeof Singular.Type`
+    ].join("\n")),
+    parse("/probe/rename.ts", `export { Hidden as Renamed } from "./codes.ts"`),
+    parse("/probe/errors.ts", [
+      `const constantCode = <const Code extends string>(code: Code) =>`,
+      `  Schema.Literal(code).pipe(Schema.withConstructorDefault(Effect.succeed(code)))`,
+      `export class Inlined extends Schema.TaggedError<Inlined>()("probe/Inlined", {`,
+      `  code: Schema.Literals(["literals_one"]), message: Schema.String`,
+      `}) {}`,
+      `export class Imported extends Schema.TaggedError<Imported>()("probe/Imported", {`,
+      `  code: Inline, message: Schema.String`,
+      `}) {}`,
+      `export class Reexported extends Schema.TaggedError<Reexported>()("probe/Reexported", {`,
+      `  code: Renamed, message: Schema.String`,
+      `}) {}`,
+      `export class Single extends Schema.TaggedError<Single>()("probe/Single", {`,
+      `  code: Schema.Literal("single_one"), message: Schema.String`,
+      `}) {}`,
+      `export class Named extends Schema.TaggedError<Named>()("probe/Named", {`,
+      `  code: Singular, message: Schema.String`,
+      `}) {}`,
+      `export class Defaulted extends Schema.TaggedError<Defaulted>()("probe/Defaulted", {`,
+      `  code: constantCode("defaulted_one"), message: Schema.String`,
+      `}) {}`,
+      `export const raise = () => new Defaulted({ message: "no raise site writes this code" })`,
+      `export class Tagged extends Data.TaggedError("probe/Tagged")<{`,
+      `  readonly code: "data_one" | "data_two"`,
+      `  readonly message: string`,
+      `}> {}`,
+      `export class Open extends Schema.TaggedError<Open>()("probe/Open", {`,
+      `  code: Schema.String, message: Schema.String`,
+      `}) {}`
+    ].join("\n")),
+    parse("/probe/raise.ts", `export const raise = () => new Open({ code: "open_one", message: "" })`)
+  ]
+  const { owners } = sweepOf(files)
+  expect(Object.fromEntries([...owners].map(([code, tags]) => [code, [...tags].sort()]))).toEqual({
+    literals_one: ["probe/Inlined"],
+    inline_one: ["probe/Imported"],
+    /* `export { Inline as Renamed }` — the cross-file fix is not one `as` away from defeat. */
+    renamed_one: ["probe/Reexported"],
+    single_one: ["probe/Single"],
+    singular_one: ["probe/Named"],
+    defaulted_one: ["probe/Defaulted"],
+    data_one: ["probe/Tagged"],
+    data_two: ["probe/Tagged"],
+    open_one: ["probe/Open"]
   })
-  expect(read).toEqual([
-    ["probe/Inline", ["inline_one"]],
-    ["probe/Imported", ["imported_one"]],
-    ["probe/Data", ["open_one"]]
-  ])
 })
 
 test("no sentence a person reads carries a code, an internal id, or a thrown message", () => {
