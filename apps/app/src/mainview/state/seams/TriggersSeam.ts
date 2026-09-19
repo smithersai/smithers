@@ -421,8 +421,40 @@ const workerCall = async (
   return { ok: true, value: answer }
 }
 
-/** What the target flow's own declared input schema says about the registered input, in its own words. */
-const schemaRefusal = (document: unknown, input: unknown): string | undefined => {
+/** The value a declared property asks for, by the type its document declares. */
+const exampleValue = (property: unknown): string => {
+  const type = isRecord(property) && typeof property.type === "string" ? property.type : undefined
+  return type === "number" || type === "integer" ? "0"
+    : type === "boolean" ? "false"
+    : type === "array" ? "[]"
+    : type === "object" ? "{}"
+    : '"…"'
+}
+
+/** `{"args": "…"}` — the input the flow's published document says it takes. */
+const inputExample = (schema: Record<string, unknown>): string | undefined => {
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === "string") : []
+  const names = required.length > 0 ? required : Object.keys(properties)
+  return names.length === 0 ? undefined : `{${names.map((name) => `"${name}": ${exampleValue(properties[name])}`).join(", ")}}`
+}
+
+/** `args`, `args and label`, `args, label and window` — the names in one clause. */
+const nameList = (names: ReadonlyArray<string>): string =>
+  names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+
+/**
+ * What the target flow's own declared input schema says about the registered
+ * input, as a sentence the person can act on.
+ *
+ * The decoder's own refusal is a JSON pointer, not a sentence — the canary
+ * walk read `Missing key at ["args"]` off the register card and out of the
+ * transcript (.artifacts/mvp-canary-walk-20260917/W1-e-triggers-register.json).
+ * Nothing here parses that message: the refusal is written from the flow's
+ * PUBLISHED document, which already names every input it requires and the type
+ * of each, so the person is told which input to give and what to put in it.
+ */
+const schemaRefusal = (document: unknown, input: unknown, flow: string): string | undefined => {
   if (document === null || typeof document !== "object") return undefined
   /* The importer answers the open `Top`; a published input document decodes without services, which is what `decodeUnknownSync` needs. */
   let declared: Schema.Top & Schema.ConstraintDecoder<unknown, never>
@@ -436,8 +468,15 @@ const schemaRefusal = (document: unknown, input: unknown): string | undefined =>
   try {
     Schema.decodeUnknownSync(declared)(input)
     return undefined
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error)
+  } catch {
+    const schema = isRecord((document as Record<string, unknown>).schema) ? (document as Record<string, unknown>).schema as Record<string, unknown> : {}
+    const example = inputExample(schema)
+    if (example === undefined) return `Input for "${flow}" isn't what it takes.`
+    const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === "string") : []
+    const missing = isRecord(input) ? required.filter((name) => !(name in input)) : required
+    return missing.length > 0
+      ? `Input for "${flow}" needs ${nameList(missing)}: ${example}.`
+      : `Input for "${flow}" takes ${example}.`
   }
 }
 
@@ -660,7 +699,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
       const names = items.map((item) => String(item.flowId)).join(", ")
       return `No flow "${request.flow}" is registered on this workspace. The workspace has: ${names}.`
     }
-    const refusal = schemaRefusal(target.inputSchema, input)
+    const refusal = schemaRefusal(target.inputSchema, input, String(request.flow))
     if (refusal !== undefined) return refusal
     const requestId = crypto.randomUUID()
     const planned = await relay(ctx, repo, "Plan", {

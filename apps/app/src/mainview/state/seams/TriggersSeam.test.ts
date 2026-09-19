@@ -506,6 +506,34 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect(calls.map((call) => call.procedure)).toEqual(["List", "List"])
   })
 
+  /*
+   * The canary's own register form, verbatim: `checks/fast` prepared with
+   * Input `{}` (.artifacts/mvp-canary-walk-20260917/W1-e-triggers-register.json
+   * `L98-previewTranscript`) put `Missing key at ["args"]` in the transcript
+   * and on the card — the decoder's own pointer, not a sentence. The refusal
+   * is written from the flow's published document: which input it needs and
+   * what to put there.
+   */
+  test("input the flow refuses is answered with the input it needs, never the decoder's pointer", async () => {
+    const calls: Array<RelayCall> = []
+    const document = JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(Schema.Struct({ args: Schema.String })))) as unknown
+    const { controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, {
+        ...workspaceAnswers(),
+        List: () => okFrame({ _tag: "flows", items: [{ flowId: "checks/fast", description: "Fast checks.", inputSchema: document }, FLOW_ITEMS[1]] })
+      }) })
+    )
+    const refused = await controller.registerTrigger({ ...REQUEST, flow: "checks/fast", input: "{}" })
+    expect(refused).toBe('Input for "checks/fast" needs args: {"args": "…"}.')
+    const wrongType = await controller.registerTrigger({ ...REQUEST, flow: "checks/fast", input: '{"args":7}' })
+    expect(wrongType).toBe('Input for "checks/fast" takes {"args": "…"}.')
+    for (const sentence of [refused, wrongType]) {
+      expect(String(sentence)).not.toContain("Missing key")
+      expect(String(sentence)).not.toContain('["')
+    }
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "List"])
+  })
+
   test("a prepared registration previews the plan and offers the human's approve button; nothing is approved yet", async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(
