@@ -144,7 +144,9 @@ const send = async (page: Page, text: string): Promise<void> => {
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill(text)
   await page.getByTestId("composer-send").click()
-  await page.keyboard.press("Escape")
+  await expect(page.getByTestId("composer-input")).toHaveValue("")
+  await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
 }
 
 /** Exercise workspace flows after the introduction, using its existing command. */

@@ -36,7 +36,7 @@ const oneStack = async (page: Page) => {
   await expect(stack).toHaveJSProperty("popover", "manual")
   await expect.poll(() => stack.evaluate(node => node.matches(":popover-open"))).toBe(true)
   // The whole single toast is visible, below the session's Sign in strip.
-  expect(await stack.evaluate(node => {
+  await expect.poll(() => stack.evaluate(node => {
     const rect = node.getBoundingClientRect()
     const header = document.querySelector(".session-navigation")!.getBoundingClientRect()
     return rect.top >= header.bottom && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth
