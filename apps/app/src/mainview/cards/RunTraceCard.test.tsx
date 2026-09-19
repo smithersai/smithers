@@ -1068,6 +1068,10 @@ test("the practice run's own timeline names an unknown flow alone, with no empty
 })
 
 describe("the primary monitoring surface", () => {
+  test.each([["reconnecting", "Reconnecting…"], ["quiet", "No recent progress"], ["stopped", "Stopped watching"]] as const)("%s does not present old activity as live", (phase, label) => {
+    const { host } = renderTrace({ phase, events: JOURNAL, traceView: undefined })
+    expect(host.querySelector(".run-outcome-words")?.textContent).toBe(label)
+  })
   test("the default opens the phase strip and human rows, with technical views behind a flow", () => {
     const { host, dispatched } = renderTrace({ events: JOURNAL, traceView: undefined })
     expect(host.querySelector(".run-phases")).not.toBeNull()

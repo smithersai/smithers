@@ -27,7 +27,7 @@ export const RunTraceSummary = ({ card, model, facts, onRunCommand: send }: {
   const condition = verdict !== undefined ? undefined : action === "approval" ? "Approval needed"
     : current.condition === "thrashing" ? "Thrashing" : current.condition === "blocked" || action === "resume" ? "Blocked" : undefined
   const status = verdict ?? phase
-  const activity = verdict === undefined && phase !== "launching" ? current.activity : undefined
+  const activity = verdict === undefined && (phase === "running" || phase === "waiting-approval") ? current.activity : undefined
   const onRunCommand = runSourceCommand(card.id, send)
   return <header className="run-outcome" data-phase={status} data-testid={`run-outcome-${runId}`} aria-label="Current run status">
     <span className="run-outcome-dot" data-status={status} aria-hidden />
