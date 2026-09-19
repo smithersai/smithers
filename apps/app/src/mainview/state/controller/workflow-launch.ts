@@ -92,9 +92,9 @@ export const createWorkflowLaunchController = (
               const list = await ctx.gateway.listFlows(request.repo, binding)
               if (!current()) return TOAST_SUPERSEDED
               const names = list.status === "ok" ? list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).slice(0, 8).map(flow => flow.flowId).join(", ") : ""
-              return fail({ ...result, message: `There's no flow called ${request.workflow} on ${request.repo}.${names ? ` The workspace has: ${names}.` : ""}` })
+              return await fail({ ...result, message: `There's no flow called ${request.workflow} on ${request.repo}.${names ? ` The workspace has: ${names}.` : ""}` })
             }
-            return fail(result)
+            return await fail(result)
           }
         }
         if (!current()) return TOAST_SUPERSEDED

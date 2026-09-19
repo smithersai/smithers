@@ -13,7 +13,12 @@ const deferred = <T>() => {
 }
 
 async function fixture() {
-  const storage = memoryStorage()
+  const disk = memoryStorage()
+  let failNextWrite = false
+  const storage = { ...disk, setItem: (key: string, value: string) => {
+    if (failNextWrite) { failNextWrite = false; throw new Error("Request write refused") }
+    disk.setItem(key, value)
+  } }
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", ownerKind: "user", name: "launch-test", head: null }] }).isPersisted.promise
@@ -41,6 +46,7 @@ async function fixture() {
   const cards = () => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
   const toasts = () => [...store.collections.toasts.values()].filter(toast => toast.key.startsWith("flow.request."))
   return { store, storage, controller, services, calls, cards, toasts, chat,
+    failNextWrite: () => { failNextWrite = true },
     provision: (fn: typeof provision) => { provision = fn }, run: (fn: typeof run) => { run = fn }, status: (value: RunSummaryRow["status"]) => { status = value } }
 }
 
@@ -132,6 +138,25 @@ test("workspace_starting during Run retries the same admission instead of failin
     expect(calls).toHaveLength(2)
     expect(calls[0]!.payload.idempotencyKey).toBe(calls[1]!.payload.idempotencyKey)
   }
+})
+
+test("a refused launch whose error cannot be saved records a typed persistence failure and remains retryable", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.run(() => gate.promise)
+  await t.controller.commands.run("flow.run", `review ${repo}`)
+  await waitFor(() => t.calls.some(call => call.procedure === "Run"))
+  await waitFor(() => t.toasts()[0]?.status === "running")
+  await t.store.settled?.()
+  t.failNextWrite()
+  gate.resolve(json(200, { ok: false, error: { message: "Provider unavailable", detail: { code: "provider_unavailable" } } }))
+  await waitFor(() => t.toasts()[0]?.status === "failed")
+  expect(t.cards()[0]?.payload.input?._workflowLaunch).toMatchObject({ error: {
+    stage: "persistence", code: "request_persistence_failed", message: "The run request could not be saved. Try again."
+  } })
+  t.run(async () => json(200, { ok: true, payload: { runId: "run-1" } }))
+  await t.controller.commands.run("flow.run.retry", t.cards()[0]!.id)
+  await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
 })
 
 test("reload reconnects a launch whose Run response was lost, using the same Plan and Run keys", async () => {
