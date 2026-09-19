@@ -327,10 +327,13 @@
         "state": {
           "status": "running",
           "input": {
-            "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+            "description": "frame 1",
+            "frame": 1
           },
           "title": "frame 1",
+          "metadata": {
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+          },
           "time": {
             "start": 1007
           }
@@ -482,11 +485,16 @@
         "state": {
           "status": "running",
           "input": {
-            "task": "Read package.json and tell me the name field.",
-            "file": "package.json",
-            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            "description": "triage/relevance · 1 state"
           },
           "title": "triage/relevance · 1 state",
+          "metadata": {
+            "input": {
+              "task": "Read package.json and tell me the name field.",
+              "file": "package.json",
+              "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            }
+          },
           "time": {
             "start": 1014
           }
@@ -509,9 +517,7 @@
         "state": {
           "status": "completed",
           "input": {
-            "task": "Read package.json and tell me the name field.",
-            "file": "package.json",
-            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            "description": "triage/relevance · relevant: yes (0.93)"
           },
           "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
           "title": "triage/relevance · 1 state · 3 questions · 212 ms",
@@ -577,6 +583,11 @@
                 "risk": 0.62
               },
               "latencyMs": 212
+            },
+            "input": {
+              "task": "Read package.json and tell me the name field.",
+              "file": "package.json",
+              "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
             }
           },
           "time": {
@@ -602,15 +613,16 @@
         "state": {
           "status": "completed",
           "input": {
-            "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+            "description": "frame 1 · 3 calls · read-only",
+            "frame": 1
           },
           "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n",
           "title": "frame 1 · 3 calls · read-only",
           "metadata": {
             "transition": "continue",
             "calls": 3,
-            "edits": 0
+            "edits": 0,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
           "time": {
             "start": 1007,
@@ -634,7 +646,9 @@
         "tool": "demand",
         "state": {
           "status": "completed",
-          "input": {},
+          "input": {
+            "description": "read-only · 1/1"
+          },
           "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
           "title": "read-only · 1/1",
           "metadata": {},
@@ -950,10 +964,13 @@
         "state": {
           "status": "running",
           "input": {
-            "frame": 2,
-            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+            "description": "frame 2",
+            "frame": 2
           },
           "title": "frame 2",
+          "metadata": {
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+          },
           "time": {
             "start": 1025
           }
@@ -975,7 +992,9 @@
         "tool": "demand",
         "state": {
           "status": "completed",
-          "input": {},
+          "input": {
+            "description": "read-only · 1/1 · justification"
+          },
           "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
           "title": "read-only · 1/1 · justification",
           "metadata": {},
@@ -1258,10 +1277,13 @@
         "state": {
           "status": "running",
           "input": {
-            "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+            "description": "frame 1",
+            "frame": 1
           },
           "title": "frame 1",
+          "metadata": {
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+          },
           "time": {
             "start": 1033
           }
@@ -1413,11 +1435,16 @@
         "state": {
           "status": "running",
           "input": {
-            "task": "Read package.json and tell me the name field.",
-            "file": "package.json",
-            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            "description": "triage/relevance · 1 state"
           },
           "title": "triage/relevance · 1 state",
+          "metadata": {
+            "input": {
+              "task": "Read package.json and tell me the name field.",
+              "file": "package.json",
+              "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            }
+          },
           "time": {
             "start": 1040
           }
@@ -1440,9 +1467,7 @@
         "state": {
           "status": "completed",
           "input": {
-            "task": "Read package.json and tell me the name field.",
-            "file": "package.json",
-            "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
+            "description": "triage/relevance · relevant: yes (0.93)"
           },
           "output": "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)",
           "title": "triage/relevance · 1 state · 3 questions · 212 ms",
@@ -1508,6 +1533,11 @@
                 "risk": 0.62
               },
               "latencyMs": 212
+            },
+            "input": {
+              "task": "Read package.json and tell me the name field.",
+              "file": "package.json",
+              "excerpt": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n"
             }
           },
           "time": {
@@ -1533,15 +1563,16 @@
         "state": {
           "status": "completed",
           "input": {
-            "frame": 1,
-            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
+            "description": "frame 1 · 3 calls · read-only",
+            "frame": 1
           },
           "output": "{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n",
           "title": "frame 1 · 3 calls · read-only",
           "metadata": {
             "transition": "continue",
             "calls": 3,
-            "edits": 0
+            "edits": 0,
+            "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
           "time": {
             "start": 1033,
@@ -1565,7 +1596,9 @@
         "tool": "demand",
         "state": {
           "status": "completed",
-          "input": {},
+          "input": {
+            "description": "read-only · 1/1"
+          },
           "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
           "title": "read-only · 1/1",
           "metadata": {},
@@ -1881,10 +1914,13 @@
         "state": {
           "status": "running",
           "input": {
-            "frame": 2,
-            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+            "description": "frame 2",
+            "frame": 2
           },
           "title": "frame 2",
+          "metadata": {
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+          },
           "time": {
             "start": 1051
           }
@@ -1906,7 +1942,9 @@
         "tool": "demand",
         "state": {
           "status": "completed",
-          "input": {},
+          "input": {
+            "description": "read-only · 1/1 · justification"
+          },
           "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
           "title": "read-only · 1/1 · justification",
           "metadata": {},
@@ -1999,15 +2037,16 @@
         "state": {
           "status": "completed",
           "input": {
-            "frame": 2,
-            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
+            "description": "frame 2 · 1 call · read-only",
+            "frame": 2
           },
           "output": "total 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n\n",
           "title": "frame 2 · 1 call · read-only",
           "metadata": {
             "transition": "complete",
             "calls": 1,
-            "edits": 0
+            "edits": 0,
+            "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
           },
           "time": {
             "start": 1051,

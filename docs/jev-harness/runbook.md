@@ -77,7 +77,7 @@ A `classify` card in the transcript, titled with the door, the state count, the 
 ## Known rough edges
 
 - Enter on a highlighted row in the folder picker closes the picker instead of opening the project; use the mouse.
-- The `cell`, `classify`, `health` and `demand` cards render with the app's generic "Called `cell`" row; only file and shell calls get the app's native rendering.
+- The `cell`, `classify`, `health` and `demand` cards render with the app's generic "Called `cell`" row; only file and shell calls get the app's native rendering. Each of the four leads that row with its own one line, so a collapsed card reads `frame 1 · 3 calls · read-only`, `triage/relevance · relevant: yes (0.93)`, `needs you: approve the write` or `read-only · 1/1`. The frame's program and the classify call's state are on the card's metadata, not in that line.
 - A collapsed `health` card shows its input (`color=red`) rather than its reason; expand it to read why.
 - The folder picker lists your home directory, so a project outside `~` has to be typed into the search box.
 - The dot is gray for the whole run when no gateway key is set, which is also what a gateway outage looks like.

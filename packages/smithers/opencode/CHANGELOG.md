@@ -35,6 +35,25 @@
 
 ### Fixed
 
+- Every card this server invents now leads with the one line a reader needs.
+  Neither client reads a card's `title` for a tool it does not know: the
+  hosted app's `GenericTool` takes its subtitle from `input.description` and
+  has no expanded body at all, and the TUI prints every scalar of the input
+  untruncated. So the health card read "Called `health`" over `color=red`
+  with its reason nowhere, the `cell` card put the whole frame program in
+  its collapsed line, and the `classify` card put the task, the file and the
+  excerpt in its own. The four cards now carry `description` first, so they
+  read `needs you: approve the write`, `frame 1 · 3 calls · read-only`,
+  `triage/relevance · relevant: yes (0.93)` and `read-only · 1/1`. The frame
+  program and the classify call's state moved to the card's metadata.
+
+- `Health.strip` drops every leading dot, not only the first. A person
+  renaming a session pastes the echoed title back over a dot the app already
+  wrote, so the words can arrive under two or three dots at once. Dropping
+  one left the rest inside the stored words, where `Health.dotted` rendered a
+  title with two dots in it (`🔴 ⚪⚪ New`) and `Health.colorOf` read a color
+  out of the person's words that the server never decided.
+
 - `GET /session/:id/message` answers 400 when `before` is not a message id of
   that session. Such a cursor sorted below every row, so the answer was an
   empty page and the app read a broken cursor as the end of the history.

@@ -125,7 +125,10 @@ interface CallCard {
   readonly partID: string
   readonly callID: string
   readonly tool: string
+  /** The input the cell wrote, which the card's title and metadata read. */
   readonly input: Record<string, unknown>
+  /** The input the card carries, which is the raw one for every flow OpenCode already renders. */
+  readonly served: Record<string, unknown>
   readonly start: number
 }
 
@@ -478,6 +481,59 @@ export const classifyTitle = (
 }
 
 /**
+ * The input a card this server invents carries. Both clients render a card
+ * whose tool they do not know from its input alone: the hosted app's
+ * `label` (packages/session-ui/src/components/basic-tool.tsx) takes the
+ * subtitle from the first of `description`, `query`, `url`, `filePath`,
+ * `path`, `pattern`, `name`, then lists three more scalars as `key=value`,
+ * and its `GenericTool` has no expanded body at all; the TUI's `input`
+ * (packages/tui/src/routes/session/index.tsx) prints every scalar of the
+ * input, in insertion order and untruncated. Neither reads the card's
+ * `title`. So the one line a reader needs goes in `description`, ahead of
+ * the short scalars that qualify it, and everything long — a frame's
+ * program, a classify call's state — stays in the card's metadata.
+ *
+ * @param description the one line a reader scanning the transcript needs
+ * @param rest the short scalars that follow it
+ * @category conversions
+ * @since 1.0.0
+ */
+export const cardInput = (
+  description: string,
+  rest: Record<string, unknown> = {}
+): Record<string, unknown> => ({ description, ...rest })
+
+/**
+ * The line a classify card leads with: the door, and the leading answer to
+ * the first question the classifier declares, which is the verdict the door
+ * was opened for. A batch names how many states it judged instead, because
+ * no single answer stands for the batch, and a state that failed names its
+ * code.
+ *
+ * @param flowName the flow the cell called
+ * @param input the call input as the cell wrote it
+ * @param value the settled call's value, or `undefined` while it runs
+ * @category conversions
+ * @since 1.0.0
+ */
+export const classifyDescription = (
+  flowName: string,
+  input: Record<string, unknown>,
+  value?: Schema.Json
+): string => {
+  const door = classifyDoor(flowName)
+  const states = classifyStates(input)
+  if (value === undefined || states > 1) return `${door} · ${states} state${states === 1 ? "" : "s"}`
+  const entry = classifyEntries(value)[0]
+  if (entry === undefined) return `${door} · ${states} state`
+  if (entry.answers === undefined) return `${door} · ${asString(entry.error["code"]) ?? "failed"}`
+  const first = Object.entries(entry.answers)[0]
+  if (first === undefined) return `${door} · no questions`
+  const [id, answer] = first
+  return `${door} · ${id}: ${isRecord(answer) ? leading(answer) : String(answer)}`
+}
+
+/**
  * The title of a call card: the one thing the reader needs to tell this call
  * from the next.
  *
@@ -791,7 +847,14 @@ const demandCard = (
     type: "tool",
     callID: `demand_${frame}_${ordinal}`,
     tool: "demand",
-    state: { status: "completed", input: {}, output: text, title, metadata: {}, time: { start: now, end: now } }
+    state: {
+      status: "completed",
+      input: cardInput(title),
+      output: text,
+      title,
+      metadata: {},
+      time: { start: now, end: now }
+    }
   }
   return { state: { ...state, demandText: { ...state.demandText, [partID]: text } }, events: [partEvent(part, now)] }
 }
@@ -1056,8 +1119,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         tool: "cell",
         state: {
           status: "running",
-          input: { frame: state.frame + 1, source: cell.source },
+          input: cardInput(`frame ${state.frame + 1}`, { frame: state.frame + 1 }),
           title: `frame ${state.frame + 1}`,
+          metadata: { source: cell.source },
           time: { start: now }
         }
       }
@@ -1078,6 +1142,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         callID: key,
         tool: toolName(event.call.flowName),
         input,
+        served: isClassify(event.call.flowName) ? cardInput(classifyDescription(event.call.flowName, input)) : input,
         start: now
       }
       const edits = ["edit", "write", "apply_patch"].includes(event.call.flowName) ? 1 : 0
@@ -1090,7 +1155,15 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         type: "tool",
         callID: card.callID,
         tool: card.tool,
-        state: { status: "running", input, title: toolTitle(event.call.flowName, input), time: { start: now } }
+        state: isClassify(event.call.flowName)
+          ? {
+            status: "running",
+            input: card.served,
+            title: toolTitle(event.call.flowName, input),
+            metadata: { input },
+            time: { start: now }
+          }
+          : { status: "running", input, title: toolTitle(event.call.flowName, input), time: { start: now } }
       }
       const classify = isClassify(event.call.flowName) ? 1 : 0
       const counted = `start:${key}` in state.counted
@@ -1146,17 +1219,21 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         state: ok
           ? {
             status: "completed",
-            input: card.input,
+            input: classify
+              ? cardInput(classifyDescription(event.flowName, card.input, result.value))
+              : card.served,
             output: toolOutput(event.flowName, result.value),
             title: classify
               ? classifyTitle(event.flowName, card.input, result.value, now - card.start)
               : toolTitle(event.flowName, card.input),
-            metadata: toolMetadata(event.flowName, result.value),
+            metadata: classify
+              ? { ...toolMetadata(event.flowName, result.value), input: card.input }
+              : toolMetadata(event.flowName, result.value),
             time: { start: card.start, end: now }
           }
           : {
             status: "error",
-            input: card.input,
+            input: card.served,
             error: subject === "" ? failure : `${subject}: ${failure}`,
             metadata: { code: result.code ?? Cell.defaultCallFailureCode, result: result.value },
             time: { start: card.start, end: now }
@@ -1200,8 +1277,8 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       if (state.cell === undefined) return { state, events: [] }
       const now = ctx.now()
       const cell = state.cell
-      const input = { frame: state.frame + 1, source: cell.source }
       const outcome = event.outcome
+      const settledTitle = cellTitle(cell, state.frame)
       const part: Protocol.ToolPart = {
         ...base(state),
         id: cell.partID,
@@ -1211,17 +1288,28 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         state: outcome._tag === "settled"
           ? {
             status: "completed",
-            input,
+            input: cardInput(settledTitle, { frame: state.frame + 1 }),
             output: cell.prints,
-            title: cellTitle(cell, state.frame),
-            metadata: { transition: outcome.transition._tag, calls: cell.calls, edits: cell.edits },
+            title: settledTitle,
+            metadata: {
+              transition: outcome.transition._tag,
+              calls: cell.calls,
+              edits: cell.edits,
+              source: cell.source
+            },
             time: { start: cell.start, end: now }
           }
           : {
             status: "error",
-            input,
+            input: cardInput(settledTitle, { frame: state.frame + 1 }),
             error: outcome._tag === "raised" ? `${outcome.name}: ${outcome.message}` : outcome.message,
-            metadata: { outcome: outcome._tag, output: cell.prints, calls: cell.calls, edits: cell.edits },
+            metadata: {
+              outcome: outcome._tag,
+              output: cell.prints,
+              calls: cell.calls,
+              edits: cell.edits,
+              source: cell.source
+            },
             time: { start: cell.start, end: now }
           }
       }
@@ -1348,6 +1436,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           callID: key,
           tool: toolName(flowName),
           input,
+          // A parked call is a capability call, and OpenCode renders every
+          // capability's card from the input the cell wrote.
+          served: input,
           start: now
         }
         calls = { ...calls, [key]: card }
@@ -1359,7 +1450,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
               type: "tool",
               callID: card.callID,
               tool: card.tool,
-              state: { status: "running", input, title: toolTitle(flowName, input), time: { start: now } }
+              state: { status: "running", input: card.served, title: toolTitle(flowName, input), time: { start: now } }
             },
             now
           )
@@ -1514,7 +1605,7 @@ export const decided = (
     tool: "health",
     state: {
       status: "completed",
-      input: { color: decision.color },
+      input: cardInput(decision.reason, { color: decision.color }),
       output: answers === undefined && failure !== undefined ? failure : Health.renderAnswers(answers),
       title: decision.reason,
       metadata: { color: decision.color, reason: decision.reason, answers },
@@ -1616,9 +1707,15 @@ const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => 
         tool: "cell",
         state: {
           status: "error",
-          input: { frame: cell.frame + 1, source: cell.source },
+          input: cardInput(cellTitle(cell, cell.frame), { frame: cell.frame + 1 }),
           error: reason,
-          metadata: { outcome: closing._tag, output: cell.prints, calls: cell.calls, edits: cell.edits },
+          metadata: {
+            outcome: closing._tag,
+            output: cell.prints,
+            calls: cell.calls,
+            edits: cell.edits,
+            source: cell.source
+          },
           time: { start: cell.start, end: now }
         }
       },
@@ -1635,7 +1732,7 @@ const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => 
         tool: card.tool,
         state: {
           status: "error",
-          input: card.input,
+          input: card.served,
           error: reason,
           metadata: {},
           time: { start: card.start, end: now }
