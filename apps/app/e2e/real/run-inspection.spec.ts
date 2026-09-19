@@ -34,6 +34,7 @@ import {
   TIMELINE_PHASES,
   treeFrames
 } from "./run-inspection/timeline"
+import { awaitSeededFlow, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
@@ -254,31 +255,48 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   })
 })
 
-workflowTest("a completed provider run's timeline shows its phases and frame lines, and a scrub keeps the later phases as doors across reload", scenario("runs.timeline-phase-strip-scrub-durable", {
+workflowTest("a completed agent run's timeline shows its phases and frame lines, and a scrub keeps the later moments as doors across reload", scenario("runs.timeline-phase-strip-scrub-durable", {
   capabilities: ["identity", "cloud"],
   coverage: [
-    "action:flow.create", "action:runs.trace.view", "action:runs.trace.select", "action:runs.trace.live",
-    "host:production", "path:success", "path:persistence", "door:slash", "door:button",
-    "dimension:real-provider", "dimension:completed-run", "dimension:timeline", "dimension:phase-strip",
-    "dimension:frame-lines", "dimension:scrub-cursor", "dimension:later-phase-door", "dimension:reload",
+    "action:workspace.view", "action:workspace.terminal", "action:workspace.suspend", "action:workspace.resume", "action:repo.select",
+    "action:flow.run", "action:runs.trace.view", "action:runs.trace.select", "action:runs.trace.live",
+    "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
+    "dimension:real-provider", "dimension:real-pty", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
+    "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor",
+    "dimension:later-phase-door", "dimension:reload",
     "evidence:gateway-journal-frames-and-durable-cursor"
   ],
-  description: "Run the real create-flow provider to completion, read its journal from the gateway, and require the timeline's phase bands and frame lines to match the frames that journal opened. Scrub to the first band, prove the log stops at the cursor while every later band stays a door, move forward through one, reload, return to latest, and reload again."
+  description: "Give a disposable repository its own prompt flow through the workspace terminal, restart the host so it discovers it, and run it on the real provider: a prompt flow is the only run the agent's cell loop journals. Read that journal from the gateway and require the timeline's phase bands and frame lines to match the frames it opened. Scrub to the first band, prove the log stops at the cursor while every later band and pin stays a door, move forward through one, press a frame line, reload, and return to live."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   const repo = workflowRepo.repo
-  await bootOwnedWorkflow(page, repo, workflowRepo.workspaceId)
-  const marker = fixtureInputText(`s16-timeline-${Date.now().toString(36)}`)
-  const launched = await createFlowRun(page, repo, marker, workflowRepo)
-  const runId = launched.runId
+  const workspaceId = workflowRepo.workspaceId!
+  await bootOwnedWorkflow(page, repo, workspaceId)
+  await writeSeededFlow(page, request, repo, workspaceId)
+  await restartWorkspaceHost(page, request, repo, workspaceId)
+  await awaitSeededFlow(page, request, repo, workspaceId)
+  // Bind the launch to THIS workspace again: without the binding flow.run provisions the repo-level route, which production refuses.
+  await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
+  await closeComposer(page)
 
-  const terminal = await waitForTerminalRun(page, request, repo, runId, 9 * 60_000, workflowRepo.workspaceId)
+  const marker = fixtureInputText(`s16-timeline-${Date.now().toString(36)}`)
+  const [runId] = await Promise.all([
+    acceptedRunId(page, repo, workflowRepo),
+    command(page, `/flow.run ${SEEDED_FLOW} ${repo} ${JSON.stringify({ args: marker })}`)
+  ])
+  await closeComposer(page)
+  // Run ids restart at run-1 on every workspace, and the signed-in profile's conversation outlives a scenario,
+  // so an earlier repository's run-1 card can still be on the page. This scenario's card is the newest one.
+  const ownCard = (): ReturnType<typeof runCard> => runCard(page, runId).last()
+  expect(await exactRunId(ownCard())).toBe(runId)
+
+  const terminal = await waitForTerminalRun(page, request, repo, runId, 9 * 60_000, workspaceId)
   expect(terminal.status).toBe("completed")
-  await expect(runCard(page, runId).getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", "completed", { timeout: 60_000 })
+  await expect(ownCard().getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", "completed", { timeout: 60_000 })
 
   // The oracle is the gateway's journal, never the card's own fold of it.
   const eventsAnswer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
     selector: { _tag: "run-events", runId }
-  }, workflowRepo.workspaceId)
+  }, workspaceId)
   const events = projectionRows(eventsAnswer)
   const frames = journalFrames(events)
   expect(frames.length, "a provider-backed agent run must journal at least one turn; a journal with none has no band to scrub").toBeGreaterThan(0)
@@ -286,7 +304,7 @@ workflowTest("a completed provider run's timeline shows its phases and frame lin
   const latest = Math.max(...events.map((event) => typeof event.sequence === "number" ? event.sequence : 0))
   expect(latest, "a completed run journals records after its first turn opened").toBeGreaterThan(opens[0]!)
 
-  const trace = runCard(page, runId).getByTestId(`run-trace-${runId}`)
+  const trace = ownCard().getByTestId(`run-trace-${runId}`)
   await trace.getByRole("button", { name: "Timeline", exact: true }).click()
   await expect(trace).toHaveAttribute("data-view", "timeline")
   // The pump pages the journal onto the card; give it the same minute the outcome line gets.
@@ -328,7 +346,10 @@ workflowTest("a completed provider run's timeline shows its phases and frame lin
     expect(line.subject.length, `${line.node} names at most one subject`).toBeLessThanOrEqual(1)
     expect(line.subject.filter((subject) => subject === ""), `${line.node} never renders an empty subject`).toEqual([])
   }
-  const outcome = await runCard(page, runId).getByTestId(`run-outcome-${runId}`).innerText()
+  // textContent, not innerText: innerText puts a newline between the verdict and the counts, which
+  // toHaveText then normalises to a space the DOM never held, so an unchanged headline reads as changed.
+  const outcome = (await ownCard().getByTestId(`run-outcome-${runId}`).textContent()) ?? ""
+  expect(outcome, "a completed run's headline carries its verdict and its counts").toMatch(/\d+ turns?/)
 
   // Scrub to the first band: the cursor is recorded, the log stops there, the strip does not.
   const cursor = bands[0]!.seq
@@ -337,14 +358,14 @@ workflowTest("a completed provider run's timeline shows its phases and frame lin
   await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeVisible()
   await expect(frameLines(trace)).toHaveCount(lineFramesAt(frames, cursor).length)
   await expect(treeFrames(trace)).toHaveCount(frames.filter((entry) => entry.opens <= cursor).length)
-  await expect(runCard(page, runId).getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", frameNode(1))
+  await expect(ownCard().getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", frameNode(1))
   const scrubbed = await readBands(trace)
   expect(bandIdentity(scrubbed), "a scrub never drops a band").toEqual(bandIdentity(bands))
   expect(scrubbed.map((band) => band.reached)).toEqual(bands.map((band) => String(band.seq <= cursor)))
   expect(scrubbed.map((band) => band.current)).toEqual(bands.map((_band, index) => index === 0 ? "location" : null))
   expect(scrubbed.filter((band) => !band.enabled), "a band past the cursor stays a door").toEqual([])
   expect((await readPins(trace)).map((pin) => pin.reached)).toEqual(pins.map((pin) => String(pin.seq <= cursor)))
-  await expect(runCard(page, runId).getByTestId(`run-outcome-${runId}`), "the run's verdict and counts are not the cursor's").toHaveText(outcome)
+  await expect(ownCard().getByTestId(`run-outcome-${runId}`), "the run's verdict and counts are not the cursor's").toHaveText(outcome)
 
   // A later door: the last band, else the last pin past the cursor. The scenario claims
   // `dimension:later-phase-door`, so a journal with neither fails here rather than passing
@@ -365,12 +386,12 @@ workflowTest("a completed provider run's timeline shows its phases and frame lin
   expect(shown.length, "the later door leaves at least one frame line on screen").toBeGreaterThan(0)
   const pressed = frameNode(shown[shown.length - 1]!)
   await frameLines(trace).last().click()
-  await expect(runCard(page, runId).getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", pressed)
+  await expect(ownCard().getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", pressed)
   await expect(trace.getByText(`At #${parked}`, { exact: true })).toBeVisible()
 
   // The cursor is the card's, not the component's: a reload keeps it.
   await page.reload({ waitUntil: "domcontentloaded" })
-  const restored = runCard(page, runId).getByTestId(`run-trace-${runId}`)
+  const restored = ownCard().getByTestId(`run-trace-${runId}`)
   await expect(restored).toHaveAttribute("data-view", "timeline")
   await expect(restored.getByText(`At #${parked}`, { exact: true })).toBeVisible()
   await expect(frameLines(restored)).toHaveCount(lineFramesAt(frames, parked).length)
@@ -389,7 +410,7 @@ workflowTest("a completed provider run's timeline shows its phases and frame lin
   expect((await readBands(restored)).map((band) => [band.reached, band.current])).toEqual(bands.map(() => ["true", null]))
   expect(await readLines(restored)).toEqual(lines)
   await page.reload({ waitUntil: "domcontentloaded" })
-  const live = runCard(page, runId).getByTestId(`run-trace-${runId}`)
+  const live = ownCard().getByTestId(`run-trace-${runId}`)
   await expect(live).toHaveAttribute("data-view", "timeline")
   await expect(live.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
   await expect(frameLines(live)).toHaveCount(lines.length)
