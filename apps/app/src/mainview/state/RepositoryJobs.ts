@@ -20,11 +20,20 @@ export const repositoryJobWorkspace = (cards: Iterable<Card>, repo: string, owne
 /**
  * A job's registered state, in the setup card's own words. Undefined until the
  * host has answered what is registered: an unread registration is not "Off".
+ *
+ * A registration the card is HOLDING is an answer the host already gave, so it
+ * is read whatever the recovery is doing now. Boot re-reads every setup card
+ * (controller/repositorySetup.ts resumeRepositorySetups), and that re-read
+ * parks `registrationState` at "unknown" until it lands and at "unavailable"
+ * when it fails — which used to blank the state of a job that is registered,
+ * so one census read "Handle issues · Paused" beside a bare "Build a feature"
+ * whose registration was enabled at revision 57. Only a card with no
+ * registration at all waits for the answer.
  */
 export const repositoryJobState = (setup: Pick<RepositorySetup, "revision" | "active" | "recovery">): string | undefined =>
-  setup.recovery !== undefined && setup.recovery.registrationState !== "known" ? undefined
-    : setup.active?.enabled ? setup.active.revision === setup.revision ? "Enabled" : "Enabled · draft changes"
+  setup.active?.enabled ? setup.active.revision === setup.revision ? "Enabled" : "Enabled · draft changes"
     : setup.active ? "Paused"
+    : setup.recovery !== undefined && setup.recovery.registrationState !== "known" ? undefined
     : setup.recovery?.trialRegistration ? setup.recovery.trialRegistration.enabled ? "Trial" : "Paused"
     : "Off"
 
