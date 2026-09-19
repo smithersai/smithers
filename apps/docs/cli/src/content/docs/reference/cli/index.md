@@ -29,7 +29,7 @@ starts durable workflows.
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `clean [pattern]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
 | `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
-| `serve`, `opencode`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, serve the OpenCode app, diagnose, discover uses, migrate source, check versions, or submit a report. |
+| `serve`, `opencode`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, serve the OpenCode app, diagnose, discover uses, migrate source, check versions, or submit a report. `opencode` needs `AI_GATEWAY_API_KEY` as well as a seat key and refuses to start without one, because the harness fails a run whose completion nothing judged; `--scripted` runs no model and needs neither. |
 
 Target patterns include `//...`, `//package/...`, and `//package:target`.
 Execution supports `--plan`, `--jobs`, and `--no-cache`. `affected` compares

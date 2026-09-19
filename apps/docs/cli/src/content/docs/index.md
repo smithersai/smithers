@@ -83,7 +83,7 @@ The verbs group by the job they do:
 | End a run | `cancel`, `down` |
 | Read what happened | `ls`, `ps`, `status` (aliases `inspect`, `why`), `logs` (alias `events`), `output` |
 | Set a project up | `init`, `suggest`, `doctor`, `migrate` |
-| Host and integrate | `serve` (alias `gateway`), `opencode`, `mcp`, `claude` |
+| Host and integrate | `serve` (alias `gateway`), `opencode` (needs `AI_GATEWAY_API_KEY`), `mcp`, `claude` |
 | Maintain | `gc`, `memory`, `update`, `bug`, `completions` |
 
 Smithers 0.x spellings that were removed refuse with one sentence and a
