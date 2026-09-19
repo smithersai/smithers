@@ -1,0 +1,28 @@
+{
+  "name": "smithers-flow-mock",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@xyflow/react": "^12.11.6",
+    "dagre": "^0.8.5",
+    "motion": "^12.43.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.54",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

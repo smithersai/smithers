@@ -1,0 +1,126 @@
+/*
+ * The Smithers token contract, lifted from apps/app/src/mainview/styles/tokens.css.
+ * Two axes: data-theme (light | dark), data-palette (night-owl default).
+ * Every value below is the shipped one; nothing here is invented for the mock.
+ */
+:root {
+  color-scheme: light;
+
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-caption: 0.75rem;
+  --fs-small: 0.875rem;
+  --fs-body: 1rem;
+  --fs-md: 1.125rem;
+  --r-sm: 8px;
+  --r-bubble: 18px;
+  --r-full: 999px;
+  --ease-current: cubic-bezier(0.22, 0.61, 0.21, 1);
+  --dur: 180ms;
+  --dur-slow: 260ms;
+
+  /* night-owl · light */
+  --bg: #fbfbfb;
+  --text: #403f53;
+  --text-muted: #5c5b71;
+  --text-faint: #6f6e85;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --surface-3: #ffffff;
+  --surface-glass: rgb(255 255 255 / 72%);
+  --surface-glass-strong: rgb(255 255 255 / 85%);
+  --border: rgb(64 63 83 / 8%);
+  --border-strong: rgb(64 63 83 / 14%);
+  --border-solid: #d9d9d9;
+  --hover: #e0e0e0;
+  --hover-subtle: rgb(64 63 83 / 3%);
+  --inverse-bg: #403f53;
+  --inverse-text: #fbfbfb;
+  --brand: #994cc3;
+  --success: #207770;
+  --warning: #826601;
+  --danger: #ba3f3b;
+  --info: #4876d6;
+  --code-bg: #f0f0f0;
+  --code-text: #403f53;
+  --inline-code-bg: rgb(64 63 83 / 6%);
+  --shadow-rgb: 64 63 83;
+  --canvas-dot: rgb(64 63 83 / 16%);
+
+  --ring: color-mix(in srgb, var(--brand) 45%, transparent);
+  --ring-border: color-mix(in srgb, var(--brand) 72%, var(--surface));
+
+  --bubble-incoming: var(--surface);
+  --bubble-outgoing: color-mix(in srgb, var(--brand) 14%, var(--surface));
+
+  --shadow-1: 0 1px 2px rgb(var(--shadow-rgb) / 4%), 0 1px 3px rgb(var(--shadow-rgb) / 6%);
+  --shadow-2: 0 1px 2px rgb(var(--shadow-rgb) / 4%), 0 12px 32px rgb(var(--shadow-rgb) / 10%);
+  --shadow-3: 0 4px 12px rgb(var(--shadow-rgb) / 10%), 0 16px 48px rgb(var(--shadow-rgb) / 14%);
+
+  --brand-soft: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  --brand-soft-strong: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  --brand-border: color-mix(in srgb, var(--brand) 40%, transparent);
+  --success-soft: color-mix(in srgb, var(--success) 12%, var(--surface));
+  --success-border: color-mix(in srgb, var(--success) 40%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  --warning-border: color-mix(in srgb, var(--warning) 40%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  --danger-border: color-mix(in srgb, var(--danger) 40%, transparent);
+  --info-soft: color-mix(in srgb, var(--info) 10%, var(--surface));
+  --info-border: color-mix(in srgb, var(--info) 40%, transparent);
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 28px; --sp-8: 32px;
+  --fs-1: var(--fs-caption); --fs-2: var(--fs-small); --fs-3: var(--fs-body);
+  --lh-tight: 1.35; --lh-body: 1.5;
+  --r-1: var(--r-sm); --r-2: 10px; --r-3: 12px; --r-4: 16px;
+  --ctl-h: 36px; --ctl-h-sm: 32px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* night-owl · dark */
+  --bg: #011627;
+  --text: #d6deeb;
+  --text-muted: #8badc1;
+  --text-faint: #748fa5;
+  --surface: #0b253a;
+  --surface-2: #1d3b53;
+  --surface-3: #234d70;
+  --surface-glass: rgb(11 37 58 / 72%);
+  --surface-glass-strong: rgb(11 37 58 / 85%);
+  --border: rgb(214 222 235 / 10%);
+  --border-strong: rgb(214 222 235 / 18%);
+  --border-solid: #122d42;
+  --hover: #1d3b53;
+  --hover-subtle: rgb(214 222 235 / 5%);
+  --inverse-bg: #d6deeb;
+  --inverse-text: #011627;
+  --brand: #c792ea;
+  --success: #addb67;
+  --warning: #ecc48d;
+  --danger: #ef5350;
+  --info: #82aaff;
+  --code-bg: #011627;
+  --code-text: #d6deeb;
+  --inline-code-bg: rgb(214 222 235 / 8%);
+  --shadow-rgb: 0 0 0;
+  --canvas-dot: rgb(214 222 235 / 12%);
+
+  --ring-border: color-mix(in srgb, var(--brand) 78%, var(--text));
+  --bubble-incoming: var(--hover);
+  --bubble-outgoing: color-mix(in srgb, var(--brand) 24%, var(--surface));
+
+  --shadow-1: 0 1px 2px rgb(var(--shadow-rgb) / 24%), 0 1px 3px rgb(var(--shadow-rgb) / 32%);
+  --shadow-2: 0 1px 2px rgb(var(--shadow-rgb) / 24%), 0 12px 32px rgb(var(--shadow-rgb) / 40%);
+  --shadow-3: 0 4px 12px rgb(var(--shadow-rgb) / 45%), 0 16px 48px rgb(var(--shadow-rgb) / 50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
