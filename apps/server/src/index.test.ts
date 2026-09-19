@@ -6,6 +6,7 @@ import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import {
   CLIENT_ERROR_LOG_MAX_BYTES,
   CLIENT_ERROR_SOURCE_WINDOW_MAX,
@@ -4177,6 +4178,66 @@ describe("wave 11 — the /api/workflow/* routes", () => {
       expect(text).not.toContain(CLOUD_TOKEN)
       expect(text).not.toContain("smithers_gateway")
     })
+  })
+
+  /*
+   * Measured on canary 0068f10c2b35: after /workspace.suspend then
+   * /workspace.resume, `POST /api/workflow/provision` answered `ready` in 0s
+   * while the gateway was not up, five rpc calls then timed out at 30s each,
+   * and the first one that worked landed at t=161s. The cached record inside
+   * its half-life was the whole answer, and a suspend writes nothing to it —
+   * so `ready` was the PRE-SUSPEND state. A readiness answer has to be about
+   * the gateway, so the gateway is who answers it.
+   */
+  test("a workspace whose gateway is not serving is never answered `ready`", async () => {
+    let serving = true
+    await withRelay({ gateway: () => (serving ? undefined : json(502, { error: "bad gateway" })) }, async (calls) => {
+      const ask = () =>
+        worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "codeplanesmithers/smithers-demo" }) }),
+          env()
+        )
+      expect(await (await ask()).json()).toMatchObject({ status: "ready", gatewayId: "gw-1" })
+      const provisions = calls.filter((call) => call.url.endsWith("/gateway")).length
+
+      // The VM idle-suspends behind a record nothing invalidates.
+      serving = false
+      const response = await ask()
+      expect(response.status).toBe(200)
+      const body = await response.json() as { status?: unknown; message?: unknown }
+      expect(body.status).not.toBe("ready")
+      expect(body).toMatchObject({ status: "provisioning" })
+      expect(String(body.message)).toContain("isn't answering yet")
+      // The record is younger than the forced-reprovision floor, so the honest
+      // answer is the wait itself and not another POST at Smithers Cloud.
+      expect(calls.filter((call) => call.url.endsWith("/gateway")).length).toBe(provisions)
+    })
+  })
+
+  /*
+   * The person's sentence. `upstream_refused — … Something Smithers depends on
+   * refused that` is a true fault class and a false account of what happened:
+   * nothing refused anything, the workspace was still coming up.
+   */
+  test("running something against a starting workspace says it is starting, not that something refused", async () => {
+    await withRelay(
+      { gateway: () => json(409, { code: "conflict", message: "repo gateway is not running" }) },
+      async () => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({ repo: "codeplanesmithers/smithers-demo", procedure: "Run", payload: {} })
+          }),
+          env()
+        )
+        const body = await response.json() as { code?: unknown; message?: unknown }
+        expect(body.code).not.toBe("upstream_refused")
+        expect(body.code).toBe("workspace_starting")
+        expect(String(body.message)).toContain("starting back up")
+        expect(response.status).toBe(WORKER_FAILURES.workspace_starting.status)
+        expect(WORKER_FAILURES.workspace_starting.fault).toBe("wait")
+      }
+    )
   })
 
   test("a signed-out caller gets 401 and nothing is provisioned", async () => {
