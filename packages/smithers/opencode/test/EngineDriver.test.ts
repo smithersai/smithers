@@ -11,7 +11,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Effect, Layer, Stream } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -613,6 +613,82 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     // The sink hears the interrupt as soon as the body is gone, not after a
     // ten second wait for a result a cancelled run never publishes.
     expect(result.closedMs).toBeLessThan(3000)
+  })
+
+  /**
+   * The Stop that lands while the frame is on its way to a park. The sink
+   * holds the body at the ask, which is after the hook decided to park and
+   * before the engine has recorded it, and the Stop is answered there.
+   *
+   * One press must be enough. The engine cancels a run whose cancellation was
+   * recorded before the park's commit, so the row below is `cancelled` and
+   * nothing will ever resume it; a driver that reported the park its body saw
+   * left the session busy for good, with no card to answer, and only a second
+   * Stop got out of it.
+   */
+  it("ends a turn whose frame parks a moment after the Stop, on the first Stop", async () => {
+    const directory = scratch()
+    const log = recorder()
+    const reached = Deferred.makeUnsafe<void>()
+    const go = Deferred.makeUnsafe<void>()
+    let asks = 0
+    const holding: Driver.Sink = {
+      event: (event) =>
+        Effect.suspend(() => {
+          log.events.push(event)
+          if (event._tag !== "permission-required" || asks++ > 0) return Effect.void
+          return Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(go))
+        }),
+      closed: log.sink.closed
+    }
+    script.replies = [bashCell("echo racing")]
+    const result = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* Effect.forkDetach(driver.start(input("ses_race", "msg_race"), holding))
+        yield* Deferred.await(reached)
+        const stopped = yield* Effect.forkDetach(driver.interrupt("ses_race"))
+        const interrupted = yield* Fiber.join(stopped)
+        yield* Deferred.succeed(go, undefined)
+        yield* wait(() => log.outcomes.length === 1)
+        return {
+          interrupted,
+          left: yield* store.listTurns(),
+          // A second Stop finds nothing: the first one ended the turn.
+          again: yield* driver.interrupt("ses_race")
+        }
+      }))
+    expect(result).toMatchObject({ interrupted: true, again: false, left: [] })
+    expect(log.outcomes).toEqual([{ _tag: "interrupted" }])
+    expect(engineRow(directory, "msg_race")).toEqual({ status: "cancelled", waiting: null, token: null })
+  })
+
+  /**
+   * The engine drives a suspended execution once more of its own accord, which
+   * replays the frame and asks the same question again. The person is looking
+   * at one card, so the turn announces one ask: a second `permission.asked`
+   * for a request already pending puts a duplicate card in the app.
+   */
+  it("announces a park once, however many times the engine drives it", async () => {
+    const directory = scratch()
+    const log = recorder()
+    script.replies = [bashCell("echo once")]
+    const asked = await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_once", "msg_once"), log.sink)
+        // The engine's own second drive of the parked run, waited for rather
+        // than slept through: it replays the frame, so the call is announced a
+        // second time, and the ask it would have asked again follows that.
+        yield* wait(() => started(log.events, "bash").length >= 2)
+        yield* Effect.sleep("1 second")
+        return log.events.filter((event) => event._tag === "permission-required")
+      }))
+    expect(log.outcomes).toEqual([{ _tag: "suspended" }])
+    expect(asked.map((event) => (event as AgentEvent.PermissionRequired).request.requestId)).toEqual([
+      permissionOf(log.events)
+    ])
+    // The replay still reaches the call, which is what keeps the card's own
+    // part up to date; only the ask is announced once.
+    expect(started(log.events, "bash").length).toBeGreaterThanOrEqual(2)
   })
 
   it("interrupts a parked turn", async () => {

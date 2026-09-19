@@ -159,9 +159,21 @@ describe("event HttpApi (httpapi-event.test.ts)", () => {
     const stream = await open()
     try {
       expect(await stream.next()).toMatchObject({ type: "server.connected" })
-      const id = await newSession()
-      const created = await stream.next()
-      expect(created).toMatchObject({ type: "session.created", properties: { info: { id } } })
+      // The subscription registers on the pull past the greeting, and nothing
+      // outside the stream can observe that pull, so a session is created
+      // until one of them is announced rather than once with a stopwatch on
+      // the answer: under load the drain had not pulled yet and the one
+      // announcement went to no subscriber.
+      const ids: Array<string> = []
+      let created: { type: string; properties: Record<string, unknown> } | undefined
+      for (let attempt = 0; attempt < 20 && created === undefined; attempt++) {
+        ids.push(await newSession())
+        created = await stream.next(250)
+      }
+      expect(created).toMatchObject({ type: "session.created" })
+      expect(ids).toContain(
+        ((created!.properties["info"]) as { readonly id: string }).id
+      )
     } finally {
       await stream.close()
     }

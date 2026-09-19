@@ -10,9 +10,14 @@
  * the `authorize` hook refusing a call before its durable boundary opens:
  * the execution suspends, the person answers, and `engine.resume` re-drives
  * the same id, so the replayed frame re-emits its events and the projection
- * updates the same cards. An interrupt is `engine.interrupt`, whose body
- * exit closes the projection. A steer is a durable notification the loop
- * drains at its next frame boundary. A restart re-drives what was open.
+ * updates the same cards, and the ask the person is looking at is announced
+ * once however many times the engine drives the park. An interrupt is
+ * `engine.interrupt`, whose body exit closes the projection; a Stop that lands
+ * while a frame is on its way to a park is still a stop, because the engine
+ * cancels the run the cancellation reaches ahead of the park's commit, so the
+ * park such a body reports is read as that interrupt. A steer is a durable
+ * notification the loop drains at its next frame boundary. A restart re-drives
+ * what was open.
  *
  * The composition follows `docs/jev-harness/composition-brief.md`: the
  * engine is built over the host's guarded platform, the registration
@@ -366,6 +371,36 @@ interface Running {
   /** The body's exit for the drive in flight. */
   settled: Deferred.Deferred<Driver.Outcome>
   driving: boolean
+  /**
+   * Set when the person asked this turn to stop, and never cleared: a Stop is
+   * about the turn, and the turn ends.
+   *
+   * A frame that parks a moment after the Stop reports the park its body saw,
+   * and the engine has already cancelled the run underneath it: the
+   * cancellation is recorded before the park's own commit, so the commit is
+   * guarded away and nothing will resume the row. Reporting that park would
+   * leave the session busy for good with no card to answer, which is why the
+   * park of an aborting turn is read as the interrupt it belongs to.
+   */
+  aborting: boolean
+  /**
+   * The permission request ids this turn has announced. The engine drives a
+   * suspended execution once more of its own accord, which replays the frame
+   * and asks the same question again; the person is looking at one card, so
+   * the ask is announced once per request id and not once per drive.
+   */
+  readonly announced: Set<string>
+}
+
+/**
+ * Whether an ask is the turn's first under its request id, remembering it when
+ * it is. A repeat is a replay of the ask the person already has in front of
+ * them, not a second question.
+ */
+const announces = (running: Running, requestID: string): boolean => {
+  if (running.announced.has(requestID)) return false
+  running.announced.add(requestID)
+  return true
 }
 
 const grantKey = (sessionID: string, key: string): string => `${sessionID}\u0000${key}`
@@ -656,7 +691,9 @@ export const layer = (options: Options) =>
           sink,
           parked: undefined,
           settled: yield* Deferred.make<Driver.Outcome>(),
-          driving: false
+          driving: false,
+          aborting: false,
+          announced: new Set()
         }
         sessions.set(input.sessionID, running)
         executions.set(input.messageID, running)
@@ -785,7 +822,13 @@ export const layer = (options: Options) =>
                   if (event._tag === "transition-applied" && event.transition._tag === "complete") {
                     output = event.transition.output
                   }
-                  return running === undefined ? Effect.void : running.sink.event(event)
+                  if (running === undefined) return Effect.void
+                  // One card per question. A replayed drive asks again under
+                  // the same request id, and the second ask would stand a
+                  // duplicate card beside the one being answered.
+                  return event._tag === "permission-required" && !announces(running, event.request.requestId)
+                    ? Effect.void
+                    : running.sink.event(event)
                 })
               ),
               Effect.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({}), QuickJSSandbox.layer)),
@@ -890,10 +933,11 @@ export const layer = (options: Options) =>
          * cancel is recorded, not settled), nothing re-drives it, and the
          * app is owed idle as soon as the body is gone.
          */
-        const awaitPublished = (executionId: string, outcome: Driver.Outcome): Effect.Effect<void> =>
+        const awaitPublished = (running: Running, outcome: Driver.Outcome): Effect.Effect<void> =>
           Effect.gen(function*() {
             if (outcome._tag === "interrupted") return
-            for (let attempt = 0; attempt < 400 && !stopping; attempt++) {
+            const executionId = running.input.messageID
+            for (let attempt = 0; attempt < 400 && !stopping && !running.aborting; attempt++) {
               const result = yield* polled(executionId)
               if (
                 result !== undefined && result !== "missing" &&
@@ -907,13 +951,22 @@ export const layer = (options: Options) =>
 
         const settle = (running: Running, outcome: Driver.Outcome): Effect.Effect<void> =>
           Effect.gen(function*() {
-            yield* awaitPublished(running.input.messageID, outcome)
-            if (outcome._tag === "failed" && outcome.provider !== undefined) {
-              yield* Effect.logError(seatFailureLine(outcome.provider))
+            yield* awaitPublished(running, outcome)
+            // The park of a turn the person stopped is that stop: the engine
+            // cancelled the run the moment the cancellation was recorded
+            // ahead of the park's commit, and a park the commit won is swept
+            // for the same request, so the turn is over either way and the
+            // session is owed idle now rather than at a second Stop.
+            const ended: Driver.Outcome = running.aborting && outcome._tag === "suspended"
+              ? { _tag: "interrupted" }
+              : outcome
+            if (ended._tag === "failed" && ended.provider !== undefined) {
+              yield* Effect.logError(seatFailureLine(ended.provider))
             }
             running.driving = false
-            yield* running.sink.closed(outcome)
-            if (outcome._tag === "suspended") return
+            yield* running.sink.closed(ended)
+            if (ended._tag === "suspended") return
+            running.parked = undefined
             sessions.delete(running.input.sessionID)
             executions.delete(running.input.messageID)
             denials.delete(running.input.messageID)
@@ -994,10 +1047,18 @@ export const layer = (options: Options) =>
           Effect.gen(function*() {
             const running = sessions.get(sessionID)
             if (running === undefined) return false
-            yield* Effect.ignoreCause(runtime.interrupt(turnFlow, running.input.messageID))
+            // Recorded before the engine is told, so a park this Stop raced is
+            // read as the stop it is whichever of the two lands first.
+            running.aborting = true
             // A parked execution has no body to exit: the cancel is recorded
-            // and the engine closes the run without re-executing it.
-            if (!running.driving) {
+            // and the engine closes the run without re-executing it. Whether
+            // there is a body is read before the engine is told, because
+            // telling it ends the body: a driving turn that settles while this
+            // call waits is settled by its own exit, and reading the flag
+            // afterwards closed such a turn a second time.
+            const parked = !running.driving
+            yield* Effect.ignoreCause(runtime.interrupt(turnFlow, running.input.messageID))
+            if (parked) {
               running.parked = undefined
               yield* settle(running, { _tag: "interrupted" })
             }

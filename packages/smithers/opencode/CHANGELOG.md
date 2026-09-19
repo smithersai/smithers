@@ -51,6 +51,32 @@
 
 ### Fixed
 
+- One Stop ends a turn whose frame parks a moment after it. The park and the
+  Stop race: the engine records the cancellation before it interrupts
+  anything, so a cancellation recorded ahead of the park's own commit turns
+  that commit into a guard failure and cancels the run, and a park that
+  commits first is swept for the same request. Either way the turn is over,
+  but the driver reported the park its body saw, so `Turns` left the
+  projection open, the session read busy for good with no card to answer, and
+  only a second Stop got out of it. The park of a turn the person stopped is
+  now read as that stop, and the wait for the engine to publish the park ends
+  with it, which also takes ten seconds of polling off the abort. This is the
+  race behind the flaky `EngineDriver > aborts a parked turn through the
+  composition`: the card reaches the store before the park commits, so a
+  test that aborts as soon as it sees the card was aborting inside the window.
+
+- A driving turn is no longer closed twice by its own Stop. `interrupt` read
+  whether there was a body to exit after telling the engine, and telling the
+  engine ends the body, so a turn that settled while that call was in flight
+  was settled again by the caller.
+
+- One park announces one card. The engine drives a suspended execution once
+  more of its own accord, which replays the frame and asks the same question
+  again, so every permission park published `permission.asked` twice and a
+  second card stood beside the one being answered. The ask is announced once
+  per request id now, not once per drive; the replayed call itself still
+  reaches the projection, which is what keeps the card's own part up to date.
+
 - A finished session keeps the color its last state earned. Three of eleven
   finished, idle sessions on a live keyed drive sat red "waiting for approval"
   with nothing pending, because `Health.decide` short-circuits on

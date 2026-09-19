@@ -11,6 +11,29 @@ const dataLines = (frames: ReadonlyArray<string>) =>
 const parse = (frames: ReadonlyArray<string>) =>
   dataLines(frames).map((line) => JSON.parse(line.slice("data: ".length)) as Events.Envelope)
 
+/** Polls a condition another fiber makes true, instead of sleeping a guess. */
+const until = (check: () => boolean): Effect.Effect<void> =>
+  Effect.suspend(() => check() ? Effect.void : Effect.andThen(Effect.sleep("2 millis"), until(check)))
+
+/**
+ * Publishes until the stream under watch has taken `atLeast` frames, which is
+ * how a test knows the stream is subscribed: the subscription registers when
+ * the stream pulls past its greeting, and nothing outside the stream can
+ * observe that. A fixed sleep in its place published into no subscriber at all
+ * under load, and the test read back an event it had already published.
+ */
+const publishUntilTaken = (
+  publish: Effect.Effect<unknown>,
+  taken: () => number,
+  atLeast: number
+): Effect.Effect<void> =>
+  Effect.suspend(() =>
+    taken() >= atLeast ? Effect.void : Effect.andThen(
+      publish,
+      Effect.andThen(Effect.sleep("2 millis"), publishUntilTaken(publish, taken, atLeast))
+    )
+  )
+
 describe("Events", () => {
   it("envelopes session events with the directory and project and remembers a bounded replay", async () => {
     const result = await run(
@@ -78,9 +101,17 @@ describe("Events", () => {
     const result = await run(
       Effect.gen(function*() {
         const hub = yield* Events.make(options)
-        const open = yield* Effect.forkDetach(Stream.runCollect(hub.stream()))
-        yield* Effect.sleep("20 millis")
-        yield* hub.publish({ type: "session.idle", properties: { sessionID: "s" } })
+        // What the open stream has taken so far, so the publish below waits for
+        // the subscription rather than for a stopwatch.
+        const taken: Array<string> = []
+        const open = yield* Effect.forkDetach(
+          Stream.runCollect(Stream.tap(hub.stream(), (chunk) => Effect.sync(() => void taken.push(chunk))))
+        )
+        yield* publishUntilTaken(
+          hub.publish({ type: "session.idle", properties: { sessionID: "s" } }),
+          () => taken.length,
+          2
+        )
         yield* hub.close
         const drained = yield* Fiber.join(open)
         const late = yield* Stream.runCollect(hub.stream())
@@ -90,7 +121,11 @@ describe("Events", () => {
         }
       })
     )
-    expect(result.drained).toEqual(["server.connected", "session.idle"])
+    // The greeting, then every event the stream was published while it was
+    // open: one at least, and one per retry the subscription needed.
+    expect(result.drained[0]).toBe("server.connected")
+    expect(result.drained.length).toBeGreaterThan(1)
+    expect(result.drained.slice(1).every((type) => type === "session.idle")).toBe(true)
     // Opened after the close: the greeting, then the end, never a live wait.
     // Nothing is replayed, because the stream named no id.
     expect(result.late).toEqual(["server.connected"])
@@ -102,33 +137,43 @@ describe("Events", () => {
         const hub = yield* Events.make({ directory: "/d", project: "p", heartbeat: "1 hour", replay: 3 })
         const gate = yield* Deferred.make<void>()
         const seen: Array<Events.Envelope> = []
-        // The consumer reads server.connected, then stalls on the first live
-        // frame until the gate opens.
+        // The consumer reads server.connected and one live frame, then stalls
+        // until the gate opens. The second frame is what makes the stall
+        // observable: the queue is registered and the consumer is inside it,
+        // so the publishes below cannot race the subscription. A test that
+        // waited a fixed ten milliseconds for that instead published into no
+        // subscriber at all under load, and read back no event.
         const consumer = yield* Effect.forkChild(
           hub.stream().pipe(
             Stream.mapEffect((chunk) =>
               Effect.as(
-                seen.length === 0 ? Effect.void : Deferred.await(gate),
+                seen.length < 2 ? Effect.void : Deferred.await(gate),
                 parse([chunk])[0]!
               )
             ),
             Stream.runForEach((envelope) => Effect.sync(() => void seen.push(envelope)))
           )
         )
-        yield* Effect.sleep("10 millis")
+        yield* publishUntilTaken(
+          hub.publish({ type: "message.part.delta", properties: { delta: "0" } }),
+          () => seen.length,
+          2
+        )
         for (let index = 1; index <= 40; index++) {
           yield* hub.publish({ type: "message.part.delta", properties: { delta: `${index}` } })
         }
-        yield* Effect.sleep("10 millis")
         yield* Deferred.succeed(gate, undefined)
-        yield* Effect.sleep("10 millis")
+        yield* until(() => seen.length > 2)
         yield* hub.close
         yield* Fiber.join(consumer)
         return seen.filter((envelope) => envelope.payload.type === "message.part.delta")
           .map((envelope) => envelope.payload.properties["delta"])
       })
     )
-    expect(result.length).toBeLessThan(40)
+    // The stalled consumer kept the newest events of the forty published
+    // behind it, and the first one it had already taken.
+    expect(result.length).toBeLessThan(41)
+    expect(result[0]).toBe("0")
     expect(result.slice(-3)).toEqual(["38", "39", "40"])
   })
 
