@@ -5604,6 +5604,9 @@ importers:
       '@smthrs/control':
         specifier: 1.0.0-rc.0
         version: link:../control
+      '@smthrs/journal':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/journal
       '@smthrs/sync':
         specifier: 1.0.0-rc.0
         version: link:../flows/sync
@@ -5635,9 +5638,6 @@ importers:
       '@smthrs/flows':
         specifier: 1.0.0-rc.0
         version: link:../flows
-      '@smthrs/journal':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/journal
       '@smthrs/kernel':
         specifier: 1.0.0-rc.0
         version: link:../flows/kernel

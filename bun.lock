@@ -2770,6 +2770,7 @@
       "version": "1.0.0-rc.0",
       "dependencies": {
         "@smthrs/control": "1.0.0-rc.0",
+        "@smthrs/journal": "1.0.0-rc.0",
         "@smthrs/sync": "1.0.0-rc.0",
       },
       "devDependencies": {
@@ -2782,7 +2783,6 @@
         "@smthrs/engine-store": "1.0.0-rc.0",
         "@smthrs/flow": "1.0.0-rc.0",
         "@smthrs/flows": "1.0.0-rc.0",
-        "@smthrs/journal": "1.0.0-rc.0",
         "@smthrs/kernel": "1.0.0-rc.0",
         "@smthrs/notifications": "1.0.0-rc.0",
         "@smthrs/registry": "1.0.0-rc.0",
