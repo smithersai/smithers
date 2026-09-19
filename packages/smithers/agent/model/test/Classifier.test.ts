@@ -294,6 +294,58 @@ describe("Classifier.evaluate", () => {
     })
   })
 
+  it.each<{
+    readonly name: string
+    readonly criteria: ReadonlyArray<string>
+    readonly probabilities: Readonly<Record<string, number>>
+    readonly expected: Readonly<Record<string, number>>
+  }>([
+    {
+      name: "indexed probabilities with numeric labels",
+      criteria: ["1", "2"],
+      probabilities: { "0": 0.9, "1": 0.1 },
+      expected: { "1": 0.9, "2": 0.1 }
+    },
+    {
+      name: "label probabilities with numeric labels outside the index range",
+      criteria: ["1", "2"],
+      probabilities: { "1": 0.9, "2": 0.1 },
+      expected: { "1": 0.9, "2": 0.1 }
+    },
+    {
+      name: "index precedence when labels overlap every index",
+      criteria: ["1", "0"],
+      probabilities: { "0": 0.9, "1": 0.1 },
+      expected: { "1": 0.9, "0": 0.1 }
+    }
+  ])("uses one score dictionary format for $name", async ({ criteria, probabilities, expected }) => {
+    const answers = await Effect.runPromise(Classifier.decodeAnswers({
+      rating: Classifier.score({ instructions: "Rate this state", criteria })
+    }, {
+      rating: { type: "score", score: 0.1, probabilities }
+    }))
+
+    expect(answers.rating).toEqual({
+      value: 0.1,
+      label: criteria[0],
+      probabilities: expected,
+      confidence: 0.9
+    })
+  })
+
+  it("refuses a score dictionary mixing indexes and labels", async () => {
+    const error = failure(
+      await run(
+        Relevance.evaluate(state),
+        scripted({ ...good, risk: { score: 1.5, probabilities: { low: 0.4, "2": 0.6 } } })
+      )
+    )
+
+    expect(error).toBeInstanceOf(Classifier.ClassifierError)
+    expect(error.code).toBe("invalid_answer")
+    expect(error.message).toContain("score probabilities must use either rung indexes or rung labels")
+  })
+
   it("encodes the state through its schema before sending it", async () => {
     const seen: Array<Evaluator.Request> = []
     const Dated = Classifier.make("dated", {

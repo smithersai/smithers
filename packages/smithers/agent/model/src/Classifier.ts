@@ -301,7 +301,23 @@ const decodeOne = (
         return Result.fail(invalidAnswer(id, `score ${raw.score} is outside the ${rungs.length} rungs`))
       }
       const label = rungs[Math.round(raw.score)]!
-      const probabilities = distribution(rungs, label, raw.probabilities, (index) => [rungs[index]!, String(index)])
+      let probabilityKeys: ReadonlyArray<string> = rungs
+      if (raw.probabilities !== undefined) {
+        const supplied = Object.keys(raw.probabilities)
+        const indexes = rungs.map((_, index) => String(index))
+        const indexSet = new Set(indexes)
+        // Choose one key space for the whole dictionary. A rung label may
+        // itself be an index, so per-rung aliases can duplicate or swap mass.
+        if (supplied.every((key) => indexSet.has(key))) {
+          probabilityKeys = indexes
+        } else {
+          const labels = new Set(rungs)
+          if (!supplied.every((key) => labels.has(key))) {
+            return Result.fail(invalidAnswer(id, "score probabilities must use either rung indexes or rung labels"))
+          }
+        }
+      }
+      const probabilities = distribution(rungs, label, raw.probabilities, (index) => [probabilityKeys[index]!])
       if (Result.isFailure(probabilities)) return Result.fail(invalidAnswer(id, probabilities.failure))
       return Result.succeed({
         value: raw.score,
@@ -321,8 +337,10 @@ const decodeOne = (
  * of its options; a score must lie within the rubric's index range. A
  * distribution the transport did not send is one-hot on the chosen option or
  * nearest rung, so confidence reads 1 and a caller that wants to tell the two
- * apart keeps the raw response. Both the typed path and the ad-hoc path go
- * through here.
+ * apart keeps the raw response. A score distribution uses one dictionary
+ * format: all valid zero-based indexes, otherwise all declared labels.
+ * Indexes take precedence when numeric labels make both formats valid.
+ * Both the typed path and the ad-hoc path go through here.
  *
  * @category decoding
  * @since 1.0.0-rc.0
