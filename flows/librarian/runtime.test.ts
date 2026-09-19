@@ -42,7 +42,7 @@ const layers = (live: Model.Model, policy: Budget.Policy) => agentRuntime(
     route: { prepare: () => Effect.succeed({ routeId: "test", protocolId: "test", method: "POST", url: "http://127.0.0.1", publicHeaders: {}, body: new Uint8Array(), bodyText: "" }) }
   }) }, "anthropic:test"))),
   Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
-  Layer.provideMerge(Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))),
+  Layer.provideMerge(Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }))),
   Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)
