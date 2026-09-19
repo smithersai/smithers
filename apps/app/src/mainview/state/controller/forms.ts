@@ -8,7 +8,7 @@ import type { AgentInvocation } from "../../flows/AgentInvocation"
 import type { CommandGesture } from "../../flows/CommandGesture"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { FieldOption,FieldValue,FormDraft,FormField,FormHints,OptionProvider } from "../../flows/FlowForms"
-import { assembleArgs,declaredInput,draftFrom,formFieldsFor,missingFields,partialPayload,submissionPayload } from "../../flows/FlowForms"
+import { assembleArgs,declaredInput,draftFrom,formFieldsFor,missingFields,positionalRead,submissionPayload } from "../../flows/FlowForms"
 import { payloadFor } from "../../flows/SlashPayload"
 import { manifests } from "../../plugins/catalog"
 import { actorSharedState } from "../ActorBindings"
@@ -331,7 +331,10 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       (entry ?? ctx.commands.find(request.name))?.metadata.grammar,
       knownRepositories(ctx.store)
     )
-    let given = "payload" in parsed ? parsed.payload : partialPayload(fields, hints, request.args)
+    const read = "payload" in parsed
+      ? { payload: parsed.payload, skipped: [] as ReadonlyArray<string> }
+      : positionalRead(fields, hints, request.args)
+    let given = read.payload
     if (request.name === "files.read") {
       /* Keep the selected repository and ask only for what is actually missing. */
       const repo = typeof given["repo"] === "string" ? given["repo"] : fileTargetKey(store)
@@ -368,7 +371,33 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       payloadField: request.payloadField, inputSchema: Schema.toJsonSchemaDocument(input)
     }
     const resolved = withOptions(fields, draft)
-    const parseError = "error" in parsed && missingFields(resolved, draft).length === 0 ? { error: parsed.error } : {}
+    /*
+     * THE FORM LAW's one sentence, and the two rules allowed to write it.
+     *
+     * First the flow's OWN rule over what the invocation already named
+     * (`refuse`): it is about a value the person supplied, so it stands
+     * whether or not the form still has fields to ask for.
+     *
+     * Then the grammar's reason, which stays the fallback for a line that
+     * parsed into nothing askable — with one subtraction, and only one. The
+     * positional re-read below this branch may SKIP an optional slot so the
+     * required slots behind it can have the tokens that are left
+     * (FlowForms.positionalRead, walk W1's pause card). A slot it skipped is
+     * a field the line never named, so the form does have something left to
+     * ask and `missingFields` — which counts only the required ones — is not
+     * the whole answer. Without this, the skip rule INVENTS a sentence
+     * `main@origin` does not have: `/triggers.register one two three` takes
+     * three words into Flow, Name and Schedule and then quotes the grammar at
+     * a line the form just read (R102 B1, R102c B1c). It subtracts nothing
+     * else: a line no slot was skipped for keeps exactly the sentence
+     * `main@origin` puts on that card, including every complaint about a
+     * value the card is holding (R102d B1d).
+     */
+    const refused = hints?.refuse?.(given)
+    const parseError = refused !== undefined
+      ? { error: refused }
+      : "error" in parsed && read.skipped.length === 0 && missingFields(resolved, draft).length === 0
+        ? { error: parsed.error } : {}
     // Two open setups must not overwrite each other's question.
     const cardId = request.cardId ?? (request.name === "setup.ask"
       ? setupQuestionCardId(String(given["cardId"] ?? "")) : formCardId(request.name))

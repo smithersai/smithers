@@ -138,6 +138,108 @@ describe("THE FORM LAW — the agent door", () => {
 })
 
 describe("THE FORM LAW — the slash door and the button door", () => {
+  /*
+   * Walk W1 (W1-d-doors.json `pauseFormFields`): the person typed
+   * `/triggers.pause canary-w1-not-registered` and read back
+   * `Repo = "canary-w1-not-registered"` with `Slug` empty. The name they typed
+   * is the schedule's, and the form has to ask for the repository — not for
+   * the thing they already said.
+   */
+  test("a positional argument prefills the field the door names, not the optional repository in front of it", async () => {
+    const { store, controller } = await boot()
+    const outcome = await controller.commands.run("triggers.pause", "canary-w1-not-registered")
+    expect(outcome.status).toBe("form")
+    const card = formOf(store, "triggers.pause")
+    expect(card?.payload.fields.map((field) => field.label)).toEqual(["Repo", "Slug"])
+    expect(card?.payload.draft).toEqual({ slug: "canary-w1-not-registered" })
+    /*
+     * R102 B1: the token now fills the required slot, so nothing is missing —
+     * and a card whose optional slot the read passed over must NOT answer with
+     * the grammar's reason, which is addressed to a line the form has just
+     * read (controller/forms.ts).
+     */
+    expect(card?.payload.error).toBeUndefined()
+    await controller.dispose()
+  })
+
+  /*
+   * R102c B1c, on the door the same skip rule moved: three words reach Flow,
+   * Name and Schedule, and the card does not then quote the grammar's usage
+   * line at the person about a line the form just read. At `main@origin` the
+   * same line leaves Schedule empty and the card says nothing, so this is the
+   * branch keeping its own sentence count, not adding one.
+   */
+  test("a line whose tokens the read placed over a skipped slot earns no usage sentence", async () => {
+    const { store, controller } = await boot()
+    expect((await controller.commands.run("triggers.register", "one two three")).status).toBe("form")
+    const card = formOf(store, "triggers.register")
+    expect(card?.payload.draft).toEqual({ flow: "one", slug: "two", schedule: "three" })
+    expect(card?.payload.error).toBeUndefined()
+    await controller.dispose()
+  })
+
+  /*
+   * The subtraction above is exactly that one: a line no slot was skipped for
+   * keeps the sentence `main@origin` puts on the card, including every
+   * complaint about a value the card is holding (R102d B1d). `/flow.run 7 8 9`
+   * is one character from the `{invalid` case and is the same field.
+   */
+  test("a card still states what its own values are wrong about", async () => {
+    const { store, controller } = await boot()
+    expect((await controller.commands.run("flow.run", "7 8 9")).status).toBe("form")
+    expect(formOf(store, "flow.run")?.payload.draft).toEqual({ name: "7", repo: "8", input: "9" })
+    expect(formOf(store, "flow.run")?.payload.error).toBe("Flow input must be a JSON object.")
+    expect((await controller.commands.run("issue.implement", "0")).status).toBe("form")
+    expect(formOf(store, "issue.implement")?.payload.error).toBe("An issue number is required")
+    expect((await controller.commands.run("issues.list", "one")).status).toBe("form")
+    expect(formOf(store, "issues.list")?.payload.error).toBe("issues.list takes open, closed, or all")
+    expect((await controller.commands.run("setup.run", "7 8 9")).status).toBe("form")
+    expect(formOf(store, "setup.run")?.payload.error).toBe("Setup input must be a JSON object")
+    await controller.dispose()
+  })
+
+  /*
+   * Walk W1 (W1-e-triggers-register.json `L92-tokensTranscriptTail`):
+   * `/triggers.register --tokens 500000` opened the register form and refused
+   * nothing, although 500000 typed into the field and prepared IS refused with
+   * the range, before any network call. A limit the line names is the same
+   * limit the field names, so it meets the same rule — this door's own
+   * (TriggersSeam.limitsRefusal), never a second copy of the sentence.
+   */
+  test("a flag argument reaches its field and meets the rule the field meets", async () => {
+    const { store, controller } = await boot()
+    const outcome = await controller.commands.run("triggers.register", "--tokens 500000")
+    expect(outcome.status).toBe("form")
+    const card = formOf(store, "triggers.register")
+    expect(card?.payload.draft).toEqual({ tokens: "500000" })
+    expect(card?.payload.error).toBe("Token and time limits are whole numbers: --tokens 1..200000, --minutes 1..120.")
+    await controller.dispose()
+  })
+
+  /*
+   * R102 B2: a number INSIDE the range is not told it is outside it. The half
+   * that is missing is what the open form is there to collect, so the card
+   * asks with its empty field and says nothing.
+   */
+  test("a limit inside the range is not refused at the door", async () => {
+    const { store, controller } = await boot()
+    expect((await controller.commands.run("triggers.register", "--tokens 150000")).status).toBe("form")
+    expect(formOf(store, "triggers.register")?.payload.draft).toEqual({ tokens: "150000" })
+    expect(formOf(store, "triggers.register")?.payload.error).toBeUndefined()
+    expect((await controller.commands.run("triggers.register", "--minutes 20")).status).toBe("form")
+    expect(formOf(store, "triggers.register")?.payload.error).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a repository-shaped token is read as the repository, through the real door", async () => {
+    const { store, controller } = await boot()
+    expect((await controller.commands.run("triggers.pause", "codeplanesmithers/canary owner-nightly")).status).toBe("form")
+    expect(formOf(store, "triggers.pause")?.payload.draft).toEqual({ repo: "codeplanesmithers/canary", slug: "owner-nightly" })
+    /* R102 follow-up, through the same door: one repository-shaped token is the repository. */
+    expect((await controller.commands.run("triggers.pause", "codeplanesmithers/canary-sandbox")).status).toBe("form")
+    expect(formOf(store, "triggers.pause")?.payload.draft).toEqual({ repo: "codeplanesmithers/canary-sandbox" })
+    await controller.dispose()
+  })
 })
 
 describe("THE FORM LAW — filling and submitting", () => {
