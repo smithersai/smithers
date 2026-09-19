@@ -8,6 +8,7 @@ import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { decodeAgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { LOCAL_SESSION_HEADER, LOCAL_SESSION_META } from "@smthrs/rpc/LocalSession"
+import { createChatStub } from "../../e2e/support/ChatStub"
 import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer } from "./server"
 import type { LocalServer } from "./server"
 
@@ -29,7 +30,7 @@ beforeAll(async () => {
   server = await startLocalServer({
     port: 0,
     distDir: dist,
-    chatStub: true,
+    agent: createChatStub,
     home: "/fake/home",
     log: (line) => logs.push(line)
   })
@@ -130,17 +131,17 @@ describe("the local origin", () => {
     expect(plain.status).toBe(415)
   })
 
-  test("a wrong-length or same-length wrong capability is refused on the header, /ws and /api/cloud-ws", async () => {
+  test("a wrong-length or same-length wrong capability is refused on the header and /api/cloud-ws", async () => {
     const token = server.sessionToken
     const sameLength = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`
     for (const wrong of [`${token}x`, token.slice(0, 8), sameLength]) {
       const header = await fetch(`${server.origin}/api/repos`, { headers: { [LOCAL_SESSION_HEADER]: wrong } })
       expect(header.status).toBe(401)
       const protocol = server.websocketProtocol.replace(token, wrong)
-      for (const path of ["/ws", "/api/cloud-ws/repos/will/smithers/workspace/sessions/s1/terminal"]) {
-        const upgrade = await fetch(`${server.origin}${path}`, { headers: { "sec-websocket-protocol": `other, ${protocol}` } })
-        expect(upgrade.status).toBe(401)
-      }
+      const upgrade = await fetch(`${server.origin}/api/cloud-ws/repos/will/smithers/workspace/sessions/s1/terminal`, {
+        headers: { "sec-websocket-protocol": `other, ${protocol}` }
+      })
+      expect(upgrade.status).toBe(401)
     }
   })
 
@@ -156,12 +157,6 @@ describe("the local origin", () => {
     expect(line).not.toContain("live_c4p4b1l1ty")
     expect(line).not.toContain("abcdef0123456789token")
     expect(line).toContain("Bearer [REDACTED_TOKEN]")
-  })
-
-  test("a lane replaces a placeholder by registering the same route", async () => {
-    server.router.add("GET", "/api/repos", () => Response.json({ repos: [{ id: "force" }] }))
-    expect(await (await apiFetch("/api/repos")).json()).toEqual({ repos: [{ id: "force" }] })
-    server.router.add("GET", "/api/repos", () => Response.json({ repos: [] }))
   })
 
   test("the OAuth legs are navigations: no session header, yet never 401", async () => {
@@ -351,7 +346,9 @@ describe("the Smithers Cloud seam", () => {
       port: 0,
       distDir: dist,
       cloudMode: "hybrid",
-      chatStub: true,
+      agent: createChatStub,
+      // This host is the cloud proxy alone; the identity seam has its own tests.
+      identityUpstream: null,
       cloudApi: `http://127.0.0.1:${upstream.port}`,
       cloudAuth: {
         token: () => "smithers_test_token",
@@ -413,7 +410,9 @@ describe("the Smithers Cloud seam", () => {
       port: 0,
       distDir: dist,
       cloudMode: "hybrid",
-      chatStub: true,
+      agent: createChatStub,
+      // This host is the cloud proxy alone; the identity seam has its own tests.
+      identityUpstream: null,
       cloudApi: `http://127.0.0.1:${upstream.port}`,
       cloudAuth: {
         token: () => "smithers_test_token",
@@ -563,52 +562,6 @@ describe("POST /api/chat/turn", () => {
       body: JSON.stringify({ runId: "run-3" })
     })
     expect(await late.json()).toEqual({ ok: true, status: "not-found" })
-  })
-})
-
-describe("/ws", () => {
-  const connect = (): Promise<WebSocket> =>
-    new Promise((resolve, reject) => {
-      const socket = new WebSocket(`${server.origin.replace("http", "ws")}/ws`, server.websocketProtocol)
-      socket.onopen = () => resolve(socket)
-      socket.onerror = () => reject(new Error("ws failed"))
-    })
-
-  const nextMessage = (socket: WebSocket): Promise<unknown> =>
-    new Promise((resolve) => {
-      socket.onmessage = (event) => resolve(JSON.parse(String(event.data)))
-    })
-
-  test("subscribe receives published frames; unsubscribe stops them", async () => {
-    const socket = await connect()
-    const ack = nextMessage(socket)
-    socket.send(JSON.stringify({ type: "subscribe", topic: "pty:abc" }))
-    expect(await ack).toEqual({ type: "subscribed", topic: "pty:abc" })
-    const frame = nextMessage(socket)
-    server.publish("pty:abc", { type: "pty.output", sessionId: "abc", data: "hi" })
-    expect(await frame).toEqual({ type: "pty.output", sessionId: "abc", data: "hi" })
-    const unack = nextMessage(socket)
-    socket.send(JSON.stringify({ type: "unsubscribe", topic: "pty:abc" }))
-    expect(await unack).toEqual({ type: "unsubscribed", topic: "pty:abc" })
-    socket.close()
-  })
-
-  test("a registered message handler receives client frames by type", async () => {
-    const received: Array<unknown> = []
-    const off = server.onMessage("probe.ping", (message, socket) => {
-      received.push(message)
-      socket.send(JSON.stringify({ type: "echo", data: message.data }))
-    })
-    const socket = await connect()
-    const reply = nextMessage(socket)
-    socket.send(JSON.stringify({ type: "probe.ping", data: "ls\n" }))
-    expect(await reply).toEqual({ type: "echo", data: "ls\n" })
-    expect(received).toEqual([{ type: "probe.ping", data: "ls\n" }])
-    off()
-    const error = nextMessage(socket)
-    socket.send(JSON.stringify({ type: "probe.ping", data: "x" }))
-    expect(await error).toEqual({ type: "error", message: "No handler for probe.ping." })
-    socket.close()
   })
 })
 

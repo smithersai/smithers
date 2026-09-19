@@ -75,7 +75,7 @@ const CODE_FLOWS = ["code.hover", "code.definition", "code.diagnostics"] as cons
 
 const controllerFor = async (bootstrap: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap, socketUrl: () => undefined })
+  return createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
 }
 
 describe("the code.* flows", () => {

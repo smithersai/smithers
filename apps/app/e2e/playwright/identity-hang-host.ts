@@ -20,10 +20,9 @@ const hanging = Bun.serve({
 const server = await startLocalServer({
   port: 0,
   distDir: fileURLToPath(new URL("../../dist/", import.meta.url)),
-  // chatStub would null the identity upstream (server.ts); the stub is off so
-  // the hybrid seam proxies to the hanging socket above. No chat turn is ever
-  // started, so the real agent construction never touches the network.
-  chatStub: false,
+  // No agent is injected, so the hybrid seam proxies to the hanging socket
+  // above. No chat turn is ever started, so the real agent construction
+  // never touches the network.
   cloudMode: "hybrid",
   identityUpstream: `http://127.0.0.1:${hanging.port}`,
   cloudApi: null,

@@ -27,14 +27,10 @@ import { createCloudTerminalClient,pageCloudSocketUrl } from "./CloudTerminalCli
 import { selectFirstRunRepository } from "./FirstRunRepository"
 import type { InputMode } from "./InputMode"
 import { knowledgeCardAvailable } from "./KnowledgeFeatures"
-import { createLspClient } from "./LspClient"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
-import type { PtyClient } from "./PtyClient"
-import { createPtyClient,pageSocketUrl } from "./PtyClient"
 import type { KnownRepositories } from "./RepoContext"
 import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,repositorySource,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
-import { createTargetRunClient } from "./TargetRunClient"
 import type { AccountController } from "./controller/account"
 import { createAccountController } from "./controller/account"
 import type { AgentsController } from "./controller/agents"
@@ -189,10 +185,10 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly cancelReset: () => void
   readonly runCommand: (name: string, args?: string) => boolean
   readonly connectLocalRepository: (access: RepositoryAccess) => Promise<void>
-  readonly makeConnectorReadOnly: (id: string) => Promise<string | void>
+  readonly makeConnectorReadOnly: (id: string) => string | void
   readonly askConnectorRemoval: (id: string) => string | void
   readonly cancelConnectorRemoval: () => void
-  readonly removeConnector: (id: string) => Promise<string | void>
+  readonly removeConnector: (id: string) => string | void
   readonly selectWorldDocument: (id: string) => string | void
   readonly changeWorldDocument: (id: string, body: string) => Promise<string | void>
   readonly listCloudWiki: (repo: string, page?: number) => Promise<string | { value: string }>
@@ -232,6 +228,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
   readonly setPalette: (args: string) => string | void
+  /** Opens one hidden mock as a card (experimental/Registry.ts); no flow reaches it without the flag. */
+  readonly openExperimentalPane: (pane: string) => void
   /** Archive locally and start fresh; model-generated notes are opt-in. */
   readonly clearConversation: (options?: { readonly summarize?: boolean }) => Promise<string | void>
   /* The browser tool + surface (§2d/§2d′). */
@@ -318,8 +316,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly dismissCard: FormsController["dismissCard"]
   readonly loadRepos: TabsController["loadRepos"]
   readonly notePtyExit: TabsController["notePtyExit"]
-  /** The PTY transport the terminal tabs attach to (docs/LOCAL-APP.md "/ws"). */
-  readonly pty: PtyClient
   /** Lane citc: the cloud-workspace terminal transport (one socket per workspace session). */
   readonly cloudTerminal: CloudTerminalClient
   /* The admin dev-tools panel + debug reads (§2b/§2d; admin registry only). */
@@ -605,13 +601,7 @@ export interface AppServices {
   readonly storageRecoveryHost?: StorageRecoveryHost
   readonly fetchImpl?: FetchLike
   /**
-   * The `/ws` URL the PTY and target-run clients open; default the page's
-   * own origin. A test binds `() => undefined` so no real socket is opened
-   * against an origin that is not listening.
-   */
-  readonly socketUrl?: () => string | undefined
-  /**
-   * The per-launch local capability every `/ws` socket carries as its
+   * The per-launch local capability every cloud tunnel socket carries as its
    * subprotocol; default the page's injected token (runtime/LocalSession.ts).
    * A test against a real local origin binds the server's protocol.
    */
@@ -695,6 +685,8 @@ export interface AppFeatures {
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
   readonly suggestionPills?: boolean
+  /** The hidden mock namespace (experimental/Registry.ts). */
+  readonly experimental?: boolean
 }
 
 /**
@@ -709,7 +701,8 @@ export const createAppController = (
 ): AppController => {
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
-    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true"
+    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
+    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
     ...services, features: { ...services.features, ...knowledge }
@@ -922,7 +915,8 @@ export const createAppController = (
     debugSeams,
     openBrowser,
     toggleTheme,
-    setPalette
+    setPalette,
+    openExperimentalPane
   } = actors.pair(ctx, (context, select) => createPresentationController(context, select(adminHealth)))
 
   const {
@@ -970,12 +964,8 @@ export const createAppController = (
     if (refusal !== undefined) return refusal
     if (wasMaximized) minimizeCard()
   }
-  const socketUrl = services.socketUrl ?? pageSocketUrl
   const socketProtocols = services.socketProtocols ?? localSocketProtocols
   createHealthStatusController(ctx)
-  const pty = createPtyClient({ http, baseUrl, socketUrl, socketProtocols,
-    onStatus: (sessionId, status) => { store.dispatch({ type: "pty.status.observed", actor: "system", sessionId, status }) } })
-  ctx.onDispose(pty.dispose)
   /* Lane citc: the cloud-workspace terminal transport, one socket per session. */
   const cloudTerminal = createCloudTerminalClient({
     auth: services.bootstrap?.host === "cloud" ? "cookie" : "subprotocol",
@@ -983,17 +973,6 @@ export const createAppController = (
     socketProtocol: () => socketProtocols()[0]
   })
   ctx.onDispose(cloudTerminal.dispose)
-  const targetRuns = createTargetRunClient({ socketUrl, socketProtocols })
-  ctx.onDispose(targetRuns.dispose)
-  /*
-   * Code intelligence (docs/code-intel/PLAN.md §3-4): the `/api/lsp/*`
-   * transport with the `lsp:<repoId>` diagnostics stream, and the seam that
-   * turns the three code.* acts into `{ value }` for the model and patches to
-   * the file card. A request past 300 ms states itself on the toast stack (the
-   * 300 ms law): the host spawns the language server on first use.
-   */
-  const lsp = createLspClient({ http: (input, init) => ctx.boundedFetch(input, init), baseUrl, socketUrl, socketProtocols })
-  ctx.onDispose(lsp.dispose)
   /*
    * Lane L6: the workspace language-server transport (plue #505), one socket
    * per (workspace, language) through the same tunnel the cloud terminal
@@ -1009,7 +988,7 @@ export const createAppController = (
     })
     : undefined
   if (cloudLsp !== undefined) ctx.onDispose(cloudLsp.dispose)
-  const codeIntelSeam = actors.pair(seamCtx, (context, select) => createCodeIntelSeam(context, { lsp, readFile: select(filesSeam.readFile), ...(cloudLsp === undefined ? {} : { cloudLsp }) }))
+  const codeIntelSeam = actors.pair(seamCtx, (context, select) => createCodeIntelSeam(context, { readFile: select(filesSeam.readFile), ...(cloudLsp === undefined ? {} : { cloudLsp }) }))
   ctx.onDispose(codeIntelSeam.dispose)
   const { codeHover, codeDefinition, codeDiagnostics } = actors.pair(seamCtx, (_context, select) => {
     const seam = select(codeIntelSeam)
@@ -1609,7 +1588,6 @@ export const createAppController = (
     dismissCard,
     loadRepos,
     notePtyExit,
-    pty,
     cloudTerminal,
     toggleDevtools,
     toggleSurfacesMenu,
@@ -1641,6 +1619,7 @@ export const createAppController = (
     debugSeams,
     toggleTheme,
     setPalette,
+    openExperimentalPane,
     adoptSession,
     loadSession,
     signIn,
@@ -1805,6 +1784,7 @@ export const createAppController = (
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
+        experimental: features.experimental,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",

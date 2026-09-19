@@ -10,12 +10,11 @@ import { actorSharedState } from "../ActorBindings"
  * what the card knows about the server. The definition opens its target
  * through files.read's line anchor.
  *
- * The client follows the card's repository (lane L6): a local working copy
- * asks the local app's server (LspClient.ts → `/api/lsp/*`); a cloud
- * repository with a RUNNING workspace asks the server plue runs inside that
- * workspace (CloudLspClient.ts, through the Bun tunnel); a cloud repository
- * without one is told which act opens or resumes a workspace; a file no
- * language the workspace relays handles is told the DTO's list.
+ * Every repository is a cloud repository (docs/LOCAL-BACKEND-RETIREMENT.md).
+ * One with a RUNNING workspace asks the server plue runs inside that
+ * workspace (CloudLspClient.ts, through the Bun tunnel); one without is told
+ * which act opens or resumes a workspace; a file no language the workspace
+ * relays handles is told the DTO's list.
  *
  * Honesty: a missing language server is stated with its install line and
  * never installed; a position the server has nothing for is stated; a
@@ -26,22 +25,16 @@ import { actorSharedState } from "../ActorBindings"
  * the server publishes with no request patch the card they belong to; a
  * publication for a file nobody opened has nowhere to render and is dropped.
  *
- * A local answer is about the file on DISK (the host syncs the document from
- * disk on every request) and names the digest of that text; the card shows
- * the text it was read with. Before an answer lands on a card whose digest
- * differs, the card is re-read in place — same id, ordinal and anchor, the
- * old text's annotations dropped with it — and the answer lands only when
- * the two agree. A cloud answer is about the CARD's text (the client sends
- * it), so it lands only while the card still shows that text. A hover drawn
- * under line 12 of text that no longer has that line would be an invention.
+ * An answer is about the CARD's text (the client sends it), so it lands only
+ * while the card still shows that text. A hover drawn under line 12 of text
+ * that no longer has that line would be an invention.
  */
 import { LSP_HOVER_CAP_CHARS, LSP_LANGUAGE_SERVER_MISSING, LSP_REQUEST_TIMEOUT_MS, lspLanguageFor } from "@smthrs/rpc/LocalApp"
-import type { LspDiagnostic, LspLocation, Repo } from "@smthrs/rpc/LocalApp"
+import type { LspDiagnostic, LspLocation } from "@smthrs/rpc/LocalApp"
 import { parseRepoSelection } from "../AppState"
 import type { Actor, Card, CloudWorkspaceRow } from "../AppState"
-import type { CloudLspClient, CloudLspDocument, CloudLspEvent } from "../CloudLspClient"
-import type { LspAnswer, LspClient, LspRefusal } from "../LspClient"
-import { localFileCardId, localFileFields, requestLocalFiles, resolveFileTarget } from "./FilesSeam"
+import type { CloudLspClient, CloudLspDocument, CloudLspEvent, LspAnswer, LspRefusal } from "../CloudLspClient"
+import { resolveFileTarget } from "./FilesSeam"
 import type { FileAnchor, FilesSeam } from "./FilesSeam"
 import type { SeamContext } from "./SeamContext"
 
@@ -54,7 +47,6 @@ export interface CodeIntelSeam {
 }
 
 export interface CodeIntelSeamOptions {
-  readonly lsp: LspClient
   /**
    * Lane L6: the workspace language-server transport. Absent where this host
    * has no cloud tunnel (the web host until the W4 relay), and a cloud file
@@ -99,12 +91,6 @@ const plural = (count: number, word: string): string => `${count} ${word}${count
 
 const UNSETTLED: ReadonlySet<string> = new Set(["pending", "starting"])
 
-/** The refusal as the model reads it and as the card states it. */
-const refused = (refusal: LspRefusal): { readonly intel: Intel; readonly text: string } =>
-  refusal.code === LSP_LANGUAGE_SERVER_MISSING && refusal.install !== undefined
-    ? { intel: { state: "missing", note: refusal.install }, text: `${refusal.message} Install: ${refusal.install}` }
-    : { intel: { state: "unavailable", note: refusal.message }, text: refusal.message }
-
 /**
  * The cloud relay's refusal, in the workspace's terms: plue's 409
  * `language_server_missing` carries the install line verbatim, and the card
@@ -120,16 +106,13 @@ const refusedCloud = (refusal: LspRefusal, document: CloudLspDocument, workspace
     }
     : { intel: { state: "unavailable", note: refusal.message }, text: refusal.message }
 
-type Prepared =
-  | { readonly kind: "local"; readonly repo: Repo; readonly path: string; readonly id: string }
-  | {
-    readonly kind: "cloud"
-    readonly repo: string
-    readonly path: string
-    readonly id: string
-    readonly document: CloudLspDocument
-    readonly workspace: { readonly id: string; readonly name: string }
-  }
+interface Prepared {
+  readonly repo: string
+  readonly path: string
+  readonly id: string
+  readonly document: CloudLspDocument
+  readonly workspace: { readonly id: string; readonly name: string }
+}
 
 export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOptions): CodeIntelSeam => {
   const startingAfterMs = options.startingAfterMs ?? 300
@@ -152,27 +135,6 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     diagnostics: [...items],
     diagnosticsTotal: total > items.length ? total : undefined
   })
-
-  /*
-   * One subscription per LOCAL repository for as long as the controller
-   * lives: every publication patches the card of the file it names. The
-   * first code.* call on a repository opens it, so a repository nobody asked
-   * about costs no socket topic.
-   */
-  const watching = actorSharedState(ctx, "code-local-watches", () => new Map<string, () => void>())
-  const watch = (repo: Repo): void => {
-    if (watching.has(repo.id)) return
-    watching.set(
-      repo.id,
-      options.lsp.subscribe(repo.id, (message) => {
-        const id = localFileCardId(repo.id, message.path)
-        if (fileCard(id) === undefined) return
-        void reconciled(repo, message.path, id, message.digest, "system").then((agree) => {
-          if (agree) patch(id, diagnosticsFields(message.items, message.total), "system")
-        })
-      })
-    )
-  }
 
   /*
    * The cloud client speaks for every workspace at once: a publication lands
@@ -209,24 +171,6 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     })
   }
 
-  /**
-   * True when the card shows the text the answer is about. When it does not,
-   * the card is re-read in place through the files route (its id, ordinal and
-   * anchor stay; the old text's annotations go) and the answer lands only if
-   * the digests then agree — a file changing twice between two reads is
-   * stated by silence, never by an annotation on the wrong line.
-   */
-  const reconciled = async (repo: Repo, path: string, id: string, digest: string, actor: Actor = ctx.actor()): Promise<boolean> => {
-    const card = fileCard(id)
-    if (card === undefined) return false
-    if (card.payload.digest === digest) return true
-    const answer = await requestLocalFiles(ctx, repo, path, path, "read")
-    if ("error" in answer || answer.body.kind !== "file") return false
-    const fields = localFileFields(answer.body)
-    patch(id, { ...fields, hover: undefined, diagnostics: undefined, diagnosticsTotal: undefined }, actor)
-    return fields.digest === digest
-  }
-
   /** The file card the answer lands on, rendered through files.read when absent; the read's refusal is the answer then. */
   const ensureCard = async (repo: string, path: string, anchor?: FileAnchor): Promise<string | undefined> => {
     if (fileCard(cardIdOf(repo, path)) !== undefined) return undefined
@@ -241,17 +185,15 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
       if (fileCard(id)?.payload.intel?.state !== "ready") patch(id, { intel: { state: "starting" } })
     }, startingAfterMs)
     ;(timer as { unref?: () => void }).unref?.()
-    const key = prepared.kind === "cloud" ? connectionKey(prepared.document.workspaceId, prepared.document.language) : undefined
-    if (key !== undefined) dialing.set(key, (dialing.get(key) ?? new Set()).add(id))
+    const key = connectionKey(prepared.document.workspaceId, prepared.document.language)
+    dialing.set(key, (dialing.get(key) ?? new Set()).add(id))
     try {
       return await work()
     } finally {
       clearTimeout(timer)
-      if (key !== undefined) {
-        const set = dialing.get(key)
-        set?.delete(id)
-        if (set?.size === 0) dialing.delete(key)
-      }
+      const set = dialing.get(key)
+      set?.delete(id)
+      if (set?.size === 0) dialing.delete(key)
     }
   }
 
@@ -322,7 +264,6 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     }
     watchCloud()
     return {
-      kind: "cloud",
       repo,
       path,
       id,
@@ -336,51 +277,31 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     const target = resolveFileTarget(ctx.store, pathArg, repoArg)
     if ("error" in target) return target.error
     if (target.path === "") return "code intelligence needs a file path"
-    if (target.kind === "cloud") return prepareCloud(target.repo, target.path, anchor)
-    const refusal = await ensureCard(target.repo.id, target.path, anchor)
-    if (refusal !== undefined) return refusal
-    watch(target.repo)
-    return { kind: "local", repo: target.repo, path: target.path, id: localFileCardId(target.repo.id, target.path) }
+    if (target.kind !== "cloud") return `${target.path} is not in a cloud repository; code intelligence runs inside a workspace.`
+    return prepareCloud(target.repo, target.path, anchor)
   }
 
-  const repoNameOf = (prepared: Prepared): string => prepared.kind === "local" ? prepared.repo.name : prepared.repo
-
-  /** The digest a local answer names; a cloud answer names none (it is about the card's own text). */
-  const digestOf = (ok: object): string | undefined => {
-    const digest = (ok as { readonly digest?: unknown }).digest
-    return typeof digest === "string" ? digest : undefined
-  }
-
-  /** The refusal, stated on the card and to the model, in the terms of the host that answered. */
+  /** The refusal, stated on the card and to the model, in the workspace's terms. */
   const refuse = (prepared: Prepared, refusal: LspRefusal): string => {
-    const { intel, text } = prepared.kind === "local" ? refused(refusal) : refusedCloud(refusal, prepared.document, prepared.workspace)
+    const { intel, text } = refusedCloud(refusal, prepared.document, prepared.workspace)
     patch(prepared.id, { intel })
     return text
   }
 
-  /**
-   * True when the card shows the text the answer is about. Local answers name
-   * a digest and reconcile through the files route; a cloud answer is about
-   * the text the client sent, which lands only while the card still shows it.
-   */
-  const current = async (prepared: Prepared, digest: string | undefined): Promise<boolean> =>
-    prepared.kind === "local"
-      ? digest !== undefined && reconciled(prepared.repo, prepared.path, prepared.id, digest)
-      : fileCard(prepared.id)?.payload.content === prepared.document.content
+  /** True when the card still shows the text the client sent, which the answer is about. */
+  const current = (prepared: Prepared): boolean =>
+    fileCard(prepared.id)?.payload.content === prepared.document.content
 
   return {
     hover: async (pathArg, line, column, repoArg) => {
       const prepared = await prepare(pathArg, repoArg, { line, column })
       if (typeof prepared === "string") return prepared
       const { path, id } = prepared
-      const repo = repoNameOf(prepared)
-      const answer = await request(prepared, () =>
-        prepared.kind === "local"
-          ? options.lsp.hover({ repoId: prepared.repo.id, path, line, character: column })
-          : options.cloudLsp!.hover(prepared.document, { line, character: column }))
+      const repo = prepared.repo
+      const answer = await request(prepared, () => options.cloudLsp!.hover(prepared.document, { line, character: column }))
       if ("refusal" in answer) return refuse(prepared, answer.refusal)
       const { hover } = answer.ok
-      if (await current(prepared, digestOf(answer.ok))) {
+      if (current(prepared)) {
         patch(id, {
           intel: { state: "ready" },
           hover: hover === null ? null : { line, character: column, contents: hover.contents, ...(hover.truncated ? { truncated: true } : {}) }
@@ -399,11 +320,8 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
       const prepared = await prepare(pathArg, repoArg, { line, column })
       if (typeof prepared === "string") return prepared
       const { path, id } = prepared
-      const repo = repoNameOf(prepared)
-      const answer = await request(prepared, () =>
-        prepared.kind === "local"
-          ? options.lsp.definition({ repoId: prepared.repo.id, path, line, character: column })
-          : options.cloudLsp!.definition(prepared.document, { line, character: column }))
+      const repo = prepared.repo
+      const answer = await request(prepared, () => options.cloudLsp!.definition(prepared.document, { line, character: column }))
       if ("refusal" in answer) return refuse(prepared, answer.refusal)
       const { locations, total, omitted } = answer.ok
       const at = `${path}:${line}:${column} in ${repo}`
@@ -427,7 +345,7 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
        * asked where, not what; it reads the target with files.read. A
        * refusal still belongs in the answer because the target did not open.
        */
-      const opened = await options.readFile(first.path, prepared.kind === "local" ? prepared.repo.id : repo, { line: first.line, column: first.character })
+      const opened = await options.readFile(first.path, repo, { line: first.line, column: first.character })
       const more = total - omitted - locations.length
       const trailer = [
         ...(more > 0 ? [`… and ${more} more`] : []),
@@ -440,11 +358,8 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
       const prepared = await prepare(pathArg, repoArg)
       if (typeof prepared === "string") return prepared
       const { path, id } = prepared
-      const repo = repoNameOf(prepared)
-      const answer = await request(prepared, () =>
-        prepared.kind === "local"
-          ? options.lsp.diagnostics({ repoId: prepared.repo.id, path })
-          : options.cloudLsp!.diagnostics(prepared.document))
+      const repo = prepared.repo
+      const answer = await request(prepared, () => options.cloudLsp!.diagnostics(prepared.document))
       if ("refusal" in answer) return refuse(prepared, answer.refusal)
       const { items, total } = answer.ok
       if (items === null || total === null) {
@@ -452,7 +367,7 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
         patch(id, { intel: { state: "ready" } })
         return { value: `The language server published no diagnostics for ${path} in ${repo} within ${LSP_REQUEST_TIMEOUT_MS / 1000} s.` }
       }
-      if (await current(prepared, digestOf(answer.ok))) patch(id, { intel: { state: "ready" }, ...diagnosticsFields(items, total) })
+      if (current(prepared)) patch(id, { intel: { state: "ready" }, ...diagnosticsFields(items, total) })
       else patch(id, { intel: { state: "ready" } })
       const shown = total > items.length ? ` (first ${items.length} shown)` : ""
       return {
@@ -463,8 +378,6 @@ export const createCodeIntelSeam = (ctx: SeamContext, options: CodeIntelSeamOpti
     },
 
     dispose: () => {
-      for (const detach of watching.values()) detach()
-      watching.clear()
       cloudWatch.unwatch?.()
       cloudWatch.unwatch = undefined
       dialing.clear()

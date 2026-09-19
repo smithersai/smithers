@@ -113,7 +113,7 @@ const localController = async (harnesses: ReadonlyArray<unknown> = []) => {
 describe("the optional full composer header: the repository selector and where it lives", () => {
   test("Chat stays visible beside an active terminal without changing tabs", async () => {
     const { store, controller } = await localController()
-    const attach = spyOn(controller.pty, "attach").mockImplementation(() => () => {})
+    const attach = spyOn(controller.cloudTerminal, "attach").mockImplementation(() => () => {})
     mounted.push(() => attach.mockRestore())
     await persisted(store, { type: "tab.opened", actor: "user", tab: {
       id: "cloud-terminal", kind: "terminal", title: "Terminal", sessionId: "cloud", cwd: "/home/developer/workspace"

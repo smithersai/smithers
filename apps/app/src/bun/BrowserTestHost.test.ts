@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createChatStub } from "../../e2e/support/ChatStub"
 import { browserTestOptions } from "../../scripts/browser-test-host"
 
 describe("browser tests separate fixture ownership from real-host authority", () => {
@@ -12,7 +13,7 @@ describe("browser tests separate fixture ownership from real-host authority", ()
     expect(options).toMatchObject({
       home: "/fixture/owned",
       stateDir: "/fixture/owned/state",
-      chatStub: true,
+      agent: createChatStub,
       cloudMode: "offline",
       cloudApi: null,
       identityUpstream: null
@@ -21,7 +22,7 @@ describe("browser tests separate fixture ownership from real-host authority", ()
 
   test("real chat is a separate explicit opt-in and never imports real identity authority", () => {
     const options = browserTestOptions("/fixture/owned", "/fixture/dist", { SMITHERS_CHAT_STUB: "0" })
-    expect(options.chatStub).toBe(false)
+    expect(options.agent).toBeUndefined()
     expect(options.cloudMode).toBe("hybrid")
     expect(options.home).toBe("/fixture/owned")
     expect(options.cloudApi).toBeNull()

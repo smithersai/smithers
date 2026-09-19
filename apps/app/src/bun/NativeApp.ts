@@ -34,11 +34,22 @@ const openExternal = async (url: string): Promise<boolean> => {
 /** Application state that outlives a launch: macOS Application Support, else XDG data. */
 const stateDir = nativeStateDirectory()
 
+/*
+ * The packaged E2E tier (e2e/packaged/PackagedApp.ts) spawns the BUILT app
+ * and asserts `stub: <message>` in its transcript, so the deterministic agent
+ * has to be inside this bundle; there is no seam to inject one through once
+ * the binary is spawned. It is reached only behind SMITHERS_CHAT_STUB, and
+ * it lives in the test tree with the tier that owns it.
+ */
+const stubAgent = Bun.env.SMITHERS_CHAT_STUB === "1"
+  ? (await import("../../e2e/support/ChatStub")).createChatStub
+  : undefined
+
 const server = await startLocalServer({
   ...(port === undefined ? {} : { port }),
   distDir: defaultDistDir(import.meta.dir),
   stateDir,
-  chatStub: Bun.env.SMITHERS_CHAT_STUB === "1",
+  ...(stubAgent === undefined ? {} : { agent: stubAgent }),
   cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "offline" ? "offline" : "hybrid"
 })
 console.log(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)

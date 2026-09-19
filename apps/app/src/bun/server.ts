@@ -1,9 +1,9 @@
 /*
  * The local origin (LOCAL-APP.md, "Runtime topology"): one Bun.serve on
- * 127.0.0.1 that serves the built SPA, the chat boundary, the WebSocket bus,
- * and every lane's HTTP API. It imports nothing from Electrobun, so
- * `serve.ts` can run it without a window and Playwright can drive it in plain
- * Chromium.
+ * 127.0.0.1 that serves the built SPA, the chat boundary, the cloud
+ * WebSocket tunnels, and the handful of HTTP routes this host still owns.
+ * It imports nothing from Electrobun, so `serve.ts` can run it without a
+ * window and Playwright can drive it in plain Chromium.
  */
 import type { Server, ServerWebSocket } from "bun"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
@@ -52,7 +52,6 @@ import {
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { createNativeTurnJournal } from "./NativeTurnJournal"
-import { createChatStub } from "./ChatStub"
 import { handleBrowserFetch } from "./BrowserFetch"
 import { createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
@@ -61,7 +60,6 @@ import type { CloudAuth, CloudKeychain } from "./CloudAuth"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
 import type { RouteHandler } from "./routes"
-import { tutorialChangeRoute, type TutorialChangeHost } from "./routes/tutorial2-agent_change"
 
 /** chat.smithers.sh accepts this origin anonymously (verified 2026-08-26). */
 export const DEFAULT_CHAT_ORIGIN = "https://canary.smithers.sh"
@@ -97,21 +95,18 @@ export const CLIENT_ERROR_MAX_BODY = 16 * 1024
 
 /** Long conversations are replayed on every turn, so the cap is generous, not tight. */
 const MAX_BODY_BYTES = 1024 * 1024
-const MAX_WS_FRAME_BYTES = 128 * 1024
 /*
- * What one renderer frame may carry per branch: `/ws` its own cap, a cloud
- * terminal bridge plue's 64 KiB, a cloud lsp bridge plue's 1 MiB (lane L6). The
- * server's own ceiling sits at twice the largest so every branch refuses an
- * over-cap frame with its own reason (a frame past the ceiling is Bun's to
- * drop, as an abnormal close).
+ * What one renderer frame may carry per branch: a cloud terminal bridge
+ * plue's 64 KiB, a cloud lsp bridge plue's 1 MiB (lane L6). The server's own
+ * ceiling sits at twice the larger so every branch refuses an over-cap frame
+ * with its own reason (a frame past the ceiling is Bun's to drop, as an
+ * abnormal close).
  */
 const MAX_CLOUD_WS_FRAME_BYTES: Readonly<Record<CloudWsSessionKind, number>> = {
   terminal: CLOUD_TERMINAL_FRAME_CAP_BYTES,
   lsp: CLOUD_LSP_FRAME_CAP_BYTES
 }
-const MAX_ANY_WS_FRAME_BYTES = 2 * Math.max(MAX_WS_FRAME_BYTES, ...Object.values(MAX_CLOUD_WS_FRAME_BYTES))
-const MAX_WS_SUBSCRIPTIONS = 64
-const MAX_WS_TOPIC_CHARS = 256
+const MAX_ANY_WS_FRAME_BYTES = 2 * Math.max(...Object.values(MAX_CLOUD_WS_FRAME_BYTES))
 /** Frames a cloud-terminal tunnel queues before its upstream opens. */
 const MAX_CLOUD_WS_PENDING = 256
 /** Renderer→upstream bytes the tunnel may hold before it closes the renderer's socket. */
@@ -120,14 +115,17 @@ const MAX_CLOUD_WS_UPSTREAM_BUFFER = 1024 * 1024
 const MAX_WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024
 
 export interface LocalServerOptions {
-  /** The change agent's authorized repository/plan/receipt services; absent hosts refuse with 501. */
-  readonly tutorialChangeHost?: TutorialChangeHost
   /** 0 (the default) picks a free port. */
   readonly port?: number
   /** The built SPA: index.html plus assets/. */
   readonly distDir: string
-  /** SMITHERS_CHAT_STUB=1: the deterministic stub instead of chat.smithers.sh. */
-  readonly chatStub?: boolean
+  /**
+   * The agent behind the chat boundary, built with the frame publisher this
+   * host owns. Injected, never selected here: production passes nothing and
+   * gets the Smithers Cloud agent, and a test tier passes its own double
+   * (e2e/support/ChatStub.ts). Offline with none is a host with no agent.
+   */
+  readonly agent?: (publish: (frame: AgentTurnFrame) => void) => CloudAgent
   /** Offline has no network egress; hybrid explicitly enables Smithers Cloud. */
   readonly cloudMode?: "offline" | "hybrid"
   readonly chat?: { readonly chatUrl?: string; readonly origin?: string }
@@ -170,13 +168,12 @@ export interface LocalServerOptions {
 }
 
 export interface WsSocketData {
-  readonly topics: Set<string>
   /**
-   * Lane citc: a `/api/cloud-ws/` tunnel's bridge to the cloud terminal
-   * WebSocket. Undefined on a plain `/ws` socket. Frames the renderer sends
-   * before the upstream opens queue in `pending` (bounded) and flush on open.
+   * Lane citc: a `/api/cloud-ws/` tunnel's bridge to the cloud terminal or
+   * language-server WebSocket. Frames the renderer sends before the upstream
+   * opens queue in `pending` (bounded) and flush on open.
    */
-  readonly cloud?: CloudWsBridge
+  readonly cloud: CloudWsBridge
 }
 
 export interface CloudWsBridge {
@@ -318,20 +315,12 @@ const closeRenderer = (socket: WsSocket, code: number, reason: string): void => 
   else socket.close(code, closeReasonOf(reason))
 }
 
-/** A client frame other than subscribe/unsubscribe, dispatched by its `type`. */
-export type WsMessageHandler = (message: Readonly<Record<string, unknown>>, socket: WsSocket) => void
-
 export interface LocalServer {
   readonly origin: string
   readonly port: number
   readonly sessionToken: string
   readonly websocketProtocol: string
-  readonly router: Router
   readonly server: Server<WsSocketData>
-  /** Sends one JSON frame to every socket subscribed to the topic. */
-  readonly publish: (topic: string, message: unknown) => void
-  /** Registers the handler for one client frame type (e.g. "pty.input"). Returns the unregister. */
-  readonly onMessage: (type: string, handler: WsMessageHandler) => () => void
   readonly stop: () => Promise<void>
 }
 
@@ -391,10 +380,7 @@ const PRODUCT_PROXY_PREFIXES: ReadonlyArray<string> = [
   "/api/admin/"
 ]
 
-/** The stub's stand-in for the identity seam: signed out, nothing else configured. */
-
-export const trailPath = (pathname: string): string => pathname
-
+/** The stand-in for the identity seam where this build forwards to none: signed out, nothing else configured. */
 const stubIdentity = (pathname: string): Response =>
   pathname === AUTH_SESSION_PATH
     ? json({ status: "signed-out" })
@@ -648,7 +634,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const version = options.version ?? APP_VERSION
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const remoteEnabled = options.cloudMode === "hybrid"
-  const identityUpstream = options.chatStub === true || !remoteEnabled
+  const identityUpstream = !remoteEnabled
     ? null
     : options.identityUpstream === undefined
     ? DEFAULT_IDENTITY_UPSTREAM
@@ -679,8 +665,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const writers = new Map<string, TurnWriter>()
   const turnJournal = createNativeTurnJournal(options.stateDir)
   const publishFrame = (frame: AgentTurnFrame): void => writers.get(frame.runId)?.write(frame)
-  const agent: CloudAgent | undefined = options.chatStub === true
-    ? createChatStub(publishFrame)
+  const agent: CloudAgent | undefined = options.agent !== undefined
+    ? options.agent(publishFrame)
     : remoteEnabled
     ? createCloudAgent(publishFrame, {
       chatUrl: options.chat?.chatUrl ?? Bun.env.SMITHERS_CHAT_URL,
@@ -693,11 +679,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   }
 
   const router = new Router()
-  const changeRoute = options.tutorialChangeHost ? tutorialChangeRoute(options.tutorialChangeHost) : undefined
-  for (const verb of ["plan", "preflight", "receipt"]) {
-    router.add("POST", `/api/tutorial/change/${verb}`, ({ request }) =>
-      changeRoute ? changeRoute(request) : Response.json({ message: "The change agent is unavailable on this host." }, { status: 501 }))
-  }
   router.add("POST", "/api/tools/browser-fetch", ({ request }) => remoteEnabled
     ? handleBrowserFetch(request)
     // Shared with the Worker (apps/server/src/proxies.ts handleBrowserFetch),
@@ -873,16 +854,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     return json({ status: "accepted" }, 202)
   })
 
-  const messageHandlers = new Map<string, Set<WsMessageHandler>>()
-  const onMessage: LocalServer["onMessage"] = (type, handler) => {
-    const set = messageHandlers.get(type) ?? new Set<WsMessageHandler>()
-    set.add(handler)
-    messageHandlers.set(type, set)
-    return () => {
-      set.delete(handler)
-    }
-  }
-
   const serveStatic = async (pathname: string): Promise<Response> => {
     const index = join(distDir, "index.html")
     const decoded = decodePath(pathname)
@@ -925,28 +896,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     if (request.headers.get("host") !== expectedHost) {
       return jsonError("invalid_host", "This local server accepts only its loopback origin.")
     }
-    if (pathname === "/ws") {
-      const requestOrigin = request.headers.get("origin")
-      if (requestOrigin !== null && requestOrigin !== origin) {
-        return jsonError("invalid_origin", "WebSocket origin does not match the local app.")
-      }
-      const protocols = (request.headers.get("sec-websocket-protocol") ?? "")
-        .split(",")
-        .map((value) => value.trim())
-      if (!protocols.some((protocol) => sameSecret(protocol, websocketProtocol))) {
-        return jsonError("local_session_required", "The local session capability is required.")
-      }
-      const upgraded = bunServer.upgrade(request, {
-        data: { topics: new Set<string>() },
-        headers: { "sec-websocket-protocol": websocketProtocol }
-      })
-      return upgraded ? undefined : jsonError("upgrade_failed", "Expected a WebSocket upgrade.")
-    }
     if (pathname.startsWith(CLOUD_WS_ROUTE_PREFIX)) {
       /*
        * Lane citc: the workspace-terminal tunnel; lane L6: the workspace
-       * language-server tunnel beside it. Same authorization shape as /ws —
-       * origin and the local-session subprotocol — because a browser upgrade
+       * language-server tunnel beside it. Origin and the local-session
+       * subprotocol authorize the upgrade, because a browser upgrade
        * carries no custom headers. The path mirrors the cloud API's two
        * socket routes exactly (`repos/{o}/{r}/workspace/sessions/{id}/
        * terminal` and `…/lsp`, nothing else), and the bearer attaches HERE
@@ -990,7 +944,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       }
       const upgraded = bunServer.upgrade(request, {
         data: {
-          topics: new Set<string>(),
           cloud: {
             kind,
             target: tunnelTarget.toString(),
@@ -1025,10 +978,10 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
           return jsonError("invalid_origin", "Request origin does not match the local app.")
         }
       }
-      const matched = router.match(request.method, pathname)
-      if (matched !== undefined) {
+      const handler = router.match(request.method, pathname)
+      if (handler !== undefined) {
         try {
-          return await matched.handler({ request, url, params: matched.params })
+          return await handler({ request, url })
         } catch (error) {
           log(`${request.method} ${pathname} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
           return jsonError("internal", error instanceof Error ? error.message : "Request failed.")
@@ -1092,12 +1045,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         answered = await handle(request, bunServer)
         return answered
       } catch (error) {
-        log(`${request.method} ${trailPath(pathname)} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+        log(`${request.method} ${pathname} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
         answered = jsonError("internal", error instanceof Error ? error.message : "Request failed.")
         return answered
       } finally {
         if (answered !== undefined && (pathname === "/" || pathname.startsWith("/api/"))) {
-          log(`${request.method} ${trailPath(pathname)} -> ${answered.status} in ${Math.round(performance.now() - started)}ms`)
+          log(`${request.method} ${pathname} -> ${answered.status} in ${Math.round(performance.now() - started)}ms`)
         }
       }
     },
@@ -1107,7 +1060,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       closeOnBackpressureLimit: true,
       open: (socket) => {
         const bridge = socket.data.cloud
-        if (bridge === undefined) return
         /*
          * Lane citc: connect the cloud socket. plue requires its own
          * subprotocol at upgrade — `terminal` for the PTY, `lsp` for the
@@ -1166,84 +1118,30 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       message: (socket, raw) => {
         const bridge = socket.data.cloud
         const frameBytes = typeof raw === "string" ? Buffer.byteLength(raw) : raw.byteLength
-        if (bridge !== undefined) {
-          // Each branch refuses its own over-cap frame with its own reason: plue's 64 KiB for the terminal, 1 MiB for the lsp relay.
-          const cap = MAX_CLOUD_WS_FRAME_BYTES[bridge.kind]
-          if (frameBytes > cap) {
-            socket.close(1009, `A ${bridge.kind} frame is larger than the upstream accepts (${cap / 1024} KiB).`)
+        // Each branch refuses its own over-cap frame with its own reason: plue's 64 KiB for the terminal, 1 MiB for the lsp relay.
+        const cap = MAX_CLOUD_WS_FRAME_BYTES[bridge.kind]
+        if (frameBytes > cap) {
+          socket.close(1009, `A ${bridge.kind} frame is larger than the upstream accepts (${cap / 1024} KiB).`)
+          return
+        }
+        const upstream = bridge.upstream
+        if (upstream !== undefined && upstream.readyState === WebSocket.OPEN) {
+          // A flooding renderer must not grow the upstream client's buffer without bound (the other direction is capped by backpressureLimit).
+          if (upstream.bufferedAmount > MAX_CLOUD_WS_UPSTREAM_BUFFER) {
+            socket.close(1009, `The ${bridge.kind} input outran the upstream.`)
             return
           }
-          const upstream = bridge.upstream
-          if (upstream !== undefined && upstream.readyState === WebSocket.OPEN) {
-            // A flooding renderer must not grow the upstream client's buffer without bound (the other direction is capped by backpressureLimit).
-            if (upstream.bufferedAmount > MAX_CLOUD_WS_UPSTREAM_BUFFER) {
-              socket.close(1009, `The ${bridge.kind} input outran the upstream.`)
-              return
-            }
-            upstream.send(raw)
-          } else if (bridge.pending.length < MAX_CLOUD_WS_PENDING) {
-            bridge.pending.push(raw)
-          } else {
-            socket.close(1011, `cloud ${bridge.kind} upstream never opened`)
-          }
-          return
-        }
-        if (frameBytes > MAX_WS_FRAME_BYTES) {
-          socket.close(1009, `A /ws frame is larger than the bus accepts (${MAX_WS_FRAME_BYTES / 1024} KiB).`)
-          return
-        }
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw))
-        } catch {
-          socket.send(JSON.stringify({ type: "error", message: "Frames must be JSON." }))
-          return
-        }
-        if (typeof parsed !== "object" || parsed === null || typeof (parsed as { type?: unknown }).type !== "string") {
-          socket.send(JSON.stringify({ type: "error", message: "Frames must carry a string `type`." }))
-          return
-        }
-        const message = parsed as Record<string, unknown> & { readonly type: string }
-        if (message.type === "subscribe" || message.type === "unsubscribe") {
-          const topic = message.topic
-          if (typeof topic !== "string" || topic === "" || topic.length > MAX_WS_TOPIC_CHARS) {
-            socket.send(JSON.stringify({ type: "error", message: "subscribe needs a topic." }))
-            return
-          }
-          if (message.type === "subscribe") {
-            if (!socket.data.topics.has(topic) && socket.data.topics.size >= MAX_WS_SUBSCRIPTIONS) {
-              socket.send(JSON.stringify({ type: "error", message: `At most ${MAX_WS_SUBSCRIPTIONS} topics may be subscribed.` }))
-              return
-            }
-            socket.subscribe(topic)
-            socket.data.topics.add(topic)
-          } else {
-            socket.unsubscribe(topic)
-            socket.data.topics.delete(topic)
-          }
-          socket.send(JSON.stringify({ type: `${message.type}d`, topic }))
-          return
-        }
-        const handlers = messageHandlers.get(message.type)
-        if (handlers === undefined || handlers.size === 0) {
-          socket.send(JSON.stringify({ type: "error", message: `No handler for ${message.type}.` }))
-          return
-        }
-        for (const handler of handlers) {
-          try {
-            handler(message, socket)
-          } catch (error) {
-            log(`WebSocket ${message.type} handler failed: ${error instanceof Error ? error.message : String(error)}`)
-            socket.send(JSON.stringify({ type: "error", message: "The WebSocket request failed." }))
-          }
+          upstream.send(raw)
+        } else if (bridge.pending.length < MAX_CLOUD_WS_PENDING) {
+          bridge.pending.push(raw)
+        } else {
+          socket.close(1011, `cloud ${bridge.kind} upstream never opened`)
         }
       },
       close: (socket) => {
-        for (const topic of socket.data.topics) socket.unsubscribe(topic)
-        socket.data.topics.clear()
         const bridge = socket.data.cloud
-        if (bridge !== undefined) cloudBridges.delete(socket)
-        if (bridge?.upstream !== undefined) {
+        cloudBridges.delete(socket)
+        if (bridge.upstream !== undefined) {
           try {
             bridge.upstream.close()
           } catch {
@@ -1260,19 +1158,12 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   expectedHost = `127.0.0.1:${port}`
   log(`SMITHERS_LOCAL_ORIGIN=${origin}`)
 
-  const publish: LocalServer["publish"] = (topic, message) => {
-    server.publish(topic, JSON.stringify(message))
-  }
-
   const local: LocalServer = {
     origin,
     port,
     sessionToken,
     websocketProtocol,
-    router,
     server,
-    publish,
-    onMessage,
     stop: async () => {
       const writerCleanup = [...writers].flatMap(([runId, writer]) => [() => agent?.cancel(runId), () => writer.end()])
       writers.clear()

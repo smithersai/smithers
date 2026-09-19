@@ -32,8 +32,10 @@ exist.
 
 `SMITHERS_LOCAL_MODE=offline` is the headless default and performs no Smithers
 Cloud requests. `hybrid` enables the configured chat and identity upstreams.
-`SMITHERS_CHAT_STUB=1` supplies a deterministic in-process agent for tests and
-also disables the identity proxy.
+`SMITHERS_CHAT_STUB=1` selects the deterministic in-process agent
+(`e2e/support/ChatStub.ts`) in the two hosts that read it — the browser test
+host and the packaged app. `startLocalServer` itself never reads it: an agent
+is injected through its `agent` option or the host has the Smithers Cloud one.
 
 The native launcher starts the local origin in its own process, then opens the
 window at it. There is no detached session owner: quitting the app stops the
@@ -54,12 +56,12 @@ is ready.
 
 Each launch creates a fresh 256-bit token. The token is placed in the
 served document's `smithers-local-session` meta tag. The client sends it in
-the `x-smithers-local-session` header and in the WebSocket subprotocol.
+the `x-smithers-local-session` header and in the cloud tunnel's WebSocket
+subprotocol.
 
 The server rejects missing/invalid tokens, cross-origin API requests,
 unexpected `Host`/`Origin` values, non-JSON mutation bodies, oversized HTTP
-bodies and WebSocket frames, excessive subscriptions, and unknown client
-message types. It binds loopback only.
+bodies and WebSocket frames. It binds loopback only.
 
 The native RPC surface has exactly one privileged operation:
 
@@ -150,7 +152,6 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | POST | `/api/agent/turn/retire` | Retire a leg using its private replay capability |
 | POST | `/api/agent/turn/erase` | Delete-only proof, including fencing a not-yet-accepted leg |
 | POST | `/api/agent/turn/cancel` | Cancel a turn (`/api/chat/cancel` is an alias) |
-| POST | `/api/tutorial/change/{plan,preflight,receipt}` | The tutorial change agent; 501 on a host that configured none |
 | POST | `/api/tools/browser-fetch` | Guarded, pinned HTTPS page read (501 offline) |
 | POST | `/api/client-errors` | Renderer error ingest; logged, never persisted |
 | ANY | `/api/cloud/*` | Cloud proxy to `SMITHERS_CLOUD_API` (Bearer from the Bun credential; 501 offline) |
@@ -158,8 +159,10 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | GET | `/api/cloud-auth/session` | `{ state, username, expiresAt }`, never the token |
 | POST | `/api/cloud-auth/sign-out` | Delete the keychain credential and the in-memory token |
 
-WebSocket subscriptions are the renderer's own bus (`/ws`, subscribe and
-unsubscribe by topic) and the two cloud tunnels under `/api/cloud-ws/`.
+The only WebSockets this origin serves are the two cloud tunnels under
+`/api/cloud-ws/`. The renderer's own topic bus (`/ws`) went with the local
+backend: its only publishers were the local PTY, the target runs and the
+local language server.
 
 A file card asks the language server plue runs inside the repository's running
 workspace (lane L6, plue#505): the renderer's

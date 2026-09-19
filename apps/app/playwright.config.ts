@@ -3,8 +3,9 @@ import { defineConfig, devices } from "@playwright/test"
 /*
  * Test tier T1 (LOCAL-APP.md): the local origin without a window, driven by
  * headless Chromium. The web server builds the SPA (unless
- * SMITHERS_SKIP_SPA_BUILD=1) and boots `bun src/bun/serve.ts` on a fixed
- * port with the chat stub on. SMITHERS_CHAT_STUB=0 hits the real endpoint
+ * SMITHERS_SKIP_SPA_BUILD=1) and boots an in-process test host
+ * (e2e/playwright/webserver.ts -> scripts/browser-test-host.ts) on a fixed
+ * port with the chat stub injected. SMITHERS_CHAT_STUB=0 hits the real endpoint
  * and enables chat.real.spec.ts.
  */
 const PORT = Number(process.env.SMITHERS_E2E_PORT ?? "47311")

@@ -37,7 +37,6 @@ const boot = async (fetchImpl?: AppServices["fetchImpl"]) => {
     { available: false, startTurn: async () => ({ status: "error", message: "unused" }), cancelTurn: async () => {}, subscribe: () => () => {} },
     {
       bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: [...RuntimeCapabilitySchema.options], authFlow: "none", sandbox: { platform: "darwin", mode: "enforced" } },
-      socketUrl: () => undefined,
       fetchImpl: async (input, init) => (fetchImpl === undefined ? json({}, 404) : fetchImpl(input, init))
     })
   controllers.push(controller)

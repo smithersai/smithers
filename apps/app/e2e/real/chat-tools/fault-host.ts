@@ -99,7 +99,6 @@ product = await startLocalServer({
   distDir: join(appDir, "dist"),
   home,
   stateDir: join(root, "state"),
-  chatStub: false,
   cloudMode: "hybrid",
   chat: {
     chatUrl: `http://127.0.0.1:${proxyPort}/chat`,

@@ -40,7 +40,7 @@ diff a single cluster with
 | Local terminal | `Pty.ts`, `PtySpawn.ts`, `SessionMonitor.ts`, `routes/pty.ts` + tests | 2,173 | The workspace terminal relay into a plue VM (`/api/cloud-ws/repos/…/terminal`), which both hosts already tunnel. |
 | Local repositories | `Repos.ts`, `RepoFiles.ts`, `LocalRepository.ts`, `RepositoryAuthority.ts`, `routes/tutorialRepository.ts`, `sanitizeRemoteUrl.ts` + tests | 1,283 | Cloud repositories as plue workspaces. A repository is a workspace, never a directory on this machine. |
 | Harness detection | `Harnesses.ts`, `routes/harnesses.ts`, `routes/agents.ts` + tests | 230 | plue injects the credentials into the guest, so the app never probes for a CLI on the reader's box. |
-| Sandbox | `Sandbox.ts` + test | 377 | Nothing to wrap. Two `Bun.spawn` calls survive: the keychain read in `CloudAuth.ts`, and the `git` reads in `routes/tutorial2-agent_change.ts`, a route no production host mounts (nothing supplies its `tutorialChangeHost`). Neither needs a seatbelt profile. |
+| Sandbox | `Sandbox.ts` + test | 377 | Nothing to wrap. Two `Bun.spawn` calls survive: the keychain read in `CloudAuth.ts`, and, until the second pass below deleted it, the `git` reads in `routes/tutorial2-agent_change.ts`. The keychain read needs no seatbelt profile. |
 | Session daemon | `LocalDaemon.ts`, `LocalDaemonProtocol.ts`, `LocalDaemonClient.ts`, `LocalDaemonLease.ts`, `LocalDaemonStop.ts` + test | 600 | Nothing. The daemon existed so long-running LOCAL work survived the window closing, and that work was targets, terminals and harnesses. Long-running work now lives in a plue workspace, which survives on its own. |
 
 That is 13,072 lines of `apps/app/src/bun`, plus `Affected.ts`, `CiMatrix.ts`
@@ -81,22 +81,85 @@ folder picker (`pickLocalRepository`) is gone from
 from the packaged E2E bridge.
 
 `@smthrs/harness-detect` has lost its only consumer. The package is left in
-place, unreferenced, for Will to decide on.
+place, unreferenced, for Will to decide on. It is the obvious table for the
+cloud credential-injection path to read — plue decides which CLI to install
+and configure inside a guest, and that decision is the same
+harness-id-to-binary-and-model table — but nothing points at it today.
 
-## Follow-ups this cut did not take
+## The second pass
 
-- `mainview/state/seams/CodeIntelSeam.ts` still branches on a local repository
-  and calls `mainview/state/LspClient.ts` (`/api/lsp/*`). No local repository
-  can exist any more, so the branch is unreachable; separating it from the
-  cloud path is its own change.
-- `mainview/state/controller/connectors.ts` `reduceAccess` still calls
-  `/api/repos`, `/api/repo/access` and `/api/repo/close`. Its flows are gone,
-  so nothing reaches it.
-- `mainview/state/PtyClient.ts` and `tabs/TerminalView.tsx`'s local branch
-  still speak `/api/pty*`. The cloud workspace terminal shares that view and
-  still works.
+A follow-up cut (this commit) removed what the first one left behind because
+it was inline, or because nothing pointed at it any more.
+
+| Removed | Lines | Why it was dead |
+| --- | --- | --- |
+| `src/bun/server.ts`: the `/ws` topic bus (upgrade branch, subscribe/unsubscribe, `publish`, `onMessage`, the handler registry, the topic and subscription caps, `WsSocketData.topics`) | ~120 | Its only publishers were the local PTY, the target runs and the local language server. `/api/cloud-ws/` is unaffected; a bridge socket now carries only its bridge. |
+| `src/bun/server.ts`: `chatStub`, `tutorialChangeHost`, `trailPath` | 20 | See below; `trailPath` had been the identity function since the lane paths went. |
+| `src/bun/routes/tutorial2-agent_change.ts` + test | 125 | Nothing supplied `tutorialChangeHost`, so the route was never mounted and its three paths always answered 501. Its two `git -C` spawns were the last shell-outs outside the keychain read. |
+| `src/bun/LocalHealthJournal.ts`, `JournalLines.ts`, `atomicWriteJson.ts`, `NativeOrigin.ts` + tests | 339 | Nothing in the repository imported any of the four. |
+| `src/bun/routes.ts`: `notImplemented`, `:param` route support, `RouteContext.params`, the re-registration branch in `Router.add`, `LocalServer.router` | 35 | No route carries a parameter and no lane registers one: `startLocalServer` is the only caller of `add`. |
+| `mainview/state/PtyClient.ts`, `LspClient.ts`, `TargetRunClient.ts`, `TopicSocket.ts` + tests | ~1,100 | The three clients spoke `/api/pty*`, `/api/lsp/*` and the target-run topics; `TopicSocket` was the `/ws` lifecycle all three shared. `TargetRunClient` was constructed and disposed by `AppController` and otherwise unreferenced. |
+| `AppServices.socketUrl`, `AppController.pty` | — | The `/ws` URL and the PTY transport had no remaining consumer. `socketProtocols` stays: the cloud tunnels carry it. |
+| `tabs/TerminalView.tsx`'s local branch | 20 | A terminal is a workspace terminal. A tab without one renders "no longer available" instead of dialing a PTY that cannot exist. |
+| `seams/CodeIntelSeam.ts`'s local branch (`Prepared.kind`, the per-repository diagnostics subscription, digest reconciliation, `refused`) | 90 | `resolveFileTarget` can no longer answer `local`. `LspAnswer`/`LspRefusal` moved to `CloudLspClient.ts`, which is now their only definer. |
+| `controller/connectors.ts` `reduceAccess` | 40 | `/api/repos`, `/api/repo/access` and `/api/repo/close` are gone. Narrowing or forgetting a connector is now a store act alone, so both doors are synchronous. |
+| `flows/SearchQuery.ts` `OPEN_FLOWS.target` / `PRIMARY_FLOWS.target` | 2 | `target.open` and `target.run` are not registered flows any more. |
+
+`ChatStub.ts` moved from `src/bun/` to `e2e/support/`, and `startLocalServer`
+no longer reads `SMITHERS_CHAT_STUB` or imports a stub: it takes
+`agent: (publish) => CloudAgent` and every test tier injects one
+(`scripts/browser-test-host.ts`, `src/bun/server.test.ts`,
+`src/bun/CloudWsTunnel.test.ts`). `serve.ts`, the real headless host, no longer
+has a stub at all.
+
+Two files still ship test scaffolding inside the bundle, and the evidence says
+they have to:
+
+- `src/bun/PackagedE2EBridge.ts` is the loopback bridge the packaged tier
+  drives the **built binary** through (`e2e/packaged/PackagedApp.ts` spawns
+  `.app` with `SMITHERS_E2E_BRIDGE=1`). Nothing can be injected into a process
+  that is spawned, so the bridge has to be in the bundle. It stays inert
+  without the env var and its token.
+- The same is true of the stub: `e2e/packaged/packaged-app.e2e.test.ts`
+  asserts `stub: <message>` in the packaged app's transcript, with
+  `SMITHERS_CHAT_STUB=1` and `SMITHERS_LOCAL_MODE=offline`. `NativeApp.ts`
+  therefore imports `e2e/support/ChatStub.ts` dynamically, behind that env
+  var — the code lives with the tier that owns it even though the bundler
+  follows it in.
+
+One behaviour changed with the injection: `chatStub: true` also nulled the
+identity upstream. Every host that used it is `SMITHERS_LOCAL_MODE=offline`,
+where the identity upstream is null anyway, so only two tests that wanted a
+cloud-only host had to say `identityUpstream: null` out loud.
+
+## Follow-ups this cut did not take either
+
+- `state/controller/tabs.ts` still posts `/api/pty`, reads `/api/pty/:id/output`
+  and loads `/api/harnesses` and `/api/repos`. No host serves any of them, so
+  `openTerminalTab` and `openHarnessTab` refuse with the fetch's own failure
+  rather than a worded refusal, and no terminal or harness tab can be created.
+  Cutting them means cutting the `+` menu rows, the `tab.terminal`,
+  `tab.harness` and `tab.read` flows, and the `pty.exited` /
+  `pty.status.observed` transitions in `AppProjection.ts` — persisted event
+  kinds, so it is a migration like the card schemas.
+- `state/controller/tutorialChange.ts` `post()` calls
+  `/api/tutorial/change/{plan,preflight,receipt}`, which now 404 instead of
+  501. The practice-repository path beside it is bundled and needs no host, so
+  the tutorial itself still runs; only a change against a real repository has
+  no server.
+- `seams/SearchSeam.ts` still reads `targets` cards into `kind: "target"`
+  search items. Those cards can only come from a conversation saved before the
+  first cut, the same persistence class as the retired card schemas.
+- `@smthrs/rpc/NativeFailureCodes` still carries the language-server route
+  codes (`language_server_missing`, `language_server_failed`, `node_missing`)
+  and `@smthrs/rpc/LocalApp` the PTY, repo and harness DTOs. Shared package,
+  separate change.
 - `packages/rpc` keeps the card schemas for the retired kinds (`targets`,
   `graph`, `target-run`, `run-timeline`, `run-history`, `affected`,
   `ci-matrix`, `repo`) so a conversation saved before the cut still decodes.
   `cards/CardRenderers.tsx` renders them as empty. Dropping the schemas is a
   persistence migration, not part of this change.
+- `@smthrs/harness-detect` is still unreferenced: nothing in the repository
+  imports it (`apps/app/package.json` declares the dependency and
+  `apps/app/PACKAGE.ts` keys the unit suite on its check target, which is all
+  that is left). It is 100% covered and costs nothing where it sits.

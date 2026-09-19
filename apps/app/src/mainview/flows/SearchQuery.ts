@@ -371,7 +371,7 @@ export const rankItems = <T extends SearchFact>(items: ReadonlyArray<T>, query: 
 export const OPEN_FLOWS: Readonly<Record<SearchItemKind, ReadonlyArray<string>>> = {
   file: ["files.read"],
   flow: [],
-  target: ["target.open"],
+  target: [],
   wiki: ["wiki.open", "wiki.select"],
   note: ["wiki.select"],
   history: ["history.show"],
@@ -386,7 +386,7 @@ export const OPEN_FLOWS: Readonly<Record<SearchItemKind, ReadonlyArray<string>>>
 export const PRIMARY_FLOWS: Readonly<Record<SearchItemKind, ReadonlyArray<string>>> = {
   file: ["implement"],
   flow: [],
-  target: ["target.run"],
+  target: [],
   wiki: [],
   note: [],
   history: [],

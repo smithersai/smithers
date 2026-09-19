@@ -82,7 +82,6 @@ const boot = async () => {
   const puts: Array<{ id: string; body: Record<string, unknown> }> = []
   const controller = createAppController(store, repositories, unavailableAgent, {
     bootstrap: EVERYTHING,
-    socketUrl: () => undefined,
     fetchImpl: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const path = new URL(url, "http://local.test").pathname

@@ -80,7 +80,6 @@ const boot = async () => {
   const recorder = recordingAgent()
   const controller = createAppController(store, repositories, recorder.agent, {
     bootstrap,
-    socketUrl: () => undefined,
     fetchImpl: async (input) => {
       const url = String(input)
       if (url.endsWith("/api/harnesses")) return new Response(JSON.stringify({ harnesses: HARNESSES }), { status: 200 })

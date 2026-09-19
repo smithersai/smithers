@@ -38,7 +38,6 @@ const cloudHost = (upstreamOrigin: string): Promise<LocalServer> =>
     port: 0,
     distDir: dist,
     cloudMode: "hybrid",
-    chatStub: true,
     cloudApi: upstreamOrigin,
     upstreamTimeoutMs: DEADLINE_MS,
     cloudAuth: {
@@ -57,7 +56,6 @@ const identityHost = (upstreamOrigin: string): Promise<LocalServer> =>
     port: 0,
     distDir: dist,
     cloudMode: "hybrid",
-    chatStub: false,
     identityUpstream: upstreamOrigin,
     cloudApi: null,
     upstreamTimeoutMs: DEADLINE_MS,

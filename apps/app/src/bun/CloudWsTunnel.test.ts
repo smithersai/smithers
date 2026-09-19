@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
+import { createChatStub } from "../../e2e/support/ChatStub"
 import { startLocalServer } from "./server"
 import type { LocalServer } from "./server"
 
@@ -110,7 +111,7 @@ const startLocal = async (
   startLocalServer({
     port: 0,
     distDir: dist,
-    chatStub: true,
+    agent: createChatStub,
     ...(upstream === null
       ? {}
       : {

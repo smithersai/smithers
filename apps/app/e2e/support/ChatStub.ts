@@ -1,11 +1,18 @@
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
-import type { CloudAgent } from "./CloudAgent"
+import type { CloudAgent } from "../../src/bun/CloudAgent"
 
 /*
  * SMITHERS_CHAT_STUB=1: a deterministic CloudAgent so the Playwright suite and
  * CI run offline. It streams one reasoning delta, then the text
  * `stub: <last user message>`, then done.
+ *
+ * Test scaffolding, so it lives in the test tree: every host that wants it
+ * INJECTS it as `startLocalServer({ agent: createChatStub })`. The one host
+ * that cannot be injected into is the packaged Electrobun app — the packaged
+ * tier spawns a built binary (e2e/packaged/PackagedApp.ts) and asserts
+ * `stub: <message>` in its transcript — so src/bun/NativeApp.ts imports this
+ * behind SMITHERS_CHAT_STUB, the same way it imports PackagedE2EBridge.
  */
 
 const lastUserMessage = (request: StartAgentTurnRequest): string => {

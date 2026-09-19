@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createChatStub } from "../e2e/support/ChatStub"
 import { startLocalServer } from "../src/bun/server"
 import type { LocalServerOptions } from "../src/bun/server"
 
@@ -16,7 +17,7 @@ export const browserTestOptions = (
   return {
     port,
     distDir,
-    chatStub: !realChat,
+    ...(realChat ? {} : { agent: createChatStub }),
     cloudMode: realChat ? "hybrid" : "offline",
     cloudApi: null,
     identityUpstream: null,

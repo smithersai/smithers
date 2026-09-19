@@ -4,9 +4,12 @@ import { useController } from "../ControllerContext"
 import type { TabRow } from "../state/AppState"
 
 /*
- * A terminal or harness tab's body (docs/LOCAL-APP.md "Tabs"): the shipped
- * `@smthrs/ui` xterm adapter (@xterm/xterm + @xterm/addon-fit) attached to
- * `pty:<sessionId>` over `/ws`.
+ * A terminal tab's body (docs/LOCAL-APP.md "Tabs"): the shipped `@smthrs/ui`
+ * xterm adapter (@xterm/xterm + @xterm/addon-fit) attached to the tab's cloud
+ * workspace session through the `/api/cloud-ws/` tunnel. A terminal is always
+ * a workspace terminal: the local PTY retired with the local backend
+ * (docs/LOCAL-BACKEND-RETIREMENT.md), so a tab without a workspace has no
+ * process to show.
  *
  * xterm needs a DOM node to open into, and this package writes no lifecycle
  * effect for it: the adapter owns the mount and the fit addon, and this
@@ -18,16 +21,16 @@ import type { TabRow } from "../state/AppState"
 export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "terminal" | "harness" }> }) {
   const controller = useController()
   const { sessionId } = tab
-  /*
-   * Lane citc: a workspace terminal attaches to its cloud session through
-   * the `/api/cloud-ws/` tunnel; a local one to `pty:<sessionId>` over /ws.
-   * Same three seams either way.
-   */
-  const workspace = tab.kind === "terminal" && tab.workspaceId !== undefined && tab.repo !== undefined
-    ? { workspaceId: tab.workspaceId, repo: tab.repo }
-    : undefined
+  const repo = tab.kind === "terminal" && tab.workspaceId !== undefined ? tab.repo : undefined
   /* The last geometry sent, so a refit that changed nothing sends nothing. */
   const lastGeometry = useRef("")
+  if (repo === undefined) {
+    return (
+      <div className="tab-terminal" data-testid={`terminal-${sessionId}`}>
+        This terminal session is no longer available.
+      </div>
+    )
+  }
   return (
     <Terminal
       className="tab-terminal"
@@ -35,31 +38,14 @@ export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "t
       /* Control focus (state/controller/controlFocus.ts): the xterm helper textarea's focusin finds this marker. */
       data-control-focus-id={`terminal:${sessionId}`}
       data-control-focus-kind="terminal"
-      stream={(write) =>
-        workspace !== undefined
-          ? controller.cloudTerminal.attach(workspace.repo, sessionId, { onOutput: write })
-          : controller.pty.attach(sessionId, {
-            onOutput: write,
-            onUnavailable: () => {
-              write("\r\nThis terminal session is no longer available.\r\n")
-              controller.notePtyExit(sessionId, null)
-            },
-            onExit: (code) => {
-              write(`\r\nprocess exited (${code === null ? "null" : String(code)})\r\n`)
-              controller.notePtyExit(sessionId, code)
-            }
-          })}
-      onData={(data) =>
-        workspace !== undefined
-          ? controller.cloudTerminal.input(sessionId, data)
-          : controller.pty.input(sessionId, data)}
+      stream={(write) => controller.cloudTerminal.attach(repo, sessionId, { onOutput: write })}
+      onData={(data) => controller.cloudTerminal.input(sessionId, data)}
       onResize={({ cols, rows }) => {
         // The adapter refits on every host resize; only a changed geometry reaches the server.
         const geometry = `${cols}x${rows}`
         if (geometry === lastGeometry.current || cols === 0 || rows === 0) return
         lastGeometry.current = geometry
-        if (workspace !== undefined) controller.cloudTerminal.resize(sessionId, cols, rows)
-        else void controller.pty.resize(sessionId, cols, rows)
+        controller.cloudTerminal.resize(sessionId, cols, rows)
       }}
     />
   )

@@ -38,7 +38,22 @@ import {
 import type { LspDiagnostic, LspHover, LspLanguageId, LspLocation } from "@smthrs/rpc/LocalApp"
 import { hoverContents, LSP_CLIENT_CAPABILITIES, redactHostPaths, relativeToRoot, toDiagnostic, toWireRange } from "@smthrs/rpc/LspWire"
 import type { LspDiagnosticWire, LspHoverWire, LspLocationLinkWire, LspLocationWire } from "@smthrs/rpc/LspWire"
-import type { LspAnswer, LspRefusal } from "./LspClient"
+
+/**
+ * Why a language-server request could not be answered, in the answering
+ * host's own words. `code` is the machine-readable name (plue's, or
+ * `close_<code>` for a socket that ended), `message` the sentence shown
+ * verbatim, and `install` the install line a `language_server_missing`
+ * carries — printed, never run.
+ */
+export interface LspRefusal {
+  readonly code: string
+  readonly message: string
+  readonly install?: string
+}
+
+/** One language-server answer: what the server said, or why it said nothing. */
+export type LspAnswer<T> = { readonly ok: T } | { readonly refusal: LspRefusal }
 
 /** One file card's text as the workspace server should see it. */
 export interface CloudLspDocument {

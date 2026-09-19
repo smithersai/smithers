@@ -4,7 +4,6 @@ import type { ControllerContext } from "./context"
 import { createConnectorController } from "./connectors"
 
 const repository = { authorizationId: "synthetic-capability", root: "/tmp/repo", name: "repo", head: null, branch: "main", remoteUrl: null }
-const repo = { id: "host-repo", path: repository.root, name: "repo", git: { branch: "main", remote: null }, warnings: [], smithers: { detected: false, workspaceFile: null, declarationFiles: [], reason: "none", workspaces: [] } }
 const setup = async () => {
   const data = new Map<string, string>()
   const store = await createAppStore({ kind: "localStorage", storage: {
@@ -25,43 +24,41 @@ test("journal and verbose output strip an accidentally supplied capability", asy
   expect(JSON.stringify([...data.values()])).not.toContain(repository.authorizationId)
 })
 
+/*
+ * No host opens a repository on this machine any more
+ * (docs/LOCAL-BACKEND-RETIREMENT.md): `/api/repos`, `/api/repo/access` and
+ * `/api/repo/close` are gone, so narrowing or forgetting a connector is a
+ * store act alone and reaches the network for nothing.
+ */
 for (const action of ["read-only", "disconnect"] as const) {
-  for (const ok of [true, false]) {
-    test(`${action} waits for host revocation and retains the connector on failure (${ok})`, async () => {
-      const { store } = await setup()
-      const { authorizationId: _, ...inspection } = repository
-      store.dispatch({ type: "connector.local.connected", actor: "system", access: "read-write", repository: inspection })
-      const connector = [...store.collections.connectors.values()][0]!
-      let finish!: (response: Response) => void
-      const revoking = new Promise<Response>((resolve) => { finish = resolve })
-      const calls: Array<{ url: string; body?: unknown }> = []
-      let closed = false
-      const ctx = { store, baseUrl: "", errorMessageOf: async () => "Host refused",
-        boundedFetch: async (url: string, init?: RequestInit) => {
-          calls.push({ url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) })
-          if (url === "/api/repos") return Response.json({ repos: closed ? [] : [repo] })
-          const response = await revoking
-          closed = ok && action === "disconnect"
-          return response
-        }
-      } as unknown as ControllerContext
-      const controller = createConnectorController(ctx)
-      controller.askConnectorRemoval(connector.id)
-      const running = action === "read-only" ? controller.makeConnectorReadOnly(connector.id) : controller.removeConnector(connector.id)
-      for (let i = 0; i < 10; i++) await Promise.resolve()
-      expect(calls).toContainEqual({ url: action === "read-only" ? "/api/repo/access" : "/api/repo/close",
-        body: action === "read-only" ? { repoId: repo.id, access: "read" } : { repoId: repo.id } })
-      expect(store.collections.connectors.get(connector.id)?.access).toBe("read-write")
-      finish(Response.json(ok ? { ok: true } : {}, { status: ok ? 200 : 500 }))
-      const result = await running
-      if (!ok) {
-        expect(result).toBe("Host refused")
-        expect(store.collections.connectors.get(connector.id)?.access).toBe("read-write")
-      } else if (action === "read-only") expect(store.collections.connectors.get(connector.id)?.access).toBe("read")
-      else {
-        expect(store.collections.connectors.has(connector.id)).toBe(false)
-        expect(store.collections.repos.size).toBe(0)
+  test(`${action} is a store act and calls no host route`, async () => {
+    const { store } = await setup()
+    const { authorizationId: _, ...inspection } = repository
+    store.dispatch({ type: "connector.local.connected", actor: "system", access: "read-write", repository: inspection })
+    const connector = [...store.collections.connectors.values()][0]!
+    const calls: Array<string> = []
+    const ctx = { store, baseUrl: "", errorMessageOf: async () => "Host refused",
+      boundedFetch: async (url: string) => {
+        calls.push(url)
+        return Response.json({})
       }
-    })
-  }
+    } as unknown as ControllerContext
+    const controller = createConnectorController(ctx)
+    controller.askConnectorRemoval(connector.id)
+    const result = action === "read-only" ? controller.makeConnectorReadOnly(connector.id) : controller.removeConnector(connector.id)
+    expect(result).toBeUndefined()
+    expect(calls).toEqual([])
+    if (action === "read-only") expect(store.collections.connectors.get(connector.id)?.access).toBe("read")
+    else expect(store.collections.connectors.has(connector.id)).toBe(false)
+  })
 }
+
+test("a connector nobody asked to remove is refused, and an unknown id is named", async () => {
+  const { store } = await setup()
+  const { authorizationId: _, ...inspection } = repository
+  store.dispatch({ type: "connector.local.connected", actor: "system", access: "read-write", repository: inspection })
+  const connector = [...store.collections.connectors.values()][0]!
+  const controller = createConnectorController({ store } as unknown as ControllerContext)
+  expect(controller.removeConnector(connector.id)).toBe("Ask before disconnecting this repository.")
+  expect(controller.makeConnectorReadOnly("nope")).toBe("There is no connector with id nope.")
+})

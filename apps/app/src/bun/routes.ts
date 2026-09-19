@@ -3,9 +3,8 @@ import type { NativeRouteCode } from "@smthrs/rpc/NativeFailureCodes"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 /*
- * A tiny HTTP router for the local server. Lanes register their routes on
- * the shared instance (`server.router.add(...)`); a path pattern may carry
- * `:param` segments. Errors follow LOCAL-APP.md:
+ * A tiny HTTP router for the local server: exact paths only, registered by
+ * startLocalServer itself. Errors follow LOCAL-APP.md:
  * `{ error: { code, message } }` with a 4xx/5xx status.
  */
 
@@ -14,7 +13,6 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
 export interface RouteContext {
   readonly request: Request
   readonly url: URL
-  readonly params: Readonly<Record<string, string>>
 }
 
 export type RouteHandler = (context: RouteContext) => Response | Promise<Response>
@@ -100,9 +98,6 @@ export const jsonErrorWithStatus = (
 export const refuse = (code: WorkerFailureCode, message: string): Response =>
   json({ status: "error", code, message, origin: "local" }, WORKER_FAILURES[code].status)
 
-export const notImplemented = (what: string): Response =>
-  jsonError("not_implemented", `${what} is not implemented in this build.`)
-
 /** A path whose percent-encoding is not valid UTF-8 is the client's error, never a 500. */
 export const invalidPath = (): Response =>
   jsonError("invalid_path", "Request path is not valid percent-encoded UTF-8.")
@@ -177,46 +172,24 @@ export class Router {
   private readonly routes: Array<Route> = []
 
   add(method: HttpMethod, pattern: string, handler: RouteHandler): this {
-    const existing = this.routes.findIndex((route) => route.method === method && route.pattern === pattern)
-    const route: Route = { method, pattern, segments: split(pattern), handler }
-    // A later registration for the same method and pattern replaces the
-    // placeholder a lane's real handler supersedes.
-    if (existing >= 0) this.routes[existing] = route
-    else this.routes.push(route)
+    this.routes.push({ method, pattern, segments: split(pattern), handler })
     return this
   }
 
-  match(method: string, pathname: string): { readonly handler: RouteHandler; readonly params: Record<string, string> } | undefined {
+  match(method: string, pathname: string): RouteHandler | undefined {
     const parts = split(pathname)
-    for (const route of this.routes) {
-      if (route.method !== method || route.segments.length !== parts.length) continue
-      const params: Record<string, string> = {}
-      let matched = true
-      let undecodable = false
-      for (let index = 0; index < parts.length; index += 1) {
-        const expected = route.segments[index] ?? ""
-        const actual = parts[index] ?? ""
-        if (expected.startsWith(":")) {
-          const decoded = decodePath(actual)
-          // The route still claims the path; its refusal is the handler.
-          if (decoded === undefined) undecodable = true
-          else params[expected.slice(1)] = decoded
-        } else if (expected !== actual) {
-          matched = false
-          break
-        }
-      }
-      if (matched) return undecodable ? { handler: invalidPath, params: {} } : { handler: route.handler, params }
-    }
-    return undefined
+    return this.routes.find((route) =>
+      route.method === method &&
+      route.segments.length === parts.length &&
+      route.segments.every((segment, index) => segment === parts[index])
+    )?.handler
   }
 
   /** True when some route, of any method, claims the path. */
   knows(pathname: string): boolean {
     const parts = split(pathname)
     return this.routes.some((route) =>
-      route.segments.length === parts.length &&
-      route.segments.every((segment, index) => segment.startsWith(":") || segment === parts[index])
+      route.segments.length === parts.length && route.segments.every((segment, index) => segment === parts[index])
     )
   }
 }
