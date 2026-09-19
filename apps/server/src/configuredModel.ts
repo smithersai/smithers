@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
-import { modelFailureRefusalCode, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
+import * as Redacted from "effect/Redacted"
+import { cutModelCredential, modelFailureRefusalCode, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelBinding, ModelTestFailure } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
@@ -120,13 +121,14 @@ export const handleConfiguredModelTurn = (
     // planned is refused here, not quietly served on Cerebras.
     if (plan.protocol !== "openai-chat") return modelRefusal({ code: "invalid", field: "protocol" }, headers)
     if (plan.url !== CEREBRAS_CHAT_COMPLETIONS_URL) return modelRefusal({ code: "invalid", field: "baseUrl" }, headers)
+    if (config.cerebrasApiKey === undefined) return modelRefusal({ code: "credential_missing", credential: plan.credential }, headers)
     const deadlineMs = CLOUD_ROLE_TIMEOUT_MS
     const answer = yield* cerebrasChat({
       model: plan.modelId,
       messages,
       maxTokens: CLOUD_ROLE_MAX_TOKENS,
       temperature: CLOUD_ROLE_TEMPERATURE
-    }, deadlineMs)
+    }, deadlineMs, "manual")
     if (!answer.ok) {
       switch (answer.reason) {
         case "http":
@@ -142,11 +144,12 @@ export const handleConfiguredModelTurn = (
       }
     }
     const runId = body.runId
-    if (answer.content.trim() === "") {
+    const text = cutModelCredential(answer.content, Redacted.value(config.cerebrasApiKey))
+    if (text.trim() === "") {
       return ndjson([{ runId, type: "done", reason: "stop", error: "The configured model answered with no text." }], headers)
     }
     return ndjson([
-      { runId, type: "delta", kind: "text", text: answer.content },
+      { runId, type: "delta", kind: "text", text },
       { runId, type: "done", reason: "stop" }
     ], headers)
   })

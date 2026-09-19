@@ -129,6 +129,51 @@ const refusalOf = async (served: Served) => {
 }
 
 describe("a sealed turn that binds a model", () => {
+  test("refuses a cross-origin redirect without fetching the second host", async () => {
+    let redirectedCalls = 0
+    const destination = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => {
+      redirectedCalls += 1
+      return completion("redirect followed")
+    } })
+    const provider = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () =>
+      new Response(null, { status: 307, headers: { location: destination.url.href } }) })
+    try {
+      const served = await serve(explainBody(), { provider: async (request) => fetch(provider.url, {
+        method: request.method,
+        headers: request.headers,
+        body: await request.text(),
+        redirect: request.redirect
+      }) })
+      expect(redirectedCalls).toBe(0)
+      expect(served.calls[0]!.redirect).toBe("manual")
+      const refused = await refusalOf(served)
+      expect([refused.status, refused.code]).toEqual([502, "upstream_refused"])
+      expect(refused.message).toContain("307")
+      expect(served.calls).toHaveLength(1)
+    } finally {
+      provider.stop(true)
+      destination.stop(true)
+    }
+  })
+
+  test("cuts echoed credentials from a successful answer before building any frame", async () => {
+    const joined = `${SECRET.slice(0, 5)}${SECRET}${SECRET.slice(5)}`
+    const served = await serve(explainBody(), { provider: () => completion(`Before ${joined} after.`) })
+    expect(served.response.status).toBe(200)
+    const frames = (await served.response.text()).trim().split("\n").map((line) => JSON.parse(line) as unknown)
+    expect(frames).toEqual([
+      { runId: "explain-1", type: "delta", kind: "text", text: "Before  after." },
+      { runId: "explain-1", type: "done", reason: "stop" }
+    ])
+  })
+
+  test("an answer containing only an echoed credential is empty after sanitizing", async () => {
+    const served = await serve(explainBody(), { provider: () => completion(SECRET) })
+    expect((await served.response.text()).trim().split("\n").map((line) => JSON.parse(line) as unknown)).toEqual([
+      { runId: "explain-1", type: "done", reason: "stop", error: "The configured model answered with no text." }
+    ])
+  })
+
   test("is answered on the bound model id through Cerebras, as one delta and one done", async () => {
     let sent: Record<string, unknown> = {}
     const served = await serve(explainBody(), {

@@ -687,7 +687,8 @@ const CEREBRAS_SEAM = "cerebras"
  */
 export const cerebrasChat = (
   request: CerebrasChatRequest,
-  timeoutMs: number
+  timeoutMs: number,
+  redirect: RequestRedirect = "follow"
 ): Effect.Effect<CerebrasChatAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
@@ -696,6 +697,7 @@ export const cerebrasChat = (
     }
     const response = yield* fetchWithDeadline(CEREBRAS_SEAM, CEREBRAS_CHAT_COMPLETIONS_URL, {
       method: "POST",
+      redirect,
       headers: { authorization: `Bearer ${Redacted.value(config.cerebrasApiKey)}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: request.model,
