@@ -22,7 +22,6 @@ const expectedExports = [
   "OpenAIChatGPT",
   "OpenAIResponses",
   "Protocol",
-  "RebuildableHttpClient",
   "RequestExecutor",
   "Route",
   "ToolStream"

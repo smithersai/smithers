@@ -7,7 +7,7 @@ import * as HttpClientError from "effect/unstable/http/HttpClientError"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
-import * as RebuildableHttpClient from "../src/RebuildableHttpClient.ts"
+import * as RebuildableHttpClient from "../src/internal/rebuildableHttpClient.ts"
 
 const request = HttpClientRequest.get("https://example.test")
 const broken = new HttpClientError.HttpClientError({

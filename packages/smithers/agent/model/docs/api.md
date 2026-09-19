@@ -579,20 +579,6 @@ Question names, option names and rubric labels are JSON object keys, including
 `__proto__`, `constructor` and `toString`. Decoding reads only own properties
 and preserves these names in the answer and probability records.
 
-## `RebuildableHttpClient`
-
-`make(acquire)` returns a scoped Effect `HttpClient` whose inner client is
-replaced before the next request after a transport failure. `acquire` builds
-a client and owns its pool in the supplied scope. Replacement acquires the
-new pool before closing the old one; closing the host scope closes the last
-pool. Concurrent failures share one replacement, and late failures from a
-discarded pool cannot invalidate its successor.
-
-Requests are never replayed here. The caller owns retries and deadlines.
-HTTP responses, request encoding failures, and kernel permission refusals
-do not replace the pool. Compose kernel HTTP middleware above this client
-when capability checks are required.
-
 ## `Evaluator`
 
 The transport a classifier asks: one JSON state and a map of typed questions

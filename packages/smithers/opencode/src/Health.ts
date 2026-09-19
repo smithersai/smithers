@@ -20,11 +20,11 @@ import type * as Undici from "@effect/platform-node/Undici"
 import type * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import * as RebuildableHttpClient from "@smthrs/model/RebuildableHttpClient"
 import { Clock, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import type * as Scope from "effect/Scope"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import type * as Driver from "./Driver.ts"
+import * as RebuildableHttpClient from "./internal/rebuildableHttpClient.ts"
 
 /**
  * The state sent to Jev, from design section 3.1.

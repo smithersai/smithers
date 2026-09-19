@@ -114,11 +114,6 @@ export * as OpenAIResponses from "./OpenAIResponses.ts"
 export * as Protocol from "./Protocol.ts"
 
 /**
- * @since 1.0.0
- */
-export * as RebuildableHttpClient from "./RebuildableHttpClient.ts"
-
-/**
  * @since 0.1.0
  * @slop
  */
