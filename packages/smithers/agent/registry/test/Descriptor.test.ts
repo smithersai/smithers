@@ -456,8 +456,11 @@ describe("declarationDigest", () => {
     { presentation: { verb: { pending: "a", success: "b", failure: "c" }, subject: "invented", result: "write" } },
     { presentation: { verb: { pending: "a", success: "b", failure: "c" }, subject: "path", result: "diff" } }
   ])("rejects unsupported presentation metadata %j", (metadata) => {
-    expect(Schema.decodeUnknownOption(Descriptor.FlowDescriptor)({
-      ...Schema.encodeSync(Descriptor.FlowDescriptor)(base), ...metadata
-    })).toEqual(Option.none())
+    expect(
+      Schema.decodeUnknownOption(Descriptor.FlowDescriptor)({
+        ...Schema.encodeSync(Descriptor.FlowDescriptor)(base),
+        ...metadata
+      })
+    ).toEqual(Option.none())
   })
 })

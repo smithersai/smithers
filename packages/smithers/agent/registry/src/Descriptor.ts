@@ -488,7 +488,19 @@ export type FlowActivity = typeof FlowActivity.Type
 export const CallPresentation = Schema.Struct({
   verb: Schema.Struct({ pending: Schema.String, success: Schema.String, failure: Schema.String }),
   subject: Schema.Literals(["path", "command", "patch", "selection", "pattern", "none"]),
-  result: Schema.Literals(["text", "read", "write", "edit", "patch", "tests", "command", "matches", "paths", "entries", "none"])
+  result: Schema.Literals([
+    "text",
+    "read",
+    "write",
+    "edit",
+    "patch",
+    "tests",
+    "command",
+    "matches",
+    "paths",
+    "entries",
+    "none"
+  ])
 })
 
 /**
@@ -552,7 +564,9 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
   if (descriptor.body.contentDigest === undefined) return undefined
   const memoized = executionDigests.get(descriptor)
   if (memoized !== undefined) return memoized
-  const { activity: _activity, presentation: _presentation, ...executable } = Schema.encodeSync(FlowDescriptor)(descriptor)
+  const { activity: _activity, presentation: _presentation, ...executable } = Schema.encodeSync(FlowDescriptor)(
+    descriptor
+  )
   const digest = Digest.digest(Digest.canonical(executable))
   executionDigests.set(descriptor, digest)
   return digest

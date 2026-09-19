@@ -66,6 +66,15 @@ describe("descriptor-backed activity and presentation", () => {
     }
   })
 
+  test("unrecognized recorded metadata does not fall back to a familiar flow name", () => {
+    const records = oneCall("write", { path: "a.ts" }).map((record) => record.kind === "control.agent.cell-call-started"
+      ? { ...record, payload: { ...(record.payload as object), descriptor: { name: "write", activity: "future-activity" } } }
+      : record)
+    const model = traceFromJournal(RUN, records)
+    expect(model.bands[0]?.phase).toBe("unrecorded")
+    expect(model.lines[0]?.verb).toBe("write pending")
+  })
+
   test("descriptor activity and presentation override standard names and support custom flows", () => {
     const descriptors: ReadonlyArray<Pick<FlowDescriptor, "name" | "activity" | "presentation">> = [{
       name: "write", activity: "reads", presentation: {
@@ -133,6 +142,7 @@ describe("descriptor-backed activity and presentation", () => {
       ["test", { passed: 12, failed: [], parsed: true, exitCode: 0 }, "12 passed"],
       ["test", { passed: 3, failed: ["one"], parsed: true, exitCode: 1 }, "3 passed · 1 failed"],
       ["test", { passed: 0, failed: [], parsed: false, exitCode: 1 }, "exit 1"],
+      ["test", { passed: 2, failed: [], parsed: true, exitCode: 1 }, "2 passed · exit 1"],
       ["bash", { exitCode: 2, stdout: "", stderr: "refused" }, "exit 2"],
       ["grep", { matches: [{ path: "a.ts", line: 1, text: "a" }], files: ["a.ts"], filesSearched: 1, skippedBinary: 0, truncated: false }, "1 match"],
       ["grep", { matches: [{ path: "a.ts" }, { path: "b.ts" }] }, "2 matches"],

@@ -1962,13 +1962,12 @@
 .run-line-subject { font-family: var(--font-mono); }
 .run-line-result { color: var(--text-muted); font-size: var(--fs-small); }
 .run-line[data-failed="true"] .run-line-result { color: var(--danger); }
-.run-line-repeat, .run-line-wrote {
+.run-line-repeat {
 	flex: none;
 	padding: 0 var(--sp-2);
 	border-radius: var(--r-full);
 	font-size: var(--fs-small);
 }
-.run-line-wrote { background: color-mix(in srgb, var(--brand) 16%, var(--bg)); color: var(--text); }
 .run-line-repeat { background: color-mix(in srgb, var(--warning) 16%, var(--bg)); color: var(--text); }
 .run-note {
 	display: flex;

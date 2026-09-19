@@ -262,9 +262,10 @@ const LEGACY_PRESENTATION: ReadonlyMap<string, CallMetadata> = new Map([
 const recordedMetadata = (value: unknown, flowName: string): CallMetadata | undefined => {
   const descriptor = asRecord(value)
   if (descriptor.name !== flowName) return undefined
+  if (descriptor.activity === undefined && descriptor.presentation === undefined) return undefined
   const activity = Schema.is(FlowActivity)(descriptor.activity) ? descriptor.activity : undefined
   const presentation = Schema.is(CallPresentation)(descriptor.presentation) ? descriptor.presentation : undefined
-  return activity === undefined && presentation === undefined ? undefined : { activity, presentation }
+  return { activity, presentation }
 }
 
 /**
@@ -409,7 +410,8 @@ const resultOf = (value: unknown, format?: CallPresentation["result"]): string =
       const passed = countOf(fields.passed)
       const failed = stringList(fields.failed)
       if (fields.parsed === true && passed !== undefined && failed !== undefined && fields.invalidProbe === undefined) {
-        return `${passed} passed${failed.length === 0 ? "" : ` · ${failed.length} failed`}`
+        const exit = countOf(fields.exitCode)
+        return `${passed} passed${failed.length > 0 ? ` · ${failed.length} failed` : exit !== undefined && exit !== 0 ? ` · exit ${exit}` : ""}`
       }
       return countOf(fields.exitCode) === undefined ? "" : `exit ${fields.exitCode}`
     }
@@ -547,8 +549,9 @@ const disciplineFold = (
       }
       case "control.agent.cell-call-started": {
         const flowName = asString(payload.flowName) ?? ""
-        const descriptor = recordedMetadata(payload.descriptor, flowName) ?? descriptors.get(flowName)
-        const declared = descriptor?.activity !== undefined || descriptor?.presentation !== undefined
+        const recorded = recordedMetadata(payload.descriptor, flowName)
+        const descriptor = recorded ?? descriptors.get(flowName)
+        const declared = recorded !== undefined || descriptor?.activity !== undefined || descriptor?.presentation !== undefined
         const metadata = declared ? descriptor : LEGACY_PRESENTATION.get(flowName)
         const call: CallFacts = {
           flowName,
