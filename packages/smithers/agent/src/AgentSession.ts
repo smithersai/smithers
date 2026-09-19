@@ -320,7 +320,9 @@ const noLateFields: ReadonlySet<string> = new Set()
  *
  * The material is where the event sits and what it says: the frame, its
  * ordinal within that frame, the cell that frame produced, the event type, and
- * the event's own payload minus {@link observationOnly}. A replayed event
+ * the event's own payload minus {@link observationOnly} and minus whatever
+ * {@link lateFields} records this event type as having gained after journals
+ * of it already existed. A replayed event
  * regenerates all five, so it regenerates the identity and the index refuses
  * it. An event produced after divergence differs in at least one of them, so
  * it derives a different identity and is admitted normally: the approved
