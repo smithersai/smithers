@@ -850,7 +850,14 @@ export const make = (deps: Dependencies) => {
           if (row.state === "succeeded" && stepFacts.annotated) {
             const committed = yield* attempts.get(attemptId)
             if (Option.isNone(committed)) {
-              return yield* Effect.die(new Error("Finished checkpoint outcome disappeared"))
+              return yield* Effect.fail(
+                new AttemptStore.AttemptStoreError({
+                  code: "persistence_failed",
+                  method: "get",
+                  message: "Finished checkpoint outcome disappeared",
+                  cause: attemptId
+                })
+              )
             }
             yield* emitStepSettled(committed.value.outcome)
           }

@@ -4,7 +4,7 @@ import { Journal, JournalEvent, SqlJournal, StepFact } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
-import { Clock, Context, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import { Cause, Clock, Context, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import { fixture, onFile } from "./ExecutionSnapshotFixture.ts"
@@ -78,6 +78,47 @@ const entries = Effect.gen(function*() {
 })
 
 describe("native step facts over file SQLite", () => {
+  it.effect("a missing post-finish checkpoint outcome fails with a typed storage error and rolls back", () =>
+    fixture((file) =>
+      onFile(
+        file,
+        Effect.scoped(
+          Effect.gen(function*() {
+            yield* activate
+            const actual = yield* AttemptStore.AttemptStore
+            let finished = false
+            const inconsistent: AttemptStore.Service = {
+              ...actual,
+              finish: (input, owner) =>
+                actual.finish(input, owner).pipe(Effect.tap((receipt) =>
+                  Effect.sync(() => {
+                    finished = receipt._tag === "Finished"
+                  })
+                )),
+              get: (id) => finished ? Effect.succeed(Option.none()) : actual.get(id)
+            }
+            const outcome = yield* dispatch().pipe(
+              Effect.provideService(AttemptStore.AttemptStore, inconsistent),
+              Effect.exit
+            )
+            expect(Exit.isFailure(outcome)).toBe(true)
+            if (Exit.isFailure(outcome)) {
+              expect(Cause.squash(outcome.cause)).toMatchObject({
+                _tag: "@smthrs/run-store/AttemptStoreError",
+                code: "persistence_failed",
+                method: "get",
+                cause: { runId: "calls", stepKeyDigest: sha256("checkpoint"), attempt: 1 }
+              })
+            }
+            const saved = yield* entries
+            expect(saved.filter((row) => row.eventType === StepFact.eventType)).toEqual([])
+            expect(saved.some((row) => row.eventType.includes("attempt-finished"))).toBe(false)
+            const row = yield* actual.get({ runId: "calls", stepKeyDigest: sha256("checkpoint"), attempt: 1 })
+            expect(Option.isSome(row) && row.value.state).toBe("running")
+          }).pipe(Effect.provide(services))
+        )
+      )
+    ))
   it("refuses malformed durable coordinates and accepts a repair observation", () => {
     expect(Schema.is(StepFact.Fact)({ ...fact, step: { ...fact.step, ask: "repair" }, frame: -1 })).toBe(true)
     const malformed = [
