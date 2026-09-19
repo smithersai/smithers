@@ -17,7 +17,10 @@
  * baseline has never seen is still held to the law below rather than skipped.
  *
  * `FormCardsAgainstMain.main.json` is that baseline, captured through this
- * same harness at the `main@origin` its header names. Re-capture it with
+ * same harness at the `main@origin` its own `capturedAt` names. It was read
+ * twice — at `0e876a2566fe` and again at `6cc28aec6f9a`, 41 commits later —
+ * and all 8719 rows were byte-identical, so those 41 commits changed no card
+ * and the baseline describes main today. Re-capture it with
  * `FORM_CARDS_BASELINE=write bun test src/mainview/flows/FormCardsAgainstMain.test.ts`
  * IN A WORKSPACE ON `main@origin` AND NOWHERE ELSE, and say in the commit
  * which revision it was read at — a baseline captured on a branch is the
