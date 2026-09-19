@@ -51,7 +51,7 @@ import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Jj from "@smthrs/jj"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
@@ -447,7 +447,10 @@ const failureMessage = (cause: Cause.Cause<unknown>): string => {
  * @since 1.0.0
  */
 export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver.Outcome => {
-  const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(Cause.squash(cause)))
+  const squashed = Cause.squash(cause)
+  const unjudged = judgeRefusal(squashed)
+  if (unjudged !== undefined) return { _tag: "failed", message: failureMessage(cause), provider: unjudged }
+  const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(squashed))
   if (model === undefined) return { _tag: "failed", message: failureMessage(cause) }
   const provider: Driver.ProviderFailure = {
     seat,
@@ -462,6 +465,75 @@ export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver
       model.httpStatus === undefined ? "" : ` (HTTP ${model.httpStatus})`
     } from ${seat}: ${model.message}`,
     provider
+  }
+}
+
+/**
+ * The provider a refused judge is reported against: the Vercel AI Gateway,
+ * which is the host `AI_GATEWAY_API_KEY` opens, not the seat's provider.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const judgeProviderID = "vercel-gateway"
+
+/**
+ * The seat the completion brake runs on: Jev, on the Vercel AI Gateway. It is
+ * not a seat the operator chose, so a refusal of it is reported against this
+ * name and never against the turn's model seat.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const judgeSeat = `${judgeProviderID}:${Evaluator.defaultModel}`
+
+/**
+ * The refusal a turn no evaluator could judge reports, or `undefined` when
+ * the failure is not one.
+ *
+ * `completion_unjudged` is the harness failing a turn because the gateway
+ * would not answer whether the run's own completion stands
+ * (`CompletionClaim.read`). It reached the app as a bare `UnknownError`,
+ * against the house rule that every failure is typed: a 401 on the judge is
+ * as fixable as a 401 on the seat, and the person fixing it needs to be told
+ * which key. So it gets the shape every other refusal has, a seat, a
+ * normalized code, the HTTP status, and the words verbatim, which the
+ * projection renders as `ProviderAuthError` for a key and as a red dot for a
+ * usage limit.
+ *
+ * The code comes off the transport's own, carried on the `HarnessError`
+ * cause as `Classifier.ClassifierError` (live) or as its JSON projection
+ * (replayed): 401 and 403 are `authentication`, 429 is `rate_limited`, and
+ * anything else keeps the transport's `EvaluatorErrorCode`. Never off the
+ * sentence, which is the same rule `Health.limitReached` states.
+ *
+ * @param error the squashed failure
+ * @category conversions
+ * @since 1.0.0
+ */
+export const judgeRefusal = (error: unknown): Driver.ProviderFailure | undefined => {
+  const harness = error as { readonly code?: unknown; readonly message?: unknown; readonly cause?: unknown }
+  if (harness?.code !== "completion_unjudged") return undefined
+  const transport = harness.cause as { readonly code?: unknown; readonly status?: unknown } | undefined
+  const status = typeof transport?.status === "number" ? transport.status : undefined
+  // No status is a gateway that answered nothing: an unreachable host, this
+  // call's own deadline, or a host that installed no evaluator at all. There
+  // is no provider to name in any of those, and the message already says
+  // which, so the failure keeps its own words.
+  if (status === undefined) return undefined
+  const code = status === 401 || status === 403
+    ? "authentication"
+    : status === 429
+    ? "rate_limited"
+    : typeof transport?.code === "string"
+    ? transport.code
+    : "completion_unjudged"
+  return {
+    seat: judgeSeat,
+    providerID: judgeProviderID,
+    code,
+    status,
+    message: typeof harness.message === "string" ? harness.message : "A completion no evaluator could judge"
   }
 }
 
@@ -519,9 +591,29 @@ export const evaluatorRefusal = (
  * @since 1.0.0
  */
 export const seatFailureLine = (failure: Driver.ProviderFailure): string =>
-  `Seat ${failure.seat} refused the model call (${failure.code}${
+  failure.providerID === judgeProviderID
+    ? judgeFailureLine(failure)
+    : `Seat ${failure.seat} refused the model call (${failure.code}${
+      failure.status === undefined ? "" : `, HTTP ${failure.status}`
+    }): ${failure.message} Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`
+
+/**
+ * The line the server logs when the gateway refused the completion brake.
+ *
+ * The way out is the gateway key, never another seat: the judge is not a seat
+ * the operator picked, so the seat advice would send them to change the one
+ * thing that is working. `AI_GATEWAY_API_KEY` is written without a colon
+ * after it because the journal redactor rewrites `<name ending in
+ * KEY><colon><token>` to `[REDACTED]`; see {@link noEvaluator}.
+ *
+ * @param failure the refusal {@link judgeRefusal} built
+ * @category conversions
+ * @since 1.0.0
+ */
+export const judgeFailureLine = (failure: Driver.ProviderFailure): string =>
+  `The completion judge ${failure.seat} refused the call (${failure.code}${
     failure.status === undefined ? "" : `, HTTP ${failure.status}`
-  }): ${failure.message} Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`
+  }): ${failure.message} Check AI_GATEWAY_API_KEY and the gateway's status; the run's own seat is not the problem.`
 
 /**
  * Builds the driver and the store over one engine database. The layer

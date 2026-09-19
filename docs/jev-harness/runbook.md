@@ -70,9 +70,11 @@ init and the session command verb. The `/api/*` routes it probes at boot
 The dot sits in front of the session title. One Jev evaluation runs per frame, from the server, never from the cell.
 
 - Green: the run is progressing, exploring, verifying or done.
-- Yellow: the run is repeating itself, or it has read for four frames without an edit, or the harness demanded discipline this frame.
+- Yellow: the harness demanded discipline this frame, or the run is repeating itself, or it has read for four frames without an edit.
 - Red: the run is waiting for you (a permission card, a question, quota), or a usage limit stopped it, or Jev is at least 70 percent sure it needs a person.
 - Gray: health is unavailable or uncertain. No gateway key, a transport failure, or no answer above the confidence floor. Gray never blocks the run.
+
+The facts beat the answers, and a finished run beats both. A confident `done`, or a turn that resolved, reads green even when Jev calls the run repetitive: a run that re-read a file on its way to a correct answer is not stuck. The dot a finished session keeps is the color its last state earned, so a session that parked on a permission you answered ends green and stays green rather than keeping "waiting for approval" over an empty permission list.
 
 ## Allow once and Allow always
 
@@ -96,7 +98,9 @@ A turn gets 40 frames by default from the CLI. Raise it for a long task with `--
 
 ## What a working classify call looks like
 
-A `classify` card in the transcript, titled with the door, the state count, the question count and the latency, for example `triage/relevance · 1 state · 3 questions · 212 ms`. The footer under the finished answer counts them: `2 frames · 4 calls · 1 classify · Jev 1 call · 212 ms · $0.0000`. Jev costs $0.042 per million input tokens, so a session of ordinary size rounds to zero.
+A `classify` card in the transcript, titled with the door, the state count, the question count and the latency, for example `triage/relevance · 1 state · 3 questions · 212 ms`. A batch names how many states it judged and reports the wall clock of the whole batch. The footer under the finished answer counts them: `2 frames · 4 calls · 1 classify · Jev 5 calls · 1412 ms · $0.0000`.
+
+`Jev N calls` is every Jev call the run made, not just the classify calls: the health evaluation behind each dot and the completion brake's reading at each completion attempt are in there too. Each is counted where it is asked, so the number matches the requests in a gateway log even when one answer arrives after the turn has gone idle. The milliseconds and the dollars are what the gateway answered, so a refusal and the brake add calls and time without spend. Jev costs $0.042 per million input tokens, so a session of ordinary size rounds to zero.
 
 ## When something fails
 
@@ -108,7 +112,7 @@ A `classify` card in the transcript, titled with the door, the state count, the 
 
 **`A completion the run's own record does not support (overclaimed): complete 0.21, overclaims 0.96. The claim was handed back for a frame and came back still unproven.`** The turn ended because the run said it was done and Jev read the run's own record against that. The two numbers are the classifier's answers to "is the task as stated done" and "does the claim assert what the evidence does not show". The run was told once what was missing and given a frame to prove it; what came back did not. There is no answer to read, by design: the alternative is a sentence nothing supports, returned with a green finish on it. Re-prompt with the part that is actually missing, or allow the call the run needs to prove its work.
 
-**`A completion no evaluator could judge (refused): The gateway answered 503`** The turn ended because Jev could not judge its completion. The gateway is retried up to three times over eight seconds first, so this means the gateway was down or the key was rejected, not that one request was slow. A 401 or 403 is answered once, because a second request reaches the same sentence.
+**`A completion no evaluator could judge (refused): The gateway answered 503`** The turn ended because Jev could not judge its completion. The gateway is retried up to three times over eight seconds first, so this means the gateway was down or the key was rejected, not that one request was slow. A 401 or 403 is answered once, because a second request reaches the same sentence. The server logs **`The completion judge vercel-gateway:typesafe-ai/jev refused the call (authentication, HTTP 401): ... Check AI_GATEWAY_API_KEY and the gateway's status; the run's own seat is not the problem.`** The way out is the gateway key, never another seat, and the app shows it as an authentication failure rather than an unknown one.
 
 **The app shows nothing after Add project.** The server is not reachable. Check the local network permission, check that the server is on 4096, and check `curl -s localhost:4096/global/health`.
 

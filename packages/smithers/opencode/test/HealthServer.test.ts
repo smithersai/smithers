@@ -82,10 +82,12 @@ describe("Health over the server", () => {
     const replied = await post(`/session/${session.id}/permissions/${asked.id}`, `{"response":"once"}`)
     expect(replied.status).toBe(200)
     await until(async () => seen.some((event) => event.type === "session.idle"))
-    // The resumed run replays frame zero, which is not judged again, and
-    // ends on the frame the read-only demand was issued for (yellow); the
-    // last decision may land just after the idle.
-    await until(async () => ((await get(`/session/${session.id}`)) as Protocol.Session).title.startsWith("🟡 "))
+    // The answer clears the park, so the dot goes to what the resumed run
+    // earns (yellow, on the read-only demand it is still answering), and the
+    // finished turn ends on the color its last state earned: green, and it
+    // stays green (design F6). It never keeps "waiting for approval" over an
+    // empty permission list, which is what the live drive left behind.
+    await until(async () => ((await get(`/session/${session.id}`)) as Protocol.Session).title.startsWith("🟢 "))
     const titles = seen
       .filter((event) => event.type === "session.updated")
       .map((event) => (event.properties["info"] as Protocol.Session).title.slice(0, 2))
@@ -105,14 +107,15 @@ describe("Health over the server", () => {
       .map((event) => event.properties["part"] as Protocol.Part)
       .filter((part): part is Protocol.ToolPart => part.type === "tool" && part.tool === "health")
       .map((part) => part.state.status === "completed" && part.state.title)
-    expect(streamed).toEqual(["progressing", "waiting for approval", "read-only demanded"])
+    expect(streamed).toEqual(["progressing", "waiting for approval", "read-only demanded", "done"])
     expect(health.map((part) => part.state.status === "completed" && part.state.title)).toEqual([
       "progressing",
       "waiting for approval",
-      "read-only demanded"
+      "read-only demanded",
+      "done"
     ])
     const frameOf = (part: Protocol.Part) => Number.parseInt(part.id.slice(16, 20), 16)
-    expect(health.map(frameOf)).toEqual([0, 1, 1])
+    expect(health.map(frameOf)).toEqual([0, 1, 1, 1])
     expect(health[1]!.state.status === "completed" && health[1]!.state.output).toContain("needs a person: yes (90%)")
     expect(health[1]!.state.status === "completed" && health[1]!.state.metadata).toMatchObject({ color: "red" })
     const classify = tools.find((part) => part.tool === "classify")!
@@ -131,16 +134,23 @@ describe("Health over the server", () => {
     expect(final.cost).toBe(0)
     // The home list carries the dot too.
     const home = (await get("/api/session?limit=5000&order=desc")) as { data: Array<Protocol.SessionV2> }
-    expect(home.data.find((item) => item.id === session.id)!.title.startsWith("🟡 ")).toBe(true)
+    expect(home.data.find((item) => item.id === session.id)!.title.startsWith("🟢 ")).toBe(true)
     // Every decision was recorded: frame zero's settle, the park, and frame
     // one's settle; the replayed frame zero was not judged again.
-    const records = await Effect.runPromise(
-      Effect.flatMap(Store.Store, (store) => store.listHealth(session.id)).pipe(
-        Effect.provide(Store.layerSqlite(`${served.directory}/.smithers/opencode.sqlite`))
+    const listRecords = () =>
+      Effect.runPromise(
+        Effect.flatMap(Store.Store, (store) => store.listHealth(session.id)).pipe(
+          Effect.provide(Store.layerSqlite(`${served.directory}/.smithers/opencode.sqlite`))
+        )
       )
-    )
-    expect(records.length).toBe(3)
-    expect(records.map((record) => record.frame)).toEqual([1, 2, 2])
+    // Four evaluations: frame zero's settle, the park, the answer that cleared
+    // it, and frame one's settle. The replayed frame zero was not judged
+    // again, and the turn's final color was the rule re-read over its own last
+    // facts, not a fifth call.
+    await until(async () => (await listRecords()).length === 4)
+    const records = await listRecords()
+    expect(records.map((record) => record.frame)).toEqual([1, 2, 2, 2])
+    expect(records.map((record) => record.state.parked)).toEqual(["none", "permission", "none", "none"])
     expect(records.map((record) => record.color)).toContain("red")
     expect(records.every((record) => record.type === "flows.opencode.health.v1" && record.answers !== undefined)).toBe(
       true

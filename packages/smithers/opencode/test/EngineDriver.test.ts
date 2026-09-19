@@ -1262,9 +1262,36 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     const down = await drive("r2", outage.layer)
     expect(down.outcomes).toEqual([{
       _tag: "failed",
-      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 503")
+      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 503"),
+      // A gateway that answered is a typed refusal like any other, against the
+      // judge's own seat and never against the run's.
+      provider: {
+        seat: EngineDriver.judgeSeat,
+        providerID: EngineDriver.judgeProviderID,
+        code: "refused",
+        status: 503,
+        message: expect.stringContaining("The gateway answered 503")
+      }
     }])
     expect(outage.state.asked).toBe(Health.evaluatorRetry.attempts)
+    expect(EngineDriver.judgeFailureLine(
+      { seat: EngineDriver.judgeSeat, providerID: EngineDriver.judgeProviderID, code: "refused", message: "down" }
+    )).toBe(
+      "The completion judge vercel-gateway:typesafe-ai/jev refused the call (refused): down Check AI_GATEWAY_API_KEY and the gateway's status; the run's own seat is not the problem."
+    )
+    // A gateway that answered nothing names no provider: the message already
+    // says whether it was unreachable, slow, or never installed.
+    expect(EngineDriver.judgeRefusal(
+      new HarnessError({ code: "completion_unjudged", message: "x", cause: { code: "unreachable" } })
+    )).toBeUndefined()
+    expect(EngineDriver.judgeRefusal(new Error("boom"))).toBeUndefined()
+    // A cause with a status but no code of its own keeps the harness's code
+    // and the sentence it would have carried anyway.
+    expect(EngineDriver.judgeRefusal({ code: "completion_unjudged", cause: { status: 500 } })).toMatchObject({
+      code: "completion_unjudged",
+      status: 500,
+      message: "A completion no evaluator could judge"
+    })
 
     // A key the gateway rejected: one request, because the second would be
     // rejected in the same words and the person would wait for it.
@@ -1275,9 +1302,20 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     const unauthorized = await drive("r3", rejected.layer)
     expect(unauthorized.outcomes).toEqual([{
       _tag: "failed",
-      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 401")
+      message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 401"),
+      // A 401 on the judge is the app's own auth failure, not an
+      // `UnknownError`: the projection renders it as `ProviderAuthError`.
+      provider: {
+        seat: EngineDriver.judgeSeat,
+        providerID: EngineDriver.judgeProviderID,
+        code: "authentication",
+        status: 401,
+        message: expect.stringContaining("The gateway answered 401")
+      }
     }])
     expect(rejected.state.asked).toBe(1)
+    expect(EngineDriver.judgeRefusal({ code: "completion_unjudged", message: "m", cause: { status: 429 } }))
+      .toMatchObject({ code: "rate_limited", status: 429 })
   })
 
   /**

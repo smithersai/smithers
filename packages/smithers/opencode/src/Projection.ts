@@ -190,6 +190,12 @@ export interface State {
   readonly editedThisFrame: boolean
   /** The current color and why, or none before the first decision. */
   readonly health: Health.Decision | undefined
+  /**
+   * The answers behind the last decision Jev gave any, which the turn's
+   * final decision is re-read from. Kept across a gray evaluation: the last
+   * answers are still the last thing anything knew about the run.
+   */
+  readonly answers: Health.Answers | undefined
   /** How many health cards this turn has emitted. */
   readonly healthCards: number
   /** The run summary's counters. */
@@ -212,7 +218,13 @@ export interface Summary {
   readonly frames: number
   readonly calls: number
   readonly classifyCalls: number
-  /** Every Jev call: classify calls and health evaluations. */
+  /**
+   * Every Jev call the run made: the classify calls the cell issued, the
+   * health evaluation each trigger asked for, and the completion brake's
+   * reading at each completion attempt. Counted where each call is asked, so
+   * a health answer that arrives after the turn ended is still one of the
+   * calls the footer reports.
+   */
   readonly jevCalls: number
   readonly jevLatencyMs: number
   /** Dollars, from the usage the gateway reported. */
@@ -912,8 +924,69 @@ const endTurn = (
   }
 }
 
-const resolvedTurn = (state: State, ctx: Context): Step =>
-  endTurn(state, ctx, { finish: "stop", time: { created: state.createdAt, completed: ctx.now() } })
+/**
+ * Ends a turn that answered, after one last reading of the color rule.
+ *
+ * The dot a finished session keeps is the last one anything decided, and
+ * mid-turn decisions are made of facts that the end of the turn has since
+ * settled: a park that was answered, a demand that was met. The live drive
+ * left finished, idle sessions red "waiting for approval" over an empty
+ * permission list for exactly that reason. So the rule is re-read here over
+ * the turn's own final facts (nothing parked, the last transition
+ * `complete`, no demand outstanding) and the last answers Jev gave. It is
+ * the rule, not the gateway: no call is made, so the footer's count stays
+ * true and the turn ends when it ends. A turn nothing ever judged keeps no
+ * color, because there is none it earned.
+ */
+const resolvedTurn = (state: State, ctx: Context): Step => {
+  const close = (from: State): Step =>
+    endTurn(from, ctx, { finish: "stop", time: { created: state.createdAt, completed: ctx.now() } })
+  if (state.answers === undefined) return close(state)
+  const facts: Health.Facts = {
+    ...state.facts,
+    parked: "none",
+    lastTransition: "complete",
+    demandThisFrame: false
+  }
+  const last = decided(
+    ctx,
+    { ...state, facts },
+    Health.decide(facts, state.answers),
+    state.answers,
+    lastFrame(state)
+  )
+  const ended = close(last.state)
+  return { state: ended.state, events: [...last.events, ...ended.events] }
+}
+
+/**
+ * The park a person just answered, cleared, and the color asked again.
+ *
+ * `parked` is a fact about right now, and until a permission or a question
+ * is answered every decision short-circuits red on it before it reads a
+ * single answer. It used to be cleared only at the next `turn-opened`, so a
+ * call the person allowed inside a frame that never parked, and any
+ * evaluation between the answer and the re-drive, kept saying "waiting for
+ * approval" about a session that was waiting for nobody. The answer is the
+ * moment the fact stops being true, so the fact is cleared here and the
+ * color is asked again from the same frame. A session that is not parked is
+ * unchanged and asks nothing.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const replied = (state: State): Step => {
+  if (state.closed || state.facts.parked === "none") return { state, events: [] }
+  return {
+    state: {
+      ...state,
+      facts: { ...state.facts, parked: "none" },
+      summary: { ...state.summary, jevCalls: state.summary.jevCalls + 1 }
+    },
+    events: [],
+    health: { ...state.facts, parked: "none", frame: lastFrame(state) + 1 }
+  }
+}
 
 const demandCard = (
   state: State,
@@ -983,9 +1056,18 @@ const demanded = (state: State, name: keyof typeof demandOrdinals, frame: number
  * out. A settlement consumes the demand flag; a park does not, because the
  * frame the demand was issued for has not settled yet, and it reads the
  * flag when it does.
+ *
+ * The Jev call is counted here, where it is asked, and not where its answer
+ * is folded. The evaluation runs on a fiber of its own and a slow one answers
+ * after the turn has ended, which is recorded and never folded, so counting
+ * the answer left the run summary short of the calls the run had already
+ * made: a live drive's footer said three where the gateway log said four.
  */
 const trigger = (state: State, settled: boolean): { readonly state: State; readonly health: Health.Facts } => ({
-  state: settled ? { ...state, facts: { ...state.facts, demandThisFrame: false } } : state,
+  state: {
+    ...(settled ? { ...state, facts: { ...state.facts, demandThisFrame: false } } : state),
+    summary: { ...state.summary, jevCalls: state.summary.jevCalls + 1 }
+  },
   health: { ...state.facts, frame: state.frame + 1 }
 })
 
@@ -1056,6 +1138,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
     },
     editedThisFrame: false,
     health: colorOf(session.title),
+    answers: undefined,
     healthCards: 0,
     summary: { frames: 0, calls: 0, classifyCalls: 0, jevCalls: 0, jevLatencyMs: 0, jevCost: 0 },
     counted: {}
@@ -1480,20 +1563,35 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         `narrow-only · ${event.flow}`,
         `${event.flow} ${event.check} covers ${event.targets.join(", ")} alone. Run a broader check.`
       )
-    case "claim-demanded":
+    case "claim-demanded": {
+      // The completion brake is a Jev call, and the most expensive question
+      // the run asks: one reading per completion attempt, with the time it
+      // took on the event. A reading the journal replays after a park is the
+      // same reading, counted once, under the frame it was attached to.
+      const key = `claim:${event.nextFrame}`
+      const read: State = key in state.counted ? state : {
+        ...state,
+        summary: {
+          ...state.summary,
+          jevCalls: state.summary.jevCalls + 1,
+          jevLatencyMs: state.summary.jevLatencyMs + event.latencyMs
+        },
+        counted: { ...state.counted, [key]: true }
+      }
       // A reading that let the completion through is a journal line and not a
       // card: nothing was asked of the run, so a card would report a demand
       // that never happened.
       return event.demanded
         ? demandCard(
-          demanded(state, "claim", event.nextFrame),
+          demanded(read, "claim", event.nextFrame),
           ctx,
           event.nextFrame,
           demandOrdinals.claim,
           "claim",
           "The completion is not supported by what this run's record shows. Complete again and state the working."
         )
-        : { state, events: [] }
+        : { state: read, events: [] }
+    }
     case "permission-required": {
       const request = event.request
       const meta: Record<string, unknown> = request.meta
@@ -1700,20 +1798,23 @@ export const decided = (
 }
 
 /**
- * Folds one health evaluation in: counts the Jev call when Jev answered
- * (a refused or timed-out evaluation is not a call the gateway took), then
- * `decided` under the frame the facts were about (`facts.frame` counts
- * from one), with the failure on the card when there is one.
+ * Folds one health evaluation in: adds the time and the spend when the
+ * gateway answered it ({@link Health.gatewayAnswered}, so a call that never
+ * reached it adds no milliseconds), keeps the answers for the turn's final
+ * decision, then `decided` under the frame the facts were about
+ * (`facts.frame` counts from one), with the failure on the card when there is
+ * one. The call itself was counted where it was asked, which is the only
+ * place that always happens before the turn ends.
  *
  * @category combinators
  * @since 1.0.0
  */
 export const health = (ctx: Context, state: State, facts: Health.Facts, evaluation: Health.Evaluation): Step => {
-  const counted: State = evaluation.error !== undefined ? state : {
+  const counted: State = {
     ...state,
-    summary: {
+    answers: evaluation.answers ?? state.answers,
+    summary: !evaluation.answered ? state.summary : {
       ...state.summary,
-      jevCalls: state.summary.jevCalls + 1,
       jevLatencyMs: state.summary.jevLatencyMs + evaluation.latencyMs,
       jevCost: state.summary.jevCost + Health.jevCost(evaluation.usage)
     }

@@ -291,10 +291,38 @@ describe("a live turn on a real seat", () => {
       expect(colors.length).toBeGreaterThan(0)
       for (const color of colors) expect(["green", "yellow", "red", "gray"]).toContain(color)
 
+      // 6. The finished session ends green and stays green (design F6). The
+      //    live keyed drive that found this left finished, idle sessions red
+      //    "waiting for approval" with nothing pending, and others yellow
+      //    "repeating itself" over `progress: done`, because the last color
+      //    was decided mid-turn on facts the end of the turn had settled.
+      const titleNow = async (): Promise<string> =>
+        ((await (await ask(`/session/${session.id}`)).json()) as { title: string }).title
+      const reasons = health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
+      expect(colors.at(-1), reasons).toBe("green")
+      expect(await titleNow()).toMatch(/^\u{1F7E2}/u)
+      await sleep(3000)
+      expect(await titleNow()).toMatch(/^\u{1F7E2}/u)
+
       const summary = parts.filter((part): part is { readonly type: string; readonly text: string } =>
         part.type === "text" && typeof (part as { text?: string }).text === "string" &&
         (part as { text: string }).text.includes("Jev ")
       ).at(-1)
+      // 7. The footer counts every Jev call the run made, not the classify
+      //    calls alone: the completion brake asks once per completion attempt
+      //    and each dot is an evaluation. It read "Jev 0 calls" for a turn
+      //    that had made several.
+      const classifyCards =
+        parts.filter((part): part is ToolPart => part.type === "tool" && "tool" in part && part.tool === "classify")
+          .length
+      const counted = /(\d+) frames? · \d+ calls? · (\d+) classify · Jev (\d+) calls?/.exec(summary?.text ?? "")
+      expect(counted, summary?.text ?? "no summary line").not.toBeNull()
+      const [frameCount, classifyCalls, jevCalls] = [Number(counted![1]), Number(counted![2]), Number(counted![3])]
+      expect(classifyCalls).toBe(classifyCards)
+      // Every frame that settled asked one evaluation, and the completion
+      // brake asked one more, so the count can never be the classify count.
+      expect(jevCalls, summary!.text).toBeGreaterThan(classifyCalls)
+      expect(jevCalls, summary!.text).toBeGreaterThanOrEqual(frameCount)
       const { cost } = (await (await ask(`/session/${session.id}`)).json()) as { cost: number }
       console.info(
         `live turn: booted in ${booted} ms, idle after ${wallClockMs} ms, frames ${frames.length}, health cards ${health.length}, seat $${

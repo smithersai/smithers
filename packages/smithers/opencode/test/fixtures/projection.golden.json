@@ -2210,7 +2210,7 @@
         "messageID": "msg_0000000010020000000000000b",
         "id": "prt_000000001002ffff010000000b",
         "type": "text",
-        "text": "2 frames · 4 calls · 1 classify · Jev 1 call · 212 ms · $0.0000",
+        "text": "2 frames · 4 calls · 1 classify · Jev 4 calls · 212 ms · $0.0000",
         "synthetic": true,
         "time": {
           "start": 1061,

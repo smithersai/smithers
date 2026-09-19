@@ -840,6 +840,67 @@ describe("Turns", () => {
     expect(result.cards).toEqual([])
   })
 
+  it("clears the park when the permission is answered, and ends the finished session on the color it earned", async () => {
+    // The live drive left three finished, idle sessions red "waiting for
+    // approval" with nothing pending: `parked` was cleared only at the next
+    // `turn-opened`, and every decision short-circuits on it. The answer is
+    // when the fact stops being true, so the reply clears it and asks again.
+    const store = Store.layerSqlite(`${scratch.directory}/health-park.sqlite`)
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const evaluator = Evaluator.layerScripted(() => ({
+      progress: { score: 4 },
+      stuck: { probability: 0.69 },
+      needsHuman: { probability: 0.05 }
+    }))
+    const stackWithHealth = Layer.mergeAll(Turns.layer(options), store, hub).pipe(
+      Layer.provideMerge(Layer.mergeAll(scripted, store, hub, evaluator))
+    )
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_park"))
+        yield* turns.prompt({ sessionID: "ses_park", parts: [{ type: "text", text: "Read package.json" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_park"), (list) => list.length === 1)))
+        )
+        const pending = yield* store.listPermissions("ses_park")
+        yield* turns.permission({ sessionID: "ses_park", permissionID: pending[0]!.id, response: "once" })
+        yield* Effect.promise(() =>
+          until(() =>
+            Effect.runPromise(
+              Effect.map(store.listMessages("ses_park"), (messages) =>
+                messages.some((message) => message.info.role === "assistant" && message.info.finish === "stop"))
+            )
+          )
+        )
+        yield* turns.settled("ses_park")
+        yield* Effect.promise(() =>
+          until(() =>
+            Effect.runPromise(
+              Effect.map(store.listHealth("ses_park"), (list) => list.some((entry) => entry.state.parked === "none"))
+            )
+          )
+        )
+        return {
+          title: Option.getOrThrow(yield* store.getSession("ses_park")).title,
+          records: yield* store.listHealth("ses_park")
+        }
+      }).pipe(Effect.provide(stackWithHealth))
+    )
+    const parkedRecord = result.records.find((entry) => entry.state.parked === "permission")!
+    expect(parkedRecord.color).toBe("red")
+    // The same frame, asked again the moment the person answered.
+    const answeredAgain = result.records.filter((entry) =>
+      entry.frame === parkedRecord.frame && entry.state.parked === "none"
+    )
+    expect(answeredAgain.length).toBeGreaterThan(0)
+    expect(answeredAgain.every((entry) => entry.color !== "red")).toBe(true)
+    // And the dot the finished session keeps is the one its last state earned:
+    // `done` at 100%, over `stuck` at 69%.
+    expect(Health.colorOf(result.title)).toBe("green")
+  })
+
   it("renders the conversation tail a follow-up carries, newest last and cut from the front", () => {
     const message = (id: string, role: "user" | "assistant", texts: ReadonlyArray<string>): Store.MessageWithParts => ({
       info: role === "user"

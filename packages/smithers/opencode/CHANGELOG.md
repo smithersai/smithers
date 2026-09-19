@@ -51,6 +51,74 @@
 
 ### Fixed
 
+- A finished session keeps the color its last state earned. Three of eleven
+  finished, idle sessions on a live keyed drive sat red "waiting for approval"
+  with nothing pending, because `Health.decide` short-circuits on
+  `facts.parked` before it reads any answer and `parked` was cleared only at
+  the next `turn-opened`. Two changes. `Projection.replied` clears the park at
+  the moment a person answers a permission or a question and asks for the
+  color again from the same frame, because the answer is when the fact stops
+  being true. And a turn that resolves reads the rule once more over its own
+  final facts, nothing parked and `lastTransition` `complete`, and the last
+  answers Jev gave, so the dot the session is left with is the color of its
+  last state rather than of a park it has since passed. That last reading is
+  the rule, not a gateway call, so the footer's count stays true and the turn
+  ends when it ends; a turn nothing ever judged keeps no color. Design F6: the
+  dot turns green and stays.
+
+- The color rule no longer contradicts the answers it read. `stuck` was tested
+  before `progress`, so the live drive ended a finished bug fix yellow
+  "repeating itself (69%)" over `progress: done (89%) · stuck: yes (69%) ·
+  needs a person: no (12%)`. A run that re-read a file on its way to a correct
+  answer is not stuck, so arrival now beats repetition: a confident `done`
+  (`Health.arrived`, at or above the confidence floor) or a resolved turn is
+  green even when `stuck` is over its threshold. A demand issued this frame
+  moved up with it, ahead of both, because a completion the harness handed
+  back is a fact and not a judgement. The whole order is in `decide`'s
+  docblock, in design section 3.3, and pinned by a table test over the real
+  answer shapes.
+
+- The run summary's `Jev N calls` counts every Jev call the run made. It
+  counted the health evaluations and the classify calls only, so every
+  completion-brake reading was missing: across a live drive the footers
+  totalled 50 calls while at least one uncounted brake call happened per
+  completion attempt, and a turn that failed because the gateway answered 401
+  printed `Jev 0 calls · 0 ms · $0.0000`. Counting was the fix, not renaming:
+  the brake is the run's most expensive question and the field would be a lie
+  either way. `claim-demanded` now counts one call with the latency the event
+  carries, counted once across a replay. And every health evaluation is
+  counted where the fold asks for it rather than where its answer lands: the
+  evaluation runs on a fiber of its own, a slow answer arrives after the turn
+  ended and is recorded without being folded, so counting answers left the
+  footer short of calls the run had already made. An instrumented live drive
+  caught exactly that: the footer read `Jev 3 calls` where the gateway log
+  held four requests. The time and the spend still come off what the gateway
+  answered (`Health.gatewayAnswered`; only `unreachable` and `timeout` mean
+  nothing came back, and spend counts only reported usage), so the brake and a
+  refusal add calls and milliseconds without dollars.
+
+- A batched `classify` card reports how long the batch took. Single-state
+  calls read 319, 264 and 265 ms while every batch read about 1 ms, because
+  the batch output carried no top-level `latencyMs` and the only fallback was
+  the gap between the call's start and settle events, which the harness
+  publishes in one tick. `@smthrs/agent-std`'s `Classify.askAll` now times
+  itself and the batch output carries `latencyMs`, which the card and the
+  summary's Jev latency already prefer.
+
+- A turn the gateway refused to judge is a typed failure. A
+  `completion_unjudged` reached the app as a bare `UnknownError`, against the
+  house rule that every failure carries its class: a 401 on the judge is as
+  fixable as a 401 on the seat, and the person fixing it has to be told which
+  key. `EngineDriver.judgeRefusal` gives it the shape every other refusal has,
+  against the judge's own seat (`judgeSeat`, never the run's), with the code
+  off the transport's own (401 and 403 are `authentication`, 429 is
+  `rate_limited`), the status, and the words verbatim, so the projection
+  renders it as `ProviderAuthError` and a usage limit as a red dot naming the
+  limit. `judgeFailureLine` logs it: the way out is `AI_GATEWAY_API_KEY` and
+  the gateway's status, never another seat. A gateway that answered nothing
+  names no provider, because the message already says whether it was
+  unreachable, slow, or never installed.
+
 - A `bash` call the cell wrote as program text no longer asks the person to
   approve a blank line, and no answer to it hands over the shell. `Bash.ts`
   takes a command line or a `script` an interpreter reads on standard input,

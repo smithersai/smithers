@@ -1080,6 +1080,15 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       ]
     }
     expect(Projection.classifyOutput(batch)).toBe("1. yes: no (0.80)\n2. timeout: slow\n3. failed: ")
+    // A batch times itself, so the card says what the judging took. Before
+    // the batch carried its own clock the only number was the gap between the
+    // call's start and its settle, which the harness publishes in one tick,
+    // and every batched card read about 1 ms.
+    expect(Projection.classifyTitle("classify", { states: [1, 2, 3], questions: { yes: {} } }, {
+      ...batch,
+      latencyMs: 641
+    }, 1)).toBe("ad hoc · 3 states · 1 question · 641 ms")
+    // A batch from a journal written before it did falls back to the gap.
     expect(Projection.classifyTitle("classify", { states: [1, 2, 3], questions: { yes: {} } }, batch, 40)).toBe(
       "ad hoc · 3 states · 1 question · 40 ms"
     )
@@ -1128,8 +1137,11 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(completed.state.status === "completed" && completed.state.metadata["answers"]).toEqual([
       completed.state.status === "completed" && (completed.state.metadata["result"] as { answers: unknown }).answers
     ])
-    // Two frames ran twice (the park replays frame zero and one): the summary counts each once.
-    expect(state.summary).toMatchObject({ frames: 2, classifyCalls: 1, jevCalls: 1, jevLatencyMs: 212, jevCost: 0 })
+    // Two frames ran twice (the park replays frame zero and one): the summary
+    // counts each once. Four Jev calls: the classify call, and the three
+    // health evaluations the fold asked for (frame zero's settle, the park,
+    // frame one's settle), counted where they are asked.
+    expect(state.summary).toMatchObject({ frames: 2, classifyCalls: 1, jevCalls: 4, jevLatencyMs: 212, jevCost: 0 })
     expect(state.summary.calls).toBe(4)
     expect(state.facts.lastCalls.map((call) => call.flow)).toContain("classify/triage/relevance")
     expect(state.facts.lastCalls.map((call) => call.ok)).toContain(true)
@@ -1138,7 +1150,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(state.facts.demands).toEqual(["read-only"])
     expect(state.facts.lastTransition).toBe("complete")
     const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.synthetic === true)!
-    expect(summary.text).toBe("2 frames · 4 calls · 1 classify · Jev 1 call · 212 ms · $0.0000")
+    expect(summary.text).toBe("2 frames · 4 calls · 1 classify · Jev 4 calls · 212 ms · $0.0000")
     expect(summary.id).toBe(
       Ids.part(assistantMessageID, { frame: Projection.finalFrame, slot: Projection.summarySlot, ordinal: 0 })
     )
@@ -1200,7 +1212,8 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       answers: undefined,
       latencyMs: 30,
       usage: { inputTokens: 1000, outputTokens: 0 },
-      error: undefined
+      error: undefined,
+      answered: true
     }
     const opened2 = Projection.open(ctx, opened())
     const first = Projection.health(ctx, opened2.state, triggers[0]!, evaluation)
@@ -1218,7 +1231,9 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       output: "no answers",
       input: { color: "yellow" }
     })
-    expect(first.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 30 })
+    // The call was counted where it was asked, not here: folding its answer
+    // adds the time it took and what it cost.
+    expect(first.state.summary).toMatchObject({ jevCalls: 0, jevLatencyMs: 30 })
     expect(first.state.summary.jevCost).toBeCloseTo(0.000042)
     // The same color again: the reason is kept, nothing is emitted.
     const same = Projection.health(ctx, first.state, triggers[0]!, {
@@ -1238,16 +1253,17 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect((green.events[1]!.properties["part"] as Protocol.ToolPart).id).toBe(
       Ids.part(assistantMessageID, { frame: 1, slot: Projection.slots.health, ordinal: 1 })
     )
-    // An evaluation the gateway refused is no Jev call: the count stays, and
-    // the card says why there is no answer.
+    // An evaluation that never reached the gateway adds no time: the totals
+    // stay, and the card says why there is no answer.
     const refused = Projection.health(ctx, green.state, triggers[2]!, {
       decision: { color: "gray", reason: "health unavailable" },
       answers: undefined,
       latencyMs: 2,
       usage: undefined,
-      error: "unreachable: set AI_GATEWAY_API_KEY"
+      error: "unreachable: set AI_GATEWAY_API_KEY",
+      answered: false
     })
-    expect(refused.state.summary.jevCalls).toBe(green.state.summary.jevCalls)
+    expect(refused.state.summary.jevLatencyMs).toBe(green.state.summary.jevLatencyMs)
     expect((refused.events[1]!.properties["part"] as Protocol.ToolPart).state).toMatchObject({
       title: "health unavailable",
       output: "unreachable: set AI_GATEWAY_API_KEY"
@@ -1259,6 +1275,137 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     const next = Projection.open(ctx, { ...opened(), session: { ...session, title: "🟢 Kept" } })
     expect(next.state.health).toEqual({ color: "green", reason: "" })
     expect((next.events[2]!.properties["info"] as Protocol.Session).title).toBe("🟢 Kept")
+  })
+
+  it("keeps the color a finished session earned: the reply clears the park and the answer decides last", () => {
+    const ctx = { directory, now: clock().now, maxFrames: 8 }
+    const events = scriptEvents()
+    let step = Projection.open(ctx, opened())
+    const triggers: Array<Health.Facts> = []
+    for (const event of events) {
+      step = Projection.fold(ctx, step.state, event)
+      if (step.health !== undefined) triggers.push(step.health)
+    }
+    // The live drive's three red sessions: the permission was answered, the
+    // run finished, and `parked` was still "permission" on the facts, so
+    // every later decision short-circuited red before it read an answer.
+    let parked = Projection.open(ctx, opened()).state
+    for (const event of events) {
+      parked = Projection.fold(ctx, parked, event).state
+      if (event._tag === "permission-required") break
+    }
+    expect(parked.facts.parked).toBe("permission")
+    const answered = Projection.replied(parked)
+    expect(answered.state.facts.parked).toBe("none")
+    expect(answered.events).toEqual([])
+    expect(answered.health).toMatchObject({ parked: "none", frame: 2 })
+    // A reply to a session that is not parked asks nothing and changes nothing.
+    expect(Projection.replied(answered.state).state).toBe(answered.state)
+    expect(Projection.replied(answered.state).health).toBeUndefined()
+
+    // The answers the last evaluation gave decide the turn's final color, so
+    // a finished run ends on the color its last state earned rather than on
+    // whatever it was parked on.
+    const evaluation: Health.Evaluation = {
+      decision: { color: "red", reason: "waiting for approval" },
+      answers: {
+        progress: { value: 4, label: "done", probabilities: { done: 0.89 }, confidence: 0.89 },
+        stuck: { value: true, probability: 0.69 },
+        needsHuman: { value: false, probability: 0.12 }
+      },
+      latencyMs: 300,
+      usage: { inputTokens: 900, outputTokens: 0 },
+      error: undefined,
+      answered: true
+    }
+    let judged = Projection.open(ctx, opened())
+    const decided = Projection.health(ctx, judged.state, triggers[0]!, evaluation)
+    expect(decided.state.health?.color).toBe("red")
+    expect(decided.state.answers).toBe(evaluation.answers)
+    let finishing = decided.state
+    for (const event of events) finishing = Projection.fold(ctx, finishing, event).state
+    expect(finishing.closed).toBe(true)
+    expect(finishing.health).toEqual({ color: "green", reason: "done" })
+    expect(finishing.session.title.startsWith("🟢 ")).toBe(true)
+    // The final decision is the rule re-read over the turn's own last facts,
+    // not another gateway call: the three health evaluations the fold asked
+    // for and the one classify call, and nothing for the last reading.
+    expect(finishing.summary.jevCalls).toBe(4)
+    // A turn nothing ever judged keeps no color it never earned.
+    judged = Projection.open(ctx, opened())
+    let unjudged = judged.state
+    for (const event of events) unjudged = Projection.fold(ctx, unjudged, event).state
+    expect(unjudged.health).toBeUndefined()
+    expect(unjudged.session.title.startsWith("🟢")).toBe(false)
+  })
+
+  it("counts every Jev call the run made: the health evaluations, the classify calls, and the completion brake", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
+    // The brake asks Jev once per completion attempt and reports how long it
+    // took. It is the run's most expensive question and the footer used to
+    // leave it out entirely.
+    const read = (demanded: boolean, nextFrame: number) =>
+      new AgentEvents.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.9,
+        overclaims: 0.1,
+        latencyMs: 412,
+        demanded,
+        currentDigest: "d",
+        nextFrame
+      })
+    const passed = Projection.fold(ctx, frame.state, read(false, 1))
+    expect(passed.events).toEqual([])
+    expect(passed.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 412 })
+    // The journal replays the same reading after a park: one call, counted once.
+    const replayed = Projection.fold(ctx, passed.state, read(false, 1))
+    expect(replayed.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 412 })
+    const handedBack = Projection.fold(ctx, replayed.state, read(true, 2))
+    expect(handedBack.state.summary).toMatchObject({ jevCalls: 2, jevLatencyMs: 824 })
+    expect(handedBack.state.facts.demands).toEqual(["claim"])
+    // Every health evaluation is counted where the fold asks for it, so a slow
+    // answer that lands after the turn ended is still one of the calls the
+    // footer reports: a live drive's footer said three where the gateway log
+    // said four.
+    let settling = handedBack.state
+    let asked: Projection.Step = handedBack
+    for (const event of scriptEvents()) {
+      asked = Projection.fold(ctx, settling, event)
+      settling = asked.state
+      if (asked.health !== undefined) break
+    }
+    const settled = asked
+    expect(settled.health).toBeDefined()
+    // The two brake readings, the classify call the demo cell makes, and the
+    // health evaluation this settlement asked for.
+    expect(settled.state.summary.jevCalls).toBe(4)
+    // A gateway that answered 401 took the call, so its time is the run's: the
+    // turn that failed on it used to print "Jev 0 calls · 0 ms".
+    const refused = Projection.health(ctx, settled.state, settled.health!, {
+      decision: { color: "gray", reason: "health unavailable: The gateway answered 401" },
+      answers: undefined,
+      latencyMs: 96,
+      usage: undefined,
+      error: "refused: The gateway answered 401",
+      answered: true
+    })
+    expect(refused.state.summary.jevCalls).toBe(4)
+    expect(refused.state.summary.jevLatencyMs).toBe(settled.state.summary.jevLatencyMs + 96)
+    expect(refused.state.summary.jevCost).toBe(0)
+    expect(refused.state.answers).toBeUndefined()
+    // A request that never reached the gateway spent no time there.
+    const unreachable = Projection.health(ctx, refused.state, settled.health!, {
+      decision: { color: "gray", reason: Health.noGatewayKey },
+      answers: undefined,
+      latencyMs: 1,
+      usage: undefined,
+      error: `unreachable: ${Health.noGatewayKey}`,
+      answered: false
+    })
+    expect(unreachable.state.summary.jevCalls).toBe(4)
+    expect(unreachable.state.summary.jevLatencyMs).toBe(refused.state.summary.jevLatencyMs)
   })
 
   it("adopts the stored title and archive stamp, and nothing else", () => {

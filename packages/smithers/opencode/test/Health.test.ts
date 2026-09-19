@@ -133,6 +133,58 @@ describe("Health", () => {
         "green",
         "done"
       ],
+      // The rule may not contradict the answers it read. A run that re-read a
+      // file on its way to a correct answer is not stuck, so a confident
+      // `done` and a resolved turn both beat `stuck`: the live drive ended a
+      // finished bug fix yellow "repeating itself (69%)" over
+      // `progress: done (89%)`, and that dot is what the session kept.
+      [
+        "a confident done beats stuck",
+        facts(),
+        answers({
+          progress: { value: 4, label: "done", probabilities: { done: 0.89 }, confidence: 0.89 },
+          stuck: { value: true, probability: 0.69 }
+        }),
+        "green",
+        "done"
+      ],
+      [
+        "a resolved turn beats stuck",
+        facts({ lastTransition: "complete" }),
+        answers({ stuck: { value: true, probability: 0.69 } }),
+        "green",
+        "progressing"
+      ],
+      // Only a confident done. Under the floor the answer is not an answer.
+      [
+        "a done under the floor does not beat stuck",
+        facts(),
+        answers({
+          progress: { value: 4, label: "done", probabilities: { done: 0.4 }, confidence: 0.4 },
+          stuck: { value: true, probability: 0.69 }
+        }),
+        "yellow",
+        "repeating itself (69%)"
+      ],
+      // The facts still come before the answers: a completion the harness
+      // handed back is a demand, whatever Jev made of the frame.
+      [
+        "a demand this frame beats done",
+        facts({ demandThisFrame: true, demands: ["claim"], lastTransition: "complete" }),
+        answers({ progress: { value: 4, label: "done", probabilities: { done: 0.9 }, confidence: 0.9 } }),
+        "yellow",
+        "claim demanded"
+      ],
+      [
+        "needing a person beats done",
+        facts({ lastTransition: "complete" }),
+        answers({
+          progress: { value: 4, label: "done", probabilities: { done: 0.9 }, confidence: 0.9 },
+          needsHuman: { value: true, probability: 0.82 }
+        }),
+        "red",
+        "needs you (82%)"
+      ],
       // The facts come first: a park is red even when the model sees progress.
       [
         "parked beats the answers",
@@ -290,6 +342,7 @@ describe("Health", () => {
     expect(evaluation.answers?.progress.label).toBe("progressing")
     expect(evaluation.error).toBeUndefined()
     expect(evaluation.usage).toBeUndefined()
+    expect(evaluation.answered).toBe(true)
     expect(Health.renderAnswers(evaluation.answers)).toBe(
       "progress: progressing (70%)\nstuck: no (10%)\nneeds a person: no (10%)"
     )
@@ -313,6 +366,8 @@ describe("Health", () => {
       reason: "health unavailable: No evaluator is installed on this host"
     })
     expect(unavailable.error).toContain("unreachable")
+    // Nothing reached the gateway, so nothing is a Jev call to count.
+    expect(unavailable.answered).toBe(false)
     const noKey = await Effect.runPromise(Health.evaluate(facts()).pipe(Effect.provide(Health.evaluatorLayer({}))))
     expect(noKey.decision).toEqual({ color: "gray", reason: Health.noGatewayKey })
     expect(Health.unavailable("Health did not answer within 1500 ms")).toBe(
@@ -342,6 +397,25 @@ describe("Health", () => {
     )
     expect(slow.decision.color).toBe("gray")
     expect(slow.error).toContain("timeout")
+    expect(slow.answered).toBe(false)
+    // A gateway that answered, even to refuse, took the call: an answer the
+    // question's shape rejects is a 200 the gateway served.
+    expect(malformed.answered).toBe(true)
+  })
+
+  it("counts a gateway that answered, judgement or refusal, and nothing that never reached it", () => {
+    expect(Health.gatewayAnswered(undefined)).toBe(true)
+    const codes: Array<[Evaluator.EvaluatorErrorCode, boolean]> = [
+      ["refused", true],
+      ["empty", true],
+      ["invalid_answer", true],
+      ["invalid_question", true],
+      ["unreachable", false],
+      ["timeout", false]
+    ]
+    for (const [code, answered] of codes) {
+      expect(Health.gatewayAnswered(new Evaluator.EvaluatorError({ code, message: code })), code).toBe(answered)
+    }
   })
 
   it("picks the gateway when the key is set and the unavailable evaluator otherwise", async () => {

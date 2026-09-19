@@ -8,8 +8,8 @@
  * and then published, in that order, so the stream never says something the
  * history route does not. A prompt on a busy session is stored as a user
  * message and steered into the running turn. A permission answer is
- * published as `permission.replied` and handed to the driver, which resumes
- * the parked execution. An abort answers every pending card `reject` on the
+ * published as `permission.replied`, clears the park on the health facts, and
+ * is handed to the driver, which resumes the parked execution. An abort answers every pending card `reject` on the
  * stream, then interrupts the driver, whose exit closes the projection. A
  * rename or an archive from the app is applied on the same queue as the
  * turn's own writes and folded into the open turn, so a title set mid-turn
@@ -329,6 +329,8 @@ export const make = (
             ...closed,
             events: [...closed.events, ...yield* mootCards(job.sessionID)]
           })
+        } else if (state !== undefined && job._tag === "replied") {
+          yield* apply(job.sessionID, Projection.replied(state))
         } else if (job._tag === "health") {
           yield* record(job, ctx.now())
           if (state !== undefined && state.assistantMessageID === job.messageID) {
@@ -432,7 +434,12 @@ export const make = (
       model: Protocol.ModelRef
     ): Effect.Effect<void, Store.StoreError> =>
       Effect.gen(function*() {
-        if (yield* driver.steer(session.id, text)) return
+        if (yield* driver.steer(session.id, text)) {
+          // A steer into a turn parked on a question is that question's
+          // answer, and the same rule applies as to a permission reply.
+          yield* commit({ _tag: "replied", sessionID: session.id })
+          return
+        }
         while (states.has(session.id)) yield* Effect.sleep(steerRetryDelay)
         yield* open(session, userMessageID, partID, text, agent, model)
       })
@@ -554,6 +561,11 @@ export const make = (
             properties: { sessionID: input.sessionID, requestID: input.permissionID, reply: input.response }
           }]
         })
+        // The answer is the moment the run stops waiting for a person, and the
+        // color rule reads `parked` before it reads any answer, so a dot left
+        // on the old fact says "waiting for approval" about a session nobody
+        // is waiting on.
+        yield* commit({ _tag: "replied", sessionID: input.sessionID })
         yield* Effect.forkIn(
           driver.permission(input).pipe(
             Effect.catchCause((cause) => Effect.logError({ message: "The permission could not be answered", cause }))
@@ -710,6 +722,17 @@ interface Update {
   readonly done?: Deferred.Deferred<void> | undefined
 }
 
+/**
+ * A park a person answered: the permission reply, or the steer that answered
+ * a question. The fact stops being true at the answer, so the projection
+ * clears it and the color is asked again.
+ */
+interface Replied {
+  readonly _tag: "replied"
+  readonly sessionID: string
+  readonly done?: Deferred.Deferred<void> | undefined
+}
+
 /** A health decision coming back from its fiber. */
 interface HealthJob {
   readonly _tag: "health"
@@ -720,7 +743,7 @@ interface HealthJob {
   readonly done?: Deferred.Deferred<void> | undefined
 }
 
-type Job = Open | Event | Close | Emit | Update | HealthJob
+type Job = Open | Event | Close | Emit | Update | Replied | HealthJob
 
 /**
  * Retries a store call while the database is held by another writer, on

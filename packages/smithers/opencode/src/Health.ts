@@ -228,11 +228,38 @@ const parkedReason: Readonly<Record<Exclude<State["parked"], "none">, string>> =
 }
 
 /**
- * The color rule, design section 3.3, first match wins. The facts decide
- * first: a parked run and a run a usage limit ended are red whether or not
- * Jev answered, because waiting for approval needs no judgment. Then the
- * answers: none, or none at or above the confidence floor, is gray, since
- * health is unavailable and the run is not judged on nothing.
+ * Whether the answers say the run arrived: `done`, at or above the
+ * confidence floor. The floor is the same one the whole rule runs on, so an
+ * unsure `done` is not an answer the color may be built on.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const arrived = (answers: Answers): boolean =>
+  answers.progress.label === "done" && answers.progress.confidence >= confidenceFloor
+
+/**
+ * The color rule, design section 3.3, first match wins, in three blocks.
+ *
+ * **The facts, first.** A parked run, a run a usage limit ended, and a frame
+ * the harness issued a demand for are decided whether or not Jev answered:
+ * waiting for approval needs no judgment, and neither does a completion the
+ * harness handed back.
+ *
+ * **Then whether there is an answer at all.** None, or none at or above
+ * {@link confidenceFloor}, is gray: health is unavailable and the run is not
+ * judged on nothing.
+ *
+ * **Then the answers, and this order is deliberate.** Needing a person beats
+ * everything, because that is the one color an operator has to act on.
+ * Arrival beats repetition: a confident `done` ({@link arrived}), or a turn
+ * whose last transition was `complete`, is green even when `stuck` is over
+ * its threshold, because a run that re-read a file on its way to a correct
+ * answer is not stuck. Testing `stuck` first made the rule contradict its
+ * own answers: the live drive ended a finished bug fix yellow "repeating
+ * itself (69%)" over `progress: done (89%)`, and that was the dot the
+ * session kept. Only then repetition, and then a run that has explored four
+ * frames without an edit.
  *
  * @category combinators
  * @since 1.0.0
@@ -246,14 +273,17 @@ export const decide = (facts: Facts, answers: Answers | undefined): Decision => 
   if (answers.needsHuman.probability >= 0.7) {
     return { color: "red", reason: `needs you (${percent(answers.needsHuman.probability)})` }
   }
+  if (facts.demandThisFrame) {
+    return { color: "yellow", reason: `${facts.demands[facts.demands.length - 1] ?? "discipline"} demanded` }
+  }
+  if (arrived(answers) || facts.lastTransition === "complete") {
+    return { color: "green", reason: answers.progress.label }
+  }
   if (answers.stuck.probability >= 0.6) {
     return { color: "yellow", reason: `repeating itself (${percent(answers.stuck.probability)})` }
   }
   if (answers.progress.value <= 1 && facts.framesSinceEdit >= 4) {
     return { color: "yellow", reason: `${answers.progress.label} · ${facts.framesSinceEdit} frames, no edit yet` }
-  }
-  if (facts.demandThisFrame) {
-    return { color: "yellow", reason: `${facts.demands[facts.demands.length - 1] ?? "discipline"} demanded` }
   }
   return { color: "green", reason: answers.progress.label }
 }
@@ -367,7 +397,33 @@ export interface Evaluation {
   readonly latencyMs: number
   readonly usage: Evaluator.Usage | undefined
   readonly error: string | undefined
+  /** Whether the gateway answered this call, judgement or refusal: what makes it a Jev call to count. */
+  readonly answered: boolean
 }
+
+/**
+ * Whether the gateway answered a call, which is what makes it a call to
+ * count and not an intention.
+ *
+ * Only two codes mean nothing came back: `unreachable` is a request the
+ * transport could not get an answer to, and `timeout` is one that did not
+ * answer in time. Every other code is the gateway's own answer served over
+ * HTTP (`refused` carries the status; `empty`, `invalid_answer` and
+ * `invalid_question` are all a 200 the answer could not be read out of), so
+ * the gateway took the call and the run's footer says so. See
+ * `Evaluator.EvaluatorErrorCode`.
+ *
+ * Structural over the failure, because the two that reach here carry the same
+ * code: `Evaluator.EvaluatorError` from the transport, and
+ * `Classifier.ClassifierError` from an answer the questions did not accept.
+ *
+ * @param error what the transport failed with, or nothing when it answered
+ * @category predicates
+ * @since 1.0.0
+ */
+export const gatewayAnswered = (
+  error: { readonly code: Evaluator.EvaluatorErrorCode } | undefined
+): boolean => error === undefined || (error.code !== "unreachable" && error.code !== "timeout")
 
 /**
  * One evaluation, within the deadline. Never fails: a transport failure, a
@@ -410,7 +466,8 @@ export const evaluate = (
         answers: undefined,
         latencyMs,
         usage: undefined,
-        error: `${outcome.failure.code}: ${outcome.failure.message}`
+        error: `${outcome.failure.code}: ${outcome.failure.message}`,
+        answered: gatewayAnswered(outcome.failure)
       }
     }
     return {
@@ -418,7 +475,8 @@ export const evaluate = (
       answers: outcome.success.answers,
       latencyMs: outcome.success.response.latencyMs,
       usage: outcome.success.response.usage,
-      error: undefined
+      error: undefined,
+      answered: true
     }
   })
 
