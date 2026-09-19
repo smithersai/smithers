@@ -25,6 +25,19 @@
 # turn itself prints. A rotated secret fails this job loudly instead of turning
 # it into a no-op.
 #
+# WHY IT MAY RUN THE TURN TWICE. Every failure in the drive is the server's
+# except one: whether the cheap seat `cerebras:gpt-oss-120b` gets the right
+# answer. On 2026-09-19 all three of this job's red runs were that and nothing
+# else, twice a turn that never touched `add.mjs` and once a completion the
+# brake caught as overclaimed. A gate that reds for a reason unrelated to the
+# change under test teaches people to ignore it, so the suite gives the seat
+# one second attempt, on a fresh repository and a fresh server, and fails with
+# both reasons when both attempts leave the bug in place. Nothing else is
+# retried: a boot that never came up, a turn that never went idle, a
+# completion Jev could not judge, a protocol shape that does not hold and a
+# health dot that does not settle green all fail on the first attempt. The
+# retry is never silent, and the step below turns it into a run annotation.
+#
 # LINTING. PACKAGE.ts names this file in ci.yml's actionlint step, and
 # apps/server/scripts/canary/workflow-wiring.test.ts fails when a workflow is
 # missing from that list.
@@ -93,6 +106,9 @@ jobs:
           if ! grep -q 'live turn: booted in' "${RUNNER_TEMP}/live-turn.log"; then
             echo '::error::The turn did not run. The suite skipped it, so this job proved nothing.'
             exit 1
+          fi
+          if grep -q 'live turn: retrying once' "${RUNNER_TEMP}/live-turn.log"; then
+            echo '::notice::Green on the second attempt. The seat failed the planted bug once and the server passed every check both times; the uploaded log names the reason.'
           fi
       - name: Keep the turn's own report
         if: always()
