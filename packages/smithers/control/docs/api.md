@@ -652,7 +652,7 @@ fails it with `JevProbeError`, whose `reason` is `unconfigured` (no
 `unreachable`, or `malformed` (a body that does not answer the question asked).
 `Health.evaluate` records a failing probe as `outcome: "error"` with reason
 `probe-error` and no report, so `rollup` reads the subject `stale`, activity
-`unknown`, health `unknown`, reason `probe-error` — never healthy — and
+`unknown`, health `unknown`, reason `probe-error`, never healthy, and
 `CheckPolicy.backoff` spaces the retries. A host that binds `jev.session` must
 supply the key.
 
