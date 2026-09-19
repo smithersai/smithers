@@ -604,6 +604,44 @@ describe("Turns", () => {
     })
   })
 
+  it("ignores a driver event after its turn closed, without changing the saved answer", async () => {
+    let running: Driver.Sink | undefined
+    const driver = Layer.succeed(Driver.Driver, {
+      start: (_input: Driver.StartInput, sink: Driver.Sink) =>
+        Effect.sync(() => {
+          running = sink
+        }),
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_closed"))
+        yield* turns.prompt({ sessionID: "ses_closed", parts: [{ type: "text", text: "go" }] })
+        yield* Effect.promise(() => until(async () => running !== undefined))
+        yield* running!.closed({ _tag: "interrupted" })
+        yield* turns.settled("ses_closed")
+        const before = yield* store.listMessages("ses_closed")
+        yield* running!.event(
+          new AgentEvents.Aborted({
+            eventType: "flows.harness.aborted.v1",
+            reason: "A late driver event must not replace the saved interruption"
+          })
+        )
+        // An update goes through the same queue, so this waits for the late
+        // event to be consumed without relying on scheduling or a sleep.
+        yield* turns.update("ses_closed", (current) => current)
+        return { before, after: yield* store.listMessages("ses_closed"), status: yield* turns.status() }
+      }).pipe(Effect.provide(stack(driver, "turns-late-event")))
+    )
+    expect(result.after).toEqual(result.before)
+    expect(result.status).toEqual({})
+  })
+
   it("closes the projection when the driver cannot start, ends early, or fails", async () => {
     for (const behaviour of ["start-fails", "closes-early", "reports-failure"] as const) {
       const messages = await run(
