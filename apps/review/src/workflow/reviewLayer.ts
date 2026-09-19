@@ -158,7 +158,11 @@ const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
  * @category layers
  */
 export const scriptedEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+  Evaluator.layerScripted(() => ({
+    complete: { probability: 0.99 },
+    overclaims: { probability: 0.01 },
+    invented: { probability: 0.01 }
+  }))
 
 /**
  * Builds the review workflow over a caller-supplied seat resolver and the
