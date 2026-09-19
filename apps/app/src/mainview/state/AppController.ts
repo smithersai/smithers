@@ -962,7 +962,7 @@ export const createAppController = (
     removeModel,
     testModel,
     assignSeat,
-    resumeModelTests,
+    resumeModels,
     observeModels
   } = actors.pair(ctx, (context, select) => createModelsController(context, { nextOrdinal: store.nextOrdinal, renderFlowForm: select(renderFlowForm), minimizeCard }))
   const {
@@ -1898,15 +1898,15 @@ export const createAppController = (
   liveTutorial.resume()
   workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()
-  // A test the card still holds as requested is launched again.
-  resumeModelTests()
   /*
-   * Persisted repository and approval reads reconnect from the identity answer,
+   * Persisted model, repository and approval reads reconnect from the identity answer,
    * never from construction: every boot adopts or probes the session, and a read started
    * before that answer would only be superseded by it.
    */
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
     workflowController.resumeWorkflowRequests()
+    // Catalog recovery writes a card; leave the identity projection before dispatching it.
+    queueMicrotask(() => { if (!ctx.disposed) resumeModels() })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     runs.resumeApprovalRequests()

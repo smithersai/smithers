@@ -733,7 +733,7 @@ export const failedModelTest = (failure: ModelTestFailure, latencyMs: number, ho
 export const hostRefusedModelTest = (
   refusal: { readonly code: string | null; readonly status: number | null; readonly fault: PlueFault },
   latencyMs: number
-): ModelTestResult => {
+): Extract<ModelTestResult, { ok: false }> => {
   const code = refusal.code !== null && HOST_REFUSAL_CODE.test(refusal.code) ? refusal.code : null
   const status = refusal.status !== null && Number.isInteger(refusal.status) && refusal.status >= 100 &&
       refusal.status <= 599 ?
@@ -1037,6 +1037,11 @@ export const ModelsCardPayloadSchema = z.object({
   tests: z.array(ModelTestRecordSchema),
   /** Tests requested and not yet settled; relaunched after a reload. */
   testing: z.array(ModelRecordIdSchema),
+  /** A catalog refresh survives reload; a failed refresh keeps its typed refusal until retried. */
+  refresh: z.discriminatedUnion("state", [
+    z.strictObject({ state: z.literal("requested") }),
+    z.strictObject({ state: z.literal("failed"), failure: ModelTestFailureSchema })
+  ]).optional(),
   host: z.enum(["observed", "unavailable"]),
   selected: ModelRecordIdSchema.optional(),
   /** Why the card surfaced unasked: the one row it shows. */
@@ -1044,7 +1049,7 @@ export const ModelsCardPayloadSchema = z.object({
     z.strictObject({ kind: z.literal("test-failed"), recordId: ModelRecordIdSchema }),
     z.strictObject({ kind: z.literal("seat-unresolved"), seat: SeatIdSchema })
   ]).optional(),
-  /** The host's refusal to list its catalog, as a sentence. */
+  /** The catalog refresh's typed refusal, formatted as its code and detail. */
   error: z.string().optional()
 })
 /**

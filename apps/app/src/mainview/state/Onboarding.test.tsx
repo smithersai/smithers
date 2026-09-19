@@ -110,7 +110,7 @@ describe("onboarding — the opening entry", () => {
     expect(details?.hasAttribute("open")).toBe(true)
     expect(text(detailContent)).toContain("Host: local (1.0.0 abcdef1)")
     // The surviving vocabulary: the rows this host and the Worker both emit.
-    expect(text(detailContent)).toContain("Capabilities: agent, identity, cloud, cloud.terminal, cloud.pat")
+    expect(text(detailContent)).toContain("Capabilities: agent, model.turn, identity, cloud, cloud.terminal, cloud.pat")
     expect(text(detailContent)).toContain(`Flows registered: ${controller.commands.all().length}`)
     expect(text(detailContent)).toContain("Harnesses: none detected")
     expect(text(detailContent)).toContain("Repositories: none open")

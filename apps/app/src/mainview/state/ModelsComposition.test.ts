@@ -1,7 +1,7 @@
 /*
  * The models controller at the composition root: the `model.*` flows reach it
  * through the one command map, and a test the card still holds as requested is
- * launched again by construction alone, so a reload never strands it.
+ * launched again after identity loads, so boot cannot supersede its result.
  */
 import { expect, test } from "bun:test"
 import { MODEL_CATALOG_PATH, MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
@@ -51,7 +51,9 @@ test("the model flows run through the registry, and a requested test survives a 
   const second = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   expect(modelsCard(second)?.payload.testing).toEqual(["mine"])
   const answering = host()
-  createAppController(second, unavailableRepositories, unavailableAgent, { fetchImpl: answering.fetchImpl })
+  const reloaded = createAppController(second, unavailableRepositories, unavailableAgent, { fetchImpl: answering.fetchImpl })
+  expect(answering.paths).toEqual([])
+  await reloaded.loadSession()
   await waitFor(() => second.collections.models.get("mine")?.lastTest !== undefined)
   expect(answering.paths).toContain(MODEL_TEST_PATH)
   expect(second.collections.models.get("mine")?.lastTest?.result).toEqual(passed)

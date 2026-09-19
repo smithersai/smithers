@@ -75,7 +75,8 @@ export const createRuntime = (options: {
     bootstrap,
     http,
     backend: {
-      ...(hasCapability(bootstrap, "agent") ? { agent: createWebAgent({ fetchImpl: http }) } : {}),
+      ...(hasCapability(bootstrap, "agent") || hasCapability(bootstrap, "model.turn")
+        ? { agent: { ...createWebAgent({ fetchImpl: http }), available: hasCapability(bootstrap, "agent") } } : {}),
       ...(bootstrap.host === "local" && bootstrap.sandbox !== null
         ? { repositories: options.nativeRepositories ?? unavailableRepositories }
         : {})

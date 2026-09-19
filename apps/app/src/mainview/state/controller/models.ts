@@ -6,13 +6,11 @@ import {
   bindingOf,hostRefusedModelTest,modelOriginOf,modelSeat,modelTestFixOf,planModelBinding,seatAccepts
 } from "@smthrs/rpc/ConfiguredModel"
 import { clientRefusal,refusalOf } from "@smthrs/rpc/Refusal"
-import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { CommandResult } from "../../flows/entries/Declare"
 import { flag,line } from "../../flows/FlowForms"
 import { actorSharedState } from "../ActorBindings"
 import type { Card,StoredModel } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { errorMessage } from "../seams/SeamContext"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
 import { formRenderedText,type FormsController } from "./forms"
@@ -34,7 +32,7 @@ export interface SaveModelInput {
 }
 
 export interface ModelsController {
-  /** `model.list`: the Models card at the tail from what the store holds, then the host's catalog. */
+  /** `model.list`: requested at once; the persisted refresh and its toast run in the background. */
   readonly listModels: () => Promise<CommandResult>
   /** `model.show <name>`: the card's selected row. */
   readonly showModel: (id: string) => CommandResult
@@ -48,9 +46,9 @@ export interface ModelsController {
   readonly testModel: (id: string) => Promise<CommandResult>
   /** `model.assign <seat> <name|default>`. */
   readonly assignSeat: (seat: string, recordId: string) => Promise<CommandResult>
-  /** Boot: launch again every test the card still holds as requested. Idempotent. */
-  readonly resumeModelTests: () => void
-  /** Boot: reconnects the tests, then reads the catalog only when a seat is assigned and the host has `agent`. */
+  /** After identity loads: reconnect every requested test and catalog refresh. Idempotent. */
+  readonly resumeModels: () => void
+  /** Boot: reads the catalog only when a seat is assigned and the host can serve it. */
   readonly observeModels: () => Promise<void>
 }
 
@@ -101,6 +99,7 @@ export const modelFailureLine = (failure: ModelTestFailure): string => {
 
 /** One test in flight, for one account. A newer launch of an edited route, or for the account that arrived, replaces it, and only the current one may write. */
 interface Flight { readonly route: string; readonly epoch: number }
+interface CatalogFlight { readonly epoch: number; work: Promise<unknown> }
 
 export const createModelsController = (ctx: ControllerContext, deps: ModelsControllerDependencies): ModelsController => {
   const { store } = ctx
@@ -110,8 +109,13 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
    * lifetime: the host's last answer and the tests in flight belong to both, so
    * a test the agent launched is the one the human's second press joins.
    */
-  const shared = actorSharedState(ctx, "models", (): { catalog: ModelCatalog | undefined; hostError: string | undefined; flights: Map<string, Flight> } =>
-    ({ catalog: undefined, hostError: undefined, flights: new Map() }))
+  const shared = actorSharedState(ctx, "models", (): {
+    catalog: ModelCatalog | undefined; refresh: ModelsPayload["refresh"]; catalogFlight: CatalogFlight | undefined; flights: Map<string, Flight>; requested: Set<string>
+  } => {
+    const saved = collections.cards.get(MODELS_CARD_ID)
+    return { catalog: undefined, refresh: saved?.kind === "models" ? saved.payload.refresh : undefined, catalogFlight: undefined,
+      flights: new Map(), requested: new Set(saved?.kind === "models" ? saved.payload.testing : []) }
+  })
 
   const card = (): ModelsCard | undefined => {
     const row = collections.cards.get(MODELS_CARD_ID)
@@ -139,11 +143,12 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
       seats,
       credentials: [...credentials],
       tests: rows.flatMap((row) => row.lastTest === undefined ? [] : [row.lastTest]),
-      testing: [...shared.flights.keys()].sort(),
+      testing: [...shared.requested].filter((id) => collections.models.has(id)).sort(),
       host: shared.catalog === undefined ? "unavailable" : "observed",
       ...(chosen !== undefined && collections.models.get(chosen) !== undefined ? { selected: chosen } : {}),
       ...(attention === undefined ? {} : { attention }),
-      ...(shared.hostError === undefined ? {} : { error: shared.hostError })
+      ...(shared.refresh === undefined ? {} : { refresh: shared.refresh }),
+      ...(shared.refresh?.state === "failed" ? { error: modelFailureLine(shared.refresh.failure) } : {})
     }
   }
 
@@ -163,11 +168,11 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
   }
 
   /** At the tail when someone asked or the attention is new, never moving a maximized card; in place otherwise, and a no-op with no card. */
-  const render = (actor: "user" | "smithers" | "system", toTail: boolean, attention: Attention | undefined, selected?: string): void => {
+  const render = (actor: "user" | "smithers" | "system", toTail: boolean, attention: Attention | undefined, selected?: string): Promise<unknown> | undefined => {
     const existing = card()
     if (!toTail && existing === undefined) return
     const moves = existing === undefined || (toTail && store.session().maximizedCardId !== MODELS_CARD_ID)
-    store.dispatch({
+    return store.dispatch({
       type: "card.upsert",
       actor,
       card: {
@@ -179,7 +184,7 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
         ordinal: moves ? deps.nextOrdinal() : existing.ordinal,
         payload: payload(attention, selected)
       }
-    })
+    }).isPersisted.promise
   }
 
   /** Unasked surfacing: the card comes to the tail once per attention, and is refreshed in place after that. */
@@ -187,41 +192,59 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     render("system", JSON.stringify(card()?.payload.attention) !== JSON.stringify(attention), attention)
   }
 
-  /** The host's catalog into the store. A refusal or silence leaves the last rows and states itself on the card. */
-  const observe = async (): Promise<void> => {
-    const epoch = ctx.accountEpoch
+  /** The catalog or a typed host refusal; no provider prose is stored. */
+  const callCatalog = async (): Promise<{ readonly ok: true; readonly catalog: ModelCatalog } | Extract<ModelTestResult, { ok: false }>> => {
     let response: Response
     try {
       response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_CATALOG_PATH}`)
     } catch (cause) {
-      if (ctx.disposed || ctx.accountEpoch !== epoch) return
-      shared.catalog = undefined
-      shared.hostError = refusalSentence(clientRefusal(cause, ""))
-      return
+      return hostRefusedModelTest(clientRefusal(cause, ""), 0)
     }
     const body: unknown = await response.json().catch((): undefined => undefined)
-    if (ctx.disposed || ctx.accountEpoch !== epoch) return
     const decoded = response.ok ? ModelCatalogSchema.safeParse(body) : undefined
     if (decoded?.success !== true) {
-      shared.catalog = undefined
-      shared.hostError = refusalSentence(response.ok
+      return hostRefusedModelTest(response.ok
         ? { ...clientRefusal(undefined, ""), fault: "bug", status: response.status }
-        : refusalOf({ body, status: response.status, message: errorMessage(body, "") }))
-      return
+        : refusalOf({ body, status: response.status, message: "" }), 0)
     }
-    shared.catalog = decoded.data
-    shared.hostError = undefined
-    await store.dispatch({ type: "models.observed", actor: "system", models: decoded.data.models }).isPersisted.promise
+    return { ok: true, catalog: decoded.data }
+  }
+
+  const refreshCatalog = (toTail: boolean): Promise<unknown> => {
+    if (shared.catalogFlight?.epoch === ctx.accountEpoch) {
+      if (toTail) render(ctx.commandActor, true, undefined)
+      return shared.catalogFlight.work
+    }
+    const flight: CatalogFlight = { epoch: ctx.accountEpoch, work: Promise.resolve() }
+    shared.catalogFlight = flight
+    shared.refresh = { state: "requested" }
+    const persisted = render(toTail ? ctx.commandActor : "system", toTail || card() === undefined, toTail ? undefined : standing())
+    const owns = () => !ctx.disposed && ctx.accountEpoch === flight.epoch && shared.catalogFlight === flight
+    flight.work = ctx.withToast("model.list", "Loading models…", "Models loaded", async () => {
+      await persisted
+      if (!owns()) return TOAST_SUPERSEDED
+      const result = await callCatalog()
+      if (!owns()) return TOAST_SUPERSEDED
+      shared.catalog = result.ok ? result.catalog : undefined
+      shared.refresh = result.ok ? undefined : { state: "failed", failure: result.failure }
+      if (result.ok) await store.dispatch({ type: "models.observed", actor: "system", models: result.catalog.models }).isPersisted.promise
+      if (!owns()) return TOAST_SUPERSEDED
+      const attention = unresolved() ?? standing()
+      await render("system", attention !== undefined && JSON.stringify(card()?.payload.attention) !== JSON.stringify(attention), attention)
+      return result.ok ? true : modelFailureLine(result.failure)
+    }).then((outcome) => {
+      if (shared.catalogFlight !== flight) return
+      shared.catalogFlight = undefined
+      if (typeof outcome === "string" && !ctx.disposed && ctx.accountEpoch === flight.epoch) {
+        ctx.resolveToast("model.list", { status: "failed", detail: outcome, action: { flow: "model.list", label: "Retry" } })
+      }
+    })
+    return flight.work
   }
 
   const listModels: ModelsController["listModels"] = async () => {
-    // Instant: what the store holds, then the host's own rows when it answers.
-    render(ctx.commandActor, true, undefined)
-    await observe()
-    if (ctx.disposed) return
-    render(ctx.commandActor, false, unresolved())
-    const rows = payload(undefined).models
-    return { value: rows.length === 0 ? "No models." : rows.map((row) => `${row.id} · ${row.protocol} · ${row.modelId}`).join("\n") }
+    void refreshCatalog(true)
+    return { value: "Requested" }
   }
 
   const missing = (id: string): string => `There is no model ${id}.`
@@ -329,12 +352,14 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     const epoch = ctx.accountEpoch
     const flight: Flight = { route: JSON.stringify(bindingOf(model)), epoch }
     shared.flights.set(id, flight)
+    shared.requested.add(id)
     const key = `model.test:${id}`
     void ctx.withToast(key, `Testing ${id}…`, `Tested ${id}`, async () => {
       const result = await callHost(model)
       // A newer launch of an edited route owns the id now; this answer is about a route that is gone.
       if (shared.flights.get(id) !== flight) return TOAST_SUPERSEDED
       shared.flights.delete(id)
+      shared.requested.delete(id)
       if (ctx.disposed) return TOAST_SUPERSEDED
       const record = collections.models.get(id)
       if (ctx.accountEpoch !== epoch || record === undefined || JSON.stringify(bindingOf(record)) !== flight.route) {
@@ -372,28 +397,26 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     return { value: "Requested" }
   }
 
-  const resumeModelTests: ModelsController["resumeModelTests"] = () => {
+  const resumeModels: ModelsController["resumeModels"] = () => {
     const requested = card()?.payload.testing ?? []
-    if (requested.length === 0) return
     // A test is idempotent, so a persisted request is launched again rather than forgotten.
     for (const id of requested) {
       const record = collections.models.get(id)
-      if (record !== undefined && !shared.flights.has(id)) launch(recordOf(record))
+      if (record !== undefined && shared.flights.get(id)?.epoch !== ctx.accountEpoch) launch(recordOf(record))
+      if (record === undefined) shared.requested.delete(id)
     }
     // A request whose model is gone leaves the card.
     if (requested.some((id) => !shared.flights.has(id))) render("system", false, standing())
+    if (shared.refresh?.state === "requested") void refreshCatalog(false)
   }
 
   const observeModels: ModelsController["observeModels"] = async () => {
-    resumeModelTests()
     const { bootstrap } = ctx.services
     // A user who never assigned a seat pays nothing at boot.
-    if (collections.seats.size === 0 || bootstrap === undefined || !hasCapability(bootstrap, "agent")) return
-    await observe()
-    if (ctx.disposed || shared.catalog === undefined) return
-    const attention = unresolved()
-    if (attention !== undefined) raise(attention)
+    if (collections.seats.size === 0 || bootstrap === undefined ||
+      !(hasCapability(bootstrap, "agent") || hasCapability(bootstrap, "model.turn"))) return
+    await refreshCatalog(false)
   }
 
-  return { listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, resumeModelTests, observeModels }
+  return { listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, resumeModels, observeModels }
 }

@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { agentRole } from "@smthrs/rpc/AgentRoles"
+import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { bindingOf } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { ControllerContext } from "./context"
@@ -69,9 +70,11 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
     const evidence = target === undefined ? undefined : JSON.stringify(target.evidence)
       .replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")
     if (question === "") return "agent.explain needs something to explain: /agent.explain <what>"
-    if (!agent.available) return "There is no agent on this host to explain with."
     // Read once per question: the card names the model this request carried.
     const bound = assignedModel(ctx, "explainer")
+    if (!agent.available && !(bound !== undefined && ctx.services.bootstrap !== undefined && hasCapability(ctx.services.bootstrap, "model.turn"))) {
+      return "There is no agent on this host to explain with."
+    }
     const runId = `explain-${Date.now()}`
     const cardId = `explain-${runId}`
     const now = Date.now()

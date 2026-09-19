@@ -108,6 +108,7 @@ test("a failure stays on the toast and surfaces the card unasked, with the numbe
   const t = await setup(host.answer)
   await save(t)
   await t.models.listModels()
+  await t.settled()
   const listed = t.card()!.ordinal
   await t.store.dispatch({ type: "message.appended", actor: "user", text: "meanwhile" }).isPersisted.promise
   await t.models.testModel("mine")
@@ -233,8 +234,8 @@ test("a test requested before a reload is launched again, once, and one whose mo
   const host = held()
   const after = await setup(host.answer, storage)
   expect(after.card()?.payload.testing).toEqual(["mine"])
-  after.models.resumeModelTests()
-  after.models.resumeModelTests()
+  after.models.resumeModels()
+  after.models.resumeModels()
   await tick()
   expect(after.tests()).toHaveLength(1)
   host.releases[0]!(Response.json(passed))
@@ -245,7 +246,7 @@ test("a test requested before a reload is launched again, once, and one whose mo
 
   const gone = await setup(host.answer, storage)
   await gone.store.dispatch({ type: "card.upsert", actor: "system", card: { ...gone.card()!, payload: { ...gone.card()!.payload, testing: ["absent"] } } }).isPersisted.promise
-  gone.models.resumeModelTests()
+  gone.models.resumeModels()
   expect(gone.tests()).toHaveLength(0)
   expect(gone.card()?.payload.testing).toEqual([])
 })
@@ -258,7 +259,8 @@ test("listing paints the stored models at once, then the host's own rows, seats 
   await tick()
   expect(t.card()?.payload).toMatchObject({ models: [mine], host: "unavailable", seats: [] })
   release(Response.json(catalog))
-  expect(await listing).toEqual({ value: "jev · evaluation · typesafe-ai/jev\nmine · openai-chat · moonshotai/kimi-k3" })
+  expect(await listing).toEqual({ value: "Requested" })
+  await t.settled()
   expect(t.card()?.payload).toMatchObject({ models: [jev, mine], host: "observed", credentials: catalog.credentials,
     seats: catalog.seats.map((id) => ({ id, recordId: null, resolvable: true })) })
   expect(t.store.collections.models.get("jev")?.builtin).toBe(true)
@@ -267,9 +269,38 @@ test("listing paints the stored models at once, then the host's own rows, seats 
 test("a host that refuses its catalog says so on the card and lists nothing of its own", async () => {
   const t = await setup(async () => Response.json({ code: "sign_in_required", message: "Sign in to continue." }, { status: 401 }))
   await t.models.listModels()
+  await t.settled()
   expect(t.card()?.payload.host).toBe("unavailable")
   expect(t.card()?.payload.error).toContain("sign_in_required")
   expect(t.store.collections.models.size).toBe(0)
+})
+
+test("a catalog failure stays typed and retryable, and a departed account cannot overwrite a newer refresh", async () => {
+  const releases: Array<(response: Response) => void> = []
+  const t = await setup(() => new Promise<Response>((resolve) => { releases.push(resolve) }))
+  await t.models.listModels()
+  await tick()
+  releases[0]!(Response.json({ code: "sign_in_required", message: "private provider prose" }, { status: 401 }))
+  await t.settled()
+  expect(t.card()?.payload.refresh).toEqual({ state: "failed", failure: { code: "host_refused", refusal: "sign_in_required", status: 401, fault: "user" } })
+  expect(t.store.collections.toasts.get("toast-model.list")).toMatchObject({ status: "failed", action: { flow: "model.list", label: "Retry" } })
+  expect(JSON.stringify(t.card())).not.toContain("private provider prose")
+  await t.models.listModels()
+  await tick()
+  t.ctx.accountEpoch += 1
+  await t.models.listModels()
+  await tick()
+  expect(releases).toHaveLength(3)
+  releases[1]!(Response.json(catalog))
+  await tick()
+  expect(t.card()?.payload.refresh).toEqual({ state: "requested" })
+  expect(t.store.collections.models.size).toBe(0)
+  expect(t.store.collections.toasts.get("toast-model.list")?.status).toBe("running")
+  releases[2]!(Response.json(catalog))
+  await t.settled()
+  expect(t.card()?.payload.refresh).toBeUndefined()
+  expect(t.store.collections.models.get("jev")?.builtin).toBe(true)
+  expect(t.store.collections.toasts.get("toast-model.list")?.status).toBe("ok")
 })
 
 test("an assigned seat whose credential the host lacks surfaces once, and boot asks nothing when no seat is assigned", async () => {
@@ -299,6 +330,7 @@ test("an assigned seat whose credential the host lacks surfaces once, and boot a
 test("save, assign and remove refuse what the record cannot be, and write nothing", async () => {
   const t = await setup(async () => Response.json(catalog))
   await t.models.listModels()
+  await t.settled()
   const input = { name: "mine", protocol: "openai-chat", modelId: "moonshotai/kimi-k3", credential: "OPENROUTER_API_KEY", baseUrl: "https://openrouter.ai" } as const
   for (const [refusal, bad] of [
     ["invalid · baseUrl", { ...input, baseUrl: undefined }],
@@ -338,6 +370,7 @@ test("save, assign and remove refuse what the record cannot be, and write nothin
 test("a local host has no cloud seat to assign", async () => {
   const t = await setup(async () => Response.json({ ...catalog, seats: ["explainer"] }))
   await t.models.listModels()
+  await t.settled()
   expect(await t.models.assignSeat("recommend", "jev")).toBeString()
   expect(t.store.collections.seats.size).toBe(0)
 })
@@ -346,6 +379,7 @@ test("a form opened from the maximized pane returns the card to the transcript, 
   const t = await setup(async () => Response.json(catalog))
   await save(t)
   await t.models.listModels()
+  await t.settled()
   t.models.newModel()
   expect(t.minimized()).toBe(0)
   await t.store.dispatch({ type: "card.maximized", actor: "user", id: MODELS_CARD_ID }).isPersisted.promise
@@ -361,6 +395,7 @@ test("new and edit open the one save form, and a host row is not editable", asyn
   const t = await setup(async () => Response.json(catalog))
   await save(t, { ...mine, path: "/api/v1/chat/completions" })
   await t.models.listModels()
+  await t.settled()
   expect(t.models.newModel()).toEqual({ value: "rendered a form for name: ask the user to fill it in" })
   t.models.editModel("mine")
   expect(t.forms).toEqual([

@@ -10,7 +10,7 @@ export type ProviderModelId = typeof PROVIDER_MODEL[keyof typeof PROVIDER_MODEL]
 
 /** The assistant text every successful generation streams, in two deltas. */
 export const PROVIDER_REPLY = ["loopback ", "pong"] as const
-/** What an `echoes` generation says before the credential it was presented, which it cuts across its two deltas. */
+/** What an `echoes` generation says before its nested credential fragments. */
 export const PROVIDER_ECHO_LEAD = "your key is "
 /** The per-question confidence the evaluation endpoint reports. */
 export const PROVIDER_CONFIDENCE = 0.97

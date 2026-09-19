@@ -61,6 +61,7 @@ describe("localCapabilities (the Bun server, host local)", () => {
   test("a hybrid launch emits what the Bun server emits today: both cloud doors and no local backend", () => {
     expect(localCapabilities({ agent: true, identity: true, cloud: true })).toEqual([
       "agent",
+      "model.turn",
       "identity",
       "cloud",
       "cloud.terminal",
@@ -68,12 +69,12 @@ describe("localCapabilities (the Bun server, host local)", () => {
     ])
   })
 
-  test("an offline launch emits nothing: the desktop app offers only what the web offers", () => {
-    expect(localCapabilities({ agent: false, identity: false, cloud: false })).toEqual([])
+  test("an offline launch can serve a configured model without a default agent", () => {
+    expect(localCapabilities({ agent: false, identity: false, cloud: false })).toEqual(["model.turn"])
   })
 
   test("the chat stub is an agent without identity or Smithers Cloud", () => {
-    expect(localCapabilities({ agent: true, identity: false, cloud: false })).toEqual(["agent"])
+    expect(localCapabilities({ agent: true, identity: false, cloud: false })).toEqual(["agent", "model.turn"])
   })
 
   test("no launch claims a local backend door: the local backend retired (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md)", () => {

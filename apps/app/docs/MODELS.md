@@ -64,6 +64,13 @@ failed feature and MINIMAL TEXT forbids a row whose value is "not wired". The si
   Local Bun host serves it through a real `@smthrs/model` Route; the Worker through the
   existing `cerebrasChat`. A turn carrying `model` plus tools is refused
   `tools_not_supported`; it never falls back to the upstream.
+  Local bootstrap advertises `model.turn` independently of `agent`: an offline
+  host can explain through an operator-declared loopback binding, while an
+  unbound turn remains unavailable. The local answer is buffered up to 65,536
+  characters and published once after `cutModelCredential` sanitizes the whole
+  text. Partial answers on failure use the same rule; output beyond the bound
+  fails `invalid · protocol`. Worker answers use that same sanitizer before
+  checking for empty text or building frames. Test samples use it too.
 - `front-door` and `recommend`: the client sends the assigned decision model id; the
   Worker validates against `DECISION_MODEL_IDS`; an id off the list is `request_invalid`
   400, never a silent default; absent = today's default.
@@ -78,6 +85,14 @@ reads the number from the record, never a constant. NO retries: add the small
 provider-general `maxRetries` option to `@smthrs/model` `RequestExecutor` (the default
 ladder would turn one Test into many requests). The failure union carries codes,
 numbers, enums and the echoed credential NAME — no server free text.
+Recovery starts after identity loads or is adopted, using that account epoch.
+`model.list` also returns `{ value: "Requested" }`: the card persists
+`refresh: { state: "requested" }` before the catalog fetch, and duplicate human
+and agent requests share the background work and the `model.list` toast. The
+shared 300 ms debounce covers the whole refresh. Success clears the request;
+failure persists `{ state: "failed", failure: ModelTestFailure }` and offers
+Retry on the failed toast. Reload reconnects pending refreshes after identity;
+an earlier account's response cannot overwrite the new account's catalog.
 
 ## R8. Sign-in
 On the LOCAL host `model.test` needs no sign-in: it spends the operator's own env key on

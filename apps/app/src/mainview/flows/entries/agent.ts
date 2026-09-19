@@ -22,7 +22,7 @@ export const agentFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   const EXPLAIN = {
     name: "agent.explain",
     summary: "Ask the Explainer to explain something",
-    runtime: ["agent"] as const,
+    runtimeAny: ["agent", "model.turn"] as const,
     args: "<what>",
     input: Schema.Struct({ what: Schema.String }),
     handler: ({ what }: { readonly what: string }) => actions.explain(what)

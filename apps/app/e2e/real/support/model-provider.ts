@@ -7,7 +7,7 @@
  *
  * There is no control channel. Behaviour is keyed by the requested model id
  * (PROVIDER_MODEL; any other id is 404; `echoes` streams the presented
- * credential back, cut across two deltas, so a host that publishes provider
+ * credential back in nested fragments across three deltas, so a host that publishes provider
  * text unscrubbed is caught), a credential that is not byte-equal
  * to SMITHERS_MODEL_PROVIDER_KEY is 401, and "down" is a SIGTERM of this
  * process. GET /__journal is append-only evidence that holds a credential's
@@ -69,8 +69,7 @@ const openaiStream = (modelId: string, includeUsage: boolean, reply: ReadonlyArr
   })
   const choice = (delta: object, finish: string | null): string => chunk({ choices: [{ index: 0, delta, finish_reason: finish }] })
   return sse([
-    { data: choice({ role: "assistant", content: reply[0] }, null) },
-    { data: choice({ content: reply[1] }, null) },
+    ...reply.map((content, index) => ({ data: choice({ ...(index === 0 ? { role: "assistant" } : {}), content }, null) })),
     { data: choice({}, "stop") },
     ...(includeUsage ? [{ data: chunk({ choices: [], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } }) }] : []),
     { data: "[DONE]" }
@@ -138,9 +137,10 @@ const serve = async (protocol: ProviderProtocol, request: Request): Promise<Resp
   if (modelId === PROVIDER_MODEL.rateLimited) return record(failure(protocol, 429, "rate_limit_error", "Rate limited.", { "retry-after": String(PROVIDER_RETRY_AFTER_SECONDS) }))
   if (modelId === PROVIDER_MODEL.garbled) return record(garbled(protocol, questions ?? {}))
   if (!known.has(modelId)) return record(failure(protocol, 404, "not_found_error", `No model ${modelId}.`))
-  // The cut falls inside the credential, so neither delta holds it whole.
+  // Removing the inner echo joins an outer echo after its prefix could have escaped.
   const cut = Math.ceil(presented.length / 2)
-  const reply = modelId === PROVIDER_MODEL.echoes ? [`${PROVIDER_ECHO_LEAD}${presented.slice(0, cut)}`, presented.slice(cut)] : PROVIDER_REPLY
+  const reply = modelId === PROVIDER_MODEL.echoes
+    ? [`${PROVIDER_ECHO_LEAD}${presented.slice(0, cut).repeat(2)}`, presented.slice(cut), presented.slice(cut)] : PROVIDER_REPLY
   const answer = record(
     protocol === "evaluation" ? evaluate(questions ?? {})
       : protocol === "anthropic-messages" ? anthropicStream(modelId, reply)

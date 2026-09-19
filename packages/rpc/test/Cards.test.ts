@@ -1060,6 +1060,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         }
       ],
       testing: ["ollama"],
+      refresh: { state: "requested" },
       host: "observed",
       selected: "ollama",
       attention: { kind: "test-failed", recordId: "cerebras" },

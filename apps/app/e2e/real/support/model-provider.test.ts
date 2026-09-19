@@ -192,12 +192,12 @@ describe("behaviour is keyed by model id", () => {
     expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.garbled)))).toMatchObject({ code: "invalid_answer", status: 200 })
   })
 
-  test("echoes answers with the credential it was presented, cut across two deltas", async () => {
+  test("echoes answers with nested credential fragments whose cuts join across three deltas", async () => {
     for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
       const events = await Effect.runPromise(stream(protocol, PROVIDER_MODEL.echoes))
       const deltas = events.flatMap((event) => event.type === "text-delta" ? [event.text] : [])
-      expect(deltas).toHaveLength(2)
-      expect(deltas.join("")).toBe(`${PROVIDER_ECHO_LEAD}${KEY}`)
+      const at = Math.ceil(KEY.length / 2)
+      expect(deltas).toEqual([`${PROVIDER_ECHO_LEAD}${KEY.slice(0, at).repeat(2)}`, KEY.slice(at), KEY.slice(at)])
       // Neither delta holds the whole value, so a reader that scrubs delta by delta misses it.
       expect(deltas.some((text) => text.includes(KEY))).toBe(false)
       expect(deltas[0]!.startsWith(PROVIDER_ECHO_LEAD) && deltas[0]!.length > PROVIDER_ECHO_LEAD.length).toBe(true)

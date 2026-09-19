@@ -643,7 +643,7 @@ describe("a turn that names a configured model", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("application/x-ndjson")
     expect(await readFrames(response)).toEqual([
-      ...PROVIDER_REPLY.map((text) => ({ runId: "bound-1", type: "delta" as const, kind: "text" as const, text })),
+      { runId: "bound-1", type: "delta", kind: "text", text: PROVIDER_REPLY.join("") },
       { runId: "bound-1", type: "done", reason: "stop" }
     ])
     const seen = (await provider.journal()).slice(before)
@@ -744,7 +744,7 @@ describe("a turn that names a configured model", () => {
     }
   })
 
-  test("whose provider echoes the credential has it cut out of the stream, even across two deltas", async () => {
+  test("whose provider nests credential echoes has them cut from the complete answer", async () => {
     for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
       const runId = `bound-echo-${protocol}`
       const response = await turn(runId, binding(PROVIDER_MODEL.echoes, { protocol }))

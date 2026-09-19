@@ -61,6 +61,12 @@ You do not need to sign in for any step below.
 ## 3. Create
 
 1. Press Cmd+K, type `/model.list`, press Enter.
+   The command acknowledges `Requested` immediately. With a slow catalog, the
+   shared `Loading models…` toast appears after 300 ms and stays until the
+   catalog answers. A repeated `/model.list` joins the same refresh. Chat
+   remains usable. A failed refresh shows its typed code; a visible toast
+   settles as failed with Retry;
+   `/model.list` retries it. Reload during the request: the refresh resumes.
    See: a `Models` card. It lists only the host's own rows (`cerebras`
    `generation`, when `CEREBRAS_API_KEY` is exported in Terminal B), or
    `No models.` A host row has a `Test` button and no `Edit` or `Remove`.
@@ -120,6 +126,11 @@ See: `"status":200`, `"authorized":true`, a `credentialSha256`, and no
 
 Press Cmd+R. Press Cmd+K, type `/model.list`, press Enter.
 See: `loopback-chat` is there, with its last green result.
+
+To check a pending Test, create `slow` from step 7c, press Test, and reload
+while its dot is running. See: one resumed Test in Network, a running toast,
+then `timeout · 15000 ms` and a settled failure toast. The pending request is
+not silently discarded by the identity read during boot.
 
 ## 7. Failures. Each shows a typed code, and `Test` stays available
 
@@ -210,7 +221,8 @@ serves all three.
 2. Run `/model.list`, `Maximize card`, and in the `Explainer` row pick
    `loopback-chat`. The same act by slash: `/model.assign explainer loopback-chat`.
 3. Press Escape. Run `/agent.explain the loopback provider` again.
-   See: the answer is exactly `loopback pong`, the provider's fixed reply, and
+   See: the answer paints once when the provider finishes. It is exactly
+   `loopback pong`, the provider's fixed reply, and
    the card's last line reads `loopback-chat`. The journal gains one entry,
    `"protocol":"openai-chat"`, `"status":200`, `"authorized":true`.
 4. Reload. Run `/model.list`, maximize.
@@ -220,6 +232,16 @@ serves all three.
    without removing the model.
 6. Run `/model.assign front-door loopback-jev`.
    See: `This host has no Front door seat.`
+
+Repeat steps 2–3 with Terminal B restarted using `SMITHERS_LOCAL_MODE=offline`
+and the same credential pairs. See: Test still passes and the assigned
+Explainer still answers `loopback pong`. Select Default and ask again: the
+explanation is unavailable. The offline host never reaches a cloud agent.
+
+Set a model's Model to `e2e-echoes`, assign it to Explainer, and ask again.
+See: `your key is` with no key in the answer, response frames, DOM or stored
+state. The provider sends nested credential fragments across three deltas;
+the host sanitizes the complete answer before publishing it.
 
 ### Front door and Recommendations (cloud host, signed in)
 

@@ -66,6 +66,7 @@ export const cloudCapabilities = (env: CloudCapabilityEnv): Array<RuntimeCapabil
 export const localCapabilities = (opts: LocalCapabilityOptions): Array<RuntimeCapability> =>
   present([
     ["agent", opts.agent],
+    ["model.turn", true],
     ["browser.read", opts.browser === true],
     ["identity", opts.identity],
     ["cloud", opts.cloud],

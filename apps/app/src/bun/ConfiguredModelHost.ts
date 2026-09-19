@@ -41,6 +41,7 @@ import { toModel } from "./ConfiguredModelRoute"
 
 /** The most an explainer answer may run to. */
 const SEALED_TURN_MAX_TOKENS = 1024
+const SEALED_TURN_MAX_CHARS = 64 * 1024
 
 /** The value behind a credential NAME, Redacted at the read; undefined when unset or blank. */
 export const localModelCredential = (
@@ -182,39 +183,6 @@ export const sealedMessages = (
   return plain
 }
 
-/** A turn's text with one credential's value cut out of it, delta by delta. */
-export interface CredentialCut {
-  /** The text safe to publish now. */
-  readonly push: (text: string) => string
-  /** The tail still held when the stream ends. */
-  readonly flush: () => string
-}
-
-/**
- * The cut a Test's sample gets (`cutModelCredential`), over a stream: the
- * value may arrive broken across deltas, so a tail that could be its beginning
- * is held until the next delta settles it. The held tail is shorter than the
- * value, so it is never the value, and text that does not begin it is not held.
- */
-export const credentialCut = (secret: string): CredentialCut => {
-  let held = ""
-  return {
-    push: (text) => {
-      if (secret === "") return text
-      const kept = cutModelCredential(held + text, secret)
-      let tail = Math.min(kept.length, secret.length - 1)
-      while (tail > 0 && !secret.startsWith(kept.slice(kept.length - tail))) tail -= 1
-      held = kept.slice(kept.length - tail)
-      return kept.slice(0, kept.length - tail)
-    },
-    flush: () => {
-      const tail = held
-      held = ""
-      return tail
-    }
-  }
-}
-
 export interface SealedTurn {
   readonly runId: string
   readonly instructions: string
@@ -223,12 +191,12 @@ export interface SealedTurn {
 }
 
 /**
- * The explainer seat's turn through the planned model: text deltas as they
- * arrive, then one `done`. A provider failure ends the turn with its typed
+ * The explainer seat's turn through the planned model: one bounded answer,
+ * then one `done`. A provider failure ends the turn with its typed
  * line; it never falls back to another model. Interrupting the fiber cancels
  * the request and publishes nothing. Text is the only thing published, and
- * only through the credential cut: a provider that says the key back cannot
- * put it in a frame.
+ * only through the shared credential cut, including partial text on failure.
+ * Nothing is published early: cutting an echo can join the halves of another.
  */
 export const sealedTurn = (
   planned: Extract<LocalPlanned, { ok: true }>,
@@ -237,12 +205,14 @@ export const sealedTurn = (
   fetchImpl?: typeof globalThis.fetch
 ): Effect.Effect<void> => {
   const http = manualRedirects(fetchImpl)
-  const cut = credentialCut(Redacted.value(planned.apiKey))
+  let buffered = ""
   const say = (text: string): void => {
     if (text !== "") publish({ runId: turn.runId, type: "delta", kind: "text", text })
   }
   const done = (failure?: ModelTestFailure): void => {
-    say(cut.flush())
+    const text = cutModelCredential(buffered, Redacted.value(planned.apiKey))
+    buffered = ""
+    say(text)
     publish({
       runId: turn.runId,
       type: "done",
@@ -260,8 +230,13 @@ export const sealedTurn = (
       params: { maxTokens: SEALED_TURN_MAX_TOKENS }
     })
     yield* Stream.runForEach(model.stream(request), (event) =>
-      Effect.sync(() => {
-        if (event.type === "text-delta") say(cut.push(event.text))
+      Effect.suspend(() => {
+        if (event.type !== "text-delta") return Effect.void
+        if (buffered.length + event.text.length > SEALED_TURN_MAX_CHARS) {
+          return Effect.fail(new ModelError({ code: "invalid_provider_output", message: "The configured answer exceeded its limit" }))
+        }
+        buffered += event.text
+        return Effect.void
       }))
   }).pipe(
     Effect.provide(RequestExecutor.layer.pipe(Layer.provide(http.layer))),
