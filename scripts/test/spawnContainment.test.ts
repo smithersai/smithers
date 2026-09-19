@@ -115,9 +115,7 @@ describe("child-process containment conformance", () => {
       + "Its git rev-parse probe has a 10-second timeout and a 64-KiB output limit."
     ],
     ...[
-      "GitCommit.ts",
       "GoExec.ts",
-      "MemoryBackend.ts",
       "NixExec.ts",
       "PackageTree.ts",
       "RepoResolution.ts"
