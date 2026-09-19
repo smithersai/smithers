@@ -48,7 +48,7 @@ const packagedTests = (): string[] => {
 }
 
 const packaged = packagedTests()
-// The real lane is a directly executable script, not a package.json alias.
+// The real lane is a directly executable script; `test:e2e:real` only names it.
 // Admit only its actual Playwright invocation, never a comment/config mention.
 const invokesRealPlaywright = (source: string): boolean => {
   const parsed = ts.createSourceFile("run-real-e2e.ts", source, ts.ScriptTarget.Latest, true)
@@ -102,9 +102,12 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("lint/conformance/LiteralPin.test.ts")).toEqual(["conformance lint"])
   expect(owners("e2e/site/landing-start.spec.ts")).toEqual(["Playwright site"])
   expect(owners("e2e/real/chat-tools.spec.ts")).toEqual(["Playwright real"])
+  expect(owners("e2e/real/models.spec.ts")).toEqual(["Playwright real"])
   // The real tier's coverage gate is its own source, tested by Bun rather than
   // driven by Playwright, so the unit suite owns it.
   expect(owners("e2e/real/coverage/gate.test.ts")).toEqual(["unit"])
+  // So is the real tier's model provider: a Bun test of the process Playwright launches.
+  expect(owners("e2e/real/support/model-provider.test.ts")).toEqual(["unit"])
   expect(owners("e2e/real/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/site/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/Unassigned.spec.ts")).toEqual([])
@@ -115,6 +118,7 @@ test("every app test belongs to an executable runner", () => {
 
 test("real runner ownership comes from executable argv, not prose or a different config", () => {
   expect(realRunner).toBe(true)
+  expect(scripts["test:e2e:real"]).toBe("bun scripts/run-real-e2e.ts")
   expect(invokesRealPlaywright('// run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts"])')).toBe(false)
   expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.site.config.ts"])')).toBe(false)
   expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...args])')).toBe(true)

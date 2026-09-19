@@ -1,0 +1,300 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
+import { once } from "node:events"
+import { createServer, type AddressInfo } from "node:net"
+import { resolve } from "node:path"
+import { Effect, Layer, Redacted, Result, Stream } from "effect"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as AnthropicMessages from "@smthrs/model/AnthropicMessages"
+import * as Auth from "@smthrs/model/Auth"
+import * as Endpoint from "@smthrs/model/Endpoint"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Framing from "@smthrs/model/Framing"
+import * as ModelEvent from "@smthrs/model/ModelEvent"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
+import * as OpenAIChatCompletions from "@smthrs/model/OpenAIChatCompletions"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as Route from "@smthrs/model/Route"
+import {
+  PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_PATHS, PROVIDER_REPLY, PROVIDER_RETRY_AFTER_SECONDS,
+  type ProviderProtocol
+} from "./model-provider-behaviors"
+import { launchModelProvider, type ModelProvider } from "./model-provider-process"
+
+// The provider is judged by the REAL client: every answer below is read by an
+// @smthrs/model Route or Evaluator, so a frame the product cannot decode fails here.
+const KEY = "sk-loopback-unit-0123456789abcdef"
+const WRONG = "sk-loopback-unit-revoked-0123456789"
+const SLOW_MS = 400
+const sha = (value: string): string => createHash("sha256").update(value).digest("hex")
+
+let provider: ModelProvider
+beforeAll(async () => { provider = await launchModelProvider({ key: KEY, slowMs: SLOW_MS }) })
+afterAll(async () => { await provider.close() })
+
+const executor = Layer.provide(RequestExecutor.layer, FetchHttpClient.layer)
+const chatRoute = (key: string) => Route.openaiChatCompatible({ id: "loopback-chat", baseUrl: provider.origin, apiKey: Redacted.make(key) })
+const anthropicRoute = (key: string) =>
+  Result.map(Endpoint.make({ url: provider.origin, path: PROVIDER_PATHS.anthropic }), (endpoint) =>
+    Route.make({
+      id: "loopback-anthropic",
+      protocol: AnthropicMessages.protocol,
+      endpoint,
+      auth: Auth.apiKeyHeader("x-api-key", Redacted.make(key)),
+      framing: Framing.sse,
+      headers: { "anthropic-version": "2023-06-01" }
+    }))
+const routes = { "openai-chat": chatRoute, "anthropic-messages": anthropicRoute } as const
+type Generation = keyof typeof routes
+
+const stream = (protocol: Generation, modelId: string, key = KEY) =>
+  Effect.gen(function*() {
+    // The two routes differ only in their type parameters, which toModel erases.
+    const model = yield* Route.toModel(yield* Effect.fromResult(routes[protocol](key) as ReturnType<typeof chatRoute>))
+    return yield* Stream.runCollect(model.stream(ModelRequest.ModelRequest.make({
+      modelId,
+      system: [],
+      messages: [ModelRequest.Message.user("ping")],
+      tools: [],
+      params: ModelRequest.GenerationParams.make({ maxTokens: 16 })
+    })))
+  }).pipe(Effect.provide(executor))
+
+const questions = {
+  yes: Evaluator.BooleanQuestion.make({ instructions: "Is it a ping?" }),
+  kind: Evaluator.ChoiceQuestion.make({ instructions: "Which?", criteria: { ping: "a ping", other: "anything else" } }),
+  grade: Evaluator.ScoreQuestion.make({ instructions: "How much?", criteria: ["none", "some", "all"] })
+}
+const evaluate = (modelId: string, options: { readonly key?: string; readonly timeoutMs?: number } = {}) =>
+  Effect.gen(function*() {
+    return yield* (yield* Evaluator.Evaluator).evaluate({ state: { text: "ping" }, questions })
+  }).pipe(Effect.provide(Layer.provide(Evaluator.layerVercelGateway({
+    apiKey: Redacted.make(options.key ?? KEY),
+    baseUrl: provider.evaluationUrl,
+    model: modelId,
+    timeoutMs: options.timeoutMs ?? 10_000
+  }), FetchHttpClient.layer)))
+
+const post = (protocol: ProviderProtocol, modelId: string, credential: string | null = KEY, drop: ReadonlyArray<string> = []) => {
+  const headers = new Headers({ "content-type": "application/json" })
+  if (credential !== null) protocol === "anthropic-messages" ? headers.set("x-api-key", credential) : headers.set("authorization", `Bearer ${credential}`)
+  if (protocol === "evaluation") {
+    headers.set("ai-gateway-protocol-version", Evaluator.protocolVersion)
+    headers.set("ai-evaluation-model-specification-version", Evaluator.specificationVersion)
+    headers.set("ai-model-id", modelId)
+  }
+  for (const name of drop) headers.delete(name)
+  const path = protocol === "evaluation" ? PROVIDER_PATHS.evaluation : protocol === "anthropic-messages" ? PROVIDER_PATHS.anthropic : PROVIDER_PATHS.openaiChat
+  const body = protocol === "evaluation"
+    ? { state: {}, questions: Evaluator.encodeQuestions(questions) }
+    : { model: modelId, stream: true, messages: [{ role: "user", content: "ping" }] }
+  return fetch(`${provider.origin}${path}`, { method: "POST", headers, body: JSON.stringify(body) })
+}
+const last = async () => (await provider.journal()).at(-1)!
+
+describe("a streamed answer reaches the real client", () => {
+  for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+    test(protocol, async () => {
+      const events = await Effect.runPromise(stream(protocol, PROVIDER_MODEL.answers))
+      const deltas = events.filter((event): event is ModelEvent.TextDelta => event.type === "text-delta")
+      expect(deltas.map((delta) => delta.text)).toEqual([...PROVIDER_REPLY])
+      const settled = ModelEvent.settledMessage(events)
+      expect(settled.message.content).toEqual([{ type: "text", text: PROVIDER_REPLY.join("") }])
+      expect(settled.message.stopReason).toBe("stop")
+      expect(settled.usage.outputTokens).toBe(2)
+      expect(await last()).toMatchObject({ protocol, modelId: PROVIDER_MODEL.answers, status: 200, authorized: true, credentialSha256: sha(KEY) })
+    })
+  }
+
+  test("anthropic-messages journals the version header the route signed", async () => {
+    await Effect.runPromise(stream("anthropic-messages", PROVIDER_MODEL.answers))
+    expect((await last()).headers).toEqual({ "anthropic-version": "2023-06-01" })
+  })
+
+  test("evaluation", async () => {
+    const response = await Effect.runPromise(evaluate(PROVIDER_MODEL.answers))
+    expect(response.answers).toEqual({
+      yes: { type: "boolean", probability: PROVIDER_CONFIDENCE },
+      kind: { type: "choice", choice: "ping", probabilities: { ping: PROVIDER_CONFIDENCE } },
+      grade: { type: "score", score: 2 }
+    })
+    expect(response.confidence).toEqual({ yes: PROVIDER_CONFIDENCE, kind: PROVIDER_CONFIDENCE, grade: PROVIDER_CONFIDENCE })
+    expect(response.usage).toEqual({ inputTokens: 7, outputTokens: 1 })
+    expect((await last()).headers).toEqual({
+      "ai-gateway-protocol-version": Evaluator.protocolVersion,
+      "ai-gateway-auth-method": "api-key",
+      "ai-evaluation-model-specification-version": Evaluator.specificationVersion,
+      "ai-model-id": PROVIDER_MODEL.answers
+    })
+  })
+})
+
+describe("the credential is compared, never switched", () => {
+  test("a wrong key is the client's authentication failure, journaled by hash", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      const failure = await Effect.runPromise(Effect.flip(stream(protocol, PROVIDER_MODEL.answers, WRONG)))
+      expect(failure).toMatchObject({ code: "authentication", httpStatus: 401 })
+      expect(await last()).toMatchObject({ protocol, status: 401, authorized: false, credentialSha256: sha(WRONG) })
+    }
+    expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.answers, { key: WRONG })))).toMatchObject({ code: "refused", status: 401 })
+    expect(await last()).toMatchObject({ protocol: "evaluation", status: 401, authorized: false, credentialSha256: sha(WRONG) })
+  })
+
+  test("a key of the right length and the wrong bytes is refused", async () => {
+    const response = await post("openai-chat", PROVIDER_MODEL.answers, `${KEY.slice(0, -1)}0`)
+    expect(response.status).toBe(401)
+  })
+
+  test("no credential is 401 with a null hash", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages", "evaluation"] as const) {
+      expect((await post(protocol, PROVIDER_MODEL.answers, null)).status).toBe(401)
+      expect(await last()).toMatchObject({ protocol, status: 401, authorized: false, credentialSha256: null })
+    }
+  })
+
+  test("a bearer token does not open the x-api-key protocol", async () => {
+    const response = await fetch(`${provider.origin}${PROVIDER_PATHS.anthropic}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: PROVIDER_MODEL.answers })
+    })
+    expect(response.status).toBe(401)
+  })
+
+  test("the journal and every refusal carry no credential value", async () => {
+    const refusal = await (await post("openai-chat", PROVIDER_MODEL.answers, WRONG)).text()
+    const journal = await (await fetch(`${provider.origin}${PROVIDER_PATHS.journal}`)).text()
+    for (const text of [refusal, journal]) {
+      expect(text).not.toContain(KEY)
+      expect(text).not.toContain(WRONG)
+    }
+    expect(journal).toContain(provider.acceptedKeySha256)
+  })
+})
+
+describe("behaviour is keyed by model id", () => {
+  test("rate-limited is 429 with retry-after, which the real classifiers read as rate_limited", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages", "evaluation"] as const) {
+      const response = await post(protocol, PROVIDER_MODEL.rateLimited)
+      expect(response.status).toBe(429)
+      expect(response.headers.get("retry-after")).toBe(String(PROVIDER_RETRY_AFTER_SECONDS))
+      const body = await response.text()
+      if (protocol === "openai-chat") expect(OpenAIChatCompletions.protocol.classifyError(429, body).code).toBe("rate_limited")
+      if (protocol === "anthropic-messages") expect(AnthropicMessages.protocol.classifyError(429, body).code).toBe("rate_limited")
+    }
+    expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.rateLimited)))).toMatchObject({ code: "refused", status: 429 })
+  })
+
+  test("garbled is output the real client refuses to decode", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      expect(await Effect.runPromise(Effect.flip(stream(protocol, PROVIDER_MODEL.garbled)))).toMatchObject({ code: "invalid_provider_output" })
+    }
+    expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.garbled)))).toMatchObject({ code: "invalid_answer", status: 200 })
+  })
+
+  test("echoes answers with the credential it was presented, cut across two deltas", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      const events = await Effect.runPromise(stream(protocol, PROVIDER_MODEL.echoes))
+      const deltas = events.flatMap((event) => event.type === "text-delta" ? [event.text] : [])
+      expect(deltas).toHaveLength(2)
+      expect(deltas.join("")).toBe(`${PROVIDER_ECHO_LEAD}${KEY}`)
+      // Neither delta holds the whole value, so a reader that scrubs delta by delta misses it.
+      expect(deltas.some((text) => text.includes(KEY))).toBe(false)
+      expect(deltas[0]!.startsWith(PROVIDER_ECHO_LEAD) && deltas[0]!.length > PROVIDER_ECHO_LEAD.length).toBe(true)
+    }
+    expect(JSON.stringify(await provider.journal())).not.toContain(KEY)
+  })
+
+  test("an unknown id is 404", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      expect(await Effect.runPromise(Effect.flip(stream(protocol, "e2e-unlisted")))).toMatchObject({ code: "invalid_request", httpStatus: 404 })
+    }
+    expect(await Effect.runPromise(Effect.flip(evaluate("e2e-unlisted")))).toMatchObject({ code: "refused", status: 404 })
+    expect(await last()).toMatchObject({ modelId: "e2e-unlisted", status: 404, authorized: true })
+  })
+
+  test("slow answers after the configured delay, and is journaled before it waits", async () => {
+    const before = (await provider.journal()).length
+    expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.slow, { timeoutMs: 100 })))).toMatchObject({ code: "timeout" })
+    expect((await provider.journal()).length).toBe(before + 1)
+    const started = performance.now()
+    const events = await Effect.runPromise(stream("openai-chat", PROVIDER_MODEL.slow))
+    expect(performance.now() - started).toBeGreaterThanOrEqual(SLOW_MS)
+    expect(ModelEvent.settledMessage(events).message.stopReason).toBe("stop")
+  })
+})
+
+describe("requests outside the protocols are refused", () => {
+  test("an evaluation without its protocol headers is 400", async () => {
+    for (const name of ["ai-gateway-protocol-version", "ai-evaluation-model-specification-version"]) {
+      expect((await post("evaluation", PROVIDER_MODEL.answers, KEY, [name])).status).toBe(400)
+    }
+  })
+
+  test("a body that is not JSON is 400", async () => {
+    const response = await fetch(`${provider.origin}${PROVIDER_PATHS.openaiChat}`, { method: "POST", headers: { authorization: `Bearer ${KEY}` }, body: "{" })
+    expect(response.status).toBe(400)
+  })
+
+  test("any other path or method is 404 and leaves no journal entry", async () => {
+    const before = (await provider.journal()).length
+    expect((await fetch(`${provider.origin}/v1/models`, { headers: { authorization: `Bearer ${KEY}` } })).status).toBe(404)
+    expect((await fetch(`${provider.origin}${PROVIDER_PATHS.journal}`, { method: "DELETE" })).status).toBe(404)
+    expect((await provider.journal()).length).toBe(before)
+  })
+})
+
+describe("the owned process", () => {
+  test("stop makes the origin unreachable and start restores the same origin", async () => {
+    const origin = provider.origin
+    await provider.stop()
+    try {
+      expect(await Effect.runPromise(Effect.flip(evaluate(PROVIDER_MODEL.answers)))).toMatchObject({ code: "unreachable" })
+    } finally {
+      await provider.start()
+    }
+    expect(provider.origin).toBe(origin)
+    expect((await fetch(`${origin}${PROVIDER_PATHS.ready}`)).status).toBe(204)
+    expect((await Effect.runPromise(evaluate(PROVIDER_MODEL.answers))).answers.yes).toEqual({ type: "boolean", probability: PROVIDER_CONFIDENCE })
+  })
+
+  test("a fixed port is the origin, and stop is prompt with a slow answer in flight", async () => {
+    // The host under test is told the origin before the provider exists, so the port is the caller's to choose.
+    const listener = createServer().listen(0, "127.0.0.1")
+    await once(listener, "listening")
+    const { port } = listener.address() as AddressInfo
+    listener.close()
+    await once(listener, "close")
+    const held = await launchModelProvider({ key: KEY, port, slowMs: 30_000 })
+    try {
+      expect(held.origin).toBe(`http://127.0.0.1:${port}`)
+      const before = (await held.journal()).length
+      const waiting = fetch(`${held.origin}${PROVIDER_PATHS.openaiChat}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${KEY}` },
+        body: JSON.stringify({ model: PROVIDER_MODEL.slow, messages: [] })
+      }).then((response) => response.status, () => "unreachable")
+      // Journaled before it waits: the request is inside the provider when the signal lands.
+      while ((await held.journal()).length === before) await Bun.sleep(10)
+      const started = performance.now()
+      await held.stop()
+      expect(performance.now() - started).toBeLessThan(2_000)
+      expect(await waiting).toBe("unreachable")
+    } finally {
+      await held.close()
+    }
+  })
+
+  test("a short key refuses to boot without echoing it", async () => {
+    const short = "sk-short"
+    const child = Bun.spawn(["bun", resolve(import.meta.dir, "model-provider.ts")], {
+      env: { ...process.env, SMITHERS_MODEL_PROVIDER_KEY: short, SMITHERS_MODEL_PROVIDER_PORT: "0" },
+      stdout: "pipe",
+      stderr: "pipe"
+    })
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    expect(code).not.toBe(0)
+    expect(`${stdout}${stderr}`).toContain("SMITHERS_MODEL_PROVIDER_KEY")
+    expect(`${stdout}${stderr}`).not.toContain(short)
+  })
+})
