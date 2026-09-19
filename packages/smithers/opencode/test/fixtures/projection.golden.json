@@ -668,7 +668,7 @@
           "input": {
             "description": "read-only · 1/1"
           },
-          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
+          "output": "The last 1 frames only read (cap 1). If the request is already answerable, complete it without inventing edits or commands. Otherwise make the required change or justify more reading.",
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
@@ -1014,7 +1014,7 @@
           "input": {
             "description": "read-only · 1/1 · justification"
           },
-          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
+          "output": "The last 1 frames only read (cap 1). If the request is already answerable, complete it without inventing edits or commands. Otherwise make the required change or justify more reading.\nAnswered: justification.",
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {
@@ -1637,7 +1637,7 @@
           "input": {
             "description": "read-only · 1/1"
           },
-          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.",
+          "output": "The last 1 frames only read (cap 1). If the request is already answerable, complete it without inventing edits or commands. Otherwise make the required change or justify more reading.",
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
@@ -1983,7 +1983,7 @@
           "input": {
             "description": "read-only · 1/1 · justification"
           },
-          "output": "The last 1 frames only read (cap 1). The next frame must write, justify the reading, or park.\nAnswered: justification.",
+          "output": "The last 1 frames only read (cap 1). If the request is already answerable, complete it without inventing edits or commands. Otherwise make the required change or justify more reading.\nAnswered: justification.",
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {

@@ -1706,7 +1706,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         event.nextFrame,
         demandOrdinals["read-only"],
         `read-only · ${event.streak}/${event.cap}`,
-        `The last ${event.streak} frames only read (cap ${event.cap}). The next frame must write, justify the reading, or park.`
+        `The last ${event.streak} frames only read (cap ${event.cap}). If the request is already answerable, complete it without inventing edits or commands. Otherwise make the required change or justify more reading.`
       )
     case "read-only-demanded": {
       const partID = Ids.part(state.assistantMessageID, {

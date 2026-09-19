@@ -386,10 +386,14 @@ describe("the contract", () => {
     // suite exited 1. It moved again on 2026-08-24, 8,312 → 8,517, on will's
     // checkpoint ruling. It moved again on 2026-08-25, 8,517 → 8,811, on
     // will's tree-review ruling: the completing cell's guard also reads the
-    // working tree back. Moving these two numbers means a wave has to be run.
-    expect(replText()).toHaveLength(8_811)
+    // working tree back. The 2026-09-19 chat comparison scopes those rules to
+    // workspace changes: six opening probes complete the natural A request,
+    // against four of six with the old contract. A seeded six-print loop
+    // still fails to recover the exact answer, so this does not claim that
+    // every stalled run recovers. The 2,400-token ceiling stays unchanged.
+    expect(replText()).toHaveLength(9_264)
     expect(Digest.digest(replText()))
-      .toBe("58be572ba4cc573ec4060e093633b0e7e57d883afa69914072c420cb4512479a")
+      .toBe("80c5ebc1ac4b6a02db4759197245839e426086f64a4790e9a53f46020418145b")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {

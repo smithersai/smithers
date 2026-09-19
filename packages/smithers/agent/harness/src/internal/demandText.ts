@@ -13,8 +13,9 @@
 /**
  * Renders the read-only-discipline intervention.
  *
- * It asks for a decision rather than a token write. The two ways out are
- * stated as equals, the evidence a real edit carries is named, and destructive
+ * It asks for a decision rather than a token write. An answerable request can
+ * complete without inventing work. An unfinished workspace change still needs
+ * evidence or a justification for more observation, and destructive
  * writes made only to satisfy the notice are explicitly refused. A
  * justification must name how later frames differ from the quiet ones so the
  * run cannot buy a repeat by restating its plan.
@@ -24,11 +25,11 @@
  * @private
  */
 export const readOnly = (cap: number, frames: number): string =>
-  `Read-only discipline — ${frames} consecutive frames have made no call that declares a write, and this run's read-only budget is ${cap}. The next cell must do one of two things, and they are equally acceptable: land an edit you can already name the evidence for — the file, the change, and the check you have watched fail that will now pass — or call ctx.justify("<the evidence you are still missing, the exact call that will get it, and what that makes the next frames do differently from these ${frames}>"). Do not write something merely to answer this notice. A restore, a revert, an overwrite from captured output, or any edit whose evidence you cannot name is worse than another read-only frame, because it destroys work this run has already done. A justification is recorded and buys ${cap} quiet frames; it does not reset this counter, and one that names the same next step the last quiet frame named has bought a repeat of that frame. At ${
+  `Read-only discipline — ${frames} consecutive frames have made no call that declares a write, and this run's read-only budget is ${cap}. If the current request is already answered, call ctx.done(answer) now. A conversational or read-only answer needs no invented edit or command. If a workspace change is still required, land an edit you can already name the evidence for — the file, the change, and the check you have watched fail that will now pass. If more evidence is needed, call ctx.justify("<the evidence you are still missing, the exact call that will get it, and what that makes the next frames do differently from these ${frames}>"). Do not write something merely to answer this notice. A restore, a revert, an overwrite from captured output, or any edit whose evidence you cannot name is worse than another read-only frame, because it destroys work this run has already done. A justification is recorded and buys ${cap} quiet frames; it does not reset this counter, and one that names the same next step the last quiet frame named has bought a repeat of that frame. At ${
     cap * 2
   } consecutive read-only frames the run stops as a failure, so ${
     cap * 2 - frames
-  } frames remain in which to commit to a change.`
+  } frames remain to answer the request or make the required change.`
 
 /**
  * Renders the repeated-observation intervention.

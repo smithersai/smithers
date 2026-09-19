@@ -1654,6 +1654,28 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(state.session.title.startsWith("🟢 ")).toBe(true)
   })
 
+  it("shows that a read-only demand can be answered by completing the current request", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, { ...opened(), prompt: "Reply with only the letter A." })
+    const step = Projection.fold(
+      ctx,
+      start.state,
+      new AgentEvents.ReadOnlyDemandIssued({
+        eventType: "flows.harness.read-only-demand-issued.v1",
+        streak: 6,
+        cap: 6,
+        nextFrame: 6
+      })
+    )
+    const card = step.events[0]!.properties["part"] as Protocol.ToolPart
+    if (card.state.status !== "completed") throw new Error(`the demand card is ${card.state.status}`)
+    expect(card.state.title).toBe("read-only · 6/6")
+    expect(card.state.output).toContain("If the request is already answerable, complete it")
+    expect(card.state.output).toContain("without inventing edits or commands")
+    expect(card.state.output).toContain("Otherwise make the required change or justify more reading")
+    expect(card.state.output).not.toContain("must write")
+  })
+
   it("reviews an answer-only completion without alleging unrecorded work when invented is low", () => {
     const ctx = { directory, now: clock().now }
     const start = Projection.open(ctx, { ...opened(), prompt: "Reply with only the letter A." })

@@ -1351,10 +1351,12 @@ console.log("still reading")`
 
     // Wave 4 answered the first version of this text by running
     // `git show <base>:<path> > <path>`, which wrote something and deleted the
-    // fix the run had already landed. The two ways out are stated as equals,
-    // and the writes that are worse than another quiet frame are named.
+    // fix the run had already landed. A finished request can answer directly;
+    // unfinished changes need evidence, never a write made for this notice.
     const demanded = JSON.stringify(model.recorder.requests[1]?.messages)
-    expect(demanded).toContain("equally acceptable")
+    expect(demanded).toContain("If the current request is already answered, call ctx.done(answer) now")
+    expect(demanded).toContain("If a workspace change is still required")
+    expect(demanded).toContain("If more evidence is needed")
     expect(demanded).toContain("name the evidence for")
     expect(demanded).toContain("Do not write something merely to answer this notice")
     expect(demanded).toContain("A restore, a revert, an overwrite from captured output")
