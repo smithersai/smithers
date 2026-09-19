@@ -24,8 +24,8 @@ import { MockAgent } from "@effect/platform-node/Undici"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
-import { attenuate } from "@smthrs/kernel/CapabilitySet"
-import { Effect, Stream } from "effect"
+import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
+import { Effect, Exit, Stream } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -85,7 +85,7 @@ describe("smithers opencode model transport", () => {
         const turn = () => Effect.scoped(Stream.runCollect(seat.model.stream(prompt)))
         const forbidden = () =>
           turn().pipe(
-            attenuate([new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/other-model" })]),
+            CapabilitySet.attenuate([new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/other-model" })]),
             Effect.flip
           )
         expect(yield* forbidden()).toMatchObject({ code: "permission_denied", reason: "outside capability ceiling" })
@@ -96,6 +96,48 @@ describe("smithers opencode model transport", () => {
       }).pipe(Effect.provide(host.seats), Effect.scoped)
     )
   }, 60_000)
+
+  it("checks the caller's model capability before sending a request", async () => {
+    let requests = 0
+    const acquire = Effect.gen(function*() {
+      const agent = new MockAgent()
+      agent.disableNetConnect()
+      agent.get("https://api.cerebras.ai").intercept({ method: "POST", path: "/v1/chat/completions" })
+        .reply(200, () => {
+          requests++
+          return answer
+        }, { headers: { "content-type": "text/event-stream" } })
+        .persist()
+      yield* Effect.addFinalizer(() => Effect.promise(() => agent.close()))
+      return agent as unknown as Undici.Dispatcher
+    })
+    const host = OpenCode.nodeHost(scratch(), { CEREBRAS_API_KEY: "test-key" }, acquire)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const seat = yield* (yield* SeatResolver.SeatResolver).resolve("cerebras:gpt-oss-120b")
+        const turn = () => Effect.scoped(Stream.runCollect(seat.model.stream(prompt)))
+        const denied = yield* turn().pipe(CapabilitySet.attenuate([]), Effect.exit)
+        expect(Exit.isFailure(denied)).toBe(true)
+        expect(requests).toBe(0)
+        const allowed = yield* turn().pipe(CapabilitySet.attenuate([
+          new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/gpt-oss-120b" })
+        ]))
+        expect(Array.from(allowed)).toContainEqual({ type: "text-delta", id: "text-0", text: "back" })
+        expect(requests).toBe(1)
+        // A network grant and a different model's grant are neither this seat's authority.
+        for (
+          const pattern of [
+            new CapabilityPattern({ action: "net:post", resource: "api.cerebras.ai" }),
+            new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/another-model" })
+          ]
+        ) {
+          const result = yield* turn().pipe(CapabilitySet.attenuate([pattern]), Effect.exit)
+          expect(Exit.isFailure(result)).toBe(true)
+          expect(requests).toBe(1)
+        }
+      }).pipe(Effect.provide(host.seats), Effect.scoped)
+    )
+  })
 
   it("answers the turn after the one whose connection pool died", async () => {
     const acquired: Array<MockAgent> = []
@@ -132,6 +174,9 @@ describe("smithers opencode model transport", () => {
         // The turn that meets the dead session. One `execute` spends the
         // executor's whole ladder on it, which is what reaches the bound.
         const first = yield* Effect.flip(turn())
+        // Rebuilding the transport must retain its permission guard too.
+        const denied = yield* turn().pipe(CapabilitySet.attenuate([]), Effect.exit)
+        expect(Exit.isFailure(denied)).toBe(true)
         // The next turn. On a host whose rebuild hands back the pool that just
         // failed, this fails identically and the person restarts the server.
         const second = yield* turn()
