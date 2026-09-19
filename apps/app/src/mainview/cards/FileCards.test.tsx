@@ -420,7 +420,7 @@ const NATIVE: AppBootstrap = {
 
 const renderOn = async (bootstrap: AppBootstrap, card: Extract<Card, { kind: "file" }>): Promise<{ readonly host: HTMLElement; readonly calls: Array<[string, string | undefined]> }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap, socketUrl: () => undefined })
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
   const calls: Array<[string, string | undefined]> = []
   const host = document.createElement("div")
   document.body.appendChild(host)

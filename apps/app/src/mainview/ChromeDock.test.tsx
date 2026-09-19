@@ -74,8 +74,7 @@ const localHarness = async (services: AppServices = {}): Promise<{ store: AppSto
       capabilities: [],
       authFlow: "none",
       sandbox: { platform: "darwin", mode: "enforced" }
-    },
-    socketUrl: () => undefined
+    }
   })
   return { store, controller }
 }
@@ -94,8 +93,7 @@ const cloudHarness = async (services: AppServices = {}): Promise<{ store: AppSto
       capabilities: cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: false }),
       authFlow: "redirect",
       sandbox: null
-    },
-    socketUrl: () => undefined
+    }
   })
   return { store, controller }
 }
