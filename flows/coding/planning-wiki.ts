@@ -3,6 +3,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { RunState } from "@smthrs/engine-store/RunState"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, FileSystem, Layer, Option, Path, Schema } from "effect"
@@ -22,6 +23,11 @@ export interface PlanningWikiOptions {
   readonly reviewer: string
   /** Trusted running-host fingerprint; never a model or target-repo assertion. */
   readonly hostPolicy?: string | undefined
+  /** The evaluator the citation check asks, defaulting to the host's own gateway
+   * transport. An offline test names a scripted one the way it scripts the
+   * reviewer; nothing here weakens the check, which still refuses a page whose
+   * citations nobody could judge. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
 }
 const Config = Schema.Struct({ ...WikiInput.fields, mode: Schema.Literal("verified"),
   scopeDigest: Schema.String, output: Schema.String })
@@ -115,7 +121,7 @@ export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?
     effect => hostFilesystem === undefined ? effect : Effect.provideService(effect, FileSystem.FileSystem, hostFilesystem))
   return Layer.mergeAll(
   Interpreter.layer(PrepareWithWiki), Interpreter.layer(RefreshWiki), Interpreter.layer(Wiki),
-  actionLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot }),
+  actionLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot, evaluator: options.evaluator }),
   reuseLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot, hostPolicy: options.hostPolicy }),
   Configure.toLayer(() => planningWikiConfiguration(options, hostFilesystem)),
   Prior.toLayer(({ config }) => findPlanningWikiReview(config)),

@@ -9,6 +9,7 @@ import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import { Ownership } from "@smthrs/run-store"
@@ -27,6 +28,11 @@ import { ReviewPage } from "../wiki/workflow.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const input = { prompt: "Add the next feature from verified current documentation.", feedback: "" }
+/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
+const citationsSupported = Evaluator.layerScripted((request) =>
+  "support" in request.questions
+    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
 test("wiki generation precedes planning, reuses exact reviews, rechecks changed pages and refuses unsupported prose", {
   skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to the existing native Plue adapter" : false,
   timeout: 600_000
@@ -69,7 +75,7 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const pages: PageSpec[] = ["answer", "stable"].map(id => ({ id, title: id, purpose: `Understand ${id}.`, kind: "current", document: `${id}.md`,
     inputs: [`src/${id}.ts`], related: [] }))
-  const options = { wiki: true, repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", hostPolicy: "artifact:planning-fixture-v1", implementation: "coding/atoms",
+  const options = { wiki: true, repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", hostPolicy: "artifact:planning-fixture-v1", implementation: "coding/atoms", evaluator: citationsSupported,
     checks: ["fast", "slow"].map(tier => ({ id: tier, target: tier, flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true })) }
   const reviews: string[] = []
   let requests = 0, drafts = 0
