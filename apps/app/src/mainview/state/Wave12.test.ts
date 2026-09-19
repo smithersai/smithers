@@ -464,7 +464,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     expect(double.state.launched[0]).toMatchObject({
       workflow: "create-flow",
       repo: OTHER_REPO,
-      input: { prompt: "summarize my open issues" }
+      input: { args: "summarize my open issues" }
     })
     expect(store.collections.cards.get("workflow-repo")).toBeUndefined()
   })
@@ -496,7 +496,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     expect(said(chosen)).toContain(`repo=${OTHER_REPO}`)
     expect(double.state.launched[0]).toMatchObject({
       repo: OTHER_REPO,
-      input: { prompt: "summarize my open issues" }
+      input: { args: "summarize my open issues" }
     })
     const answered = store.collections.cards.get("workflow-repo")
     expect(answered?.kind === "workflow-repo" && answered.payload.chosen).toBe(OTHER_REPO)
