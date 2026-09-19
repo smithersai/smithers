@@ -18,7 +18,9 @@ test("external pnpm consumers retain the workspace's configured store and report
     const actualStore = execFileSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).trim()
     assert.equal(dirname(actualStore), store, "the real manager reads the workspace store override")
     assert.deepEqual(consumerCacheFlags("pnpm", root), ["--prefer-offline", "--store-dir", actualStore, "--reporter=append-only"])
-    const selectedStore = execFileSync("pnpm", [...consumerCacheFlags("pnpm", root), "store", "path"], {
+    // `store path` accepts the store selection, not install-only cache flags.
+    const storeFlags = consumerCacheFlags("pnpm", root).filter((flag) => flag !== "--prefer-offline" && flag !== "--reporter=append-only")
+    const selectedStore = execFileSync("pnpm", [...storeFlags, "store", "path"], {
       cwd: consumer, encoding: "utf8",
     }).trim()
     assert.equal(selectedStore, actualStore, "an external project uses the populated store, including its version suffix")
