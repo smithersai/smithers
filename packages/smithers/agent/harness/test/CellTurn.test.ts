@@ -3604,7 +3604,7 @@ describe("CellTurn unsupported claim", () => {
       expect.objectContaining({ text: "kept the query string; the suite is green" })
     ])
     expect(model.recorder.requests).toHaveLength(2)
-    expect(JSON.stringify(model.recorder.requests)).not.toContain("Unrecorded claim")
+    expect(JSON.stringify(model.recorder.requests)).not.toContain("Completion review")
 
     // What the brake sent: the task the person stated, the sentence the run
     // wrote, the tree fact, every check the run took over the tree it is
@@ -3667,8 +3667,8 @@ describe("CellTurn unsupported claim", () => {
       expect.objectContaining({ demanded: false, complete: 0.95, overclaims: 0.02, invented: 0.02 })
     ])
     expect(asked).toHaveLength(2)
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unrecorded claim")
-    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unrecorded claim")
+    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Completion review")
+    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Completion review")
     // The proven answer stands, on the frame it was written on: proving a
     // claim costs the honest run no frame it would not have spent anyway.
     expect(of(events, "resolved")[0]?.message.content).toEqual([

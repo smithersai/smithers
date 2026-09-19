@@ -181,8 +181,8 @@ not a measurement. Once the five deterministic demands have found nothing, the
 controller sends the task, the completion message, whether the tree moved,
 the check ledger, the last check's output, and bounded receipts for recent
 settled calls to the `Evaluator` service. The receipts retain classification
-and read results across frames. Jev answers three questions: does the evidence
-show the task as stated is done, does the claim assert something the evidence
+and read results across frames. Jev answers three questions: does the completion
+satisfy the person's current request, does the claim assert something the evidence
 does not show, and does it report a command or result the record does not
 contain? A probability of 0.3 or below on the first, 0.8 or above on the second,
 or 0.5 or above on the third hands the frame back,
@@ -192,6 +192,12 @@ of the five already spoke. Every reading is journaled, demand or not, with all
 three probabilities and the evaluator latency, so a wave can be read for
 agreement rather than only for firings. A replay uses the recorded reading
 without another evaluator request.
+
+The first question judges the newest request when the task includes labeled
+conversation history. A conversational answer needs no workspace activity.
+The demand asks the agent to answer the current request in the requested
+format; it asks for recorded evidence only for actions or results the answer
+claims, rather than turning every completion into a work report.
 
 It never falls back and it never goes quiet. A completion Jev could not judge,
 whether the host bound no transport or the gateway refused, timed out or

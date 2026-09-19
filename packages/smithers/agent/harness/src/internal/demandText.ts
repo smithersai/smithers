@@ -112,13 +112,13 @@ export const narrowOnly = (flow: string, check: string, targets: ReadonlyArray<s
 Every one of those this run has looked at somewhere else, but no other call it made covers them all, so nothing in this run says what they report on their own. Any term this check carries beyond them — a filter, a selector, a subset of cases, a flag that stops early — is a condition you have never taken off, and what a condition hides is exactly where a change breaks something that was passing. Run ${flow} over the same subjects with those conditions removed and complete once you have seen what it prints; or complete and state in your output that it carries no condition and the reading is already whole. Nothing re-runs it for you, and what you return next is the answer that stands.`
 
 /**
- * Renders the claim-not-recorded completion intervention.
+ * Renders the completion-review intervention.
  *
- * It names the one thing that fired and nothing else. The reader is asked
- * only for the working behind its own sentence — which call, what it printed,
- * why that shows what the task asked for — because that is the whole of what
- * the judgement is missing, and because a demand that named the model doing
- * the judging would invite the run to argue with it instead of answering it.
+ * Any of the three completion questions can ask for another frame. A low
+ * completeness reading does not establish that the run invented work, so the
+ * notice asks for a direct answer and makes evidence conditional on the
+ * actions or results that answer actually claims. A conversational answer
+ * needs no work report and must retain the person's requested format.
  *
  * The task is not quoted back. It is in the run's prefix on every frame, so a
  * quote would buy nothing and cost the window the run has to answer in, and
@@ -126,25 +126,19 @@ Every one of those this run has looked at somewhere else, but no other call it m
  * No probability is quoted either: a number is journal material for a grader,
  * and in front of a model it is a score to negotiate.
  *
- * It takes no argument. It used to render one of two sentences, for the two
- * questions that could fire it; only one question fires it now — whether the
- * claim reports a command or a result the record does not record — so there is
- * one thing to say. See `CompletionClaim`.
- *
- * The text states the way out and what re-stating costs. The way out is not
- * "prove the task is done": a run is entitled to finish by reporting what it
- * could not do, and telling it otherwise is what made honest runs re-claim
- * until they died. The way out is to stop reporting a result the run did not
- * obtain, which a run can take either by obtaining it or by saying plainly
- * what it did and did not check.
+ * The text still warns about the narrower refusal: repeated claims of work
+ * the record does not carry can end the run. Honest reports of work left
+ * undone remain valid answers when that is what the run can report.
  *
  * @category conversions
  * @since 1.0.0-rc.0
  * @private
  */
 export const claim = (): string =>
-  `Unrecorded claim — your completion reports a command you ran, or a result you got, that this run's record does not carry.
+  `Completion review — reconsider whether your completion answers the current request and whether any claimed actions or results are supported by this run's record.
 
-Nothing re-checks this and nothing grades the answer you give it. There are two ways to answer, and both are accepted. Make the call whose result your sentence is about and complete again on what it actually printed. Or complete again saying only what this run did: what you changed, what you ran, what it reported, and what you did not check and why. A completion that reports work honestly left undone is not refused here, and never was — what is refused is a result nothing in this run produced.
+Answer the current request directly, keeping its requested format. A purely conversational answer needs no file edit, command, or verification. Do not add a work report when the person asked only for an answer.
 
-What you return next is read the same way this was, and a completion that still reports work this run never recorded ends the run with no answer at all.`
+If you claim a command or result, use recorded evidence: make an allowed call needed to obtain it, or remove the unsupported claim and say plainly what remains unchecked when relevant. A completion that reports work honestly left undone is not refused for that alone.
+
+The next completion is judged again. A repeated claim of work this run never recorded can end the run with no answer.`

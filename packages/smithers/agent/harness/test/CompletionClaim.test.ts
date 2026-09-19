@@ -87,6 +87,7 @@ const judge = (options: {
   readonly changes?: Frame.StateChanges
   readonly calls?: ReadonlyArray<Frame.ObservedCall>
   readonly closed?: string
+  readonly claim?: string
 } = {}) => {
   const state = new CellTurn.State({ ...base, openingDigest: "t0", ...options.changes })
   const judged = Frame.judgeCompletion(
@@ -101,7 +102,7 @@ const judge = (options: {
       captures: []
     }),
     state.contextWindow,
-    claim
+    options.claim ?? claim
   )
   return Effect.provide(judged, options.layer ?? Evaluator.layerUnavailable())
 }
@@ -180,10 +181,10 @@ describe("the claim brake", () => {
     expect(judged.demand?.spent).toEqual({ claimDemands: 1 })
     // The demand is the event, so it is journaled once and not twice.
     expect(judged.observed).toBeUndefined()
-    // The prose names what is missing, asks for the working, and quotes no
+    // The prose asks for a direct answer with support for claimed work, and quotes no
     // probability: a score in front of a model is a score to negotiate. It
     // also re-quotes no task, so `Transcript` rebuilds it from the event.
-    expect(judged.demand?.note).toContain("Unrecorded claim")
+    expect(judged.demand?.note).toContain("Completion review")
     expect(judged.demand?.note).not.toContain("0.6")
     expect(judged.demand?.note).not.toContain(task)
     expect(jev.asked).toHaveLength(1)
@@ -201,6 +202,28 @@ describe("the claim brake", () => {
       invented: 0.05,
       demanded: false
     })
+  })
+
+  it("asks a soft-bounced conversational answer to keep the requested form without alleging invented work", async () => {
+    const jev = reading({ complete: 0.27, overclaims: 0.20, invented: 0.14 })
+    const contextWindow = ContextWindow.make({
+      modelId: "test-model",
+      segments: [{
+        kind: "instructions",
+        zone: "prefix",
+        content: [ModelRequest.SystemPart.make({ text: "The task for this run:\n\nReply with only the letter A." })]
+      }]
+    })
+    const judged = await settled({ layer: jev.layer, changes: { contextWindow }, claim: "A" })
+
+    expect(judged.demand?.event).toMatchObject({ _tag: "claim-demanded", demanded: true, invented: 0.14 })
+    expect(judged.unproven).toBeUndefined()
+    expect(judged.demand?.note).toContain("Completion review")
+    expect(judged.demand?.note).toContain("current request")
+    expect(judged.demand?.note).toContain("requested format")
+    expect(judged.demand?.note).toContain("purely conversational answer")
+    expect(judged.demand?.note).not.toContain("Unrecorded claim")
+    expect(judged.demand?.note).not.toContain("saying only what this run did")
   })
 
   it("hands back a claim that reports a command the record does not record, however complete it looks", async () => {

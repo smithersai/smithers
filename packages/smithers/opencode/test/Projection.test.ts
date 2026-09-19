@@ -1654,7 +1654,48 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(state.session.title.startsWith("🟢 ")).toBe(true)
   })
 
-  it("puts the completion the brake refused in the transcript, under the two probabilities it read", () => {
+  it("reviews an answer-only completion without alleging unrecorded work when invented is low", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, { ...opened(), prompt: "Reply with only the letter A." })
+    const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
+    const completed = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.TransitionApplied({
+        eventType: "flows.harness.transition-applied.v1",
+        transition: new Cell.Complete({ output: "A" })
+      })
+    )
+    // These are the actual readings on the answer-only request in the live
+    // browser trace. The demand must not turn low completion into an
+    // allegation that a command or result was invented.
+    const bounced = Projection.fold(
+      ctx,
+      completed.state,
+      new AgentEvents.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.27,
+        overclaims: 0.20,
+        invented: 0.14,
+        latencyMs: 412,
+        demanded: true,
+        currentDigest: "d",
+        nextFrame: 1
+      })
+    )
+    const card = bounced.events[0]!.properties["part"] as Protocol.ToolPart
+    if (card.state.status !== "completed") throw new Error(`the demand card is ${card.state.status}`)
+    expect(card.state.title).toBe("claim · invented 0.14 (complete 0.27, overclaims 0.20)")
+    expect(card.state.output).toContain("Completion review")
+    expect(card.state.output).toContain("current request")
+    expect(card.state.output).toContain("requested format")
+    expect(card.state.output).toContain("A purely conversational answer needs no file edit, command, or check")
+    expect(card.state.output).not.toContain("Unrecorded claim")
+    expect(card.state.output).not.toContain("this completion reports a command")
+    expect(card.state.output).toMatch(/The completion this demand handed back:\n\nA$/)
+  })
+
+  it("puts the completion the brake refused in the transcript, under the three probabilities it read", () => {
     const ctx = { directory, now: clock().now }
     const start = Projection.open(ctx, opened())
     const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
@@ -1687,14 +1728,14 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     if (state.status !== "completed") throw new Error(`the demand card is ${state.status}`)
     // The card used to be titled `claim` and nothing else, and a collapsed
     // card is its title: the only mark the brake left was one word. `invented`
-    // leads, because it is the one of the three that decides anything.
+    // leads because it can refuse the completion after its review allowance.
     expect(state.title).toBe("claim · invented 0.94 (complete 0.21, overclaims 0.96)")
     expect(state.input["description"]).toBe("claim · invented 0.94 (complete 0.21, overclaims 0.96)")
     // And the answer it refused was only ever in opencode.sqlite, so a
     // correct answer the brake bounced was gone as far as a person was
     // concerned. It is in the transcript now, word for word.
     expect(state.output).toContain(answer)
-    expect(state.output).toContain("Unrecorded claim")
+    expect(state.output).toContain("Completion review")
     // A reading that let the completion through writes no card at all.
     expect(
       Projection.fold(

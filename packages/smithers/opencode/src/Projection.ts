@@ -1156,10 +1156,9 @@ const demandCard = (
  * the refusal arguable: a person who thinks the run was right can see how
  * close it was.
  *
- * `invented` leads, and the other two are in brackets behind it, because only
- * one of the three decides anything. `CompletionClaim` carries the corpus that
- * demoted the other two, and a title that led with them would invite a reader
- * to argue with numbers that did not act.
+ * `invented` leads because it can refuse a completion after its review
+ * allowance is spent. All three readings can ask for another completion;
+ * the title preserves each probability so that request can be assessed.
  *
  * @param invented the probability the claim reports a command or a result the evidence does not record
  * @param complete the probability the task as stated is done
@@ -1181,17 +1180,17 @@ export const claimTitle = (invented: number, complete: number, overclaims: numbe
  * the transcript, under the probabilities, where they can read it and decide
  * for themselves whether the brake was right.
  *
- * The first line says what was wrong with the sentence rather than that the
- * task was unfinished, because that is what the brake now judges: a completion
- * reporting a command the run never ran or a result it never got. See
- * `CompletionClaim`.
+ * A review can follow any of the three readings, including low completion
+ * with no sign of invented work. Its guidance asks for the current task and
+ * evidence to be checked without asserting which claim was wrong. An
+ * answer-only request can be complete without an action or a check.
  *
  * @param completion the words the refused completion carried, when the run applied one
  * @category conversions
  * @since 1.0.0
  */
 export const claimText = (completion: string | undefined): string =>
-  `Unrecorded claim: this completion reports a command the run ran, or a result it got, that the run's record does not carry. Complete again on what was actually run, or say plainly what was not checked.${
+  `Completion review: answer the current request directly and preserve its requested format. A purely conversational answer needs no file edit, command, or check. For actions or results you claim, use the recorded evidence and say plainly what remains unchecked.${
     completion === undefined ? "" : `\n\nThe completion this demand handed back:\n\n${completion}`
   }`
 
