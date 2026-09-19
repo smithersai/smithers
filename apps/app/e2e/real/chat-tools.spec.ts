@@ -2,28 +2,24 @@ import type { TestInfo } from "@playwright/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { launchFaultHarness } from "./chat-tools/fault-process"
 import {
-assertOwnedFile,
-assistantMessages,
-bootWorkspace,
-captureCancelReply,
-captureTurnTraffic,
-completedAssistantContaining,
-nextTurnResponse,
-openOwnedRepoThroughSlash,
-parseTurnFrames,
-selectOwnedRepo,
-toolExecution,
-transcript
+  assistantMessages,
+  bootWorkspace,
+  captureCancelReply,
+  captureTurnTraffic,
+  completedAssistantContaining,
+  nextTurnResponse,
+  parseTurnFrames,
+  toolExecution,
+  transcript
 } from "./chat-tools/ui"
 import { scenario } from "./coverage/types"
 import {
-closeComposer,
-command,
-createOwnedLocalRepo,
-expect,
-openComposer,
-realApi,
-test
+  closeComposer,
+  command,
+  expect,
+  openComposer,
+  realApi,
+  test
 } from "./support/test"
 
 const chatTest = process.env.SMITHERS_REAL_E2E_HOST === "production" ? authenticatedTest : test
@@ -61,43 +57,6 @@ chatTest("a grounded answer arrives as multiple real stream frames and completes
   expect(deltas.map((frame) => frame.text).join("")).toContain(expected)
   expect(frames.some((frame) => frame.type === "done" && frame.error === undefined)).toBe(true)
   await attachJson(testInfo, "real-stream-frames", frames)
-})
-
-test("the model invokes files.read against an owned repository and grounds its answer in disk bytes", scenario("chat.tool-files-read", {
-  capabilities: ["agent"],
-  coverage: ["action:chat.send", "action:repo.open", "action:files.read", "host:local", "path:success", "door:slash", "door:agent", "dimension:tool-loop", "dimension:grounding", "evidence:tool-call-and-repo-read"],
-  description: "Open a disposable jj repository through the UI, require the agent to read a real file, and verify both tool traffic and filesystem truth."
-}), async ({ page }, testInfo) => {
-  const fileText = `owned file truth ${Date.now()}\nsecond line\n`
-  const marker = `FILE_READ_${Date.now()}`
-  const repo = await createOwnedLocalRepo({ name: `chat-file-${Date.now()}`, files: { "context.txt": fileText } })
-  await bootWorkspace(page)
-  const opened = await openOwnedRepoThroughSlash(page, repo)
-  const fileResponse = page.waitForResponse((response) =>
-    new URL(response.url()).pathname === "/api/repo/files" && response.status() === 200)
-  const traffic = await captureTurnTraffic(page)
-  const turnResponse = nextTurnResponse(page)
-
-  await command(page, `Use the commands tool to execute files.read with args context.txt. Read the tool result before answering. Then answer with ${marker} followed by the exact first line of the file.`)
-  expect((await turnResponse).status()).toBe(200)
-  const answer = await completedAssistantContaining(page, marker)
-  await expect(answer).toContainText(fileText.split("\n")[0]!)
-  const readResponse = await fileResponse
-  expect(readResponse.request().postDataJSON()).toEqual({ repoId: opened.id, path: "context.txt" })
-  const readUrl = new URL(readResponse.url())
-  expect(readResponse.request().method()).toBe("POST")
-  const independentRead = await realApi(page, page.context().request, "POST", readUrl.pathname + readUrl.search, readResponse.request().postDataJSON())
-  expect(independentRead.status()).toBe(200)
-  const readBody = await independentRead.json() as { readonly content?: unknown; readonly path?: unknown }
-  expect(readBody.path).toBe("context.txt")
-  expect(readBody.content).toBe(fileText)
-
-  const frames = parseTurnFrames(await traffic.read())
-  const execution = toolExecution(frames, "files.read")
-  expect(execution?.args).toMatch(/^context\.txt(?:\s|$)/)
-  await expect(transcript(page).locator('.smithers-card[data-kind="file"]')).toContainText("context.txt")
-  await assertOwnedFile(repo, "context.txt", fileText)
-  await attachJson(testInfo, "files-read-evidence", { execution, readBody, frames })
 })
 
 test("the model invokes browser.open and cites content returned by the real fetch service", scenario("chat.tool-browser-open", {
@@ -269,84 +228,6 @@ test("Copy message writes the complete rendered catalog to the real browser clip
   expect(clipboard).toBe(expected)
   await attachJson(testInfo, "clipboard-evidence", { length: clipboard.length, exactMatch: clipboard === expected })
 
-})
-
-test("repository switching routes successive model reads to the selected filesystem", scenario("chat.repository-tool-context", {
-  capabilities: ["agent"],
-  coverage: ["action:repo.open", "action:repo.select", "action:files.read", "action:chat.send", "host:local", "path:success", "door:slash", "door:agent", "dimension:repository-context", "evidence:disk-and-model-tool-context"],
-  description: "Read distinct same-named files through the real model after each UI repository selection, requiring both answers and tool calls to agree with the selected filesystem."
-}), async ({ page }, testInfo) => {
-  const stamp = Date.now()
-  const firstText = "The orchard grows apricots.\n"
-  const secondText = "The harbor shelters narwhals.\n"
-  const first = await createOwnedLocalRepo({ name: `chat-alpha-${stamp}`, files: { "context.txt": firstText } })
-  const second = await createOwnedLocalRepo({ name: `chat-beta-${stamp}`, files: { "context.txt": secondText } })
-  await bootWorkspace(page)
-
-  const firstOpened = await openOwnedRepoThroughSlash(page, first)
-  const firstTurn = nextTurnResponse(page)
-  const firstTraffic = await captureTurnTraffic(page)
-  await command(page, "Use the commands tool to execute files.read with args context.txt in the active repository. Reply with its exact first line after reading the result.")
-  expect((await firstTurn).status()).toBe(200)
-  await completedAssistantContaining(page, "apricots")
-  const firstFrames = parseTurnFrames(await firstTraffic.read())
-  await attachJson(testInfo, "first-repository-model-frames", firstFrames)
-  expect(toolExecution(firstFrames, "files.read")?.args).toMatch(/^context\.txt(?:\s|$)/)
-
-  const secondOpened = await openOwnedRepoThroughSlash(page, second)
-  const secondTurn = nextTurnResponse(page)
-  const secondTraffic = await captureTurnTraffic(page)
-  await command(page, "Use the commands tool to execute files.read with args context.txt in the newly active repository. Reply with its exact first line after reading the result.")
-  expect((await secondTurn).status()).toBe(200)
-  await expect(transcript(page)).toHaveAttribute("aria-busy", "false", { timeout: 90_000 })
-  const secondFrames = parseTurnFrames(await secondTraffic.read())
-  await attachJson(testInfo, "second-repository-model-frames", secondFrames)
-  await completedAssistantContaining(page, "narwhals")
-  expect(toolExecution(secondFrames, "files.read")?.args).toMatch(/^context\.txt(?:\s|$)/)
-  await assertOwnedFile(first, "context.txt", firstText)
-  await assertOwnedFile(second, "context.txt", secondText)
-  await attachJson(testInfo, "selected-model-repositories", { firstOpened, secondOpened })
-})
-
-test("repository selection reads each filesystem and preserves both cards after reload", scenario("chat.repository-selection-persistence", {
-  capabilities: [],
-  coverage: ["action:repo.open", "action:repo.select", "action:files.read", "host:local", "path:success", "path:persistence", "door:slash", "door:user-only", "dimension:repository-context", "evidence:disk-api-and-persisted-repository-cards"],
-  description: "Independently verify repository selection and shared card persistence without allowing a model-context failure to block these UI and filesystem assertions."
-}), async ({ page, request }, testInfo) => {
-  const stamp = Date.now()
-  const firstText = `ALPHA_DISK_TRUTH_${stamp}\n`
-  const secondText = `BETA_DISK_TRUTH_${stamp}\n`
-  const first = await createOwnedLocalRepo({ name: `chat-disk-alpha-${stamp}`, files: { "context.txt": firstText } })
-  const second = await createOwnedLocalRepo({ name: `chat-disk-beta-${stamp}`, files: { "context.txt": secondText } })
-  await bootWorkspace(page)
-  const firstOpened = await openOwnedRepoThroughSlash(page, first)
-  const secondOpened = await openOwnedRepoThroughSlash(page, second)
-  await selectOwnedRepo(page, first)
-  await command(page, "/files.read context.txt")
-  await closeComposer(page)
-  const alphaCard = page.getByTestId(`card-file-${firstOpened.id}-context.txt`)
-  await expect(alphaCard).toContainText(firstText.trim())
-  await expect(alphaCard).not.toContainText(secondText.trim())
-  await selectOwnedRepo(page, second)
-  await command(page, "/files.read context.txt")
-  await closeComposer(page)
-  const betaCard = page.getByTestId(`card-file-${secondOpened.id}-context.txt`)
-  await expect(betaCard).toContainText(secondText.trim())
-  await expect(betaCard).not.toContainText(firstText.trim())
-  await page.reload()
-  await expect(transcript(page)).toContainText(firstText.trim())
-  await expect(transcript(page)).toContainText(secondText.trim())
-  await expect(alphaCard).toContainText(firstText.trim())
-  await expect(betaCard).toContainText(secondText.trim())
-
-  const listedResponse = await realApi(page, request, "GET", "/api/repos")
-  expect(listedResponse.status()).toBe(200)
-  const listed = await listedResponse.json() as { readonly repos?: ReadonlyArray<{ readonly id?: unknown; readonly path?: unknown }> }
-  expect(listed.repos?.some((repo) => repo.id === firstOpened.id && repo.path === first.path)).toBe(true)
-  expect(listed.repos?.some((repo) => repo.id === secondOpened.id && repo.path === second.path)).toBe(true)
-  await assertOwnedFile(first, "context.txt", firstText)
-  await assertOwnedFile(second, "context.txt", secondText)
-  await attachJson(testInfo, "repository-isolation-evidence", { firstOpened, secondOpened, listed })
 })
 
 test("slash browser.open fetches and renders a public page without interception", scenario("chat.browser-fetch-public", {

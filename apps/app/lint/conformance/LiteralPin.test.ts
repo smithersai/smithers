@@ -145,11 +145,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "the workflow gateway double's run id for the beat 12 launches; the app wraps it as flow-run-<runId>, so the bare prefix is never a card id"
   },
   {
-    literal: "data-selected-line",
-    file: "e2e/real/files-code.spec.ts",
-    reason: "stamped on the anchored line by the same pierre renderer; FileCards.test.tsx verifies this real shadow-DOM attribute, which is not app JSX"
-  },
-  {
     literal: "navigation-storage-",
     file: "e2e/real/navigation-frames/storage.ts",
     reason: "test-owned request IDs on the shipped SQLite worker protocol; the worker echoes them for request correlation and they are never card IDs"

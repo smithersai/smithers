@@ -1,7 +1,5 @@
 import type { Locator, Page, Response } from "@playwright/test"
-import { readFile } from "node:fs/promises"
-import { appEntryPath, closeComposer, command, expect, realApi, registerOwnedRepo } from "../support/test"
-import type { OwnedLocalRepo } from "../support/test"
+import { appEntryPath, expect } from "../support/test"
 
 import { assertTurnTrafficProtocol, inspectTurnTraffic } from "./traffic"
 import type { TurnFrame, TurnTrafficOptions } from "./traffic"
@@ -106,46 +104,4 @@ export const toolExecution = (
     if (input.action === "execute" && input.name === flow) return input
   }
   return undefined
-}
-
-export const openOwnedRepoThroughSlash = async (
-  page: Page,
-  repo: OwnedLocalRepo
-): Promise<{ readonly id: string; readonly path: string }> => {
-  await command(page, "/verbose")
-  await expect(transcript(page)).toContainText("Verbose on")
-  const opening = page.waitForResponse((response) =>
-    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/repo/open")
-  await command(page, `/repo.open ${repo.path}`)
-  await expect(transcript(page).locator(".tool-act-line").filter({ hasText: `You ran /repo.open ${repo.path}` }).last())
-    .toContainText("→ executed")
-  const response = await opening
-  expect(response.status()).toBe(200)
-  const inventory = await realApi(page, page.context().request, "GET", "/api/repos")
-  expect(inventory.status()).toBe(200)
-  const body = await inventory.json() as { readonly repos?: ReadonlyArray<{ readonly id: string; readonly path: string }> }
-  const found = body.repos?.find((entry) => entry.path === repo.path)
-  expect(found, "The completed UI open must appear in the real repository inventory").toBeDefined()
-  const opened = { id: found!.id, path: found!.path }
-  registerOwnedRepo(opened)
-  await command(page, `/repo.select local:${repo.path}`)
-  await expect(transcript(page).locator(".tool-act-line").filter({ hasText: `You ran /repo.select local:${repo.path}` }).last())
-    .toContainText("→ executed")
-  await command(page, "/verbose")
-  await closeComposer(page)
-  return opened
-}
-
-export const selectOwnedRepo = async (page: Page, repo: OwnedLocalRepo): Promise<void> => {
-  await command(page, "/verbose")
-  await expect(transcript(page)).toContainText("Verbose on")
-  await command(page, `/repo.select local:${repo.path}`)
-  await expect(transcript(page).locator(".tool-act-line").filter({ hasText: `You ran /repo.select local:${repo.path}` }).last())
-    .toContainText("→ executed")
-  await command(page, "/verbose")
-  await closeComposer(page)
-}
-
-export const assertOwnedFile = async (repo: OwnedLocalRepo, relative: string, expected: string): Promise<void> => {
-  expect(await readFile(`${repo.path}/${relative}`, "utf8")).toBe(expected)
 }

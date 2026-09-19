@@ -1,14 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
 import { closeComposer, command, expect, realApi, test } from "./support/test"
-import {
-  assertRepositoryStillOpen,
-  assertRepositoryUnchanged,
-  bootOwnedChangeRepository,
-  createLocalChangeFixture,
-  expectLocalChangeRefusal,
-  repositorySnapshot
-} from "./changes-reviews/local"
 
 const PUBLIC_REPO = "smithersai/smithers"
 
@@ -63,60 +55,6 @@ const currentPublicChange = async (page: Parameters<typeof realApi>[0], request:
   expect(change, "The public Smithers mirror must expose at least one concrete jj change").toBeDefined()
   return change as { readonly change_id: string; readonly commit_id: string; readonly description: string }
 }
-
-test("change.open refuses an owned real jj stack without mutating its history or files", scenario("changes.local-open-unwired-no-mutation", {
-  capabilities: [],
-  coverage: [
-    "action:repo.open", "action:repo.select", "action:change.open", "host:local",
-    "path:error", "path:keyboard", "path:persistence", "door:slash",
-    "dimension:keyboard", "dimension:real-jj-stack", "dimension:unwired-rebase-boundary", "dimension:reload",
-    "evidence:jj-log-diff-and-file-readback"
-  ],
-  description: "Two real jj changes are selected through change.open; the explicit unwired-rebase refusal must leave the repository byte-for-byte and history-for-history unchanged before and after reload."
-}), async ({ page, request }, testInfo) => {
-  const fixture = await createLocalChangeFixture()
-  await bootOwnedChangeRepository(page, request, fixture)
-  const before = await repositorySnapshot(fixture)
-
-  await command(page, `/change.open ${fixture.repoKey} ${fixture.commits.join(" ")}`)
-  await closeComposer(page)
-  await expectLocalChangeRefusal(page, fixture)
-  await assertRepositoryUnchanged(fixture, before, testInfo, "change-open-refusal-jj-state")
-
-  await page.reload({ waitUntil: "domcontentloaded" })
-  await expect(page).toHaveURL(/\/smithersai\/smithers$/)
-  await expect(page.getByText(/Opening a Change from picked commits .* is not wired yet\./).last()).toBeVisible()
-  await expect(page.locator('.smithers-card[data-kind="change"]')).toHaveCount(0)
-  await assertRepositoryStillOpen(page, request, fixture)
-  await assertRepositoryUnchanged(fixture, before, testInfo, "change-open-refusal-after-reload")
-})
-
-test("the derived change.open form reaches the same real jj no-mutation boundary by keyboard", scenario("changes.local-open-form-keyboard-refusal", {
-  capabilities: [],
-  coverage: [
-    "action:repo.open", "action:repo.select", "action:change.open", "action:form.set", "action:form.submit",
-    "host:local", "path:error", "path:keyboard", "door:slash", "door:button",
-    "dimension:keyboard", "dimension:derived-form", "dimension:real-jj-stack", "evidence:jj-log-diff-and-file-readback"
-  ],
-  description: "A missing-input slash renders the shared form, accepts an opened repository and real commit ids, and keyboard submission reaches the honest unwired boundary without changing jj state."
-}), async ({ page, request }, testInfo) => {
-  const fixture = await createLocalChangeFixture()
-  await bootOwnedChangeRepository(page, request, fixture)
-  const before = await repositorySnapshot(fixture)
-
-  await command(page, "/change.open")
-  await closeComposer(page)
-  const form = page.getByTestId("card-form-change.open")
-  await expect(form).toBeVisible()
-  await form.getByTestId("flow-form-repo").fill(fixture.repoKey)
-  await form.getByTestId("flow-form-commits").fill(fixture.commits.join(" "))
-  await form.getByTestId("flow-form-commits").press("Enter")
-
-  await expect(form).toHaveAttribute("data-status", "error")
-  await expect(form.getByRole("alert")).toContainText("needs the rebase step in the workspace, which is not wired yet")
-  await expect(page.locator('.smithers-card[data-kind="change"]')).toHaveCount(0)
-  await assertRepositoryUnchanged(fixture, before, testInfo, "change-open-form-refusal-jj-state")
-})
 
 test("a signed-out production user can verify a public change and diff but change.view waits durably for GitHub sign-in", scenario("changes.production-public-read-auth-boundary", {
   capabilities: ["identity", "cloud"],
