@@ -34,7 +34,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { Review } from "../../apps/review/src/workflow/reviewFlow.ts";
-import { layerMemory } from "../../apps/review/src/workflow/reviewLayer.ts";
+import { layerMemory, scriptedEvaluator } from "../../apps/review/src/workflow/reviewLayer.ts";
 import { reviewSeatResolver } from "../../apps/review/src/workflow/reviewSeatResolver.ts";
 import { resolveReviewSeats } from "../../apps/review/src/workflow/reviewSeats.ts";
 import { type Baseline, baselineFrom, drift, type FixtureOutcome } from "./baseline.ts";
@@ -107,7 +107,10 @@ async function runFixture(label: PlantedBugLabel, live: boolean): Promise<Fixtur
           out: join(workRoot, "walkthrough.html"),
         } as never,
         { executionId: `review-seeded-${label.fixture}-${Date.now()}` },
-      ).pipe(Effect.provide(layerMemory(seats)), Effect.orDie),
+      ).pipe(
+        Effect.provide(live ? layerMemory(seats) : layerMemory(seats, {}, scriptedEvaluator())),
+        Effect.orDie,
+      ),
     );
     return {
       fixture: label.fixture,
