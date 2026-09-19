@@ -37,8 +37,10 @@ it("distinguishes current build definitions from legacy run state without hiding
   writeFileSync(join(root, ".smithers", "runs.sqlite"), "")
   expect(Project.legacyState(root)).toEqual([join(root, ".smithers")])
   rmSync(join(root, ".smithers", "runs.sqlite"))
-  // The opencode server's own database is 1.0 state, beside build definitions or alone.
-  for (const file of ["opencode.sqlite", "opencode.sqlite-wal", "opencode.sqlite-shm"]) {
+  // The opencode server's own files are 1.0 state, beside build definitions or
+  // alone: its database, the sidecars an open one has, and the record naming
+  // the server that holds the directory, which a killed server leaves behind.
+  for (const file of ["opencode.sqlite", "opencode.sqlite-wal", "opencode.sqlite-shm", "opencode.server.json"]) {
     writeFileSync(join(root, ".smithers", file), "")
   }
   expect(Project.legacyState(root)).toEqual([])

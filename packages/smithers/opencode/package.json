@@ -45,6 +45,7 @@
     "./Events": "./src/Events.ts",
     "./Health": "./src/Health.ts",
     "./Ids": "./src/Ids.ts",
+    "./Ownership": "./src/Ownership.ts",
     "./Pricing": "./src/Pricing.ts",
     "./Projection": "./src/Projection.ts",
     "./Protocol": "./src/Protocol.ts",

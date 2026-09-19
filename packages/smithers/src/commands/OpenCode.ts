@@ -19,6 +19,12 @@
  * verb refuses to start without it rather than serving a session that breaks
  * at the first real task. `--scripted` runs no model and needs neither key.
  *
+ * One directory is one server's. A second verb over a directory a live server
+ * already holds refuses to start and names that server, because the two would
+ * share the directory's store and not their events. The claim is
+ * `@smthrs/opencode`'s `Ownership`, and it is taken before the driver opens
+ * the store.
+ *
  * @since 1.0.0
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
@@ -29,6 +35,7 @@ import * as Auth from "@smthrs/opencode/Auth"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
 import type * as Driver from "@smthrs/opencode/Driver"
 import * as EngineDriver from "@smthrs/opencode/EngineDriver"
+import * as Ownership from "@smthrs/opencode/Ownership"
 import * as Pricing from "@smthrs/opencode/Pricing"
 import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
@@ -175,21 +182,29 @@ export const host = async (
       host: nodeHost(directory, environment),
       environment
     })
-  if (!connection.quiet) {
-    // The words and the brake have to agree. Jev reads every completion, and
-    // a claim the run's own record does not support ends the turn instead of
-    // standing as its answer; see `CompletionClaim` and the runbook.
-    const judge = options.scripted
-      ? "No model runs; the recorded turn replays."
-      : "Jev judges every completion, and an unproven claim ends the turn."
-    process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
-  }
+  // The words and the brake have to agree. Jev reads every completion, and
+  // a claim the run's own record does not support ends the turn instead of
+  // standing as its answer; see `CompletionClaim` and the runbook.
+  const judge = options.scripted
+    ? "No model runs; the recorded turn replays."
+    : "Jev judges every completion, and an unproven claim ends the turn."
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
       // The guard samples the directory before the driver creates
       // `.smithers/opencode.sqlite` under it, so a clean checkout is never
       // told it holds 0.x state.
       yield* Globals.guard(globals)
+      // One directory is one server's, and the claim is taken before the
+      // driver opens the store: a second server that got that far would have
+      // re-driven the turn the first one has open. The banner is printed
+      // after it, so a server refused the directory never says it is serving
+      // it.
+      yield* Ownership.claim({ directory, url: Serve.url(requested) })
+      if (!connection.quiet) {
+        yield* Effect.sync(() =>
+          process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
+        )
+      }
       return yield* Serve.host({
         directory,
         bind: requested,
@@ -199,6 +214,7 @@ export const host = async (
         pricing: Pricing.pricingOf(seat)
       }).pipe(Effect.provide(driver))
     }).pipe(
+      Effect.scoped,
       Effect.provide(RedactedLogger.layer()),
       Effect.provideService(Logger.LogToStderr, true)
     ),
@@ -209,6 +225,12 @@ export const host = async (
   // fiber: that is the operator stopping the server, not a failure. The
   // guard would otherwise report the interruption as `command_failed`
   // with "All fibers interrupted without error" on stderr.
-  if (!Cause.hasInterruptsOnly(result.cause)) throw Cause.squash(result.cause)
+  if (!Cause.hasInterruptsOnly(result.cause)) {
+    const failure = Cause.squash(result.cause)
+    // A directory another live server holds is the operator's mistake, not a
+    // broken server: it exits the way the missing key does.
+    if (failure instanceof Ownership.ClaimRefused) throw new CliError.UsageError({ message: failure.message })
+    throw failure
+  }
   if (!connection.quiet) process.stderr.write(`Stopped serving ${directory}.\n`)
 }

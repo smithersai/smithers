@@ -22,6 +22,16 @@
 
 ### Fixed
 
+- `smithers opencode` refuses to start on a directory another live server
+  already serves, names that server, and exits 2, the way it refuses a missing
+  `AI_GATEWAY_API_KEY`. Two servers over one directory came up with no refusal
+  and no warning, sharing the directory's store while each held its own event
+  hub. The claim is taken before the driver opens the store, and the banner is
+  printed after it, so a server refused the directory never says it is serving
+  it. A killed server's record is replaced by the
+  next one, so a crash costs nobody their directory, and that record does not
+  make `.smithers` read as Smithers 0.x state.
+
 - `smithers opencode --max-frames` defaults to forty instead of one hundred:
   a prompt in the app is a person waiting, and the help says so.
 - `smithers opencode` no longer prints the 0.x state notice for its own

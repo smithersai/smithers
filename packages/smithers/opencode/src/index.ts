@@ -45,6 +45,11 @@ export * as Health from "./Health.ts"
 export * as Ids from "./Ids.ts"
 
 /**
+ * @since 1.0.0 @category serve
+ */
+export * as Ownership from "./Ownership.ts"
+
+/**
  * @since 1.0.0 @category projection
  */
 export * as Pricing from "./Pricing.ts"

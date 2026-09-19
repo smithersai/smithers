@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the routes, the event hub, the store, the projection, the health color, the turn composition, the driver seam, the engine driver and the scripted driver, identifiers, CORS, and basic authentication."
+description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the claim on the served directory, the routes, the event hub, the store, the projection, the health color, the turn composition, the driver seam, the engine driver and the scripted driver, identifiers, CORS, and basic authentication."
 ---
 
 The package declares `effect`, `@effect/platform-node` and
@@ -27,6 +27,26 @@ also importable from `@smthrs/opencode/<Module>`.
 | `app`             | `(options) => Layer<never, never, HttpRouter \| Driver \| Store>`                                        | The routes behind CORS and auth over the hub and the turns, for an in-process handler.                                          |
 | `layer`           | `(options) => Layer<HttpServer, ServeError \| BindRefused, Driver \| Store>`                             | The application on a Node socket over the host's driver and store. Ends the event streams, then closes the socket, on shutdown. |
 | `host`            | `(options) => Effect<never, ServeError \| BindRefused, Driver \| Store>`                                 | Hosts the server until interrupted.                                                                                             |
+
+## `Ownership`
+
+One directory is one server's. A second server over a directory a live server
+already holds refuses to start, because the two share the directory's store and
+do not share their events. The record names the owner the way the engine names
+the owner of a run, and liveness is the engine's own probe: a process on this
+host is alive unless the operating system reports no such process, and a record
+written on another host names a process this host cannot ask about.
+
+| Export         | Signature                                                  | Meaning                                                                                          |
+| -------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `Claim`        | `{ owner: OwnerId, url }`                                  | The server that holds a directory, and the address it serves.                                    |
+| `ClaimRefused` | `TaggedError`                                              | A directory another live server holds; the message is the refusal.                               |
+| `claimPath`    | `(directory: string) => string`                            | `<directory>/.smithers/opencode.server.json`.                                                    |
+| `read`         | `(directory: string) => Claim \| undefined`                | The record on disk, and nothing when there is none or what is there is not one.                  |
+| `refusal`      | `(held: Claim, directory: string) => string`               | The sentence a second server refuses with: which server holds it, and the three ways out.        |
+| `live`         | `(held: Claim, claimant: OwnerId) => Effect<boolean>`      | Whether the server the record names is still there.                                              |
+| `Options`      | `{ directory, url, owner? }`                               | How the claim identifies this server; a fresh nonce on this host and process by default.         |
+| `claim`        | `(options: Options) => Effect<Claim, ClaimRefused, Scope>` | Takes the directory, and gives it back when the scope closes. Replaces a killed server's record. |
 
 ## `Routes`
 
@@ -87,6 +107,7 @@ broken cursor is reported rather than read as the end of the history.
 | `Store`                   | `Context.Service`                                              | The store service.                                                        |
 | `putHealth`, `listHealth` | on `Service`                                                   | One `flows.opencode.health.v1` record per decision, per session.          |
 | `listParts`               | on `Service`: `(messageID) => Effect<Array<Part>, StoreError>` | The parts of one message in id order.                                     |
+| `listMessages`            | on `Service`: `(sessionID, { limit?, before? })`               | One page of messages oldest first, each with the parts of that page.      |
 | `migrations`              | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger.      |
 | `make`                    | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                             |
 | `layer`                   | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                         |

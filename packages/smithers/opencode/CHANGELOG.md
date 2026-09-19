@@ -77,6 +77,33 @@
   per request id now, not once per drive; the replayed call itself still
   reaches the projection, which is what keeps the card's own part up to date.
 
+- A second server over a directory another live server already serves refuses
+  to start, names that server, and exits 2, the way the missing key does. Both
+  came up with no refusal and no warning before: they share the directory's
+  store and do not share their event hubs, so each client was told half of what
+  happened, and the second server answered a card the first one had parked, took
+  the row down on its own hub and left the parked turn busy for good. The new
+  `Ownership` module records the server that holds a directory in
+  `<directory>/.smithers/opencode.server.json` as an `OwnerId`, and asks the
+  question the engine asks before it takes a run from a peer owner, with the
+  engine's own probe: is that process still there, with `ESRCH` the one answer
+  that means death (`Ownership.sameHostPidProbe` in `@smthrs/run-store`). A
+  record whose process is gone is what a killed server left behind, so the next
+  server replaces it instead of obeying it and nobody is locked out of their own
+  directory. The claim is taken before the driver opens the store, because a
+  second server that got that far has already re-driven the turn the store holds
+  open. Two servers over different directories still serve, and so does stopping
+  a server and starting it again.
+
+- A history read reads the parts of the page it returns, not every part of the
+  session. `Store.listMessages` paged the message headers and then read the
+  whole parts table for the session, so one `GET /session/:id/message` on a long
+  session took the entire transcript off disk, and paging back through it took
+  it again per page. A page is the run of message ids between its first and its
+  last, so the read is that range, over the index the parts table already has,
+  and it takes three parameters whatever the page holds. A page with no
+  messages in it reads no parts at all.
+
 - A finished session keeps the color its last state earned. Three of eleven
   finished, idle sessions on a live keyed drive sat red "waiting for approval"
   with nothing pending, because `Health.decide` short-circuits on

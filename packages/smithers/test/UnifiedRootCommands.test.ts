@@ -1,12 +1,14 @@
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import * as EngineDriver from "@smthrs/opencode/EngineDriver"
+import * as Ownership from "@smthrs/opencode/Ownership"
 import { Effect } from "effect"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
+import * as CliError from "../src/CliError.ts"
 import * as Project from "../src/Project.ts"
 import * as Suggest from "../src/Suggest.ts"
 
@@ -386,6 +388,40 @@ describe("unified root command dispatch", () => {
     expect(ports.serveHost.mock.calls[0]![0]).toMatchObject({ directory, seat: "scripted:demo", maxFrames: 7 })
     // The scripted seat has no price; a starter seat's price rides along the same way.
     expect(ports.serveHost.mock.calls[0]![0]).toHaveProperty("pricing", undefined)
+  })
+
+  it("refuses a directory another live server holds, and exits the way a usage error does", async () => {
+    ports.opencode.mockRestore()
+    const { host } = await vi.importActual<typeof import("../src/commands/OpenCode.ts")>("../src/commands/OpenCode.ts")
+    const directory = mkdtempSync(join(tmpdir(), "smithers-opencode-held-"))
+    const before = process.cwd()
+    ports.serveHost.mockImplementation(() => Effect.void)
+    try {
+      const refused = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function*() {
+            // A server on this directory, alive for as long as the scope is.
+            yield* Ownership.claim({ directory, url: "http://127.0.0.1:4096" })
+            return yield* Effect.promise(() =>
+              host(
+                { directory, port: 4097, hostname: "127.0.0.1", listen: false, cors: [], maxFrames: 7, scripted: true },
+                { credential: undefined, environment: {} },
+                { quiet: true }
+              ).then(() => undefined, (error: unknown) => error)
+            )
+          })
+        )
+      )
+      expect(refused).toBeInstanceOf(CliError.UsageError)
+      expect(CliError.exitCode(refused as CliError.CliError)).toBe(2)
+      expect((refused as CliError.UsageError).message).toContain("already serves it at http://127.0.0.1:4096")
+      // The refused server never reached the socket, and never opened the store.
+      expect(ports.serveHost).not.toHaveBeenCalled()
+      expect(existsSync(join(directory, ".smithers", "opencode.sqlite"))).toBe(false)
+    } finally {
+      process.chdir(before)
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it("resolves the opencode seat, bind and engine host from the options and the environment", async () => {

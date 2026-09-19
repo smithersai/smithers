@@ -114,6 +114,8 @@ Counted on the wire on 2026-09-18, against every request fifteen turns sent to `
 
 **`smithers opencode needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge.`** and exit code 2, before any socket opens. You did not export the gateway key. Export it, or pass `--scripted` to walk the whole app surface on a recorded turn with no keys at all.
 
+**`Refusing to serve <directory>: process 4242 on <host> already serves it at http://127.0.0.1:4096. ...`** and exit code 2, before any socket opens. One directory is one server's: two servers over one directory share its store and not their events, so each client would see half of what happened. Stop the other server, serve another directory, or, if process 4242 is not that server, delete `<directory>/.smithers/opencode.server.json` and start again. A server that was killed leaves that record behind, and the next server checks whether the process it names is still there and replaces it when it is not, so an ordinary crash costs you nothing.
+
 **`No model seat: pass --seat provider:model, set SMITHERS_SEAT or a provider key such as CEREBRAS_API_KEY, or pass --scripted to replay the recorded turn.`** No seat and no provider key is set.
 
 **`Seat cerebras:gpt-oss-120b refused the model call (quota_exceeded, HTTP 429): ... Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`** The seat, not the harness, said no. The dot goes red and names the limit.

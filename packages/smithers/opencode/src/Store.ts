@@ -291,7 +291,15 @@ export const make: Effect.Effect<Service, StoreError, SqlClient.SqlClient> = Eff
         : yield* sql`SELECT info FROM opencode_messages WHERE session_id = ${sessionID} AND id < ${options.before}
                      ORDER BY id DESC LIMIT ${limit}`
       const messages = rows.map((row) => parse<Protocol.Message>(row, "info")).reverse()
-      const parts = yield* sql`SELECT part FROM opencode_parts WHERE session_id = ${sessionID} ORDER BY id ASC`
+      // The parts of the page, not of the session. Reading the session's
+      // parts read the whole transcript for every page, so the cost of one
+      // history read grew with the session it was paging through. A page is
+      // the run of message ids between its first and its last, so the read is
+      // that range and takes three parameters whatever the page holds. A page
+      // with no messages in it asks for nothing.
+      const parts = messages.length === 0 ? [] : yield* sql`SELECT part FROM opencode_parts
+                     WHERE session_id = ${sessionID} AND message_id >= ${messages[0]!.id}
+                       AND message_id <= ${messages[messages.length - 1]!.id} ORDER BY id ASC`
       const byMessage = new Map<string, Array<Protocol.Part>>()
       for (const row of parts) {
         const part = parse<Protocol.Part>(row, "part")

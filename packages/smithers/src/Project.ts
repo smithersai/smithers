@@ -193,15 +193,22 @@ export const legacyDatabases = (
 const buildDefinitionFiles = new Set(["WORKSPACE.ts", "FACTORY.ts", "factory.json", "home.json", "target-index.json"])
 
 /**
- * The 1.0 databases `smithers opencode` keeps under `.smithers`: a current
- * server's state, not a 0.x run store, so they never make the directory
- * legacy state.
+ * What `smithers opencode` keeps under `.smithers`: its database, the
+ * sidecars an open database has, and the record naming the server that holds
+ * the directory. All of it is a current server's state, not a 0.x run store,
+ * so none of it makes the directory legacy state. A server that was killed
+ * leaves its record behind, and the next command must not read that as 0.x.
  */
-const currentDatabaseFiles = new Set(["opencode.sqlite", "opencode.sqlite-wal", "opencode.sqlite-shm"])
+const currentDatabaseFiles = new Set([
+  "opencode.sqlite",
+  "opencode.sqlite-wal",
+  "opencode.sqlite-shm",
+  "opencode.server.json"
+])
 
 /**
  * Whether a `.smithers` directory holds only what 1.0 writes there: the
- * current build definitions, the opencode database, or both. An empty
+ * current build definitions, the opencode server's own files, or both. An empty
  * directory, an unknown file, a subdirectory and unreadable metadata all
  * still read as 0.x state.
  */
@@ -227,8 +234,7 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
  * every command forever.
  *
  * A `.smithers` directory containing only current build definitions, only
- * the `opencode.sqlite` database `smithers opencode` keeps there, or both, is
- * also excluded. Unknown files, subdirectories and unreadable metadata remain
+ * what `smithers opencode` keeps there, or both, is also excluded. Unknown files, subdirectories and unreadable metadata remain
  * legacy markers.
  *
  * @category getters

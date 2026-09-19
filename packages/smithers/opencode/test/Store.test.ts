@@ -1,5 +1,9 @@
-import { Effect, Option } from "effect"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as Statement from "effect/unstable/sql/Statement"
+import { mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type * as Health from "../src/Health.ts"
 import * as Protocol from "../src/Protocol.ts"
@@ -48,6 +52,56 @@ const withStore = <A>(body: (store: Store.Service) => Effect.Effect<A, Store.Sto
       return yield* body(store)
     }).pipe(Effect.provide(Store.layerSqlite(`${scratch.directory}/nested/state/opencode.sqlite`)))
   )
+
+/** One read of the parts table: what it asked for, and how many rows it took. */
+interface PartsRead {
+  readonly text: string
+  readonly params: ReadonlyArray<unknown>
+  readonly rows: number
+}
+
+/**
+ * The store over its own database, with every read of the parts table
+ * recorded. A history read that pages must read the page's parts, so the
+ * statement is pinned as well as its answer: reading the session's parts
+ * instead returned the same messages while taking the whole transcript
+ * from disk on every page.
+ */
+const withRecordedStore = <A>(
+  reads: Array<PartsRead>,
+  body: (store: Store.Service) => Effect.Effect<A, Store.StoreError>
+) => {
+  const recorded = (client: SqlClient.SqlClient): SqlClient.SqlClient =>
+    new Proxy(client, {
+      apply: (target, self, args) => {
+        const statement = Reflect.apply(target, self, args) as Statement.Statement<never>
+        // The migrator asks the client for things that are not statements.
+        if (typeof statement.compile !== "function") return statement
+        const [text, params] = statement.compile()
+        if (!text.includes("FROM opencode_parts")) return statement
+        return Effect.tap(statement, (rows) =>
+          Effect.sync(() => reads.push({ text: text.replace(/\s+/g, " ").trim(), params, rows: rows.length })))
+      }
+    }) as SqlClient.SqlClient
+  const filename = `${scratch.directory}/recorded/opencode.sqlite`
+  mkdirSync(dirname(filename), { recursive: true })
+  return run(
+    Effect.gen(function*() {
+      const store = yield* Store.Store
+      return yield* body(store)
+    }).pipe(
+      Effect.provide(
+        Store.layer.pipe(
+          Layer.provide(
+            Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, recorded)).pipe(
+              Layer.provide(NodeDatabase.layer({ filename }))
+            )
+          )
+        )
+      )
+    )
+  )
+}
 
 describe("Store", () => {
   it("keeps grants and open turns, and drops them with the session", async () => {
@@ -165,6 +219,40 @@ describe("Store", () => {
     expect(result.none).toBe(true)
     expect(result.parts.map((part) => part.id)).toEqual(["prt_2a", "prt_2b"])
     expect(result.noParts).toEqual([])
+  })
+
+  it("reads the parts of the page it returns, not of the session", async () => {
+    const reads: Array<PartsRead> = []
+    const result = await withRecordedStore(reads, (store) =>
+      Effect.gen(function*() {
+        yield* store.putSession(session("ses_p", 4))
+        for (const index of [1, 2, 3]) {
+          yield* store.putMessage(user(`msg_${index}`, "ses_p"))
+          yield* store.putPart(text(`prt_${index}a`, `msg_${index}`, "ses_p", "first"))
+          yield* store.putPart(text(`prt_${index}b`, `msg_${index}`, "ses_p", "second"))
+        }
+        // The newest message has no parts yet, which is what a turn that has
+        // just started looks like.
+        yield* store.putMessage(user("msg_4", "ses_p"))
+        const page = yield* store.listMessages("ses_p", { limit: 2 })
+        const whole = yield* store.listMessages("ses_p")
+        const nothing = yield* store.listMessages("ses_none")
+        return { page, whole, nothing }
+      }))
+    expect(result.page.map((item) => item.info.id)).toEqual(["msg_3", "msg_4"])
+    expect(result.page[0]!.parts.map((part) => part.id)).toEqual(["prt_3a", "prt_3b"])
+    expect(result.page[1]!.parts).toEqual([])
+    expect(result.whole.flatMap((item) => item.parts.map((part) => part.id))).toHaveLength(6)
+    expect(result.nothing).toEqual([])
+    // One read per page, and a page with no messages reads no parts at all.
+    expect(reads).toHaveLength(2)
+    const [page, whole] = reads
+    // The page's own range, and three parameters whatever the page holds.
+    expect(page!.params).toEqual(["ses_p", "msg_3", "msg_4"])
+    expect(page!.rows).toBe(2)
+    expect(page!.text).toContain("message_id >= ? AND message_id <= ?")
+    expect(whole!.params).toEqual(["ses_p", "msg_1", "msg_4"])
+    expect(whole!.rows).toBe(6)
   })
 
   it("applies what emitted events imply and ignores the rest", async () => {
