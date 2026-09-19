@@ -173,3 +173,15 @@ docs/reviews/
 
 # disposable one-off probe scripts (apps/app/.impl13.tmp.mjs style)
 .*.tmp.mjs
+
+# pnpm self-links: `pnpm install` links each workspace package into
+# node_modules/.pnpm/node_modules/<name>, and that link points back at the
+# package directory. When the package's own folder then gains a link of the
+# same name, the path resolves to its own parent: an infinite self-reference
+# that jj snapshots as a tracked file. Exact paths only; the package name is
+# still legitimately used by `pnpm --filter <name>`.
+/apps/app/smithers-app
+/apps/ui/smithers-ui
+/apps/server/smithers-server
+/apps/tutorial-coordinator/smithers-tutorial-coordinator
+/packages/smthrs-deprecation/smthrs
