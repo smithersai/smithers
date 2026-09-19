@@ -487,7 +487,8 @@ export const runCachedModelTest = async <P, O>(
     // completion replays exactly as it was recorded.
     evaluator: Evaluator.layerScripted(() => ({
       complete: { probability: 0.99 },
-      overclaims: { probability: 0.01 }
+      overclaims: { probability: 0.01 },
+      invented: { probability: 0.01 }
     }))
   })
   const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow)).pipe(

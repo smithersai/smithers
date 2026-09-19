@@ -649,7 +649,11 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       // never falls back, and a scripted composition that reached for a
       // gateway key would either fail every unit or leave the shell.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+        Evaluator.layerScripted(() => ({
+          complete: { probability: 0.99 },
+          overclaims: { probability: 0.01 },
+          invented: { probability: 0.01 }
+        }))
       )
     )
   }))
