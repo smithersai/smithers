@@ -124,10 +124,11 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
     assert.equal(health.protocolVersion, "1")
     assert.equal(health.workspaceHash, Serve.workspaceHash(root))
     assert.equal(health.gatewayId, options.gatewayId)
-    // A configured coding host always advertises these three. It adds
+    // A configured coding host always advertises these four: coding/dispatch is
+    // registered unconditionally, so its door is open on every host. It adds
     // coding-request/v1 only with planning, and coding-vibe/v1 only with both
     // planning and landing; these options configure neither.
-    assert.deepEqual(health.capabilities, ["coding-plan/v1", "repository-jobs/v1", "repository-source/v1"])
+    assert.deepEqual(health.capabilities, ["coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1"])
     assert.equal(Serve.health(root).capabilities, undefined, "ordinary CLI health does not claim native coding")
     const card = yield* control.plan({ flowId: "coding", input: { plan: {
       prompt: "Write hello.txt", memoryRevision: "fixture", base: initial.head as Revision,
