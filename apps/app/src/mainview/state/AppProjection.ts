@@ -2653,6 +2653,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             role: "smithers",
             text: transition.text,
             ...(transition.action === undefined ? {} : { action: transition.action }),
+            ...(transition.spoken === undefined ? {} : { spoken: transition.spoken }),
             status: "complete",
             createdAt,
             ordinal: nextOrdinal(collections)

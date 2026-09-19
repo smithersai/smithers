@@ -645,7 +645,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
      * person is still looking a minute later.
      */
     if (CANDIDATE_OPERATIONS.has(operation) && openQuestion(card) !== undefined) {
-      ctx.store.dispatch({ type: "message.appended", actor: "system", text: SETUP_QUESTION_GATE })
+      ctx.store.dispatch({ type: "message.appended", actor: "system", text: SETUP_QUESTION_GATE, spoken: true })
       return SETUP_QUESTION_GATE
     }
     if (card.payload.recovery && (card.payload.recovery.state !== "completed" || card.payload.recovery.registrationState !== "known")) {
@@ -752,7 +752,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
      */
     configureRepositorySetup: (id, field, value) => edit(id, async () => {
       const refuse = (sentence: string) => {
-        ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence })
+        ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence, spoken: true })
         return sentence
       }
       const card = get(id)

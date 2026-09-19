@@ -1042,7 +1042,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
    * appended to the transcript as well.
    */
   const refusePause = (message: string): string => {
-    ctx.dispatch({ type: "message.appended", actor: "system", text: message })
+    ctx.dispatch({ type: "message.appended", actor: "system", text: message, spoken: true })
     return message
   }
 

@@ -142,7 +142,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "message.tool.executed": z.object({ "type": z.literal("message.tool.executed"), "actor": z.literal("smithers"), "turnId": z.string(), "text": z.string(), "answersTurn": MessageSchema.shape["answersTurn"] }).strict(),
   "message.steered": z.object({ "type": z.literal("message.steered"), "actor": z.literal("user"), "turnId": z.string(), "text": z.string() }).strict(),
   "message.claim.substituted": z.object({ "type": z.literal("message.claim.substituted"), "actor": z.literal("system"), "turnId": z.string(), "text": z.string() }).strict(),
-  "message.appended": z.object({ "type": z.literal("message.appended"), "actor": z.enum(["system", "user", "smithers"]), "text": z.string(), "action": MessageSchema.shape["action"].optional() }).strict(),
+  "message.appended": z.object({ "type": z.literal("message.appended"), "actor": z.enum(["system", "user", "smithers"]), "text": z.string(), "action": MessageSchema.shape["action"].optional(), "spoken": MessageSchema.shape["spoken"] }).strict(),
   "tab.opened": z.object({ "type": z.literal("tab.opened"), "actor": ActorSchema, "tab": NewTabSchema }).strict(),
   "tab.selected": z.object({ "type": z.literal("tab.selected"), "actor": ActorSchema, "id": z.string() }).strict(),
   "tab.close.asked": z.object({ "type": z.literal("tab.close.asked"), "actor": ActorSchema, "id": z.union([z.string(), z.null()]) }).strict(),

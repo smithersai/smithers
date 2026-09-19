@@ -1337,7 +1337,10 @@ describe("triggers seam: listing and pausing a schedule", () => {
     await controller.runCommand("form.submit", cardId)
     await settled()
     const card = store.collections.cards.get(cardId)
-    expect([...store.collections.messages.values()].map((message) => message.text).filter((text) => text === sentence)).toEqual([sentence])
+    const said = [...store.collections.messages.values()].filter((message) => message.text === sentence)
+    expect(said.map((message) => message.text)).toEqual([sentence])
+    /* The door's own mark, which is what the form card yields to. */
+    expect(said.map((message) => message.spoken)).toEqual([true])
     expect(card?.kind === "flow-form" ? card.payload.error : "no card").toBeUndefined()
   })
 

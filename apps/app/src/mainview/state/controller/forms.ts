@@ -238,16 +238,25 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
    * sentence standing in the transcript right above it
    * (.artifacts/mvp-canary-walk-20260917/W1-13-triggers-pause-submitted.png).
    * The transcript line is the one the walk verified as required, so the card
-   * yields to it — and only to it: the sentence has to be the line the
-   * transcript JUST took, so a refusal that matches something said minutes ago
-   * still lands on the card the person is looking at.
+   * yields to it — and only to it. What makes a line that one is the door
+   * SAYING so (`Message.spoken`, set where the door appends it), not its
+   * position: comparing against the tail meant any message appended between
+   * the door's `message.appended` and this patch — another actor's line, a
+   * seam's answer, the next turn — brought the duplicate straight back. The
+   * line still has to belong to THIS submission, so a sentence the door said
+   * minutes ago lands on the card the person is looking at now.
    */
-  const justSaid = (sentence: string): boolean => {
-    let latest: { readonly ordinal: number; readonly text: string } | undefined
+  const latestOrdinal = (): number => {
+    let latest = 0
+    for (const message of collections.messages.values()) latest = Math.max(latest, message.ordinal)
+    return latest
+  }
+
+  const alreadySaid = (sentence: string, since: number): boolean => {
     for (const message of collections.messages.values()) {
-      if (latest === undefined || message.ordinal > latest.ordinal) latest = message
+      if (message.spoken === true && message.ordinal > since && message.text === sentence) return true
     }
-    return latest?.text === sentence
+    return false
   }
 
   const patch = (card: FlowFormCard, payload: FlowFormCard["payload"], status: Card["status"]): Promise<void> => {
@@ -498,6 +507,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const asAgent = via === "agent" || actor === "smithers"
     const continuation = invocation ?? continuationFor(card)
     await patch(card, { ...card.payload, submitting: true }, "active")
+    /* Everything the doors say from here on belongs to this submission. */
+    const saidBefore = latestOrdinal()
     let outcome: CommandOutcome
     try {
       outcome = await ctx.commands.submit({
@@ -521,7 +532,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     }
     const error = describe(outcome)
     const { error: _repeated, ...settledPayload } = current.payload
-    await patch(current, justSaid(error) ? { ...settledPayload, submitting: false } : { ...current.payload, submitting: false, error }, "error")
+    await patch(current, alreadySaid(error, saidBefore) ? { ...settledPayload, submitting: false } : { ...current.payload, submitting: false, error }, "error")
     // The card carries the refusal for the human; the agent reads it as its result.
     return actor === "smithers" ? error : undefined
   }

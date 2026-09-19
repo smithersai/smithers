@@ -459,6 +459,17 @@ export const MessageSchema = z.object({
   /** A one-line visible tool act ("Smithers ran /world.new-note") renders as a marker row, not a bubble. */
   act: z.string().optional(),
   /**
+   * A door's own refusal, written where it stays.
+   *
+   * A consequential door whose sentence has to outlive a four-second toast
+   * appends it to the transcript itself AND returns it (seams/TriggersSeam.ts
+   * refusePause, controller/repositorySetup.ts). This flag is that door
+   * telling the rest of the app it has already been said, so the form card the
+   * same submission settles does not print it a second time
+   * (controller/forms.ts). Nothing else sets it and nothing renders it.
+   */
+  spoken: z.literal(true).optional(),
+  /**
    * This act IS its turn's whole answer, so the model reads it as the
    * assistant's words in every later turn (controller/turns.ts
    * contextMessages). Only the Jev front door sets it: that turn was answered
@@ -1573,6 +1584,8 @@ export type AppTransition =
     text: string
     /** The action that rides the message (sign-in, request access, retry, a confirm flow). */
     action?: Message["action"]
+    /** The door is saying this refusal here, so its form card must not repeat it ({@link Message.spoken}). */
+    spoken?: true
   }
   /* The local-app tabs (docs/LOCAL-APP.md "Tabs"). */
   | { type: "tab.opened"; actor: Actor; tab: Tab }
