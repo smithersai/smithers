@@ -287,6 +287,33 @@ const alive = (marker: string): boolean => {
 }
 
 describe("EngineDriver", { timeout: 90_000 }, () => {
+  it("returns clarification as an answer instead of leaving a model-requested question parked", async () => {
+    const directory = scratch()
+    const question = recorder()
+    const followup = recorder()
+    script.replies = [
+      "ctx.park(\"waiting-input\", \"Which greeting?\")",
+      "ctx.done(\"Which greeting?\")",
+      "ctx.done(\"Hello.\")"
+    ]
+    await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_question", "msg_question_1", "Ask which greeting I want."), question.sink)
+        // There is no question-card reply surface in this host. A durable
+        // question park would never be resumed by the person's next prompt.
+        expect(question.outcomes).toEqual([{ _tag: "completed" }])
+        expect(question.events.some((event) => event._tag === "suspended")).toBe(false)
+        yield* driver.start(input("ses_question", "msg_question_2", "Say Hello."), followup.sink)
+      }), { maxFrames: 4 })
+    expect(followup.outcomes).toEqual([{ _tag: "completed" }])
+    expect(answer(question.events)).toBe("Which greeting?")
+    expect(answer(followup.events)).toBe("Hello.")
+    expect(script.calls).toBe(3)
+    expect(script.requests[1]!.messages.some((message) => JSON.stringify(message).includes("no approval channel")))
+      .toBe(true)
+    expect(script.requests[0]!.system.map((part) => part.text).join("\n")).toContain("ctx.done(question)")
+  })
+
   it("parks on bash, runs the call once after Allow once, and refuses a second turn while busy", async () => {
     const directory = scratch()
     const log = recorder()

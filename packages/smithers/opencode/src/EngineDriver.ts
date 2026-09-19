@@ -188,7 +188,7 @@ export const readOnlyCap = 6
  * @since 1.0.0
  */
 export const hostTeaching =
-  "You are answering a person in a chat app. When the request is conversational, or your printed output already answers it, call ctx.done(answer) in that same cell. Call flows only when the request needs them. Never run a command the person did not ask for."
+  "You are answering a person in a chat app. When the request is conversational, or your printed output already answers it, call ctx.done(answer) in that same cell. Ask clarifying questions with ctx.done(question), then wait for the person's next message. Call flows only when the request needs them. Never run a command the person did not ask for."
 
 /**
  * The message a rejected call settles with. The harness appends its generic
@@ -844,7 +844,10 @@ export const layer = (options: Options) =>
               capabilityEnvelope: patterns(envelope),
               limits,
               maxFrames,
-              approvalChannel: true,
+              // This host has permission replies, but no question-card reply
+              // route. Model-requested parks must not create an unanswerable
+              // waiting turn; clarification is an ordinary chat answer.
+              approvalChannel: false,
               system: [hostTeaching],
               // A turn that only reads, or only prints, is demanded at six
               // frames and stopped at twelve; see `readOnlyCap`.
