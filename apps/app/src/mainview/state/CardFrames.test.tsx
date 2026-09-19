@@ -312,7 +312,7 @@ describe("server-emitted card frames", () => {
       }
     })
     const quiet = renderToStaticMarkup(<CardView card={runCard("quiet")} {...cardViewHandlers} />)
-    expect(quiet).toContain("has gone quiet")
+    expect(quiet).toContain("No recent progress")
     expect(quiet).not.toContain("Running")
     expect(quiet).toContain("Quiet")
     // The two acts are on the card, and both are registered commands.
@@ -320,7 +320,7 @@ describe("server-emitted card frames", () => {
     expect(quiet).toContain("data-flow=\"flow.run.stop\"")
 
     const stopped = renderToStaticMarkup(<CardView card={runCard("stopped")} {...cardViewHandlers} />)
-    expect(stopped).toContain("I stopped watching this run.")
+    expect(stopped).toContain("Stopped watching")
     expect(stopped).not.toContain("Running")
     expect(stopped).toContain("Stopped")
 
