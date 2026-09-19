@@ -32,6 +32,7 @@ export interface FlowInput {
   readonly "runs.list": { readonly repo?: string; readonly status?: string; readonly flow?: string; readonly lineage?: string; readonly sourceCard?: string }
   readonly "runs.attention": { readonly repo?: string; readonly sourceCard?: string }
   readonly "runs.open": { readonly runId: string; readonly repo?: string; readonly sourceCard?: string }
+  readonly "runs.trace.select": { readonly runId: string; readonly nodeId: string; readonly seq?: number; readonly sourceCard?: string }
   readonly "approvals.open": { readonly runId: string; readonly sourceCard?: string }
   readonly "tutorial.live.inspect": { readonly cardId: string; readonly eventId: string }
   readonly "files.open-diff": { readonly cardId: string; readonly path: string }
@@ -115,6 +116,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "runs.list": (payload) => line(token(payload, "status"), token(payload, "flow"), keyed(payload, "lineage"), keyed(payload, "sourceCard"), token(payload, "repo")),
   "runs.attention": (payload) => line(keyed(payload, "sourceCard"), token(payload, "repo")),
   "runs.open": (payload) => line(keyed(payload, "sourceCard"), token(payload, "runId"), token(payload, "repo")),
+  "runs.trace.select": (payload) => line(keyed(payload, "sourceCard"), token(payload, "runId"), token(payload, "nodeId"), token(payload, "seq")),
   "approvals.open": (payload) => line(keyed(payload, "sourceCard"), token(payload, "runId")),
   "tutorial.live.inspect": (payload) => line(token(payload, "cardId"), token(payload, "eventId")),
   "files.open-diff": (payload) => JSON.stringify(payload),

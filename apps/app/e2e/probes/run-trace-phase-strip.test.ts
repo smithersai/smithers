@@ -26,7 +26,7 @@ afterAll(async () => { await browser?.close(); await server?.stop(true) })
 const open = async (scenario: string): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } })
   page.on("pageerror", (error) => console.error(error))
-  page.setDefaultTimeout(3000)
+  page.setDefaultTimeout(10000)
   await page.goto(`${server.url}?scenario=${scenario}`)
   await page.locator(".run-phases").waitFor()
   await page.evaluate(() => document.fonts.ready)

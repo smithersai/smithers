@@ -15,7 +15,7 @@ test("scrub positions preserve sparse sequences, ties and clock regressions in j
   ]
   expect(tracePositions(records, { start: 1000, end: 4000 })).toEqual([
     { seq: 3, left: 0 }, { seq: 10, left: 0 }, { seq: 12, left: (2 / 3) * 100 },
-    { seq: 31, left: (2 / 3) * 100 }, { seq: 40, left: 100 }
+    { seq: 31, left: (1 / 3) * 100 }, { seq: 40, left: 100 }
   ])
 })
 
@@ -41,4 +41,10 @@ test("pin doors and their owning frames follow sequence when timestamps tie or r
     { seq: 2, at: 3000, label: "first", tone: "warn" }
   ], { start: 1000, end: 4000 })
   expect(pins.map((pin) => pin.milestone.seq)).toEqual([2, 5, 8])
+})
+
+test("a cluster's members remain before the next pin in DOM order when stamps regress", () => {
+  const moments = [1000, 2000, 1000, 1000, 2000, 1000].map((at, seq) => ({ at, seq, label: String(seq), tone: "brand" as const }))
+  const pins = phasePins(moments, { start: 1000, end: 11000 })
+  expect(pins.flatMap((pin) => [pin.milestone, ...pin.folded]).map((moment) => moment.seq)).toEqual([0, 1, 2, 3, 4, 5])
 })

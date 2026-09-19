@@ -1,5 +1,6 @@
 import type { CSSProperties, PointerEvent } from "react"
 import { flowAction, flowProps } from "../flows/FlowAction"
+import { flowArgs } from "../flows/FlowArgs"
 import type { RunCommand } from "./CardFamily"
 import { durationWords, phaseBandGeometry, phaseExtent, type JournalRecord, type Milestone, type TraceExtent, type TraceModel } from "./RunTrace"
 
@@ -28,8 +29,9 @@ export const phasePins = (milestones: ReadonlyArray<Milestone>, extent: TraceExt
     const free = rows.findIndex((occupied) => occupied.every((anchor) => Math.abs(left - anchor) >= PIN_APART))
     const row = free >= 0 ? free : rows.length
     if (row >= PIN_ROWS) {
-      const nearest = pins.reduce((a, b) => Math.abs(b.left - left) <= Math.abs(a.left - left) ? b : a)
-      nearest.folded.push(milestone)
+      // Append to the last door so disclosed members also precede the next
+      // door in journal order, even when their timestamps run backwards.
+      pins[pins.length - 1]!.folded.push(milestone)
     } else {
       ;(rows[row] ??= []).push(left)
       pins.push({ milestone, left, row, folded: [] })
@@ -97,15 +99,13 @@ export const tracePositions = (records: ReadonlyArray<JournalRecord>, extent: Tr
   const ordered = [...new Map(records.flatMap((record) => Number.isSafeInteger(record.sequence) && record.sequence! >= 0
     ? [[record.sequence!, record] as const] : [])).values()].sort((a, b) => a.sequence! - b.sequence!)
   const axis = extent.end - extent.start
-  let previous = 0
   return ordered.map((record, index) => {
     const payload = record.payload as { readonly at?: unknown } | undefined
     const at = typeof payload?.at === "number" && Number.isFinite(payload.at) ? payload.at : record.occurredAt
     const left = axis <= 0 || at === undefined || !Number.isFinite(at)
       ? index / Math.max(ordered.length - 1, 1) * 100
       : clamp((at - extent.start) / axis * 100, 0, 100)
-    previous = Math.max(previous, left)
-    return { seq: record.sequence!, left: previous }
+    return { seq: record.sequence!, left }
   })
 }
 
@@ -130,7 +130,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
   const reached = (seq: number) => cursorSeq === undefined || seq <= cursorSeq
   const current = [...positions].reverse().find((position) => position.seq <= (cursorSeq ?? Infinity)) ?? positions[0]
   const here = cursorSeq === undefined ? undefined : [...model.bands].reverse().find((band) => band.seq <= cursorSeq)
-  const argsAt = (seq: number) => `${runId} ${frameAtSequence(model, seq)} ${seq}`
+  const argsAt = (seq: number) => flowArgs("runs.trace.select", { runId, nodeId: frameAtSequence(model, seq), seq })
   const select = (seq: number) => onRunCommand("runs.trace.select", argsAt(seq))
   const preview = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -231,7 +231,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
             aria-current={band === here ? "location" : undefined}
             aria-label={`${band.phase} · ${durationWords(Math.max(band.endedAt - band.startedAt, 0))}`}
             style={{ left: `${bar.left}%`, width: `${bar.width}%` }}
-            {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${band.frames[0] ?? model.root.id} ${band.seq}`)}>
+            {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: band.frames[0] ?? model.root.id, seq: band.seq }))}>
             {bar.width >= BAND_NAMED ? <span className="run-phase-name">{band.phase}</span> : null}
           </button>
         })}

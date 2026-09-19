@@ -20,6 +20,14 @@ const roundTrip = <N extends FlowWithInput>(name: N, input: FlowInput[N], line: 
 }
 
 describe("flowArgs — one serialisation, and the grammar gives the values back", () => {
+  test("runs.trace.select preserves the source, node and optional recorded sequence", () => {
+    for (const seq of [undefined, 0, 17]) {
+      const input = { sourceCard: "flow-run-source", runId: "run-1", nodeId: "frame-2", ...(seq === undefined ? {} : { seq }) }
+      roundTrip("runs.trace.select", input, `sourceCard=flow-run-source run-1 frame-2${seq === undefined ? "" : ` ${seq}`}`, input)
+    }
+    roundTrip("runs.trace.select", { runId: "run-1", nodeId: "frame-2", seq: 17 }, "run-1 frame-2 17", { runId: "run-1", nodeId: "frame-2", seq: 17 })
+  })
+
   test("runs.steer carries a message that holds spaces", () => {
     roundTrip("runs.steer", { runId: "run-1", body: "focus on the failing test" }, "run-1 focus on the failing test", {
       runId: "run-1",
