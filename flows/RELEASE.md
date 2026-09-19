@@ -104,7 +104,10 @@ Steps support `click`, `fill`, and `wait-text`; selectors and assertions must
 describe the scenario being recorded. The action uses a fresh Chromium context,
 checks page errors, and saves start/middle/end frames plus WebM video. It does
 not start, stop, mock, or reuse the user's existing gateway. Requests are limited
-to loopback hosts. Playwright's Chromium must already be installed. The approval
+to loopback hosts. Playwright's Chromium and its ffmpeg binary must already be
+installed: `pnpm exec playwright install chromium ffmpeg`. Chromium alone fails
+at `browserContext.newPage`, because the recording context renders WebM with
+ffmpeg. The approval
 explicitly includes reviewing the frames/video; recording filenames alone are
 not evidence for a feature claim.
 
@@ -223,4 +226,4 @@ redrafting. Publishing tests substitute external commands and provider calls.
 The optional recorder is tested against a local HTML fixture in real Chromium.
 Type checking and workflow tests are registered as `//flows:check` and
 `//flows:suite`; the browser test is `//flows:recording` and requires Playwright's
-Chromium.
+Chromium and ffmpeg (`pnpm exec playwright install chromium ffmpeg`).
