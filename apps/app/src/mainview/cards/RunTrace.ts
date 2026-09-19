@@ -153,6 +153,8 @@ export interface TraceOptions {
 }
 
 export interface TraceModel {
+  /** Source records for status and check receipts, including their settlement sequences. */
+  readonly journal: ReadonlyArray<JournalRecord>
   readonly root: TraceSpan
   /** Every span in tree order, with its depth: the tree's rows and the waterfall's rows. */
   readonly rows: ReadonlyArray<TraceSpan>
@@ -1188,6 +1190,7 @@ export const traceFromJournal = (
     ? { start: 0, end: 0 }
     : { start, end: Math.max(end, start) }
   return {
+    journal: rawOrdered,
     root: frozenRoot,
     rows,
     extent,
