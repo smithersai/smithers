@@ -380,8 +380,10 @@ const programLine = (script: string): string => {
  * the one line the person is approving, and the `always` pattern a grant may
  * cover.
  *
- * A command line names its program in its first word, so a grant can cover
- * that word and nothing else. A script is program text an interpreter reads
+ * A simple command line names its program in its first word, so a grant can
+ * cover that word. Shell syntax can run other programs or redirect output;
+ * those calls offer no reusable pattern and ask for their own approval.
+ * A script is program text an interpreter reads
  * on standard input; it has no first word, and the first word of the program
  * is not the name of anything the shell would run. Such a call therefore
  * offers no `always` at all: an empty list, which is why no bash answer can
@@ -411,7 +413,12 @@ export const bashSubject = (input: Record<string, unknown>): {
   }
   const command = asString(input["command"])
   if (command !== undefined && command.trim() !== "") {
-    const word = command.trim().replace(/\s[\s\S]*$/, "")
+    const simple = command.trim()
+    // Deliberately a small literal-command grammar, not a shell parser.
+    // Quotes, substitutions, redirections, operators, and line breaks all
+    // need their own approval instead of borrowing the first word's grant.
+    if (!/^[\w./-]+(?:[ \t]+[\w./:=+,%@*?-]+)*$/.test(simple)) return { command, always: [] }
+    const word = simple.replace(/\s[\s\S]*$/, "")
     const container = asString(input["container"])
     return { command, always: [container === undefined ? `${word} *` : `${word} * in container ${container}`] }
   }
@@ -735,7 +742,7 @@ export const toolMetadata = (flowName: string, value: Schema.Json): Record<strin
 /**
  * The permission card's patterns and `always` rule for a parked call.
  *
- * The bash flow never offers `*`: a command line offers its first word, and
+ * The bash flow never offers `*`: a simple command line offers its first word, and
  * a call that names no command a person could read offers nothing, so an
  * answer to it covers that one call. Every other flow offers the whole flow,
  * which is what its card says.

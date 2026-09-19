@@ -13,7 +13,7 @@ import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -387,6 +387,50 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     // A bash call no pattern can describe buys nothing, so there is no key.
     expect(EngineDriver.alwaysKey(directory, "bash", { command: "" })).toBeUndefined()
     expect(EngineDriver.alwaysKey(directory, "read", { path: `${directory}/a.txt` })).toBe("read *")
+  })
+
+  it("asks again when a granted command prefixes a compound shell program", async () => {
+    const directory = scratch()
+    const marker = join(directory, "compound-marker")
+    const first = recorder()
+    const second = recorder()
+    script.replies = [bashCell("echo one"), bashCell(`echo two; printf reached > ${marker}`)]
+    const result = await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_compound", "msg_compound_1"), first.sink)
+        yield* driver.permission({
+          sessionID: "ses_compound",
+          permissionID: permissionOf(first.events),
+          response: "always"
+        })
+        yield* driver.start(input("ses_compound", "msg_compound_2"), second.sink)
+        const before = { outcomes: [...second.outcomes], wrote: existsSync(marker) }
+        if (second.outcomes.at(-1)?._tag === "suspended") {
+          yield* driver.permission({
+            sessionID: "ses_compound",
+            permissionID: permissionOf(second.events),
+            response: "once"
+          })
+        }
+        return { before, after: existsSync(marker) }
+      }))
+    expect(result.before).toEqual({ outcomes: [{ _tag: "suspended" }], wrote: false })
+    expect(result.after).toBe(true)
+  })
+
+  it.each([
+    "echo safe; printf extra",
+    "echo safe && printf extra",
+    "echo safe | cat",
+    "echo safe\nprintf extra",
+    "echo $(printf extra)",
+    "echo `printf extra`",
+    "echo safe > file",
+    "echo <(printf extra)",
+    "echo safe\\\nprintf extra"
+  ])("does not reuse a command grant for shell syntax: %s", (command) => {
+    expect(EngineDriver.alwaysKey("/repo", "bash", { command })).toBeUndefined()
+    expect(Projection.bashSubject({ command }).always).toEqual([])
   })
 
   it("shows a script-form call its program, and Allow always on it covers that one call", async () => {
