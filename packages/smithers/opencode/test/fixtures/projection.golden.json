@@ -606,6 +606,25 @@
       "part": {
         "sessionID": "ses_ffffffffeffe00000000000000",
         "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020000020000000b0",
+        "type": "text",
+        "synthetic": true,
+        "text": "Cell output\n\n```text\n{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n\n```",
+        "time": {
+          "start": 1007,
+          "end": 1017
+        }
+      },
+      "time": 1017
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
         "id": "prt_0000000010020000020000000b",
         "type": "tool",
         "callID": "cell_0_9265220e",
@@ -626,11 +645,11 @@
           },
           "time": {
             "start": 1007,
-            "end": 1017
+            "end": 1018
           }
         }
       },
-      "time": 1017
+      "time": 1018
     }
   },
   {
@@ -653,12 +672,12 @@
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
-            "start": 1018,
-            "end": 1018
+            "start": 1019,
+            "end": 1019
           }
         }
       },
-      "time": 1018
+      "time": 1019
     }
   },
   {
@@ -682,7 +701,7 @@
           }
         }
       },
-      "time": 1019
+      "time": 1020
     }
   },
   {
@@ -695,7 +714,7 @@
         "id": "prt_0000000010020001000000000b",
         "type": "step-start"
       },
-      "time": 1020
+      "time": 1021
     }
   },
   {
@@ -709,10 +728,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1021
+          "start": 1022
         }
       },
-      "time": 1021
+      "time": 1022
     }
   },
   {
@@ -894,7 +913,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1022
+          "updated": 1023
         }
       }
     }
@@ -943,11 +962,11 @@
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
-          "start": 1021,
-          "end": 1023
+          "start": 1022,
+          "end": 1024
         }
       },
-      "time": 1024
+      "time": 1025
     }
   },
   {
@@ -972,11 +991,11 @@
             "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
           },
           "time": {
-            "start": 1025
+            "start": 1026
           }
         }
       },
-      "time": 1025
+      "time": 1026
     }
   },
   {
@@ -999,12 +1018,12 @@
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {
-            "start": 1026,
-            "end": 1026
+            "start": 1027,
+            "end": 1027
           }
         }
       },
-      "time": 1026
+      "time": 1027
     }
   },
   {
@@ -1025,11 +1044,11 @@
           },
           "title": "ls -la",
           "time": {
-            "start": 1027
+            "start": 1028
           }
         }
       },
-      "time": 1027
+      "time": 1028
     }
   },
   {
@@ -1068,7 +1087,7 @@
         "id": "prt_0000000010020000000000000b",
         "type": "step-start"
       },
-      "time": 1028
+      "time": 1029
     }
   },
   {
@@ -1082,10 +1101,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1029
+          "start": 1030
         }
       },
-      "time": 1029
+      "time": 1030
     }
   },
   {
@@ -1207,7 +1226,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1030
+          "updated": 1031
         }
       }
     }
@@ -1256,11 +1275,11 @@
         "type": "reasoning",
         "text": "I'll read package.json and list the directory first.",
         "time": {
-          "start": 1029,
-          "end": 1031
+          "start": 1030,
+          "end": 1032
         }
       },
-      "time": 1032
+      "time": 1033
     }
   },
   {
@@ -1285,11 +1304,11 @@
             "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
           "time": {
-            "start": 1033
+            "start": 1034
           }
         }
       },
-      "time": 1033
+      "time": 1034
     }
   },
   {
@@ -1310,11 +1329,11 @@
           },
           "title": "package.json",
           "time": {
-            "start": 1034
+            "start": 1035
           }
         }
       },
-      "time": 1035
+      "time": 1036
     }
   },
   {
@@ -1341,12 +1360,12 @@
             }
           },
           "time": {
-            "start": 1034,
-            "end": 1036
+            "start": 1035,
+            "end": 1037
           }
         }
       },
-      "time": 1036
+      "time": 1037
     }
   },
   {
@@ -1367,11 +1386,11 @@
           },
           "title": "/repo",
           "time": {
-            "start": 1037
+            "start": 1038
           }
         }
       },
-      "time": 1038
+      "time": 1039
     }
   },
   {
@@ -1413,12 +1432,12 @@
             }
           },
           "time": {
-            "start": 1037,
-            "end": 1039
+            "start": 1038,
+            "end": 1040
           }
         }
       },
-      "time": 1039
+      "time": 1040
     }
   },
   {
@@ -1446,11 +1465,11 @@
             }
           },
           "time": {
-            "start": 1040
+            "start": 1041
           }
         }
       },
-      "time": 1041
+      "time": 1042
     }
   },
   {
@@ -1541,12 +1560,31 @@
             }
           },
           "time": {
-            "start": 1040,
-            "end": 1042
+            "start": 1041,
+            "end": 1043
           }
         }
       },
-      "time": 1042
+      "time": 1043
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020000020000000b0",
+        "type": "text",
+        "synthetic": true,
+        "text": "Cell output\n\n```text\n{\"name\":\"demo-repo\",\"version\":\"0.1.0\"}\n\nREADME.md package.json src/\n{\"relevant\":{\"value\":true,\"probability\":0.93},\"role\":{\"value\":\"implementation\"},\"risk\":{\"label\":\"none\"}}\n\n```",
+        "time": {
+          "start": 1034,
+          "end": 1044
+        }
+      },
+      "time": 1044
     }
   },
   {
@@ -1575,12 +1613,12 @@
             "source": "const pkg = await ctx.call(\"read\", { path: \"package.json\" })\nconst root = await ctx.call(\"ls\", { path: \".\" })\nconst verdict = await ctx.call(\"classify/triage/relevance\", { task: \"Read package.json and tell me the name field.\", file: \"package.json\", excerpt: pkg.content })\nconsole.log(pkg.content)\nconsole.log(root.entries.map((e) => e.name).join(\" \"))\nconsole.log(JSON.stringify(verdict.answers))\nreturn ctx.continue()"
           },
           "time": {
-            "start": 1033,
-            "end": 1043
+            "start": 1034,
+            "end": 1045
           }
         }
       },
-      "time": 1043
+      "time": 1045
     }
   },
   {
@@ -1603,12 +1641,12 @@
           "title": "read-only · 1/1",
           "metadata": {},
           "time": {
-            "start": 1044,
-            "end": 1044
+            "start": 1046,
+            "end": 1046
           }
         }
       },
-      "time": 1044
+      "time": 1046
     }
   },
   {
@@ -1632,7 +1670,7 @@
           }
         }
       },
-      "time": 1045
+      "time": 1047
     }
   },
   {
@@ -1645,7 +1683,7 @@
         "id": "prt_0000000010020001000000000b",
         "type": "step-start"
       },
-      "time": 1046
+      "time": 1048
     }
   },
   {
@@ -1659,10 +1697,10 @@
         "type": "reasoning",
         "text": "",
         "time": {
-          "start": 1047
+          "start": 1049
         }
       },
-      "time": 1047
+      "time": 1049
     }
   },
   {
@@ -1844,7 +1882,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1048
+          "updated": 1050
         }
       }
     }
@@ -1893,11 +1931,11 @@
         "type": "reasoning",
         "text": "The read-only cap asks for an action, so I'll run the command and answer.",
         "time": {
-          "start": 1047,
-          "end": 1049
+          "start": 1049,
+          "end": 1051
         }
       },
-      "time": 1050
+      "time": 1052
     }
   },
   {
@@ -1922,11 +1960,11 @@
             "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
           },
           "time": {
-            "start": 1051
+            "start": 1053
           }
         }
       },
-      "time": 1051
+      "time": 1053
     }
   },
   {
@@ -1949,12 +1987,12 @@
           "title": "read-only · 1/1 · justification",
           "metadata": {},
           "time": {
-            "start": 1052,
-            "end": 1052
+            "start": 1054,
+            "end": 1054
           }
         }
       },
-      "time": 1052
+      "time": 1054
     }
   },
   {
@@ -1975,11 +2013,11 @@
           },
           "title": "ls -la",
           "time": {
-            "start": 1027
+            "start": 1028
           }
         }
       },
-      "time": 1053
+      "time": 1055
     }
   },
   {
@@ -2015,12 +2053,31 @@
             }
           },
           "time": {
-            "start": 1027,
-            "end": 1054
+            "start": 1028,
+            "end": 1056
           }
         }
       },
-      "time": 1054
+      "time": 1056
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001020000000b0",
+        "type": "text",
+        "synthetic": true,
+        "text": "Cell output\n\n```text\ntotal 16\n-rw-r--r--  1 demo  staff   60 README.md\n-rw-r--r--  1 demo  staff   40 package.json\ndrwxr-xr-x  3 demo  staff   96 src\n\n\n```",
+        "time": {
+          "start": 1053,
+          "end": 1057
+        }
+      },
+      "time": 1057
     }
   },
   {
@@ -2049,12 +2106,12 @@
             "source": "const out = await ctx.call(\"bash\", { command: \"ls -la\" })\nconsole.log(out.stdout)\nreturn ctx.done(\"The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.\")"
           },
           "time": {
-            "start": 1051,
-            "end": 1055
+            "start": 1053,
+            "end": 1058
           }
         }
       },
-      "time": 1055
+      "time": 1058
     }
   },
   {
@@ -2078,7 +2135,7 @@
           }
         }
       },
-      "time": 1056
+      "time": 1059
     }
   },
   {
@@ -2092,10 +2149,10 @@
         "type": "text",
         "text": "",
         "time": {
-          "start": 1057
+          "start": 1060
         }
       },
-      "time": 1057
+      "time": 1060
     }
   },
   {
@@ -2159,11 +2216,11 @@
         "type": "text",
         "text": "The package is demo-repo 0.1.0; the directory holds README.md, package.json and src/.",
         "time": {
-          "start": 1057,
-          "end": 1058
+          "start": 1060,
+          "end": 1061
         }
       },
-      "time": 1059
+      "time": 1062
     }
   },
   {
@@ -2195,7 +2252,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1060
+          "updated": 1063
         }
       }
     }
@@ -2224,12 +2281,12 @@
             "reason": "answered"
           },
           "time": {
-            "start": 1060,
-            "end": 1060
+            "start": 1063,
+            "end": 1063
           }
         }
       },
-      "time": 1060
+      "time": 1063
     }
   },
   {
@@ -2242,7 +2299,7 @@
         "role": "assistant",
         "time": {
           "created": 1001,
-          "completed": 1061
+          "completed": 1064
         },
         "parentID": "msg_0000000010010000000000000a",
         "modelID": "demo",
@@ -2279,11 +2336,11 @@
         "text": "2 frames · 4 calls · 1 classify · Jev 4 calls · 212 ms · $0.0000",
         "synthetic": true,
         "time": {
-          "start": 1062,
-          "end": 1062
+          "start": 1065,
+          "end": 1065
         }
       },
-      "time": 1062
+      "time": 1065
     }
   },
   {
@@ -2315,7 +2372,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1062
+          "updated": 1065
         }
       }
     }

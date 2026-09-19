@@ -167,7 +167,7 @@ export const stoppedTurn =
 export const history = (messages: ReadonlyArray<Store.MessageWithParts>, cap = historyCap): string | undefined => {
   const lines: Array<string> = []
   for (const message of messages) {
-    // The run summary is a synthetic text part: the person never read it as an answer.
+    // Adapter receipts and the run summary are synthetic text, not final answers.
     const text = message.parts.flatMap((part) => part.type === "text" && part.synthetic !== true ? [part.text] : [])
       .join("").trim()
     const stopped = message.info.role === "assistant" && message.info.error?.name === abortedError

@@ -3,9 +3,10 @@
  *
  * One turn is one assistant message. Each frame opens a `step-start` part,
  * streams the model's prose into a `reasoning` part, renders the cell the
- * model wrote as a `cell` tool part whose output is what the cell printed,
+ * model wrote as a `cell` tool part and its prints as visible text after it,
  * renders every `ctx.call` as a tool part named after the flow (`ls` as
- * `list`, so OpenCode's rich cards apply), and closes with a `step-finish`
+ * `list`, so OpenCode's rich cards apply), shows submitted patches as text
+ * beside their cards, and closes with a `step-finish`
  * part carrying the frame's tokens. A discipline demand is a `demand` tool
  * part. A permission park is `permission.asked`. `Resolved` streams the
  * final answer as a text part and ends the turn: the assistant header gets
@@ -842,6 +843,33 @@ const partEvent = (part: Protocol.Part, time: number): Protocol.Emitted => ({
   properties: { sessionID: part.sessionID, part, time }
 })
 
+/** Literal output cannot close its own fence and become transcript markup. */
+const fenced = (text: string): string => {
+  const size = (text.match(/`+/g) ?? []).reduce((size, run) => Math.max(size, run.length + 1), 3)
+  const fence = "`".repeat(size)
+  return `${fence}text\n${text}\n${fence}`
+}
+
+/**
+ * Native cards without a body need a visible receipt beside the card. The
+ * suffix sorts immediately after its card and before the next ordinal;
+ * replay derives the same id, so the clients replace this text in place.
+ */
+const detailText = (
+  state: State,
+  card: { readonly partID: string; readonly start: number },
+  text: string,
+  now: number
+): Protocol.Emitted =>
+  partEvent({
+    ...base(state),
+    id: `${card.partID}0`,
+    type: "text",
+    synthetic: true,
+    text,
+    time: { start: card.start, end: now }
+  }, now)
+
 const deltaEvent = (state: State, partID: string, field: string, delta: string): Protocol.Emitted => ({
   type: "message.part.delta",
   properties: { sessionID: state.session.id, messageID: state.assistantMessageID, partID, field, delta }
@@ -1577,14 +1605,31 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           },
           counted: { ...state.counted, [`settle:${key}`]: true }
         },
-        events: [partEvent(part, now)]
+        events: [
+          partEvent(part, now),
+          ...(event.flowName === "apply_patch"
+            ? [detailText(
+              state,
+              card,
+              `Submitted patch\n\n${fenced(asString(card.input["input"]) ?? "")}\n\nSettled result\n\n${
+                fenced(ok ? toolOutput(event.flowName, result.value) : failure)
+              }`,
+              now
+            )]
+            : [])
+        ]
       }
     }
     case "cell-printed": {
       const facts: Health.Facts = { ...state.facts, lastPrints: event.text.slice(-healthTextCap) }
       return state.cell === undefined
         ? { state: { ...state, facts }, events: [] }
-        : { state: { ...state, facts, cell: { ...state.cell, prints: event.text } }, events: [] }
+        : {
+          state: { ...state, facts, cell: { ...state.cell, prints: event.text } },
+          events: event.text === ""
+            ? []
+            : [detailText(state, state.cell, `Cell output\n\n${fenced(event.text)}`, ctx.now())]
+        }
     }
     case "discipline-armed":
       // The budget the engine armed is the budget health reports, whatever the host was told.

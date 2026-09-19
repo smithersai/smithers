@@ -1,6 +1,8 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Ids from "../src/Ids.ts"
+import * as Projection from "../src/Projection.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
 import { serve, type Served, until } from "./Harness.ts"
@@ -125,7 +127,11 @@ describe("Health over the server", () => {
       output: "1. relevant: yes (0.93) · role: implementation (0.81) · risk: none (0.62)"
     })
     const summary = assistant.parts.find((part): part is Protocol.TextPart =>
-      part.type === "text" && part.synthetic === true
+      part.type === "text" && part.id === Ids.part(assistant.info.id, {
+          frame: Projection.finalFrame,
+          slot: Projection.summarySlot,
+          ordinal: 0
+        })
     )!
     // The park replays frame zero and one; each frame, call and classify call counts once.
     expect(summary.text).toMatch(/^2 frames · 4 calls · 1 classify · Jev \d+ calls · \d+ ms · \$0\.0000$/)

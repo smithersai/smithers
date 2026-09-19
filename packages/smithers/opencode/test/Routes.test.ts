@@ -461,7 +461,10 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(bash.state.input).toEqual({ command: "ls -la" })
     const read = tools.find((part) => part.tool === "read")!
     expect(read.state.input).toEqual({ filePath: join(served.directory, "package.json") })
-    const text = assistant.parts.find((part: Part) => part.type === "text") as Extract<Part, { type: "text" }>
+    const text = assistant.parts.find((part: Part) => part.type === "text" && part.synthetic !== true) as Extract<
+      Part,
+      { type: "text" }
+    >
     expect(text.text).toContain("demo-repo")
     expect(text.time?.end).toBeDefined()
     const paged = (await get(`/session/${session.id}/message?limit=1&before=${assistant.info.id}`)) as Array<

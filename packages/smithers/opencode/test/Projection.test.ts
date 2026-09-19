@@ -131,9 +131,9 @@ describe("Projection", () => {
     const tools = parts
       .map((event) => event.properties["part"] as Protocol.Part)
       .filter((part): part is Protocol.ToolPart => part.type === "tool")
-    // Fifteen cards, the cell card the park leaves open, and the health card
-    // the resolved turn ends on.
-    expect(ids.size).toBe(15 + 2)
+    // Fifteen cards, the cell card the park leaves open, the final health
+    // card, and two visible cell print receipts, each updated across replay.
+    expect(ids.size).toBe(15 + 2 + 2)
     expect([...new Set(tools.map((part) => part.tool))].sort()).toEqual([
       "bash",
       "cell",
@@ -1166,7 +1166,12 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     // The replayed demand is the same demand: issued once, listed once.
     expect(state.facts.demands).toEqual(["read-only"])
     expect(state.facts.lastTransition).toBe("complete")
-    const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.synthetic === true)!
+    const summaryID = Ids.part(assistantMessageID, {
+      frame: Projection.finalFrame,
+      slot: Projection.summarySlot,
+      ordinal: 0
+    })
+    const summary = parts.find((part): part is Protocol.TextPart => part.type === "text" && part.id === summaryID)!
     expect(summary.text).toBe("2 frames · 4 calls · 1 classify · Jev 4 calls · 212 ms · $0.0000")
     expect(summary.id).toBe(
       Ids.part(assistantMessageID, { frame: Projection.finalFrame, slot: Projection.summarySlot, ordinal: 0 })
