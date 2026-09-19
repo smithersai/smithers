@@ -49,6 +49,7 @@ const SKIP_FILE = /\.(test|spec)\.tsx?$/
 const TAGGED =
   /class\s+([A-Za-z_$][\w$]*)\s+extends\s+[\w$.]*TaggedError(?:<[^>]*>\(\)\(\s*"([^"]+)"\s*,\s*|\(\s*"([^"]+)"\s*\)\s*<\s*)\{/g
 const NAMED = /(?:^|\n)\s*(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*Schema\.Literals\(/g
+const NEW_SITE = /new\s+(?:[A-Za-z_$][\w$]*\.)*([A-Za-z_$][\w$]*)\s*\(\s*\{/g
 /* A field of the record itself, not a suffix of one: `{`, `,` and a line start all open a field,
  * and a `Data.TaggedError` type argument spells its fields `readonly`. */
 const CODE_FIELD = /(^|[\n,{])[\t ]*(?:readonly[\t ]+)?code:[\t ]*/
@@ -125,26 +126,26 @@ const admitted = (
 }
 
 /**
- * Every code a `new <name>({ … })` anywhere in the sweep passes as a literal.
+ * Every class name a `new <name>({ code: "…" })` anywhere in the sweep names,
+ * to the literals its sites pass.
  *
  * The fallback for a class whose `code` no declaration closes. `undefined`
  * from {@link admitted} used to mean "contributes nothing", which let an open
  * `code: Schema.String` spell an answered code at its raise site and say
  * nothing here.
  */
-const raised = (texts: ReadonlyMap<string, string>, name: string): ReadonlyArray<string> => {
-  const codes = new Set<string>()
-  const sites = new RegExp(`new\\s+(?:[A-Za-z_$][\\w$]*\\.)*${name}\\s*\\(\\s*\\{`, "g")
+const raised = (texts: ReadonlyMap<string, string>): ReadonlyMap<string, ReadonlySet<string>> => {
+  const codes = new Map<string, Set<string>>()
   for (const source of texts.values()) {
-    for (const site of source.matchAll(sites)) {
+    for (const site of source.matchAll(NEW_SITE)) {
       const fields = bracketed(source, site.index + site[0].length - 1)
       const field = CODE_FIELD.exec(fields)
       if (field === null) continue
       const literal = /^"([a-z][a-z0-9_]*)"/.exec(fields.slice(field.index + field[0].length))
-      if (literal !== null) codes.add(literal[1]!)
+      if (literal !== null) codes.set(site[1]!, (codes.get(site[1]!) ?? new Set()).add(literal[1]!))
     }
   }
-  return [...codes]
+  return codes
 }
 
 /** Every code a tagged failure class in this repo can carry, to the tags that carry it. */
@@ -152,6 +153,7 @@ const vocabularies = (): ReadonlyMap<string, ReadonlySet<string>> => {
   const texts = new Map<string, string>()
   for (const root of ROOTS) for (const file of sources(join(ROOT, root))) texts.set(file, readFileSync(file, "utf8"))
   const named = declarations(texts)
+  const sites = raised(texts)
   const owners = new Map<string, Set<string>>()
   for (const source of texts.values()) {
     for (const declaration of source.matchAll(TAGGED)) {
@@ -164,7 +166,7 @@ const vocabularies = (): ReadonlyMap<string, ReadonlySet<string>> => {
       const from = field.index + field[0].length
       const tag = declaration[2] ?? declaration[3]!
       const closed = admitted(source, fields.slice(from), at + 1 + from, named)
-      for (const code of closed ?? raised(texts, declaration[1]!)) {
+      for (const code of closed ?? sites.get(declaration[1]!) ?? []) {
         owners.set(code, (owners.get(code) ?? new Set()).add(tag))
       }
     }
@@ -252,7 +254,8 @@ test("the sweep reads both spellings of a tagged class, an imported code schema,
     const from = field.index + field[0].length
     return [
       declaration[2] ?? declaration[3]!,
-      admitted(source, fields.slice(from), at + 1 + from, named) ?? raised(new Map([["probe", source]]), declaration[1]!)
+      admitted(source, fields.slice(from), at + 1 + from, named)
+        ?? [...raised(new Map([["probe", source]])).get(declaration[1]!) ?? []]
     ]
   })
   expect(read).toEqual([
