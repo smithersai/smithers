@@ -4,6 +4,7 @@ import {
   githubCreationBar,
   makeCreationBar,
   scenarioOutcome,
+  TeardownProblem,
   TeardownRefusal,
   teardownSentence
 } from "./teardown"
@@ -173,6 +174,37 @@ describe("the sentence a teardown failure is filed under", () => {
     expect(sentence).toContain(repository)
     expect(sentence).not.toContain("sk-live-abcdefgh")
     expect(sentence).not.toContain("502")
+  })
+
+  test("is the cleanup's own sentence when this repository wrote one, never a vaguer replacement", () => {
+    const written = new TeardownProblem(`Preserved ${repository} because run 41f2 never reached terminal.`)
+    expect(teardownSentence(repository, written)).toBe(`Preserved ${repository} because run 41f2 never reached terminal.`)
+  })
+
+  test("keeps a written sentence that names the unsafe step, rather than collapsing it into 'did not finish'", () => {
+    const written = new TeardownProblem(
+      `Repository deletion for ${repository} is unsafe while an accepted import or workflow run remains unresolved.`,
+      { cause: new Error("Projection.Snapshot 500") }
+    )
+    const sentence = teardownSentence(repository, written)
+    expect(sentence).toContain("is unsafe while an accepted import")
+    expect(sentence).not.toContain("did not finish")
+    // The library's own words stay on the cause, where only a trace reader opens them.
+    expect(sentence).not.toContain("Projection.Snapshot")
+  })
+
+  test("says the same thing once when an aggregate holds several failures nobody wrote for", () => {
+    const sentence = teardownSentence(repository, new AggregateError([
+      new Error("locator.waitFor: Timeout 60000ms exceeded"),
+      new Error("apiRequestContext.fetch: socket hang up")
+    ], "cleanup was incomplete"))
+    expect(sentence).toBe(teardownSentence(repository, new Error("one unrecognised failure")))
+  })
+
+  test("still speaks when an aggregate carries no failure at all, because a silent annotation says nothing", () => {
+    const sentence = teardownSentence(repository, new AggregateError([], `Cleanup for ${repository} left 1 recorded orphan(s)`))
+    expect(sentence).toContain(repository)
+    expect(sentence.length).toBeGreaterThan(0)
   })
 
   test("reads every branch of an aggregate, so one refusal inside it still speaks", () => {

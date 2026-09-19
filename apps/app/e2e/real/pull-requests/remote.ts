@@ -1,7 +1,7 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { command, expect, realApi } from "../support/test"
 import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
-import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
+import { scenarioOutcome, TEARDOWN_ANNOTATION, TeardownProblem } from "../support/teardown"
 import { expectFlowOutcome } from "../repositories-github/local"
 import {
   attachProductionJson,
@@ -516,7 +516,7 @@ export const cleanupOwnedPullRequestRepo = async (
           })()
       const cardOnly = terminal?.observed_from === "repo-import-card"
       importDrained = !cardOnly && (terminal?.status === "ready" || terminal?.status === "failed")
-      if (!importDrained) failures.push(new Error(`Import job for ${owned.fullName} did not drain`))
+      if (!importDrained) failures.push(new TeardownProblem(`Import job for ${owned.fullName} did not drain, so the repository it imported into is preserved.`))
     } catch (error) {
       failures.push(error)
     }
@@ -530,14 +530,14 @@ export const cleanupOwnedPullRequestRepo = async (
       }).toMatch(/^(merged|failed|closed)$/)
     } catch (error) {
       landingsDrained = false
-      failures.push(new Error(`Landing job #${number} for ${owned.fullName} did not drain`, { cause: error }))
+      failures.push(new TeardownProblem(`Landing job #${number} for ${owned.fullName} did not drain, so the repository it lands into is preserved.`, { cause: error }))
     }
   }
 
   let cloudDeleted = !owned.importSubmitted
   let githubDeleted = false
   if (owned.mirrorPending) {
-    failures.push(new Error(`Mirror on ${owned.fullName} has no terminal receipt; preserving its dependencies`))
+    failures.push(new TeardownProblem(`Mirror on ${owned.fullName} has no terminal receipt, so the repository and everything that depends on it are preserved.`))
   } else if (importDrained && landingsDrained) {
     const cleanup = await Promise.allSettled([
       owned.importSubmitted ? deleteOwnedCloudRepository(page, request, owned.fullName) : Promise.resolve(undefined),

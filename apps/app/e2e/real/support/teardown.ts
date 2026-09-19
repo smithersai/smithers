@@ -30,7 +30,29 @@ export type TeardownRefusalReason = "github-sudo-mode" | "delete-unsettled"
  * internal identifier or a message thrown by a library: those belong in
  * {@link TeardownRefusal.cause}, which only a trace reader opens.
  */
-export class TeardownRefusal extends Error {
+/**
+ * A cleanup failure whose sentence this repository wrote on purpose.
+ *
+ * This is the whole test for "does a person already have a sentence here": the
+ * class, never the text. A cleanup path that knows why it stopped says so by
+ * throwing this. Everything else, a locator that ran out of time or a fetch
+ * that hung up, arrives as some other error and is named by
+ * {@link teardownSentence} instead. Reading the message to guess which kind it
+ * is would make every reworded sentence a behaviour change.
+ *
+ * The message names the step that stopped and what it leaves behind. It may
+ * name a run, job or issue a person can open, because that is how they find it;
+ * it never carries a library's own words about its internals, which belong on
+ * `cause`.
+ */
+export class TeardownProblem extends Error {
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, options)
+    this.name = "TeardownProblem"
+  }
+}
+
+export class TeardownRefusal extends TeardownProblem {
   readonly reason: TeardownRefusalReason
   constructor(reason: TeardownRefusalReason, message: string, options?: { readonly cause?: unknown }) {
     super(message, options)
@@ -146,20 +168,36 @@ export interface ScenarioOutcome {
 }
 
 /**
+ * The sentence a person reads when nothing wrote one for this failure.
+ *
+ * It is the floor, not the ceiling: it says what is left behind and what to do
+ * about it, for a failure that came from a library and can say neither.
+ */
+export const unnamedFailureSentence = (repository: string): string =>
+  `Cleanup of ${repository} did not finish, so it may still exist. ` +
+  "Its cause is on the scenario's trace; open the repository in the saved E2E browser profile and remove it there."
+
+/**
  * The sentence a teardown failure is filed under.
  *
- * A refusal this module raised already carries a whole sentence. Anything else
- * is named by its class and the repository it was cleaning up, because a raw
- * thrown message is a library's words about its own internals and reads to a
- * person as noise.
+ * A {@link TeardownProblem} already carries a whole sentence this repository
+ * wrote, and it is kept exactly, because it names the step that stopped and
+ * often the run or issue that is still open. Anything else is a library's words
+ * about its own internals, which read to a person as noise, so it is named by
+ * what it leaves behind instead.
+ *
+ * The two are told apart by class alone. This sentence only fills a silence; it
+ * never speaks over a sentence that was already there, and a failure that says
+ * nothing at all still gets one, because a teardown annotation with no words in
+ * it is a leak nobody can act on.
  */
 export const teardownSentence = (repository: string, failure: unknown): string => {
-  if (failure instanceof TeardownRefusal) return failure.message
+  if (failure instanceof TeardownProblem) return failure.message
   if (failure instanceof AggregateError) {
-    return failure.errors.map((nested) => teardownSentence(repository, nested)).join(" ")
+    const sentences = [...new Set(failure.errors.map((nested) => teardownSentence(repository, nested)))]
+    if (sentences.length > 0) return sentences.join(" ")
   }
-  return `Cleanup of ${repository} did not finish, so it may still exist. ` +
-    "Its cause is on the scenario's trace; open the repository in the saved E2E browser profile and remove it there."
+  return unnamedFailureSentence(repository)
 }
 
 /**

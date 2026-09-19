@@ -1,7 +1,7 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { expect, realApi } from "../support/test"
 import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
-import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
+import { scenarioOutcome, TEARDOWN_ANNOTATION, TeardownProblem } from "../support/teardown"
 import { runSlash } from "./local"
 import {
   attachProductionJson,
@@ -40,7 +40,7 @@ export type IssueWire = Record<string, unknown> & {
   readonly state?: unknown
 }
 
-const errorOf = (message: string, cause: unknown): Error => new Error(message, { cause })
+const errorOf = (message: string, cause: unknown): TeardownProblem => new TeardownProblem(message, { cause })
 const TERMINAL_RUN_STATUSES = new Set(["cancelled", "completed", "failed"])
 
 export const uniqueRepositoryName = (): string =>
@@ -259,7 +259,7 @@ export const withOwnedImportedRepository = async (
       }
       let workflowRunsSettled = !workflowRunSubmissionAmbiguous
       if (workflowRunSubmissionAmbiguous) {
-        cleanupFailures.push(new Error(`A workflow run submission for ${repo} returned no authoritative run id and cannot be drained safely.`))
+        cleanupFailures.push(new TeardownProblem(`A workflow run submission for ${repo} returned no authoritative run id and cannot be drained safely.`))
       }
       for (const run of trackedWorkflowRuns.values()) {
         try {
@@ -288,7 +288,7 @@ export const withOwnedImportedRepository = async (
           workflowRunsSettled,
           skipped: ["close issues", "delete cloud mirror", "delete GitHub source"]
         })
-        cleanupFailures.push(new Error(`Repository deletion for ${repo} is unsafe while an accepted import or workflow run remains unresolved.`))
+        cleanupFailures.push(new TeardownProblem(`Repository deletion for ${repo} is unsafe while an accepted import or workflow run remains unresolved.`))
       } else {
         for (const number of trackedIssues) {
           try {

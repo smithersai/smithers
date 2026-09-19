@@ -2,7 +2,7 @@ import { fixtureRepositoryName } from "../support/values"
 import type { APIRequestContext, BrowserContext, Page, TestInfo } from "@playwright/test"
 import { authenticatedTest } from "../auth-permissions/profile"
 import { closeComposer, command, expect, realApi } from "../support/test"
-import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
+import { scenarioOutcome, TEARDOWN_ANNOTATION, TeardownProblem } from "../support/teardown"
 import {
   attachProductionJson,
   bootProductionRepository,
@@ -104,7 +104,7 @@ export const drainRuns = async (
       }
       terminal.push(row)
     } catch (error) {
-      failures.push(new Error(`Owned run ${runId} did not drain.`, { cause: error }))
+      failures.push(new TeardownProblem(`Owned run ${runId} did not drain, so the repository it belongs to is preserved.`, { cause: error }))
     }
   }
   if (failures.length > 0) throw new AggregateError(failures, `Not every owned run on ${owned.repo} reached a terminal projection; preserving its dependencies.`)
@@ -229,12 +229,15 @@ export const workflowTest = authenticatedTest.extend<WorkflowFixtures>({
       if (deletions[1]?.status === "fulfilled") githubDeleted = true
       else cleanupFailures.push(deletions[1]?.reason)
     } else {
-      cleanupFailures.push(new Error(`Preserved ${fixture.repo} because ${fixture.ambiguities.length > 0 ? fixture.ambiguities.join(" ") : "not every accepted run reached terminal"}.`))
+      cleanupFailures.push(new TeardownProblem(`Preserved ${fixture.repo} because ${fixture.ambiguities.length > 0 ? fixture.ambiguities.join(" ") : "not every accepted run reached terminal"}.`))
     }
     await attachProductionJson(testInfo, "workflow-fixture-cleanup", {
       repo: fixture.repo, trackedRunIds: [...fixture.runs], ambiguities: fixture.ambiguities,
       runs, drained, githubDeleted, cloudDeleted,
-      preserved: !drained || fixture.ambiguities.length > 0
+      preserved: !drained || fixture.ambiguities.length > 0,
+      // The filed sentence names what is left behind; the words a library threw
+      // about its own internals are kept here, where a trace reader finds them.
+      cleanupFailures: cleanupFailures.map(String)
     })
     /*
      * The scenario answers for its body. A cleanup that could not finish is
