@@ -18,12 +18,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const failure: {
   renameTo: string | undefined
   remove: string | undefined
+  removeCode: string | undefined
+  rmdirCode: string | undefined
   syncCode: string | undefined
   syncedDirectories: Array<string>
   code: string
 } = {
   renameTo: undefined,
   remove: undefined,
+  removeCode: undefined,
+  rmdirCode: undefined,
   syncCode: undefined,
   syncedDirectories: [],
   code: "ENOSPC"
@@ -45,11 +49,20 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     },
     rm: async (...args: Parameters<typeof original.rm>): Promise<void> => {
       if (failure.remove !== undefined && String(args[0]).includes(failure.remove)) {
-        const code = failure.code
+        const code = failure.removeCode ?? failure.code
         failure.remove = undefined
+        failure.removeCode = undefined
         throw Object.assign(new Error(`${code}: injected`), { code })
       }
       return original.rm(...args)
+    },
+    rmdir: async (...args: Parameters<typeof original.rmdir>): Promise<void> => {
+      if (failure.rmdirCode !== undefined && String(args[0]).includes(".smthrs-lock-")) {
+        const code = failure.rmdirCode
+        failure.rmdirCode = undefined
+        throw Object.assign(new Error(`${code}: injected`), { code })
+      }
+      return original.rmdir(...args)
     },
     open: async (...args: Parameters<typeof original.open>) => {
       const handle = await original.open(...args)
@@ -85,6 +98,8 @@ beforeEach(async () => {
   root = await RealFs.realpath(await RealFs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-mat-")))
   failure.renameTo = undefined
   failure.remove = undefined
+  failure.removeCode = undefined
+  failure.rmdirCode = undefined
   failure.syncCode = undefined
   failure.syncedDirectories = []
   failure.code = "ENOSPC"
@@ -93,6 +108,8 @@ beforeEach(async () => {
 afterEach(async () => {
   failure.renameTo = undefined
   failure.remove = undefined
+  failure.removeCode = undefined
+  failure.rmdirCode = undefined
   failure.syncCode = undefined
   failure.syncedDirectories = []
   failure.code = "ENOSPC"
@@ -154,6 +171,25 @@ describe("materializeManifest publishes or restores, never neither", () => {
 
     expect(await RealFs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("next")
     expect(await RealFs.lstat(NodePath.join(root, "dist", "previous.txt")).then(() => true, () => false)).toBe(false)
+  })
+
+  it("preserves the publication error and previous tree when both cleanup steps fail", async () => {
+    const digest = await seed()
+    failure.renameTo = `${NodePath.sep}dist`
+    failure.remove = ".smthrs-mat-"
+    failure.removeCode = "EIO"
+    failure.rmdirCode = "EBUSY"
+
+    await expect(PackageTree.materializeManifest(root, ".flows", {
+      outDir: "dist",
+      entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
+    })).rejects.toThrow("ENOSPC: injected")
+
+    expect(await RealFs.readFile(NodePath.join(root, "dist", "previous.txt"), "utf8")).toBe("previous")
+    const remaining = await RealFs.readdir(root)
+    expect(remaining.filter((name) => name.startsWith(".smthrs-old-"))).toEqual([])
+    expect(remaining.filter((name) => name.startsWith(".smthrs-mat-"))).toHaveLength(1)
+    expect(remaining.filter((name) => name.startsWith(".smthrs-lock-"))).toHaveLength(1)
   })
 
   it("fsyncs the parent directory after publishing", async () => {
