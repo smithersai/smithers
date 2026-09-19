@@ -162,7 +162,10 @@ for (const wikiEnabled of [false, true]) test(`configured request host ${wikiEna
     assert.equal(health.protocolVersion, "1")
     assert.equal(health.workspaceHash, Serve.workspaceHash(root))
     assert.equal(health.gatewayId, options.gatewayId)
-    assert.deepEqual(health.capabilities, ["coding-plan/v1", "repository-jobs/v1", "repository-source/v1", "coding-request/v1"])
+    // coding-dispatch/v1 is unconditional (flows/coding/dispatch.md): a single
+    // turn needs no project JSON, so it rides in every envelope this host serves.
+    // coding-request/v1 is the one entry this configuration adds over a plain host.
+    assert.deepEqual(health.capabilities, ["coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1", "coding-request/v1"])
     assert.equal(Serve.health(root).capabilities, undefined, "ordinary CLI health does not claim native coding")
     // Use the actual bearer-authenticated HTTP protocol for every mutation.
     // An in-process operator approval cannot prove a hosted UI can approve.

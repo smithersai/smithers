@@ -91,7 +91,7 @@ export const pages: readonly PageSpec[] = [
   page({ id: "coding-request", title: "Prompt to coding outcome", purpose: "Follow verified wiki, planning, saved prototype and owner correction through ordinary native children.", kind: "current", document: "factory/wiki/pages/coding-request.md", related: ["coding-planning", "coding-poc", "coding-correction", "coding-host", "coding-ui"] }, [
     "flows/coding/request.ts", "flows/coding/request.md", "flows/coding/request/flow.ts", "flows/coding/schema.ts",
     "flows/coding/source-admission.ts", ["flows/coding/host.ts", [95, 119], [129, 148]], "flows/coding/planning-wiki.md", "flows/coding/poc.md",
-    ["flows/test/coding-request-host.test.ts", [22, 40], [77, 81], [128, 135], [147, 173], [175, 225]], "flows/coding/steering.ts", ["flows/coding/correction.ts", [153, 174], [206, 228]], "apps/app/src/mainview/cards/CodingPlan.ts"
+    ["flows/test/coding-request-host.test.ts", [22, 40], [77, 81], [128, 135], [147, 176], [178, 228]], "flows/coding/steering.ts", ["flows/coding/correction.ts", [153, 174], [206, 228]], "apps/app/src/mainview/cards/CodingPlan.ts"
   ]),
   page({ id: "coding-planning", title: "Planning from repository memory", purpose: "Gather verified memory, ask material questions and bind the Plan to native source and catalog definitions.", kind: "current", document: "factory/wiki/pages/coding-planning.md", related: ["wiki-generation", "coding-request", "coding-progression", "coding-poc"] }, [
     "flows/coding/planning.ts", "flows/coding/planning-memory.ts", "flows/coding/planning-wiki.ts",
