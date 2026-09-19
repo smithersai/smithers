@@ -18,6 +18,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
 import { NativeCoding, nativeLayer } from "../coding/native.ts"
@@ -194,20 +195,24 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
     }
     return remote
   }))
-  let contextualModelCalls = 0, deletionModelCalls = 0
+  // The judge every reader of this host asks. `3638d4ef09fa` made AI checks
+  // and the event intake Jev-only and `8af5ed0d90d5` did the same for the
+  // reproduction and evaluation verdicts, so the seat fixture below no longer
+  // sees any of them: what a rule was judged against is read off the judge.
+  const judge = makeHostJudge()
   const model = Model.make({ stream: request => Stream.suspend(() => {
     const text = JSON.stringify(request); requests.push(text)
-    const scoring = text.includes("Independently evaluate the recorded production job")
+    // The seat that writes an evaluation row's reason beside Jev's verdict. It
+    // is the one worker entitled to the maintainer's frozen expectation.
+    const scoring = text.includes("Report what the recorded production job actually did")
     const suggesting = text.includes("Propose a configuration for this one repository responsibility")
     const changing = text.includes("Implement the maintainer's configured responsibility as a bounded full-file proposal")
-    const checking = text.includes("Check the maintainer's exact rule against this captured base/candidate comparison")
     const taskText = request.system.find(part => part.type === "text" && part.text.startsWith("The task for this run:\n\n"))
     const task = taskText?.type === "text" ? JSON.parse(taskText.text.slice("The task for this run:\n\n".length).split("\n")[0]!) : undefined
     if (!scoring && !suggesting) assert(!text.includes("HELD_OUT_EXPECTATION"), "production worker must not receive expected eval answers")
-    if (scoring) assert(text.includes("HELD_OUT_EXPECTATION"), "the independent judge keeps the maintainer's expectation")
+    if (scoring) assert(text.includes("HELD_OUT_EXPECTATION"), "the reason writer keeps the maintainer's expectation")
     const response: any = suggesting ? { ...setup.draft, cases: setup.draft.cases.map(test => ({ ...test, input: JSON.parse(test.input) })) } : scoring
       ? { reason: "The recorded result answers a question and cites the source greeting.", evidenceIds: [0] }
-      : checking ? { verdict: "pass", summary: "Every supplied changed file matches the fixture's requested behavior.", examinedPaths: task.comparison.paths, findings: [] }
       : changing ? { summary: "Change the greeting to goodbye and retain its regression test.", question: "", baseline: [],
         proposal: [{ path: "greeting.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "greeting.mjs").digest, content: "export const greeting = 'goodbye';\n" },
           { path: "regression.mjs", beforeDigest: null, content: "import { greeting } from './greeting.mjs';\nif (greeting !== 'goodbye') throw new Error('wrong greeting');\n" }], children: [] }
@@ -217,34 +222,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       response.proposal = [{ path: "obsolete.mjs", beforeDigest: task.evidence.files.find((file: any) => file.path === "obsolete.mjs").digest, content: null },
         { path: "regression.mjs", beforeDigest: null, content: "import { existsSync } from 'node:fs';\nif (existsSync('obsolete.mjs')) throw new Error('obsolete handler remains');\n" }]
     }
-    if (checking && deleting) {
-      deletionModelCalls++
-      assert.equal(task.check.id, "implementation-review", "The normal built-in required review checks the deletion")
-      assert.equal(task.baseContext.source, task.comparison.base)
-      assert.equal(task.context.source, task.comparison.candidate)
-      assert(task.baseContext.files.some((file: any) => file.path === "obsolete.mjs" && file.text.includes("oldBehavior")))
-      assert(task.baseContext.files.some((file: any) => file.path === "old-helper.mjs" && file.text.includes("CAPTURED_DELETED_HELPER")))
-      assert(!task.context.files.some((file: any) => file.path === "obsolete.mjs"), "Removed code must not masquerade as candidate source")
-      assert(task.context.files.some((file: any) => file.path === "regression.mjs"))
-    }
-    if (checking && task.check.rule.includes("Fixture: captured context")) {
-      contextualModelCalls++
-      assert(!task.check.rule.includes("missing"), "missing required context must refuse before spending a reviewer invocation")
-      assert.equal(task.context.source, task.comparison.candidate)
-      assert(task.context.files.some((file: any) => file.path === "telemetry.mjs" && file.text.includes("CAPTURED_TELEMETRY_HELPER")), "reviewer receives actual imported helper bytes")
-      assert(task.context.files.some((file: any) => file.path === "docs/telemetry.md"))
-      assert(task.context.files.some((file: any) => file.path === "AGENTS.md"))
-      if (task.check.rule.endsWith("fail")) {
-        response.verdict = "fail"
-        response.summary = "The fixture requested a concrete finding on the changed handler."
-        response.findings = [{ path: "greeting.mjs", line: 4, message: "Retain the handler failure context." }]
-      }
-    }
-    if (checking && task.check.rule === "Fixture: telemetry context is unavailable") {
-      response.verdict = "uncertain"
-      response.summary = "The telemetry helper required by this rule was not supplied."
-    }
-    if (!scoring && !suggesting && !checking && !changing && task.event.payload.issue?.title === "Ask twice") {
+    if (!scoring && !suggesting && !changing && task.event.payload.issue?.title === "Ask twice") {
       const replies = task.event.payload.authorReplies ?? []
       response.question = replies.length < 2 ? `Provide detail ${replies.length + 1}` : ""
     }
@@ -268,7 +246,12 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
   const seats = { resolve: (id: string) => Effect.succeed({ id, modelId: "scripted", model, contextWindowTokens: 100000,
     route: { prepare: () => Effect.succeed({ routeId: "fixture", protocolId: "fixture", method: "POST" as const, url: "https://fixture.invalid", publicHeaders: {}, body: new TextEncoder().encode("{}"), bodyText: "{}" }) } }) }
   const listening = await Effect.runPromise(Deferred.make<number>())
-  const observedPlatform: NativeControl.Platform = { ...platform, gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
+  // This host asks Jev in five places, not one: the intake screen over every
+  // inbound text, each AI check's changed hunks, a reproduction review, an
+  // evaluation row, and the completion brake over every step's claim. They
+  // share one `Evaluator`, so one scripted judge answers all of them by
+  // question id and refuses the rest exactly as a keyless host does.
+  const observedPlatform: NativeControl.Platform = { ...platform, evaluator: judge.layer, gateway: (health, options) => platform.gateway(health, options).pipe(Layer.tap(context => {
     const server = Context.get(context, HttpServer.HttpServer)
     if (!NetAddress.isInetAddress(server.address)) throw new Error("expected TCP gateway")
     return Deferred.succeed(listening, server.address.port)
@@ -353,7 +336,7 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       if (kind.startsWith("ai-context")) configured.draft.checks[1] = { ...configured.draft.checks[1]!,
         policy: kind === "ai-context-required" ? "required" : "report", rule: kind === "ai-context-missing" || kind === "ai-context-required"
           ? "Follow docs/missing.md. Fixture: captured context missing" : `Follow docs/telemetry.md. Fixture: captured context ${kind.endsWith("fail") ? "fail" : "pass"}` }
-      const modelCallsBefore = contextualModelCalls
+      const rulesJudgedBefore = judge.rulesJudged.length
       // An inheriting job is ordinary live work: a trial or an evaluation keeps
       // its own checks, so the policy read would never run under those.
       const event = kind.startsWith("ci-") ? { source: "smithers-cloud" as const, type: "pull_request", action: "opened",
@@ -414,8 +397,24 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
         const unavailable = kind === "ai-context-missing" || kind === "ai-context-required"
         assert.equal(semantic.status, unavailable ? "error" : kind.endsWith("fail") ? "failed" : "passed")
         assert.equal(detail.gate, kind === "ai-context-required" ? "blocked" : "passed")
-        assert.equal(contextualModelCalls - modelCallsBefore, unavailable ? 0 : 1)
+        // Jev is the only model an AI check asks. A rule whose required
+        // context is missing must refuse before a reviewer is spent on it, so
+        // the judge is never asked that rule at all; an available one is
+        // judged, once per changed hunk in the check's scope.
+        const judged = judge.rulesJudged.slice(rulesJudgedBefore).filter(asked => asked === configured.draft.checks[1]!.rule)
+        assert.equal(judged.length > 0, !unavailable, `the reviewer was ${unavailable ? "not " : ""}spent on ${kind}`)
+        assert(!judge.rulesJudged.some(asked => asked.includes("Fixture: captured context missing")),
+          "missing required context must refuse before spending a reviewer invocation")
         assert.equal(semantic.detail.context.source, native.head.commitId)
+        // The captured context the reviewer's verdict is retained beside. It
+        // carries the imported helper's own bytes and the documents AGENTS.md
+        // points at, which is what makes this check's scope reviewable at all.
+        if (!unavailable) {
+          assert(semantic.detail.context.files.some((file: any) => file.path === "telemetry.mjs" && file.text.includes("CAPTURED_TELEMETRY_HELPER")),
+            "the retained context carries the actual imported helper bytes")
+          assert(semantic.detail.context.files.some((file: any) => file.path === "docs/telemetry.md"))
+          assert(semantic.detail.context.files.some((file: any) => file.path === "AGENTS.md"))
+        }
         if (unavailable) assert(semantic.detail.context.reads.some((read: any) => read.path === "docs/missing.md" && read.status === "missing"))
         const expected = { id: "context", name: "Judge measured context", expected: "A complete source supports this check", required: true,
           input: JSON.stringify({ event: input.event, sourceRevision: output.sourceRevision,
@@ -468,12 +467,25 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
           const refusal = yield* ownedJob(launched.runId!, Schema.decodeUnknownSync(JobInput)(input)).pipe(Effect.match({ onFailure: error => String(error), onSuccess: () => undefined }))
           if (deletionUnavailable) assert.match(refusal ?? "accepted", /The live job did not complete its selected work/, "Actual completedJob must refuse the partial job before trial activation")
           else assert.equal(refusal, undefined, "The exact completed deletion has a verified owned native receipt")
-          assert.equal(deletionModelCalls, deletionUnavailable ? 0 : 1)
+          // The built-in required review is Jev's, and it is asked exactly when
+          // the base side of the deletion could be captured whole.
+          const reviewRule = "Review this change against the requested scope."
+          assert.equal(judge.rulesJudged.some(asked => asked.startsWith(reviewRule)), !deletionUnavailable,
+            "the built-in review is spent on a complete base context and refused before a missing one")
           const checked = change.checks.at(-1).output, review = checked.results.find((check: any) => check.checkId === "implementation-review")
           assert.equal(review.policy, "required")
           assert.equal(review.status, deletionUnavailable ? "error" : "passed")
           if (deletionUnavailable) assert(review.detail.baseContext.reads.some((read: any) => read.path === "missing-deleted.mjs" && read.status === "unresolved" && read.required))
           assert.equal(review.detail.baseContext.source, checked.base)
+          if (!deletionUnavailable) {
+            // The deleted side is read from the base, never from the candidate:
+            // removed code may not masquerade as source the change still has.
+            assert(review.detail.baseContext.files.some((file: any) => file.path === "obsolete.mjs" && file.text.includes("oldBehavior")))
+            assert(review.detail.baseContext.files.some((file: any) => file.path === "old-helper.mjs" && file.text.includes("CAPTURED_DELETED_HELPER")))
+            assert(!review.detail.context.files.some((file: any) => file.path === "obsolete.mjs"), "Removed code must not masquerade as candidate source")
+            assert(review.detail.context.files.some((file: any) => file.path === "regression.mjs"))
+            assert.equal(review.detail.context.source, checked.candidate)
+          }
           assert.equal(yield* Effect.promise(() => readFile(join(root, "obsolete.mjs"), "utf8")), "import { oldBehavior } from './old-helper.mjs';\nexport const obsolete = () => oldBehavior();\n", "Trial leaves the editing checkout untouched")
           const expected = { id: "deletion", name: "Judge actual deletion checks", expected: "The obsolete handler is removed and regression passes", required: true,
             input: JSON.stringify({ event: input.event, sourceRevision: output.sourceRevision,
