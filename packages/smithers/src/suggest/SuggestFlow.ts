@@ -412,7 +412,11 @@ export const layerScripted = (config: { readonly root: string; readonly script: 
     return composed(
       config.root,
       seats,
-      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      Evaluator.layerScripted(() => ({
+        complete: { probability: 0.99 },
+        overclaims: { probability: 0.01 },
+        invented: { probability: 0.01 }
+      }))
     )
   }))
 
