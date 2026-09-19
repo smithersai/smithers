@@ -62,7 +62,13 @@ describe("Classify declaration", () => {
     for (const needle of ["JSON value", "Up to 64 states", "Questions keyed by id"]) expect(input).toContain(needle)
     const output = described(Classify.Output).join("\n")
     for (
-      const needle of ["One answer per question id", "How sure each answer is", "Wall-clock", "One entry per state"]
+      const needle of [
+        "One answer per question id",
+        "How sure each answer is",
+        "Wall-clock milliseconds the evaluation took",
+        "Wall-clock milliseconds the whole batch took",
+        "One entry per state"
+      ]
     ) {
       expect(output).toContain(needle)
     }
@@ -138,6 +144,7 @@ describe("Classify.run", () => {
       error: { code: "timeout", message: "The gateway did not answer" }
     })
     expect(output.results[2]).toMatchObject({ ok: true, answers: { relevant: { value: false, probability: 0.08 } } })
+    expect(output.latencyMs).toBeGreaterThanOrEqual(0)
   })
 
   it("keeps at most 8 states in flight", async () => {
@@ -156,6 +163,9 @@ describe("Classify.run", () => {
     const output = success(await run(Classify.run({ states, questions }), layer))
     expect("results" in output && output.results.length).toBe(20)
     expect(peak).toBe(Classify.CONCURRENCY)
+    // The batch times itself. Three waves of 8 sleeping 5 ms each cannot
+    // report the 1 ms a card used to show for every batch.
+    expect("latencyMs" in output && output.latencyMs).toBeGreaterThanOrEqual(5)
   })
 
   it("refuses the whole call when no state at all was answered", async () => {
@@ -212,7 +222,7 @@ describe("Classify.curated", () => {
     // A cell writes `c.answers.role.value` from the catalog alone; the ids
     // and shapes come from the declared questions, so they cannot drift.
     expect(curated.flow.description).toBe(
-      `${Classifiers.relevance.description} Answers: relevant boolean { value, probability }; role choice implementation|fixture|unrelated { value, probabilities, confidence }; risk score none<low<medium<high { value, label, probabilities, confidence }. Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }.`
+      `${Classifiers.relevance.description} Answers: relevant boolean { value, probability }; role choice implementation|fixture|unrelated { value, probabilities, confidence }; risk score none<low<medium<high { value, label, probabilities, confidence }. Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }], latencyMs }.`
     )
     for (const classifier of Classifiers.all) {
       const description = Classify.curated(classifier).flow.description ?? ""
@@ -225,7 +235,7 @@ describe("Classify.curated", () => {
     expect(adHoc).toContain("answers { value, probabilities, confidence }")
     expect(adHoc).toContain("answers { value, label, probabilities, confidence }")
     expect(adHoc).toContain(
-      "returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }"
+      "returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }], latencyMs }"
     )
     expect(adHoc).toContain("returns { answers, confidence, latencyMs }")
   })

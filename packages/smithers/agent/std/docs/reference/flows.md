@@ -465,11 +465,11 @@ With `state`, the output is one verdict:
 | `confidence` | record of id to number | How sure each answer is, from 0 to 1.                                                                                                 |
 | `latencyMs`  | integer                | Wall-clock milliseconds the evaluation took.                                                                                          |
 
-With `states`, the output is `results`: one entry per state, in the order
-given, each `{ ok: true, state, answers, confidence }` or
-`{ ok: false, state, error: { code, message } }`. Eight states are in flight at
-once. When no state at all was answered the call fails with the first failure
-instead.
+With `states`, the output is `results` and `latencyMs`: one entry per state, in
+the order given, each `{ ok: true, state, answers, confidence }` or
+`{ ok: false, state, error: { code, message } }`, and the wall-clock
+milliseconds the whole batch took. Eight states are in flight at once. When no
+state at all was answered the call fails with the first failure instead.
 
 A curated flow `classify/<id>`, declared by `Classify.curated(classifier)`,
 takes the classifier's own state, or `{ states }`, and answers in the same two

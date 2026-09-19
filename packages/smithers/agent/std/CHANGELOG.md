@@ -4,6 +4,14 @@
 
 ### Changed
 
+- A batched `classify` call reports how long it took. `Classify.askAll` times
+  itself and the batch output carries `latencyMs` beside `results`, the way a
+  single verdict already carried the transport's. Without it the only timing a
+  caller had was the gap between the call's start and settle events, which the
+  harness publishes in one tick, so every batched classify card in the
+  OpenCode server read about 1 ms while single-state calls read 319, 264 and
+  265 ms. The field is additive: `results` is unchanged.
+
 - `Classify` maps evaluator failures with `Classifier.fromEvaluatorError` from
   `@smthrs/model` instead of a private copy.
 

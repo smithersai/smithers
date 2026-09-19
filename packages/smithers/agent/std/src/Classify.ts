@@ -28,6 +28,7 @@
 import * as Flow from "@smthrs/core/Flow"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -117,7 +118,7 @@ export const Questions = Schema.Record(Schema.String, Classifier.Question).annot
  */
 export const States = Schema.Array(State).annotate({
   description:
-    "Up to 64 states to judge with the same questions; returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] } in the order given"
+    "Up to 64 states to judge with the same questions; returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }], latencyMs } in the order given"
 }).check(Schema.isMinLength(1), Schema.isMaxLength(MAX_STATES))
 
 /**
@@ -212,7 +213,8 @@ export type BatchResult = typeof BatchResult.Type
 export const Output = Schema.Union([
   Verdict,
   Schema.Struct({
-    results: Schema.Array(BatchResult).annotate({ description: "One entry per state, in the order given" })
+    results: Schema.Array(BatchResult).annotate({ description: "One entry per state, in the order given" }),
+    latencyMs: Schema.Int.annotate({ description: "Wall-clock milliseconds the whole batch took" })
   })
 ])
 
@@ -298,11 +300,17 @@ export const askAll = (
   questions: Classifier.Questions
 ): Effect.Effect<Output, Classifier.ClassifierError> =>
   Effect.gen(function*() {
-    const settled = yield* Effect.forEach(
+    // The batch reports its own wall clock, the way a single verdict reports
+    // the transport's. Without it the only time a caller had was the gap
+    // between the call's start and settle events, which the harness publishes
+    // in one tick, so every batched classify card read about 1 ms however long
+    // the judging actually took.
+    const [elapsed, settled] = yield* Effect.timed(Effect.forEach(
       states,
       (state) => Effect.result(ask(evaluator, state, questions)),
       { concurrency: CONCURRENCY }
-    )
+    ))
+    const latencyMs = Math.round(Duration.toMillis(elapsed))
     const results = settled.map((outcome, index): BatchResult => {
       const state = states[index] as Schema.Json
       return Result.isSuccess(outcome)
@@ -313,7 +321,7 @@ export const askAll = (
     if (first !== undefined && results.every((result) => !result.ok)) {
       return yield* Effect.fail(first.failure)
     }
-    return { results }
+    return { results, latencyMs }
   })
 
 /**
@@ -392,7 +400,7 @@ const answerShape = (question: Classifier.Question): string =>
     : `score ${question.criteria.join("<")} { value, label, probabilities, confidence }`
 
 const batchContract =
-  "Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }] }."
+  "Batch { states: [...] } returns { results: [{ ok: true, state, answers, confidence } | { ok: false, state, error: { code, message } }], latencyMs }."
 
 /**
  * The answer contract of one curated classifier, derived from its declared

@@ -56,9 +56,11 @@ console.log(targets)
 `states` takes up to 64 states of at most 32 KiB each, evaluated eight at a
 time. Each entry of `results` is `{ ok: true, state, answers, confidence }` or
 `{ ok: false, state, error: { code, message } }`, in the order the states were
-given, so a state that timed out never hides its neighbours. When no state at
-all was answered, the whole call resolves `{ ok: false }` instead, because
-there is nothing to branch on.
+given, so a state that timed out never hides its neighbours. Beside `results`,
+`latencyMs` is the wall-clock milliseconds the whole batch took, the way a
+single verdict reports the transport's. When no state at all was answered, the
+whole call resolves `{ ok: false }` instead, because there is nothing to branch
+on.
 
 One state under `state` instead of `states` answers with
 `{ answers, confidence, latencyMs }` directly. `confidence` is one number per
