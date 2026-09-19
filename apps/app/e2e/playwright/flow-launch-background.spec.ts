@@ -8,6 +8,7 @@ const send = async (page: Page, text: string) => {
   if (!await input.isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).click()
   await input.fill(text)
   await page.getByTestId("composer-send").click()
+  await expect(input).toHaveValue("")
 }
 
 test("flow launch leaves Chat usable through preparation, launch, reload and remote completion", async ({ page }) => {

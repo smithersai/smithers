@@ -25,10 +25,10 @@ export const startedRunOf = (card: RunCard): { readonly runId: string; readonly 
 /**
  * The plan inside a run card. A tutorial plan card (`change-plan`) IS the
  * plan: its commits, its check, and its one door (Start), or the run it
- * became once started. A tutorial run card (`change`) folds the same plan
- * away under its execution, because the run is now the point. Predicted
- * ownership is visible before execution; recorded receipts arrive through
- * the run journal and the receipt strip.
+ * became once started. A running plan shows its goals and opens the planned
+ * changes through their persisted selection. Predicted ownership is visible
+ * before execution; recorded receipts arrive through the run journal and
+ * the receipt strip.
  */
 export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCatalogs = [], model }: {
   readonly card: RunCard

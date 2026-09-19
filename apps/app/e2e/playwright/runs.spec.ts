@@ -143,9 +143,8 @@ const send = async (page: Page, text: string): Promise<void> => {
   await expect(page.locator(".app-shell")).toBeVisible()
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill(text)
-  await page.getByTestId("composer-send").click()
+  await page.getByTestId("composer-input").press("Enter")
   await expect(page.getByTestId("composer-input")).toHaveValue("")
-  await page.keyboard.press("Control+k")
   await expect(page.getByTestId("composer-input")).toBeHidden()
 }
 
