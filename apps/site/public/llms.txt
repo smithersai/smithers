@@ -135,6 +135,7 @@
 - [@smthrs/model](https://smithers.sh/docs/reference/api/model/): Schema-first Effect model protocols, routes, and streaming events for flows
 - [@smthrs/notifications](https://smithers.sh/docs/reference/api/notifications/): Durable notification queue, admission policy, and journal projection for flows
 - [@smthrs/observability](https://smithers.sh/docs/reference/api/observability/): Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers
+- [@smthrs/opencode](https://smithers.sh/docs/reference/api/opencode/): OpenCode protocol server over the Smithers agent loop, for the hosted OpenCode app
 - [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/core alone and imports no Node built-ins.
 - [@smthrs/plan](https://smithers.sh/docs/reference/api/plan/): The persisted flows plan: a keyed action graph, its append-only store, and its diff
 - [@smthrs/platform-browser](https://smithers.sh/docs/reference/api/platform-browser/): Browser implementations of Effect platform services backed by ZenFS and just-bash

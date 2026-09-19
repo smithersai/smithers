@@ -7382,6 +7382,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/model`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
 | `@smthrs/notifications`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
 | `@smthrs/observability`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
+| `@smthrs/opencode`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/package.json)               |
 | `@smthrs/patterns`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
 | `@smthrs/plan`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
 | `@smthrs/platform-browser` | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/package.json) |
@@ -12846,12 +12847,18 @@ supplies none refuses a containerised call.
 
 ```ts
 const tests: (
-  services: Context.Context<ChildProcessSpawner.ChildProcessSpawner | TestRunner.TestRunner>
+  services: Context.Context<
+    ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
+  >
 ) => FlowBinding.Source
 ```
 
 The project's own test runner as one ordinary flow. A host that has no
-runner binds `TestRunner.layerNoop` and the flow says so when it is called.
+runner binds `TestRunner.layerNoop` and the flow says so when it is called. The
+`Evaluator` is what the flow attributes a non-zero exit with: Jev answers
+whether the run failed about the code or about the command it was handed, so a
+host binds an evaluator and sets `AI_GATEWAY_API_KEY`, and a judge that does
+not answer fails the call.
 
 ### StandardFlows.memory
 
@@ -12933,6 +12940,36 @@ const AskOutput = Schema.Struct({
   approved: Schema.Boolean
 })
 ```
+
+### StandardFlows.classify, StandardFlows.ClassifyOptions
+
+```ts
+interface ClassifyOptions {
+  readonly classifiers?: ReadonlyArray<Classify.AnyClassifier> | undefined
+}
+
+const classify: (
+  services: Context.Context<Evaluator.Evaluator>,
+  options?: ClassifyOptions
+) => FlowBinding.Source
+```
+
+The cell's doors to Jev, as the source `std/classify`: the ad-hoc `classify`
+flow from [`@smthrs/std`](/docs/reference/api/std/), and one `classify/<id>` flow per curated
+classifier, whose input is the classifier's state schema (or `{ states }`) and
+whose description is the classifier's. `classifiers` defaults to the three
+`@smthrs/std` ships (`triage/relevance`, `check/verdict`, `edit/risk`); pass
+`[]` to bind the ad-hoc door alone. Every call is a sealed `model:call:*`, so
+the run's capability envelope must grant it. A curated flow folds the
+classifier's digest into its declaration, so a changed question is a new call
+identity and a resumed run never replays an answer to a question that has
+since changed.
+
+The one service is the `Evaluator` from [`@smthrs/model`](/docs/reference/api/model/). A host
+without a gateway key binds `Evaluator.layerUnavailable()`, and every call then
+resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
+with a message containing `unreachable:` after the binding's
+`Flow <name> failed:` prefix; the batch shape reports the same code per state. Nothing hangs and nothing is invented.
 
 ### StandardFlows.ApprovalUnavailable
 
@@ -16840,7 +16877,7 @@ https://smithers.sh/docs/reference/api/cli/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md) · [package docs](https://cli.smithers.sh)
 
-> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/opencode`](/docs/reference/api/opencode/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
 
 The root entry point exports each public module as a namespace. Import a module directly with `@smthrs/cli/<Module>`.
 
@@ -17951,6 +17988,40 @@ an opaque fingerprint from current run ownership and lifecycle.
 and failure backoff. `defaultPolicy` uses 5s/2s/20s/120s respectively and caps
 backoff at 60s. Defaults report unknown semantic activity; no checker output grants
 approval or authorizes a remedy.
+
+## JevSessionChecker
+
+The one registered checker that reads semantic activity, bound by the ID
+`jev.session`. See [Configure observational health](https://control.smithers.sh/guides/observe-health/).
+
+`makeJevSessionChecker(options)` builds it over an explicit `env`, `fetch`, `url`,
+and `timeoutMs`; `jevSessionChecker` is the instance `makeRegistry` admits, reading
+the host process. The probe asks Jev, through the Vercel AI Gateway at
+`jevEvaluationUrl` as model `jevModelId`, one choice question over `working`,
+`idle`, and `needs-input` and one boolean question about whether the output ends
+waiting for a person. State is the session's `alive`, `exitCode`, and the newest
+`jevStateTailCharacters` of output, sent with zero data retention.
+
+An answer becomes a report only at confidence `jevConfidenceFloor` or above:
+`needs-input` reports reason `prompt-detected`, `working` and `idle` report `ok`.
+A reading below the floor is Jev's own answer and reports
+`{ activity: "unknown", reason: "ok" }`.
+
+There is no fallback to another model or to a healthy-looking answer. An
+unexposed output tail and a session that is not alive keep the lifecycle report,
+because there is nothing to ask about. Every other way the probe cannot ask
+fails it with `JevProbeError`, whose `reason` is `unconfigured` (no
+`AI_GATEWAY_API_KEY`), `http` (with the gateway's `status`), `timeout`,
+`unreachable`, or `malformed` (a body that does not answer the question asked).
+`Health.evaluate` records a failing probe as `outcome: "error"` with reason
+`probe-error` and no report, so `rollup` reads the subject `stale`, activity
+`unknown`, health `unknown`, reason `probe-error`, never healthy, and
+`CheckPolicy.backoff` spaces the retries. A host that binds `jev.session` must
+supply the key.
+
+`jevRequestTimeoutMs` is the deadline on the call and `jevProbeTimeoutMs` the
+wider probe budget this checker asks a binding for, so the typed `timeout`
+failure surfaces instead of a bare `probe-timeout`.
 
 ## Monitor
 
@@ -24506,35 +24577,36 @@ The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
 in the [module and export inventory](https://harness.smithers.sh/reference/); the sections below state
 behavior and signatures.
 
-| Module                       | Public exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | What it is                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `HarnessError`               | `HarnessErrorCode`, `HarnessError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Stable failures reported at the harness translation boundary.                                            |
-| `AgentEvent`                 | `DisciplineArmed`, `TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters.                                                         |
-| `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Local structural plan nodes used at the harness-to-engine boundary.                                      |
-| `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                     | Narrow engine port consumed by the built-in harness.                                                     |
-| `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Deterministic token accounting for context windows.                                                      |
-| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                        | The immutable, provider-neutral context assembled for one model request.                                 |
-| `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                              | Transcript projection from durable journal entries.                                                      |
-| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                           | Declarations for sealed transcript-summary steps.                                                        |
-| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `PromotionState`, `empty`, `enqueue`, `drainAtClose`, `promoteAtIdle`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                   | Turn-boundary steering values and their source contract.                                                 |
-| `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Adapter from the durable notification queue to harness turn boundaries.                                  |
-| `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                          | The cell contract.                                                                                       |
-| `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                                               | The deterministic script sandbox port.                                                                   |
-| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `make`, `teach`, `run`                                                                                                                                                                                                                                                                                                                                     | The cell-first controller.                                                                               |
-| `CellHistory`                | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The source of every cell the current turn executed.                                                      |
-| `CellCalls`                  | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Registry-backed resolution for the flow calls a cell makes.                                              |
-| `FlowBinding`                | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry`                                                                                                                                                                                                                                                                                                                                                                                                                                | The executable-flow binding contract.                                                                    |
-| `StructuredOutput`           | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode`                                                                                                                                                                                                                                                                                                                                                                                   | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
-| `TruncatedOutput`            | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The truncation ledger: which bytes this run was handed as a fragment.                                    |
-| `CallLedger`                 | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                        | The call ledger: what this run has already asked, rendered every frame.                                  |
-| `NarrowedCheck`              | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                          | The narrowing ledger: which checks this run has run, and over which tree.                                |
-| `CellValidation`             | `Validation`, `normalize`, `validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Cell validation at the boundary.                                                                         |
-| `UnmovedTree`                | `Unmoved`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The completion with nothing behind it.                                                                   |
-| `UnresolvedFailure`          | `exitStatusKey`, `failed`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The failing check a completion stepped around.                                                           |
-| `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | The evidence that is already complete.                                                                   |
-| `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
-| `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The variables panel: what the realm holds, stated every frame.                                           |
-| `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                      | The QuickJS-WASM sandbox binding.                                                                        |
+| Module                       | Public exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | What it is                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `HarnessError`               | `HarnessErrorCode`, `HarnessError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Stable failures reported at the harness translation boundary.                                            |
+| `AgentEvent`                 | `DisciplineArmed`, `TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters.                                                         |
+| `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Local structural plan nodes used at the harness-to-engine boundary.                                      |
+| `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                      | Narrow engine port consumed by the built-in harness.                                                     |
+| `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Deterministic token accounting for context windows.                                                      |
+| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                                         | The immutable, provider-neutral context assembled for one model request.                                 |
+| `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                                               | Transcript projection from durable journal entries.                                                      |
+| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Declarations for sealed transcript-summary steps.                                                        |
+| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `PromotionState`, `empty`, `enqueue`, `drainAtClose`, `promoteAtIdle`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                                    | Turn-boundary steering values and their source contract.                                                 |
+| `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Adapter from the durable notification queue to harness turn boundaries.                                  |
+| `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                                           | The cell contract.                                                                                       |
+| `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                                                                | The deterministic script sandbox port.                                                                   |
+| `CellTurn`                   | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `make`, `teach`, `run`                                                                                                                                                                                                                                                                                                                               | The cell-first controller.                                                                               |
+| `CellHistory`                | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The source of every cell the current turn executed.                                                      |
+| `CellCalls`                  | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Registry-backed resolution for the flow calls a cell makes.                                              |
+| `FlowBinding`                | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The executable-flow binding contract.                                                                    |
+| `StructuredOutput`           | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode`                                                                                                                                                                                                                                                                                                                                                                                                    | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
+| `TruncatedOutput`            | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The truncation ledger: which bytes this run was handed as a fragment.                                    |
+| `CallLedger`                 | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The call ledger: what this run has already asked, rendered every frame.                                  |
+| `NarrowedCheck`              | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger`                                                                                                                                                                                                                                                                                                                                                                                                                           | The narrowing ledger: which checks this run has run, and over which tree.                                |
+| `CellValidation`             | `Validation`, `normalize`, `validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Cell validation at the boundary.                                                                         |
+| `CompletionClaim`            | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `Check`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `reason`, `newest`, `read`, `demand`, `quote`, `prose`                                                                                                                                                                                                                                                                                                                                                                                                                               | The completion nothing in the record contradicts.                                                        |
+| `UnmovedTree`                | `Unmoved`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The completion with nothing behind it.                                                                   |
+| `UnresolvedFailure`          | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The failing check a completion stepped around.                                                           |
+| `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The evidence that is already complete.                                                                   |
+| `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
+| `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The variables panel: what the realm holds, stated every frame.                                           |
+| `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                                       | The QuickJS-WASM sandbox binding.                                                                        |
 
 ## Durability
 
@@ -24689,6 +24761,7 @@ export const make: (options: {
   readonly narrowingCap?: number | undefined
   readonly unmovedCap?: number | undefined
   readonly unresolvedCap?: number | undefined
+  readonly claimCap?: number | undefined
   readonly approvalChannel?: boolean | undefined
   readonly revalidations?: number | undefined
   readonly checkpointCap?: number | undefined
@@ -24706,6 +24779,7 @@ Every omitted budget takes its module-level default, and zero disarms it:
 | `defaultNarrowingDemands`  | 1       | Completions bounced for narrowed evidence.         |
 | `defaultUnmovedDemands`    | 1       | Completions bounced for an unmoved tree.           |
 | `defaultUnresolvedDemands` | 1       | Completions bounced for a displaced failing check. |
+| `defaultClaimDemands`      | 1       | Completions bounced for an unsupported claim.      |
 | `defaultRevalidations`     | 1       | In-frame answers to an unparseable cell.           |
 | `defaultMaxCheckpoints`    | 8       | Trees one run may pin with `ctx.checkpoint()`.     |
 
@@ -25200,14 +25274,15 @@ serves a fixed list; `makeNoop` records nothing; `layer`, `layerCells`, and
 `import * as AgentEvent from "@smthrs/harness/AgentEvent"`
 
 The serializable events a harness adapter emits, one schema class per event
-and `AgentEvent.AgentEvent` as the tagged union of all 29. The controller
+and `AgentEvent.AgentEvent` as the tagged union of all 30. The controller
 journals them in order: `DisciplineArmed` once at the start, the frame cycle
 (`TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`,
 `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`,
 `CellSettled`, `TransitionApplied`), the interventions and observations
 (`ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`,
 `NarrowedDemanded`, `NarrowOnlyDemanded`, `UnmovedDemanded`,
-`UnresolvedDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`,
+`UnresolvedDemanded`, `ClaimDemanded`, `SufficiencyObserved`,
+`VacuousVerificationObserved`,
 `MutationObserved`, `CheckpointMinted`, `CompactionSettled`,
 `SteeringDrained`), and the terminal set (`Suspended`, `PermissionRequired`,
 `TurnClosed`, `Resolved`, `Aborted`).
@@ -25227,6 +25302,7 @@ writes and `Transcript` reads:
 | `cell-rejected-in-frame`        | `cellRejectedInFrame`         | `flows.harness.cell-rejected-in-frame.v1`        |
 | `cell-settled`                  | `cellSettled`                 | `flows.harness.cell-settled.v1`                  |
 | `checkpoint-minted`             | `checkpointMinted`            | `flows.harness.checkpoint-minted.v1`             |
+| `claim-demanded`                | `claimDemanded`               | `flows.harness.claim-demanded.v1`                |
 | `compaction-settled`            | `compactionSettled`           | `flows.harness.compaction-settled.v1`            |
 | `discipline-armed`              | `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
 | `model-delta`                   | `modelDelta`                  | `flows.harness.model-delta.v1`                   |
@@ -25480,13 +25556,42 @@ completion's text, and "no change is needed" is a legitimate answer.
 
 `import * as UnresolvedFailure from "@smthrs/harness/UnresolvedFailure"`
 
-The failing check a completion stepped around. `failed` and `passed` read a
-settled call's `exitStatusKey` (`exitCode`) for a failing or passing status;
+The failing check a completion stepped around. `exitStatus` reads a settled
+call's `exitStatusKey` (`exitCode`), and `failed` and `passed` read it for a
+failing or passing status;
 `revisits` decides whether a later check asks about the same subject as an
 earlier one; `find` finds the failing check a completion replaced rather than
 answered; and `demand` states which reading failed, which one replaced it,
 and what ends it. A failing check alone is not the trigger: the run itself
 must have demonstrated the subject was still live by returning to it.
+
+## CompletionClaim
+
+`import * as CompletionClaim from "@smthrs/harness/CompletionClaim"`
+
+The sixth brake on a completion, and the only one that is not a measurement.
+It declares one classifier, `completion/claim`, over four facts the harness
+already holds: the task as the person stated it, the completion message,
+whether the tree moved, and the last check the completing frame ran, with its
+result clipped to the newest `outputBytes` (4 KiB). It asks Jev two questions
+through the `Evaluator` service. Does the evidence show the task as stated is
+done, and does the claim assert something the evidence does not show? `read` asks and returns both probabilities with the latency, or nothing
+where no evaluator is bound, no task or claim exists, or the transport failed;
+`find` decides, and demands only at `disprovenAt` (0.3) or below on the first
+question, or `overclaimedAt` (0.8) or above on the second; `reason` says which
+of the two a reading is about and `demand` renders the prose the next frame
+reads. The thresholds are strict because the vendor reports 76% agreement with
+frontier-model labels on its own evaluations: a false demand costs a run a
+frame, while a false pass costs nothing here, because the five deterministic
+brakes still ran and the truth bar still judges what they let through.
+
+It never passes a claim on its own. A confident "complete" ends no run,
+bypasses no other demand, and does nothing but write a journal line;
+`judgeCompletion` consults it only once the five deterministic demands have
+found nothing, and it spends `claimCap` (1) like the other completion caps.
+Without an `Evaluator` service in context it is a no-op: no request, no
+`ClaimDemanded` event, and behaviour identical to the harness before it
+existed.
 
 ## Sufficiency
 
@@ -31239,7 +31344,7 @@ https://smithers.sh/docs/reference/api/model/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) · [package docs](https://model.smithers.sh)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
 
 A model call is one composition: a `Protocol` owns the wire shape of an API
 family, an `Endpoint` owns where to send it, an `Auth` owns the credential,
@@ -31735,6 +31840,101 @@ Use `Chunk.toReadonlyArray(call.fragments)` when an array is needed.
 | `delta(state, callId, fragment)` | operation   | Appends an argument fragment.                                                                                                                                                                                                                                                                                                               |
 | `end(state, callId)`             | operation   | Completes a call. Empty fragments complete as `"{}"`. An unknown id fails with `invalid_provider_output` (`Received completion for unknown tool call <id>`), and reassembled text that is not a JSON object fails the same way (`Invalid JSON input for streamed tool call <name>`), because a live stream must not hand a guess to a tool. |
 | `flushAborted(state)`            | operation   | Settles every open call after a stream halt, preserving partial text verbatim for the journal. This is the non-executing half of the split: built-in lowerings omit aborted turns from continuations, while a live completion still passes the strict validator.                                                                            |
+
+## `Classifier`
+
+Typed questions about a JSON state, answered by Jev through an `Evaluator`.
+A host declares a classifier once and gets typed answers: a choice's option
+names become a literal union, a score's rungs become its labels.
+
+```ts
+import { Classifier, Evaluator } from "@smthrs/model"
+import { Config, Effect, Schema } from "effect"
+
+const Relevance = Classifier.make("triage/relevance", {
+  description: "Whether a file must change for the task, and its role.",
+  state: Schema.Struct({ task: Schema.String, file: Schema.String, excerpt: Schema.String }),
+  questions: {
+    relevant: Classifier.boolean({
+      instructions: "Does this file need to change for the task?",
+      criteria: { true: "the fix or its test lives here", false: "unrelated or only imported" }
+    }),
+    role: Classifier.choice({
+      instructions: "What is this file's role?",
+      criteria: {
+        implementation: "code under test",
+        fixture: "test data or setup",
+        unrelated: "nothing to do with the task"
+      }
+    }),
+    risk: Classifier.score({
+      instructions: "How risky is editing this file?",
+      criteria: ["none", "low", "medium", "high"]
+    })
+  }
+})
+
+const program = Effect.gen(function*() {
+  const answer = yield* Relevance.evaluate({ task, file, excerpt })
+  const many = yield* Relevance.evaluateAll(states, { concurrency: 8 })
+  return Classifier.confident(answer.role, 0.7)
+})
+
+const live = Evaluator.layerVercelGateway({ apiKey: Config.Redacted("AI_GATEWAY_API_KEY") })
+```
+
+| Export                                        | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make(id, { description, state, questions })` | constructor | Returns `{ id, description, state, questions, digest, evaluate, evaluateAll }`. `digest` is the SHA-256 of the canonical JSON of `{ id, questions }`, so a durable call key that folds it in never replays an answer to a question that has since changed.                                                                                 |
+| `boolean({ instructions, criteria? })`        | constructor | A yes/no question. `criteria` says what each side means.                                                                                                                                                                                                                                                                                   |
+| `choice({ instructions, criteria })`          | constructor | One of the named options in `criteria`, 2 to 255 of them. Fewer or more throws a `TypeError` at construction, the same moment a malformed schema would.                                                                                                                                                                                    |
+| `score({ instructions, criteria })`           | constructor | A position along an ordered rubric of at least 2 distinct rungs. Fewer, or a repeated rung, throws a `TypeError` at construction.                                                                                                                                                                                                          |
+| `evaluate(state)`                             | method      | `Effect<AnswersOf<questions>, ClassifierError, Evaluator>`. Encodes the state through its schema, sends one request, decodes the raw answers against the questions.                                                                                                                                                                        |
+| `evaluateAll(states, { concurrency? })`       | method      | `Effect<ReadonlyArray<Result<AnswersOf<questions>, ClassifierError>>, never, Evaluator>`. One request per state, at most `concurrency` in flight (`defaultConcurrency`, 8), results in the states' order, each state's failure its own.                                                                                                    |
+| `BooleanAnswer`                               | interface   | `{ value: boolean; probability: number }`. `value` is `probability >= 0.5`.                                                                                                                                                                                                                                                                |
+| `ChoiceAnswer<Key>`                           | interface   | `{ value: Key; probabilities: Record<Key, number>; confidence: number }`. `confidence` is the largest probability in the distribution.                                                                                                                                                                                                     |
+| `ScoreAnswer<Label>`                          | interface   | `{ value: number; label: Label; probabilities: Record<string, number>; confidence: number }`. `value` is the score as Jev gave it, interpolated over zero-based rung indexes; `label` is the nearest rung; `probabilities` is keyed by rung label whether the wire keyed it by label or by index; `confidence` is the largest probability. |
+| `AnswerOf<Q>`, `AnswersOf<Qs>`                | types       | The answer a question infers, and the answers a question map infers.                                                                                                                                                                                                                                                                       |
+| `confidence(answer)`                          | getter      | 0 to 1: a boolean's distance from even odds doubled, `abs(p - 0.5) * 2`; a choice's or score's `confidence`.                                                                                                                                                                                                                               |
+| `confident(answer, floor)`                    | getter      | `Option` of the answer's value when `confidence(answer) >= floor`.                                                                                                                                                                                                                                                                         |
+| `decodeAnswers(questions, raw)`               | decoding    | `Effect<AnswersOf<questions>, ClassifierError>`. Shared by the typed path and the ad-hoc path.                                                                                                                                                                                                                                             |
+| `Question`, `Answer`                          | schemas     | Effect Schemas for the ad-hoc path: a model-authored question is decoded with `Question` (the same value as `Evaluator.Question`, construction limits included) before it reaches the transport, and a decoded answer in any of the three shapes matches `Answer`.                                                                         |
+| `ClassifierError`                             | error       | `{ code, status?, message }` with `code` from `Evaluator.EvaluatorErrorCode`. Typed, never thrown.                                                                                                                                                                                                                                         |
+
+Decoding is strict. Every question needs an answer of its own type; a
+boolean's probability and every distribution entry lie in `[0, 1]`; a choice
+names one of its options; a score lies within the rubric's index range.
+Anything else fails as `invalid_answer`, naming the question. A state the
+schema does not encode fails as `invalid_question`. A distribution the
+transport did not send is one-hot on the chosen option or nearest rung, so
+`confidence` reads 1; a caller that has to tell the two apart keeps the raw
+`Evaluator.Response`.
+
+## `Evaluator`
+
+The transport a classifier asks: one JSON state and a map of typed questions
+go out, one raw answer per question comes back. Jev writes no text, so it can
+never name an option the question did not offer.
+
+| Export                                                                                          | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Evaluator`                                                                                     | service interface and tag | `evaluate({ state, questions }) => Effect<{ answers, usage?, latencyMs }, EvaluatorError>`. Tag id `/model/Evaluator`.                                                                                                                                                                                                                                                                                         |
+| `layerVercelGateway(options)`                                                                   | layer                     | Jev through the Vercel AI Gateway over the kernel `HttpClient`. One POST per evaluation, one deadline over the whole call, no retries. Options: `apiKey` (a `Redacted` or a `Config` read at construction), `model` (`typesafe-ai/jev`), `timeoutMs` (1500), `zeroDataRetention` (true), `baseUrl` (`https://ai-gateway.vercel.sh/v4/ai/evaluation-model`). Every request runs as a `model:call` on the model. |
+| `layerScripted(script)`                                                                         | layer                     | Answers from `(request) => answers` or `(request) => Effect<answers, EvaluatorError>`. A scripted answer may omit its `type`; the layer fills it from the question and decodes the result like a gateway body, so a script answering the wrong shape fails as `invalid_answer`.                                                                                                                                |
+| `layerFromEnvironment(environment)`                                                             | layer                     | The evaluator a host binds from its own environment: `layerVercelGateway` when `AI_GATEWAY_API_KEY` is set, `layerUnavailable()` when it is not. Every host that runs an agent loop binds this, because the harness's completion brake never falls back. Needs the kernel `HttpClient`.                                                                                                                        |
+| `environmentKey`                                                                                | constant                  | `"AI_GATEWAY_API_KEY"`, the variable `layerFromEnvironment` reads.                                                                                                                                                                                                                                                                                                                                             |
+| `layerUnavailable()`                                                                            | layer                     | Fails every request as `unreachable`, for a host without a key.                                                                                                                                                                                                                                                                                                                                                |
+| `Question`, `RawAnswer`, `RawAnswers`                                                           | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                  |
+| `EvaluatorErrorCode`                                                                            | schema                    | `unreachable` (no response), `refused` (a status other than 200, kept in `status`), `empty` (a 200 without answers), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                                                                            |
+| `EvaluatorError`                                                                                | error                     | `{ code, status?, message }`. Typed, never thrown.                                                                                                                                                                                                                                                                                                                                                             |
+| `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                          |
+
+The wire protocol is the AI SDK gateway provider's own, as recorded on
+2026-09-17. Vercel may change it without notice; a changed response surfaces
+as `empty` or `invalid_answer`, never as a guessed answer. The request body
+is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
+and the gateway key rides in the `authorization` header, which request traces
+redact.
 
 ## `ModelCatalog`
 
@@ -32917,6 +33117,243 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 Builds a scoped browser OpenTelemetry layer over the validated resource. A
 layer with no processor factories at all still builds; it provides the resource
 and bridges nothing.
+
+---
+
+# @smthrs/opencode
+https://smithers.sh/docs/reference/api/opencode/
+
+> **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/opencode/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/docs/api.md)
+
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+
+The package declares `effect`, `@effect/platform-node` and
+`@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Use the same Effect
+version in the host.
+
+The root entry point exports one namespace per module, and every module is
+also importable from `@smthrs/opencode/<Module>`.
+
+## `Serve`
+
+| Export            | Signature                                                                                                | Meaning                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Bind`            | `{ hostname, port, listen, cors, credentials }`                                                          | What the verb was asked to bind.                                                                                                |
+| `defaultBind`     | `Bind`                                                                                                   | Loopback on 4096, the port the hosted app expects.                                                                              |
+| `loopbackHosts`   | `ReadonlyArray<string>`                                                                                  | The addresses that need no opt-in.                                                                                              |
+| `refusal`         | `(bind: Bind) => string \| undefined`                                                                    | Why a bind is refused: a non-loopback host needs `listen` and credentials.                                                      |
+| `url`             | `(bind: Bind) => string`                                                                                 | The URL the app connects to.                                                                                                    |
+| `banner`          | `(bind: Bind, directory: string) => string`                                                              | The line printed once the server listens.                                                                                       |
+| `databasePath`    | `(directory: string) => string`                                                                          | `<directory>/.smithers/opencode.sqlite`.                                                                                        |
+| `BindRefused`     | `TaggedError`                                                                                            | A bind the rule refuses; `layer` and `host` fail with it.                                                                       |
+| `shutdownTimeout` | `Duration.Input`                                                                                         | Two seconds: how long the socket waits on shutdown after the event streams were ended.                                          |
+| `Options`         | `{ directory, bind, version, seat, agent?, heartbeat?, evaluator?, environment?, maxFrames?, pricing? }` | How the server is assembled; the evaluator defaults to `Health.evaluatorLayer` over `environment`.                              |
+| `app`             | `(options) => Layer<never, never, HttpRouter \| Driver \| Store>`                                        | The routes behind CORS and auth over the hub and the turns, for an in-process handler.                                          |
+| `layer`           | `(options) => Layer<HttpServer, ServeError \| BindRefused, Driver \| Store>`                             | The application on a Node socket over the host's driver and store. Ends the event streams, then closes the socket, on shutdown. |
+| `host`            | `(options) => Effect<never, ServeError \| BindRefused, Driver \| Store>`                                 | Hosts the server until interrupted.                                                                                             |
+
+## `Routes`
+
+| Export        | Signature                                                                  | Meaning                                                                                         |
+| ------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `Options`     | `{ directory, version, seat, agent }`                                      | How the routes describe the server.                                                             |
+| `layer`       | `(options) => Layer<never, never, HttpRouter \| Store \| Events \| Turns>` | Mounts every route.                                                                             |
+| `projectID`   | `(directory: string) => string`                                            | A stable hash of the absolute path.                                                             |
+| `modelOf`     | `(seat: string) => ModelRef`                                               | `provider:model` split into `{ providerID, modelID }`.                                          |
+| `slugOf`      | `(id: string) => string`                                                   | Two words from a session id.                                                                    |
+| `provider`    | `(seat: string) => Record<string, unknown>`                                | The one provider entry with every field the app reads.                                          |
+| `agent`       | `(name: string, seat: string) => Record<string, unknown>`                  | The one agent entry.                                                                            |
+| `gitBranch`   | `(directory: string) => string \| undefined`                               | The branch from `.git/HEAD`.                                                                    |
+| `listFiles`   | `(directory: string, path: string) => Array<FileNode>`                     | Entries of a directory under the served one.                                                    |
+| `fileContent` | `(directory: string, path: string) => FileContent \| undefined`            | A regular file under `directory` as `text`, or `binary` with no content; `undefined` otherwise. |
+
+Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
+`/path`, `/project`, `/project/current`, `PATCH /project/:id`, `/provider`,
+`/agent`, `/command`, `/lsp`, `/skill`, `/formatter`, `/provider/auth`,
+`/mcp`, `/experimental/resource`, `/question`,
+`/permission`, `/vcs`, `/vcs/diff`, `/vcs/status`, `/find/file`, `/file`,
+`/file/content`, `/api/reference`, `/session/status`, `/api/session`,
+`GET|POST /session`, `GET|PATCH|DELETE /session/:id`, `/session/:id/message`,
+`/session/:id/message/:messageID`, `/session/:id/todo`,
+`/session/:id/children`, `/session/:id/diff`, `POST /session/:id/prompt_async`,
+`POST /session/:id/abort`, `POST /session/:id/permissions/:permissionID`,
+`/global/event` and `/event`. Any other route answers the JSON 404
+`Cors.routeNotFound`, with the allow headers when the origin is allowed.
+
+`GET /session/:id/message` pages on `limit` and `before`. A page that leaves
+older messages behind names the oldest id on it in `X-Next-Cursor` and a
+relative `Link` with `rel="next"`, both exposed to the browser. A `before`
+that is not a message id of that session is a 400, not an empty page, so a
+broken cursor is reported rather than read as the end of the history.
+
+## `Events`
+
+| Export             | Signature                                                     | Meaning                                                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Envelope`         | `{ directory?, project?, payload: { id, type, properties } }` | The wire envelope of one event.                                                                                                                                             |
+| `Options`          | `{ directory, project, heartbeat?, replay? }`                 | How the hub is built.                                                                                                                                                       |
+| `Service`          | `{ publish, replay, stream, close }`                          | Stamp and broadcast an event; read the replay buffer; one SSE body (`{ after?, bare? }`), its live queue bounded to `replay` events, sliding; end every stream on shutdown. |
+| `Events`           | `Context.Service`                                             | The hub service.                                                                                                                                                            |
+| `make`, `layer`    | `(options) => Effect<Service>`, `(options) => Layer<Events>`  | Constructors.                                                                                                                                                               |
+| `frame`            | `(envelope: Envelope, bare?) => string`                       | One `data:` frame: the envelope, or with `bare` its payload alone (the `/event` shape).                                                                                     |
+| `heartbeatComment` | `string`                                                      | `: heartbeat`.                                                                                                                                                              |
+| `defaultHeartbeat` | `Duration.Input`                                              | Fifteen seconds.                                                                                                                                                            |
+| `defaultReplay`    | `number`                                                      | 256 events.                                                                                                                                                                 |
+
+## `Store`
+
+| Export                    | Signature                                                      | Meaning                                                                   |
+| ------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `StoreError`              | `TaggedError`                                                  | The database refused a statement.                                         |
+| `Grant`                   | `{ sessionID, kind: always \| once \| reject, key }`           | A permission decision kept across restarts.                               |
+| `Turn`                    | `{ sessionID, messageID, prompt, history?, agent?, model? }`   | A turn the engine driver has not seen settle.                             |
+| `Service`                 | sessions, messages, parts, permissions, grants, turns, `apply` | What the store does; `apply` persists what an emitted event implies.      |
+| `Store`                   | `Context.Service`                                              | The store service.                                                        |
+| `putHealth`, `listHealth` | on `Service`                                                   | One `flows.opencode.health.v1` record per decision, per session.          |
+| `listParts`               | on `Service`: `(messageID) => Effect<Array<Part>, StoreError>` | The parts of one message in id order.                                     |
+| `migrations`              | `Migrations.MigrationSet`                                      | The `opencode` namespace under the shared `flows_migrations` ledger.      |
+| `make`                    | `Effect<Service, StoreError, SqlClient>`                       | Builds the store over an ambient `SqlClient`.                             |
+| `layer`                   | `Layer<Store, StoreError, SqlClient>`                          | The store over an ambient client.                                         |
+| `layerSqlite`             | `(filename: string) => Layer<Store, StoreError>`               | The store over its own file.                                              |
+| `defaultMessageLimit`     | `number`                                                       | 20.                                                                       |
+| `databasePath`            | `(directory) => string`                                        | `<directory>/.smithers/opencode.sqlite`, the one file every module means. |
+
+## `Projection`
+
+| Export                                                                                | Meaning                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Context`, `Opened`, `State`, `Step`, `Closing`                                       | What the fold needs, what opens a turn, its state, its answer, and how a turn ends without an event.                                                                                                                                        |
+| `open`                                                                                | `(ctx, opened) => Step`: the user message with the app's own part id (`opened.userPartID`), the session title, the assistant header, the busy status; `createdAt` and `userCreatedAt` keep a re-opened or retried turn's times.             |
+| `fold`                                                                                | `(ctx, state, event: AgentEvent) => Step`: total; an unknown event changes nothing.                                                                                                                                                         |
+| `close`                                                                               | `(ctx, state, closing) => Step`: ends a turn the stream did not end; every open cell and call card settles as an error, and a refused key is a `ProviderAuthError`.                                                                         |
+| `toolName`, `toolInput`, `toolTitle`, `toolOutput`                                    | How a flow call becomes the card OpenCode renders.                                                                                                                                                                                          |
+| `toolMetadata`, `permissionPatterns`                                                  | The structured metadata beside a card, and the patterns of a permission card.                                                                                                                                                               |
+| `prose`, `answerText`, `chunks`                                                       | The model's prose outside code fences, the final answer, and its streamed deltas.                                                                                                                                                           |
+| `slots`, `finalFrame`, `summarySlot`, `demandOrdinals`                                | The sort keys parts are derived from.                                                                                                                                                                                                       |
+| `isClassify`, `classifyEntries`, `classifyAnswers`, `classifyOutput`, `classifyTitle` | How a classify call becomes the `classify` card: one line per state, the full answers as metadata.                                                                                                                                          |
+| `classifyDoor`                                                                        | `(flowName) => string`: the curated id (`triage/relevance`) or `ad hoc`, which leads the classify card's title.                                                                                                                             |
+| `Step.health`                                                                         | The `Health.Facts` a folded event hands out when it triggers an evaluation: a cell settling for the first time, a park, an aborted close. A frame the journal replays after a park hands out nothing and counts nothing twice.              |
+| `decided`, `health`                                                                   | Fold a decision in: the dot on the title and a `health` card on a color change, sorted under the frame whose settlement or park produced the facts; `health` counts the Jev call when Jev answered and puts a failure on the card.          |
+| `adopt`                                                                               | `(state, stored: Session) => State`: the title and the archive stamp as the store holds them now, so a rename or an archive made mid-turn is what the turn's next `session.updated` carries; an archived session carries no dot.            |
+| `Pricing`, `costOf`, `sessionNow`                                                     | Dollars per million tokens, the cost of a token count, and the session with this turn's tokens and cost, each frame counted once across a replay. The assistant header carries the last model step's tokens, the way OpenCode reports them. |
+| `Summary`, `summaryLine`                                                              | The run summary: frames, calls, classify calls, Jev calls, latency, and spend, each counted once across a replay.                                                                                                                           |
+| `defaultMaxFrames`, `lastCallsKept`, `healthTextCap`                                  | What the health facts carry; the frame budget follows the engine's `discipline-armed` event once it arrives.                                                                                                                                |
+
+## `Health`
+
+| Export                                                                                 | Signature                                                                                      | Meaning                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `State`, `Facts`, `toState`                                                            | schema, `State & { demandThisFrame, stoppedBy }`, `(facts) => State`                           | What Jev is sent (design section 3.1), and the two server-only facts the rule also reads.                                                                                                                                                                                  |
+| `Limit`, `limitReached`, `limitReason`                                                 | `{ code, seat }`, `(ProviderFailure \| undefined) => Limit \| undefined`, `(limit) => string`  | The usage limit that ended a run, read off the provider's normalized `quota_exceeded` or `rate_limited` code and never off its sentence, and the red reason it renders as.                                                                                                 |
+| `classifier`                                                                           | `Classifier<"harness/health", State, questions>`                                               | The curated health classifier: `progress` (score), `stuck`, `needsHuman` (boolean).                                                                                                                                                                                        |
+| `Answers`, `Color`, `Decision`                                                         | types                                                                                          | The typed answers, `green \| yellow \| red \| gray`, and a color with its reason.                                                                                                                                                                                          |
+| `decide`                                                                               | `(facts, answers \| undefined) => Decision`                                                    | The color rule, first match wins; no answers or none confident is gray.                                                                                                                                                                                                    |
+| `dots`, `colorOf`, `strip`, `dotted`, `retitle`                                        | title helpers                                                                                  | The dot per color, and how a title carries, loses, and keeps one across a rename; `strip` drops the U+FE0F the app writes after the dot; `retitle` drops a dot the rename arrives with and keeps the session's own, and an empty rename keeps the title.                   |
+| `evaluate`                                                                             | `(facts, deadline?) => Effect<Evaluation, never, Evaluator>`                                   | One evaluation within the deadline; never fails. A transport failure is a gray decision whose reason is `unavailable(message)`.                                                                                                                                            |
+| `unavailable`                                                                          | `(message: string) => string`                                                                  | The gray reason a failed transport renders: `health unavailable: <message>`, so the card says why and the way out (`noGatewayKey` without a key).                                                                                                                          |
+| `Evaluation`, `Entry`, `recordType`                                                    | `{ decision, answers, latencyMs, usage, error }`, the stored record                            | What an evaluation produced, and the `flows.opencode.health.v1` record the store keeps.                                                                                                                                                                                    |
+| `evaluatorLayer`, `evaluatorConfigured`, `ambientEnvironment`, `noGatewayKey`          | `(environment) => Layer<Evaluator>`, `(environment) => boolean`, `() => process.env`, `string` | Jev through the Vercel gateway under `evaluatorRetry` when `AI_GATEWAY_API_KEY` is set, else one that refuses with `noGatewayKey` and is not retried. `evaluatorConfigured` answers the same question before the layer is built, which is what the startup preflight asks. |
+| `RetryPolicy`, `evaluatorRetry`                                                        | `{ attempts, backoffMs, deadlineMs, budgetMs }`, `{ 3, 250, 2500, 8000 }`                      | The retry every gateway evaluation on this host runs under: three requests, 250 ms apart, 2500 ms over each, 8000 ms over all of them. The gateway gets `deadlineMs` as its `timeoutMs`, in place of the library's 1500 ms.                                                |
+| `retryable`                                                                            | `(EvaluatorError) => boolean`                                                                  | Whether a failure is worth asking again: `unreachable`, `timeout`, and `refused` carrying 429 or a 5xx. Never `invalid_question`, `invalid_answer`, `empty`, or `refused` carrying anything else, 401 and 403 included.                                                    |
+| `retrying`, `retryingLayer`                                                            | `(Evaluator, policy?) => Evaluator`, `(Layer<Evaluator>, policy?) => Layer<Evaluator>`         | The same evaluator, asked again when the failure was a blip, with the last failure the one that surfaces. The harness's completion brake has no fallback, so without this one 429 ends the turn as `completion_unjudged`.                                                  |
+| `jevCost`, `jevInputPricePerMillion`, `renderAnswers`, `confidenceFloor`, `deadlineMs` | constants and conversions                                                                      | Jev's price and the card's answer text.                                                                                                                                                                                                                                    |
+
+## `Turns`
+
+| Export                            | Signature                                                                                                                                                   | Meaning                                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `PromptInput`                     | `{ sessionID, messageID?, agent?, model?, parts }`                                                                                                          | What the app sends on `prompt_async`.                                                     |
+| `TurnsError`                      | `TaggedError` with `unknown_session`, `unknown_permission`, `empty_prompt`                                                                                  | The failures a turn request reports.                                                      |
+| `Options`                         | `{ directory, agent, model, maxFrames?, pricing? }`                                                                                                         | Defaults a prompt inherits.                                                               |
+| `Service`                         | `{ prompt, abort, permission, update, status }`                                                                                                             | The composition; `update` applies a rename or an archive in order with the turn's writes. |
+| `Turns`                           | `Context.Service`                                                                                                                                           | The service.                                                                              |
+| `promptText`                      | `(parts) => string`                                                                                                                                         | The text of a prompt's parts.                                                             |
+| `history`                         | `(messages, cap?) => string \| undefined`                                                                                                                   | The conversation tail a follow-up carries.                                                |
+| `historyCap`                      | `number`                                                                                                                                                    | 4096 characters.                                                                          |
+| `isLocked`                        | `(error: StoreError) => boolean`                                                                                                                            | Whether a store write found the database held by the engine.                              |
+| `whileLocked`                     | `(effect: Effect<A, StoreError>) => Effect<A, StoreError>`                                                                                                  | Retries a store call while the database is held.                                          |
+| `userPartID`                      | `(userMessageID, parts) => string`                                                                                                                          | The user text part's id: the app's own, else derived.                                     |
+| `steerRetryDelay`                 | `Duration.Input`                                                                                                                                            | How a prompt the running turn could not take waits to open the next.                      |
+| `storeRetryDelay`, `storeRetries` | `Duration.Input`, `number`                                                                                                                                  | How a locked write is retried.                                                            |
+| `make`, `layer`                   | constructors over `Driver`, `Store`, `Events` and `Evaluator`; `make` re-opens the turns the driver finds at boot and forks a health evaluation per trigger |                                                                                           |
+
+## `Driver`
+
+| Export            | Signature                                                                           | Meaning                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `StartInput`      | `{ sessionID, messageID, prompt, history?, agent?, model? }`                        | What starts a turn; `messageID` is the execution id, `history` the conversation tail. |
+| `Outcome`         | `completed \| interrupted \| suspended \| failed`                                   | How the body ended; `failed` carries a `provider` when the seat refused the call.     |
+| `ProviderFailure` | `{ seat, providerID, code, status?, message }`                                      | The seat, the normalized code, the HTTP status, and the provider's message verbatim.  |
+| `Sink`            | `{ event, closed }`                                                                 | Where a running turn reports.                                                         |
+| `PermissionInput` | `{ sessionID, permissionID, response }`                                             | A permission answer.                                                                  |
+| `DriverError`     | `TaggedError` with `busy`, `unknown_session`, `unknown_permission`, `engine_failed` | The failures a driver reports.                                                        |
+| `Service`         | `{ start, interrupt, permission, steer, resumeOnBoot }`                             | What a driver does.                                                                   |
+| `Driver`          | `Context.Service`                                                                   | The seam.                                                                             |
+
+## `EngineDriver`
+
+| Export                             | Signature                                                                                                                | Meaning                                                                                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Host`                             | `{ platform, seats, registry }`                                                                                          | What the host equips a turn with: the guarded platform, the seat resolver, the registry.                                                                                                                                     |
+| `FlowServices`                     | `{ filesystem, shell, engine, evaluator }`                                                                               | The service slices the standard flows are built from.                                                                                                                                                                        |
+| `Options`                          | `{ directory, seat, host, maxFrames?, limits?, flows?, asks?, databaseFile?, attachTimeout?, evaluator?, environment? }` | How the driver is built; the evaluator defaults to `Health.evaluatorLayer` over `environment`.                                                                                                                               |
+| `layer`                            | `(options) => Layer<Driver \| Store>`                                                                                    | The driver and the store over one engine database.                                                                                                                                                                           |
+| `readOnlyCap`                      | `6`                                                                                                                      | Consecutive read-only frames a turn may spend: the harness demands an action at six and ends the run at twelve (`read_only_cap`, a red `stopped` decision). Half the harness default; a turn in the app is a person waiting. |
+| `hostTeaching`                     | `string`                                                                                                                 | The host's system teaching every turn carries: call `ctx.done` in the cell that has the answer, call flows only when needed, never run a command the person did not ask for.                                                 |
+| `deniedMessage`                    | `(flow) => string`                                                                                                       | The message a rejected call settles with; says the harness's generic `capability_refused` hint beside it is about the flow, not this call.                                                                                   |
+| `turnFlow`                         | `Flow`                                                                                                                   | The one durable flow every prompt executes, `opencode/turn`.                                                                                                                                                                 |
+| `task`                             | `(input: StartInput) => string`                                                                                          | The task the model is given: the prompt, behind the conversation tail when there is one.                                                                                                                                     |
+| `requestID`                        | `(executionId, identity) => string`                                                                                      | The permission id of a call, stable across replay.                                                                                                                                                                           |
+| `standardFlows`                    | `(services) => ReadonlyArray<FlowBinding.Source>`                                                                        | Filesystem, shell, clock, and classify with the three curated classifiers.                                                                                                                                                   |
+| `refusing`                         | `(source, rejected) => FlowBinding.Source`                                                                               | Settles a rejected call as `capability_refused` with `deniedMessage`.                                                                                                                                                        |
+| `envelope`                         | `ReadonlyArray<string>`                                                                                                  | `fs:read:/**`, `fs:write:/**`, `proc:spawn:*`, `model:call:*`.                                                                                                                                                               |
+| `defaultLimits`                    | `Sandbox.Limits`                                                                                                         | The CLI's cell budget; the frame budget is `Projection.defaultMaxFrames`.                                                                                                                                                    |
+| `alwaysKey`                        | `(directory, flow, input) => string`                                                                                     | What Allow always grants: the flow and the card's pattern, `bash echo *`.                                                                                                                                                    |
+| `evaluatorRefusal`, `noEvaluator`  | `(options) => string \| undefined`, `string`                                                                             | The startup preflight: why this host cannot run a turn, or `undefined`. A host that injects its own evaluator passes; a host that leaves the evaluator to its environment is refused when that environment holds no key.     |
+| `failedOutcome`, `seatFailureLine` | `(seat, cause) => Outcome`, `(failure) => string`                                                                        | A refused seat as an outcome with the provider's words, and the server log line with the hint.                                                                                                                               |
+| `databasePath`                     | `(directory) => string`                                                                                                  | `<directory>/.smithers/opencode.sqlite`.                                                                                                                                                                                     |
+| `inertJj`                          | `{ snapshot, restore, diff }`                                                                                            | The version control the engine is built over; a turn never calls it.                                                                                                                                                         |
+
+## `ScriptedDriver` and `DemoScript`
+
+| Export                         | Meaning                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `ScriptedDriver.Segment`       | A run of events, or a permission park with its `allowed` and `rejected` continuations.            |
+| `ScriptedDriver.Script`        | `{ segments }`.                                                                                   |
+| `ScriptedDriver.Options`       | `{ script, delay? }`: the turn to replay and the pause between events.                            |
+| `ScriptedDriver.make`, `layer` | Constructors.                                                                                     |
+| `DemoScript.script`            | `(input: StartInput) => Script`: the recorded turn keyed by the session id, with a classify call. |
+
+## `Ids`
+
+| Export     | Signature                                                                          | Meaning                                                                        |
+| ---------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `prefixes` | `{ session: "ses", message: "msg", part: "prt", permission: "per", event: "evt" }` | OpenCode's prefixes.                                                           |
+| `make`     | `(kind, timestamp?) => string`                                                     | A fresh id; sessions sort newest first, the rest in creation order.            |
+| `part`     | `(messageID, { frame, slot, ordinal }) => string`                                  | A part id derived from its message and a sort key.                             |
+| `reply`    | `(userMessageID) => string`                                                        | The answer's id, derived from the prompt's so a retry runs the same execution. |
+| `head`     | `(timestamp, descending, sequence) => string`                                      | The twelve-character time head.                                                |
+| `isKind`   | `(kind, id) => boolean`                                                            | Whether an id carries a kind's prefix.                                         |
+
+## `Pricing`
+
+| Export      | Signature                                   | Meaning                                                                 |
+| ----------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `pricingOf` | `(seat) => Projection.Pricing \| undefined` | The published list price of a starter seat; an unknown seat costs zero. |
+
+## `Cors` and `Auth`
+
+| Export                 | Meaning                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                               |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                    |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.               |
+| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both. |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.      |
+| `Auth.Credentials`     | `{ username, password }`.                                                                          |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                   |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.     |
 
 ---
 
@@ -39104,9 +39541,9 @@ https://smithers.sh/docs/reference/api/std/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/api.md) · [package docs](https://std.smithers.sh)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/)
 
-The package exports 31 modules. Each is reachable from the root entry point as a
+The package exports 33 modules. Each is reachable from the root entry point as a
 namespace and from its own subpath:
 
 ```ts
@@ -39127,7 +39564,7 @@ surface.
 
 ## The flow modules
 
-Seventeen modules declare a flow. Every one of them exports the same names:
+Eighteen modules declare a flow. Every one of them exports the same names:
 
 | Export         | Type                                     | Meaning                                  |
 | -------------- | ---------------------------------------- | ---------------------------------------- |
@@ -39141,21 +39578,22 @@ Seventeen modules declare a flow. Every one of them exports the same names:
 | `flow`         | `Flow`                                   | The declaration, built by `Flow.make`.   |
 | `run`          | `(input) => Effect<Output, StdError, R>` | The handler.                             |
 
-The modules are `ApplyPatch`, `Bash`, `Edit`, `Explore`, `Fetch`, `Glob`,
-`Grep`, `HttpPost`, `Ls`, `Lsp`, `Read`, `ShellCommand`, `TestRun`,
+The modules are `ApplyPatch`, `Bash`, `Classify`, `Edit`, `Explore`, `Fetch`,
+`Glob`, `Grep`, `HttpPost`, `Ls`, `Lsp`, `Read`, `ShellCommand`, `TestRun`,
 `UpdatePlan`, `WebFetch`, `WebSearch`, and `Write`.
 
 Some of them export more than the common nine:
 
-| Module         | Additional exports                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                        |
-| `Explore`      | `make(options: { model?: string })`, and no `run`                                           |
-| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                    |
-| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE` |
-| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                    |
-| `UpdatePlan`   | `StepStatus`, `Plan`                                                                        |
-| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                    |
+| Module         | Additional exports                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                                                                                                                       |
+| `Classify`     | `MAX_STATES`, `MAX_STATE_BYTES`, `CONCURRENCY`, `State`, `Questions`, `States`, `Verdict`, `BatchResult`, `ask`, `askAll`, `answerContract`, `curated`; `run` fails with `ClassifierError` |
+| `Explore`      | `make(options: { model?: string })`, and no `run`                                                                                                                                          |
+| `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                                                                                                                   |
+| `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE`                                                                                                |
+| `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                                                                                                                   |
+| `UpdatePlan`   | `StepStatus`, `Plan`                                                                                                                                                                       |
+| `WebSearch`    | the `WebSearch` service, `make`, `makeNoop`, `layerNoop`                                                                                                                                   |
 
 ## Manifest
 
@@ -39163,17 +39601,17 @@ The whole library keyed by registry name. Every registry is frozen.
 
 | Export       | Type                                 | Meaning                                    |
 | ------------ | ------------------------------------ | ------------------------------------------ |
-| `flows`      | record of name to declaration        | All 17 declarations.                       |
-| `handlers`   | record of name to handler            | The 16 that have one; `explore` is absent. |
-| `effectsFor` | record of name to narrowing function | All 17, including `explore`.               |
-| `names`      | readonly tuple of 17 names           | Registry order.                            |
-| `readOnly`   | readonly tuple of 8 names            | The read-only projection.                  |
+| `flows`      | record of name to declaration        | All 18 declarations.                       |
+| `handlers`   | record of name to handler            | The 17 that have one; `explore` is absent. |
+| `effectsFor` | record of name to narrowing function | All 18, including `explore`.               |
+| `names`      | readonly tuple of 18 names           | Registry order.                            |
+| `readOnly`   | readonly tuple of 9 names            | The read-only projection.                  |
 
 ```ts
 import * as Manifest from "@smthrs/std/Manifest"
 
 Manifest.names // ["read", "write", "edit", "ls", "glob", "grep", "bash", ...]
-Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetch", "lsp"]
+Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetch", "lsp", "classify"]
 ```
 
 ## StdError
@@ -39201,29 +39639,62 @@ Every service key, error tag, and class identifier in this package is
 `@smthrs/std/<Name>`, so `Effect.catchTag("@smthrs/std/StdError", ...)` catches
 every handler failure.
 
+## Classifiers
+
+The curated classifiers `classify/<id>` flows are declared from, each a
+`Classifier.make` declaration from [`@smthrs/model`](/docs/reference/api/model/) with a state
+schema and atomic questions.
+
+| Export             | Type                             | Meaning                                                                                                                    |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `relevance`        | `Classifier` `triage/relevance`  | `{ task, file, excerpt }`: `relevant` boolean, `role` choice, `risk` score.                                                |
+| `checkVerdict`     | `Classifier` `check/verdict`     | `{ task, command, exitCode, output }`: `rightReason` boolean, `invalidProbe` boolean.                                      |
+| `editRisk`         | `Classifier` `edit/risk`         | `{ task, path, hunk }`: `risk` score, `reversible` boolean.                                                                |
+| `probeAttribution` | `Classifier` `probe/attribution` | `{ command, exitCode, output }`: `attribution` choice, `executed` boolean. Asked by `Probe.classify`, not bound as a flow. |
+| `all`              | `ReadonlyArray<AnyClassifier>`   | The first three, in catalog order; what `StandardFlows.classify` binds when a host names no classifiers.                   |
+
+`Classify.curated(classifier)` turns any of them, or a host's own, into a
+`{ name, digest, flow, run }` whose input is the classifier's state or
+`{ states }` and whose description ends with `Classify.answerContract`, the
+answer ids and shapes derived from the questions. See
+[Judge state with classify](https://std.smithers.sh/guides/classify-with-jev/).
+
 ## Probe
 
 Telling an invalid probe from a failing check. A non-zero exit is a runner's
 verdict about the code it ran, not about the command it was handed.
 
-| Export         | Type                                                                  | Meaning                                                                                     |
-| -------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `key`          | `"invalidProbe"`                                                      | The reserved output key a flow reports one under.                                           |
-| `Reason`       | `Schema.Literals` and the matching type                               | `unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`, `unknown-environment`. |
-| `InvalidProbe` | `Schema.Struct` and the matching type                                 | `{ reason, evidence, message }`.                                                            |
-| `classify`     | `(result: { exitCode, stdout, stderr }) => InvalidProbe \| undefined` | Classifies one command result.                                                              |
+| Export             | Type                                                                                         | Meaning                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `key`              | `"invalidProbe"`                                                                             | The reserved output key a flow reports one under.                                           |
+| `Reason`           | `Schema.Literals` and the matching type                                                      | `unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`, `unknown-environment`. |
+| `InvalidProbe`     | `Schema.Struct` and the matching type                                                        | `{ reason, evidence, message }`.                                                            |
+| `Attribution`      | `{ to, executed?, invalidProbe? }`                                                           | What one result was attributed to: the tree, or one of the five.                            |
+| `CONFIDENCE_FLOOR` | `0.7`                                                                                        | The confidence an attribution needs before it outranks the tree.                            |
+| `MAX_OUTPUT_BYTES` | `32768`                                                                                      | The most output bytes one judgment carries, newest kept.                                    |
+| `posix`            | `(exitCode: number) => InvalidProbe \| undefined`                                            | Reads the shell's own refusal, 126 and 127, from the exit code alone.                       |
+| `classify`         | `(result: { command, exitCode, output }) => Effect<Attribution, ClassifierError, Evaluator>` | Attributes one command result, with Jev.                                                    |
+| `unjudged`         | `(error: ClassifierError) => StdError`                                                       | The standard-flow failure a judge that did not answer is.                                   |
 
 ```ts
 import * as Probe from "@smthrs/std/Probe"
 
-const probe = Probe.classify({ exitCode: 127, stdout: "", stderr: "pytest: command not found" })
-// { reason: "unknown-command", evidence: "pytest: command not found", message: "..." }
+Probe.posix(127)
+// { reason: "unknown-command", evidence: "the command exited 127", message: "..." }
+
+const attribution = yield * Probe.classify({ command: "pytest tests/x.py::nope", exitCode: 4, output })
+// { to: "unknown-test", executed: false, invalidProbe: { reason: "unknown-test", ... } }
 ```
 
-A zero exit is never classified. A runner's own report that it executed tests
-vetoes every wording recogniser, so a genuine reproduction that prints
-`No module named` from inside a test is not suppressed. Exit codes 126 and 127
-are the shell's verdict and are not vetoed.
+The attribution is Jev's: `classify` asks the `probe/attribution` classifier
+through the `Evaluator` service of [`@smthrs/model`](/docs/reference/api/model/), so a host
+needs `AI_GATEWAY_API_KEY` and a bound evaluator. Two things are still decided
+without it, because an exit code is a fact rather than prose: a zero exit is
+never classified, and 126 and 127 are the shell's own refusal to start the
+command. An answer below `CONFIDENCE_FLOOR` is the tree's failure, which leaves
+a genuine reproduction intact. There is no third path: when the judge does not
+answer, `unjudged` turns its failure into the caller's typed failure rather
+than a guess.
 
 ## Search
 
@@ -47487,6 +47958,7 @@ flow is a workflow, and a run is a persisted flow execution.
 | `mcp` | Register the Smithers MCP server with an agent |
 | `memory` | Durable facts, notes, recall, and conversation history |
 | `migrate` | Inventory, plan, or apply the 0.x-to-1.x source migration |
+| `opencode` | Serve the OpenCode protocol over the agent loop for the hosted OpenCode app |
 | `owners` | Resolve owners, reasons, and the agent policy for paths, or for the paths a diff touches |
 | `query` | List labels or evaluate deps(label), rdeps(label), or owners(label) |
 | `review` | Execute the model-review targets selected by a pattern (needs the engine CLI; skips where it is absent) |
