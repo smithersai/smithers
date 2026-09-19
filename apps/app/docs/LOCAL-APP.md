@@ -152,6 +152,8 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | POST | `/api/agent/turn/retire` | Retire a leg using its private replay capability |
 | POST | `/api/agent/turn/erase` | Delete-only proof, including fencing a not-yet-accepted leg |
 | POST | `/api/agent/turn/cancel` | Cancel a turn (`/api/chat/cancel` is an alias) |
+| GET | `/api/model/catalog` | Built-in models, credential names with `present` and their pinned origins, and seats; never a value |
+| POST | `/api/model/test` | One request to a configured model; 200 with a typed result for a pass and a failure; no sign-in |
 | POST | `/api/tools/browser-fetch` | Guarded, pinned HTTPS page read (501 offline) |
 | POST | `/api/client-errors` | Renderer error ingest; logged, never persisted |
 | ANY | `/api/cloud/*` | Cloud proxy to `SMITHERS_CLOUD_API` (Bearer from the Bun credential; 501 offline) |

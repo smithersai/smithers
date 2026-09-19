@@ -3,11 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
+import { APP_BOOTSTRAP_PATH, AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { decodeAgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { LOCAL_SESSION_HEADER, LOCAL_SESSION_META } from "@smthrs/rpc/LocalSession"
+import { PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_REPLY } from "../../e2e/real/support/model-provider-behaviors"
+import { launchModelProvider } from "../../e2e/real/support/model-provider-process"
+import type { ModelProvider } from "../../e2e/real/support/model-provider-process"
 import { createChatStub } from "../../e2e/support/ChatStub"
 import { defaultDistDir, describeCookie, rescopeCookie, startLocalServer } from "./server"
 import type { LocalServer } from "./server"
@@ -310,6 +313,17 @@ describe("the local origin", () => {
 })
 
 describe("the Smithers Cloud seam", () => {
+  test("the bootstrap this host serves is one the client's own schema admits", async () => {
+    // The SPA refuses to start on a bootstrap its schema rejects ("Runtime
+    // bootstrap broke its contract"), so a field the client requires is part of
+    // this route's contract: a host with no sandbox says `sandbox: null`, the
+    // way the Worker does, and never omits the key.
+    const body: unknown = await (await apiFetch(APP_BOOTSTRAP_PATH)).json()
+    const parsed = AppBootstrapSchema.safeParse(body)
+    expect(parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)).toEqual([])
+    expect((body as { readonly sandbox?: unknown }).sandbox).toBeNull()
+  })
+
   test("offline answers 501 like the identity stub, and the session is honestly signed-out", async () => {
     // Offline the host claims neither cloud door: the bootstrap is the shared
     // table (@smthrs/rpc/HostCapabilities) for a launch with no Smithers Cloud upstream.
@@ -562,6 +576,204 @@ describe("POST /api/chat/turn", () => {
       body: JSON.stringify({ runId: "run-3" })
     })
     expect(await late.json()).toEqual({ ok: true, status: "not-found" })
+  })
+})
+
+/*
+ * The explainer seat (R6): a turn that names a model is answered by that
+ * model over the real loopback provider, or refused. The stub agent stands
+ * behind the same host, so any `stub:` text in an answer is a fallback.
+ */
+describe("a turn that names a configured model", () => {
+  const KEY = "sk-turn-REDACTME-0123456789abcdef"
+  let provider: ModelProvider
+  let bound: LocalServer
+  let redirector: ReturnType<typeof Bun.serve>
+  const trail: Array<string> = []
+
+  beforeAll(async () => {
+    // The provider finishes a slow answer before it exits, so the wait is kept under afterAll's budget.
+    provider = await launchModelProvider({ key: KEY, slowMs: 1_500 })
+    redirector = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        new Response(null, { status: 307, headers: { location: `${provider.origin}${new URL(request.url).pathname}` } })
+    })
+    bound = await startLocalServer({
+      port: 0,
+      distDir: dist,
+      agent: createChatStub,
+      env: {
+        SMITHERS_MODEL_KEY_LOOPBACK: KEY,
+        SMITHERS_MODEL_KEY_LOOPBACK_ORIGIN: provider.origin,
+        SMITHERS_MODEL_KEY_UNSET_ORIGIN: provider.origin,
+        SMITHERS_MODEL_KEY_DETOUR: KEY,
+        SMITHERS_MODEL_KEY_DETOUR_ORIGIN: `http://127.0.0.1:${redirector.port}`
+      },
+      log: (line) => trail.push(line)
+    })
+  })
+
+  afterAll(async () => {
+    await bound.stop()
+    await redirector.stop(true)
+    await provider.close()
+  })
+
+  const binding = (modelId: string, fields: Record<string, unknown> = {}) => ({
+    protocol: "openai-chat",
+    baseUrl: provider.origin,
+    modelId,
+    credential: "LOOPBACK",
+    ...fields
+  })
+  const post = (path: string, body: unknown): Promise<Response> =>
+    fetch(`${bound.origin}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", [LOCAL_SESSION_HEADER]: bound.sessionToken },
+      body: JSON.stringify(body)
+    })
+  const turn = (runId: string, model: unknown, extra: Record<string, unknown> = {}): Promise<Response> =>
+    post(TURN_PATH, { runId, messages: [{ role: "user", content: "say ok" }], instructions: "Be brief.", purpose: "explain", role: "explainer", model, ...extra })
+
+  test("is answered by that model through its Route, never by the agent", async () => {
+    const before = (await provider.journal()).length
+    const response = await turn("bound-1", binding(PROVIDER_MODEL.answers))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toBe("application/x-ndjson")
+    expect(await readFrames(response)).toEqual([
+      ...PROVIDER_REPLY.map((text) => ({ runId: "bound-1", type: "delta" as const, kind: "text" as const, text })),
+      { runId: "bound-1", type: "done", reason: "stop" }
+    ])
+    const seen = (await provider.journal()).slice(before)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ modelId: PROVIDER_MODEL.answers, authorized: true, credentialSha256: provider.acceptedKeySha256 })
+  })
+
+  test("with tools, or continuing a tool call, is refused tools_not_supported", async () => {
+    const before = (await provider.journal()).length
+    const tooled = await turn("bound-2", binding(PROVIDER_MODEL.answers), {
+      tools: [{ type: "function", name: "read", description: "Reads.", parameters: {} }]
+    })
+    expect(tooled.status).toBe(400)
+    expect(await tooled.json()).toMatchObject({ status: "error", code: "tools_not_supported", origin: "local" })
+    const continued = await turn("bound-2", binding(PROVIDER_MODEL.answers), {
+      messages: [{ type: "function_call_output", call_id: "c1", output: "x" }]
+    })
+    expect(continued.status).toBe(400)
+    expect(await continued.json()).toMatchObject({ code: "tools_not_supported" })
+    expect((await provider.journal()).length).toBe(before)
+  })
+
+  test("with a binding this host will not serve is refused by code, and nothing answers in its place", async () => {
+    const cases: ReadonlyArray<readonly [unknown, number, string]> = [
+      [binding(PROVIDER_MODEL.answers, { credential: "GITHUB_TOKEN" }), 400, "request_invalid"],
+      [binding(PROVIDER_MODEL.answers, { credential: "OPENAI_API_KEY" }), 400, "request_invalid"],
+      [binding(PROVIDER_MODEL.answers, { protocol: "evaluation" }), 400, "request_invalid"],
+      [binding(PROVIDER_MODEL.answers, { apiKey: KEY }), 400, "request_invalid"],
+      ["cerebras", 400, "request_invalid"],
+      [binding(PROVIDER_MODEL.answers, { credential: "UNSET" }), 503, "seam_not_configured"]
+    ]
+    const before = (await provider.journal()).length
+    for (const [model, status, code] of cases) {
+      const response = await turn("bound-3", model)
+      const text = await response.text()
+      expect(response.status).toBe(status)
+      expect(JSON.parse(text)).toMatchObject({ status: "error", code, origin: "local" })
+      expect(text).not.toContain("stub:")
+      expect(text).not.toContain(KEY)
+    }
+    expect((await provider.journal()).length).toBe(before)
+  })
+
+  test("whose provider refuses ends the turn with the typed line, not with another model's answer", async () => {
+    const response = await turn("bound-4", binding(PROVIDER_MODEL.rateLimited))
+    expect(response.status).toBe(200)
+    expect(await readFrames(response)).toEqual([{ runId: "bound-4", type: "done", reason: "stop", error: "refused · 429" }])
+  })
+
+  test("whose provider redirects is refused with the status, and the target is never dialled", async () => {
+    const before = (await provider.journal()).length
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      const runId = `bound-detour-${protocol}`
+      const response = await turn(runId, binding(PROVIDER_MODEL.answers, {
+        protocol,
+        baseUrl: `http://127.0.0.1:${redirector.port}`,
+        credential: "DETOUR"
+      }))
+      expect(response.status).toBe(200)
+      expect(await readFrames(response)).toEqual([{ runId, type: "done", reason: "stop", error: "refused · 307" }])
+    }
+    expect((await provider.journal()).length).toBe(before)
+  })
+
+  test("on an offline host is served on loopback only, and nothing else is dialled", async () => {
+    let dialled = 0
+    const offline = await startLocalServer({
+      port: 0,
+      distDir: dist,
+      agent: createChatStub,
+      env: { ANTHROPIC_API_KEY: KEY },
+      modelFetch: (async () => {
+        dialled += 1
+        return new Response(null, { status: 500 })
+      }) as unknown as typeof fetch
+    })
+    try {
+      const response = await fetch(`${offline.origin}${TURN_PATH}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", [LOCAL_SESSION_HEADER]: offline.sessionToken },
+        body: JSON.stringify({
+          runId: "bound-offline",
+          messages: [{ role: "user", content: "say ok" }],
+          instructions: "Be brief.",
+          purpose: "explain",
+          role: "explainer",
+          model: { protocol: "anthropic-messages", modelId: "claude-x", credential: "ANTHROPIC_API_KEY" }
+        })
+      })
+      const text = await response.text()
+      expect(response.status).toBe(400)
+      expect(JSON.parse(text)).toMatchObject({ status: "error", code: "request_invalid", origin: "local" })
+      expect(text).not.toContain("stub:")
+      expect(text).not.toContain(KEY)
+      expect(dialled).toBe(0)
+    } finally {
+      await offline.stop()
+    }
+  })
+
+  test("whose provider echoes the credential has it cut out of the stream, even across two deltas", async () => {
+    for (const protocol of ["openai-chat", "anthropic-messages"] as const) {
+      const runId = `bound-echo-${protocol}`
+      const response = await turn(runId, binding(PROVIDER_MODEL.echoes, { protocol }))
+      expect(response.status).toBe(200)
+      const raw = await response.text()
+      expect(raw).not.toContain(KEY)
+      const frames = raw.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line) as AgentTurnFrame)
+      const said = frames.flatMap((frame) => frame.type === "delta" ? [frame.text] : []).join("")
+      // The words around the value arrive whole and in order; only the value is gone.
+      expect(said).toBe(PROVIDER_ECHO_LEAD)
+      expect(frames.at(-1)).toEqual({ runId, type: "done", reason: "stop" })
+    }
+  })
+
+  test("is cancelled by interrupting it, and the stream closes", async () => {
+    const before = (await provider.journal()).length
+    // Bun sends the headers with the first frame, so the turn is awaited only after the cancel.
+    const pending = turn("bound-5", binding(PROVIDER_MODEL.slow))
+    while ((await provider.journal()).length === before) await Bun.sleep(10)
+    const cancel = await post("/api/chat/cancel", { runId: "bound-5" })
+    expect(await cancel.json()).toEqual({ ok: true, status: "cancelled" })
+    expect(await readFrames(await pending)).toEqual([])
+    const late = await post("/api/chat/cancel", { runId: "bound-5" })
+    expect(await late.json()).toEqual({ ok: true, status: "not-found" })
+  })
+
+  test("leaves the credential out of every trail line", () => {
+    expect(trail.length).toBeGreaterThan(0)
+    expect(trail.some((line) => line.includes(KEY))).toBe(false)
   })
 })
 

@@ -10,6 +10,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { existsSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
+import { Effect, Fiber } from "effect"
 import {
   AUTH_CALLBACK_PATH,
   AUTH_NATIVE_CLAIM_PATH,
@@ -21,6 +22,8 @@ import {
   CHAT_TURN_PATH,
   HEALTH_PATH,
   IDENTITY_ROUTE_PREFIX,
+  MODEL_CATALOG_PATH,
+  MODEL_TEST_PATH,
   TURN_PATH,
   TURN_REPLAY_PATH,
   TURN_RETIRE_PATH,
@@ -29,6 +32,8 @@ import {
 import * as Redaction from "@smthrs/journal/Redaction"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
+import { MODEL_TEST_BODY_MAX_BYTES, modelFailureRefusalCode, ModelTestRequestSchema } from "@smthrs/rpc/ConfiguredModel"
+import type { ModelCredentialEnv } from "@smthrs/rpc/ConfiguredModel"
 import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import {
   CLOUD_AUTH_SESSION_PATH,
@@ -57,6 +62,8 @@ import { createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
 import { createCloudAuth } from "./CloudAuth"
 import type { CloudAuth, CloudKeychain } from "./CloudAuth"
+import { modelFailureLine, planOnLocal, sealedMessages, sealedTurn } from "./ConfiguredModelHost"
+import { createModelProbe } from "./ModelProbe"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
 import type { RouteHandler } from "./routes"
@@ -165,6 +172,15 @@ export interface LocalServerOptions {
   readonly log?: (line: string) => void
   /** Test/replay override; production generates 256 fresh random bits. */
   readonly sessionToken?: string
+  /**
+   * The environment model credentials are read from, by name (R4). Defaults to
+   * Bun.env; a test passes its own record, and nothing else reads a model key.
+   */
+  readonly env?: ModelCredentialEnv
+  /** Test override for the one deadline a model test runs under. */
+  readonly modelTestDeadlineMs?: number
+  /** Test override for the transport a configured model is reached through. */
+  readonly modelFetch?: typeof globalThis.fetch
 }
 
 export interface WsSocketData {
@@ -699,7 +715,10 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         cloud: cloudUpstream !== null,
         browser: remoteEnabled
       }),
-      authFlow: identityUpstream === null ? "none" : "both"
+      authFlow: identityUpstream === null ? "none" : "both",
+      // This host wraps nothing. The client's schema requires the key, and an
+      // omitted one stops the SPA at "Runtime bootstrap broke its contract".
+      sandbox: null
     }))
 
   router.add("GET", HEALTH_PATH, () =>
@@ -710,12 +729,18 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       home
     }))
 
-  const startChatTurn = (body: StartAgentTurnRequest): Response => {
-    if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
-    const runId = body.runId
-    if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
-    // The writer exists before the agent starts, so a frame published before
-    // the response stream opens is queued, never lost.
+  const modelEnv: ModelCredentialEnv = options.env ?? Bun.env
+  /** Offline performs no egress, so a configured model may be reached on loopback only. */
+  const modelEgress = remoteEnabled ? {} : { egress: false }
+  /** Live configured-model turns by runId: what a cancel interrupts. */
+  const sealedTurns = new Map<string, () => void>()
+
+  /**
+   * One turn's open response. The writer exists before its producer starts, so
+   * a frame published before the response stream opens is queued, never lost.
+   * `cancel` is the producer's own stop, run when the reader goes away.
+   */
+  const openTurn = (runId: string, cancel: () => void): () => Response => {
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined
     const queue: Array<Uint8Array> = []
     let ended = false
@@ -738,37 +763,86 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       }
     }
     writers.set(runId, writer)
+    return () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          controller = streamController
+          for (const chunk of queue) streamController.enqueue(chunk)
+          queue.length = 0
+          if (ended) {
+            try {
+              streamController.close()
+            } catch {
+              // Nothing to close twice.
+            }
+          }
+        },
+        cancel() {
+          // Only this response's own writer may cancel: a later turn reusing
+          // the runId must survive this one's teardown.
+          if (writers.get(runId) !== writer) return
+          writers.delete(runId)
+          ended = true
+          cancel()
+        }
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
+      })
+    }
+  }
+
+  /**
+   * The explainer seat (R6): a turn that names a model is answered by THAT
+   * model through its decoded Route, or refused. It never reaches the agent
+   * below, so no failure here can fall back to the default upstream.
+   */
+  const startConfiguredTurn = (body: StartAgentTurnRequest, model: unknown): Response => {
+    if (body.tools !== undefined && body.tools.length > 0) {
+      return refuse("tools_not_supported", "A configured model runs no tools; send this turn without tools.")
+    }
+    const messages = sealedMessages(body.messages)
+    if (messages === undefined) {
+      return refuse("tools_not_supported", "A configured model runs no tools, so it cannot continue a tool call.")
+    }
+    const planned = planOnLocal(model, modelEnv, { kind: "generation", ...modelEgress })
+    if (!planned.ok) return refuse(modelFailureRefusalCode(planned.failure), modelFailureLine(planned.failure))
+    const runId = body.runId
+    if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
+    let interrupt = (): void => {}
+    const respond = openTurn(runId, () => interrupt())
+    const fiber = Effect.runFork(
+      sealedTurn(
+        planned,
+        { runId, instructions: body.instructions, messages, ...(body.context === undefined ? {} : { context: body.context }) },
+        publishFrame,
+        options.modelFetch
+      ).pipe(Effect.ensuring(Effect.sync(() => sealedTurns.delete(runId))))
+    )
+    interrupt = () => Effect.runFork(Fiber.interrupt(fiber))
+    sealedTurns.set(runId, interrupt)
+    return respond()
+  }
+
+  const startChatTurn = (body: StartAgentTurnRequest): Response => {
+    /*
+     * The binding stays untrusted until the planner has judged it: a malformed
+     * one is refused by name, never dropped, because a dropped binding is the
+     * silent fallback R6 forbids.
+     */
+    const model: unknown = "model" in body ? body.model : undefined
+    if (model !== undefined) return startConfiguredTurn(body, model)
+    if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
+    const runId = body.runId
+    if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
+    const respond = openTurn(runId, () => agent.cancel(runId))
     const started = agent.start(body)
     if (started.status === "error") {
       writers.delete(runId)
       return jsonError("turn_running", started.message)
     }
-    const stream = new ReadableStream<Uint8Array>({
-      start(streamController) {
-        controller = streamController
-        for (const chunk of queue) streamController.enqueue(chunk)
-        queue.length = 0
-        if (ended) {
-          try {
-            streamController.close()
-          } catch {
-            // Nothing to close twice.
-          }
-        }
-      },
-      cancel() {
-        // Only this response's own writer may cancel: a later turn reusing
-        // the runId must survive this one's teardown.
-        if (writers.get(runId) !== writer) return
-        writers.delete(runId)
-        ended = true
-        agent.cancel(runId)
-      }
-    })
-    return new Response(stream, {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
-    })
+    return respond()
   }
   const handleChatTurn: RouteHandler = async ({ request }) => {
     // Bound actual bytes; a chunked request carries no Content-Length.
@@ -790,12 +864,19 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   router.add("POST", TURN_ERASE_PATH, ({ request }) => turnJournal.access(request, true, true))
 
   const handleChatCancel: RouteHandler = async ({ request }) => {
-    if (agent === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
+    // A configured-model turn is this host's own fiber and needs no agent; every other turn is the agent's.
+    if (agent === undefined && sealedTurns.size === 0) {
+      return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
+    }
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
     const runId = typeof parsed.body === "object" && parsed.body !== null && "runId" in parsed.body ? parsed.body.runId : undefined
     if (typeof runId !== "string" || runId === "") return jsonError("invalid_request", "runId is required.")
-    const result = agent.cancel(runId)
+    const interruptSealed = sealedTurns.get(runId)
+    interruptSealed?.()
+    const result: { readonly status: "cancelled" | "not-found" } = interruptSealed !== undefined
+      ? { status: "cancelled" }
+      : agent?.cancel(runId) ?? { status: "not-found" }
     // Cancelling aborts upstream without a frame, so the stream closes here
     // or the SPA would keep reading a response that can never complete.
     const writer = writers.get(runId)
@@ -804,6 +885,28 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   }
   router.add("POST", CANCEL_PATH, handleChatCancel)
   router.add("POST", CHAT_CANCEL_PATH, handleChatCancel)
+
+  /*
+   * The Models surface. This host answers both routes itself and proxies
+   * neither: the credentials are this machine's own, read by name from the
+   * environment it was started with, so no sign-in stands in front of them
+   * (R8). The catalog carries names and presence, never a value.
+   */
+  const modelProbe = createModelProbe({
+    env: modelEnv,
+    egress: remoteEnabled,
+    ...(options.modelTestDeadlineMs === undefined ? {} : { deadlineMs: options.modelTestDeadlineMs }),
+    ...(options.modelFetch === undefined ? {} : { fetch: options.modelFetch })
+  })
+  router.add("GET", MODEL_CATALOG_PATH, () => json(modelProbe.catalog()))
+  router.add("POST", MODEL_TEST_PATH, async ({ request }) => {
+    const parsed = await readJson(request, MODEL_TEST_BODY_MAX_BYTES)
+    if ("error" in parsed) return parsed.error
+    const body = ModelTestRequestSchema.safeParse(parsed.body)
+    if (!body.success) return refuse("request_invalid", "Body must be { model }.")
+    // Both outcomes are a 200: a failed test is an answer, typed, with no provider text in it.
+    return json(await modelProbe.test(body.data.model))
+  })
 
   /*
    * The Smithers Cloud login (lane piper, ADR 0001): start answers the URL the
@@ -1167,6 +1270,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     stop: async () => {
       const writerCleanup = [...writers].flatMap(([runId, writer]) => [() => agent?.cancel(runId), () => writer.end()])
       writers.clear()
+      // A configured-model turn holds a provider request open; interrupting its fiber aborts it.
+      for (const interrupt of [...sealedTurns.values()]) interrupt()
       // Stop accepting traffic before waiting on independent resources. A
       // failed finalizer must not strand the listener or another child owner.
       const results = await Promise.allSettled([
