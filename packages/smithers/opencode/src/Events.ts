@@ -169,12 +169,13 @@ export const make = (options: Options): Effect.Effect<Service> =>
         return envelope
       })
 
-    const replay: Service["replay"] = (after) =>
-      Effect.sync(() => {
-        if (after === undefined) return [...buffer]
-        const index = buffer.findIndex((envelope) => envelope.payload.id === after)
-        return index < 0 ? [...buffer] : buffer.slice(index + 1)
-      })
+    const replayed = (after: string | undefined): Array<Envelope> => {
+      if (after === undefined) return [...buffer]
+      const index = buffer.findIndex((envelope) => envelope.payload.id === after)
+      return index < 0 ? [...buffer] : buffer.slice(index + 1)
+    }
+
+    const replay: Service["replay"] = (after) => Effect.sync(() => replayed(after))
 
     /**
      * What one stream missed: nothing at all unless it named where it left
@@ -187,8 +188,7 @@ export const make = (options: Options): Effect.Effect<Service> =>
      * as {@link Service.replay} answers it, whether or not the buffer still
      * reaches back that far.
      */
-    const missed = (after: string | undefined): Effect.Effect<Array<Envelope>> =>
-      after === undefined ? Effect.succeed([]) : replay(after)
+    const missed = (after: string | undefined): Array<Envelope> => after === undefined ? [] : replayed(after)
 
     const stream: Service["stream"] = (streamOptions = {}) => {
       const bare = streamOptions.bare === true
@@ -196,40 +196,36 @@ export const make = (options: Options): Effect.Effect<Service> =>
       // the newest `capacity` events, never every event of every later
       // turn: the app reloads history on reconnect and `Last-Event-ID`
       // replays the gap.
-      const live = Stream.callback<Envelope>((queue) =>
-        Effect.suspend(() =>
-          closed ? Queue.end(queue) : Effect.acquireRelease(
-            Effect.sync(() => {
-              subscribers.add(queue)
-            }),
-            () =>
-              Effect.sync(() => {
-                subscribers.delete(queue)
-              })
-          )
-        ), { bufferSize: capacity, strategy: "sliding" })
       const beats = Stream.tick(options.heartbeat ?? defaultHeartbeat).pipe(
         Stream.drop(1),
-        Stream.map(() =>
-          heartbeatComment + frame(serverEvent("server.heartbeat"), bare)
+        Stream.map(() => heartbeatComment + frame(serverEvent("server.heartbeat"), bare))
+      )
+      return Stream.unwrap(Effect.gen(function*() {
+        const queue = yield* Queue.make<Envelope, Cause.Done>({ capacity, strategy: "sliding" })
+        // Snapshot the replay and subscribe in the same synchronous step.
+        // Opening cards can read the database asynchronously, and delivering
+        // the greeting can yield too: events in either gap must already have
+        // a queue, without also appearing in the replay.
+        const past = yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const past = missed(streamOptions.after)
+            if (closed) Queue.endUnsafe(queue)
+            else subscribers.add(queue)
+            return past
+          }),
+          () => Effect.sync(() => void subscribers.delete(queue))
         )
-      )
-      const greeting = Effect.zipWith(
-        missed(streamOptions.after),
-        streamOptions.opening ?? Effect.succeed([]),
-        (missed, opening) => [...missed, ...opening.map(stamp)]
-      )
-      return Stream.fromEffect(greeting).pipe(
-        Stream.flatMap((told) =>
-          Stream.concat(
-            Stream.fromIterable([
-              frame(serverEvent("server.connected"), bare),
-              ...told.map((envelope) => frame(envelope, bare))
-            ]),
-            Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare)), beats, { haltStrategy: "left" })
-          )
+        const opening = yield* streamOptions.opening ?? Effect.succeed([])
+        const told = [...past, ...opening.map(stamp)]
+        const live = Stream.fromQueue(queue)
+        return Stream.concat(
+          Stream.fromIterable([
+            frame(serverEvent("server.connected"), bare),
+            ...told.map((envelope) => frame(envelope, bare))
+          ]),
+          Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare)), beats, { haltStrategy: "left" })
         )
-      )
+      }))
     }
 
     const close: Service["close"] = Effect.suspend(() => {

@@ -17,10 +17,8 @@ const until = (check: () => boolean): Effect.Effect<void> =>
 
 /**
  * Publishes until the stream under watch has taken `atLeast` frames, which is
- * how a test knows the stream is subscribed: the subscription registers when
- * the stream pulls past its greeting, and nothing outside the stream can
- * observe that. A fixed sleep in its place published into no subscriber at all
- * under load, and the test read back an event it had already published.
+ * how a test waits for its consumer to read live events without assuming a
+ * fixed scheduling delay under load.
  */
 const publishUntilTaken = (
   publish: Effect.Effect<unknown>,
@@ -35,6 +33,25 @@ const publishUntilTaken = (
   )
 
 describe("Events", () => {
+  it.each(["opening read", "connected greeting"])("keeps an event published during the %s", async (moment) => {
+    const frames = await run(Effect.gen(function*() {
+      const hub = yield* Events.make(options)
+      const publish = hub.publish({ type: "permission.asked", properties: { id: "per_new", sessionID: "s" } })
+      return yield* hub.stream({
+        opening: moment === "opening read" ? Effect.as(publish, []) : Effect.succeed([])
+      }).pipe(
+        Stream.tap((chunk) =>
+          moment === "connected greeting" && chunk.includes("\"type\":\"server.connected\"")
+            ? publish
+            : Effect.void
+        ),
+        Stream.take(2),
+        Stream.runCollect
+      )
+    }))
+    expect(parse(frames).map((event) => event.payload.type)).toEqual(["server.connected", "permission.asked"])
+  })
+
   it("envelopes session events with the directory and project and remembers a bounded replay", async () => {
     const result = await run(
       Effect.gen(function*() {
@@ -67,9 +84,8 @@ describe("Events", () => {
         const hub = yield* Events.make(options)
         const anchor = yield* hub.publish({ type: "a", properties: {} })
         yield* hub.publish({ type: "b", properties: {} })
-        // The live subscriber registers only once the replay chunk has been
-        // written, and the heartbeat clock starts at that same moment, so a
-        // beat is the first observable proof that the stream is listening.
+        // The heartbeat follows the greeting and replay, so the live event
+        // below has a deterministic place after both.
         const beating = yield* Deferred.make<void>()
         const collected = yield* Effect.forkChild(
           hub.stream({ after: anchor.payload.id }).pipe(
