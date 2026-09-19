@@ -96,11 +96,40 @@ const MINUTES = SetupDraftSchema.shape.budgetMinutes
 /** What one unattended fire may spend, as the registrar bounds it (`deploymentTokens`, the same shared schema). */
 const TOKENS = BudgetTokensSchema
 
+/** The two limits an unattended fire is bounded by, named as the register door's grammar names them. */
+export type LimitName = "tokens" | "minutes"
+
+/** What each limit alone may be, in that grammar. A `Record` over the union, so neither can be forgotten. */
+const LIMIT_RANGES: Readonly<Record<LimitName, string>> = {
+  tokens: `--tokens ${TOKENS.minValue}..${TOKENS.maxValue}`,
+  minutes: `--minutes ${MINUTES.minValue}..${MINUTES.maxValue}`
+}
+
 /** The whole of what a registration may name, in the grammar the register door takes. */
-const LIMIT_RANGE = `--tokens ${TOKENS.minValue}..${TOKENS.maxValue}, --minutes ${MINUTES.minValue}..${MINUTES.maxValue}`
+const LIMIT_RANGE = `${LIMIT_RANGES.tokens}, ${LIMIT_RANGES.minutes}`
 
 /** The shape the two limits take: whole numbers inside that range. */
 export const LIMIT_SHAPE = `Token and time limits are whole numbers: ${LIMIT_RANGE}.`
+
+/**
+ * What a registration naming one limit and not the other is missing: the
+ * other one, and the range that one takes.
+ *
+ * An unattended fire is bounded by a PAIR — tokens and time — so half a pair
+ * bounds nothing. Naming one is not a bad number, though, and `LIMIT_SHAPE`
+ * said it was: `--tokens 150000` is inside the range that sentence quotes
+ * (R102 B2).
+ *
+ * It is not a free choice between the pair and nothing either. This rule runs
+ * before `limitsFor`, so its sentence is the FIRST one a person reads, and
+ * `Name both limits, or neither` offered "neither" to a flow that declares no
+ * limits of its own — `checks/fast`, the flow walk W1 registered — which
+ * `limitsFor` then refuses with `unboundedFlowSentence` (R102b B1b). Only the
+ * rule that has the flow in hand knows whether "neither" is open, so this one
+ * states the missing half and nothing else.
+ */
+export const otherLimitSentence = (missing: LimitName): string =>
+  `Name the other limit: ${LIMIT_RANGES[missing]}.`
 
 /**
  * A flow whose own declaration cannot bound one unattended fire, and the
@@ -488,18 +517,54 @@ interface TriggerLimits {
 }
 
 /**
+ * Why the limits as typed cannot bound an unattended fire: a number is outside
+ * the range the register door takes, or only one of the pair was named. The
+ * two are different facts about what the person did, so they are told apart
+ * here rather than by comparing sentences (R102 B2).
+ */
+type LimitsProblem =
+  | { readonly problem: "out-of-range"; readonly error: string }
+  | { readonly problem: "half-named"; readonly error: string }
+
+/**
  * The limits the person typed, before anything is asked of the workspace:
  * nothing, two whole positive numbers, or the one refusal their shape earns.
+ *
+ * A limit is held to its range only when it was actually named. `--tokens
+ * 150000` alone used to be told its number was not a whole number in range,
+ * which is false about 150000 — what it is missing is the other half.
  */
-const namedLimits = (request: TriggerWrite): TriggerLimits | { readonly error: string } | undefined => {
+const namedLimits = (request: TriggerWrite): TriggerLimits | LimitsProblem | undefined => {
   const tokens = String(request.tokens ?? "").trim()
   const minutes = String(request.minutes ?? "").trim()
   if (tokens === "" && minutes === "") return undefined
   const count = Number(tokens)
   const span = Number(minutes)
-  if (!TOKENS.safeParse(count).success) return { error: LIMIT_SHAPE }
-  if (!MINUTES.safeParse(span).success) return { error: LIMIT_SHAPE }
+  if (tokens !== "" && !TOKENS.safeParse(count).success) return { problem: "out-of-range", error: LIMIT_SHAPE }
+  if (minutes !== "" && !MINUTES.safeParse(span).success) return { problem: "out-of-range", error: LIMIT_SHAPE }
+  if (tokens === "") return { problem: "half-named", error: otherLimitSentence("tokens") }
+  if (minutes === "") return { problem: "half-named", error: otherLimitSentence("minutes") }
   return { tokens: count, milliseconds: span * 60_000 }
+}
+
+/**
+ * The refusal the two limits' own shape earns, for a door that holds them
+ * before the seam is asked for anything.
+ *
+ * The register form's own submit reaches `namedLimits` above and is refused
+ * with zero network calls; a slash line naming the same number reached the
+ * field and nothing else, because the line was short of the flow, name and
+ * schedule the flow also needs and so never ran (walk W1). Both doors read
+ * the one rule here, so neither restates the sentence.
+ *
+ * Only an out-of-range number is stated at the door. Half a pair is what the
+ * open form is there to collect, so the card asks for it with its empty field
+ * instead of contradicting the number the person just typed; the missing half
+ * is refused at submit, where it is the whole of what is wrong.
+ */
+export const limitsRefusal = (named: Readonly<Record<string, unknown>>): string | undefined => {
+  const limits = namedLimits({ operation: "register", ...named } as TriggerWrite)
+  return limits !== undefined && "problem" in limits && limits.problem === "out-of-range" ? limits.error : undefined
 }
 
 /** The ceiling the scheduled flow declares for itself (`Descriptor.budgetOf` answers the undeclared case with an empty budget). */

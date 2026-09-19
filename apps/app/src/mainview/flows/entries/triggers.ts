@@ -4,6 +4,7 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
+import { limitsRefusal } from "../../state/seams/TriggersSeam"
 import { flag, line, text } from "../FlowForms"
 import { flow, RepoTarget } from "./Declare"
 import type { FlowEntry } from "../registry"
@@ -99,6 +100,8 @@ export const triggersFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     input: Registration,
     form: {
       submitLabel: "Prepare",
+      /* The limits the line named meet the registrar's rule here, in the registrar's own words. */
+      refuse: limitsRefusal,
       args: (payload) =>
         line(
           text(payload, "repo"),

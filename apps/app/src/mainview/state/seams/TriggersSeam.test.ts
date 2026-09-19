@@ -11,7 +11,7 @@ import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { readFile } from "node:fs/promises"
 import { flowArgs } from "../../flows/FlowArgs"
-import { LIMIT_SHAPE, NO_RULES_SENTENCE, overBoundFlowSentence, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
+import { LIMIT_SHAPE, limitsRefusal, NO_RULES_SENTENCE, otherLimitSentence, overBoundFlowSentence, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
 
 const createAppController = scopedControllers()
 
@@ -688,6 +688,61 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     /* R98 F2: past the registrar's token ceiling the host refused on the registration run, after a Plue approval row existed. */
     expect(await controller.registerTrigger({ ...REQUEST, tokens: "500000", minutes: "20" })).toBe(LIMIT_SHAPE)
     expect(calls).toEqual([])
+  })
+
+  /*
+   * R102 B2 and R102b B1b, held against ONE fixture because they are one
+   * conversation. Half a pair is not a bad number: the number is inside the
+   * range the sentence names and the other limit is simply not typed yet. The
+   * rule says so in its own words at submit, and says NOTHING at the door,
+   * whose whole purpose is to collect the half that is missing.
+   *
+   * What it says is only what is MISSING. The pair rule runs before
+   * `limitsFor`, so its sentence is the FIRST one a person reads — and for a
+   * flow that declares no limits of its own, `Name both limits, or neither`
+   * offered them "neither" and `limitsFor` then refused them for taking it.
+   * That flow is `checks/fast`, the one walk W1 registered, so the flow here
+   * is `checks/fast` and its plan carries the empty budget the walk saw
+   * (D3-13-plan-envelope.json). The three calls stay in one test so the two
+   * sentences can never drift apart again.
+   */
+  test("a flow that declares no limits is told what is missing, never offered a choice the next rule refuses", async () => {
+    const calls: Array<RelayCall> = []
+    const unbounded = workspaceAnswers({
+      List: () => okFrame({ _tag: "flows", items: [{ flowId: "checks/fast", description: "Runs the fast checks." }, FLOW_ITEMS[1]] }),
+      Plan: (payload) =>
+        payload.flowId === "checks/fast"
+          ? okFrame({ ...PLAN, flowId: "checks/fast", envelope: { ...PLAN.envelope, flows: ["checks/fast"], budget: {} } })
+          : okFrame({ ...PLAN, planId: "plan-registrar", digest: "f".repeat(64), flowId: String(payload.flowId) })
+    })
+    const { controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, unbounded) })
+    )
+    const walked = { ...REQUEST, flow: "checks/fast", input: "" }
+
+    /* Half a pair, refused with zero network calls, naming the half that is missing and the range it takes. */
+    expect(await controller.registerTrigger({ ...walked, tokens: "150000" })).toBe("Name the other limit: --minutes 1..120.")
+    expect(await controller.registerTrigger({ ...walked, minutes: "20" })).toBe("Name the other limit: --tokens 1..200000.")
+    expect(calls).toEqual([])
+
+    /* Neither named, same flow: the only sentence that may speak of "none" is the one that knows the flow. */
+    expect(await controller.registerTrigger(walked)).toBe(unboundedFlowSentence("checks/fast"))
+    expect(calls.map((call) => call.procedure)).toEqual(["List", "Plan"])
+
+    /* No sentence on this card offers an option another rule refuses. */
+    for (const sentence of [otherLimitSentence("tokens"), otherLimitSentence("minutes"), unboundedFlowSentence("checks/fast")]) {
+      expect(sentence).not.toContain("or neither")
+    }
+    expect(otherLimitSentence("tokens")).toBe("Name the other limit: --tokens 1..200000.")
+    expect(otherLimitSentence("minutes")).toBe("Name the other limit: --minutes 1..120.")
+
+    /* The door's own rule: a number out of range still earns the range; a half-named pair earns silence. */
+    expect(limitsRefusal({ tokens: "150000" })).toBeUndefined()
+    expect(limitsRefusal({ minutes: "20" })).toBeUndefined()
+    expect(limitsRefusal({ tokens: "500000" })).toBe(LIMIT_SHAPE)
+    expect(limitsRefusal({ minutes: "500" })).toBe(LIMIT_SHAPE)
+    expect(limitsRefusal({ tokens: "lots" })).toBe(LIMIT_SHAPE)
+    expect(limitsRefusal({})).toBeUndefined()
   })
 
   /*
