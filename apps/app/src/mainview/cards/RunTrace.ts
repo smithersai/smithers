@@ -15,7 +15,7 @@
  *
  * Pure: the card renders the model, the tests read it from a fixture.
  */
-import { uniqueCallEvents, openCallIndex } from "@smthrs/gateway/Diagnosis"
+import { callScope, uniqueCallEvents, openCallIndex } from "@smthrs/gateway/Diagnosis"
 import { CallPresentation, FlowActivity, type FlowDescriptor } from "@smthrs/registry/Descriptor"
 import { Schema } from "effect"
 import { engineTraceFromJournal } from "./EngineTrace"
@@ -933,7 +933,7 @@ const disciplineFold = (
  * @param records the run's journal, in sequence order
  * @param options what the plan declared; absent leaves every derived field at its empty reading
  */
-export const traceFromJournal = (
+const foldJournal = (
   run: TraceRun,
   records: ReadonlyArray<JournalRecord>,
   options: TraceOptions = {}
@@ -1152,6 +1152,12 @@ export const traceFromJournal = (
         )
         span.endedAt = at
         parent().children.push(span)
+        if (kind === "control.agent.turn-closed" && payload.step !== undefined) {
+          const closed = frame
+          closeFrame(at)
+          if (closed !== undefined && payload.outcome === "suspended") closed.status = "waiting"
+          if (closed !== undefined && payload.outcome === "aborted") closed.status = "cancelled"
+        }
       }
     }
   }
@@ -1203,6 +1209,84 @@ export const traceFromJournal = (
   }
 }
 
+/** Fold each recorded dispatch independently, keeping prompt-run addresses unchanged. */
+export const traceFromJournal = (
+  run: TraceRun,
+  records: ReadonlyArray<JournalRecord>,
+  options: TraceOptions = {}
+): TraceModel => {
+  const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+  const ordered = uniqueCallEvents(rawOrdered)
+  const groups = new Map<string, JournalRecord[]>()
+  const unscoped: JournalRecord[] = []
+  for (const record of ordered) {
+    const scope = callScope(record)
+    if (scope === undefined) unscoped.push(record)
+    else {
+      const group = groups.get(scope) ?? []
+      group.push(record)
+      groups.set(scope, group)
+    }
+  }
+  if (groups.size === 0) return foldJournal(run, records, options)
+  const base = foldJournal(run, unscoped, options)
+  const children = [...base.root.children]
+  const bands = [...base.bands]
+  const milestones = [...base.milestones]
+  const lines = [...base.lines]
+  const notes = [...base.notes]
+  const terminal = [...ordered].reverse().find((record) =>
+    record.kind === "control.run.completed" || record.kind === "control.run.failed" || record.kind === "control.run.cancelled")
+  const terminalAt = terminal === undefined ? undefined : timeOf(terminal, asRecord(terminal.payload))
+  for (const [scope, group] of groups) {
+    const prefix = `step:${encodeURIComponent(scope)}/`
+    const scoped = foldJournal({ ...run, status: "running" }, group, options)
+    const rename = (span: TraceSpan): TraceSpan => ({
+      ...span, id: `${prefix}${span.id}`, children: span.children.map(rename),
+      ...(span.status === "running" && TERMINAL_RUN.has(base.root.status) ? {
+        // A terminal run proves work stopped. It does not prove which open
+        // step succeeded or caused the run to fail.
+        status: "stopped",
+        ...(terminalAt === undefined ? {} : { endedAt: terminalAt })
+      } : {})
+    })
+    children.push(...scoped.root.children.map(rename))
+    bands.push(...scoped.bands.map((band) => ({ ...band, frames: band.frames.map((id) => `${prefix}${id}`) })))
+    milestones.push(...scoped.milestones)
+    lines.push(...scoped.lines.map((line) => ({ ...line, spanId: `${prefix}${line.spanId}` })))
+    notes.push(...scoped.notes.map((note) => ({
+      ...note, spanId: note.spanId === scoped.root.id ? base.root.id : `${prefix}${note.spanId}`
+    })))
+  }
+  children.sort((left, right) => left.startedAt - right.startedAt || (left.detail.sequence ?? 0) - (right.detail.sequence ?? 0))
+  const root = {
+    ...base.root,
+    startedAt: Math.min(...ordered.map((record) => timeOf(record, asRecord(record.payload)))),
+    children
+  }
+  const rows: TraceSpan[] = []
+  const walk = (span: TraceSpan): void => { rows.push(span); span.children.forEach(walk) }
+  walk(root)
+  const positions = new Map(rows.map((span, index) => [span.id, index]))
+  return {
+    journal: rawOrdered,
+    root, rows,
+    extent: {
+      start: Math.min(...rows.map((span) => span.startedAt)),
+      end: Math.max(...rows.map((span) => span.endedAt ?? span.startedAt))
+    },
+    counts: {
+      spans: rows.length - 1,
+      running: rows.filter((span) => span.kind !== "run" && span.status === "running").length,
+      failed: rows.filter((span) => span.kind !== "run" && span.status === "failed").length
+    },
+    bands: bands.sort((left, right) => left.startedAt - right.startedAt || left.seq - right.seq),
+    milestones: milestones.sort((left, right) => left.seq - right.seq),
+    lines: lines.sort((left, right) => (positions.get(left.spanId) ?? 0) - (positions.get(right.spanId) ?? 0)),
+    notes: notes.sort((left, right) => left.seq - right.seq)
+  }
+}
+
 /**
  * One span's bar on the shared axis, as percentages. An open span runs to the
  * axis end; an instant span is zero width and renders as a marker.
@@ -1237,9 +1321,10 @@ export const waterfallGeometry = (
  * @param model the trace
  */
 export const phaseExtent = (model: TraceModel): TraceExtent => {
-  const first = model.bands[0]
-  const last = model.bands[model.bands.length - 1]
-  return first === undefined || last === undefined ? model.extent : { start: first.startedAt, end: last.endedAt }
+  return model.bands.length === 0 ? model.extent : {
+    start: Math.min(...model.bands.map((band) => band.startedAt)),
+    end: Math.max(...model.bands.map((band) => band.endedAt))
+  }
 }
 
 /**

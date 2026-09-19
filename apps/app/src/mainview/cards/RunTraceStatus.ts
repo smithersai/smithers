@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
-import { openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
+import { callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../flows/coding/schema"
 import { engineRunEvidence } from "./EngineTrace"
 import type { TraceModel } from "./RunTrace"
@@ -38,7 +38,7 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
   if ((cursor === undefined || cursor >= latest) && terminal.has(model.root.status)) return { verdict: model.root.status }
   let activity: string | undefined, condition: RunStatus["condition"], action: RunStatus["action"], verdict: string | undefined
   const approvals = new Set<string>()
-  const calls: Array<{ flowName: string; callId?: string; input: unknown }> = []
+  const calls: Array<{ flowName: string; callId?: string; scope?: string; input: unknown }> = []
   for (const row of visible(model, cursor)) {
     const p = record(row.payload)
     switch (row.kind) {
@@ -47,12 +47,12 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
       case "control.agent.cell-call-started": {
         const name = text(p.flowName)
         if (name === undefined) break
-        calls.push({ flowName: name, callId: text(p.callId), input: p.input })
+        calls.push({ flowName: name, callId: text(p.callId), scope: callScope(row), input: p.input })
         activity = callActivity(name, p.input)
         break
       }
       case "control.agent.cell-call-settled": {
-        const index = openCallIndex(calls, text(p.callId), text(p.flowName))
+        const index = openCallIndex(calls, text(p.callId), text(p.flowName), callScope(row))
         const ended = index < 0 ? undefined : calls.splice(index, 1)[0]
         const ongoing = calls.at(-1)
         if (ongoing !== undefined) activity = callActivity(ongoing.flowName, ongoing.input)
@@ -165,7 +165,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
         if (first === undefined || first.sequence! < planSequence) return []
         return [{ execution, implementation: implementation.value, opened: first.sequence! }]
       })
-      const open: Array<{ flowName: string; callId?: string; input: unknown; sequence: number; match?: "full" | "narrowed" }> = []
+      const open: Array<{ flowName: string; callId?: string; scope?: string; input: unknown; sequence: number; match?: "full" | "narrowed" }> = []
       const invalidate = (seq: number, changed: ReadonlyArray<string>) => {
         if (changed.length > 0 && paths.length > 0 && !changed.some(path => paths.some(planned => overlap(path, planned)) || overlap(path, check.target))) return
         invalidated = seq
@@ -180,11 +180,11 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
         if (row.kind === "control.agent.mutation-observed" && p.basis === "observed" && p.mutated === true) invalidate(seq, strings(p.paths))
         if (row.kind === "control.agent.cell-call-started") {
           const flowName = text(p.flowName) ?? "", matched = match(checkSelection(flowName, p.input), check.target)
-          open.push({ flowName, callId: text(p.callId), input: p.input, sequence: seq, match: matched })
+          open.push({ flowName, callId: text(p.callId), scope: callScope(row), input: p.input, sequence: seq, match: matched })
           if (matched !== undefined) { state = matched === "full" ? "running" : "narrowed"; resultSequence = seq }
         }
         if (row.kind === "control.agent.cell-call-settled") {
-          const index = openCallIndex(open, text(p.callId), text(p.flowName))
+          const index = openCallIndex(open, text(p.callId), text(p.flowName), callScope(row))
           const call = index < 0 ? undefined : open.splice(index, 1)[0]
           if (call === undefined) continue
           if (["edit", "write", "apply_patch"].includes(call.flowName) && p.outcome === "success") {
