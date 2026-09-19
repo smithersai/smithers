@@ -1577,7 +1577,15 @@ describe("the review verb and an absent engine CLI", () => {
     const bin = NodePath.join(root, ".test-bin")
     await Fs.mkdir(bin, { recursive: true })
     const git = NodeChildProcess.execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim()
-    await Fs.symlink(git, NodePath.join(bin, "git"))
+    const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
+    // A host's Git may itself be a policy wrapper needing an interpreter and
+    // the underlying Git on PATH. Preserve that environment only inside Git;
+    // the review still sees a PATH with no engine executable.
+    await Fs.writeFile(
+      NodePath.join(bin, "git"),
+      `#!/bin/sh\nPATH=${quote(process.env["PATH"] ?? "")}\nexport PATH\nexec ${quote(git)} "$@"\n`,
+      { mode: 0o755 }
+    )
     return bin
   }
 
@@ -1640,6 +1648,12 @@ export const Package = S.Package({ targets: { review } })
   it("skips rather than fails when the engine CLI is not installed", async () => {
     const root = await reviewWorkspace()
     const bin = await pathWithoutEngine(root)
+    const engine = NodeChildProcess.spawnSync("/bin/sh", ["-c", "command -v codex"], {
+      env: { ...process.env, PATH: bin },
+      encoding: "utf8"
+    })
+    expect(engine.status).toBe(1)
+    expect(engine.stdout).toBe("")
     const { exitCode, logs } = await withPath(bin, () => serve(root, ["review", "//:review"]))
     // Green: a host with no model CLI cannot say whether the diff is clean,
     // and reporting "unclean" for that is a red gate no commit can turn green.
