@@ -150,9 +150,14 @@ const Answers = Schema.Record(Schema.String, Classifier.Answer).annotate({
     "One answer per question id: boolean { value, probability }, choice { value, probabilities, confidence }, score { value, label, probabilities, confidence }"
 })
 
+const Usage = Schema.Struct({
+  inputTokens: Schema.Number.annotate({ description: "Input tokens reported by the evaluator" }),
+  outputTokens: Schema.Number.annotate({ description: "Output tokens reported by the evaluator" })
+}).annotate({ description: "Reported token usage; a batch sums its successful states' reported usage" })
+
 /**
  * What one state's judgment looks like: the answers, their confidence, and
- * the time the transport took.
+ * the time and token usage the transport reported.
  *
  * @category schemas
  * @since 1.0.0
@@ -160,7 +165,8 @@ const Answers = Schema.Record(Schema.String, Classifier.Answer).annotate({
 export const Verdict = Schema.Struct({
   answers: Answers,
   confidence: Confidence,
-  latencyMs: Schema.Int.annotate({ description: "Wall-clock milliseconds the evaluation took" })
+  latencyMs: Schema.Int.annotate({ description: "Wall-clock milliseconds the evaluation took" }),
+  usage: Schema.optional(Usage)
 })
 
 /**
@@ -214,7 +220,8 @@ export const Output = Schema.Union([
   Verdict,
   Schema.Struct({
     results: Schema.Array(BatchResult).annotate({ description: "One entry per state, in the order given" }),
-    latencyMs: Schema.Int.annotate({ description: "Wall-clock milliseconds the whole batch took" })
+    latencyMs: Schema.Int.annotate({ description: "Wall-clock milliseconds the whole batch took" }),
+    usage: Schema.optional(Usage)
   })
 ])
 
@@ -281,7 +288,12 @@ export const ask = (
       Effect.mapError(Classifier.fromEvaluatorError)
     )
     const answers = yield* Classifier.decodeAnswers(questions, response.answers)
-    return { answers, confidence: confidences(answers), latencyMs: response.latencyMs }
+    return {
+      answers,
+      confidence: confidences(answers),
+      latencyMs: response.latencyMs,
+      ...(response.usage === undefined ? {} : { usage: response.usage })
+    }
   })
 
 /**
@@ -321,7 +333,15 @@ export const askAll = (
     if (first !== undefined && results.every((result) => !result.ok)) {
       return yield* Effect.fail(first.failure)
     }
-    return { results, latencyMs }
+    const usage = settled.reduce<Evaluator.Usage | undefined>((total, outcome) => {
+      const reported = Result.isSuccess(outcome) ? outcome.success.usage : undefined
+      if (reported === undefined) return total
+      return {
+        inputTokens: (total?.inputTokens ?? 0) + reported.inputTokens,
+        outputTokens: (total?.outputTokens ?? 0) + reported.outputTokens
+      }
+    }, undefined)
+    return { results, latencyMs, ...(usage === undefined ? {} : { usage }) }
   })
 
 /**

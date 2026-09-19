@@ -1376,6 +1376,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
         overclaims: 0.1,
         invented: 0.05,
         latencyMs: 412,
+        usage: { inputTokens: 10_000, outputTokens: 0 },
         demanded,
         currentDigest: "d",
         nextFrame
@@ -1383,11 +1384,14 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     const passed = Projection.fold(ctx, frame.state, read(false, 1))
     expect(passed.events).toEqual([])
     expect(passed.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 412 })
+    expect(passed.state.summary.jevCost).toBeCloseTo(0.00042, 8)
     // The journal replays the same reading after a park: one call, counted once.
     const replayed = Projection.fold(ctx, passed.state, read(false, 1))
     expect(replayed.state.summary).toMatchObject({ jevCalls: 1, jevLatencyMs: 412 })
+    expect(replayed.state.summary.jevCost).toBeCloseTo(0.00042, 8)
     const handedBack = Projection.fold(ctx, replayed.state, read(true, 2))
     expect(handedBack.state.summary).toMatchObject({ jevCalls: 2, jevLatencyMs: 824 })
+    expect(handedBack.state.summary.jevCost).toBeCloseTo(0.00084, 8)
     expect(handedBack.state.facts.demands).toEqual(["claim"])
     // Every health evaluation is counted where the fold asks for it, so a slow
     // answer that lands after the turn ended is still one of the calls the
@@ -1418,7 +1422,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     })
     expect(refused.state.summary.jevCalls).toBe(4)
     expect(refused.state.summary.jevLatencyMs).toBe(settled.state.summary.jevLatencyMs + 96)
-    expect(refused.state.summary.jevCost).toBe(0)
+    expect(refused.state.summary.jevCost).toBe(settled.state.summary.jevCost)
     expect(refused.state.answers).toBeUndefined()
     // A request that never reached the gateway spent no time there.
     const unreachable = Projection.health(ctx, refused.state, settled.health!, {

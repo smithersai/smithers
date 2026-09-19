@@ -1693,25 +1693,38 @@ describe("CellTurn recorded observations", () => {
         emits(`ctx.park("waiting-input", "May I run the tests?")`)
       ])
       const engine = ScriptedEngine.make(model.model)
+      const evaluator = Layer.effect(
+        Evaluator.Evaluator,
+        Effect.gen(function*() {
+          const underlying = yield* Evaluator.Evaluator
+          return Evaluator.Evaluator.of({
+            evaluate: (request) =>
+              underlying.evaluate(request).pipe(Effect.map((response) => ({
+                ...response,
+                usage: { inputTokens: first ? 1200 : 9999, outputTokens: 0 }
+              })))
+          })
+        })
+      ).pipe(Layer.provide(Evaluator.layerScripted(() => {
+        requests++
+        return !first && later === "unavailable"
+          ? Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline after restart" }))
+          : {
+            complete: { probability: first ? 0.1 : 0.99 },
+            overclaims: { probability: first ? 0.9 : 0.01 },
+            invented: { probability: first ? 0.95 : 0.01 }
+          }
+      })))
       return collect({ state: initial, flows: [] }, {
         engine: journaled(engine, records),
-        evaluator: Evaluator.layerScripted(() => {
-          requests++
-          return !first && later === "unavailable"
-            ? Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline after restart" }))
-            : {
-              complete: { probability: first ? 0.1 : 0.99 },
-              overclaims: { probability: first ? 0.9 : 0.01 },
-              invented: { probability: first ? 0.95 : 0.01 }
-            }
-        })
+        evaluator
       })
     }
 
     const original = await attempt(true)
     expect(original.failure).toMatchObject({ code: "suspended" })
     expect(of(original.events, "claim-demanded")).toEqual([
-      expect.objectContaining({ invented: 0.95, demanded: true })
+      expect.objectContaining({ invented: 0.95, demanded: true, usage: { inputTokens: 1200, outputTokens: 0 } })
     ])
 
     const replay = await attempt(false)

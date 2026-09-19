@@ -491,6 +491,15 @@ const asNumber = (value: unknown): number | undefined => typeof value === "numbe
 const classifyStates = (input: Record<string, unknown>): number =>
   Array.isArray(input["states"]) ? input["states"].length : 1
 
+/** Usage is optional in old journal results and when the provider omitted it. */
+const classifyCost = (value: unknown): number => {
+  const usage = isRecord(value) ? value["usage"] : undefined
+  if (!isRecord(usage)) return 0
+  const inputTokens = asNumber(usage["inputTokens"])
+  const outputTokens = asNumber(usage["outputTokens"])
+  return inputTokens === undefined || outputTokens === undefined ? 0 : Health.jevCost({ inputTokens, outputTokens })
+}
+
 const leading = (answer: Record<string, unknown>): string => {
   const value = answer["value"]
   const probabilities = isRecord(answer["probabilities"]) ? answer["probabilities"] : {}
@@ -1562,8 +1571,9 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           editedThisFrame: state.editedThisFrame || edited,
           summary: counted ? state.summary : {
             ...state.summary,
-            jevCalls: state.summary.jevCalls + 1,
-            jevLatencyMs: state.summary.jevLatencyMs + latency
+            jevCalls: state.summary.jevCalls + classifyStates(card.input),
+            jevLatencyMs: state.summary.jevLatencyMs + latency,
+            jevCost: state.summary.jevCost + (ok ? classifyCost(result.value) : 0)
           },
           counted: { ...state.counted, [`settle:${key}`]: true }
         },
@@ -1729,7 +1739,8 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         summary: {
           ...state.summary,
           jevCalls: state.summary.jevCalls + 1,
-          jevLatencyMs: state.summary.jevLatencyMs + event.latencyMs
+          jevLatencyMs: state.summary.jevLatencyMs + event.latencyMs,
+          jevCost: state.summary.jevCost + Health.jevCost(event.usage)
         },
         counted: { ...state.counted, [key]: true }
       }

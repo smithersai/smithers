@@ -594,6 +594,8 @@ export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
   invented: Schema.Number,
   /** Wall-clock milliseconds the evaluation took. */
   latencyMs: Schema.Int,
+  /** Token usage reported by the evaluator, absent from older journal entries. */
+  usage: Schema.optional(Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number })),
   /** Whether this reading handed the completion back. */
   demanded: Schema.Boolean,
   /** Workspace digest the completing frame closed on; empty when unmeasured. */

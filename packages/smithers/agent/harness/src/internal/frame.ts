@@ -846,6 +846,7 @@ export const judgeCompletion = (
       overclaims: reading.overclaims,
       invented: reading.invented,
       latencyMs: reading.latencyMs,
+      ...(reading.usage === undefined ? {} : { usage: reading.usage }),
       demanded: bounced,
       currentDigest: workspaceDigest,
       nextFrame

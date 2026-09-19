@@ -441,6 +441,8 @@ export interface Probabilities {
 export interface Reading extends Probabilities {
   /** Wall-clock milliseconds the whole evaluation took, as the harness timed it. */
   readonly latencyMs: number
+  /** Token usage reported by the evaluator, absent when it supplied none. */
+  readonly usage?: Evaluator.Usage | undefined
 }
 
 /**
@@ -590,8 +592,19 @@ export const read = (
     if (Option.isNone(bound)) {
       return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host"))
     }
+    // The classifier returns answers. Keep the transport's accounting at
+    // its service boundary so the durable reading can carry both.
+    let usage: Evaluator.Usage | undefined
+    const metered = Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        bound.value.evaluate(request).pipe(Effect.tap((response) =>
+          Effect.sync(() => {
+            usage = response.usage
+          })
+        ))
+    })
     const settled = yield* classifier.evaluate(evidence).pipe(
-      Effect.provideService(Evaluator.Evaluator, bound.value),
+      Effect.provideService(Evaluator.Evaluator, metered),
       Effect.timed,
       // `ClassifierError.code` is `EvaluatorErrorCode` verbatim, so the
       // reason a journal reads is the transport's own.
@@ -610,7 +623,8 @@ export const read = (
       complete: answers.complete.probability,
       overclaims: answers.overclaims.probability,
       invented: answers.invented.probability,
-      latencyMs: Math.round(Duration.toMillis(elapsed))
+      latencyMs: Math.round(Duration.toMillis(elapsed)),
+      ...(usage === undefined ? {} : { usage })
     }
   })
 

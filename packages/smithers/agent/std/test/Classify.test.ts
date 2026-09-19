@@ -25,6 +25,24 @@ const scripted = (script: Evaluator.Script): Layer.Layer<Evaluator.Evaluator> =>
 
 const byFile = scripted((request) => answersFor((request.state as { readonly file: string }).file))
 
+const metered = (
+  layer: Layer.Layer<Evaluator.Evaluator>,
+  usageFor: (request: Evaluator.Request) => Evaluator.Usage | undefined
+): Layer.Layer<Evaluator.Evaluator> =>
+  Layer.effect(
+    Evaluator.Evaluator,
+    Effect.gen(function*() {
+      const evaluator = yield* Evaluator.Evaluator
+      return Evaluator.Evaluator.of({
+        evaluate: (request) =>
+          evaluator.evaluate(request).pipe(Effect.map((response) => {
+            const usage = usageFor(request)
+            return { ...response, ...(usage === undefined ? {} : { usage }) }
+          }))
+      })
+    })
+  ).pipe(Layer.provide(layer))
+
 const decodeInput = Schema.decodeUnknownResult(Classify.Input)
 
 const run = <A, E>(effect: Effect.Effect<A, E, Evaluator.Evaluator>, layer: Layer.Layer<Evaluator.Evaluator>) =>
@@ -97,6 +115,43 @@ describe("Classify declaration", () => {
 })
 
 describe("Classify.run", () => {
+  it.each(["ad-hoc", "curated"])("preserves reported usage through the %s output schema", async (door) => {
+    const state = { task: "fix the parser", file: "src/Parser.ts", excerpt: "export const parse = ..." }
+    const usage = { inputTokens: 1200, outputTokens: 4 }
+    const request = door === "ad-hoc"
+      ? Classify.run({ state, questions })
+      : Classify.curated(Classifiers.relevance).run(state)
+    const output = success(await run(request, metered(byFile, () => usage)))
+    expect(output).toMatchObject({ usage })
+    expect(Schema.decodeUnknownSync(Classify.Output)(output)).toMatchObject({ usage })
+  })
+
+  it("sums usage reported by successful batch states without inventing usage for the rest", async () => {
+    const layer = scripted((request) => {
+      const file = (request.state as { readonly file: string }).file
+      return file === "broken.py"
+        ? Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "No answer" }))
+        : answersFor(file)
+    })
+    const states = ["one.py", "broken.py", "unmetered.py", "two.py"].map((file) => ({ file }))
+    const usageFor = (request: Evaluator.Request) => {
+      const file = (request.state as { readonly file: string }).file
+      return file === "one.py" ?
+        { inputTokens: 100, outputTokens: 2 }
+        : file === "two.py" ?
+        { inputTokens: 300, outputTokens: 6 }
+        : undefined
+    }
+    const output = success(await run(Classify.run({ states, questions }), metered(layer, usageFor)))
+    expect(output).toMatchObject({ usage: { inputTokens: 400, outputTokens: 8 } })
+    expect(Schema.decodeUnknownSync(Classify.Output)(output)).toMatchObject({
+      usage: { inputTokens: 400, outputTokens: 8 }
+    })
+    expect("results" in output && output.results.map((result) => result.ok)).toEqual([true, false, true, true])
+    const unmetered = success(await run(Classify.run({ states, questions }), layer))
+    expect(unmetered).not.toHaveProperty("usage")
+  })
+
   it("answers one state with decoded answers, a confidence per question, and the latency", async () => {
     const verdict = success(await run(Classify.run({ state: { file: "widen.py" }, questions }), byFile))
     expect("answers" in verdict).toBe(true)
@@ -323,7 +378,9 @@ describe("Classify.curated", () => {
     expect(single).toEqual({ count: 12n })
     expect(success(await run(transformed.run(single), layer))).toMatchObject({ answers: { ok: { value: true } } })
     const result = success(await run(transformed.run(batch), layer))
-    expect("results" in result && result.results.map((entry) => entry.state)).toEqual([{ count: "12" }, { count: "13" }])
+    expect("results" in result && result.results.map((entry) => entry.state)).toEqual([{ count: "12" }, {
+      count: "13"
+    }])
     expect(seen).toEqual([{ count: "12" }, { count: "12" }, { count: "13" }])
     expect(messageOf(decode({ count: "1".repeat(Classify.MAX_STATE_BYTES) }))).toContain("at most 32768 bytes")
   })
