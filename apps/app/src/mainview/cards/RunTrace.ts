@@ -415,6 +415,8 @@ interface FrameFacts {
   blocked: boolean
   /** `control.agent.mutation-observed`'s answer; absent when the frame closed on none. */
   mutated?: boolean
+  /** A measured tree comparison outranks declared writes and successful no-op calls. */
+  observedMutation?: boolean
   /** The write pin this frame minted: where it sits in the milestones, and every file it counts. */
   wrote?: { readonly milestone: number; readonly paths: Array<string> }
   readonly calls: Array<CallFacts>
@@ -558,6 +560,9 @@ const disciplineFold = (
       case "control.agent.mutation-observed": {
         const mutated = payload.mutated === true
         if (frame !== undefined) frame.mutated = mutated
+        if (frame !== undefined && payload.basis === "observed" && typeof payload.mutated === "boolean") {
+          frame.observedMutation = payload.mutated
+        }
         // Written for every frame, so only a frame that changed something is
         // worth a note. `basis` is the body because a `declared` answer is
         // paperwork and an `observed` one is a fact about the tree, and a
@@ -761,10 +766,8 @@ const disciplineFold = (
     }
   }
 
-  // "Changed" is what the journal recorded: the frame's own
-  // `mutation-observed` said the tree moved, or it made a successful edit-like
-  // call for a change to have been recorded from.
-  const changed = frames.map((entry) => entry.mutated === true || madeAWrite(entry))
+  // A measured unchanged tree is authoritative even when a write succeeded.
+  const changed = frames.map((entry) => entry.observedMutation ?? (entry.mutated === true || madeAWrite(entry)))
 
   // A repeated call is only evidence of a stall inside a STREAK, and only
   // across a span the workspace never moved in.
@@ -778,22 +781,27 @@ const disciplineFold = (
   // against the last time it ran on THIS tree, never against a run from before
   // an edit landed. On top of that a repeat counts only where the frames beside
   // it repeat too — each of them recording no change of its own — and
-  // `repeatOf` is set only inside a streak of two or more such frames.
+  // `repeatOf` is set only inside a streak of two or more such frames. Every
+  // substantive call must repeat a settled reading; a fresh call, new result,
+  // or pending result means this frame has not been shown to be redundant.
   const firstSeen = new Map<string, number>()
-  const repeatedFrom: Array<number | undefined> = []
+  const repeatedFrom = new Map<CallFacts, number>()
+  const redundant: Array<boolean> = []
   frames.forEach((entry, index) => {
-    let earliest: number | undefined
-    for (const call of entry.calls) {
-      const seen = firstSeen.get(call.signature)
-      if (seen === undefined) firstSeen.set(call.signature, entry.frame)
-      else if (seen < entry.frame) earliest = earliest === undefined ? seen : Math.min(earliest, seen)
+    const calls = entry.calls.filter((call) => call.flowName !== CHECKPOINT_FLOW)
+    for (const call of calls) {
+      if (call.settled === undefined) continue
+      const reading = `${call.signature} ${JSON.stringify(call.settled)}`
+      const seen = firstSeen.get(reading)
+      if (seen === undefined) firstSeen.set(reading, entry.frame)
+      else if (seen < entry.frame) repeatedFrom.set(call, seen)
     }
-    repeatedFrom.push(earliest)
+    redundant.push(calls.length > 0 && calls.every((call) => repeatedFrom.has(call)))
     // The tree moved in this frame, so every call recorded before it ran
     // against a tree that no longer exists and none of them can be repeated.
     if (changed[index] === true) firstSeen.clear()
   })
-  const stalling = frames.map((_frame, index) => repeatedFrom[index] !== undefined && changed[index] !== true)
+  const stalling = frames.map((_frame, index) => redundant[index] === true && changed[index] !== true)
   const stuck = stalling.map((flag, index) =>
     flag && (stalling[index - 1] === true || stalling[index + 1] === true))
 
@@ -836,7 +844,7 @@ const disciplineFold = (
     // A frame that called nothing has no line. Absence is absence.
     if (call === undefined) return []
     const acts = FLOW_ACTS[call.flowName]
-    const repeatOf = stuck[index] === true ? repeatedFrom[index] : undefined
+    const repeatOf = stuck[index] === true ? repeatedFrom.get(call) : undefined
     return [{
       spanId: entry.id,
       frame: entry.frame,

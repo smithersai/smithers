@@ -583,6 +583,67 @@ describe("what the frame was doing", () => {
  * nothing about.
  */
 describe("what the journal did not say", () => {
+  test("fresh file reads beside a repeated listing are not redundant frames", () => {
+    const journal = ["a.ts", "b.ts", "c.ts"].flatMap((path, index) => {
+      const seq = index * 6 + 1
+      return [
+        at(seq, "control.agent.turn-opened", {}, seq),
+        at(seq + 1, "control.agent.cell-call-started", { flowName: "read", input: { path } }, seq + 1),
+        at(seq + 2, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: path }, seq + 2),
+        at(seq + 3, "control.agent.cell-call-started", { flowName: "ls", input: { path: "src" } }, seq + 3),
+        at(seq + 4, "control.agent.cell-call-settled", { flowName: "ls", outcome: "success", value: ["a.ts", "b.ts", "c.ts"] }, seq + 4),
+        at(seq + 5, "control.agent.mutation-observed", { basis: "observed", mutated: false, digest: "tree" }, seq + 5)
+      ]
+    })
+    const model = traceFromJournal(RUN, journal)
+    expect(model.bands.map((band) => band.phase)).toEqual(["researching"])
+    expect(model.lines.map((line) => [line.subject, line.repeatOf])).toEqual([
+      ["a.ts", undefined], ["b.ts", undefined], ["c.ts", undefined]
+    ])
+  })
+
+  test("an observed unchanged tree outranks successful no-op writes in a stall streak", () => {
+    const journal = [0, 1, 2].flatMap((index) => {
+      const seq = index * 4 + 1
+      return [
+        at(seq, "control.agent.turn-opened", {}, seq),
+        at(seq + 1, "control.agent.cell-call-started", { flowName: "write", input: { path: "a.ts", content: "same" } }, seq + 1),
+        at(seq + 2, "control.agent.cell-call-settled", { flowName: "write", outcome: "success", value: { path: "a.ts", bytes: 4 } }, seq + 2),
+        at(seq + 3, "control.agent.mutation-observed", { basis: "observed", mutated: false, digest: "tree" }, seq + 3)
+      ]
+    })
+    const model = traceFromJournal(RUN, journal)
+    expect(model.bands.at(-1)).toMatchObject({ phase: "stuck", frames: ["frame-2", "frame-3"] })
+    expect(model.lines.map((line) => line.repeatOf)).toEqual([undefined, 1, 1])
+  })
+
+  test("a repeat reference belongs to the headline call, not an earlier different call", () => {
+    const inputs = [["other"], ["headline"], ["headline", "other"], ["headline", "other"]]
+    let seq = 0
+    const journal = inputs.flatMap((paths) => [
+      at(++seq, "control.agent.turn-opened", {}, seq),
+      ...paths.flatMap((path) => [
+        at(++seq, "control.agent.cell-call-started", { flowName: "read", input: { path } }, seq),
+        at(++seq, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: path }, seq)
+      ])
+    ])
+    expect(traceFromJournal(RUN, journal).lines.map((line) => line.repeatOf)).toEqual([undefined, undefined, 2, 2])
+  })
+
+  test("new results and unresolved calls do not establish redundant work", () => {
+    for (const pending of [false, true]) {
+      let seq = 0
+      const journal = ["first", "second", "third"].flatMap((value) => [
+        at(++seq, "control.agent.turn-opened", {}, seq),
+        at(++seq, "control.agent.cell-call-started", { flowName: "read", input: { path: "a.ts" } }, seq),
+        ...(pending ? [] : [at(++seq, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value }, seq)])
+      ])
+      const model = traceFromJournal(RUN, journal)
+      expect(model.bands.some((band) => band.phase === "stuck")).toBe(false)
+      expect(model.lines.every((line) => line.repeatOf === undefined)).toBe(true)
+    }
+  })
+
   /** One frame per element: a check, an edit, then checks again. */
   const check = (sequence: number, stamp: number): ReadonlyArray<JournalRecord> => [
     at(sequence, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, stamp),
