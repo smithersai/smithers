@@ -152,7 +152,8 @@ export const createWorkflowLaunchController = (
   const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor }): Promise<string | { value: string }> => {
     const login = owner()
     if (!login) return "Sign in with GitHub first: flows run on your own workspace."
-    const key = canonicalStoredJsonValue([login, args.repo, args.binding.workspaceId ?? null, args.workflow, args.input])
+    const input = JSON.parse(canonicalStoredJsonValue(args.input)) as Record<string, unknown>
+    const key = canonicalStoredJsonValue([login, args.repo, args.binding.workspaceId ?? null, args.workflow, input])
     // Admission is serialized through persistence, shared by button, slash and agent bindings.
     while (persisting.has(key)) await persisting.get(key)
     const prior = [...store.collections.cards.values()].find(card => {
@@ -166,12 +167,13 @@ export const createWorkflowLaunchController = (
       else send(prior.id, held)
       return { value: `run-requested workflow=${args.workflow} request=${held.id} repo=${args.repo}` }
     }
-    const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow, input: args.input }
+    const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow,
+      input }
     const id = `flow-request-${request.id}`
     const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: { id, kind: "run-trace", title: `${args.workflow} · ${args.repo}`,
       status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: args.repo, ...args.binding, gatewayBindingVersion: 1,
         workflow: args.workflow, runId: `pending-${request.id}`, phase: "launching", steps: [], result: null, lastSeq: 0, liveTail: true,
-        input: { ...args.input, _workflowLaunch: request } } } }).isPersisted.promise
+        input: { ...request.input, _workflowLaunch: request } } } }).isPersisted.promise
     persisting.set(key, saving)
     try { await saving } catch { return "The run request could not be saved. Try again." } finally { persisting.delete(key) }
     send(id, request)

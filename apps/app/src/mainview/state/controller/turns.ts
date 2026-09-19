@@ -797,7 +797,7 @@ export const createTurnController = (
      */
     const answersTurn = call.callId.startsWith(AGENT_TURN_FRONT_DOOR_CALL_PREFIX)
     const launched = runLaunchCommandOf(call.name, call.args)
-    if (!answersTurn && launched !== undefined && toolResultLaunchedRun(result)) turn.runLaunch = /\brun-requested\b/.test(result) ? `${launched}:requested` : launched
+    if (!answersTurn && launched !== undefined && toolResultLaunchedRun(result)) turn.runLaunch = launched
     store.dispatch({
       type: "toolcall.recorded",
       actor: "smithers",

@@ -113,6 +113,23 @@ test("a refused launch stays visible and the existing retry flow retries the sam
   expect(plans[1]!.payload.input).toEqual({ args: "inspect" })
 })
 
+test("workspace_starting during Run retries the same admission instead of failing the request", async () => {
+  const t = await fixture()
+  let attempts = 0
+  t.run(async () => ++attempts === 1
+    ? new Response(JSON.stringify({ code: "workspace_starting", message: "Waking up" }), { status: 503, headers: { "Retry-After": "0" } })
+    : json(200, { ok: true, payload: { runId: "run-1" } }))
+  await t.controller.commands.run("flow.run", `review ${repo} {"args":"inspect"}`)
+  await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
+  expect(t.cards()).toHaveLength(1)
+  expect(t.cards()[0]?.status).toBe("active")
+  for (const procedure of ["Plan", "Approval.Submit", "Run"]) {
+    const calls = t.calls.filter(call => call.procedure === procedure)
+    expect(calls).toHaveLength(2)
+    expect(calls[0]!.payload.idempotencyKey).toBe(calls[1]!.payload.idempotencyKey)
+  }
+})
+
 test("reload reconnects a launch whose Run response was lost, using the same Plan and Run keys", async () => {
   const t = await fixture()
   const gate = deferred<Response>()
@@ -186,4 +203,17 @@ test("simultaneous equivalent inputs across the user and agent bindings share on
   gate.resolve(json(200, { status: "ready" }))
   await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
   expect(t.calls.filter(call => call.procedure === "Plan")).toHaveLength(1)
+})
+
+test("a persisted request launches its admitted input even if the caller later changes its object", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  const input = { args: "inspect", nested: { count: 1 }, _workflowLaunch: "flow-owned value" }
+  await t.controller.runWorkflow("review", repo, input)
+  input.args = "changed after admission"
+  input.nested.count = 9
+  gate.resolve(json(200, { status: "ready" }))
+  await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
+  expect(t.calls.find(call => call.procedure === "Plan")?.payload.input).toEqual({ args: "inspect", nested: { count: 1 }, _workflowLaunch: "flow-owned value" })
 })

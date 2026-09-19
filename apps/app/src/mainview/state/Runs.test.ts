@@ -388,6 +388,7 @@ test("declared flow inputs reuse persisted forms and the existing named launch p
   await controller.commands.run("form.set", `${form.id} attempts 2`)
   await controller.commands.run("form.set", `${form.id} mode thorough`)
   await controller.commands.run("form.submit", form.id)
+  await waitFor(() => double.state.launched.length === 1)
   expect(double.state.launched).toEqual([{ workflow: "review-pr", repo: REPO,
     input: { path: "src/retries.ts", attempts: 2, mode: "thorough", draft: false } }])
 })
@@ -406,6 +407,7 @@ test("optional flow inputs are offered before launch, while an empty schema can 
   expect(double.state.launched).toHaveLength(0)
   const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")!
   await controller.commands.run("form.submit", form.id)
+  await waitFor(() => double.state.launched.length === 1)
   expect(double.state.launched).toHaveLength(1)
   expect(double.state.launched[0]?.input).toEqual({})
   declare(Schema.Struct({}))

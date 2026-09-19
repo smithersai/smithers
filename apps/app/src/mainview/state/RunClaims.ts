@@ -50,9 +50,8 @@ export const runLaunchCommandOf = (toolName: string, toolArguments: string): str
 }
 
 /**
- * A tool result that did NOT launch anything (an honest refusal, an unknown
- * command, a chooser route) leaves the model free to speak: there is no run to
- * misdescribe. Only a real launch arms the substitution.
+ * A saved request or confirmed launch arms claim suppression. A refusal,
+ * unknown command or chooser leaves the model free to describe that outcome.
  */
 export const toolResultLaunchedRun = (result: string): boolean =>
   !result.startsWith("failed:") && !result.startsWith("unknown-") && /\brun-(?:started|requested)\b/.test(result)
@@ -91,7 +90,7 @@ export const claimsRunState = (text: string): boolean => {
  * one about its own layout, so it names the card instead of pointing at it.
  */
 export const deterministicRunLine = (command: string): string =>
-  command.endsWith(":requested") ? "Run requested." : command === "flow.create"
+  command === "flow.run" ? "Run requested." : command === "flow.create"
     ? `I started a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
     : "I started that run — the run card shows its real progress."
 

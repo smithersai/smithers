@@ -7,8 +7,8 @@ const call = (name: string): string => JSON.stringify({ action: "execute", name,
 test("a requested launch arms claim suppression without claiming a run has started", () => {
   expect(toolResultLaunchedRun("run-requested workflow=review request=r1 repo=o/r")).toBe(true)
   expect(toolResultLaunchedRun("failed: run-requested")).toBe(false)
-  expect(renderedRunTurnText("flow.run:requested", "The run has completed.")).toBe("Run requested.")
-  expect(renderedRunTurnText("flow.run:requested", "The run is now running.")).toBe("Run requested.")
+  expect(renderedRunTurnText("flow.run", "The run has completed.")).toBe("Run requested.")
+  expect(renderedRunTurnText("flow.run", "The run is now running.")).toBe("Run requested.")
 })
 
 /*
