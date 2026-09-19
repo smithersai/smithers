@@ -110,6 +110,7 @@ export const FLOW_NAMES = [
   "egress.session",
   "env.set",
   "env.view",
+  "experimental.set",
   "feature.prototype",
   "feature.setup",
   "files.add",

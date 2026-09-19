@@ -234,6 +234,9 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
   readonly setPalette: (args: string) => string | void
+  /** Opens one hidden mock as a card (experimental/Registry.ts); no flow reaches it without the flag. */
+  readonly openExperimentalPane: (pane: string) => void
+  readonly setExperimentalProp: (cardId: string, key: string, value: string) => string | void
   /** Archive locally and start fresh; model-generated notes are opt-in. */
   readonly clearConversation: (options?: { readonly summarize?: boolean }) => Promise<string | void>
   /* The browser tool + surface (§2d/§2d′). */
@@ -710,6 +713,8 @@ export interface AppFeatures {
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
   readonly suggestionPills?: boolean
+  /** The hidden mock namespace (experimental/Manifest.ts). */
+  readonly experimental?: boolean
 }
 
 /**
@@ -724,7 +729,8 @@ export const createAppController = (
 ): AppController => {
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
-    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true"
+    mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
+    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
     ...services, features: { ...services.features, ...knowledge }
@@ -746,13 +752,15 @@ export const createAppController = (
     store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
   const restored = store.session()
+  const restoredCardAvailable = (kind: string): boolean =>
+    knowledgeCardAvailable(kind, features) && (kind !== "experimental" || features.experimental)
   const maximized = restored.maximizedCardId === null ? undefined : store.collections.cards.get(restored.maximizedCardId)
-  if (maximized && !knowledgeCardAvailable(maximized.kind, features)) store.dispatch({ type: "frame.navigated", actor: "system",
+  if (maximized && !restoredCardAvailable(maximized.kind)) store.dispatch({ type: "frame.navigated", actor: "system",
     workspaceId: restored.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID, branchId: restored.activeBranchId ?? DEFAULT_BRANCH_ID,
     frameId: rootFrameId(restored.activeBranchId ?? DEFAULT_BRANCH_ID) })
   const activeTab = restored.activeTabId === undefined ? undefined : store.collections.tabs.get(restored.activeTabId)
   const tabCard = activeTab?.kind === "card" && activeTab.cardId ? store.collections.cards.get(activeTab.cardId) : undefined
-  if (tabCard && !knowledgeCardAvailable(tabCard.kind, features)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
+  if (tabCard && !restoredCardAvailable(tabCard.kind)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome, saidBefore) => {
     if (ctx.disposed) return
@@ -937,7 +945,9 @@ export const createAppController = (
     debugSeams,
     openBrowser,
     toggleTheme,
-    setPalette
+    setPalette,
+    openExperimentalPane,
+    setExperimentalProp
   } = actors.pair(ctx, (context, select) => createPresentationController(context, select(adminHealth)))
 
   const {
@@ -1687,6 +1697,8 @@ export const createAppController = (
     debugSeams,
     toggleTheme,
     setPalette,
+    openExperimentalPane,
+    setExperimentalProp,
     adoptSession,
     loadSession,
     signIn,
@@ -1851,6 +1863,7 @@ export const createAppController = (
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
+        experimental: features.experimental,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",

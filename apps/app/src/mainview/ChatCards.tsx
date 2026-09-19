@@ -92,6 +92,7 @@ export const CardView = memo(function CardView({
   pluginLibrary,
   wiki,
   mythicalHistory,
+  experimental,
   signedOut,
   presentation
 }: CardViewProps) {
@@ -272,6 +273,7 @@ export const CardView = memo(function CardView({
         <div className="smithers-card-body">
           <CardBodyBoundary cardId={card.id} onRunCommand={onRunCommand}>
           {card.loading && card.kind !== "workspace" ? <ViewSkeleton /> : renderCardBody(card, {
+            experimental,
             onDecideApproval,
             onGrantConfirm,
             onGrantCancel,

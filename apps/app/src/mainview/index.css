@@ -6,4 +6,5 @@
 @import "./styles/github-cards.css";
 @import "./styles/surfaces.css";
 @import "./styles/chrome.css";
+@import "./styles/experimental.css";
 @config "../../tailwind.config.js";

@@ -50,6 +50,7 @@ export interface CardActions {
   readonly pluginLibrary?: boolean
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
+  readonly experimental?: boolean
   /** Read authority for derived decorations; absent only in isolated static previews. */
   readonly projectionStore?: CardProjectionAuthority
   /** Structured answers carry what the human wrote, already shaped for the question. */

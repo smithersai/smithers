@@ -2502,6 +2502,21 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       message: z.string(),
       retryAt: z.string().nullable()
     })
+  }),
+  /*
+   * One kind for every hidden mock behind VITE_SMITHERS_EXPERIMENTAL
+   * (apps/app experimental/Registry.ts). A mock is a proposal, not a product
+   * surface, so it does not cost the wire a kind of its own: `pane` names the
+   * registry entry and `props` is whatever that mock takes. Earning a kind,
+   * a payload schema and a migration is what promotion means.
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("experimental"),
+    payload: z.object({
+      pane: z.string(),
+      props: z.record(z.string(), z.unknown()).optional()
+    })
   })
 ])
 /** Retired UI records keep their identity, without retaining executable forms or feature data. */

@@ -46,6 +46,7 @@ import { composerFlows } from "./entries/composer"
 import { connectSurfaceFlows } from "./entries/connector"
 import { debugFlows, debugVerboseFlows } from "./entries/debug"
 import { egressFlows } from "./entries/egress"
+import { experimentalFlows } from "./entries/experimental"
 import { envFlows } from "./entries/env"
 import { featureFlows } from "./entries/feature"
 import { codeFlows } from "./entries/code"
@@ -184,6 +185,8 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...searchFlows(actions),
   ...paletteFlows(actions),
   ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsFlows(actions) : []),
+  /* The hidden mocks (experimental/Registry.ts); absent without the flag. */
+  ...(actions.snapshot?.()?.experimental === true ? experimentalFlows(actions) : []),
   ...guideFlows(actions)
 ]
 

@@ -25,6 +25,7 @@ import { commitPickCardFamily } from "./CommitPickCard"
 import { commitCardFamily } from "./CommitCards"
 import { conversationCardFamily } from "./ConversationCards"
 import { envCardFamily } from "./EnvCard"
+import { experimentalCardFamily } from "./ExperimentalCard"
 import { fileCardFamily } from "./FileCards"
 import { flowFormCardFamily } from "./FlowFormCards"
 import { historyCardFamily } from "./HistoryCard"
@@ -80,6 +81,7 @@ const localBackendCardFamily = Object.fromEntries(
 export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   repositorySetupCardFamily,
   retiredCardFamily,
+  experimentalCardFamily,
   localBackendCardFamily,
   turnCardFamily,
   approvalCardFamily,
@@ -121,6 +123,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
 export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...repositorySetupCardFamily,
   ...retiredCardFamily,
+  ...experimentalCardFamily,
   ...localBackendCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,
