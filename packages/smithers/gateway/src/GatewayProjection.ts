@@ -16,7 +16,7 @@ import { ControlFacts, ControlSchema, Health, Monitor } from "@smthrs/control"
 import { ExecutionFact } from "@smthrs/journal"
 import { Schema } from "effect"
 import * as Diagnosis from "./Diagnosis.ts"
-import { openCallIndex, uniqueCallEvents } from "./internal/callEvents.ts"
+import { callScope, openCallIndex, uniqueCallEvents } from "./internal/callEvents.ts"
 
 /**
  * One run, everything a run card displays, and the diagnosis of what happened
@@ -282,12 +282,15 @@ export const runSummary = (
  * settlement can close a legacy start after an old parked run resumes, but
  * neither fallback may steal an identified call.
  */
-const takeOpenCall = <A extends { readonly flowName: string; readonly callId: string | undefined }>(
+const takeOpenCall = <
+  A extends { readonly flowName: string; readonly callId: string | undefined; readonly scope: string | undefined }
+>(
   open: Array<A>,
   callId: string | undefined,
-  flowName: string | undefined
+  flowName: string | undefined,
+  scope: string | undefined
 ): A | undefined => {
-  const found = openCallIndex(open, callId, flowName)
+  const found = openCallIndex(open, callId, flowName, scope)
   return found < 0 ? undefined : open.splice(found, 1)[0]
 }
 
@@ -333,7 +336,14 @@ const callHistory = (
   events: ReadonlyArray<ControlSchema.ControlEvent>
 ): ReadonlyArray<CallRecord> => {
   const calls = new Map<string, CallRecord>()
-  const open: Array<{ readonly callId: string | undefined; readonly flowName: string; readonly call: CallRecord }> = []
+  const open: Array<
+    {
+      readonly callId: string | undefined
+      readonly flowName: string
+      readonly call: CallRecord
+      readonly scope: string | undefined
+    }
+  > = []
   let seat: string | undefined
   let ordinal = 0
   let settlements = 0
@@ -350,13 +360,13 @@ const callHistory = (
       const nodeId = `call-${ordinal}`
       const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
       const call: CallRecord = { nodeId, flowName, seat, startedAt: Diagnosis.timeOf(event), settlement: undefined }
-      open.push({ callId, flowName, call })
+      open.push({ callId, flowName, call, scope: callScope(event) })
       calls.set(nodeId, call)
       continue
     }
     if (event.kind !== "control.agent.cell-call-settled") continue
     const callId = Diagnosis.asString(payload.callId)
-    const claimed = takeOpenCall(open, callId, Diagnosis.asString(payload.flowName))
+    const claimed = takeOpenCall(open, callId, Diagnosis.asString(payload.flowName), callScope(event))
     if (claimed === undefined) continue
     const failed = Diagnosis.asString(payload.outcome) === "failure"
     settlements += 1

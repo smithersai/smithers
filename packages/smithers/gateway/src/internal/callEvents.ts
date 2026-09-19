@@ -3,7 +3,7 @@
  *
  * @since 1.0.0
  */
-import { CallFact } from "@smthrs/journal"
+import { CallFact, StepFact } from "@smthrs/journal"
 import * as Schema from "effect/Schema"
 
 /** A sparse historical observation is readable without inventing missing fields.
@@ -45,6 +45,64 @@ export const nativeCallEvent = <Event extends CallObservation>(event: Event): Ev
   }
 }
 
+/** Normalize a checkpoint only within its recorded execution and source.
+ * Replayed prefixes retain the generation that first recorded the work.
+ * @category projections
+ * @since 1.0.0
+ */
+export const nativeStepEvent = <Event extends CallObservation>(event: Event): Event | undefined => {
+  if (event.kind !== "control.engine.event" || typeof event.payload !== "object" || event.payload === null) {
+    return undefined
+  }
+  const envelope = event.payload as Record<string, unknown>
+  if (
+    envelope.version !== 1 || envelope.eventType !== StepFact.eventType ||
+    typeof envelope.generation !== "number" || !Number.isSafeInteger(envelope.generation) || envelope.generation < 0 ||
+    typeof envelope.sequence !== "number" || !Number.isSafeInteger(envelope.sequence) || envelope.sequence < 0 ||
+    typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs) || envelope.emittedAtMs < 0
+  ) return undefined
+  const decoded = Schema.decodeUnknownOption(StepFact.Fact)(envelope.payload)
+  if (decoded._tag === "None") return undefined
+  const fact = decoded.value
+  const step = fact.step
+  if (
+    envelope.executionId !== step.executionId || envelope.sourceSequence !== fact.sourceSequence ||
+    envelope.sourceId !== `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}` ||
+    fact.generation > envelope.generation || !Number.isFinite(fact.at) ||
+    typeof fact.payload !== "object" || fact.payload === null || Array.isArray(fact.payload)
+  ) return undefined
+  return {
+    ...event,
+    kind: fact.eventType,
+    payload: {
+      ...fact.payload,
+      step: { ...step, generation: fact.generation, frame: fact.frame, ordinal: fact.ordinal },
+      at: fact.at
+    }
+  }
+}
+
+/** Scope call matching to the recorded invocation, including its generation.
+ * @category projections
+ * @since 1.0.0
+ */
+export const callScope = (event: CallObservation): string | undefined => {
+  const payload = event.payload
+  if (typeof payload !== "object" || payload === null || !("step" in payload)) return undefined
+  const step = payload.step
+  if (typeof step !== "object" || step === null || Array.isArray(step)) return undefined
+  const scope = step as Record<string, unknown>
+  return JSON.stringify([
+    scope.executionId,
+    scope.stepId,
+    scope.attempt,
+    scope.ask,
+    scope.retry,
+    scope.scope,
+    scope.generation
+  ])
+}
+
 /**
  * Identity first; the upgrade fallback can consume only unidentified starts.
  *
@@ -52,31 +110,42 @@ export const nativeCallEvent = <Event extends CallObservation>(event: Event): Ev
  * @since 1.0.0
  */
 export const openCallIndex = (
-  open: ReadonlyArray<{ readonly flowName: string; readonly callId?: string | undefined }>,
+  open: ReadonlyArray<
+    { readonly flowName: string; readonly callId?: string | undefined; readonly scope?: string | undefined }
+  >,
   callId: string | undefined,
-  flowName: string | undefined
+  flowName: string | undefined,
+  scope?: string
 ): number => {
-  const identified = callId === undefined ? -1 : open.findIndex((call) => call.callId === callId)
+  const identified = callId === undefined
+    ? -1
+    : open.findIndex((call) => call.callId === callId && call.scope === scope)
   if (identified >= 0) return identified
-  return open.findIndex((call) => call.callId === undefined && (flowName === undefined || call.flowName === flowName))
+  return open.findIndex((call) =>
+    call.scope === scope && call.callId === undefined && (flowName === undefined || call.flowName === flowName)
+  )
 }
 
 /**
- * Deduplication applies only to identified call lifecycle events.
+ * Deduplicate identified call lifecycles and committed checkpoint observations.
  *
  * @category projections
  * @since 1.0.0
  */
 export const callEventKey = (event: CallObservation): string | undefined => {
-  event = nativeCallEvent(event) ?? event
+  const stepEvent = nativeStepEvent(event)
+  const original = event
+  event = stepEvent ?? nativeCallEvent(event) ?? event
   if (event.kind !== "control.agent.cell-call-started" && event.kind !== "control.agent.cell-call-settled") {
-    return undefined
+    if (stepEvent === undefined) return undefined
+    const envelope = original.payload as Record<string, unknown>
+    return JSON.stringify(["step-fact", original.runId, callScope(stepEvent), envelope.sourceSequence])
   }
   const payload = event.payload
   if (typeof payload !== "object" || payload === null || !("callId" in payload) || typeof payload.callId !== "string") {
     return undefined
   }
-  return JSON.stringify([event.kind, payload.callId])
+  return JSON.stringify([event.kind, payload.callId, callScope(event)])
 }
 
 /**
@@ -91,15 +160,24 @@ export const uniqueCallEvents = <Event extends CallObservation>(
 ): ReadonlyArray<Event> => {
   const native = new Map<string, Event>()
   const normalized = events.map((event) => {
-    const fact = nativeCallEvent(event)
+    const fact = nativeStepEvent(event) ?? nativeCallEvent(event)
     if (fact === undefined) return event
-    const key = callEventKey(fact)!
-    if (!native.has(key)) native.set(key, fact)
+    const key = callEventKey(event)
+    if (key !== undefined && !native.has(key)) native.set(key, fact)
     return fact
   })
   const seen = new Set<string>()
-  return normalized.flatMap((event) => {
-    const key = callEventKey(event)
+  const stepSeen = new Set<string>()
+  return normalized.flatMap((event, index) => {
+    const original = events[index]!
+    if (nativeStepEvent(original) !== undefined) {
+      const envelope = original.payload as Record<string, unknown>
+      const fact = envelope.payload as Record<string, unknown>
+      const identity = JSON.stringify([original.runId, callScope(event), envelope.sourceSequence, fact.generation])
+      if (stepSeen.has(identity)) return []
+      stepSeen.add(identity)
+    }
+    const key = callEventKey(original)
     if (key === undefined) return [event]
     if (seen.has(key)) return []
     seen.add(key)

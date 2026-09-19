@@ -40,7 +40,7 @@ import * as Diagnosis from "./Diagnosis.ts"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
-import { callEventKey, nativeCallEvent } from "./internal/callEvents.ts"
+import { callEventKey, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.ts"
 
 /**
  * How often an idle subscription emits a keepalive frame.
@@ -1015,7 +1015,12 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
               if (selector._tag === "transcript") {
                 for (const event of initial.events) {
                   const key = callEventKey(event)
-                  if (key !== undefined) seen.set(key, seen.get(key) === true || nativeCallEvent(event) !== undefined)
+                  if (key !== undefined) {
+                    seen.set(
+                      key,
+                      seen.get(key) === true || (nativeCallEvent(event) ?? nativeStepEvent(event)) !== undefined
+                    )
+                  }
                 }
               }
               return seen
@@ -1052,7 +1057,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                 // reported before its cursor, without re-folding that prefix.
                 const callKey = selector._tag === "transcript" ? callEventKey(event) : undefined
                 const duplicateCall = callKey !== undefined && state.reportedCalls.has(callKey)
-                const authoritative = nativeCallEvent(event) !== undefined
+                const authoritative = (nativeCallEvent(event) ?? nativeStepEvent(event)) !== undefined
                 const replaceTranscript = duplicateCall && authoritative && state.reportedCalls.get(callKey) === false
                 if (callKey !== undefined) {
                   state.reportedCalls.set(callKey, authoritative || state.reportedCalls.get(callKey) === true)

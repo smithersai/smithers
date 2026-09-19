@@ -34,13 +34,13 @@ import * as NativeResolution from "./internal/nativeResolution.ts"
 export { uniqueCallEvents }
 
 /**
- * The deduplication key for an identified call start or settlement, if any.
- * Incremental CLI readers retain these keys to match the full history fold.
+ * Native fact normalization and stable call/checkpoint identities.
+ * Incremental readers retain these keys to match the full history fold.
  *
  * @since 1.0.0
  * @category projections
  */
-export { callEventKey, nativeCallEvent } from "./internal/callEvents.ts"
+export { callEventKey, callScope, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.ts"
 
 /**
  * Finds an open call by ID, with name/FIFO fallback only for legacy starts.
