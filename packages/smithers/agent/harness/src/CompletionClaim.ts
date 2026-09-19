@@ -587,7 +587,15 @@ export const read = (
       Effect.timed,
       // `ClassifierError.code` is `EvaluatorErrorCode` verbatim, so the
       // reason a journal reads is the transport's own.
-      Effect.mapError((error) => unjudged(error.code, error.message, error))
+      Effect.mapError((error) =>
+        unjudged(error.code, error.message, {
+          code: error.code,
+          ...(error.status === undefined ? {} : { status: error.status }),
+          // Schema.Defect decodes any object with `message` to a bare Error,
+          // discarding custom fields. Keep the structured transport facts.
+          detail: error.message
+        })
+      )
     )
     const [elapsed, answers] = settled
     return {

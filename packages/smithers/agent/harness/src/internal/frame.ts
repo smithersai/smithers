@@ -797,7 +797,8 @@ export const judgeCompletion = (
   state: State,
   accounting: Accounting,
   contextWindow: ContextWindow.ContextWindow,
-  claim: string
+  claim: string,
+  read: typeof CompletionClaim.read = CompletionClaim.read
 ): Effect.Effect<CompletionJudgement, HarnessError.HarnessError, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     const { calls, facts, workspaceDigest } = accounting
@@ -818,7 +819,7 @@ export const judgeCompletion = (
     if (state.claimCap === 0) return stands
     const task = CompletionClaim.prose(taskText(contextWindow))
     const check = lastCheck(calls)
-    const reading = yield* CompletionClaim.read({
+    const reading = yield* read({
       task,
       claim: CompletionClaim.prose(claim),
       // The `UnmovedTree` fact, read the other way round. An unmeasured tree

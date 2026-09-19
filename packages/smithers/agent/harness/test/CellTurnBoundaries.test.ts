@@ -1673,6 +1673,54 @@ const steeringQueue = () => {
  * strength of that.
  */
 describe("CellTurn recorded observations", () => {
+  it.each(["changed", "unavailable"])("replays a completion reading when the evaluator is %s", async (later) => {
+    const records = new Map<string, unknown>()
+    const initial = state({
+      approvalChannel: true,
+      contextWindow: ContextWindow.make({
+        modelId: "test-model",
+        segments: [{
+          kind: "instructions",
+          zone: "prefix",
+          content: [ModelRequest.SystemPart.make({ text: "Run the tests and report their result." })]
+        }]
+      })
+    })
+    let requests = 0
+    const attempt = (first: boolean) => {
+      const model = ScriptedModel.make([
+        emits(`ctx.done("The tests pass.")`),
+        emits(`ctx.park("waiting-input", "May I run the tests?")`)
+      ])
+      const engine = ScriptedEngine.make(model.model)
+      return collect({ state: initial, flows: [] }, {
+        engine: journaled(engine, records),
+        evaluator: Evaluator.layerScripted(() => {
+          requests++
+          return !first && later === "unavailable"
+            ? Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline after restart" }))
+            : {
+              complete: { probability: first ? 0.1 : 0.99 },
+              overclaims: { probability: first ? 0.9 : 0.01 },
+              invented: { probability: first ? 0.95 : 0.01 }
+            }
+        })
+      })
+    }
+
+    const original = await attempt(true)
+    expect(original.failure).toMatchObject({ code: "suspended" })
+    expect(of(original.events, "claim-demanded")).toEqual([
+      expect.objectContaining({ invented: 0.95, demanded: true })
+    ])
+
+    const replay = await attempt(false)
+    expect(replay.failure).toMatchObject({ code: "suspended" })
+    expect(of(replay.events, "claim-demanded")).toEqual(of(original.events, "claim-demanded"))
+    expect(of(replay.events, "resolved")).toEqual([])
+    expect(requests).toBe(1)
+  })
+
   it("replays a call's recorded timeout instead of re-racing the clock", async () => {
     const records = new Map<string, unknown>()
     const cell = `const first = await ctx.call("fs/list", { path: "." })

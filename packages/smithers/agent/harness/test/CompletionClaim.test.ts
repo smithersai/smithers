@@ -23,7 +23,7 @@
  */
 import { ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as CompletionClaim from "../src/CompletionClaim.ts"
@@ -333,6 +333,8 @@ describe("the claim brake", () => {
     const error = await unjudged({ layer: refusing(failure).layer })
 
     expect((error.cause as Record<string, unknown> | undefined)?.["code"]).toBe("refused")
+    const persisted = Schema.decodeSync(HarnessError)(Schema.encodeSync(HarnessError)(error))
+    expect(persisted.cause).toMatchObject({ code: "refused", status: 503, detail: "gateway down" })
   })
 
   it("is never consulted when a deterministic brake already named something", async () => {
