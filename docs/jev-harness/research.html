@@ -48,7 +48,7 @@ code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre
 </table>
 
 <h3>1.1 Wire protocol we use</h3>
-<p>Vercel documents the evaluation modality as "AI SDK only", but the SDK's gateway provider is open source and speaks plain HTTP. Our client copies its protocol and carries no <code>ai</code> dependency and no TypeSafe key. This is landed and live in <code>apps/server/src/jev.ts</code>.</p>
+<p>The documentation read for the initial spike described evaluation as "AI SDK only". The SDK's open-source gateway provider speaks plain HTTP, which the client in <code>apps/server/src/jev.ts</code> implements without an <code>ai</code> dependency or TypeSafe key. Review on 2026-09-19: Vercel now documents a direct <a href="https://vercel.com/docs/ai-gateway/modalities/evaluation#http-api">evaluation HTTP API</a>. The transport below records the protocol used by the spike and the currently tested Smithers evaluator.</p>
 <pre><code>POST https://ai-gateway.vercel.sh/v4/ai/evaluation-model
 authorization: Bearer $AI_GATEWAY_API_KEY
 ai-gateway-protocol-version: 0.0.1
@@ -83,6 +83,7 @@ content-type: application/json
 <div class="warn"><strong>Three loops exist.</strong> The harness cell loop serves the CLI control plane. <code>@smthrs/chain</code> is wrapped by the product app but never bound. The product app's chat goes through the server proxy to a managed-inference tool loop. The Jev harness builds on the first, and does not touch the other two.</div>
 
 <h2>3. OpenCode</h2>
+<div class="note">Sections 3.2 to 3.4 retain the initial source investigation. The live trace disproved the proposed v2 contract; use <a href="design.html">design section 6</a> and <a href="trace/summary.md">Run A</a> for the shipping v1 server. The append log records subsequent measurements.</div>
 <p>OpenCode is a server plus clients. The server is an Effect <code>HttpApi</code> (Effect 4.0.0-beta.83 via a workspace catalog) defined in <code>packages/protocol</code> with handlers in <code>packages/server</code>; the clients are the TUI, the desktop app, and the web app <code>packages/app</code>. Reference versions: installed CLI 1.18.31; fresh clone of main at 5a83358 (2026-09-17); an older checkout 1.18.7 at <code>~/flows/reference/opencode</code>.</p>
 
 <h3>3.1 The hosted app connects to any local server</h3>

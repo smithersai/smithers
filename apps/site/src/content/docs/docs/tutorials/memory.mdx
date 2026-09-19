@@ -22,7 +22,7 @@ A memory policy decides which namespace a flow tree reads and writes, whether re
 pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/memory@next @smthrs/harness@next @smthrs/model@next @smthrs/registry@next @smthrs/database@next @smthrs/platform-node@next @smthrs/control@next @smthrs/time-travel@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
-You need no provider key: the seat resolves to a scripted model, so the runs are deterministic. Point `SeatResolver` at a provider route and nothing above it changes.
+You need no provider key: both the model and the completion evaluator are scripted, so the runs are deterministic. A live host supplies a provider-backed seat and a real evaluator; the scripted completion probabilities below are only for this tutorial.
 
 ## 1. Write facts in one run
 
@@ -53,6 +53,7 @@ import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -240,6 +241,11 @@ const program = Effect.gen(function*() {
         Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
         // This offline run has no approved plan envelope to derive a ceiling from.
         Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
+        Layer.provideMerge(Evaluator.layerScripted(() => ({
+          complete: { probability: 0.99 },
+          overclaims: { probability: 0.01 },
+          invented: { probability: 0.01 }
+        }))),
         Layer.provideMerge(Agent.layerDefaults),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),

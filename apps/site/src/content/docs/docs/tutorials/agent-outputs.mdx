@@ -7,7 +7,7 @@ sidebar:
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components"
 
-In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses are scripted.
+In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and completion evaluator are scripted. A live host must replace both with provider-backed layers.
 
 A declared `output` schema is rendered into the step's system teaching as JSON Schema. The model's final answer is decoded against it, with one correction re-prompt before the step fails. [Agent runtime](/docs/concepts/agent-runtime/) explains the loop.
 
@@ -31,6 +31,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Flow } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -73,7 +74,7 @@ const prepared: Route.PreparedRequest = {
 }
 
 // A scripted model, so the run is deterministic and needs no API key. Point
-// the resolver at a provider route and nothing above it changes.
+// a live host at provider-backed seat and evaluator layers to judge real work.
 const scripted: Model.Model = Model.make({
   stream: (request) =>
     Stream.suspend(() => {
@@ -130,6 +131,11 @@ export const seats = SeatResolver.layer({
 
 export const agentHost = Layer.mergeAll(host, seats, Agent.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+  Layer.provideMerge(Evaluator.layerScripted(() => ({
+    complete: { probability: 0.99 },
+    overclaims: { probability: 0.01 },
+    invented: { probability: 0.01 }
+  }))),
   Layer.provideMerge(Agent.layerDefaults)
 )
 ```

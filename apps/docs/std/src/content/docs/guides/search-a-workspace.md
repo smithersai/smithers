@@ -11,10 +11,10 @@ Both flows go through the `Search` service, so bind either
 first. The semantics are identical; see
 [The search contract](/concepts/search-contract/) for why.
 
-## Always pass a root
+## Choose the search root
 
-`root` defaults to `/`, which searches the whole filesystem. Pass the project
-directory:
+`root` defaults to `.`, resolved by the host filesystem. A guarded agent host
+resolves it inside its workspace. Pass a root to search another directory:
 
 ```ts
 import * as Glob from "@smthrs/std/Glob"
@@ -136,3 +136,9 @@ Twelve directory names are skipped during descent, including `.git`,
 `node_modules`, `__pycache__`, and `.venv`. Skipping applies to descent only, so
 naming one of them as the `root` searches it. An entry the process cannot read
 is skipped and the walk continues.
+
+The portable peer streams file contents when the host supports it. A guarded
+host may provide atomic file reads but refuse streaming handles. If a stream
+fails before delivering any bytes, search tries that same filesystem's atomic
+read. A stream that fails after delivering bytes is discarded without a second
+read, so two versions of a changing file cannot be combined into one result.

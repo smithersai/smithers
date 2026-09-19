@@ -2315,6 +2315,7 @@ In this tutorial you'll build an agent flow two ways. First, a markdown flow tha
 
 - The Smithers CLI: `npm install --global @smthrs/cli@next`. The `@next` suffix is required while 1.0 is a release candidate.
 - A provider credential in the environment: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. [Configure model seats](/docs/guides/model-seats/) explains how a seat resolves from environment keys.
+- `AI_GATEWAY_API_KEY` for the completion evaluator in the live markdown run. Part 3 scripts both the seat and evaluator and needs no key.
 - A git repository to work in. Part 2 reviews its uncommitted change.
 - Node.js 22.19.0 or later for part 3.
 
@@ -2425,6 +2426,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj, type ChangeId } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -2476,7 +2478,7 @@ const prepared: Route.PreparedRequest = {
 
 // A scripted model: it reads the two paths out of the request and answers
 // with one cell that uses the tools, so the run is deterministic and needs no
-// API key. Point SeatResolver at a provider route and nothing above it changes.
+// API key. A live host replaces both this seat and the scripted evaluator.
 const scripted: Model.Model = Model.make({
   stream: (request) =>
     Stream.suspend(() => {
@@ -2571,8 +2573,13 @@ const program = Effect.gen(function*() {
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
     // This offline run has no approved plan envelope to derive a ceiling from.
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-    // The QuickJS sandbox the cell's code runs in, and the steering source it
-    // drains. Both are browser-safe defaults.
+    // This offline example supplies a scripted completion judge.
+    Layer.provideMerge(Evaluator.layerScripted(() => ({
+      complete: { probability: 0.99 },
+      overclaims: { probability: 0.01 },
+      invented: { probability: 0.01 }
+    }))),
+    // QuickJS and the default steering source.
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -2620,7 +2627,7 @@ through the write tool, and every call ran inside the sandbox budget.
 # Pass typed outputs between agent steps
 https://smithers.sh/docs/tutorials/agent-outputs/
 
-In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses are scripted.
+In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and completion evaluator are scripted. A live host must replace both with provider-backed layers.
 
 A declared `output` schema is rendered into the step's system teaching as JSON Schema. The model's final answer is decoded against it, with one correction re-prompt before the step fails. [Agent runtime](/docs/concepts/agent-runtime/) explains the loop.
 
@@ -2644,6 +2651,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Flow } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -2686,7 +2694,7 @@ const prepared: Route.PreparedRequest = {
 }
 
 // A scripted model, so the run is deterministic and needs no API key. Point
-// the resolver at a provider route and nothing above it changes.
+// a live host at provider-backed seat and evaluator layers to judge real work.
 const scripted: Model.Model = Model.make({
   stream: (request) =>
     Stream.suspend(() => {
@@ -2743,6 +2751,11 @@ export const seats = SeatResolver.layer({
 
 export const agentHost = Layer.mergeAll(host, seats, Agent.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+  Layer.provideMerge(Evaluator.layerScripted(() => ({
+    complete: { probability: 0.99 },
+    overclaims: { probability: 0.01 },
+    invented: { probability: 0.01 }
+  }))),
   Layer.provideMerge(Agent.layerDefaults)
 )
 ```
@@ -2970,7 +2983,7 @@ A memory policy decides which namespace a flow tree reads and writes, whether re
 pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/memory@next @smthrs/harness@next @smthrs/model@next @smthrs/registry@next @smthrs/database@next @smthrs/platform-node@next @smthrs/control@next @smthrs/time-travel@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
-You need no provider key: the seat resolves to a scripted model, so the runs are deterministic. Point `SeatResolver` at a provider route and nothing above it changes.
+You need no provider key: both the model and the completion evaluator are scripted, so the runs are deterministic. A live host supplies a provider-backed seat and a real evaluator; the scripted completion probabilities below are only for this tutorial.
 
 ## 1. Write facts in one run
 
@@ -3001,6 +3014,7 @@ import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -3188,6 +3202,11 @@ const program = Effect.gen(function*() {
         Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
         // This offline run has no approved plan envelope to derive a ceiling from.
         Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
+        Layer.provideMerge(Evaluator.layerScripted(() => ({
+          complete: { probability: 0.99 },
+          overclaims: { probability: 0.01 },
+          invented: { probability: 0.01 }
+        }))),
         Layer.provideMerge(Agent.layerDefaults),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
@@ -7283,13 +7302,13 @@ This is the support reference for 1.0.0-rc.0. Sources below link to the current 
 
 ## Runtimes
 
-| Runtime                | RC boundary                                                                                                                                                                                                                                                                                                                      | Source of truth                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Node.js                | Supported durable runtime via NodeRuntime and local SQLite. Release packages declare either `>=22.19.0` or `^22.19.0 \|\| >=24.11.0`; the CLI and agent packages require the narrower range. CI pins `22.19.0`; the release smoke checks both floors listed below.                                                                    | [Manifest inventory](#published-node-engine-ranges); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [release workflow](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                                                                            |
-| Node.js release smoke  | The release workflow requires the same candidate tarballs to pass on `22.19.0` and `24.11.0`, records actual Node/npm versions, and checks installation, imports, bundling, and typechecking. Treat a candidate as verified only when both runtime receipts and its archive are retained; configured gates alone are not a pass. | [release workflow and receipt upload](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml); [smoke implementation and version output](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs)                                                                                                     |
-| Bun                    | The adapter declares `engines.bun: ">=1.4.0"`; CI pins `1.4.1`. BunRuntime now composes the durable engine with the native Bun SQL driver. Native Node↔Bun restart is covered by NativeRuntimeParity; the existing package-runner scope is listed below. Selecting NodeDatabase under Bun returns `unsupported_runtime` and directs callers to BunDatabase. This is not a claim that every application runs on Bun.                                                                                                      | [adapter manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/package.json); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [native restart contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/test/NativeRuntimeParity.test.ts) |
-| Browsers               | bundle only. No durable flows, including when a caller supplies another SQL client.                                                                                                                                                                                                                                              | [browser bundle contract](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [aggregate boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/aggregate-surface.md)                                                                                                      |
-| Deno and edge runtimes | Not supported. Browser bundling does not establish Deno, Cloudflare, or Vercel engine support.                                                                                                                                                                                                                                   | [browser contract scope](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [native SQLite database boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)                                                                                            |
+| Runtime                | RC boundary                                                                                                                                                                                                                                                                                                                                                                                                         | Source of truth                                                                                                                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Node.js                | Supported durable runtime via NodeRuntime and local SQLite. Release packages declare either `>=22.19.0` or `^22.19.0 \|\| >=24.11.0`; the CLI and agent packages require the narrower range. CI pins `22.19.0`; the release smoke checks both floors listed below.                                                                                                                                                  | [Manifest inventory](#published-node-engine-ranges); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [release workflow](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                                                                      |
+| Node.js release smoke  | The release workflow requires the same candidate tarballs to pass on `22.19.0` and `24.11.0`, records actual Node/npm versions, and checks installation, imports, bundling, and typechecking. Treat a candidate as verified only when both runtime receipts and its archive are retained; configured gates alone are not a pass.                                                                                    | [release workflow and receipt upload](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml); [smoke implementation and version output](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs)                                                                                               |
+| Bun                    | The adapter declares `engines.bun: ">=1.4.0"`; CI pins `1.4.1`. BunRuntime now composes the durable engine with the native Bun SQL driver. Native Node↔Bun restart is covered by NativeRuntimeParity; the existing package-runner scope is listed below. Selecting NodeDatabase under Bun returns `unsupported_runtime` and directs callers to BunDatabase. This is not a claim that every application runs on Bun. | [adapter manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/package.json); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [native restart contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/test/NativeRuntimeParity.test.ts) |
+| Browsers               | bundle only. No durable flows, including when a caller supplies another SQL client.                                                                                                                                                                                                                                                                                                                                 | [browser bundle contract](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [aggregate boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/aggregate-surface.md)                                                                                                |
+| Deno and edge runtimes | Not supported. Browser bundling does not establish Deno, Cloudflare, or Vercel engine support.                                                                                                                                                                                                                                                                                                                      | [browser contract scope](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [native SQLite database boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)                                                                                 |
 
 ### Bun package scope
 
@@ -7336,14 +7355,14 @@ These ten packages declare `bunTest` targets. The target uses Bun's package runn
 
 ## Known limitations and evidence
 
-| Area               | Limit                                                                                                                                                                  | Source of truth                                                                                                                                                                                                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Global run listing | Loads the run population before paging. A page limit does not bound the underlying read or memory use. No scale claim. A named run has a separate direct lookup.       | [ControlLive list path](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/ControlLive.ts); [SQL listRuns](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/SqlControlRuntime.ts)    |
-| Fault tier         | Bounded cases: hosted-provider faults, timer races, and other gaps remain. Passing the required fault job does not cover every failure mode.                           | [fault coverage record](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md); [fault job](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts)                                                        |
-| Soak               | The streaming case covers five subscribers and 500 events. `reliability.yml` schedules a daily `sync-long-soak` job: 60 minutes of the sync reconnect, stalled-consumer, compaction and retention workload on Node 22.19.0 and 24.18.0, with completed receipts required by `scripts/check-soak-campaign.mjs`. That is a declaration, not run evidence; hours-long growth, the CLI case 16 composition, and hosted soak are outside this evidence. | [scheduled soak job](https://github.com/smithersai/smithers/blob/main/.github/workflows/reliability.yml); [case 16 and omitted soak tiers](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md) |
-| Production canary  | Disabled for this repository. The job is guarded on `smithersai/flows`; it is not an RC validation surface.                                                            | [canary job guard](https://github.com/smithersai/smithers/blob/main/.github/workflows/canary.yml)                                                                                                                                              |
-| Provider first use | A funded first-use provider run is not part of the automated release-smoke evidence. Tarball import/typecheck success does not demonstrate a provider conversation.    | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [release checks](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                    |
-| Project migration  | A realistic migrated project is not part of the automated release-smoke evidence. Migration fixtures and source rewrites do not establish that end-to-end result.      | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [migration verification guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/guides/set-verification-commands.md) |
+| Area               | Limit                                                                                                                                                                                                                                                                                                                                                                                                                                              | Source of truth                                                                                                                                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global run listing | Loads the run population before paging. A page limit does not bound the underlying read or memory use. No scale claim. A named run has a separate direct lookup.                                                                                                                                                                                                                                                                                   | [ControlLive list path](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/ControlLive.ts); [SQL listRuns](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/SqlControlRuntime.ts)    |
+| Fault tier         | Bounded cases: hosted-provider faults, timer races, and other gaps remain. Passing the required fault job does not cover every failure mode.                                                                                                                                                                                                                                                                                                       | [fault coverage record](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md); [fault job](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts)                                                        |
+| Soak               | The streaming case covers five subscribers and 500 events. `reliability.yml` schedules a daily `sync-long-soak` job: 60 minutes of the sync reconnect, stalled-consumer, compaction and retention workload on Node 22.19.0 and 24.18.0, with completed receipts required by `scripts/check-soak-campaign.mjs`. That is a declaration, not run evidence; hours-long growth, the CLI case 16 composition, and hosted soak are outside this evidence. | [scheduled soak job](https://github.com/smithersai/smithers/blob/main/.github/workflows/reliability.yml); [case 16 and omitted soak tiers](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md)               |
+| Production canary  | Disabled for this repository. The job is guarded on `smithersai/flows`; it is not an RC validation surface.                                                                                                                                                                                                                                                                                                                                        | [canary job guard](https://github.com/smithersai/smithers/blob/main/.github/workflows/canary.yml)                                                                                                                                              |
+| Provider first use | A funded first-use provider run is not part of the automated release-smoke evidence. Tarball import/typecheck success does not demonstrate a provider conversation.                                                                                                                                                                                                                                                                                | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [release checks](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                    |
+| Project migration  | A realistic migrated project is not part of the automated release-smoke evidence. Migration fixtures and source rewrites do not establish that end-to-end result.                                                                                                                                                                                                                                                                                  | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [migration verification guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/guides/set-verification-commands.md) |
 
 ## Published Node engine ranges
 
@@ -7382,7 +7401,7 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/model`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
 | `@smthrs/notifications`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
 | `@smthrs/observability`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
-| `@smthrs/opencode`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/package.json)               |
+| `@smthrs/opencode`         | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/package.json)               |
 | `@smthrs/patterns`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
 | `@smthrs/plan`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
 | `@smthrs/platform-browser` | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/package.json) |
@@ -24117,7 +24136,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/gateway/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/docs/api.md) · [package docs](https://gateway.smithers.sh)
 
-> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/sync`](/docs/reference/api/sync/)
+> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
 The gateway declares `effect`, `@effect/platform-node`, and `@effect/platform-bun`
 as exact `4.0.0-rc.115` peers; `@effect/platform-node` is optional for
@@ -25571,19 +25590,39 @@ must have demonstrated the subject was still live by returning to it.
 `import * as CompletionClaim from "@smthrs/harness/CompletionClaim"`
 
 The sixth brake on a completion, and the only one that is not a measurement.
-It declares one classifier, `completion/claim`, over five facts the harness
+It declares one classifier, `completion/claim`, over the facts the harness
 already holds: the task as the person stated it, the completion message,
-whether the tree moved, every check the run took over the tree it is
-completing on as `Evidence.checksRun` (command and outcome, newest
-`checksRunLimit` (24) kept), and the last check the completing frame ran with
-its result clipped to the newest `outputBytes` (4 KiB). It asks Jev three
-questions through the `Evaluator` service. Does the evidence show the task as
-stated is done, does the claim assert something the evidence does not show,
+whether the tree moved, every check the run took in its workspace as
+`Evidence.checksRun` (command and outcome, newest
+`checksRunLimit` (24) kept), the last check the completing frame ran with
+its result clipped to the newest `outputBytes` (4 KiB), and `Evidence.callsRun`.
+The latter lists the newest 30 settled calls from the durable call ledger,
+including classification and reads that report no exit status. Each receipt
+names the flow, bounded input subject, settlement status and structural result
+summary. It records that a result was obtained without carrying its full
+payload. Direct callers may omit this field for compatibility; the controller
+always supplies it. It asks Jev three
+questions through the `Evaluator` service. Does the completion satisfy the
+person's current request, does the claim assert something the evidence does not show,
 and does the claim report having run a command, or having obtained a result,
 that the evidence does not record? `read` asks and returns all three
 probabilities with the latency; it returns nothing only where there is no task
 and no claim to form a question about, and fails with `completion_unjudged`
 for every other reason it could not get an answer.
+
+The completeness question treats labeled prior conversation as context and
+judges the newest request after `The person now says:`. A purely conversational
+request can be satisfied by the answer itself, without a file edit, flow call
+or check. A soft demand uses neutral completion-review guidance: answer the
+current request in its requested format, and support only the actions and
+results actually claimed. It does not allege invented work merely because
+the completeness reading was low.
+
+`CellTurn` records a completion reading at an engine boundary keyed by the
+session, frame, cell digest and classifier digest. Replay uses that recorded
+reading, so a resumed turn keeps its previous decision without asking Jev
+again. Provider refusals retain their code, HTTP status when present and
+detail through the journal's error schema.
 
 **All three ask; only the third refuses.** `find` hands the completion back at
 any of three heights, `disprovenAt` (0.3) or below on the first question,
@@ -25592,7 +25631,8 @@ the third, and `demand` renders the prose the next frame reads. `unrecorded`
 says whether a reading is one the brake ends a run over, which is `inventedAt`
 (0.85) or above on the third question and nothing else.
 
-The split is measured. A corpus of eighteen completion states over the live
+The split was measured using the original completeness wording, whose positive
+criteria named only workspace changes and checks. A corpus of eighteen completion states over the live
 gate's own planted repository, asked six times each on 2026-09-19, found the
 first two questions unable to separate a lie from an honest answer: "is the
 task done" at or below 0.3 fired on eight of the twelve honest completions and
@@ -31964,6 +32004,17 @@ transport did not send is one-hot on the chosen option or nearest rung, so
 `confidence` reads 1; a caller that has to tell the two apart keeps the raw
 `Evaluator.Response`.
 
+A score distribution uses one key format throughout. When every key is a valid
+zero-based rung index, decoding uses indexes, including when numeric labels
+overlap those indexes. Otherwise every key must be a declared rung label.
+Missing entries become zero; a dictionary that fits neither format fails as
+`invalid_answer`. This follows Jev's indexed response while accepting
+unambiguous label-keyed responses from other evaluators.
+
+Question names, option names and rubric labels are JSON object keys, including
+`__proto__`, `constructor` and `toString`. Decoding reads only own properties
+and preserves these names in the answer and probability records.
+
 ## `Evaluator`
 
 The transport a classifier asks: one JSON state and a map of typed questions
@@ -31989,6 +32040,18 @@ as `empty` or `invalid_answer`, never as a guessed answer. The request body
 is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
 and the gateway key rides in the `authorization` header, which request traces
 redact.
+
+The encoded state must be a JSON value. Values that JSON would discard or
+reshape, including `undefined`, `bigint`, non-finite numbers, cycles and class
+instances, fail as `invalid_question` before an HTTP request is sent. A typed
+classifier may use a codec with a non-JSON decoded value when its encoded
+representation is valid JSON.
+
+The gateway accepts string, array and object states directly. For a number,
+boolean or `null`, this transport sends `{ state: originalValue }` and prefixes
+each question's instructions to ask about the original value, not the wrapper.
+The caller's state and questions are unchanged; batch results retain the
+original state.
 
 ## `ModelCatalog`
 
@@ -33301,7 +33364,7 @@ broken cursor is reported rather than read as the end of the history.
 | `open`                                                                                | `(ctx, opened) => Step`: the user message with the app's own part id (`opened.userPartID`), the session title, the assistant header, the busy status; `createdAt` and `userCreatedAt` keep a re-opened or retried turn's times.                                                                                                                                                                                                                                                                                                                                 |
 | `fold`                                                                                | `(ctx, state, event: AgentEvent) => Step`: total; an unknown event changes nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `budgetEnded`                                                                         | `(state) => boolean`: whether the frame budget, and not the run, ended a turn that resolved. A run that finished applies a `complete` transition and the controller closes the turn on its words; a run out of budget applies none and gets the budget notice instead. Read off the transition and never off the notice.                                                                                                                                                                                                                                        |
-| `claimTitle`, `claimText`                                                             | `(complete, overclaims) => string`, `(completion \| undefined) => string`: the completion brake's card. The title carries the two probabilities Jev read, and the body carries what to do and the completion the brake handed back, word for word, so a correct answer it refused is in the transcript instead of only in `opencode.sqlite`.                                                                                                                                                                                                                    |
+| `claimTitle`, `claimText`                                                             | `(invented, complete, overclaims) => string`, `(completion \| undefined) => string`: the completion brake's card. The title carries all three probabilities. The body requests a review against the current task and its requested format, requires evidence only for claimed actions or results, and preserves the handed-back completion word for word. A purely conversational answer needs no file edit, command, or check.                                                                                                                                 |
 | `close`                                                                               | `(ctx, state, closing) => Step`: ends a turn the stream did not end; every open cell and call card settles as an error, and a refused key is a `ProviderAuthError`. A turn that ended without an answer is red and the reason names what ended it, off a typed code every time: the provider's normalized code for a usage limit, the harness's `HarnessError` code for a cap or a refusal it made, `frame_budget` when the loop's top-of-frame budget check ended it, and `unknown` for a body that failed with neither. Only the operator's own Stop is gray. |
 | `toolName`, `toolInput`, `toolTitle`, `toolOutput`                                    | How a flow call becomes the card OpenCode renders.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `toolMetadata`, `permissionPatterns`                                                  | The structured metadata beside a card, and the patterns of a permission card.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -50452,7 +50515,11 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // still needs no key. A host with a gateway key binds
     // `Evaluator.layerFromEnvironment(process.env)` instead.
     Layer.provideMerge(
-      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      Evaluator.layerScripted(() => ({
+        complete: { probability: 0.99 },
+        overclaims: { probability: 0.01 },
+        invented: { probability: 0.01 }
+      }))
     ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -52861,7 +52928,11 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // it still needs no key. A host with a gateway key binds
               // `Evaluator.layerFromEnvironment(process.env)` instead.
               Layer.provideMerge(
-                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+                Evaluator.layerScripted(() => ({
+                  complete: { probability: 0.99 },
+                  overclaims: { probability: 0.01 },
+                  invented: { probability: 0.01 }
+                }))
               )
             )
           )
@@ -53668,7 +53739,11 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // it still needs no key. A host with a gateway key binds
               // `Evaluator.layerFromEnvironment(process.env)` instead.
               Layer.provideMerge(
-                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+                Evaluator.layerScripted(() => ({
+                  complete: { probability: 0.99 },
+                  overclaims: { probability: 0.01 },
+                  invented: { probability: 0.01 }
+                }))
               ),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(durableEngine(filename, "examples-mcp"))
@@ -54454,7 +54529,11 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // still needs no key. A host with a gateway key binds
       // `Evaluator.layerFromEnvironment(process.env)` instead.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+        Evaluator.layerScripted(() => ({
+          complete: { probability: 0.99 },
+          overclaims: { probability: 0.01 },
+          invented: { probability: 0.01 }
+        }))
       ),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
@@ -54779,7 +54858,8 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                 Layer.provideMerge(
                   Evaluator.layerScripted(() => ({
                     complete: { probability: 0.99 },
-                    overclaims: { probability: 0.01 }
+                    overclaims: { probability: 0.01 },
+                    invented: { probability: 0.01 }
                   }))
                 ),
                 Layer.provideMerge(Action.layerImplementations)
@@ -57077,7 +57157,11 @@ const policies = (calls: Array<string>) =>
     // still needs no key. A host with a gateway key binds
     // `Evaluator.layerFromEnvironment(process.env)` instead.
     Layer.provideMerge(
-      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      Evaluator.layerScripted(() => ({
+        complete: { probability: 0.99 },
+        overclaims: { probability: 0.01 },
+        invented: { probability: 0.01 }
+      }))
     )
   )
 

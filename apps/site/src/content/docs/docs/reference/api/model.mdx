@@ -575,6 +575,17 @@ transport did not send is one-hot on the chosen option or nearest rung, so
 `confidence` reads 1; a caller that has to tell the two apart keeps the raw
 `Evaluator.Response`.
 
+A score distribution uses one key format throughout. When every key is a valid
+zero-based rung index, decoding uses indexes, including when numeric labels
+overlap those indexes. Otherwise every key must be a declared rung label.
+Missing entries become zero; a dictionary that fits neither format fails as
+`invalid_answer`. This follows Jev's indexed response while accepting
+unambiguous label-keyed responses from other evaluators.
+
+Question names, option names and rubric labels are JSON object keys, including
+`__proto__`, `constructor` and `toString`. Decoding reads only own properties
+and preserves these names in the answer and probability records.
+
 ## `Evaluator`
 
 The transport a classifier asks: one JSON state and a map of typed questions
@@ -600,6 +611,18 @@ as `empty` or `invalid_answer`, never as a guessed answer. The request body
 is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
 and the gateway key rides in the `authorization` header, which request traces
 redact.
+
+The encoded state must be a JSON value. Values that JSON would discard or
+reshape, including `undefined`, `bigint`, non-finite numbers, cycles and class
+instances, fail as `invalid_question` before an HTTP request is sent. A typed
+classifier may use a codec with a non-JSON decoded value when its encoded
+representation is valid JSON.
+
+The gateway accepts string, array and object states directly. For a number,
+boolean or `null`, this transport sends `{ state: originalValue }` and prefixes
+each question's instructions to ask about the original value, not the wrapper.
+The caller's state and questions are unchanged; batch results retain the
+original state.
 
 ## `ModelCatalog`
 

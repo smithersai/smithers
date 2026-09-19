@@ -367,7 +367,11 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // it still needs no key. A host with a gateway key binds
               // `Evaluator.layerFromEnvironment(process.env)` instead.
               Layer.provideMerge(
-                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+                Evaluator.layerScripted(() => ({
+                  complete: { probability: 0.99 },
+                  overclaims: { probability: 0.01 },
+                  invented: { probability: 0.01 }
+                }))
               )
             )
           )
