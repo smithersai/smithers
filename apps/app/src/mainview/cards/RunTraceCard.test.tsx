@@ -776,6 +776,36 @@ describe("the timeline reads as phases, then what each frame did", () => {
     expect(dispatched).toEqual([{ name: "runs.trace.select", args: `sourceCard=flow-run-run-1 run-1 ${first.spanId}` }])
   })
 
+  test("frame rows show settlement-aware verbs once and keep raw output behind call selection", () => {
+    const output = { path: "a.ts", bytesWritten: 12, created: false }
+    const cases = [
+      [undefined, "writing", ""],
+      [{ outcome: "failure", message: "read-only" }, "failed to write", "read-only"],
+      [{ outcome: "success", value: output }, "wrote", "12 bytes"],
+      [{ outcome: "success", value: { unsupported: "raw-only" } }, "wrote", ""]
+    ] as const
+    for (const [settlement, verb, result] of cases) {
+      const events = [
+        stamp(1, "control.agent.turn-opened", {}, 1000),
+        stamp(2, "control.agent.cell-call-started", { flowName: "write", input: { path: "a.ts" } }, 1100),
+        ...(settlement === undefined ? [] : [stamp(3, "control.agent.cell-call-settled", { flowName: "write", ...settlement }, 1200)])
+      ]
+      const { host, dispatched } = renderTrace({ events })
+      const row = host.querySelector<HTMLButtonElement>('[data-frame-line="frame-1"]')!
+      expect(row.querySelector(".run-line-verb")?.textContent).toBe(verb)
+      expect(row.querySelector(".run-line-result")?.textContent).toBe(result)
+      expect(row.querySelector(".run-line-wrote")).toBeNull()
+      expect(row.textContent).not.toContain("bytesWritten")
+      expect(row.textContent).not.toContain("raw-only")
+      click(row)
+      expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-1" }])
+      if (settlement !== undefined && "value" in settlement) {
+        const selected = renderTrace({ events, selection: "call-1" })
+        expect(selected.host.querySelector('[aria-label="Output"]')?.textContent).toBe(JSON.stringify(settlement.value))
+      }
+    }
+  })
+
   test("a stalled frame names the frame it repeats, and the discipline note sits under the frame it happened in", () => {
     const model = fold(STALLED, "running")
     const { host } = timeline(STALLED, { phase: "running" })

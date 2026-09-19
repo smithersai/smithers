@@ -16,6 +16,8 @@
  * Pure: the card renders the model, the tests read it from a fixture.
  */
 import { uniqueCallEvents, openCallIndex } from "@smthrs/gateway/Diagnosis"
+import { CallPresentation, FlowActivity, type FlowDescriptor } from "@smthrs/registry/Descriptor"
+import { Schema } from "effect"
 import { engineTraceFromJournal } from "./EngineTrace"
 
 /** One control journal record, as the run card stores it (the run-events projection's row shape). */
@@ -144,13 +146,10 @@ export interface TraceNote {
 
 /** Extra options the fold takes; every field optional, absent = today's behaviour. */
 export interface TraceOptions {
-  /**
-   * Check targets the PLAN declared (`flows/coding/schema.ts` `Check.target`),
-   * in either shape a plan carries them: a build-target label or a path. A
-   * bash call is "testing" only if its command ran one of them, by the rules
-   * {@link runsCheck} holds. Absent = no frame is classified testing.
-   */
+  /** Plan targets are coverage requirements, never evidence that a call ran tests. */
   readonly checkTargets?: ReadonlyArray<string>
+  /** Descriptor metadata for this journal. Recorded call metadata takes precedence. */
+  readonly descriptors?: ReadonlyArray<Pick<FlowDescriptor, "name" | "activity" | "presentation">>
 }
 
 export interface TraceModel {
@@ -239,27 +238,33 @@ const builder = (
  * nothing said about it.
  */
 
-/**
- * The verb one flow's call reads as, and which phase rule it answers.
- *
- * This table belongs on the registry descriptor, next to `description`. A verb
- * table on the UI side drifts the moment someone adds a flow, and this module
- * cannot see the flows a host bound; until the descriptor carries it, the
- * table stays small and stays in this one place. The keys are the standard
- * flows' own names (`@smthrs/std` `Bash.name`, `Edit.name`, ...). `acts` is
- * what the phase rules mean by "edit-like" and "bash-like"; a flow this table
- * has never heard of is neither, and its verb is its own name.
- */
-const FLOW_ACTS: Readonly<Record<string, { readonly verb: string; readonly acts?: "edit" | "bash" }>> = {
-  bash: { verb: "ran", acts: "bash" },
-  test: { verb: "ran", acts: "bash" },
-  edit: { verb: "edited", acts: "edit" },
-  write: { verb: "wrote", acts: "edit" },
-  apply_patch: { verb: "patched", acts: "edit" },
-  read: { verb: "read" },
-  grep: { verb: "searched" },
-  glob: { verb: "listed" },
-  ls: { verb: "listed" }
+type CallMetadata = Pick<FlowDescriptor, "activity" | "presentation">
+
+/** Compatibility for journals whose descriptors predate presentation metadata. */
+const legacy = (
+  activity: FlowActivity, pending: string, success: string, failure: string,
+  subject: CallPresentation["subject"], result: CallPresentation["result"]
+): CallMetadata => ({ activity, presentation: { verb: { pending, success, failure }, subject, result } })
+
+const LEGACY_PRESENTATION: ReadonlyMap<string, CallMetadata> = new Map([
+  ["bash", legacy("other", "running", "ran", "failed to run", "command", "command")],
+  ["test", legacy("tests", "running", "ran", "failed to run", "selection", "tests")],
+  ["edit", legacy("writes", "editing", "edited", "failed to edit", "path", "edit")],
+  ["write", legacy("writes", "writing", "wrote", "failed to write", "path", "write")],
+  ["apply_patch", legacy("writes", "patching", "patched", "failed to patch", "patch", "patch")],
+  ["read", legacy("reads", "reading", "read", "failed to read", "path", "read")],
+  ["grep", legacy("reads", "searching", "searched", "failed to search", "pattern", "matches")],
+  ["glob", legacy("reads", "listing", "listed", "failed to list", "pattern", "paths")],
+  ["ls", legacy("reads", "listing", "listed", "failed to list", "path", "entries")]
+])
+
+/** Read only the descriptor's validated display fields; a call input is never metadata. */
+const recordedMetadata = (value: unknown, flowName: string): CallMetadata | undefined => {
+  const descriptor = asRecord(value)
+  if (descriptor.name !== flowName) return undefined
+  const activity = Schema.is(FlowActivity)(descriptor.activity) ? descriptor.activity : undefined
+  const presentation = Schema.is(CallPresentation)(descriptor.presentation) ? descriptor.presentation : undefined
+  return activity === undefined && presentation === undefined ? undefined : { activity, presentation }
 }
 
 /**
@@ -321,8 +326,14 @@ const writtenPaths = (input: unknown): ReadonlyArray<string> => {
 }
 
 /** A call's subject: a path reads as its basename, a command as itself. */
-const subjectOf = (input: unknown): string => {
+const subjectOf = (input: unknown, format?: CallPresentation["subject"]): string => {
   const fields = asRecord(input)
+  if (format === "none") return ""
+  if (format === "path") return asString(fields.path) === undefined ? "" : basename(fields.path as string)
+  if (format === "command") return commandOf(input) ?? ""
+  if (format === "patch") return filesLabel(patchedPaths(asString(fields.input) ?? ""))
+  if (format === "pattern") return asString(fields.pattern) ?? ""
+  if (format === "selection") return stringList(fields.selection)?.join(" ") ?? ""
   const path = asString(fields.path)
   if (path !== undefined) return basename(path)
   const command = commandOf(input)
@@ -344,40 +355,70 @@ const subjectOf = (input: unknown): string => {
 }
 
 /**
- * Whether a command ran one of the checks the plan declared.
- *
- * Two target shapes reach here and they MEAN differently, so they match
- * differently (`flows/coding/schema.ts` `Check.target`).
- *
- * A build-target LABEL — `//memory:typecheck`, `//ui:browser`, the shape this
- * repo's own plans declare — names one whole target and is an atom: no narrower
- * reading is spelled inside it, and a runner puts its own arguments after it
- * (`bun run check //memory:typecheck --watch`). So a command runs it when the
- * label stands in the command as its own token, wherever it stands. A flag that
- * narrows what the target then runs is `control.agent.narrowed-demanded`'s
- * business, not this rule's.
- *
- * A PATH target names a tree, and a path under it is a strictly NARROWER
- * reading: `pytest tests/admin_views/tests.py` runs one file of what
- * `tests/admin_views` names. Reading a substring as the target is how a UI
- * launders a narrowed check into a pass, which is the exact confusion
- * `control.agent.narrowed-demanded` exists to catch, so a path target must be
- * the command's LAST token. A token, not a suffix of the raw text: `views`
- * must not match `pytest admin_views`.
- *
- * A target that cannot be one token — empty, or carrying whitespace — cannot be
- * matched against a tokenised command at all. Guessing at it is the laundering
- * above, so it matches nothing and the frame is classified on what else it did.
+ * Legacy shell journals have no structured activity. Recognize only direct
+ * invocations of known runners. Shell composition, expansion and quoted
+ * programs remain unknown. Arguments can narrow a check without changing
+ * its activity; no command here establishes a plan's required coverage.
  */
-const runsCheck = (command: string, targets: ReadonlyArray<string>): boolean => {
-  const tokens = command.split(/\s+/).filter((token) => token !== "")
-  const last = tokens[tokens.length - 1]
-  return targets.some((target) =>
-    target === "" || /\s/.test(target)
-      ? false
-      : target.startsWith("//")
-      ? tokens.includes(target)
-      : last === target)
+const shellActivity = (command: string): FlowActivity => {
+  if (/[;&|<>`$\n\r]/.test(command)) return "other"
+  const words = command.trim().split(/\s+/)
+  const first = words[0]
+  if (["pytest", "vitest", "jest"].includes(first ?? "")) return "tests"
+  if (/^python[23]?$/.test(first ?? "") && words[1] === "-m" && ["pytest", "unittest"].includes(words[2] ?? "")) return "tests"
+  if (first === "bun" && words[1] === "test") return "tests"
+  if (["pnpm", "npm", "bun"].includes(first ?? "")) {
+    if (words[1] === "test" || (words[1] === "run" && words[2] === "test")) return "tests"
+    if (words[1] === "exec" && ["vitest", "jest"].includes(words[2] ?? "")) return "tests"
+    if (words[1] === "run" && ["check", "typecheck", "lint"].includes(words[2] ?? "")) return "checks"
+  }
+  if (first === "go" && words[1] === "test") return "tests"
+  if (first === "cargo" && words[1] === "test") return "tests"
+  if (first === "tsc") return "checks"
+  return "other"
+}
+
+const stringList = (value: unknown): ReadonlyArray<string> | undefined =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined
+
+const countOf = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+
+const counted = (value: number, noun: string, plural = `${noun}s`): string => `${value} ${value === 1 ? noun : plural}`
+
+/** Known output fields only. Unknown objects remain in the call's raw output. */
+const resultOf = (value: unknown, format?: CallPresentation["result"]): string => {
+  if (format === "none") return ""
+  if (typeof value === "string") return clip(value) ?? ""
+  const fields = asRecord(value)
+  if (fields.truncated === true && typeof fields.digest === "string") return ""
+  switch (format) {
+    case "read": {
+      const start = countOf(fields.startLine)
+      const end = countOf(fields.endLine)
+      return start !== undefined && start > 0 && end !== undefined && end >= start - 1
+        ? counted(end - start + 1, "line") : ""
+    }
+    case "write": return countOf(fields.bytesWritten) === undefined ? "" : counted(fields.bytesWritten as number, "byte")
+    case "edit": return countOf(fields.replacements) === undefined ? "" : counted(fields.replacements as number, "replacement")
+    case "patch": {
+      const groups = [stringList(fields.added), stringList(fields.modified), stringList(fields.deleted)]
+      return groups.every((group) => group !== undefined) ? counted(new Set(groups.flat()).size, "file") : ""
+    }
+    case "tests": {
+      const passed = countOf(fields.passed)
+      const failed = stringList(fields.failed)
+      if (fields.parsed === true && passed !== undefined && failed !== undefined && fields.invalidProbe === undefined) {
+        return `${passed} passed${failed.length === 0 ? "" : ` · ${failed.length} failed`}`
+      }
+      return countOf(fields.exitCode) === undefined ? "" : `exit ${fields.exitCode}`
+    }
+    case "command": return countOf(fields.exitCode) === undefined ? "" : `exit ${fields.exitCode}`
+    case "matches": return Array.isArray(fields.matches) ? counted(fields.matches.length, "match", "matches") : ""
+    case "paths": return stringList(fields.paths) === undefined ? "" : counted((fields.paths as ReadonlyArray<string>).length, "file")
+    case "entries": return Array.isArray(fields.entries) ? counted(fields.entries.length, "entry", "entries") : ""
+    default: return ""
+  }
 }
 
 /** A note body from the sentences the payload carried; a field the record omitted contributes nothing. */
@@ -396,13 +437,15 @@ interface CallFacts {
   readonly flowName: string
   readonly callId?: string | undefined
   readonly input: unknown
+  readonly activity?: FlowActivity | undefined
+  readonly presentation?: CallPresentation | undefined
   /**
    * What a repeat is judged by: the flow and the input exactly as journaled. A
    * field the trail truncated still canonicalizes to its own digest, so a
    * repeat of a huge input is still recognised as one.
    */
   readonly signature: string
-  settled?: { readonly failed: boolean; readonly result: string; readonly denied: boolean }
+  settled?: { readonly failed: boolean; readonly result: string; readonly denied: boolean; readonly value: unknown }
 }
 
 /** What one frame did, as its own records said it. */
@@ -424,7 +467,7 @@ interface FrameFacts {
 
 /** Whether the frame made an edit-like call the journal recorded settling successfully. */
 const madeAWrite = (entry: FrameFacts): boolean =>
-  entry.calls.some((call) => FLOW_ACTS[call.flowName]?.acts === "edit" && call.settled?.failed === false)
+  entry.calls.some((call) => call.activity === "writes" && call.settled?.failed === false && !call.settled.denied)
 
 /**
  * The call a frame's line is about: a change it made, else the check it ran,
@@ -434,8 +477,8 @@ const madeAWrite = (entry: FrameFacts): boolean =>
  * disagree about whether the journal said anything about a frame at all.
  */
 const dominantCall = (entry: FrameFacts): CallFacts | undefined =>
-  entry.calls.find((one) => FLOW_ACTS[one.flowName]?.acts === "edit")
-    ?? entry.calls.find((one) => FLOW_ACTS[one.flowName]?.acts === "bash")
+  entry.calls.find((one) => one.activity === "writes")
+    ?? entry.calls.find((one) => one.activity === "checks" || one.activity === "tests")
     ?? entry.calls.find((one) => one.flowName !== CHECKPOINT_FLOW)
 
 /**
@@ -461,7 +504,7 @@ const disciplineFold = (
   ordered: ReadonlyArray<JournalRecord>,
   options: TraceOptions
 ): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes"> => {
-  const targets = options.checkTargets ?? []
+  const descriptors = new Map(options.descriptors?.map((descriptor) => [descriptor.name, descriptor]))
   const frames: Array<FrameFacts> = []
   const notes: Array<TraceNote> = []
   const milestones: Array<Milestone> = []
@@ -504,10 +547,15 @@ const disciplineFold = (
       }
       case "control.agent.cell-call-started": {
         const flowName = asString(payload.flowName) ?? ""
+        const descriptor = recordedMetadata(payload.descriptor, flowName) ?? descriptors.get(flowName)
+        const declared = descriptor?.activity !== undefined || descriptor?.presentation !== undefined
+        const metadata = declared ? descriptor : LEGACY_PRESENTATION.get(flowName)
         const call: CallFacts = {
           flowName,
           callId: asString(payload.callId),
           input: payload.input,
+          activity: !declared && flowName === "bash" ? shellActivity(commandOf(payload.input) ?? "") : metadata?.activity,
+          presentation: metadata?.presentation,
           signature: `${flowName} ${textOf(payload.input) ?? ""}`
         }
         open.push(call)
@@ -517,6 +565,7 @@ const disciplineFold = (
         break
       }
       case "control.agent.cell-call-settled": {
+        if (payload.outcome !== "success" && payload.outcome !== "failure") break
         const index = openCallIndex(open, asString(payload.callId), asString(payload.flowName))
         const call = index < 0 ? undefined : open.splice(index, 1)[0]
         if (call === undefined) break
@@ -528,13 +577,14 @@ const disciplineFold = (
         call.settled = {
           failed,
           result: (failed ? textOf(payload.message) : textOf(payload.value)) ?? "",
-          denied
+          denied,
+          value: payload.value
         }
         if (denied && frame !== undefined) frame.blocked = true
         // A write is the fastest thing a run does, so its band is always too
         // narrow to carry a label, and its own marker is the only way to reach
         // the moment that matters most.
-        if (!failed && FLOW_ACTS[call.flowName]?.acts === "edit") {
+        if (!failed && !denied && call.activity === "writes") {
           // A pin is its label, so a pin with none is a marker nobody can read
           // and nobody can tell from the next one. The journal gave this call
           // no file; no file, no pin.
@@ -815,15 +865,13 @@ const disciplineFold = (
       ? "blocked"
       : stuck[index] === true
       ? "stuck"
-      : changed[index] === true
+      : changed[index] === true || entry.calls.some((call) => call.activity === "writes")
       ? "implementing"
-      : entry.calls.some((call) =>
-          FLOW_ACTS[call.flowName]?.acts === "bash" && runsCheck(commandOf(call.input) ?? "", targets)
-        )
+      : entry.calls.some((call) => call.activity === "checks" || call.activity === "tests")
       ? "testing"
-      : dominantCall(entry) === undefined
-      ? "unrecorded"
-      : "researching")
+      : entry.calls.some((call) => call.activity === "reads")
+      ? "researching"
+      : "unrecorded")
 
   const bands: Array<PhaseBand> = []
   frames.forEach((entry, index) => {
@@ -843,20 +891,18 @@ const disciplineFold = (
     const call = dominantCall(entry)
     // A frame that called nothing has no line. Absence is absence.
     if (call === undefined) return []
-    const acts = FLOW_ACTS[call.flowName]
     const repeatOf = stuck[index] === true ? repeatedFrom.get(call) : undefined
+    const outcome = call.settled === undefined ? "pending" : call.settled.failed || call.settled.denied ? "failure" : "success"
     return [{
       spanId: entry.id,
       frame: entry.frame,
-      verb: acts?.verb ?? call.flowName,
-      subject: subjectOf(call.input),
-      // A call the journal has not settled has no result yet, and a settled one
-      // carries its flow's whole Output up to the journal's cap: one row of a
-      // card is not where 64 KiB of JSON goes, so it is bounded like every
-      // other quoted line here.
-      result: clip(call.settled?.result) ?? "",
+      verb: call.presentation?.verb[outcome] ?? `${call.flowName}${outcome === "pending" ? " pending" : outcome === "failure" ? " failed" : ""}`,
+      subject: subjectOf(call.input, call.presentation?.subject),
+      // Read supported output fields through the descriptor's presentation.
+      // The selected call retains the raw value, including unsupported shapes.
+      result: call.settled?.failed === true ? clip(call.settled.result) ?? "" : resultOf(call.settled?.value, call.presentation?.result),
       failed: call.settled?.failed === true,
-      wrote: acts?.acts === "edit" && call.settled?.failed === false,
+      wrote: call.activity === "writes" && call.settled?.failed === false && !call.settled.denied,
       ...(repeatOf === undefined ? {} : { repeatOf })
     }]
   })

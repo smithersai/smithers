@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { durationWords, isTraceFilter, phaseBandGeometry, phaseExtent, spanMatches, spanPath, traceFiltersFor, traceFromJournal, turnNarratives, waterfallGeometry } from "./RunTrace"
 import type { JournalRecord } from "./RunTrace"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
+import type { FlowDescriptor } from "@smthrs/registry/Descriptor"
 
 /*
  * The trace model over a journal in the agent's own shapes (AgentSession's
@@ -36,6 +37,132 @@ const JOURNAL: ReadonlyArray<JournalRecord> = [
 ]
 
 const RUN = { runId: "run-1", flowId: "implement", status: "running", kind: "implement" }
+
+/** A single recorded call, with settlement omitted while it is pending. */
+const oneCall = (flowName: string, input: unknown, settlement?: Record<string, unknown>): ReadonlyArray<JournalRecord> => [
+  at(1, "control.agent.turn-opened", {}, 1000),
+  at(2, "control.agent.cell-call-started", { flowName, input }, 1100),
+  ...(settlement === undefined ? [] : [at(3, "control.agent.cell-call-settled", { flowName, ...settlement }, 1200)])
+]
+
+describe("descriptor-backed activity and presentation", () => {
+  test("structured tests and narrowed checks are testing independently of a plan's coverage", () => {
+    for (const input of [{ selection: ["//ui:browser"] }, { selection: ["tests/a.ts", "--grep", "one case"] }, {}]) {
+      for (const checkTargets of [[], ["//ui:browser"], ["tests"]]) {
+        expect(traceFromJournal(RUN, oneCall("test", input), { checkTargets }).bands[0]?.phase).toBe("testing")
+      }
+    }
+    for (const command of ["pytest tests/admin_views/one.py", "bun test tests/a.ts --test-name-pattern one"]) {
+      expect(traceFromJournal(RUN, oneCall("bash", { command }), { checkTargets: ["tests"] }).bands[0]?.phase).toBe("testing")
+    }
+  })
+
+  test("mentioning a check target does not execute it, and unknown activity stays unknown", () => {
+    for (const command of ["echo //ui:browser", "cat //ui:browser", "printf 'pytest tests'", "custom //ui:browser"]) {
+      expect(traceFromJournal(RUN, oneCall("bash", { command }), CHECKS).bands[0]?.phase).toBe("unrecorded")
+    }
+    for (const flow of ["custom", "constructor", "toString", "__proto__"]) {
+      expect(traceFromJournal(RUN, oneCall(flow, { path: "a.ts" })).bands[0]?.phase).toBe("unrecorded")
+    }
+  })
+
+  test("descriptor activity and presentation override standard names and support custom flows", () => {
+    const descriptors: ReadonlyArray<Pick<FlowDescriptor, "name" | "activity" | "presentation">> = [{
+      name: "write", activity: "reads", presentation: {
+        verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" }, subject: "pattern", result: "text"
+      }
+    }, { name: "custom.test", activity: "tests" }, { name: "read", activity: "other" }]
+    const model = traceFromJournal(RUN, oneCall("write", { path: "a.ts", pattern: "needle" }, { outcome: "success", value: "found" }), { descriptors })
+    expect(model.bands[0]?.phase).toBe("researching")
+    expect(model.lines[0]).toMatchObject({ verb: "inspected", subject: "needle", result: "found", wrote: false })
+    expect(model.milestones).toEqual([])
+    expect(traceFromJournal(RUN, oneCall("custom.test", {}), { descriptors }).bands[0]?.phase).toBe("testing")
+    expect(traceFromJournal(RUN, oneCall("read", {}), { descriptors }).bands[0]?.phase).toBe("unrecorded")
+  })
+
+  test.each([
+    ["reads", "researching"], ["writes", "implementing"], ["checks", "testing"], ["tests", "testing"], ["other", "unrecorded"]
+  ] as const)("recorded descriptor activity %s is authoritative and survives journal serialization", (activity, phase) => {
+    const journal = oneCall("custom", { path: "a.ts" }, { outcome: "success", value: "done" }).map((record) =>
+      record.kind === "control.agent.cell-call-started" ? {
+        ...record, payload: { ...(record.payload as object), descriptor: {
+          name: "custom", activity, presentation: {
+            verb: { pending: "working on", success: "handled", failure: "failed to handle" }, subject: "path", result: "text"
+          }
+        } }
+      } : record)
+    const model = traceFromJournal(RUN, JSON.parse(JSON.stringify(journal)), { descriptors: [{ name: "custom", activity: "other" }] })
+    expect(model.bands[0]?.phase).toBe(phase)
+    expect(model.lines[0]).toMatchObject({ verb: "handled", subject: "a.ts", result: "done" })
+  })
+
+  test.each([
+    "pytest tests/a.py", "vitest run a.test.ts", "jest a.test.ts", "python -m pytest a.py", "python3 -m unittest a",
+    "bun test a.test.ts", "pnpm test --filter a", "npm run test -- a", "pnpm exec vitest run", "go test ./one", "cargo test one",
+    "tsc --noEmit", "bun run check //ui:browser --grep one", "npm run typecheck", "pnpm run lint"
+  ])("recognizes a direct legacy check invocation: %s", (command) => {
+    expect(traceFromJournal(RUN, oneCall("bash", { command })).bands[0]?.phase).toBe("testing")
+  })
+
+  test.each([
+    "echo pytest", "printf 'bun test'", "cat test-output", "my-pytest tests", "bun test-more", "python3 script.py pytest",
+    "echo ok && pytest tests", "pytest tests | cat", "pytest $TARGET", "'pytest' tests", "pytest tests\necho done"
+  ])("leaves unsupported shell activity unknown: %s", (command) => {
+    expect(traceFromJournal(RUN, oneCall("bash", { command }), CHECKS).bands[0]?.phase).toBe("unrecorded")
+  })
+
+  test("write summaries distinguish pending, rejected and successful settlements", () => {
+    const cases = [
+      [undefined, "writing", "", false, false],
+      [{ outcome: "failure", message: "permission denied" }, "failed to write", "permission denied", true, false],
+      [{ outcome: "success", value: { path: "a.ts", bytesWritten: 12, created: false } }, "wrote", "12 bytes", false, true]
+    ] as const
+    for (const [settlement, verb, result, failed, wrote] of cases) {
+      const model = traceFromJournal(RUN, oneCall("write", { path: "a.ts" }, settlement))
+      expect(model.lines[0]).toMatchObject({ verb, subject: "a.ts", result, failed, wrote })
+    }
+  })
+
+  test("supported result formats use recorded facts and leave unsupported JSON in the selected call", () => {
+    const cases = [
+      ["read", { content: "a\nb", startLine: 3, endLine: 4, totalLines: 20, truncated: true }, "2 lines"],
+      ["read", { content: "", startLine: 1, endLine: 0, totalLines: 0, truncated: false }, "0 lines"],
+      ["write", { path: "a.ts", bytesWritten: 0, created: false }, "0 bytes"],
+      ["edit", { path: "a.ts", replacements: 2, startLine: 1, endLine: 2, hunk: "actual lines" }, "2 replacements"],
+      ["apply_patch", { added: ["a.ts"], modified: ["b.ts"], deleted: [], output: "Success." }, "2 files"],
+      ["test", { passed: 12, failed: [], parsed: true, exitCode: 0 }, "12 passed"],
+      ["test", { passed: 3, failed: ["one"], parsed: true, exitCode: 1 }, "3 passed · 1 failed"],
+      ["test", { passed: 0, failed: [], parsed: false, exitCode: 1 }, "exit 1"],
+      ["bash", { exitCode: 2, stdout: "", stderr: "refused" }, "exit 2"],
+      ["grep", { matches: [{ path: "a.ts", line: 1, text: "a" }], files: ["a.ts"], filesSearched: 1, skippedBinary: 0, truncated: false }, "1 match"],
+      ["grep", { matches: [{ path: "a.ts" }, { path: "b.ts" }] }, "2 matches"],
+      ["glob", { paths: ["a.ts", "b.ts"], total: 5, truncated: true }, "2 files"],
+      ["ls", { entries: [{ name: "a.ts", kind: "file" }], total: 1, truncated: false }, "1 entry"],
+      ["ls", { entries: [], total: 0, truncated: false }, "0 entries"],
+      ["read", { text: "unsupported" }, ""],
+      ["edit", { hunk: "+line" }, ""],
+      ["test", { passed: 12, failed: [] }, ""],
+      ["write", { bytesWritten: -1 }, ""],
+      ["write", { truncated: true, bytes: 99999, digest: "d" }, ""],
+      ["custom", { passed: 12, failed: [] }, ""]
+    ] as const
+    for (const [flow, value, result] of cases) {
+      const model = traceFromJournal(RUN, oneCall(flow, { path: "a.ts" }, { outcome: "success", value }))
+      expect(model.lines[0]?.result).toBe(result)
+      expect(model.rows.find((span) => span.kind === "call")?.detail.output).toBe(JSON.stringify(value))
+    }
+  })
+
+  test("presentation suppresses unrequested subjects and results and bounds plain text", () => {
+    const presentation = { verb: { pending: "waiting", success: "finished", failure: "failed" }, subject: "none", result: "none" } as const
+    expect(traceFromJournal(RUN, oneCall("custom", { path: "a.ts" }, { outcome: "success", value: "private" }), {
+      descriptors: [{ name: "custom", activity: "other", presentation }]
+    }).lines[0]).toMatchObject({ verb: "finished", subject: "", result: "" })
+    const line = traceFromJournal(RUN, oneCall("read", { path: "a" }, { outcome: "success", value: "x".repeat(500) })).lines[0]!
+    expect(line.result).toHaveLength(160)
+    expect(line.result.endsWith("…")).toBe(true)
+  })
+})
 
 describe("the trace model", () => {
   test("turn explanations use recorded prose and fall back to actual calls without presenting code or truncated metadata as intent", () => {
@@ -310,8 +437,8 @@ describe("what the frame was doing", () => {
       at(5, "control.agent.cell-call-started", { flowName: "target.run", input: { label: "//apps/app:unitTests" } }, 5)
     ], CHECKS)
     expect(open.lines).toEqual([
-      { spanId: "frame-1", frame: 1, verb: "edited", subject: "x.ts", result: "", failed: false, wrote: false },
-      { spanId: "frame-2", frame: 2, verb: "target.run", subject: "", result: "", failed: false, wrote: false }
+      { spanId: "frame-1", frame: 1, verb: "editing", subject: "x.ts", result: "", failed: false, wrote: false },
+      { spanId: "frame-2", frame: 2, verb: "target.run pending", subject: "", result: "", failed: false, wrote: false }
     ])
     // A frame that called nothing has no line; absence is absence.
     expect(traceFromJournal(RUN, [at(1, "control.agent.turn-opened", {}, 1)]).lines).toEqual([])
@@ -332,7 +459,7 @@ describe("what the frame was doing", () => {
     ])
     expect(refused.milestones).toEqual([{ seq: 4, at: 4, label: "failed", tone: "bad" }])
     expect(refused.lines).toEqual([
-      { spanId: "frame-1", frame: 1, verb: "wrote", subject: "x.ts", result: "read-only tree", failed: true, wrote: false }
+      { spanId: "frame-1", frame: 1, verb: "failed to write", subject: "x.ts", result: "read-only tree", failed: true, wrote: false }
     ])
   })
 
@@ -366,18 +493,17 @@ describe("what the frame was doing", () => {
     ])
   })
 
-  test("a narrowed check does not satisfy the broader target the plan declared", () => {
+  test("a narrowed check is still testing and reports only the narrower command", () => {
     const journal = (command: string): ReadonlyArray<JournalRecord> => [
       at(1, "control.agent.turn-opened", {}, 1000),
       at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
       at(3, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "ok" }, 1500)
     ]
     expect(traceFromJournal(RUN, journal("pytest tests/admin_views"), CHECKS).bands.map((band) => band.phase)).toEqual(["testing"])
-    // It CONTAINS the target and runs one file of it: strictly narrower, never the check itself.
-    expect(traceFromJournal(RUN, journal("pytest tests/admin_views/tests.py"), CHECKS).bands.map((band) => band.phase))
-      .toEqual(["researching"])
-    // Without declared targets no command is a check at all.
-    expect(traceFromJournal(RUN, journal("pytest tests/admin_views")).bands.map((band) => band.phase)).toEqual(["researching"])
+    const narrowed = traceFromJournal(RUN, journal("pytest tests/admin_views/tests.py"), CHECKS)
+    expect(narrowed.bands.map((band) => band.phase)).toEqual(["testing"])
+    expect(narrowed.lines[0]?.subject).toBe("pytest tests/admin_views/tests.py")
+    expect(traceFromJournal(RUN, journal("pytest tests/admin_views")).bands.map((band) => band.phase)).toEqual(["testing"])
   })
 
   test("a stall streak names the frame it repeats; a check re-run after an edit does not", () => {
@@ -439,7 +565,7 @@ describe("what the frame was doing", () => {
     ], CHECKS)
     expect(denied.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual([
       "blocked frame-1",
-      "researching frame-2"
+      "unrecorded frame-2"
     ])
   })
 
@@ -567,9 +693,9 @@ describe("what the frame was doing", () => {
     expect(legacy.counts).toEqual({ spans: 10, running: 3, failed: 1 })
     // `files.edit` is not a flow the verb table knows, so nothing here is
     // edit-like and both frames merge into the one honest band.
-    expect(legacy.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual(["researching frame-1,frame-2"])
+    expect(legacy.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual(["unrecorded frame-1,frame-2"])
     expect(legacy.lines.map((line) => `${line.frame} ${line.verb} ${line.subject}`))
-      .toEqual(["1 files.read README.md", "2 files.edit x.ts"])
+      .toEqual(["1 files.read README.md", "2 files.edit pending x.ts"])
     expect(traceFromJournal(RUN, [])).toMatchObject({ bands: [], milestones: [], lines: [], notes: [] })
   })
 })
@@ -679,7 +805,7 @@ describe("what the journal did not say", () => {
     ])
   })
 
-  test("a plan's real targets are labels, and a label is matched as a token wherever the runner put its flags", () => {
+  test("check activity is independent of whether its target matches the plan", () => {
     const journal = (command: string): ReadonlyArray<JournalRecord> => [
       at(1, "control.agent.turn-opened", {}, 1000),
       at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
@@ -693,11 +819,10 @@ describe("what the journal did not say", () => {
     // the check with does not end with it.
     expect(phases("bun run check //memory:typecheck --reporter=dot")).toEqual(["testing"])
     expect(phases("bun run check //memory:typecheck")).toEqual(["testing"])
-    // A longer label is a different target, not this one.
-    expect(phases("bun run check //ui:browser_only")).toEqual(["researching"])
+    expect(phases("bun run check //ui:browser_only")).toEqual(["testing"])
   })
 
-  test("a path target matches at a token boundary, and a target that cannot be a token is not guessed at", () => {
+  test("a test invocation stays testing for unrelated, narrow and multiword plan targets", () => {
     const journal = (command: string): ReadonlyArray<JournalRecord> => [
       at(1, "control.agent.turn-opened", {}, 1000),
       at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
@@ -706,22 +831,19 @@ describe("what the journal did not say", () => {
     const phases = (command: string, targets: ReadonlyArray<string>) =>
       traceFromJournal(RUN, journal(command), { checkTargets: targets }).bands.map((band) => band.phase)
     // The reviewer's probe: `admin_views` ends with `views` and is not it.
-    expect(phases("pytest admin_views", ["views"])).toEqual(["researching"])
+    expect(phases("pytest admin_views", ["views"])).toEqual(["testing"])
     expect(phases("pytest views", ["views"])).toEqual(["testing"])
-    // A narrower reading is still refused.
-    expect(phases("pytest tests/admin_views/tests.py", ["tests/admin_views"])).toEqual(["researching"])
-    // Two tokens can never be one token of a command, so this target matches nothing.
-    expect(phases("pytest a b", ["a b"])).toEqual(["researching"])
+    expect(phases("pytest tests/admin_views/tests.py", ["tests/admin_views"])).toEqual(["testing"])
+    expect(phases("pytest a b", ["a b"])).toEqual(["testing"])
   })
 
-  test("a frame line's result is bounded; a flow's whole Output does not become one card row", () => {
+  test("a frame line leaves unsupported structured output in the selected call", () => {
     const model = traceFromJournal(RUN, [
       at(1, "control.agent.turn-opened", {}, 1000),
       at(2, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/x.ts" } }, 1100),
       at(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: { text: "x".repeat(5000) } }, 1200)
     ], CHECKS)
-    expect(model.lines[0]!.result).toHaveLength(160)
-    expect(model.lines[0]!.result.endsWith("…")).toBe(true)
+    expect(model.lines[0]!.result).toBe("")
     // The span still carries everything the journal carried.
     expect(model.rows.find((span) => span.id === "call-1")?.detail.output?.length).toBeGreaterThan(5000)
   })

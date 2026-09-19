@@ -101,9 +101,8 @@ const sequenceOf = (record: Record<string, unknown>): number =>
 const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
 
 /**
- * The check targets the plan declared, and nothing else: a bash command is a
- * check only when it ends with one of them, so a run without a plan never has
- * a frame called testing.
+ * The check targets the plan declared. Activity comes from calls independently
+ * of these coverage requirements.
  *
  * Read off the WHOLE journal: what the plan declared is a fact about the run,
  * not about where the reader parked the cursor, and the strip below shows the
@@ -564,7 +563,6 @@ const FrameLines = ({ model, selected, runId, onRunCommand }: {
               {line.subject === "" ? null : <>{" "}<span className="run-line-subject">{line.subject}</span></>}
             </span>
             <span className="run-line-result">{line.result}</span>
-            {line.wrote ? <span className="run-line-wrote">wrote</span> : null}
             {line.repeatOf === undefined ? null : <span className="run-line-repeat">same as {line.repeatOf}</span>}
           </button>
           {notes.filter((note) => note.spanId === line.spanId).map((note) => <Note key={note.seq} note={note} />)}
