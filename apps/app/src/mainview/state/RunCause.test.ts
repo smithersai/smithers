@@ -409,6 +409,10 @@ test("a code this table answers is one no other failure vocabulary in the repo s
   )
   for (const code of Object.keys(shared)) expect(runCause(code)).toBeUndefined()
   for (const code of ANSWERED_CODES) expect(owners.get(code)?.size).toBe(1)
+  /* The librarian declares what its own code can surface, so these three are the model's alone. */
+  for (const code of ["content_policy", "context_overflow", "invalid_provider_output"]) {
+    expect(owners.get(code)).toEqual(new Set(["flows/model/ModelError"]))
+  }
 })
 
 /*
@@ -533,7 +537,11 @@ test("the late-turn conditions are different sentences, not one lead", () => {
     "render_failed",
     /* A cap this side enforced, and a wait that never ended. */ "read_only_cap",
     "suspended",
-    /* A record from another build. */ "incompatible_journal"
+    /* A record from another build. */ "incompatible_journal",
+    /* The three the person's own request is the lever for, so the lead is false for them. */
+    "content_policy",
+    "context_overflow",
+    "invalid_provider_output"
   ] as const
   const said = distinct.map((code) => runCause(code)!.message)
   expect(new Set(said).size).toBe(distinct.length)

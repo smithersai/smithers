@@ -10,8 +10,26 @@ import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts
 
 export { SeatUnresolved } from "@smthrs/agent/Seat"
 export { BudgetExceeded, AccountingUnavailable } from "@smthrs/agent/Budget"
+// The provider conditions this file can actually surface: a seat that could
+// not reach the provider at all. `surfaceFailure` below is the only thing that
+// builds a ProviderUnavailable, and it builds one only from these seven, so
+// declaring the model's whole vocabulary here claimed twelve. The five it
+// dropped — content_policy, context_overflow, invalid_provider_output,
+// invalid_request, unknown — describe an exchange that DID reach the provider,
+// which the librarian never re-raises under its own tag. A code names its
+// author only while one vocabulary spells it (apps/app RunCause.ts), so five
+// unreachable members cost a person five sentences about their own request.
+export const ProviderCode = ModelErrorCode.pick([
+  "no_route",
+  "authentication",
+  "transport",
+  "provider_internal",
+  "call_timeout",
+  "rate_limited",
+  "quota_exceeded"
+])
 export class ProviderUnavailable extends Schema.TaggedError<ProviderUnavailable>()("librarian/ProviderUnavailable", {
-  code: ModelErrorCode, message: Schema.String
+  code: ProviderCode, message: Schema.String
 }) {}
 // Lanes 2/3 include this schema in every enclosing action/flow error union.
 export const LibrarianFailure = Schema.Union([AgentAction.AgentFailure, Budget.AccountingUnavailable, ProviderUnavailable])
@@ -19,12 +37,12 @@ export type LibrarianFailure = typeof LibrarianFailure.Type
 export const failureTags = {
   seat: "@smthrs/agent/Seat/SeatUnresolved", budget: "flows/agent/BudgetExceeded", provider: "librarian/ProviderUnavailable"
 } as const
-const ProviderCause = Schema.Struct({ librarianProvider: Schema.Tuple([ModelErrorCode, Schema.String]) })
-const providerCodes = new Set(["no_route", "authentication", "transport", "provider_internal", "call_timeout", "rate_limited", "quota_exceeded"])
+const ProviderCause = Schema.Struct({ librarianProvider: Schema.Tuple([ProviderCode, Schema.String]) })
+const isProviderCode = Schema.is(ProviderCode)
 export const surfaceFailure = (failure: unknown): unknown => {
   const cause = typeof failure === "object" && failure !== null && "cause" in failure ? failure.cause : failure
   if (Schema.is(ProviderCause)(cause)) return new ProviderUnavailable({ code: cause.librarianProvider[0], message: cause.librarianProvider[1] })
-  if (Schema.is(ModelError)(cause) && providerCodes.has(cause.code)) return new ProviderUnavailable({ code: cause.code, message: cause.message })
+  if (Schema.is(ModelError)(cause) && isProviderCode(cause.code)) return new ProviderUnavailable({ code: cause.code, message: cause.message })
   return failure
 }
 const preserveProvider = <E>(failure: E): E | HarnessError => {
