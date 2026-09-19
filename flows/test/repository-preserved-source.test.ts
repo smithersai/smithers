@@ -186,14 +186,16 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "f
         return { status: "retained" as const, requestId: request.requestId, workspaceId: receipt.workspaceId, repositoryId: 3,
           ref: `refs/smithers/workspaces/${receipt.workspaceId}/sources/${f.child.commitId}`, source: f.child } }) }
     // Jev is the only model an AI check asks, so this scripts Jev's verdict
-    // where the frontier seat's used to be scripted. `provideMerge` builds the
-    // host's own binding first, so this override is the registration that
-    // wins; the proposal/landing machinery under test is unchanged.
+    // where the frontier seat's used to be scripted. `checkLayers` now binds
+    // Jev itself, so substituting one here is a deliberate scoped override and
+    // says so; `provideMerge` builds the host's binding first, so this
+    // registration is the one that wins. The proposal/landing machinery under
+    // test is unchanged.
     const scriptedJev = JevSemanticCheck.toLayer(input => Effect.sync(() => { seenChecks.push(input.comparison.candidate)
       if (input.check.id === advisory.id) return { verdict: "fail" as const, summary: "The change edits code.txt",
         examinedPaths: input.comparison.paths, findings: input.comparison.paths.map(path => ({ path, line: 1, message: "Outside the requested scope" })) }
       return { verdict: mode === "fresh-check-failed" && input.comparison.candidate === f.child.commitId ? "uncertain" as const : "pass" as const,
-        summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }))
+        summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }), { override: true })
     const runtime = ManagedRuntime.make(scriptedJev.pipe(
       Layer.provideMerge(Layer.mergeAll(changeLayers(f.options), checkLayers(f.options), deliveryLayers,
         DraftChange.toLayer(author => Effect.sync(() => { calls.push("draft"); assert.equal(author.evidence.source.commitId, f.base.commitId)
