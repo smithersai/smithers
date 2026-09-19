@@ -478,6 +478,9 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     })
     expect(log.outcomes).toEqual([{
       _tag: "failed",
+      // The frame's own `HarnessError` code travels beside the provider's,
+      // so the projection knows the harness ended the run and which rule did.
+      harness: { code: "model_failed" },
       message: `quota_exceeded (HTTP 429) from openai:dead: ${refused}`,
       provider: { seat: "openai:dead", providerID: "openai", code: "quota_exceeded", status: 429, message: refused }
     }])
@@ -575,7 +578,11 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
       event._tag === "read-only-demand-issued"
     )!
     expect(demand.cap).toBe(EngineDriver.readOnlyCap)
-    expect(log.outcomes).toEqual([{ _tag: "failed", message: expect.stringContaining("read-only budget of 6") }])
+    expect(log.outcomes).toEqual([{
+      _tag: "failed",
+      harness: { code: "read_only_cap" },
+      message: expect.stringContaining("read-only budget of 6")
+    }])
     expect(script.calls).toBe(EngineDriver.readOnlyCap * 2)
     // The host's teaching is in the system context of the first request,
     // ahead of the task, and says when to call ctx.done.
@@ -1204,6 +1211,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     )
     expect(refused.outcomes).toEqual([{
       _tag: "failed",
+      harness: { code: "completion_unjudged" },
       message: expect.stringContaining("A completion no evaluator could judge")
     }])
     const refusedCalls = settledCalls(refused.events, "classify")
@@ -1234,6 +1242,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     }
     expect(ambient.outcomes).toEqual([{
       _tag: "failed",
+      harness: { code: "completion_unjudged" },
       message: expect.stringContaining("A completion no evaluator could judge")
     }])
     const ambientCalls = settledCalls(ambient.events, "classify")
@@ -1338,6 +1347,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     const down = await drive("r2", outage.layer)
     expect(down.outcomes).toEqual([{
       _tag: "failed",
+      harness: { code: "completion_unjudged" },
       message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 503"),
       // A gateway that answered is a typed refusal like any other, against the
       // judge's own seat and never against the run's.
@@ -1361,6 +1371,17 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
       new HarnessError({ code: "completion_unjudged", message: "x", cause: { code: "unreachable" } })
     )).toBeUndefined()
     expect(EngineDriver.judgeRefusal(new Error("boom"))).toBeUndefined()
+    // The harness's own code travels the same way, live and as the JSON
+    // projection a replayed failure arrives as. It was dropped before, which
+    // is why every cap and every refusal the harness makes reached the
+    // projection as an untyped sentence.
+    expect(EngineDriver.harnessStop(new HarnessError({ code: "claim_unproven", message: "x" })))
+      .toEqual({ code: "claim_unproven" })
+    expect(EngineDriver.harnessStop({ code: "read_only_cap", message: "x" })).toEqual({ code: "read_only_cap" })
+    // And nothing that is not one of the harness's codes is reported as one.
+    expect(EngineDriver.harnessStop({ code: "quota_exceeded" })).toBeUndefined()
+    expect(EngineDriver.harnessStop(new Error("boom"))).toBeUndefined()
+    expect(EngineDriver.harnessStop(undefined)).toBeUndefined()
     // A cause with a status but no code of its own keeps the harness's code
     // and the sentence it would have carried anyway.
     expect(EngineDriver.judgeRefusal({ code: "completion_unjudged", cause: { status: 500 } })).toMatchObject({
@@ -1378,6 +1399,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
     const unauthorized = await drive("r3", rejected.layer)
     expect(unauthorized.outcomes).toEqual([{
       _tag: "failed",
+      harness: { code: "completion_unjudged" },
       message: expect.stringContaining("A completion no evaluator could judge (refused): The gateway answered 401"),
       // A 401 on the judge is the app's own auth failure, not an
       // `UnknownError`: the projection renders it as `ProviderAuthError`.

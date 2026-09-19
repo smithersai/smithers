@@ -1,3 +1,5 @@
+import type * as HarnessError from "@smthrs/harness/HarnessError"
+import { HarnessErrorCode } from "@smthrs/harness/HarnessError"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
@@ -34,6 +36,7 @@ const facts = (extra: Partial<Health.Facts> = {}): Health.Facts => ({
   lastTransition: "continue",
   demandThisFrame: false,
   stoppedBy: undefined,
+  endedBy: undefined,
   ...extra
 })
 
@@ -216,6 +219,32 @@ describe("Health", () => {
         "gray",
         "health unavailable"
       ],
+      // A run the harness ended is red before any answer is read, and the
+      // reason names the rule that ended it. It used to be gray reading
+      // `failed`, which is the sentence a missing gateway key writes.
+      [
+        "the harness could not prove the run's claim",
+        facts({ endedBy: { code: "claim_unproven" } }),
+        undefined,
+        "red",
+        "stopped: the run could not prove its claim"
+      ],
+      [
+        "the frame budget ended the run",
+        facts({ endedBy: { code: Health.frameBudget, maxFrames: 40 } }),
+        answers({ progress: { value: 2, label: "progressing", probabilities: { progressing: 0.9 }, confidence: 0.9 } }),
+        "red",
+        "stopped: the frame budget of 40 is exhausted"
+      ],
+      // A usage limit is the provider's and beats it, because what the
+      // operator does about it is at the provider.
+      [
+        "a usage limit beats the harness code that carried it",
+        facts({ stoppedBy: outOfQuota, endedBy: { code: "model_failed" } }),
+        undefined,
+        "red",
+        "stopped: openai:gpt is out of quota"
+      ],
       [
         "parked with every answer under the floor",
         facts({ parked: "question" }),
@@ -231,6 +260,31 @@ describe("Health", () => {
     for (const [name, given, replied, color, reason] of table) {
       expect(Health.decide(given, replied), name).toEqual({ color, reason })
     }
+  })
+
+  it("names every way the harness ends a run, and nothing it does not raise", () => {
+    // Total over the harness's own codes: a code it adds is a type error
+    // here, never a run that ends with no reason a person can read.
+    const codes: Array<HarnessError.HarnessErrorCode> = [...HarnessErrorCode.literals]
+    for (const code of codes) {
+      expect(Health.endedReason({ code }), code).toBe(Health.endedReasons[code])
+      expect(Health.endedReason({ code }), code).toMatch(/^stopped: /)
+    }
+    expect(Health.endedReason({ code: "unknown" })).toBe("stopped: the turn failed")
+    // The budget raises nothing, so it has a code of its own and a reason
+    // that names the number the operator raises.
+    expect(Health.endedReason({ code: Health.frameBudget, maxFrames: 40 })).toBe(
+      "stopped: the frame budget of 40 is exhausted"
+    )
+  })
+
+  it("keeps one missed deadline off the dot and says so when three are missed running", () => {
+    // 1500 ms is five times Jev's measured answer and the retry already
+    // gives a blip a second chance inside it, so the deadline is not what is
+    // wrong; calling one missing measurement "unavailable" is.
+    expect(Health.deadlineMs).toBe(1500)
+    expect(Health.deadlineMisses).toBe(3)
+    expect(Health.missedDeadlines(3)).toBe("health unavailable: Jev missed its 1500 ms deadline 3 times running")
   })
 
   it("dots, strips, and re-dots titles", () => {
@@ -398,6 +452,12 @@ describe("Health", () => {
     expect(slow.decision.color).toBe("gray")
     expect(slow.error).toContain("timeout")
     expect(slow.answered).toBe(false)
+    // The code travels typed beside the sentence, so a caller decides on the
+    // code: `Projection.health` keeps the run's color for this one failure
+    // and repaints for every other.
+    expect(slow.code).toBe("timeout")
+    expect(unavailable.code).toBe("unreachable")
+    expect(malformed.code).toBe("invalid_answer")
     // A gateway that answered, even to refuse, took the call: an answer the
     // question's shape rejects is a 200 the gateway served.
     expect(malformed.answered).toBe(true)

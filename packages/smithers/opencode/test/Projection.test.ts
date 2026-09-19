@@ -131,12 +131,15 @@ describe("Projection", () => {
     const tools = parts
       .map((event) => event.properties["part"] as Protocol.Part)
       .filter((part): part is Protocol.ToolPart => part.type === "tool")
-    expect(ids.size).toBe(15 + 1)
+    // Fifteen cards, the cell card the park leaves open, and the health card
+    // the resolved turn ends on.
+    expect(ids.size).toBe(15 + 2)
     expect([...new Set(tools.map((part) => part.tool))].sort()).toEqual([
       "bash",
       "cell",
       "classify",
       "demand",
+      "health",
       "list",
       "read"
     ])
@@ -487,9 +490,12 @@ describe("Projection", () => {
     // A rate-limit window is the same fault class: a limit stopped the run.
     const limited = Projection.close(ctx, start.state, refused("rate_limited", "Rate limit reached for gpt", 429))
     expect([dotOf(limited), cardOf(limited)]).toEqual(["🔴", "stopped: openai:gpt is rate limited"])
-    // A provider that broke is gray: health is unknown, not bad.
+    // A provider that broke is not a usage limit, so there is no limit to
+    // name. It is still a run that is over, and the harness code it came
+    // wrapped in says which rule ended it.
     const broke = Projection.close(ctx, start.state, refused("provider_internal", "Internal server error", 500))
-    expect([dotOf(broke), cardOf(broke)]).toEqual(["⚪", "failed"])
+    expect([dotOf(broke), cardOf(broke)]).toEqual(["🔴", "stopped: the model call failed"])
+    expect(broke.state.facts.stoppedBy).toBeUndefined()
     // And the words are not the contract: a refusal whose sentence says "cap"
     // and whose code says otherwise is that same ordinary failure.
     const capInProse = Projection.close(
@@ -498,7 +504,7 @@ describe("Projection", () => {
       refused("provider_internal", "The concurrency cap for this account was hit", 503)
     )
     expect(capInProse.state.facts.stoppedBy).toBeUndefined()
-    expect([dotOf(capInProse), cardOf(capInProse)]).toEqual(["⚪", "failed"])
+    expect([dotOf(capInProse), cardOf(capInProse)]).toEqual(["🔴", "stopped: the model call failed"])
     // The rule replays the same decision off the facts the projection kept,
     // so a reload and the live stream read the same dot.
     expect(Health.decide(noQuota.state.facts, undefined)).toEqual({
@@ -506,8 +512,8 @@ describe("Projection", () => {
       reason: "stopped: openai:gpt is out of quota"
     })
     expect(Health.decide(capInProse.state.facts, undefined)).toEqual({
-      color: "gray",
-      reason: "health unavailable"
+      color: "red",
+      reason: "stopped: the model call failed"
     })
   })
 
@@ -931,7 +937,7 @@ describe("Projection", () => {
       "unmoved",
       "unresolved · bash",
       "narrow-only · bash",
-      "claim",
+      "claim · complete 0.08, overclaims 0.40",
       "read-only · 3/3 · park"
     ])
 
@@ -998,7 +1004,12 @@ describe("Projection", () => {
     ])
     const thenClosed = Projection.fold(ctx, answeredFirst.state, closeResolved)
     expect(thenClosed.state.closed).toBe(true)
+    // This turn applied no `complete` transition, which is what a turn its
+    // frame budget ended looks like, so the step's finish is followed by the
+    // red dot and its card before the header and the summary.
     expect(thenClosed.events.map((event) => event.type)).toEqual([
+      "message.part.updated",
+      "session.updated",
       "message.part.updated",
       "message.updated",
       "message.part.updated",
@@ -1006,6 +1017,10 @@ describe("Projection", () => {
       "session.status",
       "session.idle"
     ])
+    expect(thenClosed.state.health).toEqual({
+      color: "red",
+      reason: `stopped: the frame budget of ${Projection.defaultMaxFrames} is exhausted`
+    })
     const closedFirst = Projection.fold(ctx, frame.state, closeResolved)
     expect(closedFirst.state.closed).toBe(false)
     expect(closedFirst.events.map((event) => event.type)).toEqual(["message.part.updated"])
@@ -1213,6 +1228,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       latencyMs: 30,
       usage: { inputTokens: 1000, outputTokens: 0 },
       error: undefined,
+      code: undefined,
       answered: true
     }
     const opened2 = Projection.open(ctx, opened())
@@ -1261,6 +1277,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       latencyMs: 2,
       usage: undefined,
       error: "unreachable: set AI_GATEWAY_API_KEY",
+      code: "unreachable",
       answered: false
     })
     expect(refused.state.summary.jevLatencyMs).toBe(green.state.summary.jevLatencyMs)
@@ -1316,6 +1333,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       latencyMs: 300,
       usage: { inputTokens: 900, outputTokens: 0 },
       error: undefined,
+      code: undefined,
       answered: true
     }
     let judged = Projection.open(ctx, opened())
@@ -1331,12 +1349,15 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     // not another gateway call: the three health evaluations the fold asked
     // for and the one classify call, and nothing for the last reading.
     expect(finishing.summary.jevCalls).toBe(4)
-    // A turn nothing ever judged keeps no color it never earned.
+    // A turn nothing ever judged still ends with a color, because the rule
+    // has one without Jev: the harness handed a completion back, nothing is
+    // parked and no demand is outstanding. It says `answered` rather than the
+    // `done` nobody said.
     judged = Projection.open(ctx, opened())
     let unjudged = judged.state
     for (const event of events) unjudged = Projection.fold(ctx, unjudged, event).state
-    expect(unjudged.health).toBeUndefined()
-    expect(unjudged.session.title.startsWith("🟢")).toBe(false)
+    expect(unjudged.health).toEqual({ color: "green", reason: Health.answeredReason })
+    expect(unjudged.session.title.startsWith("🟢 ")).toBe(true)
   })
 
   it("counts every Jev call the run made: the health evaluations, the classify calls, and the completion brake", () => {
@@ -1389,6 +1410,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       latencyMs: 96,
       usage: undefined,
       error: "refused: The gateway answered 401",
+      code: "refused",
       answered: true
     })
     expect(refused.state.summary.jevCalls).toBe(4)
@@ -1402,10 +1424,273 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       latencyMs: 1,
       usage: undefined,
       error: `unreachable: ${Health.noGatewayKey}`,
+      code: "unreachable",
       answered: false
     })
     expect(unreachable.state.summary.jevCalls).toBe(4)
     expect(unreachable.state.summary.jevLatencyMs).toBe(refused.state.summary.jevLatencyMs)
+  })
+
+  it("ends a run the harness killed red, naming the rule that killed it, live and on a reload", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    /** The closing the driver builds from a harness failure, the way the sink hands it over. */
+    const killed = (code: HarnessError["code"], message: string): Projection.Closing => {
+      const outcome = EngineDriver.failedOutcome(
+        "cerebras:gpt-oss-120b",
+        Cause.fail(new HarnessError({ code, message }))
+      )
+      if (outcome._tag !== "failed") throw new Error(`the driver reported ${outcome._tag}`)
+      return outcome
+    }
+    const dotOf = (step: Projection.Step): string =>
+      (step.events[0]!.properties["info"] as Protocol.Session).title.slice(0, 2).trim()
+    const cardOf = (step: Projection.Step): string => {
+      const state = (step.events[1]!.properties["part"] as Protocol.ToolPart).state
+      return state.status === "completed" ? state.title : `the health card is ${state.status}`
+    }
+    // The measured lie: a claim the brake refused left the session idle under
+    // a gray dot reading `failed`, which is the same dot a missing gateway key
+    // writes. The operator read "Jev was down" over a run Jev had stopped.
+    const unproven = Projection.close(
+      ctx,
+      start.state,
+      killed(
+        "claim_unproven",
+        "A completion the run's own record does not support (overclaimed): complete 0.08, overclaims 0.89."
+      )
+    )
+    expect([dotOf(unproven), cardOf(unproven)]).toEqual(["🔴", "stopped: the run could not prove its claim"])
+    expect(unproven.state.facts.endedBy).toEqual({ code: "claim_unproven" })
+    // The words are still the header's, verbatim, so the sentence a person
+    // acts on is not paraphrased by the dot.
+    const header = unproven.events.find((event) =>
+      event.type === "message.updated" && (event.properties["info"] as Protocol.Message).role === "assistant"
+    )!.properties["info"] as Protocol.AssistantMessage
+    expect(header.error?.data.message).toContain("complete 0.08, overclaims 0.89")
+    // Every other rule the harness stops a run on reads the same way.
+    const cap = Projection.close(ctx, start.state, killed("read_only_cap", "12 frames, no write"))
+    expect([dotOf(cap), cardOf(cap)]).toEqual(["🔴", "stopped: the run read for too many frames without writing"])
+    const unjudged = Projection.close(ctx, start.state, killed("completion_unjudged", "The gateway answered 503"))
+    expect([dotOf(unjudged), cardOf(unjudged)]).toEqual(["🔴", "stopped: nothing could judge the completion"])
+    // A body that failed with nothing typed in it is still a run that is over.
+    const bare = Projection.close(ctx, start.state, { _tag: "failed", message: "boom" })
+    expect([dotOf(bare), cardOf(bare)]).toEqual(["🔴", "stopped: the turn failed"])
+    // A reload reads the dot back off the facts, so the stream and the
+    // history agree about a session nobody is watching any more.
+    expect(Health.decide(unproven.state.facts, undefined)).toEqual({
+      color: "red",
+      reason: "stopped: the run could not prove its claim"
+    })
+    // The operator's own Stop stays gray: nothing about it is theirs to fix.
+    const stopped = Projection.close(ctx, start.state, { _tag: "interrupted" })
+    expect([dotOf(stopped), cardOf(stopped)]).toEqual(["⚪", "interrupted"])
+  })
+
+  it("ends a run its frame budget ended red, and a run that finished on its last frame green", () => {
+    const ctx = { directory, now: clock().now, maxFrames: 2 }
+    const opening = Projection.open(ctx, opened())
+    /** One frame, then the transition the run applied, then the turn's close. */
+    const drive = (transition: Cell.Transition): Projection.State => {
+      let state = opening.state
+      for (
+        const event of [
+          scriptEvents()[0]!,
+          new AgentEvents.TransitionApplied({ eventType: "flows.harness.transition-applied.v1", transition }),
+          new AgentEvents.TurnClosed({
+            eventType: "flows.harness.turn-closed.v1",
+            stopReason: "stop",
+            outcome: "resolved"
+          }),
+          new AgentEvents.Resolved({
+            eventType: "flows.harness.resolved.v1",
+            message: ModelRequest.Message.assistant("whatever the harness handed back", { stopReason: "stop" })
+          })
+        ]
+      ) state = Projection.fold(ctx, state, event).state
+      return state
+    }
+    // The measured lie: the budget notice is the whole answer, and the dot
+    // was green over it because the final reading forced `lastTransition` to
+    // `complete`. The run answered nothing.
+    const spent = drive(new Cell.Continue({}))
+    expect(Projection.budgetEnded(spent)).toBe(true)
+    expect(spent.health).toEqual({ color: "red", reason: "stopped: the frame budget of 2 is exhausted" })
+    expect(spent.session.title.startsWith("🔴 ")).toBe(true)
+    expect(spent.facts.endedBy).toEqual({ code: Health.frameBudget, maxFrames: 2 })
+    // The same frame count, the same notice-shaped answer, and a run that
+    // did say it was done: green, because the difference is the transition
+    // and not the sentence.
+    const finished = drive(new Cell.Complete({ output: "the name field is smithers" }))
+    expect(Projection.budgetEnded(finished)).toBe(false)
+    expect(finished.health).toEqual({ color: "green", reason: Health.answeredReason })
+    // The loop also checks the budget at the top of a frame, where it emits
+    // the answer and returns without closing the turn. The body then exits
+    // `completed` and the sink closes it with a fixed sentence, which is a
+    // spent budget and not a failure.
+    let atTop = opening.state
+    for (
+      const event of [
+        scriptEvents()[0]!,
+        new AgentEvents.Resolved({
+          eventType: "flows.harness.resolved.v1",
+          message: ModelRequest.Message.assistant("The frame budget of 2 is exhausted.", { stopReason: "stop" })
+        })
+      ]
+    ) atTop = Projection.fold(ctx, atTop, event).state
+    expect(atTop.closed).toBe(false)
+    const closed = Projection.close(ctx, atTop, { _tag: "failed", message: "The turn ended without an answer" })
+    expect(closed.state.health).toEqual({ color: "red", reason: "stopped: the frame budget of 2 is exhausted" })
+  })
+
+  it("gives a turn that finishes in one frame a color, because a resolved turn needs no answers to have one", () => {
+    const ctx = { directory, now: clock().now }
+    let state = Projection.open(ctx, opened()).state
+    for (
+      const event of [
+        scriptEvents()[0]!,
+        new AgentEvents.TransitionApplied({
+          eventType: "flows.harness.transition-applied.v1",
+          transition: new Cell.Complete({ output: "smithers" })
+        }),
+        new AgentEvents.TurnClosed({
+          eventType: "flows.harness.turn-closed.v1",
+          stopReason: "stop",
+          outcome: "resolved"
+        }),
+        new AgentEvents.Resolved({
+          eventType: "flows.harness.resolved.v1",
+          message: ModelRequest.Message.assistant("smithers", { stopReason: "stop" })
+        })
+      ]
+    ) state = Projection.fold(ctx, state, event).state
+    // The turn ends before the frame's evaluation ever answers, so there are
+    // no answers to read. It used to keep no dot at all, which an operator
+    // cannot read as anything.
+    expect(state.answers).toBeUndefined()
+    expect(state.closed).toBe(true)
+    expect(state.health).toEqual({ color: "green", reason: "answered" })
+    expect(state.session.title.startsWith("🟢 ")).toBe(true)
+  })
+
+  it("puts the completion the brake refused in the transcript, under the two probabilities it read", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
+    const answer = "The name field is smithers-orchestrator. I read it out of package.json."
+    const completed = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.TransitionApplied({
+        eventType: "flows.harness.transition-applied.v1",
+        transition: new Cell.Complete({ output: answer })
+      })
+    )
+    expect(completed.state.lastCompletion).toBe(answer)
+    const bounced = Projection.fold(
+      ctx,
+      completed.state,
+      new AgentEvents.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.21,
+        overclaims: 0.96,
+        latencyMs: 412,
+        demanded: true,
+        currentDigest: "d",
+        nextFrame: 1
+      })
+    )
+    const card = bounced.events[0]!.properties["part"] as Protocol.ToolPart
+    const state = card.state
+    if (state.status !== "completed") throw new Error(`the demand card is ${state.status}`)
+    // The card used to be titled `claim` and nothing else, and a collapsed
+    // card is its title: the only mark the brake left was one word.
+    expect(state.title).toBe("claim · complete 0.21, overclaims 0.96")
+    expect(state.input["description"]).toBe("claim · complete 0.21, overclaims 0.96")
+    // And the answer it refused was only ever in opencode.sqlite, so a
+    // correct answer the brake bounced was gone as far as a person was
+    // concerned. It is in the transcript now, word for word.
+    expect(state.output).toContain(answer)
+    expect(state.output).toContain("Complete again and state the working")
+    // A reading that let the completion through writes no card at all.
+    expect(
+      Projection.fold(
+        ctx,
+        completed.state,
+        new AgentEvents.ClaimDemanded({
+          eventType: "flows.harness.claim-demanded.v1",
+          complete: 0.9,
+          overclaims: 0.1,
+          latencyMs: 4,
+          demanded: false,
+          currentDigest: "d",
+          nextFrame: 1
+        })
+      ).events
+    ).toEqual([])
+    // A demand with no completion behind it says the same thing without one.
+    expect(Projection.claimText(undefined)).not.toContain("handed back")
+  })
+
+  it("keeps the color the run had when one health deadline is missed, and goes gray when three are", () => {
+    const ctx = { directory, now: clock().now }
+    const facts: Health.Facts = { ...Projection.open(ctx, opened()).state.facts, frame: 1 }
+    const evaluation = (extra: Partial<Health.Evaluation> = {}): Health.Evaluation => ({
+      decision: { color: "green", reason: "progressing" },
+      answers: undefined,
+      latencyMs: 40,
+      usage: undefined,
+      error: undefined,
+      code: undefined,
+      answered: true,
+      ...extra
+    })
+    const timedOut = evaluation({
+      decision: { color: "gray", reason: "health unavailable: Health did not answer within 1500 ms" },
+      error: "timeout: Health did not answer within 1500 ms",
+      code: "timeout",
+      answered: false
+    })
+    const green = Projection.health(ctx, Projection.open(ctx, opened()).state, facts, evaluation())
+    expect(green.state.health?.color).toBe("green")
+    // The measured flicker: one call over its deadline in four of sixteen
+    // turns repainted a working run gray, which reads as "health is
+    // unavailable" over a run that was fine. The measurement is missing, the
+    // color the run had is not.
+    const missedOnce = Projection.health(ctx, green.state, facts, timedOut)
+    expect(missedOnce.events).toEqual([])
+    expect(missedOnce.state.health?.color).toBe("green")
+    expect(missedOnce.state.missedDeadlines).toBe(1)
+    const missedTwice = Projection.health(ctx, missedOnce.state, facts, timedOut)
+    expect(missedTwice.events).toEqual([])
+    expect(missedTwice.state.missedDeadlines).toBe(2)
+    // Three in a row is not a blip, and the dot says exactly that rather than
+    // keeping a color nothing has confirmed for three frames.
+    const missedThrice = Projection.health(ctx, missedTwice.state, facts, timedOut)
+    expect(missedThrice.state.health).toEqual({
+      color: "gray",
+      reason: "health unavailable: Jev missed its 1500 ms deadline 3 times running"
+    })
+    // An answer clears the streak.
+    const answered = Projection.health(ctx, missedThrice.state, facts, evaluation())
+    expect(answered.state.missedDeadlines).toBe(0)
+    expect(answered.state.health?.color).toBe("green")
+    // Every other transport failure is the gateway saying it cannot serve
+    // this, which is unavailability, and paints gray on the first one.
+    const refused = Projection.health(
+      ctx,
+      answered.state,
+      facts,
+      evaluation({
+        decision: { color: "gray", reason: "health unavailable: The gateway answered 401" },
+        error: "refused: The gateway answered 401",
+        code: "refused"
+      })
+    )
+    expect(refused.state.health?.color).toBe("gray")
+    // A deadline missed before anything ever decided has no color to keep.
+    const first = Projection.health(ctx, Projection.open(ctx, opened()).state, facts, timedOut)
+    expect(first.state.health?.color).toBe("gray")
   })
 
   it("adopts the stored title and archive stamp, and nothing else", () => {

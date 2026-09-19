@@ -69,7 +69,11 @@ const parkedPermission = async (seen: Seen, sessionID: string): Promise<Protocol
   return asked()!.properties as unknown as Protocol.PermissionRequest
 }
 
-/** Waits until the session's turn is idle and its last health decision landed. */
+/**
+ * Waits until the session's turn is idle and its last health decision landed:
+ * the frame that settled, the park, the frame after it, and the color the
+ * resolved turn ends on.
+ */
 const settled = async (seen: Seen, sessionID: string): Promise<void> => {
   await until(async () =>
     seen.some((event) => event.type === "session.idle" && event.properties["sessionID"] === sessionID)
@@ -79,7 +83,7 @@ const settled = async (seen: Seen, sessionID: string): Promise<void> => {
       event.type === "message.part.updated" && event.properties["sessionID"] === sessionID &&
       (event.properties["part"] as Part).type === "tool" &&
       (event.properties["part"] as Extract<Part, { type: "tool" }>).tool === "health"
-    ).length === 3
+    ).length >= 4
   )
 }
 
@@ -395,7 +399,7 @@ describe("Routes through the OpenCode SDK client", () => {
         event.type === "message.part.updated" && (event.properties["part"] as Part).type === "tool" &&
         (event.properties["part"] as Extract<Part, { type: "tool" }>).tool === "health"
       ).length
-    await until(async () => healthStreamed() === 3)
+    await until(async () => healthStreamed() >= 4)
 
     const types = seen.map((event) => event.type)
     expect(types).toContain("message.part.delta")
@@ -423,8 +427,9 @@ describe("Routes through the OpenCode SDK client", () => {
       parentID: "msg_0000000000010000000000000u"
     })
     const tools = assistant.parts.filter((part: Part): part is Extract<Part, { type: "tool" }> => part.type === "tool")
-    // Frame zero's settle is judged once (gray, no Jev key); the park (red)
-    // and the resumed frame's settle (gray again) both sort under frame one.
+    // Frame zero's settle is judged once (gray, no Jev key); the park (red),
+    // the resumed frame's settle (gray again) and the color the resolved turn
+    // ends on (green) all sort under frame one.
     expect(tools.map((part) => part.tool)).toEqual([
       "cell",
       "read",
@@ -434,6 +439,7 @@ describe("Routes through the OpenCode SDK client", () => {
       "cell",
       "bash",
       "demand",
+      "health",
       "health",
       "health"
     ])
@@ -447,7 +453,8 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(healthCards.map((state) => state.title)).toEqual([
       "health unavailable: No evaluator is installed on this host",
       "waiting for approval",
-      "health unavailable: No evaluator is installed on this host"
+      "health unavailable: No evaluator is installed on this host",
+      "answered"
     ])
     const bash = tools.find((part) => part.tool === "bash")!
     expect(bash.state.status === "completed" && bash.state.metadata).toMatchObject({ exit: 0 })
@@ -462,8 +469,9 @@ describe("Routes through the OpenCode SDK client", () => {
     >
     expect(paged.map((item) => item.info.role)).toEqual(["user"])
     const updated = (await sdk.session.get({ path: { id: session.id } })).data as unknown as Protocol.Session
-    // No evaluator is installed, so the first frame turned the dot gray.
-    expect(updated.title).toBe("⚪ Read package.json and tell me the name field.")
+    // No evaluator is installed, so every frame turned the dot gray. The turn
+    // itself resolved, which is green on a fact that needs no evaluation.
+    expect(updated.title).toBe("🟢 Read package.json and tell me the name field.")
     expect(updated.tokens.input).toBeGreaterThan(0)
     expect((await sdk.session.abort({ path: { id: session.id } })).data).toBe(false)
     await reader.cancel()

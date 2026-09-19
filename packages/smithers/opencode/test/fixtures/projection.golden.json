@@ -2167,6 +2167,72 @@
     }
   },
   {
+    "type": "session.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "info": {
+        "id": "ses_ffffffffeffe00000000000000",
+        "slug": "quiet-harbor",
+        "projectID": "p",
+        "directory": "/repo",
+        "path": "",
+        "title": "🟢 Read package.json and tell me the name field.",
+        "version": "test",
+        "agent": "smithers",
+        "model": {
+          "id": "demo",
+          "providerID": "scripted"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 2052,
+          "output": 184,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1000,
+          "updated": 1060
+        }
+      }
+    }
+  },
+  {
+    "type": "message.part.updated",
+    "properties": {
+      "sessionID": "ses_ffffffffeffe00000000000000",
+      "part": {
+        "sessionID": "ses_ffffffffeffe00000000000000",
+        "messageID": "msg_0000000010020000000000000b",
+        "id": "prt_0000000010020001f00000000b",
+        "type": "tool",
+        "callID": "health_0",
+        "tool": "health",
+        "state": {
+          "status": "completed",
+          "input": {
+            "description": "answered",
+            "color": "green"
+          },
+          "output": "no answers",
+          "title": "answered",
+          "metadata": {
+            "color": "green",
+            "reason": "answered"
+          },
+          "time": {
+            "start": 1060,
+            "end": 1060
+          }
+        }
+      },
+      "time": 1060
+    }
+  },
+  {
     "type": "message.updated",
     "properties": {
       "sessionID": "ses_ffffffffeffe00000000000000",
@@ -2176,7 +2242,7 @@
         "role": "assistant",
         "time": {
           "created": 1001,
-          "completed": 1060
+          "completed": 1061
         },
         "parentID": "msg_0000000010010000000000000a",
         "modelID": "demo",
@@ -2213,11 +2279,11 @@
         "text": "2 frames · 4 calls · 1 classify · Jev 4 calls · 212 ms · $0.0000",
         "synthetic": true,
         "time": {
-          "start": 1061,
-          "end": 1061
+          "start": 1062,
+          "end": 1062
         }
       },
-      "time": 1061
+      "time": 1062
     }
   },
   {
@@ -2230,7 +2296,7 @@
         "projectID": "p",
         "directory": "/repo",
         "path": "",
-        "title": "Read package.json and tell me the name field.",
+        "title": "🟢 Read package.json and tell me the name field.",
         "version": "test",
         "agent": "smithers",
         "model": {
@@ -2249,7 +2315,7 @@
         },
         "time": {
           "created": 1000,
-          "updated": 1061
+          "updated": 1062
         }
       }
     }

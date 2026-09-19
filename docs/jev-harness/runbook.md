@@ -6,7 +6,7 @@ This is the page to read before the first run of `smithers opencode` against the
 
 The harness asks Jev whether every completion describes what the run did. It fails a run it cannot judge, and it fails a run whose claim it can read the record against: a completion Jev reads as unproven is handed back for a frame, up to three times, and a claim that still does not match the record ends the turn instead of standing as its answer. That judgement rides on the Vercel AI Gateway, so a gateway key is required in addition to a model seat key.
 
-The brake stops the run, not only the sentence. The turn ends with no answer at all, the assistant message carries the two probabilities Jev returned, and the dot goes gray. It also fires on completions that were true. Across sixteen live turns on 2026-09-18 it killed two runs that had the answer in hand (`add(2, 3) returns -1` over a repository where `add` subtracts, and `planted` as the name field in `package.json`), and one live CI dispatch of the planted one-character bug in four ended the same way. The shape it reads as unproven is the task whose evidence is not a moved tree plus a check that passed: a question about the repository, or a command run and reported. A task that edits a file and runs the repository's own test came back green seven times out of seven on this machine.
+The brake stops the run, not only the sentence. The turn ends with no answer at all, the assistant message carries the two probabilities Jev returned, and the dot goes red reading `stopped: the run could not prove its claim`. It also fires on completions that were true, so the completion it refused is kept in the transcript on the `claim` card for you to read. Across sixteen live turns on 2026-09-18 it killed two runs that had the answer in hand (`add(2, 3) returns -1` over a repository where `add` subtracts, and `planted` as the name field in `package.json`), and one live CI dispatch of the planted one-character bug in four ended the same way. The shape it reads as unproven is the task whose evidence is not a moved tree plus a check that passed: a question about the repository, or a command run and reported. A task that edits a file and runs the repository's own test came back green seven times out of seven on this machine.
 
 ```
 export AI_GATEWAY_API_KEY=<your Vercel AI Gateway key>
@@ -71,14 +71,25 @@ init and the session command verb. The `/api/*` routes it probes at boot
 
 The dot sits in front of the session title. One Jev evaluation runs per frame, from the server, never from the cell.
 
-- Green: the run is progressing, exploring, verifying or done.
+- Green: the run is progressing, exploring, verifying or done. A turn that resolved is green even when nothing ever judged it, and reads `answered`.
 - Yellow: the harness demanded discipline this frame, or the run is repeating itself, or it has read for four frames without an edit.
-- Red: the run is waiting for you (a permission card, a question, quota), or a usage limit stopped it, or Jev is at least 70 percent sure it needs a person.
-- Gray: health is unavailable or uncertain. No gateway key, a transport failure, no answer above the confidence floor, a turn you interrupted (reason `interrupted`), or a turn the harness ended on a claim it could not prove (reason `failed`). Gray never blocks the run.
+- Red: the run is waiting for you (a permission card, a question, quota), Jev is at least 70 percent sure it needs a person, or the run is over. A run that is over reads `stopped: ...` and the rest of the line names what ended it.
+- Gray: health is unavailable, and nothing else. No gateway key, a transport failure, no answer above the confidence floor, or a turn you stopped (reason `interrupted`). Gray never blocks the run.
 
 The facts beat the answers, and a finished run beats both. A confident `done`, or a turn that resolved, reads green even when Jev calls the run repetitive: a run that re-read a file on its way to a correct answer is not stuck. The dot a finished session keeps is the color its last state earned, so a session that parked on a permission you answered ends green and stays green rather than keeping "waiting for approval" over an empty permission list.
 
-Two finished colors do not mean what they look like, both measured on 2026-09-18. A run the harness killed on an unproven claim keeps a gray dot whose reason line reads `failed`, so the sidebar says health was unavailable where it should say the run was stopped. A run that spends its whole frame budget keeps the color of its last frame, which was green with the reason `exploring` on a run that answered nothing. Read the last message before you trust either color. A conversational turn that finishes in one frame keeps no dot at all.
+A red `stopped:` line names one of four things, and each one names what to do next.
+
+| Reason line | What ended the run | What to do |
+| --- | --- | --- |
+| `stopped: cerebras:gpt-oss-120b is out of quota` | The seat's provider refused on a usage limit. | Raise the limit, or run on another seat. |
+| `stopped: the run could not prove its claim` | The completion brake read the run's own record against its claim and refused it, with no bounce left. | Read the refused completion on the `claim` card and decide for yourself; re-prompt with the missing part, or allow the call the run needs. |
+| `stopped: the frame budget of 40 is exhausted` | The run spent every frame it had without finishing. | Raise `--max-frames`, or split the task. |
+| `stopped: nothing could judge the completion` | The gateway would not answer whether the completion stands. | Check `AI_GATEWAY_API_KEY` and the gateway; the run's own seat is not the problem. |
+
+Every other rule the harness stops a run on reads the same way, one line per code, and a body that failed with no code at all reads `stopped: the turn failed` with the words on the message.
+
+Measured on 2026-09-19, five live turns on `cerebras:gpt-oss-120b`: a bug fix ended green `done`, a conversational turn that finished in one frame ended green `answered`, a run out of frames ended red `stopped: the frame budget of 5 is exhausted` with the finish reason `stop`, a run the brake killed ended red `stopped: the run could not prove its claim` with the finish reason `error`, and a turn stopped from the app ended gray `interrupted`.
 
 ## Allow once and Allow always
 
@@ -100,7 +111,7 @@ A script call also has a mode. `mode: hermetic` pre-checks path tokens by readin
 
 ## The frame budget
 
-A turn gets 40 frames by default from the CLI. Raise it for a long task with `--max-frames 120`. When the budget runs out the turn stops and says so: `The frame budget of 40 is exhausted. The run stops here; the last transition was a request to continue.` That notice is the whole answer, the finish reason is `stop`, and the dot keeps whatever color the last frame earned, so a run that answered nothing can end green. The notice is the thing to read, not the color.
+A turn gets 40 frames by default from the CLI. Raise it for a long task with `--max-frames 120`. When the budget runs out the turn stops and says so: `The frame budget of 40 is exhausted. The run stops here; the last transition was a request to continue.` That notice is the whole answer and the finish reason is `stop`, but the dot goes red reading `stopped: the frame budget of 40 is exhausted`, so the color and the notice say the same thing. A run that completed on its last frame is green as usual: what tells the two apart is whether the run said it was done, not how many frames it used.
 
 ## What a working classify call looks like
 
@@ -122,7 +133,7 @@ Counted on the wire on 2026-09-18, against every request fifteen turns sent to `
 
 **`A completion the run's own record does not support (overclaimed): complete 0.08, overclaims 0.89. The claim was handed back for a frame and came back still unproven.`** The turn ended because the run said it was done and Jev read the run's own record against that. The two numbers are the classifier's answers to "is the task as stated done" and "does the claim assert what the evidence does not show"; `(incomplete)` in place of `(overclaimed)` means the first question failed rather than the second. The run was told what was missing and given up to three frames to prove it; what came back did not. There is no answer to read, by design: the alternative is a sentence nothing supports, returned with a green finish on it.
 
-This is the refusal you will meet most often, and it is not always right. It reaches the app as `UnknownError` carrying that sentence, the finish reason is `error`, the dot is gray, and the only sign in the transcript that a claim was read is a `demand` card titled `claim`. On 2026-09-18 it correctly refused "the tests pass" over a repository whose one test exits 1 with every shell call denied, and it also killed two turns whose answers were right. Read the sentence, then either re-prompt with the part that is actually missing, allow the call the run needs to prove its work, or restate the task so it ends in a check the run can run.
+This is the refusal you will meet most often, and it is not always right. The finish reason is `error`, the dot is red reading `stopped: the run could not prove its claim`, and the transcript carries a `demand` card titled with the two probabilities, for example `claim · complete 0.21, overclaims 0.96`. That card's body carries the completion the brake handed back, word for word, so you can read the answer it refused and judge it yourself. On 2026-09-18 the brake correctly refused "the tests pass" over a repository whose one test exits 1 with every shell call denied, and it also killed two turns whose answers were right. Read the refused completion, then either re-prompt with the part that is actually missing, allow the call the run needs to prove its work, or restate the task so it ends in a check the run can run.
 
 **`A completion no evaluator could judge (refused): The gateway answered 503`** The turn ended because Jev could not judge its completion. The gateway is retried up to three times over eight seconds first, so this means the gateway was down or the key was rejected, not that one request was slow. A 401 or 403 is answered once, because a second request reaches the same sentence. The server logs **`The completion judge vercel-gateway:typesafe-ai/jev refused the call (authentication, HTTP 401): ... Check AI_GATEWAY_API_KEY and the gateway's status; the run's own seat is not the problem.`** The way out is the gateway key, never another seat, and the app shows it as an authentication failure rather than an unknown one.
 
@@ -134,11 +145,8 @@ This is the refusal you will meet most often, and it is not always right. It rea
 - The `cell`, `classify`, `health` and `demand` cards render with the app's generic "Called `cell`" row; only file and shell calls get the app's native rendering. Each of the four leads that row with its own one line, so a collapsed card reads `frame 1 · 3 calls · read-only`, `triage/relevance · relevant: yes (0.93)`, `needs you: approve the write` or `read-only · 1/1`. The frame's program and the classify call's state are on the card's metadata, not in that line.
 - A collapsed `health` card shows its input (`color=red`) rather than its reason; expand it to read why.
 - The folder picker lists your home directory, so a project outside `~` has to be typed into the search box.
-- The dot is gray for the whole run when no gateway key is set, which is also what a gateway outage looks like.
-- The dot flickers gray mid-run with `health unavailable: Health did not answer within 1500 ms` when one health call misses its deadline. It came up in four of sixteen measured turns and changes nothing about the run.
-- A turn the harness killed on an unproven claim keeps a gray dot, and a turn that ran out of frames keeps whatever color it had, including green. Neither color says the run stopped.
-- Nothing in the transcript reads "the claim was not accepted" in words. The message error says it, and a `demand` card titled `claim` marks where it happened.
-- A claim the brake bounced is never shown, so a correct answer it refused is not in the transcript either. It is in `<directory>/.smithers/opencode.sqlite`, as that frame's `complete` transition.
+- Every mid-run dot is gray when no gateway key is set, which is also what a gateway outage looks like. The turn still ends green when it resolves, because that color is a fact and not a judgement.
+- One health call over its 1.5 s deadline keeps the color the run already had instead of flickering gray. Three missed in a row do go gray, reading `health unavailable: Jev missed its 1500 ms deadline 3 times running`. The deadline is five times Jev's measured answer and the gateway is already retried inside it, so a miss is a measurement that did not arrive rather than health that is unavailable.
 - A prompt sent while a turn is running reaches the run and steers it, and it gets no assistant message of its own. The running turn answers both prompts, or dies on one claim covering both.
 
 ## Filing what you find

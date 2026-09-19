@@ -51,6 +51,68 @@
 
 ### Fixed
 
+- The health dot tells the truth about a run that is over. Gray says one
+  thing, "health is unavailable", and an operator who walked away reads it on
+  an idle session as Jev having been down while the run carried on. Nothing
+  was carrying on. Measured on 2026-09-18: a run the harness killed on an
+  unproven claim kept a gray dot whose reason line read `failed`, which is the
+  same dot a missing gateway key writes. Every turn that ends without an
+  answer is red now, and the reason names what ended it, off a typed code
+  every time and never off a sentence: `stopped: the run could not prove its
+  claim`, `stopped: the run read for too many frames without writing`,
+  `stopped: nothing could judge the completion`, and one line per remaining
+  `HarnessError` code in a record the compiler keeps total. Only the
+  operator's own Stop stays gray, because nothing about it is theirs to act
+  on. `Driver.Outcome` carries the harness's own code as `HarnessStop` and
+  `EngineDriver.harnessStop` reads it, live or as the JSON projection a
+  replayed failure arrives as; 091697c6 typed the provider's code and left
+  this one on the floor.
+
+- A run its frame budget ended is red naming the budget, instead of green over
+  the budget notice. The turn's last reading overwrote `lastTransition` with
+  `complete` before it read the rule, so a run that answered nothing took the
+  rule's arrival clause and finished green on `The frame budget of 40 is
+  exhausted. The run stops here`. The real transition is kept now, and a
+  resolved turn whose last transition is not `complete` is a turn its budget
+  ended (`Projection.budgetEnded`): the run that finished says so first, and
+  the run that ran out says nothing. Read off the transition, never off the
+  notice. The loop's other budget exit, the check at the top of a frame that
+  emits the answer and returns without closing the turn, reaches
+  `Projection.close` as a body that exited `completed` and is read there the
+  same way.
+
+- A turn that finishes in one frame ends with a color. It ended with none: the
+  turn is over before the frame's evaluation answers, and the final reading
+  returned early when there were no answers to read. No dot is not honesty, it
+  is a hole an operator cannot read. The rule has an answer without Jev,
+  because rule 6's second clause is a fact and not a judgement: the harness
+  handed a completion back, nothing is parked, and no demand is outstanding.
+  Such a turn reads green `answered`, which does not claim a `done` nobody
+  said.
+
+- The completion the brake handed back is in the transcript. Until now the
+  only copy was a `complete` transition inside `opencode.sqlite`, so a correct
+  answer the brake refused was gone as far as the person was concerned, and
+  the brake is not always right. The `demand` card carries it word for word,
+  under a title that carries the two probabilities Jev read
+  (`claim · complete 0.21, overclaims 0.96`) in place of the single word
+  `claim`, which was the whole of that card when collapsed.
+
+- One health call over its 1.5 s deadline no longer flickers the dot gray
+  mid-run. It came up in four of sixteen measured turns and changed nothing
+  about any of them. The deadline is not what is wrong: Jev answers in about
+  300 ms end to end, the deadline is five times that, and the retry already
+  gives a blip a second chance inside it. Calling one missing measurement
+  "unavailable" is what was wrong, so a missed deadline keeps the color the
+  run already had and every other transport failure still repaints gray at
+  once, because those are the gateway saying it cannot serve the call.
+  `Health.deadlineMisses` in a row does go gray, naming the streak, so a dot
+  is never more than three frames older than something that confirmed it.
+
+- A harness `Aborted` closes the turn as the interrupt it is. It is the event
+  `CellTurn` sends from `Effect.onInterrupt` and nothing else, and it used to
+  close as a failure, which reached the app as `UnknownError`.
+
 - One Stop ends a turn whose frame parks a moment after it. The park and the
   Stop race: the engine records the cancellation before it interrupts
   anything, so a cancellation recorded ahead of the park's own commit turns

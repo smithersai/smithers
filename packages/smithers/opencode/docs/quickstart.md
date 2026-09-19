@@ -54,12 +54,18 @@ After every frame the server asks Jev where the run is, whether it is
 repeating itself, and whether it needs a person, and puts the answer in
 front of the session title.
 
-| Dot | Meaning                                                                                                     |
-| --- | ----------------------------------------------------------------------------------------------------------- |
-| 🟢  | Progressing, verifying, or done.                                                                            |
-| 🟡  | Repeating itself, exploring without an edit for four frames, or a discipline demand was just issued.        |
-| 🔴  | Parked on a permission, a question, or quota; needs a person; or a usage limit ended the run.               |
-| ⚪  | Jev unreachable or over its 1.5 s deadline, every answer under 0.5 confidence, or the turn was interrupted. |
+| Dot | Meaning                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🟢  | Progressing, verifying, or done. A turn that resolved is green even when nothing judged it, reading `answered`.                                                                                                                     |
+| 🟡  | Repeating itself, exploring without an edit for four frames, or a discipline demand was just issued.                                                                                                                                |
+| 🔴  | Parked on a permission, a question, or quota; needs a person; or the run is over. A run that is over reads `stopped: ...` and names what ended it: the seat's usage limit, the rule the harness stopped it on, or its frame budget. |
+| ⚪  | Jev unreachable, every answer under 0.5 confidence, or you stopped the turn.                                                                                                                                                        |
+
+Gray means health is unavailable and nothing else. A run that is over is red,
+never gray, because gray on an idle session reads as "Jev was down" when what
+happened is that the run stopped. One missed 1.5 s deadline keeps the color
+the run already had rather than repainting it gray; three missed in a row go
+gray and say so.
 
 A `health` card appears in the timeline on every color change, titled with
 the reason and carrying the three answers. A gray card titled

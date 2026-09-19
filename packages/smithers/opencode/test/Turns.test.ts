@@ -109,7 +109,7 @@ describe("Turns", () => {
               Effect.map(store.listMessages("ses_1"), (messages) =>
                 messages.some((message) =>
                   message.info.role === "assistant" && message.info.finish === "stop" &&
-                  message.parts.filter((part) => part.type === "tool" && part.tool === "health").length === 3
+                  message.parts.filter((part) => part.type === "tool" && part.tool === "health").length >= 4
                 ))
             )
           )
@@ -128,8 +128,9 @@ describe("Turns", () => {
     expect(result.wrongPermission).toMatchObject({ code: "unknown_permission" })
     expect(result.messages.map((message) => message.info.role)).toEqual(["user", "assistant", "user"])
     // Seven cards from the script, plus the health cards: frame zero's
-    // settle (gray, no Jev key), the park (red), and the resumed frame's
-    // settle (gray again), each under the frame that produced it.
+    // settle (gray, no Jev key), the park (red), the resumed frame's settle
+    // (gray again) and the color the resolved turn ends on (green), each
+    // under the frame that produced it.
     expect(
       result.messages[1]!.parts.flatMap((part) => part.type === "tool" ? [`${part.tool}:${part.state.status}`] : [])
     ).toEqual([
@@ -141,6 +142,7 @@ describe("Turns", () => {
       "cell:completed",
       "bash:completed",
       "demand:completed",
+      "health:completed",
       "health:completed",
       "health:completed"
     ])
@@ -834,10 +836,16 @@ describe("Turns", () => {
       }).pipe(Effect.provide(late))
     )
     expect(result.closed).toEqual({})
-    expect(result.duringTurn).toEqual([])
+    // The only card the turn wrote is the color it ended on, which is the rule
+    // read over the turn's own facts and never a gateway call, so it lands
+    // with every evaluation still waiting on the gate.
+    expect(result.duringTurn.map((part) => {
+      const state = (part as Protocol.ToolPart).state
+      return state.status === "completed" ? state.title : state.status
+    })).toEqual([Health.answeredReason])
     expect(result.records.length).toBeGreaterThan(0)
     // Recorded, never folded: a closed turn grows no card from a late verdict.
-    expect(result.cards).toEqual([])
+    expect(result.cards).toEqual(result.duringTurn)
   })
 
   it("clears the park when the permission is answered, and ends the finished session on the color it earned", async () => {

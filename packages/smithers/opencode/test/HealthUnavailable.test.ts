@@ -60,8 +60,11 @@ describe("Health without a gateway key", () => {
     const replied = await post(`/session/${session.id}/permissions/${asked.id}`, `{"response":"once"}`)
     expect(replied.status).toBe(200)
     await until(async () => seen.some((event) => event.type === "session.idle"))
-    // The last decision may land just after the idle.
-    await until(async () => ((await get(`/session/${session.id}`)) as Protocol.Session).title.startsWith("⚪ "))
+    // The last decision may land just after the idle. The turn itself ends
+    // green: it resolved, and a resolved turn is green on a fact that needs
+    // no answers, which is the only color a run with no gateway key ever
+    // earns.
+    await until(async () => ((await get(`/session/${session.id}`)) as Protocol.Session).title.startsWith("🟢 "))
 
     const streamed = seen
       .filter((event) => event.type === "message.part.updated")
@@ -74,7 +77,8 @@ describe("Health without a gateway key", () => {
     expect(streamed).toEqual([
       ["gray", Health.noGatewayKey],
       ["red", "waiting for approval"],
-      ["gray", Health.noGatewayKey]
+      ["gray", Health.noGatewayKey],
+      ["green", Health.answeredReason]
     ])
     const history = (await get(`/session/${session.id}/message?limit=20`)) as Array<Store.MessageWithParts>
     const assistant = history.find((item) => item.info.role === "assistant")!
@@ -84,7 +88,8 @@ describe("Health without a gateway key", () => {
     expect(cards.map((part) => part.state.status === "completed" && part.state.title)).toEqual([
       Health.noGatewayKey,
       "waiting for approval",
-      Health.noGatewayKey
+      Health.noGatewayKey,
+      Health.answeredReason
     ])
     // The card's body is the failure, and it says the same thing once.
     expect(cards[0]!.state.status === "completed" && cards[0]!.state.output).toBe(`unreachable: ${Health.noGatewayKey}`)

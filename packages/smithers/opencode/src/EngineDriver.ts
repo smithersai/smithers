@@ -49,7 +49,7 @@ import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
-import { HarnessError } from "@smthrs/harness/HarnessError"
+import { HarnessError, HarnessErrorCode } from "@smthrs/harness/HarnessError"
 import * as Notifications from "@smthrs/harness/Notifications"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
@@ -470,11 +470,43 @@ const failureMessage = (cause: Cause.Cause<unknown>): string => {
 }
 
 /**
+ * The harness code a failure carries, or `undefined` when nothing in it is a
+ * `HarnessError`.
+ *
+ * Both shapes are read, because a failure reaches here two ways: live, as the
+ * class the harness raised, and replayed, as the JSON projection the engine
+ * journaled it to, which keeps the fields and loses the prototype. The set is
+ * closed by `HarnessError.HarnessErrorCode`, and a code outside it is not one
+ * of ours, so it is not reported as one.
+ *
+ * This is what 091697c6 left behind: `failedOutcome` kept the `ModelError` it
+ * found and dropped the `HarnessError` around it, so every cap and every
+ * refusal the harness itself makes reached `Projection.close` as an untyped
+ * sentence and the dot went gray reading `failed`.
+ *
+ * @param error the squashed failure
+ * @category conversions
+ * @since 1.0.0
+ */
+export const harnessStop = (error: unknown): Driver.HarnessStop | undefined => {
+  const code = (error as { readonly code?: unknown } | undefined)?.code
+  return typeof code === "string" && HarnessErrorCode.literals.includes(code as never)
+    ? { code: code as Driver.HarnessStop["code"] }
+    : undefined
+}
+
+/**
  * The outcome a failed body settles as. A model call the provider refused
  * (a bad key, an account with no credit, a closed quota window) is found
  * through the frame's wrapper, live or as the engine's JSON projection, and
  * reported with the seat, the code, the HTTP status, and the provider's
  * message verbatim; any other failure keeps its own message.
+ *
+ * Every arm also carries the harness's own code when there is one
+ * ({@link harnessStop}), because the two answer different questions: the
+ * provider failure says what to fix at the provider, and the harness code
+ * says that the harness ended the run and which rule of its own ended it. A
+ * frame that fails on a refused model call carries both.
  *
  * @param seat the seat the turn ran on
  * @param cause the body's failure
@@ -483,10 +515,13 @@ const failureMessage = (cause: Cause.Cause<unknown>): string => {
  */
 export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver.Outcome => {
   const squashed = Cause.squash(cause)
+  const harness = harnessStop(squashed)
   const unjudged = judgeRefusal(squashed)
-  if (unjudged !== undefined) return { _tag: "failed", message: failureMessage(cause), provider: unjudged }
+  if (unjudged !== undefined) {
+    return { _tag: "failed", message: failureMessage(cause), provider: unjudged, harness }
+  }
   const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(squashed))
-  if (model === undefined) return { _tag: "failed", message: failureMessage(cause) }
+  if (model === undefined) return { _tag: "failed", message: failureMessage(cause), harness }
   const provider: Driver.ProviderFailure = {
     seat,
     providerID: seat.slice(0, Math.max(seat.indexOf(":"), 0)) || seat,
@@ -499,7 +534,8 @@ export const failedOutcome = (seat: string, cause: Cause.Cause<unknown>): Driver
     message: `${model.code}${
       model.httpStatus === undefined ? "" : ` (HTTP ${model.httpStatus})`
     } from ${seat}: ${model.message}`,
-    provider
+    provider,
+    harness
   }
 }
 

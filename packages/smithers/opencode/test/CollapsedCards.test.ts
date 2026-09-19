@@ -64,9 +64,9 @@ const scriptEvents = (): Array<AgentEvent.AgentEvent> => {
 }
 
 /**
- * Every tool card the demo turn writes, plus one health card. Health lands
- * only on a color change and the demo script carries no evaluation, so the
- * decision is folded in here.
+ * Every tool card the demo turn writes, plus one more health card. The turn
+ * ends on a color of its own; a red one needs answers the demo script carries
+ * none of, so that decision is folded in here.
  */
 const cards = (): ReadonlyArray<Protocol.ToolPart> => {
   const ctx = { directory, now: clock() }
@@ -155,7 +155,10 @@ describe("the cards this server invents", () => {
    * over "color=red" and the reason was nowhere.
    */
   it("lead the health card with the reason, not the color it came from", () => {
-    const card = firstCard("health")
+    // The demo turn ends with a health card of its own (green, `answered`),
+    // so the folded red decision is the last one.
+    const health = cards().filter((part) => part.tool === "health")
+    const card = health[health.length - 1]!
     expect(appSubtitle(inputOf(card))).toBe("needs you: approve the write")
     expect(appArgs(inputOf(card))).toEqual(["color=red"])
     expect(tuiLine(card)).toBe("# health [description=needs you: approve the write, color=red]")

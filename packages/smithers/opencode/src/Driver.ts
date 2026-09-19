@@ -12,6 +12,7 @@
  * @since 1.0.0
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as HarnessError from "@smthrs/harness/HarnessError"
 import { Context, type Effect, Schema } from "effect"
 import type * as Protocol from "./Protocol.ts"
 
@@ -48,7 +49,35 @@ export type Outcome =
   | { readonly _tag: "completed" }
   | { readonly _tag: "interrupted" }
   | { readonly _tag: "suspended" }
-  | { readonly _tag: "failed"; readonly message: string; readonly provider?: ProviderFailure | undefined }
+  | {
+    readonly _tag: "failed"
+    readonly message: string
+    readonly provider?: ProviderFailure | undefined
+    readonly harness?: HarnessStop | undefined
+  }
+
+/**
+ * The harness ending a run on one of its own codes: a cap it enforces, a
+ * judgement it could not get, a claim it refused.
+ *
+ * It is carried beside {@link ProviderFailure} and not folded into it because
+ * the two are different things to fix. A provider failure is the seat's, and
+ * the operator fixes it at the provider. This one is the harness's, and what
+ * the operator does about it is named by the code: raise the cap, mend the
+ * gateway key, re-prompt with the missing part.
+ *
+ * Only the code travels. The sentence is already on the outcome's `message`,
+ * verbatim, and the house rule is that the code is the contract and the
+ * sentence is prose (`@smthrs/model/ModelError`, and `Health.limitReached`
+ * restating it).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface HarnessStop {
+  /** The code the harness raised, off `HarnessError.code`. */
+  readonly code: HarnessError.HarnessErrorCode
+}
 
 /**
  * A model call the seat's provider refused: what the person needs to fix

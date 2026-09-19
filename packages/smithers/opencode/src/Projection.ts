@@ -118,8 +118,21 @@ export interface Opened {
  * @since 1.0.0
  */
 export type Closing =
-  | { readonly _tag: "interrupted" }
-  | { readonly _tag: "failed"; readonly message: string; readonly provider?: Driver.ProviderFailure | undefined }
+  | {
+    readonly _tag: "interrupted"
+    /**
+     * The harness's own words for the interrupt, when it reported one. The
+     * operator's Stop reports none and reads as the fixed sentence.
+     */
+    readonly message?: string | undefined
+  }
+  | {
+    readonly _tag: "failed"
+    readonly message: string
+    readonly provider?: Driver.ProviderFailure | undefined
+    /** The harness's own code, when the harness is what ended the run. */
+    readonly harness?: Driver.HarnessStop | undefined
+  }
 
 interface CallCard {
   readonly partID: string
@@ -198,6 +211,18 @@ export interface State {
   readonly answers: Health.Answers | undefined
   /** How many health cards this turn has emitted. */
   readonly healthCards: number
+  /**
+   * The output of the last `complete` transition the run applied, kept so a
+   * completion the brake handed back can be read in the transcript instead of
+   * only in the store. See the `claim-demanded` card.
+   */
+  readonly lastCompletion: string | undefined
+  /**
+   * How many health deadlines Jev has missed in a row. Reset by any
+   * evaluation that came back, failure or answer, because the streak is about
+   * the transport not answering and nothing else.
+   */
+  readonly missedDeadlines: number
   /** The run summary's counters. */
   readonly summary: Summary
   /**
@@ -925,6 +950,28 @@ const endTurn = (
 }
 
 /**
+ * Whether the frame budget, and not the run, ended a turn that resolved.
+ *
+ * The harness resolves a turn two ways, and the difference is one typed fact.
+ * A run that finished says so first: it applies a `complete` transition and
+ * the controller closes the turn on that transition's own words. A run whose
+ * budget ran out applies no such transition; the controller closes the turn
+ * because there is no next frame and hands back the budget notice
+ * (`CellTurn.budgetMessage`), which is a sentence about the harness rather
+ * than an answer to the task. So a resolved turn whose last transition is not
+ * `complete` is a turn its budget ended, whatever the notice says.
+ *
+ * Read off the transition and never off the notice, the rule 091697c6 states:
+ * the sentence is prose that changes, the transition is the contract. The
+ * frame count is not the test either, because a run that completes on its
+ * last frame has spent exactly the same budget and is not this.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const budgetEnded = (state: State): boolean => state.facts.lastTransition !== "complete"
+
+/**
  * Ends a turn that answered, after one last reading of the color rule.
  *
  * The dot a finished session keeps is the last one anything decided, and
@@ -932,29 +979,44 @@ const endTurn = (
  * settled: a park that was answered, a demand that was met. The live drive
  * left finished, idle sessions red "waiting for approval" over an empty
  * permission list for exactly that reason. So the rule is re-read here over
- * the turn's own final facts (nothing parked, the last transition
- * `complete`, no demand outstanding) and the last answers Jev gave. It is
- * the rule, not the gateway: no call is made, so the footer's count stays
- * true and the turn ends when it ends. A turn nothing ever judged keeps no
- * color, because there is none it earned.
+ * the turn's own final facts (nothing parked, no demand outstanding) and the
+ * last answers Jev gave. It is the rule, not the gateway: no call is made, so
+ * the footer's count stays true and the turn ends when it ends.
+ *
+ * Two of those final facts were wrong, and each one ended a run on a color
+ * that said the opposite of what happened.
+ *
+ * `lastTransition` was overwritten with `complete` here, so a run its frame
+ * budget ended took rule 6 and finished green over an answer that is only the
+ * budget notice. The real transition is kept now, and a resolved turn that
+ * never completed carries {@link Health.frameBudget} as the fact that ended
+ * it ({@link budgetEnded}), which is red naming the budget.
+ *
+ * A turn nothing ever judged used to keep no color at all, which is what a
+ * conversational turn that resolves in one frame always is: it ends before
+ * the first evaluation answers. No dot is not honesty, it is a hole an
+ * operator cannot read. The rule has an answer for it without Jev: rule 6's
+ * second clause is a fact, the harness handed a completion back, and at this
+ * point nothing is parked, no demand is outstanding and there is no
+ * `needsHuman` to beat it. So it is green, reading {@link Health.answeredReason}
+ * rather than a `done` nobody said.
  */
 const resolvedTurn = (state: State, ctx: Context): Step => {
   const close = (from: State): Step =>
     endTurn(from, ctx, { finish: "stop", time: { created: state.createdAt, completed: ctx.now() } })
-  if (state.answers === undefined) return close(state)
+  const endedBy: Health.Ended | undefined = budgetEnded(state)
+    ? { code: Health.frameBudget, maxFrames: state.facts.maxFrames }
+    : undefined
   const facts: Health.Facts = {
     ...state.facts,
     parked: "none",
-    lastTransition: "complete",
-    demandThisFrame: false
+    demandThisFrame: false,
+    endedBy
   }
-  const last = decided(
-    ctx,
-    { ...state, facts },
-    Health.decide(facts, state.answers),
-    state.answers,
-    lastFrame(state)
-  )
+  const decision = endedBy === undefined && state.answers === undefined
+    ? { color: "green" as const, reason: Health.answeredReason }
+    : Health.decide(facts, state.answers)
+  const last = decided(ctx, { ...state, facts }, decision, state.answers, lastFrame(state))
   const ended = close(last.state)
   return { state: ended.state, events: [...last.events, ...ended.events] }
 }
@@ -1015,6 +1077,44 @@ const demandCard = (
   }
   return { state: { ...state, demandText: { ...state.demandText, [partID]: text } }, events: [partEvent(part, now)] }
 }
+
+/**
+ * The title of the card the completion brake writes: the word, and the two
+ * probabilities it read.
+ *
+ * The card used to be titled `claim` and nothing else, and a collapsed card
+ * is its title alone, so the only mark the brake left in a transcript was one
+ * word. The numbers are the two questions Jev answered, which is what makes
+ * the refusal arguable: a person who thinks the run was right can see how
+ * close it was.
+ *
+ * @param complete the probability the task as stated is done
+ * @param overclaims the probability the claim asserts what the evidence does not show
+ * @category conversions
+ * @since 1.0.0
+ */
+export const claimTitle = (complete: number, overclaims: number): string =>
+  `claim · complete ${complete.toFixed(2)}, overclaims ${overclaims.toFixed(2)}`
+
+/**
+ * The body of that card: what the brake did, what the run has to do about it,
+ * and the completion it refused, word for word.
+ *
+ * The refused completion is the point. A brake that is right most of the time
+ * is wrong some of the time, and until now the only copy of the sentence it
+ * refused was a `complete` transition inside `opencode.sqlite`, so a correct
+ * answer it bounced was gone as far as the person was concerned. It goes in
+ * the transcript, under the two probabilities, where they can read it and
+ * decide for themselves whether the brake was right.
+ *
+ * @param completion the words the refused completion carried, when the run applied one
+ * @category conversions
+ * @since 1.0.0
+ */
+export const claimText = (completion: string | undefined): string =>
+  `The completion is not supported by what this run's record shows. Complete again and state the working, or allow the call the run needs to prove it.${
+    completion === undefined ? "" : `\n\nThe completion this demand handed back:\n\n${completion}`
+  }`
 
 /**
  * The demand kinds, in the order their cards sort inside a frame.
@@ -1134,12 +1234,15 @@ export const open = (ctx: Context, opened: Opened): Step => {
       parked: "none",
       lastTransition: "continue",
       demandThisFrame: false,
-      stoppedBy: undefined
+      stoppedBy: undefined,
+      endedBy: undefined
     },
     editedThisFrame: false,
     health: colorOf(session.title),
     answers: undefined,
     healthCards: 0,
+    lastCompletion: undefined,
+    missedDeadlines: 0,
     summary: { frames: 0, calls: 0, classifyCalls: 0, jevCalls: 0, jevLatencyMs: 0, jevCost: 0 },
     counted: {}
   }
@@ -1439,7 +1542,17 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
         ? { state: { ...state, editedThisFrame: true, facts: { ...state.facts, framesSinceEdit: 0 } }, events: [] }
         : { state, events: [] }
     case "transition-applied":
-      return { state: { ...state, facts: { ...state.facts, lastTransition: event.transition._tag } }, events: [] }
+      return {
+        state: {
+          ...state,
+          // The words a completion carried, kept for the card the brake's
+          // demand writes: a completion the brake hands back is otherwise
+          // nowhere a person can read it.
+          lastCompletion: event.transition._tag === "complete" ? event.transition.output : state.lastCompletion,
+          facts: { ...state.facts, lastTransition: event.transition._tag }
+        },
+        events: []
+      }
     case "cell-settled": {
       if (state.cell === undefined) return { state, events: [] }
       const now = ctx.now()
@@ -1587,8 +1700,8 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           ctx,
           event.nextFrame,
           demandOrdinals.claim,
-          "claim",
-          "The completion is not supported by what this run's record shows. Complete again and state the working."
+          claimTitle(event.complete, event.overclaims),
+          claimText(state.lastCompletion)
         )
         : { state: read, events: [] }
     }
@@ -1711,7 +1824,12 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       }
     }
     case "aborted":
-      return close(ctx, state, { _tag: "failed", message: event.reason })
+      // The only `Aborted` the harness emits is the one `CellTurn` sends from
+      // `Effect.onInterrupt`, so it is an interrupt and closes as one, with
+      // the harness's own words. It used to close as a failure, which read as
+      // `UnknownError` on the message; now that a failure is red, reading it
+      // as one would also have told an operator to act on their own Stop.
+      return close(ctx, state, { _tag: "interrupted", message: event.reason })
     default:
       return { state, events: [] }
   }
@@ -1806,21 +1924,55 @@ export const decided = (
  * one. The call itself was counted where it was asked, which is the only
  * place that always happens before the turn ends.
  *
+ * A missed deadline is the one failure that does not repaint the dot. Every
+ * other transport failure is the gateway saying it cannot serve this: no key,
+ * an unreachable host, a refusal, an answer that would not decode. A deadline
+ * miss says only that this frame's measurement did not arrive in time, and
+ * the color the run already had is still the last thing anything knew about
+ * it, so the dot keeps it. Going gray instead flickered the dot mid-run in
+ * four of sixteen measured turns and told the operator that health was
+ * unavailable on a run that was working. {@link Health.deadlineMisses} in a
+ * row is a different fact and does go gray, naming the streak, so a dot is
+ * never more than three frames older than something that confirmed it.
+ *
  * @category combinators
  * @since 1.0.0
  */
 export const health = (ctx: Context, state: State, facts: Health.Facts, evaluation: Health.Evaluation): Step => {
+  const missed = evaluation.code === "timeout" ? state.missedDeadlines + 1 : 0
   const counted: State = {
     ...state,
     answers: evaluation.answers ?? state.answers,
+    missedDeadlines: missed,
     summary: !evaluation.answered ? state.summary : {
       ...state.summary,
       jevLatencyMs: state.summary.jevLatencyMs + evaluation.latencyMs,
       jevCost: state.summary.jevCost + Health.jevCost(evaluation.usage)
     }
   }
-  return decided(ctx, counted, evaluation.decision, evaluation.answers, facts.frame - 1, evaluation.error)
+  if (missed > 0 && missed < Health.deadlineMisses && state.health !== undefined) return { state: counted, events: [] }
+  const decision = missed >= Health.deadlineMisses
+    ? { color: "gray" as const, reason: Health.missedDeadlines(missed) }
+    : evaluation.decision
+  return decided(ctx, counted, decision, evaluation.answers, facts.frame - 1, evaluation.error)
 }
+
+/**
+ * Whether the turn already delivered its answer and the stream never closed
+ * it: the one shape the harness's other budget exit makes.
+ *
+ * The loop checks the budget at the top of a frame as well as at the bottom.
+ * The check at the bottom closes the turn first (`turn-closed`, then
+ * `Resolved`), which {@link budgetEnded} reads. The check at the top emits
+ * `Resolved` alone and returns, so the body exits `completed`, the sink calls
+ * this with a fixed "the turn ended without an answer", and the only trace of
+ * what happened is that `resolved` was folded and nothing closed the turn.
+ * That is a spent budget, not a failure, and it says so.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+const answeredWithoutClosing = (state: State): boolean => state.answered && !state.resolving
 
 /**
  * Ends a turn the stream did not end: an interrupt takes the consumer down
@@ -1837,24 +1989,39 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
   // A refused key is the app's own ProviderAuthError; every other provider
   // refusal keeps the composed message, with the provider's words verbatim.
   const error: Protocol.MessageError = closing._tag === "interrupted"
-    ? { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
+    ? { name: "MessageAbortedError", data: { message: closing.message ?? "The turn was interrupted" } }
     : closing.provider?.code === "authentication"
     ? { name: "ProviderAuthError", data: { providerID: closing.provider.providerID, message: closing.message } }
     : { name: "UnknownError", data: { message: closing.message } }
-  // A usage limit that ended the run is red, because raising it is something
-  // the operator can do; anything else that ended the run without an answer
-  // leaves health unknown. Which one this is comes off the provider's
-  // normalized code and never off its sentence: the code is the contract
-  // (`Health.limitReached`, `@smthrs/model/ModelError`).
+  // A turn that ended without an answer is red, and the reason names what
+  // ended it. It used to be gray unless a usage limit ended it, and gray says
+  // one thing, "health is unavailable", which an operator who walked away
+  // reads as Jev being down while the run carries on. Nothing was carrying
+  // on. A run the harness killed on an unproven claim sat idle under a gray
+  // dot reading `failed` for exactly that reason.
+  //
+  // Which reason it is comes off a typed code every time and never off a
+  // sentence (`Health.limitReached`, `EngineDriver.harnessStop`): the
+  // provider's normalized code when a usage limit ended it, the harness's own
+  // `HarnessError` code when the harness did, and `unknown` when the body
+  // exited with neither, where the header's message carries the words.
+  //
+  // An interrupt stays gray. The person pressed Stop; nothing about the run
+  // is theirs to act on, and health genuinely was never judged.
   const stoppedBy = closing._tag === "failed" ? Health.limitReached(closing.provider) : undefined
-  const decision: Health.Decision = closing._tag === "interrupted"
+  const endedBy: Health.Ended | undefined = closing._tag === "interrupted"
+    ? undefined
+    : answeredWithoutClosing(settled.state)
+    ? { code: Health.frameBudget, maxFrames: settled.state.facts.maxFrames }
+    : { code: closing.harness?.code ?? "unknown" }
+  const decision: Health.Decision = endedBy === undefined
     ? { color: "gray", reason: "interrupted" }
-    : stoppedBy === undefined
-    ? { color: "gray", reason: "failed" }
-    : { color: "red", reason: Health.limitReason(stoppedBy) }
+    : stoppedBy !== undefined
+    ? { color: "red", reason: Health.limitReason(stoppedBy) }
+    : { color: "red", reason: Health.endedReason(endedBy) }
   const marked = decided(
     ctx,
-    { ...settled.state, facts: { ...settled.state.facts, stoppedBy } },
+    { ...settled.state, facts: { ...settled.state.facts, stoppedBy, endedBy } },
     decision,
     undefined,
     lastFrame(settled.state)
@@ -1879,7 +2046,7 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
  */
 const settleOpenCards = (state: State, ctx: Context, closing: Closing): Step => {
   const now = ctx.now()
-  const reason = closing._tag === "interrupted" ? "interrupted" : closing.message
+  const reason = closing.message ?? "interrupted"
   const events: Array<Protocol.Emitted> = []
   const cell = state.cell
   if (cell !== undefined) {

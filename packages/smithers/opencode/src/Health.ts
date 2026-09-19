@@ -16,6 +16,7 @@
  * @since 1.0.0
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import type * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Clock, Duration, Effect, Layer, Redacted, Schema } from "effect"
@@ -95,7 +96,94 @@ export const limitReason = (limit: Limit): string =>
     : `stopped: ${limit.seat} is rate limited`
 
 /**
- * What the color rule reads: the state Jev sees, plus two harness facts
+ * The code a run its own frame budget ended reports. It is not a
+ * `HarnessError` code because the budget raises no error: the loop stops at
+ * the top of the frame it has no budget for and hands the run's last words
+ * back as the answer, so nothing fails and there is no code to read off a
+ * cause. The projection derives it from the facts instead
+ * (`Projection.budgetEnded`).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const frameBudget = "frame_budget"
+
+/**
+ * A run the harness ended, rather than the run ending itself: which thing
+ * ended it.
+ *
+ * A usage limit is {@link Limit} and not this, because the seat's provider
+ * ended that one and the operator fixes it at the provider. This is the
+ * harness's own vocabulary: a cap it enforces, a judgement it could not get,
+ * a claim it refused, a budget it spent.
+ *
+ * The code is typed and never read off a sentence, the rule 091697c6 states
+ * for the limit and the same rule here: `HarnessError.code` is the contract,
+ * the sentence beside it is prose.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Ended =
+  /** The frame budget ran out before the run said it was done. */
+  | { readonly code: typeof frameBudget; readonly maxFrames: number }
+  /** The harness raised, and this is the code it raised with. */
+  | { readonly code: HarnessError.HarnessErrorCode }
+  /** The turn's body exited with a failure the harness put no code on. */
+  | { readonly code: "unknown" }
+
+/**
+ * The reason each harness code renders as. Total over
+ * `HarnessError.HarnessErrorCode`, so a code the harness adds is a type error
+ * here rather than a run that ends with no reason a person can read.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const endedReasons: Readonly<Record<HarnessError.HarnessErrorCode | "unknown", string>> = {
+  assembly_failed: "stopped: the run could not be assembled",
+  incompatible_journal: "stopped: the journal is from another version",
+  render_failed: "stopped: the frame could not be rendered",
+  model_failed: "stopped: the model call failed",
+  engine_failed: "stopped: the engine failed",
+  read_only_cap: "stopped: the run read for too many frames without writing",
+  completion_unjudged: "stopped: nothing could judge the completion",
+  claim_unproven: "stopped: the run could not prove its claim",
+  suspended: "stopped: the run suspended",
+  unknown: "stopped: the turn failed"
+}
+
+/**
+ * The reason a run the harness ended renders as, on the dot and the card.
+ *
+ * Every one of them starts `stopped:`, the way {@link limitReason} does,
+ * because that is the word an operator who walked away reads first: the run
+ * is not slow, it is over.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const endedReason = (ended: Ended): string =>
+  ended.code === frameBudget
+    ? `stopped: the frame budget of ${ended.maxFrames} is exhausted`
+    : endedReasons[ended.code]
+
+/**
+ * The reason a turn that answered with nothing to judge it renders as.
+ *
+ * A turn that resolves in one frame ends before any evaluation answers, so
+ * the rule has facts and no answers. Rule 6's second clause is a fact and
+ * needs none: the harness handed a completion back, and the turn is over. The
+ * color it earned is green and the word for it is this, which does not
+ * pretend Jev said `done`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const answeredReason = "answered"
+
+/**
+ * What the color rule reads: the state Jev sees, plus three harness facts
  * that never leave the server.
  *
  * @category models
@@ -106,6 +194,8 @@ export interface Facts extends State {
   readonly demandThisFrame: boolean
   /** The usage limit that ended the run, when the provider's code said one did. */
   readonly stoppedBy: Limit | undefined
+  /** What ended the run, when the harness ended it rather than the run. */
+  readonly endedBy: Ended | undefined
 }
 
 /**
@@ -202,6 +292,41 @@ export const confidenceFloor = 0.5
 export const deadlineMs = 1500
 
 /**
+ * How many deadlines in a row Jev may miss before the dot goes gray.
+ *
+ * A missed deadline is a measurement that did not arrive, not health that is
+ * unavailable, so one of them keeps the color the run already had
+ * (`Projection.health`). The deadline itself is not the thing that is wrong:
+ * Jev answers in about 300 ms end to end (`docs/jev-harness/research.html`),
+ * {@link deadlineMs} is five times that, and {@link evaluatorRetry} already
+ * gives a blip a second chance inside it. Widening it would move the flicker
+ * later and delay every gray that is real. What was wrong is calling one
+ * missing measurement "unavailable": on 2026-09-18 that flickered the dot
+ * gray mid-run in four of sixteen turns and changed nothing about any of
+ * them.
+ *
+ * Three in a row is a different fact, and it goes gray: a transport that
+ * misses three deadlines running is not answering, and a dot that keeps a
+ * color nobody has confirmed for three frames is the stale dot this whole
+ * rule exists to prevent. Three bounds the staleness to three frames while
+ * costing an isolated blip nothing.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const deadlineMisses = 3
+
+/**
+ * The gray reason a run whose health kept missing its deadline renders.
+ *
+ * @param count how many deadlines were missed in a row
+ * @category conversions
+ * @since 1.0.0
+ */
+export const missedDeadlines = (count: number): string =>
+  `health unavailable: Jev missed its ${deadlineMs} ms deadline ${count} times running`
+
+/**
  * Jev's price on the Vercel gateway: dollars per million input tokens,
  * output free, as the research doc records it.
  *
@@ -241,10 +366,16 @@ export const arrived = (answers: Answers): boolean =>
 /**
  * The color rule, design section 3.3, first match wins, in three blocks.
  *
- * **The facts, first.** A parked run, a run a usage limit ended, and a frame
- * the harness issued a demand for are decided whether or not Jev answered:
- * waiting for approval needs no judgment, and neither does a completion the
- * harness handed back.
+ * **The facts, first.** A parked run, a run a usage limit ended, a run the
+ * harness itself ended, and a frame the harness issued a demand for are
+ * decided whether or not Jev answered: waiting for approval needs no
+ * judgment, and neither does a completion the harness handed back.
+ *
+ * A run the harness ended is red and never gray. Gray is one sentence,
+ * "health is unavailable", and an operator who walked away reads it as Jev
+ * being down while the run carries on. A run that is over is the opposite of
+ * that: nothing is carrying on, and the reason names what ended it
+ * ({@link endedReason}) so the next thing to do is on the dot.
  *
  * **Then whether there is an answer at all.** None, or none at or above
  * {@link confidenceFloor}, is gray: health is unavailable and the run is not
@@ -267,6 +398,7 @@ export const arrived = (answers: Answers): boolean =>
 export const decide = (facts: Facts, answers: Answers | undefined): Decision => {
   if (facts.parked !== "none") return { color: "red", reason: parkedReason[facts.parked] }
   if (facts.stoppedBy !== undefined) return { color: "red", reason: limitReason(facts.stoppedBy) }
+  if (facts.endedBy !== undefined) return { color: "red", reason: endedReason(facts.endedBy) }
   if (answers === undefined) return { color: "gray", reason: "health unavailable" }
   const confident = Object.values(answers).some((answer) => Classifier.confidence(answer) >= confidenceFloor)
   if (!confident) return { color: "gray", reason: "health uncertain" }
@@ -397,6 +529,11 @@ export interface Evaluation {
   readonly latencyMs: number
   readonly usage: Evaluator.Usage | undefined
   readonly error: string | undefined
+  /**
+   * The transport's own code when the evaluation failed, so a caller decides
+   * on the code and not on the sentence. `undefined` when it answered.
+   */
+  readonly code: Evaluator.EvaluatorErrorCode | undefined
   /** Whether the gateway answered this call, judgement or refusal: what makes it a Jev call to count. */
   readonly answered: boolean
 }
@@ -467,6 +604,7 @@ export const evaluate = (
         latencyMs,
         usage: undefined,
         error: `${outcome.failure.code}: ${outcome.failure.message}`,
+        code: outcome.failure.code,
         answered: gatewayAnswered(outcome.failure)
       }
     }
@@ -476,6 +614,7 @@ export const evaluate = (
       latencyMs: outcome.success.response.latencyMs,
       usage: outcome.success.response.usage,
       error: undefined,
+      code: undefined,
       answered: true
     }
   })
