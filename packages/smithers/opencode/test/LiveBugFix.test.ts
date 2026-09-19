@@ -349,14 +349,34 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     expect(record).not.toContain("completion_unjudged")
     expect(record).not.toContain("no evaluator could judge")
 
-    // 2. The bug is fixed on disk, and the repository's own test agrees. This
-    //    is the seat verdict, and the one failure the caller may ask again
+    // 2. The seat verdict, and the one failure the caller may ask again
     //    about. Everything below it runs only on a turn that did the job, so
     //    a second attempt is never spent re-proving the server.
-    const seatFailure = unfixed(directory)
+    //
+    //    Two clauses, because the seat has two ways to lose. It can leave the
+    //    bug in place, which the repository says. Or it can wander until the
+    //    frame budget runs out, which the health dot says in the product's own
+    //    words: `Health.endedReason` renders that end as `stopped: the frame
+    //    budget of N is exhausted`, and a run that stopped on its budget is
+    //    red for a true reason. A dispatch on 2026-09-19 ended exactly there,
+    //    twice repeating itself and once demanding read-only, with the bug
+    //    fixed anyway. Reading the budget first names the budget rather than
+    //    the file when both went wrong.
+    //
+    //    This exempts nothing else from rule 6. The F6 regression this file
+    //    was written against left finished sessions red "waiting for approval"
+    //    and yellow "repeating itself", and neither is the budget reason, so
+    //    both still red on the first attempt.
+    const spent = health.map((part) => part.state.metadata?.reason)
+      .includes(`stopped: the frame budget of ${maxFrames} is exhausted`)
+    const seatFailure = spent
+      ? `the turn ran out of frames: ${
+        health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
+      }`
+      : unfixed(directory)
     if (seatFailure !== undefined) {
       console.info(
-        `live turn: booted in ${booted} ms, idle after ${wallClockMs} ms, attempt ${attempt} of ${seatAttempts}, frames ${frames.length}, health cards ${health.length}, THE SEAT DID NOT FIX THE BUG: ${seatFailure}`
+        `live turn: booted in ${booted} ms, idle after ${wallClockMs} ms, attempt ${attempt} of ${seatAttempts}, frames ${frames.length}, health cards ${health.length}, THE SEAT FAILED THE TASK: ${seatFailure}`
       )
       return seatFailure
     }
