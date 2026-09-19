@@ -459,8 +459,10 @@ export const curated = (classifier: AnyClassifier): Curated => {
   }
   const name = `classify/${classifier.id}`
   const state: Schema.Codec<unknown, unknown> = classifier.state
+    // The cell supplies JSON, but the codec may decode it to a Date or bigint.
+    // Measure the encoded side, which is what the evaluator receives.
+    .pipe(Schema.flip, Schema.check(withinStateBytes), Schema.flip)
     .annotate({ description: stateDescription(classifier.state) })
-    .pipe(Schema.check(withinStateBytes))
   const input: CuratedInput = Schema.Union([
     Schema.Struct({
       states: Schema.Array(state).annotate({ description: "Up to 64 states to judge, one result each" }).check(

@@ -305,6 +305,29 @@ describe("Classify.curated", () => {
     expect(success(await run(strict.run("abc"), layer))).toMatchObject({ answers: { ok: { value: true } } })
   })
 
+  it("bounds the encoded state while allowing non-JSON decoded values", async () => {
+    const transformed = Classify.curated(Classifier.make("test/bigint", {
+      description: "A bigint encoded as a JSON string.",
+      state: Schema.Struct({ count: Schema.BigIntFromString }),
+      questions: { ok: Classifier.boolean({ instructions: "Is it positive?" }) }
+    }))
+    const decode = Schema.decodeUnknownResult(transformed.flow.input)
+    const seen: Array<unknown> = []
+    const layer = scripted((request) => {
+      seen.push(request.state)
+      return { ok: { probability: 1 } }
+    })
+    const single = success(decode({ count: "12" }))
+    const batch = success(decode({ states: [{ count: "12" }, { count: "13" }] }))
+
+    expect(single).toEqual({ count: 12n })
+    expect(success(await run(transformed.run(single), layer))).toMatchObject({ answers: { ok: { value: true } } })
+    const result = success(await run(transformed.run(batch), layer))
+    expect("results" in result && result.results.map((entry) => entry.state)).toEqual([{ count: "12" }, { count: "13" }])
+    expect(seen).toEqual([{ count: "12" }, { count: "12" }, { count: "13" }])
+    expect(messageOf(decode({ count: "1".repeat(Classify.MAX_STATE_BYTES) }))).toContain("at most 32768 bytes")
+  })
+
   it("refuses a classifier whose state declares a states field", () => {
     const clashing = Classifier.make("test/clash", {
       description: "A state that looks like a batch.",
