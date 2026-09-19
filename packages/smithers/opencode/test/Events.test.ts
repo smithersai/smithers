@@ -5,9 +5,11 @@ import { run } from "./Harness.ts"
 
 const options: Events.Options = { directory: "/d", project: "p", heartbeat: "30 millis", replay: 3 }
 
+const dataLines = (frames: ReadonlyArray<string>) =>
+  frames.flatMap((chunk) => chunk.split("\n")).filter((line) => line.startsWith("data: "))
+
 const parse = (frames: ReadonlyArray<string>) =>
-  frames.flatMap((chunk) => chunk.split("\n\n").filter((line) => line.startsWith("data: ")))
-    .map((line) => JSON.parse(line.slice("data: ".length)) as Events.Envelope)
+  dataLines(frames).map((line) => JSON.parse(line.slice("data: ".length)) as Events.Envelope)
 
 describe("Events", () => {
   it("envelopes session events with the directory and project and remembers a bounded replay", async () => {
@@ -89,8 +91,9 @@ describe("Events", () => {
       })
     )
     expect(result.drained).toEqual(["server.connected", "session.idle"])
-    // Opened after the close: the replay, then the end, never a live wait.
-    expect(result.late).toEqual(["server.connected", "session.idle"])
+    // Opened after the close: the greeting, then the end, never a live wait.
+    // Nothing is replayed, because the stream named no id.
+    expect(result.late).toEqual(["server.connected"])
   })
 
   it("bounds each live queue: a stalled consumer gets the newest events, never every one", async () => {
@@ -129,6 +132,56 @@ describe("Events", () => {
     expect(result.slice(-3)).toEqual(["38", "39", "40"])
   })
 
+  it("replays nothing to a stream that named no id, and the gap after one it did", async () => {
+    const result = await run(
+      Effect.gen(function*() {
+        const hub = yield* Events.make({ directory: "/d", project: "p", heartbeat: "1 hour", replay: 8 })
+        const asked = yield* hub.publish({
+          type: "permission.asked",
+          properties: { id: "per_1", sessionID: "s" }
+        })
+        yield* hub.publish({ type: "permission.replied", properties: { requestID: "per_1", sessionID: "s" } })
+        yield* hub.close
+        const fresh = yield* Stream.runCollect(hub.stream())
+        const resumed = yield* Stream.runCollect(hub.stream({ after: asked.payload.id }))
+        return {
+          fresh: parse(fresh).map((envelope) => envelope.payload.type),
+          resumed: parse(resumed).map((envelope) => envelope.payload.type),
+          asked: parse(yield* Stream.runCollect(hub.stream({ after: "evt_gone" })))
+            .map((envelope) => envelope.payload.type),
+          // What is open right now reaches a stream that was not there when
+          // it was asked for, and is stamped with an id of its own.
+          opening: parse(
+            yield* Stream.runCollect(
+              hub.stream({
+                opening: Effect.succeed([{
+                  type: "permission.asked",
+                  properties: { id: "per_open", sessionID: "s" }
+                }])
+              })
+            )
+          )
+        }
+      })
+    )
+    // A fresh tab is not shown a permission card that was answered already.
+    expect(result.fresh).toEqual(["server.connected"])
+    expect(result.resumed).toEqual(["server.connected", "permission.replied"])
+    // A stream that did ask for a replay still gets one, even for an id the
+    // buffer no longer reaches: it asked to be told what it missed.
+    expect(result.asked).toEqual(["server.connected", "permission.asked", "permission.replied"])
+    expect(result.opening.map((envelope) => envelope.payload.type)).toEqual([
+      "server.connected",
+      "permission.asked"
+    ])
+    expect(result.opening[1]).toMatchObject({
+      directory: "/d",
+      project: "p",
+      payload: { type: "permission.asked", properties: { id: "per_open" } }
+    })
+    expect(result.opening[1]!.payload.id.startsWith("evt_")).toBe(true)
+  })
+
   it("frames an envelope as one SSE data line and drops a closed subscriber", async () => {
     expect(Events.frame({ payload: { id: "evt_1", type: "x", properties: {} } })).toBe(
       `data: {"payload":{"id":"evt_1","type":"x","properties":{}}}\n\n`
@@ -138,12 +191,13 @@ describe("Events", () => {
     const bare = await run(
       Effect.gen(function*() {
         const hub = yield* Events.make(options)
+        const anchor = yield* hub.publish({ type: "anchor", properties: { sessionID: "s" } })
         yield* hub.publish({ type: "a", properties: { sessionID: "s" } })
         // As above: wait for a beat rather than a wall clock, so the live "b"
         // is published into a stream that is already listening.
         const beating = yield* Deferred.make<void>()
         const collected = yield* Effect.forkChild(
-          hub.stream({ bare: true }).pipe(
+          hub.stream({ bare: true, after: anchor.payload.id }).pipe(
             Stream.tap((chunk) =>
               chunk.startsWith(Events.heartbeatComment) ? Deferred.succeed(beating, undefined) : Effect.void
             ),
@@ -156,11 +210,7 @@ describe("Events", () => {
         return yield* Fiber.join(collected)
       })
     )
-    const bareEvents = bare.flatMap((chunk) =>
-      chunk.split("\n\n").filter((line) => line.startsWith("data: ")).map((line) =>
-        JSON.parse(line.slice(6)) as Record<string, unknown>
-      )
-    )
+    const bareEvents = dataLines(bare).map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>)
     const bareTypes = bareEvents.map((event) => event["type"])
     expect(bareTypes[0]).toBe("server.connected")
     expect(bareTypes[1]).toBe("a")

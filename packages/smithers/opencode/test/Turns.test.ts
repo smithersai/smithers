@@ -1,3 +1,5 @@
+import * as Capability from "@smthrs/capability/Capability"
+import * as Permission from "@smthrs/capability/Permission"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as AgentEvents from "@smthrs/harness/AgentEvent"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -145,6 +147,121 @@ describe("Turns", () => {
     expect(result.idle).toEqual({})
     expect(result.replayed.map((envelope) => envelope.payload.type)).toContain("permission.replied")
     expect(result.aborted).toBe(false)
+  })
+
+  it("takes down a card a frame opened after the Stop, and asks again for an open card at boot", async () => {
+    const park = new Permission.PermissionRequired({
+      requestId: "per_late_1_deadbeef_0",
+      runId: "msg_late",
+      capability: Capability.make("proc:spawn", "bash"),
+      tier: "irreversible",
+      meta: { flow: "bash", input: { command: "ls -la" }, identity: { frame: 1, cell: "deadbeef", ordinal: 0 } }
+    })
+    /**
+     * A driver whose frame parks a moment after the Stop: the request is
+     * written after the abort has already swept, and its card would outlive
+     * the turn. The engine driver does exactly this when a Stop lands on the
+     * frame that then asks.
+     */
+    const late = Layer.succeed(Driver.Driver, {
+      // The projection is open before the driver is forked, so a body that
+      // has not reported anything yet is still a busy session.
+      start: () => Effect.void,
+      interrupt: (sessionID) =>
+        Effect.gen(function*() {
+          const sink = sinks.get(sessionID)!
+          yield* sink.event(
+            new AgentEvents.PermissionRequired({
+              eventType: "flows.harness.permission-required.v1",
+              request: park
+            })
+          )
+          yield* sink.closed({ _tag: "interrupted" })
+          return true
+        }),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const sinks = new Map<string, Driver.Sink>()
+    const remembering = Layer.effect(
+      Driver.Driver,
+      Effect.map(Driver.Driver, (driver) => ({
+        ...driver,
+        start: (input: Driver.StartInput, sink: Driver.Sink) => {
+          sinks.set(input.sessionID, sink)
+          return driver.start(input, sink)
+        }
+      }))
+    ).pipe(Layer.provide(late))
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session("ses_stopped"))
+        yield* turns.prompt({ sessionID: "ses_stopped", parts: [{ type: "text", text: "run ls" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(turns.status(), (status) => status["ses_stopped"] !== undefined)))
+        )
+        const before = (yield* hub.replay()).length
+        const aborted = yield* turns.abort("ses_stopped")
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(turns.status(), (status) => status["ses_stopped"] === undefined)))
+        )
+        return {
+          aborted,
+          left: yield* store.listPermissions("ses_stopped"),
+          after: (yield* hub.replay()).slice(before).map((envelope) => envelope.payload)
+        }
+      }).pipe(Effect.provide(stack(remembering, "turns-stopped")))
+    )
+    expect(result.aborted).toBe(true)
+    // The card the frame opened after the Stop is asked and then taken down:
+    // a request left pending would keep a card on a session that reads idle.
+    expect(result.after.map((event) => event.type)).toContain("permission.asked")
+    expect(result.after.filter((event) => event.type === "permission.replied")).toMatchObject([{
+      properties: { sessionID: "ses_stopped", requestID: park.requestId, reply: "reject" }
+    }])
+    expect(result.left).toEqual([])
+  })
+
+  it("logs a driver that refuses the answer to a card it asked for", async () => {
+    const park = new Permission.PermissionRequired({
+      requestId: "per_refused_1_feedface_0",
+      runId: "msg_refused",
+      capability: Capability.make("proc:spawn", "bash"),
+      tier: "irreversible",
+      meta: { flow: "bash", input: { command: "ls -la" }, identity: { frame: 1, cell: "feedface", ordinal: 0 } }
+    })
+    const asking = Layer.succeed(Driver.Driver, {
+      start: (_input, sink) =>
+        sink.event(
+          new AgentEvents.PermissionRequired({ eventType: "flows.harness.permission-required.v1", request: park })
+        ),
+      interrupt: () => Effect.succeed(true),
+      permission: () => Effect.fail(new Driver.DriverError({ code: "engine_failed", message: "no engine" })),
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_refused"))
+        yield* turns.prompt({ sessionID: "ses_refused", parts: [{ type: "text", text: "run ls" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_refused"), (list) => list.length === 1)))
+        )
+        const pending = yield* store.listPermissions("ses_refused")
+        // The answer is taken and the row goes down; the driver's refusal is
+        // logged, never thrown at the app.
+        yield* turns.permission({ sessionID: "ses_refused", permissionID: pending[0]!.id, response: "once" })
+        yield* Effect.sleep("50 millis")
+        return { left: yield* store.listPermissions("ses_refused") }
+      }).pipe(Effect.provide(stack(asking, "turns-refused")))
+    )
+    expect(result.left).toEqual([])
   })
 
   it("closes an interrupted turn with an aborted message", async () => {
@@ -525,23 +642,20 @@ describe("Turns", () => {
           always: [],
           tool: { messageID: "m", callID: "c" }
         })
-        yield* turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
-        yield* store.putPermission({
-          id: "per_3",
-          sessionID: "ses_3",
-          permission: "bash",
-          patterns: [],
-          metadata: {},
-          always: [],
-          tool: { messageID: "m", callID: "c" }
-        })
+        // The row is there and no turn of this session is running here, which
+        // is what a second server started over the same directory sees: the
+        // answer is refused rather than taking the row down and handing it to
+        // a driver with nothing to resume.
+        const orphan = yield* Effect.flip(
+          turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
+        )
         refuse = true
-        yield* turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
         yield* turns.prompt({ sessionID: "ses_3", parts: [{ type: "text", text: "go" }] })
         yield* Effect.sleep("50 millis")
-        return { status: yield* turns.status(), aborted: yield* turns.abort("ses_3") }
+        return { orphan, status: yield* turns.status(), aborted: yield* turns.abort("ses_3") }
       }).pipe(Effect.provide(flakyStack))
     )
+    expect(result.orphan).toMatchObject({ code: "unknown_permission" })
     expect(result.status).toEqual({})
     expect(result.aborted).toBe(true)
     expect(Turns.promptText([{ type: "text", text: "a" }, { type: "file" }, { type: "text", text: "b" }])).toBe("a\nb")

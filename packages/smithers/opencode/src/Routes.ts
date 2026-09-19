@@ -319,18 +319,39 @@ export const layer = (
       // `/global/event` carries the `{directory, project, payload}` envelope
       // the app folds; `/event` carries the bare `Event` of the OpenAPI, which
       // is what the SDK's `event.subscribe` and the TUI read.
+      /**
+       * The cards open as a stream connects. A turn parked on a permission
+       * published its ask before this stream existed, and a restart re-drives
+       * the turn without publishing anything, so a client that connects now
+       * would see a busy session with nothing it can act on. The request
+       * keeps its id, so the card it shows is the card the answer route takes.
+       */
+      const openCards = Effect.map(
+        Effect.orElseSucceed(store.listPermissions(), () => []),
+        (pending) =>
+          pending.map((request): Protocol.Emitted => ({
+            type: "permission.asked",
+            properties: { ...request }
+          }))
+      )
+
       const sse = (request: HttpServerRequest.HttpServerRequest, bare = false) =>
-        HttpServerResponse.stream(Stream.encodeText(hub.stream({ after: request.headers["last-event-id"], bare })), {
-          contentType: "text/event-stream",
-          headers: {
-            "cache-control": "no-cache, no-transform",
-            // The socket closes with the stream: a shutdown that ends the
-            // streams is not then held by an idle keep-alive connection.
-            connection: "close",
-            "x-accel-buffering": "no",
-            "x-content-type-options": "nosniff"
+        HttpServerResponse.stream(
+          Stream.encodeText(
+            hub.stream({ after: request.headers["last-event-id"], bare, opening: openCards })
+          ),
+          {
+            contentType: "text/event-stream",
+            headers: {
+              "cache-control": "no-cache, no-transform",
+              // The socket closes with the stream: a shutdown that ends the
+              // streams is not then held by an idle keep-alive connection.
+              connection: "close",
+              "x-accel-buffering": "no",
+              "x-content-type-options": "nosniff"
+            }
           }
-        })
+        )
 
       // Health, in both generations.
       yield* router.add("GET", "/global/health", json({ healthy: true, version: options.version }))

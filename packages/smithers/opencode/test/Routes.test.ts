@@ -339,6 +339,27 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(asked).toMatchObject({ sessionID: session.id, permission: "bash", patterns: ["ls -la"], always: ["ls *"] })
     expect((await get("/permission")) as Array<unknown>).toHaveLength(1)
     expect((await sdk.session.status()).data).toEqual({ [session.id]: { type: "busy" } })
+    // A stream that connects while the turn is parked is told about the card
+    // as it opens: the ask was published before it existed, and a restart
+    // publishes nothing at all, so without this it sees a busy session with
+    // nothing it can act on.
+    const late = await served.handler(new Request("http://test/global/event"))
+    const lateReader = late.body!.getReader()
+    const greeted: Array<{ type: string; properties: Record<string, unknown> }> = []
+    let greeting = ""
+    while (greeted.length < 2) {
+      greeting += new TextDecoder().decode((await lateReader.read()).value)
+      const chunks = greeting.split("\n\n")
+      greeting = chunks.pop() ?? ""
+      for (const chunk of chunks) {
+        if (chunk.startsWith("data: ")) {
+          greeted.push(JSON.parse(chunk.slice(6)).payload as { type: string; properties: Record<string, unknown> })
+        }
+      }
+    }
+    await lateReader.cancel()
+    expect(greeted.map((event) => event.type)).toEqual(["server.connected", "permission.asked"])
+    expect(greeted[1]!.properties["id"]).toBe(asked.id)
     // A second prompt while busy is steered, not started.
     const steered = await sdk.session.promptAsync({
       path: { id: session.id },
@@ -815,6 +836,12 @@ describe("Routes through the OpenCode SDK client", () => {
         expect(response.status).toBe(500)
         expect(await response.json()).toEqual({ name: "UnknownError", data: { message: "disk gone" } })
       }
+      // The stream still opens when the store cannot say what is open: a
+      // client that cannot connect learns nothing at all.
+      const stream = await handler(new Request("http://test/global/event"))
+      expect(stream.status).toBe(200)
+      const first = await stream.body!.getReader().read()
+      expect(new TextDecoder().decode(first.value)).toContain(`"type":"server.connected"`)
       const created = await handler(
         new Request("http://test/session", {
           method: "POST",

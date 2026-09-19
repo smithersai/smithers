@@ -10,8 +10,11 @@
  * carry `{payload}` only.
  *
  * A bounded replay buffer keeps the last events so a stream opened with
- * `Last-Event-ID` after a reconnect gets what it missed. The app reloads
- * history over HTTP on connect, so the buffer only has to cover a reconnect.
+ * `Last-Event-ID` after a reconnect gets what it missed. A stream that names
+ * no id is replayed nothing: the app reloads history over HTTP on connect,
+ * and a replay it did not ask for re-animates finished turns and re-raises
+ * every permission card in the window, which the app shows and can never take
+ * down, because the reply that answered each one is in the same replay.
  *
  * @since 1.0.0
  */
@@ -60,13 +63,27 @@ export interface Service {
   /** The envelopes after the given event id, oldest first; everything remembered when no id is given. */
   readonly replay: (after?: string) => Effect.Effect<Array<Envelope>>
   /**
-   * One SSE body: `server.connected`, the replay after `after`, then live
-   * events and heartbeats until the consumer stops reading or the hub closes.
+   * One SSE body: `server.connected`, the replay after `after` when one is
+   * given and nothing when none is, then whatever `opening` reports as open
+   * right now, then live events and heartbeats until the consumer stops
+   * reading or the hub closes.
    * `bare` frames each event as the payload alone (`{id, type, properties}`),
    * the shape `GET /event` answers; the default is the global envelope.
    */
   readonly stream: (
-    options?: { readonly after?: string | undefined; readonly bare?: boolean | undefined }
+    options?: {
+      readonly after?: string | undefined
+      readonly bare?: boolean | undefined
+      /**
+       * What is open as this stream opens: read when the stream is pulled,
+       * framed after the replay, and never remembered, because it is the
+       * state now and not something that happened. This is how a stream that
+       * connects while a turn is parked learns about the card, which nothing
+       * else would tell it: the ask was published before it connected, and a
+       * restart publishes nothing at all.
+       */
+      readonly opening?: Effect.Effect<ReadonlyArray<Protocol.Emitted>> | undefined
+    }
   ) => Stream.Stream<string>
   /**
    * Ends every open stream and every stream opened afterwards, so the
@@ -104,6 +121,9 @@ export const defaultReplay = 256
  * One SSE frame for an envelope: the envelope itself, or with `bare` its
  * payload alone, the `Event` shape of the 1.18.31 OpenAPI for `GET /event`.
  *
+ * Data only, no `id:` line, which is what 1.18.31 sends: a browser reading
+ * this stream sends no `Last-Event-ID` and asks for no replay.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -133,13 +153,16 @@ export const make = (options: Options): Effect.Effect<Service> =>
     const subscribers = new Set<Queue.Queue<Envelope, Cause.Done>>()
     let closed = false
 
+    /** One event in its envelope, with an id of its own. */
+    const stamp = (event: Protocol.Emitted): Envelope => ({
+      directory: options.directory,
+      project: options.project,
+      payload: { id: Ids.make("event"), type: event.type, properties: event.properties }
+    })
+
     const publish: Service["publish"] = (event) =>
       Effect.sync(() => {
-        const envelope: Envelope = {
-          directory: options.directory,
-          project: options.project,
-          payload: { id: Ids.make("event"), type: event.type, properties: event.properties }
-        }
+        const envelope = stamp(event)
         buffer.push(envelope)
         if (buffer.length > capacity) buffer.splice(0, buffer.length - capacity)
         for (const queue of subscribers) Queue.offerUnsafe(queue, envelope)
@@ -152,6 +175,20 @@ export const make = (options: Options): Effect.Effect<Service> =>
         const index = buffer.findIndex((envelope) => envelope.payload.id === after)
         return index < 0 ? [...buffer] : buffer.slice(index + 1)
       })
+
+    /**
+     * What one stream missed: nothing at all unless it named where it left
+     * off. A stream that asked for no replay is served none. The app reloads
+     * history over HTTP on connect, so a replay it did not ask for tells it
+     * about turns that finished long ago, and re-raises every permission card
+     * in the window: the app shows each one again and can never take it down,
+     * because the `permission.replied` that answered it is in the same replay
+     * or older than it, and clicking it answers 404. A named id is answered
+     * as {@link Service.replay} answers it, whether or not the buffer still
+     * reaches back that far.
+     */
+    const missed = (after: string | undefined): Effect.Effect<Array<Envelope>> =>
+      after === undefined ? Effect.succeed([]) : replay(after)
 
     const stream: Service["stream"] = (streamOptions = {}) => {
       const bare = streamOptions.bare === true
@@ -177,12 +214,17 @@ export const make = (options: Options): Effect.Effect<Service> =>
           heartbeatComment + frame(serverEvent("server.heartbeat"), bare)
         )
       )
-      return Stream.fromEffect(replay(streamOptions.after)).pipe(
-        Stream.flatMap((missed) =>
+      const greeting = Effect.zipWith(
+        missed(streamOptions.after),
+        streamOptions.opening ?? Effect.succeed([]),
+        (missed, opening) => [...missed, ...opening.map(stamp)]
+      )
+      return Stream.fromEffect(greeting).pipe(
+        Stream.flatMap((told) =>
           Stream.concat(
             Stream.fromIterable([
               frame(serverEvent("server.connected"), bare),
-              ...missed.map((envelope) => frame(envelope, bare))
+              ...told.map((envelope) => frame(envelope, bare))
             ]),
             Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare)), beats, { haltStrategy: "left" })
           )

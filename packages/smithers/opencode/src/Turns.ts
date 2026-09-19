@@ -285,6 +285,20 @@ export const make = (
       )
 
     /**
+     * The `reject` for every card the person never answered, which is also
+     * what takes each one out of the store. A card is moot once the turn is
+     * over, and the app takes a card down on `permission.replied` alone, so a
+     * request left pending at the close keeps a card on screen for a session
+     * that reads idle and answers 404 when it is clicked.
+     */
+    const mootCards = (sessionID: string): Effect.Effect<Array<Protocol.Emitted>> =>
+      Effect.map(Effect.orDie(store.listPermissions(sessionID)), (pending) =>
+        pending.map((request) => ({
+          type: "permission.replied",
+          properties: { sessionID, requestID: request.id, reply: "reject" }
+        })))
+
+    /**
      * The projection runs on a fiber of its own, fed in order by a queue.
      * The driver's sink runs inside the engine's frame, which holds the
      * write transaction the store needs, so a write from there would either
@@ -306,7 +320,15 @@ export const make = (
         } else if (state !== undefined && job._tag === "event") {
           yield* apply(job.sessionID, Projection.fold(ctx, state, job.event))
         } else if (state !== undefined && job._tag === "close") {
-          yield* apply(job.sessionID, Projection.close(ctx, state, job.closing))
+          // The moot cards go down with the close, not only at the abort,
+          // because a frame that parks a moment after the Stop writes its
+          // request after the abort has already swept, and that card would
+          // outlive the turn on a session the app reads as idle.
+          const closed = Projection.close(ctx, state, job.closing)
+          yield* apply(job.sessionID, {
+            ...closed,
+            events: [...closed.events, ...yield* mootCards(job.sessionID)]
+          })
         } else if (job._tag === "health") {
           yield* record(job, ctx.now())
           if (state !== undefined && state.assistantMessageID === job.messageID) {
@@ -491,23 +513,11 @@ export const make = (
      */
     const abort: Service["abort"] = (sessionID) =>
       Effect.gen(function*() {
-        // A card the person never answered is moot once the turn is over, and
-        // the app takes a card down on `permission.replied` alone: every
-        // pending request is answered `reject` on the stream, which is also
-        // what removes it from the store. A parked turn has no body running,
-        // so without this the app kept the card and read the session as busy
-        // after the server had gone idle.
-        const pending = yield* Effect.orDie(store.listPermissions(sessionID))
-        if (pending.length > 0) {
-          yield* commit({
-            _tag: "emit",
-            sessionID,
-            events: pending.map((request) => ({
-              type: "permission.replied",
-              properties: { sessionID, requestID: request.id, reply: "reject" }
-            }))
-          })
-        }
+        // The card goes down at once, so the app does not keep a question the
+        // person has already answered with Stop. The close sweeps again, for
+        // the request a frame that parks just after the Stop writes.
+        const moot = yield* mootCards(sessionID)
+        if (moot.length > 0) yield* commit({ _tag: "emit", sessionID, events: moot })
         if (yield* driver.interrupt(sessionID)) return true
         if (!states.has(sessionID)) return false
         yield* commit({ _tag: "close", sessionID, closing: { _tag: "interrupted" } })
@@ -521,6 +531,19 @@ export const make = (
           return yield* new TurnsError({
             code: "unknown_permission",
             message: `Permission ${input.permissionID} is not pending`
+          })
+        }
+        // The row says a card is open; this process's own turn is what can act
+        // on the answer. A second server started over the same directory reads
+        // the same rows and would take the row down, publish the reply on its
+        // own hub, and hand the answer to a driver with no turn to resume,
+        // leaving the parked turn on the other server busy for good. A row
+        // without an open turn here is not this server's to answer.
+        if (!states.has(input.sessionID)) {
+          return yield* new TurnsError({
+            code: "unknown_permission",
+            message:
+              `Permission ${input.permissionID} belongs to no turn this server is running; another server may be serving this directory`
           })
         }
         yield* commit({
@@ -590,6 +613,10 @@ export const make = (
         return sinkFor(input.sessionID)
       })
 
+    // A turn this boot re-opened may be parked on a permission. Its card is
+    // not re-published here: nothing is listening yet, and the buffer is not
+    // what a fresh stream reads. `Routes` tells each stream what is open as
+    // it connects, which reaches the client that has to answer.
     yield* driver.resumeOnBoot(reopen).pipe(
       Effect.catchCause((cause) => Effect.logError({ message: "Open turns could not be resumed", cause }))
     )

@@ -95,6 +95,38 @@
   title with two dots in it (`🔴 ⚪⚪ New`) and `Health.colorOf` read a color
   out of the person's words that the server never decided.
 
+- A stream that names no `Last-Event-ID` is replayed nothing. Every fresh
+  `/global/event` connection was served the whole 256-event buffer, and the
+  server sends no `id:` line, so no browser sends that header and every
+  reconnect took the whole buffer. A second tab opened after four turns
+  received four `permission.asked` for permissions already answered, showed
+  four cards, and could take none of them down, because each card's
+  `permission.replied` is in the same replay or older than it; clicking one
+  answered 404. A stream that does name an id still gets the replay after it.
+
+- A stream is told what is open as it connects: `Events.stream` takes an
+  `opening` effect, and `Routes` fills it with the permission requests still
+  pending. A turn parked on a permission published its ask before that stream
+  existed, and a server restarted while a turn was parked re-drives the turn
+  and publishes nothing, so the app reconnected to a session that read busy
+  with no card it could act on and no way back but a page reload. Live proof:
+  a turn parked, `SIGTERM`, restart, the reconnecting stream is greeted with
+  the card, the answer resumes the turn and it finishes.
+
+- A permission answer is refused when no turn of that session is running in
+  this process. Two servers started over one directory share the store, so the
+  second one found the first one's pending request, answered `200 true`, took
+  the row down, published the reply on its own hub, and handed the answer to a
+  driver with no turn to resume: the parked turn on the first server stayed
+  busy for good and its own answer then 404ed. The answer is now refused with
+  the reason, the row survives, and the server that owns the turn can still
+  take it.
+
+- A card the person never answered is taken down when the turn closes, not
+  only when the abort sweeps. A frame that parks a moment after Stop writes
+  its request after the sweep has run, and that card outlived the turn on a
+  session the app reads as idle.
+
 - `GET /session/:id/message` answers 400 when `before` is not a message id of
   that session. Such a cursor sorted below every row, so the answer was an
   empty page and the app read a broken cursor as the end of the history.
