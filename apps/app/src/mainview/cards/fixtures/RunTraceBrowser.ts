@@ -22,12 +22,12 @@ const events = scenario === "cluster" ? [
   stamp(7, "agent.unresolved-demanded", 1205),
   stamp(8, "agent.sufficiency-observed", 1206),
   stamp(9, "run.completed", 10000)
-] : scenario === "labels" ? [
+] : scenario === "labels" || scenario === "live" ? [
   stamp(1, "agent.turn-opened", 1000),
   stamp(2, "agent.read-only-demand-issued", 1000),
   stamp(3, "agent.repeat-demanded", 3700, { frames: 4, cap: 4 }),
   stamp(4, "agent.sufficiency-observed", 4600),
-  stamp(5, "run.completed", 10000)
+  ...(scenario === "live" ? [] : [stamp(5, "run.completed", 10000)])
 ] : [
   ...[0, 1, 2, 3].flatMap((index) => [
     stamp(1 + index * 4, "agent.turn-opened", 1000 + index * 2000),
@@ -43,7 +43,7 @@ const cardId = "flow-run-strip-browser"
 if (!store.collections.cards.has(cardId)) {
   const card: Extract<Card, { kind: "run-trace" }> = {
     id: cardId, kind: "run-trace", title: "Trace", status: "active", createdAt: 0, ordinal: 0,
-    payload: { repo: "fixture/strip", runId: "strip-browser", workflow: "probe", phase: "completed", steps: [], result: null, lastSeq: events.length, events, traceView: "timeline", liveTail: true }
+    payload: { repo: "fixture/strip", runId: "strip-browser", workflow: "probe", phase: scenario === "live" ? "running" : "completed", steps: [], result: null, lastSeq: events.length, events, traceView: "timeline", liveTail: true }
   }
   await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 }
@@ -56,14 +56,14 @@ const root = createRoot(document.getElementById("fixture")!)
 const commands: Array<{ name: string; args?: string }> = []
 declare global {
   interface Window {
-    runTraceBrowser: { cursor: number | "latest"; selection: string; commands: typeof commands }
+    runTraceBrowser: { cursor: number | "latest"; selection: string; commands: typeof commands; appendMilestone: () => Promise<void> }
   }
 }
 const render = () => {
   const card = store.collections.cards.get(cardId)
   if (card?.kind !== "run-trace") throw new Error("The fixture run card is absent")
   root.render(createElement(RunTraceBody, { card, onRunCommand: run }))
-  window.runTraceBrowser = { cursor: card.payload.cursorSeq ?? "latest", selection: card.payload.selection ?? "", commands }
+  window.runTraceBrowser = { cursor: card.payload.cursorSeq ?? "latest", selection: card.payload.selection ?? "", commands, appendMilestone }
 }
 const run = (name: FlowName, args?: string) => {
   commands.push({ name, args })
@@ -72,5 +72,14 @@ const run = (name: FlowName, args?: string) => {
     if (result.status === "failed") throw new Error(result.error)
     render()
   })
+}
+const appendMilestone = async () => {
+  const card = store.collections.cards.get(cardId)
+  if (card?.kind !== "run-trace") throw new Error("The fixture run card is absent")
+  const next = (card.payload.events ?? []).length + 1
+  await store.dispatch({ type: "card.updated", actor: "system", id: cardId, patch: { payload: {
+    ...card.payload, events: [...(card.payload.events ?? []), stamp(next, "agent.repeat-demanded", 3700, { frames: 4, cap: 4 })], lastSeq: next
+  } } }).isPersisted.promise
+  render()
 }
 render()

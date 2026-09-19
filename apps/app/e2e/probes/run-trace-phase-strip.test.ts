@@ -97,6 +97,25 @@ test("a cluster discloses every milestone to the keyboard and its last member se
   } finally { await page.close() }
 }, 30000)
 
+test("new journal milestones are measured in an already mounted strip", async () => {
+  const page = await open("live")
+  try {
+    await page.locator("#fixture").evaluate((element) => { element.style.width = "360px" })
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    expect(await page.locator(".run-phase-pin-label").count()).toBe(3)
+    await page.evaluate(() => window.runTraceBrowser.appendMilestone())
+    await page.waitForFunction(() => document.querySelectorAll(".run-phase-pin-label").length === 4)
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    const intersections = await page.locator(".run-phase-pin-label").evaluateAll((labels) => {
+      const boxes = labels.map((label) => label.getBoundingClientRect())
+      return boxes.flatMap((box, index) => boxes.slice(index + 1).filter((other) =>
+        Math.min(box.right, other.right) > Math.max(box.left, other.left) + 0.1 &&
+        Math.min(box.bottom, other.bottom) > Math.max(box.top, other.top) + 0.1))
+    })
+    expect(intersections).toEqual([])
+  } finally { await page.close() }
+}, 30000)
+
 test("every keyboard stop caps the recorded log and all position keys preserve their direction", async () => {
   const page = await open("scrub")
   try {

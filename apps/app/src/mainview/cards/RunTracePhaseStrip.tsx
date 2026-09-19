@@ -144,7 +144,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
   }
   return (
     <section className="run-phases" aria-label="Phases">
-      {pins.length > 0 ? <div className="run-phase-pins" ref={layoutPins}>
+      {pins.length > 0 ? <div className="run-phase-pins" ref={(element) => layoutPins(element)}>
         {pins.map(({ milestone, left, row, folded }) => {
           const moments = [milestone, ...folded]
           const tone = moments.reduce((loudest, one) => TONE_RANK[one.tone] > TONE_RANK[loudest] ? one.tone : loudest, milestone.tone)
