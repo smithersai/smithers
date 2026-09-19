@@ -7,7 +7,9 @@
  * The allowed origins are the OpenCode app hosts and any loopback page (a
  * local build of the app), plus what `--cors` adds. The preflight answer
  * carries what OpenCode 1.18.31 answers: the origin, the six methods, the
- * request headers, and a one-day max age.
+ * request headers, and a one-day max age. It varies on both the origin and
+ * the requested headers, because it echoes both back: a preflight cached
+ * against one of them must not be served to a request naming the other.
  *
  * @since 1.0.0
  */
@@ -34,6 +36,18 @@ export const defaultOrigins: ReadonlyArray<string> = [
  * @since 1.0.0
  */
 export const allowedMethods = "GET, HEAD, PUT, PATCH, POST, DELETE"
+
+/**
+ * What a preflight answer varies on: the origin and the requested headers,
+ * both of which it echoes back. Naming only the origin lets a shared cache
+ * serve a preflight cached for one `Access-Control-Request-Headers` value
+ * against a request that named a different one, which is the bug OpenCode's
+ * own `corsVaryFixLayer` exists to repair.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const preflightVary = "Origin, Access-Control-Request-Headers"
 
 const patternToRegExp = (pattern: string): RegExp =>
   new RegExp(`^${pattern.split("*").map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^/:]*")}$`)
@@ -107,6 +121,7 @@ export const layer = (extras: ReadonlyArray<string> = []): Layer.Layer<never, ne
         return HttpServerResponse.empty({ status: 204 }).pipe(
           HttpServerResponse.setHeaders({
             ...headers,
+            vary: preflightVary,
             "access-control-allow-methods": allowedMethods,
             "access-control-allow-headers": request.headers["access-control-request-headers"] ??
               "authorization, content-type",

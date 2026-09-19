@@ -363,6 +363,13 @@ export const layer = (
       yield* router.add("GET", "/agent", json([agent(options.agent, options.seat)]))
       yield* router.add("GET", "/command", json([]))
       yield* router.add("GET", "/lsp", json([]))
+      // The app's own route mock (`packages/app/e2e/utils/mock-server.ts` in
+      // OpenCode main) answers `/skill` and `/formatter` empty and
+      // `/provider/auth` as an empty object, beside the four above; the app
+      // asks for all seven on every boot.
+      yield* router.add("GET", "/skill", json([]))
+      yield* router.add("GET", "/formatter", json([]))
+      yield* router.add("GET", "/provider/auth", json({}))
       yield* router.add("GET", "/mcp", json({}))
       yield* router.add("GET", "/experimental/resource", json({}))
       yield* router.add("GET", "/question", json([]))
@@ -547,21 +554,32 @@ export const layer = (
               const limit = Number(params.get("limit") ?? "0")
               const before = params.get("before") ?? undefined
               const page = Number.isFinite(limit) && limit > 0 ? limit : undefined
-              return Effect.map(
-                store.listMessages(id, { limit: page === undefined ? Number.MAX_SAFE_INTEGER : page + 1, before }),
-                (messages) => {
-                  if (page === undefined || messages.length <= page) return json(messages)
-                  const items = messages.slice(1)
-                  const cursor = items[0]!.info.id
-                  const next = new URL(request.url, "http://localhost")
-                  next.searchParams.set("limit", String(page))
-                  next.searchParams.set("before", cursor)
-                  return json(items).pipe(HttpServerResponse.setHeaders({
-                    "access-control-expose-headers": "Link, X-Next-Cursor",
-                    link: `<${next.pathname}${next.search}>; rel="next"`,
-                    "x-next-cursor": cursor
-                  }))
-                }
+              return Effect.flatMap(
+                // A cursor is a message id of this session. One that is not
+                // sorts below every row, so the page would read as an empty
+                // history and the app would stop scrolling instead of
+                // reporting a broken cursor. 1.18.31 answers 400.
+                before === undefined ? Effect.succeed(true) : Effect.map(
+                  store.getMessage(before),
+                  (message) => Option.isSome(message) && message.value.sessionID === id
+                ),
+                (known) =>
+                  !known ? Effect.succeed(badRequest(`Invalid cursor ${before}`)) : Effect.map(
+                    store.listMessages(id, { limit: page === undefined ? Number.MAX_SAFE_INTEGER : page + 1, before }),
+                    (messages) => {
+                      if (page === undefined || messages.length <= page) return json(messages)
+                      const items = messages.slice(1)
+                      const cursor = items[0]!.info.id
+                      const next = new URL(request.url, "http://localhost")
+                      next.searchParams.set("limit", String(page))
+                      next.searchParams.set("before", cursor)
+                      return json(items).pipe(HttpServerResponse.setHeaders({
+                        "access-control-expose-headers": "Link, X-Next-Cursor",
+                        link: `<${next.pathname}${next.search}>; rel="next"`,
+                        "x-next-cursor": cursor
+                      }))
+                    }
+                  )
               )
             }))
       )

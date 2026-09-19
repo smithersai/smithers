@@ -4,6 +4,42 @@
 
 ### Added
 
+- `/skill`, `/formatter`, and `/provider/auth`, the three bootstrap routes the
+  hosted app asks for on every boot and this server did not mount. The app's
+  own route mock (`packages/app/e2e/utils/mock-server.ts` in OpenCode main)
+  answers all seven of that group; four of them were mounted here and three
+  answered a 404 the app retried.
+
+- `Cors.preflightVary`: a preflight answer now varies on
+  `Access-Control-Request-Headers` as well as `Origin`. The answer echoes both
+  back, so naming only the origin let a shared cache serve a preflight cached
+  for one requested header set against a request that named a different one.
+  This is the defect OpenCode's own `corsVaryFixLayer` exists to repair.
+
+- Two suites of assertions ported from OpenCode's own tests, each case keeping
+  its upstream file and name so its provenance is readable:
+  `test/AppContract.test.ts` from the hosted app's route mock, which is the
+  minimum contract a server must answer for that app, and
+  `test/UpstreamServerParity.test.ts` from `packages/opencode/test/server/**`.
+  Shapes the 1.18.31 OpenAPI declares are asserted against the declaration
+  (`test/OpenApi.ts` over `test/fixtures/opencode-1.18.31.schemas.json`)
+  rather than against a hand-written literal.
+
+- `test/LiveBugFix.test.ts`: the live end-to-end proof. It spawns the real
+  verb over a real git repository with a planted one-character bug, on the
+  real seat with a real Jev key, drives one prompt the way the hosted app
+  does, and asserts the turn finished `stop`, the bug is fixed on disk, the
+  repository's own test passes, a classify call answered with probabilities,
+  a health decision carries a color, and nothing went `completion_unjudged`.
+  It skips with a message naming both keys when either is absent.
+
+### Fixed
+
+- `GET /session/:id/message` answers 400 when `before` is not a message id of
+  that session. Such a cursor sorted below every row, so the answer was an
+  empty page and the app read a broken cursor as the end of the history.
+  1.18.31 answers 400, and so does the app's own route mock.
+
 - A bounded retry over the evaluator this server binds
   (`Health.evaluatorRetry`, `Health.retryable`, `Health.retrying`,
   `Health.retryingLayer`): three requests, 250 ms apart, 2500 ms over each,

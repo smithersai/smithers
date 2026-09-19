@@ -45,7 +45,8 @@ also importable from `@smthrs/opencode/<Module>`.
 
 Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 `/path`, `/project`, `/project/current`, `PATCH /project/:id`, `/provider`,
-`/agent`, `/command`, `/lsp`, `/mcp`, `/experimental/resource`, `/question`,
+`/agent`, `/command`, `/lsp`, `/skill`, `/formatter`, `/provider/auth`,
+`/mcp`, `/experimental/resource`, `/question`,
 `/permission`, `/vcs`, `/vcs/diff`, `/vcs/status`, `/find/file`, `/file`,
 `/file/content`, `/api/reference`, `/session/status`, `/api/session`,
 `GET|POST /session`, `GET|PATCH|DELETE /session/:id`, `/session/:id/message`,
@@ -54,6 +55,12 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 `POST /session/:id/abort`, `POST /session/:id/permissions/:permissionID`,
 `/global/event` and `/event`. Any other route answers the JSON 404
 `Cors.routeNotFound`, with the allow headers when the origin is allowed.
+
+`GET /session/:id/message` pages on `limit` and `before`. A page that leaves
+older messages behind names the oldest id on it in `X-Next-Cursor` and a
+relative `Link` with `rel="next"`, both exposed to the browser. A `before`
+that is not a message id of that session is a 400, not an empty page, so a
+broken cursor is reported rather than read as the end of the history.
 
 ## `Events`
 
@@ -212,13 +219,14 @@ Routes served: `/global/health`, `/api/health`, `/global/config`, `/config`,
 
 ## `Cors` and `Auth`
 
-| Export                 | Meaning                                                                                        |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                           |
-| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.           |
-| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.  |
-| `Auth.Credentials`     | `{ username, password }`.                                                                      |
-| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                               |
-| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                            |
-| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights. |
+| Export                 | Meaning                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                               |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                    |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.               |
+| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both. |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.      |
+| `Auth.Credentials`     | `{ username, password }`.                                                                          |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                   |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.     |
