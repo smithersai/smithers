@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
+import * as Disclosure from "../src/Disclosure.ts"
 
 describe("inputDocument", () => {
   it("returns the inline document without interpreting or replacing it", () => {
@@ -428,5 +429,35 @@ describe("declarationDigest", () => {
     expect(Descriptor.declarationDigest(base)).toBe(
       "cc7a8bd540a0be9e239d8dcc70c113b841b44079df80ce9ff118f7c9bf6a5bae"
     )
+  })
+
+  it.each(["reads", "writes", "checks", "tests", "other"] as const)(
+    "round-trips %s presentation without changing execution, declaration or prompt identity",
+    (activity) => {
+      const presentation = {
+        verb: { pending: "checking", success: "checked", failure: "failed to check" },
+        subject: "selection" as const,
+        result: "tests" as const
+      }
+      const encoded = { ...Schema.encodeSync(Descriptor.FlowDescriptor)(base), activity, presentation }
+      const decoded = Schema.decodeUnknownSync(Descriptor.FlowDescriptor)(encoded)
+      expect(decoded).toMatchObject({ activity, presentation })
+      expect(Schema.encodeSync(Descriptor.FlowDescriptor)(decoded)).toEqual(encoded)
+      expect(Descriptor.declarationDigest(decoded)).toBe(Descriptor.declarationDigest(base))
+      expect(Descriptor.executionDigest(decoded)).toBe(Descriptor.executionDigest(base))
+      expect(Disclosure.toXml([decoded])).toBe(Disclosure.toXml([base]))
+      expect(Disclosure.toEntries([decoded])).toEqual(Disclosure.toEntries([base]))
+    }
+  )
+
+  it.each([
+    { activity: "researching" },
+    { presentation: { verb: "wrote", subject: "path", result: "write" } },
+    { presentation: { verb: { pending: "a", success: "b", failure: "c" }, subject: "invented", result: "write" } },
+    { presentation: { verb: { pending: "a", success: "b", failure: "c" }, subject: "path", result: "diff" } }
+  ])("rejects unsupported presentation metadata %j", (metadata) => {
+    expect(Schema.decodeUnknownOption(Descriptor.FlowDescriptor)({
+      ...Schema.encodeSync(Descriptor.FlowDescriptor)(base), ...metadata
+    })).toEqual(Option.none())
   })
 })

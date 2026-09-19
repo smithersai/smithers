@@ -457,6 +457,48 @@ export type FlowBudget = typeof FlowBudget.Type
 export const budgetUnbounded: FlowBudget = Object.freeze({})
 
 /**
+ * A flow's declared activity, independent of its effect envelope or a plan's
+ * required coverage. Absence means unknown; `other` explicitly claims none
+ * of the four named activities.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const FlowActivity = Schema.Literals(["reads", "writes", "checks", "tests", "other"])
+
+/**
+ * A flow's declared activity.
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type FlowActivity = typeof FlowActivity.Type
+
+/**
+ * Serializable call presentation. Verbs describe the recorded settlement;
+ * subject and result select known input and output shapes. Result formats
+ * read measured fields only, never infer counts or diffs from input. An
+ * unsupported result stays available as raw output in the call details.
+ *
+ * These display hints grant no authority and are excluded from declaration,
+ * execution and model-prompt identities.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const CallPresentation = Schema.Struct({
+  verb: Schema.Struct({ pending: Schema.String, success: Schema.String, failure: Schema.String }),
+  subject: Schema.Literals(["path", "command", "patch", "selection", "pattern", "none"]),
+  result: Schema.Literals(["text", "read", "write", "edit", "patch", "tests", "command", "matches", "paths", "entries", "none"])
+})
+
+/**
+ * Serializable call presentation.
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type CallPresentation = typeof CallPresentation.Type
+
+/**
  * The discovered metadata for one flow, excluding its unloaded body content.
  *
  * `budget` is absent for a flow that declares none, and {@link budgetOf} is how
@@ -479,6 +521,8 @@ export class FlowDescriptor extends Schema.Class<FlowDescriptor>("flows/registry
   placement: Schema.Option(Placement),
   modelInvocable: Schema.Boolean,
   budget: Schema.optional(FlowBudget),
+  activity: Schema.optional(FlowActivity),
+  presentation: Schema.optional(CallPresentation),
   path: Schema.String,
   frontmatter: Schema.Record(Schema.String, Schema.Json),
   provenance: Provenance
@@ -489,7 +533,7 @@ const executionDigests = new WeakMap<FlowDescriptor, string>()
 /**
  * The executable identity a host binds into a reviewed plan.
  *
- * Includes the complete source digest and all discovered metadata, so changing
+ * Includes the complete source digest and all executable metadata, so changing
  * the model, parameters, body location, or authority cannot reuse an approval.
  * A descriptor without measured source bytes has no executable identity; it
  * may still be displayed, but a prompt executor must refuse to run it.
@@ -508,7 +552,8 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
   if (descriptor.body.contentDigest === undefined) return undefined
   const memoized = executionDigests.get(descriptor)
   if (memoized !== undefined) return memoized
-  const digest = Digest.digest(Digest.canonical(Schema.encodeSync(FlowDescriptor)(descriptor)))
+  const { activity: _activity, presentation: _presentation, ...executable } = Schema.encodeSync(FlowDescriptor)(descriptor)
+  const digest = Digest.digest(Digest.canonical(executable))
   executionDigests.set(descriptor, digest)
   return digest
 }
@@ -522,9 +567,10 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
  * is one number everywhere and adding a descriptor field is one edit here
  * rather than a field two packages must each remember.
  *
- * Every top-level field is material. Within `provenance`, the only deliberate
- * exclusion is `pack`: it describes where discovery found the declaration, not
- * what the call depends on.
+ * Display-only `activity` and `presentation` are excluded, so enriching a
+ * descriptor cannot invalidate call replay or a cached prompt. Within
+ * `provenance`, `pack` is excluded: it describes where discovery found the
+ * declaration, not what the call depends on.
  *
  * `capabilities` is sorted because a set is what it means; every other array is
  * hashed in declaration order, because order is part of what was declared.
