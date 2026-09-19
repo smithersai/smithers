@@ -280,7 +280,13 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   const refreshed = (id: string) => { const latest = get(id); if (latest) scheduleRefresh(latest) }
   const upsert = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor) =>
     persist(card, actor).then(() => refreshed(card.id))
-  /** A sentence the person reads where they are still looking, not only on a toast that leaves. */
+  /*
+   * A sentence the person reads where they are still looking, not only on a
+   * toast that leaves. `spoken` is the door saying it said this ({@link
+   * Message.spoken}): the surfaces that would otherwise repeat the sentence —
+   * the form card, the command failure path — recognize this line as the one
+   * this act already produced, and stay quiet instead of saying it twice.
+   */
   const speak = (sentence: string): string => {
     ctx.store.dispatch({ type: "message.appended", actor: "system", text: sentence, spoken: true })
     return sentence
