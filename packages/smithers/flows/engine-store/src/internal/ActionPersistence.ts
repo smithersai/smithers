@@ -43,6 +43,7 @@ import * as HostReflection from "./HostReflection.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as ProvenanceSlot from "./ProvenanceSlot.ts"
 import * as SandboxedExecution from "./SandboxedExecution.ts"
+import * as StepFacts from "./StepFacts.ts"
 
 /**
  * The boundary declaration an action may carry alongside its input.
@@ -797,6 +798,10 @@ export const make = (deps: Dependencies) => {
           Effect.catch((error) => error.code === "fence_lost" ? Effect.interrupt : Effect.fail(error))
         )
       const callFacts = CallFacts.make(input.action, deps.runId)
+      const stepFacts = StepFacts.make(input.action, deps.runId)
+      const emitStepSettled = (outcome: unknown) =>
+        Effect.flatMap(stepFacts.settled(outcome), (record) =>
+          record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(record)))
       const emitCallInvoked = Effect.flatMap(callFacts.invoked, (record) =>
         record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(record)))
       const emitCallSettled = (outcome: unknown) =>
@@ -839,6 +844,15 @@ export const make = (deps: Dependencies) => {
           const finished = yield* attempts.finish(row, deps.owner)
           if (finished._tag !== "Finished") {
             return false
+          }
+          // The checkpoint fact precedes its completion boundary so a rewind
+          // retaining that completion also retains the observation it owns.
+          if (row.state === "succeeded" && stepFacts.annotated) {
+            const committed = yield* attempts.get(attemptId)
+            if (Option.isNone(committed)) {
+              return yield* Effect.die(new Error("Finished checkpoint outcome disappeared"))
+            }
+            yield* emitStepSettled(committed.value.outcome)
           }
           yield* Effect.forEach(records, (record) =>
             emitLifecycle(record), { discard: true })
@@ -1074,7 +1088,8 @@ export const make = (deps: Dependencies) => {
                     action: "conflict_first_writer",
                     recordedRunId: Option.getOrNull(Option.map(recorded, (value) =>
                       value.runId)),
-                    recordedEventSeq: Option.getOrNull(Option.map(recorded, (value) => value.eventSeq))
+                    recordedEventSeq: Option.getOrNull(Option.map(recorded, (value) =>
+                      value.eventSeq))
                   }
                 )
               )
@@ -1275,7 +1290,9 @@ export const make = (deps: Dependencies) => {
               return yield* emitLifecycle(decision(measured)).pipe(
                 Effect.as(measured),
                 Effect.catch((error) => {
-                  if (error.code !== "idempotency_conflict") return Effect.fail(error)
+                  if (error.code !== "idempotency_conflict") {
+                    return Effect.fail(error)
+                  }
                   const conflict = new Journal.JournalError({
                     code: "idempotency_conflict",
                     message:
@@ -1769,6 +1786,9 @@ export const make = (deps: Dependencies) => {
                   })
                 )
               }
+              // Replays publish the saved first observation, never a newly
+              // computed timestamp or the current history generation.
+              yield* emitStepSettled(row.outcome)
               yield* emitConverging(
                 JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "succeeded" })
               )
@@ -2209,7 +2229,8 @@ export const make = (deps: Dependencies) => {
                 )
                 return patched._tag === "Patched"
               })),
-              (recorded) => recorded ? Effect.void : Effect.interrupt
+              (recorded) =>
+                recorded ? Effect.void : Effect.interrupt
             )
           const dispatch = effect === undefined
             ? deps.execute(input)

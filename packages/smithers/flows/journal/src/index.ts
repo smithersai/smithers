@@ -44,6 +44,11 @@ export * as ExecutionFact from "./ExecutionFact.ts"
 export * as CallFact from "./CallFact.ts"
 
 /**
+ * @since 1.0.0
+ */
+export * as StepFact from "./StepFact.ts"
+
+/**
  * @category services
  * @since 0.1.0
  */
