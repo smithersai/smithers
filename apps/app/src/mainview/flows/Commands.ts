@@ -70,7 +70,22 @@ export type CommandOutcome =
     readonly reason: string
     readonly action: "app.download.prompt" | null
   }
-  | { readonly status: "failed"; readonly error: string; readonly persistenceFailed?: true; readonly writeRefused?: true }
+  | {
+    readonly status: "failed"
+    readonly error: string
+    readonly persistenceFailed?: true
+    /** This browser would not keep the write, so the loss is stated rather than swallowed. */
+    readonly writeRefused?: true
+    /**
+     * A refusal the APP decided, carried as what it is rather than as prose
+     * the surfaces would have to read back. `error` is always its sentence
+     * (`refusalSentence`), so a surface with nothing to add renders it like
+     * any other failure and one that answers a refusal differently — the
+     * transcript, for a misunderstanding the person has to see after a
+     * notification would have gone — matches on the kind exhaustively.
+     */
+    readonly refusal?: CommandRefusal
+  }
   /**
    * THE FORM LAW (apps/app/AGENTS.md): the invocation lacked required input,
    * so nothing ran and the flow's form card is rendered instead — prefilled
@@ -78,6 +93,34 @@ export type CommandOutcome =
    * doors reach this; a button always carries its args.
    */
   | { readonly status: "form"; readonly flow: string; readonly cardId: string; readonly fields: ReadonlyArray<string> }
+
+/**
+ * A refusal the app itself decided about a typed line, before any flow ran.
+ *
+ * It carries the door and the thing refused, never a rendered sentence: the
+ * fault is the PERSON'S INPUT — nothing failed, nothing is retryable, and the
+ * way on is to type it differently — which is a different thing from a seam
+ * that refused, and the surfaces have to be able to tell them apart without
+ * reading English.
+ */
+export type CommandRefusal = {
+  /** A `--flag` the door never declared. */
+  readonly kind: "unknown-flag"
+  readonly flow: string
+  readonly flag: string
+}
+
+/**
+ * The one sentence each refusal gets. Exhaustive over the union, so a refusal
+ * added without copy is a compile error rather than a blank line in front of
+ * a person.
+ */
+export const refusalSentence = (refusal: CommandRefusal): string => {
+  switch (refusal.kind) {
+    case "unknown-flag":
+      return `/${refusal.flow} takes no --${refusal.flag} — nothing ran. Send /${refusal.flow} without it.`
+  }
+}
 
 /**
  * The door classes an exact miss resolves to. `cloud.session` refines
@@ -517,7 +560,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * door to the very option that was refused.
      */
     const stray = named === undefined ? unknownFlag(args, target.metadata.args) : undefined
-    if (stray !== undefined) return { status: "failed", error: `${nameOf(target)} takes no --${stray}` }
+    if (stray !== undefined) {
+      const refusal: CommandRefusal = { kind: "unknown-flag", flow: nameOf(target), flag: stray }
+      return { status: "failed", error: refusalSentence(refusal), refusal }
+    }
     // Parse once before prerequisites: an explicit public repository is a
     // read source even when the current URL could not be opened.
     const parsed: Parsed = named === undefined

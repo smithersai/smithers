@@ -34,6 +34,10 @@ const signedInStore = async (): Promise<AppStore> => {
 const failedToasts = (store: AppStore) =>
   [...store.collections.toasts.values()].filter((toast) => toast.status === "failed")
 
+/** What the person can still read after the notifications have gone. */
+const transcript = (store: AppStore) =>
+  [...store.collections.messages.values()].map((message) => message.text).join("\n")
+
 describe("a flow typed into the composer states its refusal", () => {
   test("an upstream 404 on /issues.view <n> <repo> surfaces the seam's own message", async () => {
     const store = await signedInStore()
@@ -109,13 +113,46 @@ describe("a flow typed into the composer states its refusal", () => {
     expect([...store.collections.messages.values()].map((message) => message.text).join("\n"))
       .not.toContain("Open the archived conversation")
     expect(store.collections.messages.size).toBeGreaterThanOrEqual(before)
-    expect(failedToasts(store).map((toast) => toast.detail).join("\n")).toContain("--summarize")
+    expect(transcript(store)).toContain("--summarize")
 
     /* A flow that DOES take flags refuses the one it never named, and keeps the ones it did. */
     controller.send("/issues.view 3 --bogus codeplanesmithers/canary-sandbox")
     await settled()
     await settled()
-    expect(failedToasts(store).map((toast) => toast.detail).join("\n")).toContain("--bogus")
+    expect(transcript(store)).toContain("--bogus")
+  })
+
+  /*
+   * Walk W1 (W1-d-doors.json `L99-summarizeSubmission`): the same line added
+   * ZERO characters to the transcript on production — no refusal row, no card,
+   * no line. The safe half held (`L99-archivedSentencePresent: false`,
+   * `L99-priorTurnsStillPresent: true`), so the person was told nothing at all
+   * about a flag they typed. The refusal is a toast, and a toast is a
+   * notification that leaves; the pause refusal beside it lands in the
+   * transcript and stays. This one does too.
+   */
+  test("the unknown flag's refusal lands in the transcript, names the flag and the door, and archives nothing", async () => {
+    const store = await signedInStore()
+    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+      fetchImpl: async () => json(200, {}),
+      /* A notification that auto-dismisses is exactly what the walk could not find afterwards. */
+      toastAutoDismissMs: 1
+    })
+    controller.send("remember that I prefer dark mode")
+    await settled()
+    const before = [...store.collections.messages.values()].map((message) => message.text)
+    controller.send("/chat.clear --summarize")
+    await settled()
+    await settled()
+    const after = [...store.collections.messages.values()].map((message) => message.text)
+    /* The transcript GREW, and every prior turn is still in it. */
+    expect(after.length).toBeGreaterThan(before.length)
+    for (const text of before) expect(after).toContain(text)
+    const refusal = after.find((text) => text.includes("--summarize")) ?? ""
+    expect(refusal).toContain("--summarize")
+    expect(refusal).toContain("/chat.clear")
+    /* A refusal is not a decode dump: no schema path, no internal id. */
+    expect(refusal).not.toMatch(/Missing key|\[".*"\]|_tag/)
   })
 
   /*

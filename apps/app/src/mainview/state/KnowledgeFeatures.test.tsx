@@ -272,7 +272,12 @@ describe("the optional Wiki summary on chat.clear", () => {
     expect(parseSubmit("/chat.clear --summarize", controller.commands.all()))
       .toEqual({ kind: "command", name: "chat.clear", args: "--summarize" })
     const outcome = await controller.commands.run("chat.clear", "--summarize")
-    expect(outcome).toEqual({ status: "failed", error: "chat.clear takes no --summarize" })
+    // The refusal is carried as what it is; its sentence is the one refusalSentence writes.
+    expect(outcome).toEqual({
+      status: "failed",
+      error: "/chat.clear takes no --summarize — nothing ran. Send /chat.clear without it.",
+      refusal: { kind: "unknown-flag", flow: "chat.clear", flag: "summarize" }
+    })
     expect(sweeps).toEqual([])
     expect([...store.collections.worldDocuments.values()].filter((row) => row.sources.includes("chat-sweep"))).toEqual([])
     expect([...store.collections.transitions.values()].some((row) => row.type === "conversation.cleared")).toBe(false)

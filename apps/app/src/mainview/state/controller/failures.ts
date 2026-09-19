@@ -266,6 +266,22 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     if (outcome.status !== "failed") return
     if (outcome.error === ZERO_BALANCE_EXHAUSTED_TEXT) return
     /*
+     * A refusal the app decided about what the person typed is a
+     * misunderstanding between them and a door, not a notification: it belongs
+     * where the answer to that line would have been, and it has to still be
+     * there when they look. `/chat.clear --summarize` refused into a toast
+     * that auto-dismissed, so the walk found the submission had added nothing
+     * at all (W1-d-doors.json `L99-summarizeSubmission.grew: 0`). The match is
+     * exhaustive: a refusal kind added without a surface is a compile error.
+     */
+    if (outcome.refusal !== undefined) {
+      switch (outcome.refusal.kind) {
+        case "unknown-flag":
+          ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
+          return
+      }
+    }
+    /*
      * A refused live tutorial launch already states itself inside its own run
      * card (cards/LiveTutorialRunBody.tsx), with the reset time and the way
      * on; a toast would say the same sentence a second time.
