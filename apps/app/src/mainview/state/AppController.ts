@@ -70,6 +70,7 @@ import { createRepositoryUpdate } from "./controller/repositoryUpdate"
 import { createRunsController,type RunsController } from "./controller/runs"
 import type { SidebarController } from "./controller/sidebar"
 import { createSidebarController } from "./controller/sidebar"
+import { latestOrdinal } from "./controller/spokenLines"
 import { createStorageRecoveryController } from "./controller/storage-recovery"
 import type { TabsController } from "./controller/tabs"
 import { createTabsController } from "./controller/tabs"
@@ -739,7 +740,7 @@ export const createAppController = (
   const tabCard = activeTab?.kind === "card" && activeTab.cardId ? store.collections.cards.get(activeTab.cardId) : undefined
   if (tabCard && !knowledgeCardAvailable(tabCard.kind, features)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
-  const surfaceCommandFailure: typeof surfaceFailure = (name, outcome) => {
+  const surfaceCommandFailure: typeof surfaceFailure = (name, outcome, saidBefore) => {
     if (ctx.disposed) return
     /*
      * A superseded act says nothing: storage recovery owns a store that has
@@ -751,7 +752,7 @@ export const createAppController = (
      * already lost under the old rule.
      */
     if (outcome.status === "failed" && outcome.persistenceFailed && !outcome.writeRefused) return
-    surfaceFailure(name, outcome)
+    surfaceFailure(name, outcome, saidBefore)
   }
   ctx.withToast = withToast
   ctx.resolveToast = resolveToast
@@ -1924,7 +1925,9 @@ export const createAppController = (
   const runCommand = (name: string, args?: string): boolean => {
     if (ctx.disposed) return false
     if (commands.find(name) === undefined) return false
-    void commands.run(name, args).then((outcome) => { if (!ctx.disposed) surfaceCommandFailure(name, outcome) })
+    /* Everything the door says from here on belongs to this press (controller/spokenLines.ts). */
+    const saidBefore = latestOrdinal(store.collections)
+    void commands.run(name, args).then((outcome) => { if (!ctx.disposed) surfaceCommandFailure(name, outcome, saidBefore) })
     return true
   }
 

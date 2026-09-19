@@ -41,6 +41,7 @@ import { downloadUrlOf } from "./app"
 import type { ActiveTurn,ControllerContext } from "./context"
 import { createHttpTurnDriver } from "./httpTurns"
 import { assignedBinding } from "./modelSeats"
+import { latestOrdinal } from "./spokenLines"
 
 /**
  * The client-side tool-loop leg cap, mirroring the chat worker's
@@ -1085,8 +1086,10 @@ export const createTurnController = (
        * otherwise), and only a name no host has is "no such flow".
        */
       store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
+      /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
+      const saidBefore = latestOrdinal(store.collections)
       void ctx.commands.run(parsed.name).then((outcome) => {
-        if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome))
+        if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome), saidBefore)
       })
       return
     }
@@ -1099,9 +1102,11 @@ export const createTurnController = (
        * (which the slash menu routes through the pointer path) was honest.
        */
       store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
+      /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
+      const saidBefore = latestOrdinal(store.collections)
       void ctx.commands
         .run(parsed.name, parsed.args)
-        .then((outcome) => { if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, outcome) })
+        .then((outcome) => { if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, outcome, saidBefore) })
       return
     }
     const prompt = parsed.text

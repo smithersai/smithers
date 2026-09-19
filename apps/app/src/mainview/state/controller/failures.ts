@@ -3,6 +3,7 @@ import type { Toast } from "../AppState"
 import { spokenLostAct } from "../BrowserWriteFailure"
 import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import type { ControllerContext } from "./context"
+import { alreadySaid,latestOrdinal } from "./spokenLines"
 
 /**
  * Launch Checklist D-4's exhausted-balance refusal, shared between the
@@ -48,7 +49,13 @@ export interface FailureController {
     outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
   ) => void
   readonly dismissToast: (id: string) => void
-  readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome) => void
+  /**
+   * State a settled command's failure. `saidBefore` is the transcript's latest
+   * ordinal as of the moment this act was admitted: only a door's own sentence
+   * spoken after that point stands in for the line this owes the person. A
+   * caller without one gets a duplicate line at worst, never silence.
+   */
+  readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome, saidBefore?: number) => void
 }
 
 export const createFailureController = (ctx: ControllerContext): FailureController => {
@@ -236,7 +243,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
    * embedded transcript message, so toasting it too would double-surface the
    * same refusal.
    */
-  const surfaceCommandFailure = (name: string, outcome: CommandOutcome): void => {
+  const surfaceCommandFailure = (name: string, outcome: CommandOutcome, saidBefore?: number): void => {
     if (ctx.disposed) return
     if (outcome.status === "form") {
       /*
@@ -275,16 +282,20 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
      * own lost-act sentences, with no flag to carry it. Recognizing our own
      * sentence keeps that rule from depending on each door remembering it.
      *
-     * Said once. The doors on the repository setup card put their own sentence
-     * in the transcript as they refuse, and this act's line is theirs if it is
-     * already the last thing in it — a second identical line reads as a second
-     * failure that did not happen.
+     * Said once, and said once FOR THIS ACT. The doors on the repository setup
+     * card put their own sentence in the transcript as they refuse, and this
+     * act's line is theirs when it is theirs: a line marked `Message.spoken`,
+     * appended since this act was admitted (controller/spokenLines.ts, the
+     * same window the form card yields on). Matching the transcript's tail
+     * instead made a SECOND lost act silent whenever its sentence was already
+     * the last line — two refused `Run` presses, one line, and a toast that
+     * leaves as the only word for the second. The window's default matches
+     * nothing, so a caller that carries no window repeats a line rather than
+     * swallowing one.
      */
     if (outcome.writeRefused === true || spokenLostAct(outcome.error)) {
-      const latest = [...ctx.store.collections.messages.values()]
-        .reduce<{ readonly ordinal: number; readonly text?: string } | undefined>(
-          (held, message) => held === undefined || message.ordinal > held.ordinal ? message : held, undefined)
-      if (latest?.text !== outcome.error) {
+      const since = saidBefore ?? latestOrdinal(ctx.store.collections)
+      if (!alreadySaid(ctx.store.collections, outcome.error, since)) {
         ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
       }
     }
