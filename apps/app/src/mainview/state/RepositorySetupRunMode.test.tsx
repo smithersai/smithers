@@ -381,3 +381,37 @@ test("a run this browser did not record says why, not that something did not fin
     expect(t.transcript()[0]).not.toContain("quota")
   } finally { await t.close() }
 })
+
+/*
+ * Said once means said once FOR THIS ACT. The first rule compared the act's
+ * sentence against the newest line in the whole transcript, so a second lost
+ * act whose sentence was already the last line said nothing at all: press
+ * `Run` twice against a browser that refuses both writes and the person heard
+ * about one of them, with a four-second toast as the only word for the other.
+ *
+ * Both directions are the same rule and are measured together here. A door
+ * that says the sentence itself (the pick, through `speak`) marks its line
+ * `Message.spoken`, and the failure path recognises THAT line — appended
+ * during this submission — and stays quiet. A door whose throw is classified
+ * at the flow boundary (`Run`) says nothing of its own, so every lost act gets
+ * its own line, however many times the same sentence has been said before.
+ */
+test("each lost act gets its own line, and a door that already said it is not repeated", async () => {
+  const t = await walk({ observedRun: true })
+  try {
+    // The door speaks for itself: one act, one line, not two.
+    t.refuseCardWrite()
+    t.pick("automatic")
+    await t.settle()
+    expect(t.transcript()).toEqual([STORAGE_FULL])
+    // The door says nothing of its own: two acts, two lines, same sentence.
+    t.refuseObservationWrite()
+    t.pressRunAccess()
+    await t.settle(600)
+    expect(t.transcript()).toEqual([STORAGE_FULL, STORAGE_FULL])
+    t.refuseObservationWrite()
+    t.pressRunAccess()
+    await t.settle(600)
+    expect(t.transcript()).toEqual([STORAGE_FULL, STORAGE_FULL, STORAGE_FULL])
+  } finally { await t.close() }
+})
