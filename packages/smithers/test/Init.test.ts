@@ -36,13 +36,17 @@ afterEach(() => {
 
 describe("the ignore rule", () => {
   it("keeps repository Grafana state out of git without hiding its configuration", () => {
+    const root = directory()
+    const initialized = spawnSync("git", ["init", "--quiet"], { cwd: root, encoding: "utf8" })
+    expect(initialized.status, initialized.stderr).toBe(0)
+    writeFileSync(join(root, ".gitignore"), readFileSync(new URL("../../../.gitignore", import.meta.url)))
     const state = ["apps/observability/data/grafana.db", "apps/observability/data/plugins/cache.json"]
     const result = spawnSync("git", ["check-ignore", "--no-index", "--stdin"], {
-      cwd: new URL("../../../", import.meta.url),
+      cwd: root,
       input: [...state, "apps/observability/docker-compose.yml"].join("\n"),
       encoding: "utf8"
     })
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout.trim().split("\n")).toEqual(state)
   })
 
