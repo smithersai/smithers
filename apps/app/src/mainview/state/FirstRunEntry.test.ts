@@ -1,10 +1,13 @@
 import { selectFirstRunRepository } from "./FirstRunRepository"
 import { expect,test } from "bun:test"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
 import { json,memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
 import { PRACTICE_CARD,PRACTICE_REPO } from "./practice/PracticeRepository"
 import { resolveTargetRepo } from "./RepoContext"
+
+/* Every controller this file builds is disposed even when an assertion fails. */
+const createAppController = scopedControllers()
 
 const until = async (check: () => boolean) => {
   for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 10))
