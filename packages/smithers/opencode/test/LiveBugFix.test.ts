@@ -333,13 +333,21 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     const judged = health.flatMap((part) => Object.values(part.state.metadata?.answers ?? {}))
       .filter((answer) => typeof answer.probability === "number")
 
-    // 1. Nothing in the turn went unjudged: the harness fails a completion
-    //    Jev could not judge as `completion_unjudged`, and that string
-    //    reaches the message error and the cell output when it happens. This
-    //    is checked FIRST and never retried, because it is the judge being
-    //    unreachable and not the seat being wrong, and a retry would report
-    //    a broken gateway as a bad seat.
-    expect(JSON.stringify(items)).not.toContain("completion_unjudged")
+    // 1. Nothing in the turn went unjudged. The harness fails a completion
+    //    Jev could not judge as `completion_unjudged`, and both its code and
+    //    the sentence that code carries are checked, because only one of them
+    //    survives every path out. The protocol's `info.error` is a name and a
+    //    message, so a refusal reaches the app as `ProviderAuthError` with
+    //    `CompletionClaim.unjudged`'s prose and no code at all: a live drive
+    //    with a deliberately wrong gateway key ended exactly that way.
+    //
+    //    This is checked FIRST and is never retried. It is the judge being
+    //    unreachable, not the seat being wrong, and a judge that is down
+    //    usually leaves the bug in place too, so a retry underneath it would
+    //    spend a second turn and then report a broken gateway as a bad seat.
+    const record = JSON.stringify(items)
+    expect(record).not.toContain("completion_unjudged")
+    expect(record).not.toContain("no evaluator could judge")
 
     // 2. The bug is fixed on disk, and the repository's own test agrees. This
     //    is the seat verdict, and the one failure the caller may ask again
