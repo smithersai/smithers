@@ -42,6 +42,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -211,6 +212,13 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // are browser-safe defaults; a host that accepts mid-run messages provides
     // its own `Steering.layer` instead.
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim, and never falls back to the
+    // model. This example scripts the judge the way it scripts the seat, so it
+    // still needs no key. A host with a gateway key binds
+    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    Layer.provideMerge(
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+    ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

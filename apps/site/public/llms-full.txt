@@ -50217,6 +50217,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -50386,6 +50387,13 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // are browser-safe defaults; a host that accepts mid-run messages provides
     // its own `Steering.layer` instead.
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim, and never falls back to the
+    // model. This example scripts the judge the way it scripts the seat, so it
+    // still needs no key. A host with a gateway key binds
+    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    Layer.provideMerge(
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+    ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50469,6 +50477,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
@@ -50567,6 +50576,10 @@ export const liveLayer = (apiKey: string) =>
     // eslint-disable-next-line no-restricted-syntax -- this standalone smoke has no approved envelope
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. Without `AI_GATEWAY_API_KEY` this smoke run fails at its
+    // first completion with `completion_unjudged`.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50640,6 +50653,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
@@ -50767,6 +50781,10 @@ export const liveLayer = (baseUrl: string) =>
     // eslint-disable-next-line no-restricted-syntax -- this standalone smoke has no approved envelope
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. A local provider does not change that: without
+    // `AI_GATEWAY_API_KEY` this run fails at its first completion.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50837,6 +50855,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
@@ -50940,6 +50959,10 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
     // eslint-disable-next-line no-restricted-syntax -- this standalone smoke has no approved envelope
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
+    // The completion brake judges every claim through Jev and never falls back
+    // to the model. Without `AI_GATEWAY_API_KEY` this smoke run fails at its
+    // first completion with `completion_unjudged`.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -52457,6 +52480,7 @@ import * as CoreFlow from "@smthrs/core/Flow"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -52771,7 +52795,14 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // offline example has no approved envelope to turn into a cap.
               // eslint-disable-next-line no-restricted-syntax -- this offline example has no approved envelope
               Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-              Layer.provideMerge(Agent.layerDefaults)
+              Layer.provideMerge(Agent.layerDefaults),
+              // The completion brake judges every claim, and never falls back to the
+              // model. This example scripts the judge the way it scripts the seat, so
+              // it still needs no key. A host with a gateway key binds
+              // `Evaluator.layerFromEnvironment(process.env)` instead.
+              Layer.provideMerge(
+                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+              )
             )
           )
         )
@@ -53343,6 +53374,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -53571,6 +53603,13 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // eslint-disable-next-line no-restricted-syntax -- this offline example has no approved envelope
               Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
               Layer.provideMerge(Agent.layerDefaults),
+              // The completion brake judges every claim, and never falls back to the
+              // model. This example scripts the judge the way it scripts the seat, so
+              // it still needs no key. A host with a gateway key binds
+              // `Evaluator.layerFromEnvironment(process.env)` instead.
+              Layer.provideMerge(
+                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+              ),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(durableEngine(filename, "examples-mcp"))
             )
@@ -54083,6 +54122,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -54349,6 +54389,13 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // The QuickJS sandbox the cell's code runs in, and the steering source it
       // drains. Both are browser-safe defaults.
       Layer.provideMerge(Agent.layerDefaults),
+      // The completion brake judges every claim, and never falls back to the
+      // model. This example scripts the judge the way it scripts the seat, so it
+      // still needs no key. A host with a gateway key binds
+      // `Evaluator.layerFromEnvironment(process.env)` instead.
+      Layer.provideMerge(
+        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      ),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
     )
@@ -54421,6 +54468,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -54664,6 +54712,16 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                 // eslint-disable-next-line no-restricted-syntax -- these offline runs have no approved envelope
                 Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
                 Layer.provideMerge(Agent.layerDefaults),
+                // The completion brake judges every claim, and never falls back to
+                // the model. This example scripts the judge the way it scripts the
+                // seat, so it still needs no key. A host with a gateway key binds
+                // `Evaluator.layerFromEnvironment(process.env)` instead.
+                Layer.provideMerge(
+                  Evaluator.layerScripted(() => ({
+                    complete: { probability: 0.99 },
+                    overclaims: { probability: 0.01 }
+                  }))
+                ),
                 Layer.provideMerge(Action.layerImplementations)
               )
             )
@@ -56816,6 +56874,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -56952,6 +57011,13 @@ const policies = (calls: Array<string>) =>
         // Under `fail` the same ceiling would end the step instead.
         Budget.layer({ tokens: { max: 500, onExceeded: "warn" } })
       )
+    ),
+    // The completion brake judges every claim, and never falls back to the
+    // model. This example scripts the judge the way it scripts the seat, so it
+    // still needs no key. A host with a gateway key binds
+    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    Layer.provideMerge(
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
     )
   )
 

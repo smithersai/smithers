@@ -10,7 +10,6 @@
  * structured-output rejection. No provider credentials are needed.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -158,10 +157,13 @@ const policies = (calls: Array<string>) =>
         Budget.layer({ tokens: { max: 500, onExceeded: "warn" } })
       )
     ),
-    // The completion brake judges every claim through Jev and never falls back
-    // to the model. Without `AI_GATEWAY_API_KEY` the run fails at its first
-    // completion with `completion_unjudged`.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici)))
+    // The completion brake judges every claim, and never falls back to the
+    // model. This example scripts the judge the way it scripts the seat, so it
+    // still needs no key. A host with a gateway key binds
+    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    Layer.provideMerge(
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+    )
   )
 
 const engine = (filename: string, hostId: string, calls: Array<string>) =>

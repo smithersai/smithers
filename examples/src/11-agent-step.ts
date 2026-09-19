@@ -11,7 +11,6 @@
  * credential.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -190,10 +189,13 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // are browser-safe defaults; a host that accepts mid-run messages provides
     // its own `Steering.layer` instead.
     Layer.provideMerge(Agent.layerDefaults),
-    // The completion brake judges every claim through Jev and never falls back
-    // to the model. Without `AI_GATEWAY_API_KEY` the run fails at its first
-    // completion with `completion_unjudged`.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // The completion brake judges every claim, and never falls back to the
+    // model. This example scripts the judge the way it scripts the seat, so it
+    // still needs no key. A host with a gateway key binds
+    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    Layer.provideMerge(
+      Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+    ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

@@ -46,6 +46,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -274,6 +275,13 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // eslint-disable-next-line no-restricted-syntax -- this offline example has no approved envelope
               Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
               Layer.provideMerge(Agent.layerDefaults),
+              // The completion brake judges every claim, and never falls back to the
+              // model. This example scripts the judge the way it scripts the seat, so
+              // it still needs no key. A host with a gateway key binds
+              // `Evaluator.layerFromEnvironment(process.env)` instead.
+              Layer.provideMerge(
+                Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+              ),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(durableEngine(filename, "examples-mcp"))
             )

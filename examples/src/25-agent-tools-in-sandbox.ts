@@ -13,7 +13,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -291,10 +290,13 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // The QuickJS sandbox the cell's code runs in, and the steering source it
       // drains. Both are browser-safe defaults.
       Layer.provideMerge(Agent.layerDefaults),
-      // The completion brake judges every claim through Jev and never falls
-      // back to the model. Without `AI_GATEWAY_API_KEY` the run fails at its
-      // first completion with `completion_unjudged`.
-      Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+      // The completion brake judges every claim, and never falls back to the
+      // model. This example scripts the judge the way it scripts the seat, so it
+      // still needs no key. A host with a gateway key binds
+      // `Evaluator.layerFromEnvironment(process.env)` instead.
+      Layer.provideMerge(
+        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+      ),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
     )
