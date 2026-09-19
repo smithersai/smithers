@@ -15,31 +15,41 @@
  * as it did before this module existed, and providing one changes nothing
  * about the step's answer, its correction budget, or its failures.
  *
- * One constraint governs an implementation: {@link Service.emit} runs inside
- * the frame that produced the event, and that frame holds the engine's write
- * transaction. An `emit` that waits on a durable write waits on a writer that
- * is waiting on `emit`, and the run stalls. A sink pushes onto a queue, writes
- * to a socket, or resolves a deferred; it does not journal.
+ * Observer sinks consume the public stream. The native durable sink sets
+ * `atSource`: the controller awaits its checkpoint before advancing or
+ * parking. Each checkpoint commits its bounded fact with its own durable
+ * outcome, before the enclosing agent action can settle. Provider work stays
+ * outside the checkpoint's SQL transaction.
  *
  * @since 0.1.0
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type { StepFact } from "@smthrs/journal"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
 /**
+ * Builds the engine-owned source checkpoint sink for a native handler.
+ * @category constructors
+ * @since 1.0.0
+ */
+export { make as durable } from "./internal/StepTrace.ts"
+
+/**
  * The sink: one event in, nothing out.
  *
- * The method cannot fail. A host's rendering is not the run's business, so a
- * sink that cannot deliver handles that itself rather than failing a step that
- * is otherwise making progress.
+ * Ordinary observers handle delivery failures themselves. A durable source
+ * sink propagates typed storage defects: a step cannot report successful
+ * completion when its required facts failed to commit.
  *
  * @category services
  * @since 0.1.0
  */
 export interface Service {
-  readonly emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  readonly emit: (event: AgentEvent.AgentEvent, step?: StepFact.Step) => Effect.Effect<void>
+  /** Checkpoint at the controller source, before it advances or parks. */
+  readonly atSource?: boolean
 }
 
 /**

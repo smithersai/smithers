@@ -1,19 +1,24 @@
 /** Real control admission, discovery, native children and durable host policy. */
 import { NodeCrypto } from "@effect/platform-node"
 import * as Budget from "@smthrs/agent/Budget"
+import * as EventSink from "@smthrs/agent/EventSink"
 import { Control, ControlRuntime } from "@smthrs/control"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { StepFact } from "@smthrs/journal"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as CoreFlow from "../flows/core/src/Flow.ts"
+import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
@@ -33,6 +38,7 @@ describe("NodeControl native modules", () => {
       const drift = mode === "drift"
       const root = await mkdtemp(join(tmpdir(), "smithers-module-host-"))
       const observed: Array<unknown> = []
+      const monitored: Array<boolean> = []
       const owners: Array<{ readonly rootId: string; readonly flowId: string }> = []
       let admittedRoot: string | undefined
       try {
@@ -75,6 +81,30 @@ export default Flow.make({
           Interpreter.layer(Child),
           Probe.toLayer(({ value }) =>
             Effect.gen(function*() {
+              const sink = yield* Effect.serviceOption(EventSink.EventSink)
+              monitored.push(Option.isSome(sink))
+              if (Option.isSome(sink)) {
+                const instance = yield* FlowRuntime.FlowInstance
+                const invocation = yield* Action.CurrentInvocationKey
+                const step = {
+                  stepId: createHash("sha256").update(invocation!).digest("hex"),
+                  executionId: instance.executionId,
+                  action: "test/Probe",
+                  attempt: 1,
+                  ask: 0,
+                  retry: 1,
+                  scope: instance.executionId
+                }
+                yield* sink.value.emit(
+                  new AgentEvent.ModelRetried({
+                    eventType: "flows.harness.model-retried.v1",
+                    attempt: 1,
+                    code: "transport",
+                    delayMillis: 0
+                  }),
+                  step
+                )
+              }
               const authority = yield* CapabilitySet.current
               const owner = yield* Effect.serviceOption(ModuleOwner)
               if (Option.isNone(owner)) return yield* Effect.die("native handler has no proved owner")
@@ -135,8 +165,7 @@ export default Flow.make({
             // These are the existing control events read by the gateway. Native
             // completion must reach this journal, not just the engine database.
             return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
-              Stream.filter((event) => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
-              Stream.take(1),
+              Stream.takeUntil((event) => event.kind === settledKind),
               Stream.runCollect,
               Effect.timeout("30 seconds")
             )
@@ -147,7 +176,19 @@ export default Flow.make({
             Effect.scoped
           )
         )
-        expect(result[0]?.kind).toBe(drift ? "control.run.failed" : "control.run.completed")
+        expect(result.some((event) => event.kind === (drift ? "control.run.failed" : "control.run.completed"))).toBe(
+          true
+        )
+        expect(result.at(-1)?.kind).toBe(settledKind)
+        const facts = result.flatMap((event) => {
+          const envelope = event.payload as { eventType?: string; payload?: unknown }
+          return event.kind === "control.engine.event" && envelope.eventType === StepFact.eventType
+            ? [Schema.decodeUnknownSync(StepFact.Fact)(envelope.payload)] :
+            []
+        })
+        expect(facts).toHaveLength(drift ? 1 : 2)
+        expect(new Set(facts.map((fact) => fact.step.executionId)).size).toBe(facts.length)
+        expect(facts.map((fact) => fact.eventType)).toEqual(facts.map(() => "control.agent.model-retried"))
         const expected = [
           {
             value: "approved/first",
@@ -163,6 +204,7 @@ export default Flow.make({
           }
         ]
         expect(observed).toEqual(drift ? expected.slice(0, 1) : expected)
+        expect(monitored).toEqual(observed.map(() => true))
         expect(owners).toEqual(observed.map(() => ({ rootId: admittedRoot, flowId: "native" })))
       } finally {
         await rm(root, { recursive: true, force: true })

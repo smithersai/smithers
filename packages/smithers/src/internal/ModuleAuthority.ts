@@ -5,6 +5,7 @@
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
+import * as EventSink from "@smthrs/agent/EventSink"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import { LaunchFailed } from "@smthrs/control/ControlError"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
@@ -159,6 +160,7 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
             })
             const budget = yield* RcMap.get(budgets, rootId).pipe(Effect.orDie)
             const instance = yield* FlowRuntime.FlowInstance
+            const trace = yield* EventSink.durable(journal)
             const accountingInstance = { ...instance, executionId: rootId }
             const key = (step: string) => JSON.stringify([executionId, step])
             const account = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -183,7 +185,8 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
               Effect.provideService(ModuleOwner, { rootId, flowId }),
               Effect.provideService(NotificationQueue.NotificationQueue, notifications),
               Effect.provideService(Steering.Source, handlerSteering),
-              Effect.provideService(QuotaPolicy.QuotaClassifier, quota)
+              Effect.provideService(QuotaPolicy.QuotaClassifier, quota),
+              Effect.provideService(EventSink.EventSink, trace)
             )
           })))
     })

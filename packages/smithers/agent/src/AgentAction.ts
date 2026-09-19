@@ -44,15 +44,16 @@
  * @since 0.1.0
  */
 import type * as Capability from "@smthrs/capability/Capability"
+import * as Digest from "@smthrs/core/Digest"
 import { Action, DurableClock, type Flow, FlowRuntime } from "@smthrs/flow"
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as Steering from "@smthrs/harness/Steering"
 import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
-import { Journal, JournalEvent } from "@smthrs/journal"
+import { Journal, JournalEvent, type StepFact } from "@smthrs/journal"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
@@ -71,6 +72,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
 import { Agent } from "./Agent.ts"
 import * as Budget from "./Budget.ts"
 import { EventSink } from "./EventSink.ts"
@@ -524,10 +526,16 @@ export const make = <
       // they happen or it does not, and the absence is the buffered behavior
       // this action has always had rather than a failure.
       const sink = yield* Effect.serviceOption(EventSink)
-      const observe = Option.match(sink, {
-        onNone: () => (_event: AgentEvent.AgentEvent): Effect.Effect<void> => Effect.void,
-        onSome: (service) => service.emit
-      })
+      const invocation = yield* Action.CurrentInvocationKey
+      const dispatchAttempt = yield* Action.CurrentAttempt
+      const stepId = invocation === undefined ? undefined : Digest.digest(invocation)
+      const sessionRoot = `${instance.executionId}/${tag}${stepId === undefined ? "" : `@${stepId}:${dispatchAttempt}`}`
+      if (stepId === undefined && Option.isSome(sink) && sink.value.atSource === true) {
+        return yield* new HarnessError({
+          code: "engine_failed",
+          message: "Agent monitoring requires a durable dispatch identity"
+        })
+      }
       // One resolution per execution: the declared seat may be a function of
       // the payload, and every later rung compares against the id it chose.
       const seatId = typeof options.seat === "function" ? options.seat(payload) : options.seat
@@ -658,6 +666,19 @@ export const make = <
         waitOutQuota(
           session,
           Effect.gen(function*() {
+            const retry = yield* Action.CurrentAttempt
+            const step: StepFact.Step | undefined = stepId === undefined ? undefined : {
+              stepId,
+              executionId: instance.executionId,
+              action: tag,
+              attempt: dispatchAttempt,
+              ask: correction ?? "repair",
+              retry,
+              scope: session
+            }
+            const observe = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
+              Option.isNone(sink) ? Effect.void : sink.value.emit(event, step)
+            const atSource = Option.isSome(sink) && sink.value.atSource === true
             const resolved = askSeat === seatId ? seat : yield* seats.resolve(askSeat)
             const outcome = yield* agent.run({
               contextWindowTokensFor: contextWindowResolver(seats),
@@ -677,7 +698,8 @@ export const make = <
               limits: host.limits,
               maxFrames: options.maxFrames ?? host.maxFrames
             }).pipe(
-              (stream) => agentOutcome(stream, observe)
+              Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
+              (stream) => agentOutcome(stream, atSource ? () => Effect.void : observe)
             )
             if (outcome._tag === "FramesExhausted") {
               return yield* new HarnessError({
@@ -716,7 +738,7 @@ export const make = <
         const declaredRepair = options.repair
         if (declaredRepair === undefined) return Effect.fail(failure)
         return ask(
-          `${instance.executionId}/${tag}#repair`,
+          `${sessionRoot}#repair`,
           declaredRepair.prompt(failure, payload),
           declaredRepair.system === undefined ? system : [
             ...(host.system ?? []),
@@ -754,7 +776,7 @@ export const make = <
         | Evaluator.Evaluator
         | Output["DecodingServices"]
       > =>
-        ask(`${instance.executionId}/${tag}#${correction}`, prompt, system, seatId, correction).pipe(
+        ask(`${sessionRoot}#${correction}`, prompt, system, seatId, correction).pipe(
           Effect.flatMap((answer) =>
             StructuredOutput.decode(options.output, answer, { corrections: correction, limit })
           ),
