@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
+import { parse, stringify } from "yaml"
 import { assertExportTargets, assertPackedExportTargets } from "./packed-export-targets.mjs"
 import { assertEffectPins, effectDeclarations, effectLockVersions, installedEffectResolutions } from "./check-single-effect-version.mjs"
 import {
@@ -31,33 +32,17 @@ const releaseVersion = JSON.parse(readFileSync(join(repoRoot, "packages/smithers
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")
 
 /**
- * The step blocks of one job, as text.
- *
- * Both workflows indent identically — jobs at two spaces, `steps:` at four,
- * the step list at six — because release.yml's toolchain and gate blocks are
- * copied out of the generated ci.yml. That is what lets the drift cases below
- * compare text instead of a parse: a block that is byte-identical in both
- * files is the same step, and one that is not is drift.
- *
- * Comments and blank lines are dropped from both sides, so prose written above
- * a copied step in the hand-written file does not read as a difference.
+ * The step blocks of one job in a common YAML spelling. The generated CI
+ * quotes keys and values while the handwritten release workflow does not;
+ * parsing both preserves every setting without treating quoting as drift.
  */
 const jobSteps = (source, job) => {
-  const lines = source.split("\n").filter((line) => line.trim() !== "" && !/^\s*#/.test(line))
-  const start = lines.indexOf(`  ${job}:`)
-  assert.notEqual(start, -1, `${job} is not a job in this workflow`)
-  const end = lines.findIndex((line, index) => index > start && /^ {2}\S/.test(line))
-  const body = lines.slice(start, end === -1 ? lines.length : end)
-  const stepsAt = body.indexOf("    steps:")
-  assert.notEqual(stepsAt, -1, `${job} declares no steps`)
-  const blocks = []
-  for (const line of body.slice(stepsAt + 1)) {
-    if (line.startsWith("      - ")) blocks.push([line])
-    else if (line.startsWith("        ") && blocks.length > 0) blocks.at(-1).push(line)
-    else break
-  }
-  assert.ok(blocks.length > 0, `${job} declares no steps`)
-  return blocks.map((block) => block.join("\n"))
+  const declared = parse(source).jobs?.[job]
+  assert.ok(declared !== undefined, `${job} is not a job in this workflow`)
+  const steps = declared.steps
+  assert.ok(Array.isArray(steps) && steps.length > 0, `${job} declares no steps`)
+  return steps.map((step) => stringify([step], { lineWidth: 0 }).trimEnd().split("\n")
+    .map((line) => `      ${line}`).join("\n"))
 }
 
 /** Every build-graph invocation these steps make, in order. */
@@ -287,7 +272,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // which `ci '//packages/...'` already covers; `apps-e2e` needs the runner's
   // Chrome; native Rust tests stay in `rust`. Release mirrors `wasm-repro`
   // so the committed artifact is rebuilt and byte-compared before packing.
-  const jobs = [...ci.slice(ci.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((match) => match[1])
+  const jobs = Object.keys(parse(ci).jobs)
   assert.deepEqual(jobs, [
     "cache-publish",
     "test",
@@ -357,8 +342,9 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
 
   // Two steps the release deliberately extends rather than copies: it checks
   // out the full history the changelog gate reads, and it points npm at the
-  // registry it publishes to. Their `with:` entries are checked below instead,
-  // so a version bump inside one still has to reach this file.
+  // registry it publishes to. Release also proves its Node 22 support floor;
+  // the smoke step checks the actual version before the Node 24 floor run.
+  // Their settings and action pins are checked below.
   const extended = ["actions/checkout", "actions/setup-node"]
   const toolchain = ciSteps.filter((step) => !/(?:smithers-build|smthrs)/.test(step))
   const missing = toolchain
@@ -378,8 +364,16 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
       copy.split("\n")[0],
       `release.yml's ${action} step uses a different action pin`
     )
+    const sourceEntries = withEntries(source)
+    const copiedEntries = withEntries(copy)
+    const floorSubstitution = "          node-version-file: .node-version"
+    if (action === "actions/setup-node") {
+      assert.ok(sourceEntries.includes(floorSubstitution), "CI selects the repository's Node version file")
+      assert.ok(copiedEntries.includes("          node-version: 22.19.0"), "release proves its Node 22 support floor")
+    }
     assert.deepEqual(
-      withEntries(source).filter((entry) => !withEntries(copy).includes(entry)),
+      sourceEntries.filter((entry) => !(action === "actions/setup-node" && entry === floorSubstitution)
+        && !copiedEntries.includes(entry)),
       [],
       `release.yml's ${action} step drops a toolchain setting ci.yml declares`
     )
