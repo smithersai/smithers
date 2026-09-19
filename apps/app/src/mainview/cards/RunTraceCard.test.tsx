@@ -261,21 +261,21 @@ describe("the run card as a trace", () => {
     expect(before.host.querySelector("[data-testid='run-trace-pane-run-1']")?.textContent).not.toContain("typecheck")
     const after = renderTrace({ events, traceView: "turns", selection: "engine:native:0", cursorSeq: 2, liveTail: false })
     expect(after.host.querySelector("[data-testid='run-trace-pane-run-1']")?.textContent).toContain('"checks":["typecheck"]')
-    expect(after.host.querySelector("[aria-label='Recorded call path']")?.textContent).toContain("coding/RunPlan")
+    expect(after.host.querySelector("[aria-label='Recorded call path']")).toBeNull()
     expect(after.host.querySelector("[data-flow='runs.open']")).toBeNull()
   })
   test("the default view is a cheap turn list and expands recorded detail only after a persisted selection", () => {
     const { host, dispatched } = renderTrace({ events: JOURNAL, traceView: undefined })
-    expect(host.querySelector("[aria-label='Turn explanations']")?.textContent).toContain("The agent called target.run.")
+    expect(host.querySelector("[aria-label='What each frame did']")?.textContent).toContain("target.run")
     expect(host.querySelector("[aria-label='Call tree']")).toBeNull()
     expect(host.querySelector("[data-testid='run-trace-pane-run-1']")).toBeNull()
-    click(host.querySelector("[data-turn='1']"))
+    click(host.querySelector("[data-frame-line='frame-1']"))
     expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-1" }])
     expect(host.querySelector("[aria-label='Call tree']")).toBeNull()
 
     const selected = renderTrace({ events: JOURNAL, traceView: "turns", selection: "call-1", liveTail: false, cursorSeq: 8 })
-    expect([...selected.host.querySelectorAll("[data-trace-span]")].map((row) => row.getAttribute("data-trace-span"))).toEqual(["frame-1", "cell-2", "call-1"])
-    expect(selected.host.querySelector("[aria-label='Recorded call path']")?.textContent).toContain("run run-1 · prototype / frame 1")
+    expect([...selected.host.querySelectorAll("[data-evidence-span]")].map((row) => row.getAttribute("data-evidence-span"))).toEqual(["cell-2", "call-1"])
+    expect(selected.host.querySelector("[aria-label='Recorded call path']")).toBeNull()
     expect(selected.host.querySelector("[role='alert']")?.textContent).toBe("12 fps at 500 nodes")
     click(selected.host.querySelector("[data-flow='runs.trace.live']"))
     expect(selected.dispatched).toEqual([{ name: "runs.trace.live", args: "sourceCard=flow-run-run-1 run-1" }])
@@ -290,7 +290,7 @@ describe("the run card as a trace", () => {
     ]
     const before = renderTrace({ events, traceView: "turns", selection: "call-1", cursorSeq: 2, liveTail: false })
     expect(before.host.querySelector("[data-flow='runs.open']")).toBeNull()
-    expect(before.host.querySelector("[data-testid='run-trace-pane-run-1']")?.textContent).not.toContain("run-1/child/review")
+    expect(before.host.textContent).not.toContain("run-1/child/review")
     const after = renderTrace({ events, traceView: "turns", selection: "call-1", cursorSeq: 3, liveTail: false })
     click(after.host.querySelector("[data-flow='runs.open']"))
     expect(after.dispatched).toEqual([{ name: "runs.open", args: "sourceCard=flow-run-run-1 run-1/child/review smithersai/smithers" }])
@@ -312,7 +312,7 @@ describe("the run card as a trace", () => {
   test("every other run is the same trace with the shared filters and the steer row while live; an implement run needs no banner", () => {
     const { host } = renderRun({ workflow: "review", steps: ["1 turn · 2 calls"], events: JOURNAL })
     expect(host.querySelector("[data-testid='run-trace-run-1']")).not.toBeNull()
-    expect(host.textContent).toContain("1 turn · 2 calls")
+    expect(host.textContent).toContain("2 turns · 2 calls")
     expect(chips(host)).toEqual(["all", "running", "failed", "model", "flow", "forks"])
     expect(host.querySelector("[data-testid='flow-run-steer-run-1']")).not.toBeNull()
     expect(host.querySelector("[data-testid='run-trace-banner-run-1']")).toBeNull()
@@ -462,12 +462,10 @@ describe("the run card reads as outcome, then turns", () => {
     expect(outcome.textContent).not.toContain("failed")
     expect(outcome.querySelector(".run-outcome-dot")?.getAttribute("data-status")).toBe("completed")
     expect(host.textContent).toContain("2 commits on fix")
-    // The turn rows: the model's sentence and the flows it called; the failed call is marked on the call alone.
-    const rows = [...host.querySelectorAll(".run-turn")]
+    const rows = [...host.querySelectorAll("[data-frame-line]")]
     expect(rows).toHaveLength(2)
-    expect(rows[0]?.querySelector(".run-turn-text")?.textContent).toBe("Write the test first, so the bug shows up as a failure.")
-    expect([...rows[0]!.querySelectorAll(".run-turn-call")].map((call) => `${call.textContent}:${call.getAttribute("data-status")}`)).toEqual(["edit:completed", "test:failed"])
-    expect(rows[0]?.getAttribute("data-status")).toBeNull()
+    expect(rows[0]?.textContent).toContain("hello.test.ts")
+    expect(host.querySelector("[aria-label='Recorded turn source']")).toBeNull()
     // Nothing is dumped twice: the result once, the progress folded once it settled, no filter chips, no empty-journal copy.
     expect(host.querySelectorAll(".run-result")).toHaveLength(1)
     expect(host.querySelector(".run-progress-fold [data-run-steps]")?.textContent).toContain("Writing the test…")
@@ -479,21 +477,21 @@ describe("the run card reads as outcome, then turns", () => {
   })
   test("a turn expands in place: its script, its calls and the selected span's facts sit under its row", () => {
     const { host } = renderRun({ phase: "completed", events: COMPLETED, traceView: undefined, selection: "call-2", liveTail: false })
-    const rows = [...host.querySelectorAll("[data-turn]")]
+    const rows = [...host.querySelectorAll("[data-frame-line]")]
     expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["true", "false"])
     const open = host.querySelector("[data-turn-open='true']")!
     expect(open.querySelector("[aria-label='Recorded turn source']")?.textContent).toContain("src/hello.test.ts")
-    expect([...open.querySelectorAll("[data-trace-span]")].map((node) => node.getAttribute("data-trace-span"))).toEqual(["frame-1", "model-2", "cell-3", "call-1", "call-2"])
-    expect(open.querySelector("[data-testid='run-trace-pane-run-1']")?.getAttribute("data-span")).toBe("call-2")
+    expect([...open.querySelectorAll("[data-evidence-span]")].map((node) => node.getAttribute("data-evidence-span"))).toEqual(["model-2", "call-1", "call-2"])
+    expect(open.querySelector("[aria-label='Call tree']")).toBeNull()
     expect(open.querySelector("[role='alert']")?.textContent).toContain("✖ greets the world")
     expect(host.querySelector("[aria-label='Waterfall']")).toBeNull()
-    expect(host.querySelector("[data-turn='1']")?.getAttribute("aria-controls")).toBe(open.querySelector(".run-turn-detail")?.id)
+    expect(host.querySelector("[data-frame-line='frame-1']")?.getAttribute("aria-controls")).toBe(open.querySelector(".run-turn-detail")?.id)
   })
   test("a live run shows its progress open and the phase words; a tutorial plan card shows neither outcome nor turns", () => {
     const live = renderRun({ phase: "running", steps: ["Writing the test…"], events: COMPLETED.slice(0, 4), traceView: undefined })
-    expect(live.host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toContain("Running on your workspace.")
+    expect(live.host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toContain("Editing src/hello.test.ts")
     expect(live.host.querySelector(".run-progress-fold")).toBeNull()
-    expect(live.host.querySelector("[data-run-steps]")?.textContent).toContain("Writing the test…")
+    expect(live.host.querySelector("[data-run-steps]")).toBeNull()
     const plan = renderRun({ kind: "change-plan", phase: "completed", input: { plan: { ...CODING_PLAN, changes: [CODING_PLAN.changes[0]!] } }, traceView: undefined })
     expect(plan.host.querySelector("[data-testid='run-outcome-run-1']")).toBeNull()
     expect(plan.host.querySelector("[data-testid='run-trace-empty-run-1']")).toBeNull()
@@ -526,7 +524,7 @@ describe("predicted coding Changes in the same run card", () => {
   })
   test("a prepared native child exposes the plan while its implementation runs, through the same selection command", () => {
     const shown = renderTrace({ workflow: "coding", input: { prompt: CODING_PLAN.prompt }, events: preparedCodingJournal(), traceView: undefined })
-    expect(shown.host.querySelector("[aria-label='Predicted Changes']")?.textContent).toContain("Store repository memory")
+    expect(shown.host.querySelector("[aria-label='Goals']")?.textContent).toContain("Store repository memory")
     const button = shown.host.querySelector<HTMLButtonElement>("[data-flow='runs.coding.select']")!
     button.focus()
     expect(document.activeElement).toBe(button)
@@ -553,7 +551,7 @@ describe("predicted coding Changes in the same run card", () => {
 
   test("the typed plan appears before any journal, with durable progressive detail and no invented outcomes", () => {
     const initial = renderTrace({ workflow: "coding", input: { plan: CODING_PLAN }, traceView: undefined })
-    const outline = initial.host.querySelector("[aria-label='Predicted Changes']")
+    const outline = initial.host.querySelector("[aria-label='Goals']")
     expect(outline?.textContent).toContain("Store repository memory")
     expect(outline?.textContent).toContain("Connect the Wiki interface")
     expect(initial.host.querySelector("[aria-label='Predicted atomic changes']")).toBeNull()
@@ -995,13 +993,13 @@ describe("the timeline reads as phases, then what each frame did", () => {
       .not.toBe(traceOf(card))
   })
 
-  test("the turns view keeps its own reading: no band, no pins, no rows", () => {
+  test("the primary view shares the band, pins and human rows", () => {
     const { host } = timeline(PHASED, { traceView: "turns" })
-    expect(host.querySelector("[data-phase-band]")).toBeNull()
-    expect(host.querySelector("[data-pin-row]")).toBeNull()
-    expect(host.querySelector("[data-frame-line]")).toBeNull()
-    expect(host.querySelector("[aria-label='Turn explanations']")).not.toBeNull()
-    expect(host.querySelectorAll(".run-turn")).toHaveLength(5)
+    expect(host.querySelector("[data-phase-band]")).not.toBeNull()
+    expect(host.querySelector("[data-pin-row]")).not.toBeNull()
+    expect(host.querySelector("[data-frame-line]")).not.toBeNull()
+    expect(host.querySelector("[aria-label='Turn explanations']")).toBeNull()
+    expect(host.querySelectorAll("[data-frame-line]")).toHaveLength(5)
   })
 
   test("a journal with no frames shows no band and no rows, never an empty one", () => {
@@ -1067,4 +1065,40 @@ test("the practice run's own timeline names an unknown flow alone, with no empty
   // One pin per frame that wrote, each under the strip's two rows.
   expect([...host.querySelectorAll(".run-phase-pin-label")].map((label) => label.textContent))
     .toEqual(["hello.test.ts", "hello.ts", "README.md"])
+})
+
+describe("the primary monitoring surface", () => {
+  test("the default opens the phase strip and human rows, with technical views behind a flow", () => {
+    const { host, dispatched } = renderTrace({ events: JOURNAL, traceView: undefined })
+    expect(host.querySelector(".run-phases")).not.toBeNull()
+    expect(host.querySelectorAll("[data-frame-line]")).toHaveLength(2)
+    for (const label of ["Call tree", "Waterfall", "Recorded call path", "Recorded turn source"]) {
+      expect(host.querySelector(`[aria-label='${label}']`)).toBeNull()
+    }
+    click(host.querySelector("[data-frame-line='frame-1']"))
+    expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-1" }])
+    expect(host.querySelector("[aria-label='Recorded turn source']")).toBeNull()
+    const expanded = renderTrace({ events: JOURNAL, traceView: undefined, selection: "frame-1", liveTail: false, cursorSeq: 8 })
+    expect(expanded.host.querySelector("[data-frame-line='frame-1']")?.getAttribute("aria-expanded")).toBe("true")
+    expect(expanded.host.querySelector("[data-turn-open='true'] [aria-label='Recorded turn source']")).not.toBeNull()
+    expect(expanded.host.querySelector("[aria-label='Call tree']")).toBeNull()
+    click(expanded.host.querySelector("[data-flow='runs.trace.view']"))
+    expect(expanded.dispatched).toEqual([{ name: "runs.trace.view", args: "sourceCard=flow-run-run-1 run-1 timeline" }])
+  })
+  test("the live header and existing approval control remain current while inspecting the past", () => {
+    const events = [...JOURNAL, stamp(9, "control.approval.requested", { requestId: "q", question: "Continue?" }, 5500)]
+    const { host, dispatched } = renderTrace({ events, cursorSeq: 4, liveTail: false, traceView: undefined })
+    const header = host.querySelector("[data-testid='run-outcome-run-1']")!
+    expect(header.textContent).toContain("Running agent/send")
+    expect(header.textContent).toContain("Approval needed")
+    click(header.querySelector("[data-flow='approvals.open']"))
+    expect(dispatched).toEqual([{ name: "approvals.open", args: "sourceCard=flow-run-run-1 run-1" }])
+    expect(host.querySelector(".run-trace-cursor")?.textContent).toBe("At #4")
+  })
+  test("known goals stay visible and a write does not tick them", () => {
+    const { host } = renderTrace({ input: { plan: CODING_PLAN }, events: JOURNAL, traceView: undefined })
+    expect(host.querySelectorAll("[data-goal]")).toHaveLength(2)
+    expect([...host.querySelectorAll("[data-goal]")].map(node => node.getAttribute("data-state"))).toEqual(["pending", "pending"])
+    expect(host.querySelector("[aria-label='Goals']")?.closest("details")).toBeNull()
+  })
 })

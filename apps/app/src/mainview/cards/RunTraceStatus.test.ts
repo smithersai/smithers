@@ -21,14 +21,15 @@ const checkState = (records: ReadonlyArray<JournalRecord>, cursor?: number) => g
 describe("current run status", () => {
   test("activity remains independent of a recorded thrashing condition", () => {
     const records = [...call(1, "read", { path: "README.md" }), event(3, "agent.repeat-demanded", { frames: 3, cap: 3 })]
-    expect(traceStatus(model(records))).toMatchObject({ activity: "Reading README.md", condition: "thrashing" })
+    expect(traceStatus(model(records))).toMatchObject({ activity: "Read README.md", condition: "thrashing" })
+    expect(traceStatus(model(records), 1).activity).toBe("Reading README.md")
     expect(traceStatus(model(records), 2).condition).toBeUndefined()
     expect(traceStatus(model([...records, event(4, "agent.mutation-observed", { basis: "observed", mutated: true })])).condition).toBeUndefined()
     expect(traceStatus(model([...records, event(4, "agent.mutation-observed", { basis: "declared", mutated: true })])).condition).toBe("thrashing")
   })
   test("park and resume change the condition without erasing activity", () => {
     const records = [...call(1, "bash", { command: "bun test" }), event(3, "agent.suspended", { reason: "event" })]
-    expect(traceStatus(model(records))).toMatchObject({ activity: "Running bun test", condition: "blocked", action: "resume" })
+    expect(traceStatus(model(records))).toMatchObject({ activity: "Ran bun test", condition: "blocked", action: "resume" })
     expect(traceStatus(model([...records, event(4, "run.resumed")])).condition).toBeUndefined()
   })
   test("only unresolved approvals request a human decision", () => {
@@ -43,6 +44,12 @@ describe("current run status", () => {
     expect(traceStatus(model([]))).toEqual({})
     expect(traceStatus(model([event(1, "agent.model-settled", { text: "I am thrashing and blocked" })])).condition).toBeUndefined()
     expect(traceStatus(model([...call(1, "read", { path: "README" }), ...call(3, "read", { path: "README" })])).condition).toBeUndefined()
+  })
+  test("settled calls use past tense and never replace another open call", () => {
+    const first = call(1, "read", { path: "README.md" })
+    const second = call(2, "write", { path: "src/file.ts" })
+    expect(traceStatus(model([first[0]!, second[0]!, { ...first[1]!, sequence: 3 }])).activity).toBe("Writing src/file.ts")
+    expect(traceStatus(model([first[0]!, { ...first[1]!, payload: { flowName: "read", callId: "c1", outcome: "failure" } }])).activity).toBe("Failed read README.md")
   })
 })
 
@@ -77,6 +84,10 @@ describe("recorded goal progress", () => {
   test("one passing check cannot tick a goal with other required checks", () => {
     expect(goals(call(1, "bash", { command: "bun test tests/memory" }))[0]!.state).toBe("pending")
     expect(goals([...call(1, "bash", { command: "bun test tests/memory" }), ...call(3, "bash", { command: "bun run check //memory:review" })])[0]!.state).toBe("passed")
+  })
+  test.each(["./src/memory.ts", "src/../src/memory.ts", "/workspace/src/memory.ts", "src\\memory.ts"])("a changed path spelled %s cannot retain a passing check", path => {
+    expect(checkState([...call(1, "bash", { command: "bun test tests/memory" }),
+      event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: [path] })])).toBe("stale")
   })
   test("native receipts bind the exact plan check, implementation and ancestry", () => {
     const change = CODING_PLAN.changes[0]!, check = change.checks[0]!

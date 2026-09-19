@@ -178,7 +178,7 @@ test("T1: launch a fixture flow, steer it, stop it, and see it in the run inbox"
   await send(page, `/flow.run review-pr ${REPO}`)
   const card = page.locator(`[data-kind="run-trace"][data-run-id="${RUN_ID}"]`)
   await expect(card).toBeVisible({ timeout: 15_000 })
-  await expect(card).toContainText("Running on your workspace.")
+  await expect(card).toContainText("Running")
   expect(rpc.map((call) => call.procedure)).toContain("Run")
 
   // Steer: the row's message rides the Steer procedure with the steer envelope.

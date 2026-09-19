@@ -1430,7 +1430,7 @@
 	margin: 0;
 	font-size: var(--fs-body);
 }
-.run-outcome-words { font-weight: 600; }
+.run-outcome-words { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
 .run-outcome-facts {
 	color: var(--text-muted);
 	font-size: var(--fs-small);
@@ -1484,15 +1484,13 @@
 .run-result > :first-child { margin-top: 0; }
 .run-result > :last-child { margin-bottom: 0; }
 
-/* 2 & 3. Folds: the executed plan and the settled run's progress. */
-.run-progress-fold,
-.coding-plan-fold {
+/* The settled run's progress. */
+.run-progress-fold {
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
 	background: var(--surface);
 }
-.run-progress-fold > summary,
-.coding-plan-fold > summary {
+.run-progress-fold > summary {
 	display: flex;
 	align-items: baseline;
 	gap: var(--sp-2);
@@ -1500,10 +1498,8 @@
 	cursor: pointer;
 	list-style: none;
 }
-.run-progress-fold > summary::-webkit-details-marker,
-.coding-plan-fold > summary::-webkit-details-marker { display: none; }
-.run-progress-fold > summary::before,
-.coding-plan-fold > summary::before {
+.run-progress-fold > summary::-webkit-details-marker { display: none; }
+.run-progress-fold > summary::before {
 	content: "";
 	width: 0.375rem;
 	height: 0.375rem;
@@ -1514,14 +1510,11 @@
 	transform: rotate(-45deg);
 	transition: transform var(--dur) var(--ease-current);
 }
-.run-progress-fold[open] > summary::before,
-.coding-plan-fold[open] > summary::before { transform: rotate(45deg); }
-.run-progress-fold > summary:focus-visible,
-.coding-plan-fold > summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; border-radius: var(--r-sm); }
-.run-fold-title, .coding-plan-fold-title { font-weight: 600; }
-.run-fold-meta, .coding-plan-fold .coding-plan-meta { color: var(--text-muted); font-size: var(--fs-small); }
-.run-progress-fold > .run-progress,
-.coding-plan-fold > * + * { padding: 0 var(--sp-3) var(--sp-3); }
+.run-progress-fold[open] > summary::before { transform: rotate(45deg); }
+.run-progress-fold > summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; border-radius: var(--r-sm); }
+.run-fold-title { font-weight: 600; }
+.run-fold-meta { color: var(--text-muted); font-size: var(--fs-small); }
+.run-progress-fold > .run-progress { padding: 0 var(--sp-3) var(--sp-3); }
 .run-progress {
 	list-style: none;
 	margin: 0;
@@ -1612,10 +1605,6 @@
 }
 .run-turn-body { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .run-turn-text { overflow-wrap: anywhere; }
-.run-turn-calls { display: flex; flex-wrap: wrap; gap: 0.25rem var(--sp-2); font-size: var(--fs-small); color: var(--text-muted); }
-.run-turn-call { font-family: var(--font-mono); }
-.run-turn-call[data-status="failed"]::after { content: " ✕"; color: var(--danger); }
-.run-turn-call[data-status="running"]::after { content: " …"; }
 .run-turn .run-trace-duration { line-height: 1.5; }
 .run-trace-duration {
 	font-family: var(--font-mono);
@@ -1630,7 +1619,6 @@
 	gap: var(--sp-2);
 	padding: 0 var(--sp-3) var(--sp-3) 2.5rem;
 }
-.run-turn-detail-root { padding: 0; }
 .run-trace-path {
 	margin: 0;
 	overflow-wrap: anywhere;
@@ -1681,10 +1669,10 @@
 .run-trace-node[data-status="failed"] .run-trace-status,
 .run-trace-node[data-status="denied"] .run-trace-status { color: var(--danger); }
 
-/* The timeline: tree beside waterfall and pane; stacked on a narrow card. */
+/* The optional debugger shares the reading column. */
 .run-trace-body {
 	display: grid;
-	grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1fr);
 	gap: var(--sp-2);
 }
 @container (max-width: 40rem) {
@@ -2062,14 +2050,10 @@
 .coding-plan-start:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 .coding-plan-started { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
 .coding-plan-started code { font-family: var(--font-mono); font-size: var(--fs-small); }
-.coding-plan-changes { list-style: none; padding: 0; margin: 0; }
-.coding-plan-change { width: 100%; display: flex; gap: 0.75rem; padding: 0.5rem; text-align: left; color: inherit; font: inherit; background: transparent; border: 0; border-radius: 0.375rem; cursor: pointer; }
-.coding-plan-change[aria-expanded="true"] { background: var(--brand-soft); }
-.coding-plan-change:focus-visible, .coding-plan summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.coding-plan summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 .coding-plan-number, .coding-plan-meta { color: var(--text-muted); }
 .coding-plan-number { font-family: var(--font-mono); font-size: var(--fs-small); text-align: right; }
 .coding-plan-meta { font-size: var(--fs-small); margin: 0; }
-.coding-plan-change .coding-plan-meta { display: block; }
 .coding-plan-detail { padding: 0.75rem; overflow-wrap: anywhere; }
 .coding-plan-detail p { margin: 0.25rem 0 0.5rem; }
 .coding-plan-atoms { padding-left: 1.25rem; }
@@ -2254,3 +2238,15 @@
 .smithers-card[data-kind="account"] .secrets-table th { width: 35%; overflow-wrap: anywhere; }
 .smithers-card[data-kind="account"] .secrets-table td { overflow-wrap: anywhere; }
 .live-tutorial-limit { color: var(--warning); }
+/* Current status and recorded goals use the card's reading column. */
+.run-outcome-condition { color: var(--warning); font-size: var(--fs-small); }
+.run-goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.run-goal { display: flex; align-items: baseline; gap: var(--sp-2); width: 100%; border: 0; background: transparent; padding: var(--sp-2) 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.run-goal:hover { background: var(--hover-subtle); }
+.run-goal:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.run-goal-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.run-goal-state { color: var(--text-muted); font-size: var(--fs-small); }
+.run-goals [data-state="passed"] .run-goal-state { color: var(--success); }
+.run-goals [data-state="failed"] .run-goal-state { color: var(--danger); }
+.run-row-evidence { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.run-line-result { min-width: 0; overflow-wrap: anywhere; }

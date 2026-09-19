@@ -1,39 +1,16 @@
 import { flowAction } from "../flows/FlowAction"
-/*
- * The embedded run card's body: what the run did, in the order a reader
- * needs it.
- *
- *   1. The outcome: one line, the run's phase in words plus the recorded
- *      facts (turns, calls, wall time), then the run's result text.
- *   2. The plan it executed, folded away (CodingPlanCard.tsx): planned work is
- *      not executed work, so a run card never repeats its plan open.
- *   3. Progress: the run's own step words, open while it moves, folded once
- *      it settled.
- *   4. The turns: one row per recorded turn, the model's first sentence and
- *      the flows it called. A row expands in place into that turn's recorded
- *      detail (its script, its calls, the selected span's journal facts).
- *      The timeline view is the same journal as a phase band you can scrub,
- *      one plain-English row per frame with its discipline events under it,
- *      and the call tree and waterfall.
- *
- * The model is RunTrace.ts's fold over the run card's `events` (the
- * `run-events` projection the pump keeps current while the run is live). A
- * run with no journal yet is the root alone with the run's status. A run of
- * kind prototype wears the never-promoted banner and the narrower filter set
- * (§3); nothing else differs here.
- *
- * Every view fact lives in the card payload: `traceView`, `filter`,
- * `selection`, `cursorSeq` and `liveTail`. Buttons and agent/slash requests
- * enter the same runs.trace.* flows with their actor recorded. This component
- * holds no state of its own. A call that failed is a fact about that call:
- * the outcome line reads the run's phase, never a child span's status.
+/**
+ * The run reads as current status, goals and journal rows. A persisted row
+ * selection opens its code and evidence. The timeline view adds the debugger.
+ * Every view choice enters an existing runs.trace flow; this card owns no state.
  */
 import { runSourceCommand } from "../flows/RunCommand"
-import { Button, Markdown, StatusPill } from "@smthrs/ui"
+import { Markdown, StatusPill } from "@smthrs/ui"
 import { PhaseStrip } from "./RunTracePhaseStrip"
 export { phasePins } from "./RunTracePhaseStrip"
 import { codingEvidenceOf } from "./CodingPlan"
 import { CodingPlanBody } from "./CodingPlanCard"
+import { RunTraceSummary } from "./RunTraceSummary"
 import { CodingPocBody } from "./CodingPocCard"
 import { CodingVibeBody } from "./CodingVibeCard"
 import type { Card } from "../state/AppState"
@@ -55,25 +32,6 @@ import {
 
 /** The banner every prototype run wears (spec 06 §3, mock #s6). */
 export const PROTOTYPE_BANNER = "Prototypes are evidence for /implement, then reaped. No review, no gates, no landing."
-
-/*
- * Wave 11 — the run's phase in words: live status from the relay event
- * stream, the result leading once the run settles. Stream loss is routine and
- * stated honestly ("reconnecting"), never a silent stall.
- */
-export const WORKFLOW_RUN_PHASE_WORDS: Readonly<Record<string, string>> = {
-  launching: "Starting the run…",
-  running: "Running on your workspace.",
-  "waiting-approval": "Waiting for your approval below.",
-  reconnecting: "Reconnecting to the workspace — the run continues; this card catches up on its own.",
-  /* Wave 12 §3 — the bounded stance: honest, not silent, and not still polling. */
-  quiet: "This run has gone quiet — no progress from your workspace for a long time, so I stopped checking.",
-  stopped: "I stopped watching this run. It may still be running on your workspace.",
-  completed: "Finished.",
-  failed: "Failed.",
-  cancelled: "Cancelled.",
-  "no-capacity": "No workspace capacity right now."
-}
 
 /** The phases a run has settled in. */
 export const TERMINAL_RUN_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "no-capacity"])
@@ -192,17 +150,6 @@ export const selectedSpan = (card: RunTraceCard, model: TraceModel): TraceSpan =
   return model.root
 }
 
-/** The calls a turn made, in order, each once: the row's summary of what the agent did. */
-const callsOf = (frame: TraceSpan): ReadonlyArray<TraceSpan> => {
-  const calls: Array<TraceSpan> = []
-  const walk = (span: TraceSpan): void => {
-    if (span.kind === "call") calls.push(span)
-    for (const child of span.children) walk(child)
-  }
-  walk(frame)
-  return calls
-}
-
 export const RunTraceBody = ({
   card,
   onRunCommand: sendRunCommand,
@@ -239,7 +186,7 @@ export const RunTraceBody = ({
     span.kind === "execution" || span.id.startsWith("engine-gap:") || span.id.startsWith("engine-invalid:")
   )
   // Following a run is cheap. The debugger appears only after an explicit selection or timeline request.
-  const inspecting = view === "timeline" || card.payload.selection !== undefined
+  const inspecting = card.payload.selection !== undefined
   const wall = model.extent.end - model.extent.start
   const settled = TERMINAL_RUN_PHASES.has(phase)
   /*
@@ -266,12 +213,10 @@ export const RunTraceBody = ({
     </span>
   ) : null
   const detail = (
-    <TurnDetail card={card} model={model} selected={selected} path={path} scope={scope} rows={rows} frame={frame} onRunCommand={onRunCommand} />
+    <TurnDetail card={card} model={model} selected={selected} scope={scope} frame={frame} onRunCommand={onRunCommand} />
   )
   return (
     <div className="run-trace" data-testid={`run-trace-${runId}`} data-kind={kind} data-view={planOnly ? "plan" : view}>
-      <Button size="sm" variant="outline" 
-        {...flowAction(onRunCommand, "runs.handoff", runId)}>Prepare handoff</Button>
       {kind === "prototype" ?
         (
           <p className="run-trace-banner" data-testid={`run-trace-banner-${runId}`}>
@@ -280,11 +225,7 @@ export const RunTraceBody = ({
         ) :
         null}
       {planOnly ? null : (
-        <header className="run-outcome" data-phase={phase} data-testid={`run-outcome-${runId}`}>
-          <span className="run-outcome-dot" data-status={phase} aria-hidden />
-          <span className="run-outcome-words">{WORKFLOW_RUN_PHASE_WORDS[phase] ?? phase}</span>
-          {facts.length > 0 ? <span className="run-outcome-facts">{facts.join(" · ")}</span> : null}
-        </header>
+        <RunTraceSummary card={card} model={whole} facts={facts} onRunCommand={onRunCommand} />
       )}
       {!planOnly && result !== null ? repositoryRun ? (
         <details className="run-progress-fold">
@@ -292,7 +233,7 @@ export const RunTraceBody = ({
           <pre className="run-trace-code" tabIndex={0} aria-label="Run output">{result}</pre>
         </details>
       ) : <Markdown className="smithers-card-markdown run-result" content={result} /> : null}
-      <CodingPlanBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
+      <CodingPlanBody model={whole} card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
       <CodingPocBody card={card} onRunCommand={onRunCommand} />
       <CodingVibeBody card={card} onRunCommand={onRunCommand} />
       {/* The run's progress words (payload.steps, a short tail the pump and replays write), newest last. */}
@@ -303,7 +244,7 @@ export const RunTraceBody = ({
             {steps.map((step, index) => <li key={`${index}:${step}`}>{step}</li>)}
           </ol>
         </details>
-      ) : (
+      ) : model.lines.length > 0 ? null : (
         <ol className="run-progress" aria-label="Progress" data-run-steps="">
           {steps.map((step, index) => <li key={`${index}:${step}`}>{step}</li>)}
         </ol>
@@ -312,7 +253,7 @@ export const RunTraceBody = ({
         <>
           {turns.length > 0 || native.length > 0 || scrub !== null ? (
             <div className="run-trace-bar" data-view="turns" role="group" aria-label="Trace presentation">
-              <span className="run-trace-bar-title">Turns</span>
+              <span className="run-trace-bar-title">Timeline</span>
               {scrub}
               <button
                 type="button"
@@ -320,47 +261,13 @@ export const RunTraceBody = ({
                 aria-pressed={false}
                 {...flowAction(onRunCommand, "runs.trace.view", `${runId} timeline`)}
               >
-                Timeline
+                Details
               </button>
             </div>
           ) : null}
-          {turns.length > 0 ? (
-            <ol className="run-turns" aria-label="Turn explanations">
-              {turns.map((turn) => {
-                const open = inspecting && frame?.id === turn.frame.id
-                const detailId = `${card.id}-turn-${turn.number}`
-                const made = callsOf(turn.frame)
-                return (
-                  <li key={turn.frame.id} data-turn-open={open}>
-                    <button
-                      type="button"
-                      className="run-turn"
-                      data-turn={turn.number}
-                      aria-pressed={open}
-                      aria-expanded={open}
-                      aria-controls={open ? detailId : undefined}
-                      title={turn.source === "model" ? "Recorded model text" : "Recorded journal activity"}
-                      {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${turn.frame.id}`)}
-                    >
-                      <span className="run-turn-number">{turn.number}</span>
-                      <span className="run-turn-body">
-                        <span className="run-turn-text">{turn.text}</span>
-                        {made.length > 0 ? (
-                          <span className="run-turn-calls" aria-label="Flows called">
-                            {made.map((call) => (
-                              <span key={call.id} className="run-turn-call" data-status={call.status}>{call.label}</span>
-                            ))}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="run-trace-duration">{durationOf(turn.frame, model) ?? ""}</span>
-                    </button>
-                    {open ? <div id={detailId} className="run-turn-detail">{detail}</div> : null}
-                  </li>
-                )
-              })}
-            </ol>
-          ) : null}
+          <PhaseStrip model={whole} records={card.payload.events ?? []} runId={runId} cursorSeq={card.payload.cursorSeq} onRunCommand={onRunCommand} />
+          <FrameLines model={model} selected={selected} runId={runId} onRunCommand={onRunCommand}
+            openFrame={inspecting ? frame?.id : undefined} detail={detail} cardId={card.id} />
           {native.length > 0 ? (
             <ol className="run-turns run-engine" aria-label="Recorded engine work">
               {native.map((span) => {
@@ -394,8 +301,6 @@ export const RunTraceBody = ({
               {settled ? "No turns were recorded." : "No turns yet."}
             </p>
           ) : null}
-          {/* A selection outside any turn (the run itself, or an engine span with no row) still gets its detail. */}
-          {inspecting && frame === undefined ? <div className="run-turn-detail run-turn-detail-root">{detail}</div> : null}
         </>
       ) : (
         <>
@@ -406,9 +311,9 @@ export const RunTraceBody = ({
               aria-pressed={false}
               {...flowAction(onRunCommand, "runs.trace.view", `${runId} turns`)}
             >
-              Turns
+              Timeline
             </button>
-            <span className="run-trace-bar-title">Timeline</span>
+            <span className="run-trace-bar-title">Details</span>
             {filters.map(([id, label]) => (
               <button
                 key={id}
@@ -532,11 +437,14 @@ const Note = ({ note }: { readonly note: TraceNote }) => (
  * fold still renders, at the end: a dropped note would read as a run with
  * nothing to say about it.
  */
-const FrameLines = ({ model, selected, runId, onRunCommand }: {
+const FrameLines = ({ model, selected, runId, onRunCommand, openFrame, detail, cardId = runId }: {
   readonly model: TraceModel
   readonly selected: TraceSpan
   readonly runId: string
   readonly onRunCommand: RunCommand
+  readonly openFrame?: string
+  readonly detail?: React.ReactNode
+  readonly cardId?: string
 }) => {
   const { lines, notes } = model
   if (lines.length === 0 && notes.length === 0) return null
@@ -544,7 +452,7 @@ const FrameLines = ({ model, selected, runId, onRunCommand }: {
   return (
     <ol className="run-lines" aria-label="What each frame did">
       {lines.map((line) => (
-        <li key={line.spanId}>
+        <li key={line.spanId} data-turn-open={openFrame === line.spanId}>
           <button
             type="button"
             className="run-line"
@@ -552,7 +460,9 @@ const FrameLines = ({ model, selected, runId, onRunCommand }: {
             data-failed={line.failed}
             data-wrote={line.wrote}
             aria-pressed={selected.id === line.spanId}
-            {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${line.spanId}`)}
+            aria-expanded={openFrame === line.spanId}
+            aria-controls={openFrame === line.spanId ? `${cardId}-${line.spanId}` : undefined}
+            {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${openFrame === line.spanId ? model.root.id : line.spanId}`)}
           >
             <span className="run-line-number">{line.frame}</span>
             <span className="run-line-body">
@@ -565,7 +475,8 @@ const FrameLines = ({ model, selected, runId, onRunCommand }: {
             <span className="run-line-result">{line.result}</span>
             {line.repeatOf === undefined ? null : <span className="run-line-repeat">same as {line.repeatOf}</span>}
           </button>
-          {notes.filter((note) => note.spanId === line.spanId).map((note) => <Note key={note.seq} note={note} />)}
+          {openFrame === line.spanId ? <div id={`${cardId}-${line.spanId}`} className="run-turn-detail">{detail}</div> : null}
+          {(detail === undefined || openFrame === line.spanId) ? notes.filter((note) => note.spanId === line.spanId).map((note) => <Note key={note.seq} note={note} />) : null}
         </li>
       ))}
       {notes.filter((note) => !placed.has(note.spanId)).map((note) => (
@@ -611,11 +522,12 @@ const CallTree = ({ rows, selected, model, runId, onRunCommand }: {
 /** The script the turn ran, as the journal recorded it. */
 const TurnSource = ({ scope }: { readonly scope: ReadonlyArray<TraceSpan> }) => {
   const cells = scope.filter((span) => span.detail.source !== undefined)
+  if (cells.length === 0) return null
   return (
     <section className="run-turn-source" aria-label="Recorded turn source">
       {cells.length > 0
         ? cells.map((span) => <Block key={span.id} title="Script" text={span.detail.source!} />)
-        : <p className="run-trace-empty">No script source was recorded for this turn.</p>}
+        : null}
     </section>
   )
 }
@@ -634,30 +546,29 @@ const ChildRunDoor = ({ span, repo, onRunCommand }: { readonly span: TraceSpan; 
     ) :
     null
 
-/**
- * One turn, expanded in place: where the selection sits, the turn's script,
- * its calls as a tree, and the selected span's recorded facts. The same
- * pieces the timeline shows, scoped to the turn the reader opened.
- */
-const TurnDetail = ({ card, model, selected, path, scope, rows, frame, onRunCommand }: {
+/** A selected row opens its recorded code, model response and call evidence in place. */
+const TurnDetail = ({ card, model, selected, scope, frame, onRunCommand }: {
   readonly card: RunTraceCard
   readonly model: TraceModel
   readonly selected: TraceSpan
-  readonly path: ReadonlyArray<TraceSpan>
   readonly scope: ReadonlyArray<TraceSpan>
-  readonly rows: ReadonlyArray<TraceSpan>
   readonly frame: TraceSpan | undefined
   readonly onRunCommand: RunCommand
 }) => {
   const { runId } = card.payload
   return (
     <>
-      <nav className="run-trace-path" aria-label="Recorded call path">
-        <PathCrumbs path={path} selected={selected} runId={runId} onRunCommand={onRunCommand} />
-      </nav>
       {frame !== undefined && frame.kind === "frame" ? <TurnSource scope={scope} /> : null}
-      <CallTree rows={rows} selected={selected} model={model} runId={runId} onRunCommand={onRunCommand} />
-      <SpanPane span={selected} model={model} runId={runId} />
+      {scope.filter(span => span.detail.printed !== undefined || span.kind === "call" || span.kind === "model").map(span => (
+        <div key={span.id} className="run-row-evidence" data-evidence-span={span.id}>
+          {span.kind === "call" ? <strong>{span.label}</strong> : null}
+          {span.detail.printed === undefined ? null : <Block title="Printed" text={span.detail.printed} />}
+          {span.detail.input === undefined ? null : <Block title="Input" text={json(span.detail.input)} />}
+          {span.detail.output === undefined ? null : <Block title={span.kind === "model" ? "Model" : "Output"} text={span.detail.output} />}
+          {span.detail.message === undefined ? null : <Block title="Failure" text={span.detail.message} alert />}
+        </div>
+      ))}
+      {selected.kind === "execution" || selected.kind === "event" || selected.kind === "run" ? <SpanPane span={selected} model={model} runId={runId} /> : null}
       <ChildRunDoor span={selected} repo={card.payload.repo} onRunCommand={onRunCommand} />
     </>
   )

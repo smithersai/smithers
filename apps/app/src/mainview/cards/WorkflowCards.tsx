@@ -186,18 +186,6 @@ export const WorkflowRunCardBody = ({
           {LIVE_RUN_PHASES.has(phase) ?
             (
               <div className="flow-run-lifecycle">
-                {card.payload.waiting !== undefined && card.payload.waiting !== "approval" ?
-                  (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-testid={`flow-run-resume-${runId}`}
-                      {...flowAction(onRunCommand, "runs.resume", runId)}
-                    >
-                      Resume
-                    </Button>
-                  ) :
-                  null}
                 <Button
                   size="sm"
                   variant="outline"

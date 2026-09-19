@@ -2,6 +2,9 @@ import { flowAction } from "../flows/FlowAction"
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
 import { codingEvidenceOf } from "./CodingPlan"
+import { traceFromJournal, type TraceModel } from "./RunTrace"
+import { traceGoals } from "./RunTraceStatus"
+import { RunTraceGoals, GOAL_STATE_WORDS } from "./RunTraceGoals"
 import { codingVibeAvailable, codingVibeRequestOf, type WorkflowCatalog } from "./CodingVibe"
 import { flowArgs } from "../flows/FlowArgs"
 import type { RunCommand } from "./CardFamily"
@@ -27,8 +30,9 @@ export const startedRunOf = (card: RunCard): { readonly runId: string; readonly 
  * ownership is visible before execution; recorded receipts arrive through
  * the run journal and the receipt strip.
  */
-export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCatalogs = [] }: {
+export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCatalogs = [], model }: {
   readonly card: RunCard
+  readonly model?: TraceModel
   readonly onRunCommand: RunCommand
   readonly workflowCatalogs?: ReadonlyArray<WorkflowCatalog>
 }) => {
@@ -42,7 +46,6 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
     const decoded = decodeChangeReceipt(card.payload.input?.tutorialReceipt)
     if (receiptMatchesPlan(decoded, plan, card.payload.repo, card.payload.runId)) receipt = decoded
   } catch { /* Unverified results never draw a parent relation. */ }
-  const tutorial = card.payload.kind === "change-plan" || card.payload.kind === "change"
   const planCard = card.payload.kind === "change-plan"
   const selected = plan.changes.find((change) => change.id === card.payload.codingChangeId)
   const reviewSummary = reviewFeedback?.result.findings[0]?.message ?? ""
@@ -50,6 +53,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
   const change = plan.changes[0]
   const atoms = plan.changes.flatMap(entry => entry.atoms)
   const started = startedRunOf(card)
+  const goals = traceGoals(model ?? traceFromJournal({ runId: card.payload.runId, flowId: card.payload.workflow, status: card.payload.phase }, card.payload.events ?? []), plan, card.payload.cursorSeq)
   return (
     <section className="coding-plan" aria-label="Coding plan" data-plan-card={planCard} data-plan-started={planCard ? card.status !== "active" : undefined}>
       {reviewFeedback === undefined ? null : (
@@ -95,31 +99,15 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
           )}
         </div>
       )}
-      {tutorial && change !== undefined ? (
-        planCard ? (
-          <>
-            <h4 className="coding-plan-title">{change.title}</h4>
-            <p className="coding-plan-intent">{change.intent}</p>
-            <PlannedCommits card={card} atoms={atoms} />
-            {change.checks.filter(check => check.tier === "fast").map(check => (
-              <p key={check.id} className="coding-plan-meta" data-plan-check={check.id}>Check: <code>{check.target}</code></p>
-            ))}
-            <p className="coding-plan-meta">Base HEAD <code className="coding-plan-sha" title={plan.base.commitId}>{plan.base.commitId}</code></p>
-          </>
-        ) : (
-          <details className="coding-plan-fold">
-            <summary>
-              <span className="coding-plan-fold-title">Plan</span>
-              <span className="coding-plan-meta">{atoms.length} {atoms.length === 1 ? "commit" : "commits"} · base <code className="coding-plan-sha" title={plan.base.commitId}>{plan.base.commitId}</code></span>
-            </summary>
-            <p className="coding-plan-intent">{change.intent}</p>
-            <PlannedCommits card={card} atoms={atoms} />
-            {change.checks.filter(check => check.tier === "fast").map(check => (
-              <p key={check.id} className="coding-plan-meta" data-plan-check={check.id}>Check: <code>{check.target}</code></p>
-            ))}
-          </details>
-        )
-      ) : null}
+      {planCard && change !== undefined ? <>
+        <h4 className="coding-plan-title">{change.title}</h4>
+        <p className="coding-plan-intent">{change.intent}</p>
+        <PlannedCommits card={card} atoms={atoms} />
+        {change.checks.filter(check => check.tier === "fast").map(check => (
+          <p key={check.id} className="coding-plan-meta" data-plan-check={check.id}>Check: <code>{check.target}</code></p>
+        ))}
+        <p className="coding-plan-meta">Base HEAD <code className="coding-plan-sha" title={plan.base.commitId}>{plan.base.commitId}</code></p>
+      </> : null}
       {planCard ? (
         card.status === "active" ? (
           <div className="coding-plan-door">
@@ -140,30 +128,9 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
           </div>
         )
       ) : null}
-      {tutorial ? null : (
+      {planCard ? null : (
         <>
-          <h4>Predicted Changes</h4>
-          <ol className="coding-plan-changes" aria-label="Predicted Changes">
-            {plan.changes.map((entry, index) => (
-              <li key={entry.id}>
-                <button
-                  type="button"
-                  className="coding-plan-change"
-                  aria-expanded={selected?.id === entry.id}
-                  aria-controls={detailsId}
-                  {...flowAction(onRunCommand, "runs.coding.select", `${card.payload.runId} ${entry.id}`)}
-                >
-                  <span className="coding-plan-number">{index + 1}</span>
-                  <span>
-                    <strong>{entry.title}</strong>
-                    <span className="coding-plan-meta">
-                      {entry.atoms.length} atomic {entry.atoms.length === 1 ? "change" : "changes"}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
+          <RunTraceGoals goals={goals} runId={card.payload.runId} selected={selected?.id} detailsId={detailsId} onRunCommand={onRunCommand} />
           {selected === undefined ?
             null :
             (
@@ -195,6 +162,9 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
                     <li key={check.id}>
                       <span>{check.target}</span>
                       <span className="coding-plan-meta">{check.tier} · {check.required ? "required" : "optional"}</span>
+                      <span data-check={check.id} data-state={goals.find(goal => goal.id === selected.id)?.checks.find(item => item.id === check.id)?.state}>
+                        {GOAL_STATE_WORDS[goals.find(goal => goal.id === selected.id)?.checks.find(item => item.id === check.id)?.state ?? "pending"]}
+                      </span>
                     </li>
                   ))}
                 </ul>

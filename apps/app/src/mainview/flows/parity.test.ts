@@ -327,10 +327,10 @@ describe("launch-law parity: every affordance is a command", () => {
       /*
        * The run card's lane-runs acts: the two secondary tabs under the trace
        * (Steps, Transcript; Events under verbose), Check again and Stop
-       * watching, Resume, Stop, Run again, the steer row's send, the
+       * watching, launch Retry, Stop, Run again, the steer row's send, the
        * repository chooser's row and the workflow list's Run.
        */
-      "../cards/WorkflowCards.tsx": 15,
+      "../cards/WorkflowCards.tsx": 14,
       "../DevtoolsPanel.tsx": 1,
       "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
@@ -374,16 +374,13 @@ describe("launch-law parity: every affordance is a command", () => {
        */
       "../cards/WorkspaceCard.tsx": 16,
       "../cards/HistoryCard.tsx": 2,
-      /*
-       * The run trace: the live return, Prepare handoff, the two presentation
-       * switches (Turns and Timeline), the filters, the turn rows, the engine
-       * rows, the breadcrumbs, the tree rows, the timeline bars and the
-       * recorded child link. Every button enters onRunCommand and persists in
-       * the same card. The phase strip has its own module and census below.
-       */
-      "../cards/RunTraceCard.tsx": 12,
-      // Single milestones, disclosed members and phase jumps all select a recorded sequence.
+      /* The trace owns selection, views, filters and child navigation.
+       * The extracted strip selects recorded sequences; summary actions reuse
+       * approvals.open and runs.resume; goals reuse runs.coding.select. */
+      "../cards/RunTraceCard.tsx": 10,
       "../cards/RunTracePhaseStrip.tsx": 3,
+      "../cards/RunTraceSummary.tsx": 2,
+      "../cards/RunTraceGoals.tsx": 1,
       /*
        * Lane runs: the run inbox's Open per row, its All/status filter chips,
        * and the Stop-all footer (all through onRunCommand), plus the
@@ -428,7 +425,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * and, once started, Open the run (card.maximize) — all through
        * onRunCommand with data-flow set.
        */
-      "../cards/CodingPlanCard.tsx": 7,
+      "../cards/CodingPlanCard.tsx": 6,
       "../cards/CodingPocCard.tsx": 2, // Native execution inspection and existing steering form.
       "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
       /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */

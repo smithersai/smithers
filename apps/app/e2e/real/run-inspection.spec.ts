@@ -194,7 +194,7 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   expect(transcript.length, "the provider-backed run must record at least one transcript row").toBeGreaterThan(0)
 
   const trace = card.getByTestId(`run-trace-${launched.runId}`)
-  const timeline = trace.getByRole("button", { name: "Timeline", exact: true })
+  const timeline = trace.getByRole("button", { name: "Details", exact: true })
   await timeline.focus()
   await expect(timeline).toBeFocused()
   await timeline.press("Enter")
@@ -314,7 +314,7 @@ workflowTest("a completed agent run's timeline shows its phases and frame lines,
   expect(latest, "a completed run journals records after its first turn opened").toBeGreaterThan(opens[0]!)
 
   const trace = ownCard().getByTestId(`run-trace-${runId}`)
-  await trace.getByRole("button", { name: "Timeline", exact: true }).click()
+  await trace.getByRole("button", { name: "Details", exact: true }).click()
   await expect(trace).toHaveAttribute("data-view", "timeline")
   // The pump pages the journal onto the card; give it the same minute the outcome line gets.
   await expect(treeFrames(trace), "the card must hold the same journal the gateway answered with").toHaveCount(frames.length, { timeout: 60_000 })

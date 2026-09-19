@@ -3,13 +3,24 @@ import * as Digest from "@smthrs/core/Digest"
 import { openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../flows/coding/schema"
 import { engineRunEvidence } from "./EngineTrace"
-import type { JournalRecord, TraceModel } from "./RunTrace"
+import type { TraceModel } from "./RunTrace"
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown): string | undefined => typeof value === "string" && value !== "" ? value : undefined
 const strings = (value: unknown): ReadonlyArray<string> => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 const terminal = new Set(["completed", "failed", "cancelled", "no-capacity"])
+const verbs = new Map<string, readonly [string, string]>([
+  ["read", ["Reading", "Read"]], ["grep", ["Searching", "Searched"]], ["glob", ["Listing", "Listed"]], ["ls", ["Listing", "Listed"]],
+  ["edit", ["Editing", "Edited"]], ["write", ["Writing", "Wrote"]], ["apply_patch", ["Editing", "Patched"]],
+  ["test", ["Testing", "Tested"]], ["bash", ["Running", "Ran"]]
+])
+const callActivity = (name: string, input: unknown, settled = false, failed = false): string => {
+  const fields = record(input)
+  const subject = text(fields.path) ?? text(fields.command) ?? text(fields.pattern) ?? strings(fields.selection).join(" ")
+  const verb = failed ? `Failed ${name}` : verbs.get(name)?.[settled ? 1 : 0] ?? `${settled ? "Finished" : "Running"} ${name}`
+  return `${verb}${subject ? ` ${subject}` : ""}`
+}
 const visible = (model: TraceModel, cursor = Infinity) => uniqueCallEvents(model.journal.filter(row =>
   Number.isSafeInteger(row.sequence) && row.sequence! <= cursor &&
   (row.runId === undefined || `run:${row.runId}` === model.root.id)))
@@ -27,18 +38,25 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
   if ((cursor === undefined || cursor >= latest) && terminal.has(model.root.status)) return { verdict: model.root.status }
   let activity: string | undefined, condition: RunStatus["condition"], action: RunStatus["action"], verdict: string | undefined
   const approvals = new Set<string>()
+  const calls: Array<{ flowName: string; callId?: string; input: unknown }> = []
   for (const row of visible(model, cursor)) {
     const p = record(row.payload)
     switch (row.kind) {
       case "control.agent.turn-opened": activity = "Thinking"; break
       case "control.agent.cell-produced": activity = "Running code"; break
       case "control.agent.cell-call-started": {
-        const name = text(p.flowName), input = record(p.input)
+        const name = text(p.flowName)
         if (name === undefined) break
-        const verbs = new Map([["read", "Reading"], ["grep", "Searching"], ["glob", "Listing"], ["ls", "Listing"],
-          ["edit", "Editing"], ["write", "Writing"], ["apply_patch", "Editing"], ["test", "Testing"], ["bash", "Running"]])
-        const subject = text(input.path) ?? text(input.command) ?? text(input.pattern) ?? strings(input.selection).join(" ")
-        activity = `${verbs.get(name) ?? `Running ${name}`}${subject ? ` ${subject}` : ""}`
+        calls.push({ flowName: name, callId: text(p.callId), input: p.input })
+        activity = callActivity(name, p.input)
+        break
+      }
+      case "control.agent.cell-call-settled": {
+        const index = openCallIndex(calls, text(p.callId), text(p.flowName))
+        const ended = index < 0 ? undefined : calls.splice(index, 1)[0]
+        const ongoing = calls.at(-1)
+        if (ongoing !== undefined) activity = callActivity(ongoing.flowName, ongoing.input)
+        else if (ended !== undefined) activity = callActivity(ended.flowName, ended.input, true, p.outcome === "failure")
         break
       }
       case "control.agent.repeat-demanded": condition = "thrashing"; break
@@ -97,7 +115,22 @@ const match = (selection: ReadonlyArray<string> | undefined, target: string): "f
   return child || selection.some(token => token.startsWith("-")) ? "narrowed" : "full"
 }
 
-const overlap = (left: string, right: string): boolean => left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`) || /[*?]/.test(left + right)
+const relativePath = (value: string): string | undefined => {
+  const path = value.replaceAll("\\", "/")
+  if (path.startsWith("/") || /^[a-z]:\//i.test(path) || /[*?]/.test(path)) return undefined
+  const parts: Array<string> = []
+  for (const part of path.split("/")) {
+    if (part === "..") { if (parts.pop() === undefined) return undefined }
+    else if (part !== "" && part !== ".") parts.push(part)
+  }
+  return parts.join("/")
+}
+const overlap = (left: string, right: string): boolean => {
+  if (right.startsWith("//")) return false
+  const a = relativePath(left), b = relativePath(right)
+  // An unanchored path or glob cannot establish that a change was unrelated.
+  return a === undefined || b === undefined || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
+}
 const decodeImplementation = Schema.decodeUnknownOption(Implementation)
 const decodeReceipt = Schema.decodeUnknownOption(Receipt)
 
@@ -136,7 +169,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
       for (const row of journal) {
         const p = record(row.payload), seq = row.sequence!
         if (seq < planSequence) continue
-        for (const entry of nativeChecks.filter(entry => entry.opened === seq)) {
+        if (nativeChecks.some(entry => entry.opened === seq)) {
           state = "running"; resultSequence = seq
         }
         if (row.kind === "control.agent.mutation-observed" && p.basis === "observed" && p.mutated === true) invalidate(seq, strings(p.paths))

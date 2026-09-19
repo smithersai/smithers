@@ -1,0 +1,40 @@
+import type { Card } from "../state/AppState"
+import type { RunCommand } from "./CardFamily"
+import { flowAction } from "../flows/FlowAction"
+import { runSourceCommand } from "../flows/RunCommand"
+import type { TraceModel } from "./RunTrace"
+import { traceStatus } from "./RunTraceStatus"
+
+const words: Readonly<Record<string, string>> = {
+  launching: "Starting…", running: "Running", "waiting-approval": "Approval needed",
+  reconnecting: "Reconnecting…", quiet: "No recent progress", stopped: "Stopped watching",
+  completed: "Finished.", failed: "Failed.", cancelled: "Cancelled.", "no-capacity": "No workspace capacity"
+}
+const terminal = new Set(["completed", "failed", "cancelled", "no-capacity"])
+
+/** The live verdict and action never follow the inspection cursor. */
+export const RunTraceSummary = ({ card, model, facts, onRunCommand: send }: {
+  readonly card: Extract<Card, { kind: "run-trace" }>
+  readonly model: TraceModel
+  readonly facts: ReadonlyArray<string>
+  readonly onRunCommand: RunCommand
+}) => {
+  const { phase, runId, waiting } = card.payload
+  const current = traceStatus(model)
+  const verdict = terminal.has(phase) ? phase : current.verdict
+  const action = verdict !== undefined ? undefined : current.action ??
+    (phase === "waiting-approval" || waiting === "approval" ? "approval" : waiting === undefined ? undefined : "resume")
+  const condition = verdict !== undefined ? undefined : action === "approval" ? "Approval needed"
+    : current.condition === "thrashing" ? "Thrashing" : current.condition === "blocked" || action === "resume" ? "Blocked" : undefined
+  const status = verdict ?? phase
+  const activity = verdict === undefined && phase !== "launching" ? current.activity : undefined
+  const onRunCommand = runSourceCommand(card.id, send)
+  return <header className="run-outcome" data-phase={status} data-testid={`run-outcome-${runId}`} aria-label="Current run status">
+    <span className="run-outcome-dot" data-status={status} aria-hidden />
+    <span className="run-outcome-words">{verdict === undefined ? activity ?? words[phase] ?? phase : words[verdict]}</span>
+    {condition === undefined || condition === words[phase] && activity === undefined ? null : <span className="run-outcome-condition">{condition}</span>}
+    {action === "approval" ? <button type="button" className="run-trace-filter" {...flowAction(onRunCommand, "approvals.open", runId)}>Review approval</button>
+      : action === "resume" ? <button type="button" className="run-trace-filter" data-testid={`flow-run-resume-${runId}`} {...flowAction(onRunCommand, "runs.resume", runId)}>Resume</button> : null}
+    {facts.length === 0 ? null : <span className="run-outcome-facts">{facts.join(" · ")}</span>}
+  </header>
+}

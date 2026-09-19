@@ -34,14 +34,14 @@ test("a started plan shows the run it became and a door to it, never a stale Sta
   expect(withError).not.toContain('aria-label="Predicted Changes"')
 })
 
-test("the run card folds the executed plan away and keeps the receipt strip outside the fold", () => {
+test("the run card shows its goals and receipt without claiming that the plan was verified", () => {
   const sha = "e".repeat(40)
   const run = { ...card, id: "flow-run-run-9", payload: { ...card.payload, kind: "change", runId: "run-9",
     input: { ...card.payload.input, tutorialReceipt: { runId: "run-9", repo: "o/r", base: CODING_PLAN.base.commitId, parent: CODING_PLAN.base.commitId, sha, subject: "Store repository memory", files: ["src/memory.ts"] } } } }
   const html = renderToStaticMarkup(<CodingPlanBody card={run} onRunCommand={() => {}} />)
-  expect(html).toContain('class="coding-plan-fold"')
-  expect(html).toContain('aria-label="Planned commits"')
+  expect(html).toContain('aria-label="Goals"')
+  expect(html).toContain('data-state="pending"')
   expect(html).not.toContain('data-flow="agent.change.start"')
   expect(html).toContain('aria-label="Resulting commit"')
-  expect(html.indexOf("</details>")).toBeLessThan(html.indexOf('aria-label="Resulting commit"'))
+  expect(html.indexOf('aria-label="Goals"')).toBeLessThan(html.indexOf('aria-label="Resulting commit"'))
 })
