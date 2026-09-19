@@ -563,7 +563,8 @@ export const exec = (declared: PackageManager | undefined, argv: ReadonlyArray<s
     case "pnpm":
       return [manager.executable, "exec", ...argv]
     case "bun":
-      return [manager.executable, "x", ...argv]
+      // Installed tools often have a Node shebang; honor the declared runtime.
+      return [manager.executable, "x", "--bun", ...argv]
   }
 }
 

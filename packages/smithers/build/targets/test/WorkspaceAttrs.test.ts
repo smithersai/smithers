@@ -129,7 +129,7 @@ describe("a declared runtime overrides the interpreter without naming a manager"
 
   it("a Bun runtime moves the suite onto bun's own tool runner", () => {
     expect(plannedArgv(Vitest({ ...vitestAttrs, packageManager, runtime: bun })))
-      .toEqual(["bun", "x", "vitest", "run", "--environment", "node", "--coverage.enabled=false"])
+      .toEqual(["bun", "x", "--bun", "vitest", "run", "--environment", "node", "--coverage.enabled=false"])
   })
 
   it("the workspace runtime leaves the workspace manager in place", () => {
