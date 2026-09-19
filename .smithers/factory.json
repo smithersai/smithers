@@ -359,6 +359,19 @@
       "modelInvocable": true
     },
     {
+      "id": "coding/dispatch",
+      "description": "Run one dispatched agent turn in this workspace and answer with the assistant messages it produced.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/dispatch/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true
+    },
+    {
       "id": "coding/implementation",
       "description": "Implement one planned Change as native JJ atoms, preserving existing identities and recording exact revision evidence.",
       "summary": null,
@@ -372,8 +385,21 @@
       "modelInvocable": true
     },
     {
+      "id": "coding/prototype",
+      "description": "Create and retain a disposable source prototype without implementing or landing it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/prototype/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true
+    },
+    {
       "id": "coding/request",
-      "description": "Refresh verified repository memory, plan, retain a disposable prototype, replan from its feedback, and implement native Changes with bounded owner correction.",
+      "description": "Plan from current repository source and native history, then implement Changes with required checks and bounded owner correction.",
       "summary": null,
       "featured": false,
       "kind": "ts",
