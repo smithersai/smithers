@@ -56,7 +56,10 @@ for (const offset of [-1, 0, 1]) {
       } as unknown as ControlService
       const projection = yield* Projections.make(service)
       const selector = { _tag: "run-events" as const, runId: "byte-oracle" }
-      const page = yield* projection.snapshot(selector)
+      const snapshot = yield* Effect.exit(projection.snapshot(selector))
+      expect(snapshot._tag).toBe("Success")
+      if (snapshot._tag !== "Success") return
+      const page = snapshot.value
       expect(bytes(page.rows)).toBeLessThanOrEqual(limit)
       if (offset <= 0) {
         expect(page.rows).toEqual(rows)
