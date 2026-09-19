@@ -320,10 +320,14 @@ describe("the workspace package contract", () => {
     assert.notEqual(platform.manifest.peerDependenciesMeta?.["@effect/platform-bun"]?.optional, true)
   })
 
-  it("keeps node-shared available only to the Node host's development checks", () => {
+  it("requires the shared Node adapter at the same exact Effect RC", () => {
     const platform = publishable.find((entry) => entry.manifest.name === "@smthrs/platform-node")
     assert.ok(platform, "@smthrs/platform-node must be publishable")
-    assert.equal(platform.manifest.peerDependencies?.["@effect/platform-node-shared"], undefined)
+    // The upstream Node adapter's caret admits a later node-shared RC whose
+    // Effect peer conflicts with this release. The real npm CreateApp consumer
+    // reproduced ERESOLVE without the workspace's overrides to hide that edge.
+    assert.equal(platform.manifest.peerDependencies?.["@effect/platform-node-shared"], effectVersion)
+    assert.notEqual(platform.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional, true)
     assert.equal(platform.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
     assert.equal(platform.manifest.devDependencies?.["@effect/platform-node-shared"], effectVersion)
   })
