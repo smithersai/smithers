@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { RECEIPT_CODES, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence, setupVerdict } from "./RunFailure"
-import { HARNESS_CODES, MODEL_CODES, runCause } from "./RunCause"
+import { ANSWERED_CODES, runCause } from "./RunCause"
 import { librarianFailureMessage } from "./LibrarianLaunch"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
@@ -142,8 +142,39 @@ test("a run that died late names what happened, and never in the harness's own w
   for (const failure of [unproven, unjudged]) expect(failure.message).toContain("Not your fault")
 })
 
+/*
+ * Four real failures, verbatim from the packages that raise them, none of
+ * which is a model call. `failureSummary` walks to the innermost record that
+ * has a `message` and prefixes THAT record's code, so a `JjError`, a sandbox
+ * `ProviderError`, a `SyncError`, a `CodingError` and a std `StdError` all
+ * reach this file as a first line that looks exactly like the model's.
+ */
+const FOREIGN = [
+  /* flows/jj/src/node/NodeJj.ts:226 — @smthrs/jj/JjError */
+  "unknown: jj describe: cannot run in /gone: not a directory",
+  /* flows/sandbox/src/internal/execSession.ts:189 — @smthrs/sandbox/RemoteChildProcessSpawner/ProviderError */
+  "unknown: unrecognized process",
+  /* flows/sync/src/internal/ShareSigner.ts:97 — @smthrs/sync/SyncError */
+  "unknown: Web Crypto could not import the HMAC signing key",
+  /* flows/coding/native.ts:56 — coding/Error */
+  "invalid_request: Native coding request exceeds its bounded payload size",
+  /* agent/std/src/ExaWebSearch.ts:102 — @smthrs/std/StdError */
+  "rate_limited: Exa search was throttled; retry after 30 seconds"
+]
+
+test("a code another vocabulary also spells is never told a model call failed", () => {
+  for (const cause of FOREIGN) {
+    const error = `failed — ${cause.slice(0, 100)}`
+    for (const failure of [runFailureOf({ workflow: LATE_FLOW, error, events: journal(cause) }), runFailureOf({ workflow: LATE_FLOW, error })]) {
+      expect(failure.message).toBe(INFRA)
+      expect(failure.message).not.toContain("model")
+      expect(failure.fault).toBe("infra")
+    }
+  }
+})
+
 test("every code the harness and the model can journal reaches a person as its own sentence", () => {
-  for (const code of [...HARNESS_CODES, ...MODEL_CODES]) {
+  for (const code of ANSWERED_CODES) {
     const answered = runCause(code)!
     expect(runFailureOf({ workflow: LATE_FLOW, error: `failed — ${code}: whatever the host wrote`, events: journal(`${code}: whatever the host wrote`) }))
       .toEqual({ fault: answered.fault, message: answered.message, detail: `${code}: whatever the host wrote` })
@@ -158,7 +189,7 @@ test("every code the harness and the model can journal reaches a person as its o
  * card, and it carries the same code.
  */
 test("the sentence survives the workspace the journal died with", () => {
-  for (const code of [...HARNESS_CODES, ...MODEL_CODES]) {
+  for (const code of ANSWERED_CODES) {
     const answered = runCause(code)!
     const verdict = `failed — ${code}: whatever the host wrote`
     expect(runFailureOf({ workflow: LATE_FLOW, error: verdict }))

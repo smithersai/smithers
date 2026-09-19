@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
-import { HARNESS_CODES, MODEL_CODES, RUN_CAUSE_COPY, runCause } from "./RunCause"
+import { ANSWERED_CODES, HARNESS_CODES, isSharedCode, MODEL_CODES, RUN_CAUSE_COPY, runCause, SHARED_CODES } from "./RunCause"
 
 /** The literal set a package declares, read from the declaration rather than copied. */
 const literals = (path: string, declaration: string): ReadonlyArray<string> => {
@@ -23,9 +23,11 @@ test("every code the harness and the model declare is answered here, and only th
   const provider: ReadonlyArray<string> = MODEL_CODES
   expect([...answered].sort()).toEqual([...harness].sort())
   expect([...provider].sort()).toEqual([...model].sort())
-  /* Two vocabularies, one lookup: membership has to identify the author. */
+  /* Disjoint from each other, which is all it ever was: see SHARED_CODES. */
   expect(harness.filter((code) => model.includes(code))).toEqual([])
-  expect(Object.keys(RUN_CAUSE_COPY).sort()).toEqual([...harness, ...model].sort())
+  expect(Object.keys(RUN_CAUSE_COPY).sort()).toEqual([...harness, ...model].filter((code) => !isSharedCode(code)).sort())
+  const table: ReadonlyArray<string> = ANSWERED_CODES
+  expect([...table].sort()).toEqual(Object.keys(RUN_CAUSE_COPY).sort())
 })
 
 test("no sentence a person reads carries a code, an internal id, or a thrown message", () => {
@@ -50,15 +52,15 @@ test("a fault that is not the person's says so, and one that is names the act", 
   }
 })
 
-test("the four late-turn conditions are four different sentences, not one lead", () => {
+test("the late-turn conditions are different sentences, not one lead", () => {
   const distinct = [
     /* A turn opened and nothing came back. */ "model_failed",
-    /* The provider refused, and the provider timed out. */ "rate_limited",
+    /* The provider ran the account out, and the provider timed out. */ "quota_exceeded",
     "call_timeout",
     /* The brake, both halves, which mean different things since 46fcc61722f5. */ "claim_unproven",
     "completion_unjudged",
-    /* The host and the gateway behind it. */ "engine_failed",
-    "no_route"
+    /* No seat to run on, and a provider that failed on its own side. */ "no_route",
+    "provider_internal"
   ] as const
   const said = distinct.map((code) => runCause(code)!.message)
   expect(new Set(said).size).toBe(distinct.length)
@@ -69,4 +71,6 @@ test("a code this build has never heard of is answered by nothing here", () => {
   for (const code of ["", "brand_new_code", "invalid_receipt", "execution", "stale_revision"]) {
     expect(runCause(code)).toBeUndefined()
   }
+  /* And neither is one another vocabulary also spells, whoever raised it this time. */
+  for (const code of Object.keys(SHARED_CODES)) expect(runCause(code)).toBeUndefined()
 })
