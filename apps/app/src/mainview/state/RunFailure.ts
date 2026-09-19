@@ -1,6 +1,7 @@
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import type { PlueFault } from "@smthrs/rpc/Refusal"
 import { REFUSAL_COPY, refusalLead } from "@smthrs/rpc/RefusalCopy"
+import { runCause } from "./RunCause"
 
 /** Uncoded run failures belong to Smithers. Never infer blame from an error string. */
 export function runFailure(detail = "") {
@@ -189,16 +190,38 @@ export const runFailureOf = (payload: {
   const failure = runFailure(payload.error)
   const line = journalledCause(payload.events)
   const journalled = line === undefined ? null : JOURNALLED.exec(line)
-  if (line === undefined || journalled === null) return failure
-  const fault = journalledFault(payload.workflow, journalled[1] ?? "", journalled[2] ?? "")
-  if (fault === undefined) return failure
-  switch (fault) {
-    case "user": return { fault, message: SETUP_REFUSAL_COPY.get(journalled[2] ?? "") ?? journalled[2] ?? "", detail: line }
-    /* The fault's own lead, so the setup card and the run card say one thing; the verdict stays the evidence. */
-    case "wait":
-    case "infra":
-    case "dependency":
-    case "bug": return payload.workflow === SETUP_FLOW ? { fault, message: REFUSAL_COPY[fault].lead, detail: failure.detail } : failure
-    default: { const unhandled: never = fault; return unhandled }
+  if (journalled !== null && line !== undefined) {
+    const fault = journalledFault(payload.workflow, journalled[1] ?? "", journalled[2] ?? "")
+    if (fault !== undefined) {
+      switch (fault) {
+        case "user": return { fault, message: SETUP_REFUSAL_COPY.get(journalled[2] ?? "") ?? journalled[2] ?? "", detail: line }
+        /* The fault's own lead, so the setup card and the run card say one thing; the verdict stays the evidence. */
+        case "wait":
+        case "infra":
+        case "dependency":
+        case "bug": return payload.workflow === SETUP_FLOW ? { fault, message: REFUSAL_COPY[fault].lead, detail: failure.detail } : failure
+        default: { const unhandled: never = fault; return unhandled }
+      }
+    }
   }
+  /*
+   * The run's own typed cause, for any flow: the harness and the model each
+   * declare a closed vocabulary, and a code from either one says what happened
+   * without anything being read off the sentence beside it. The two flow
+   * vocabularies above are answered first, so a code they both spell keeps the
+   * reading its own flow gives it.
+   *
+   * The journal is preferred and the verdict stands in for it, because the two
+   * carry the same first line and only one of them survives the run: the
+   * journal is a live read against the run's workspace
+   * (`controller/workflow-pump.ts` `readJournalPages`), so a run whose
+   * workspace has been torn down has no journal at all, while the verdict is
+   * persisted on the card. Before this, such a run could only ever say the
+   * infra lead, however typed the cause it died of.
+   */
+  const settled = SETTLED.exec(payload.error?.split(/[\r\n]/, 1)[0] ?? "")
+  const code = journalled?.[1] ?? settled?.[1]
+  const cause = code === undefined ? undefined : runCause(code)
+  if (cause === undefined) return failure
+  return { fault: cause.fault, message: cause.message, detail: line ?? failure.detail }
 }

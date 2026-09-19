@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { RECEIPT_CODES, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence, setupVerdict } from "./RunFailure"
+import { HARNESS_CODES, MODEL_CODES, runCause } from "./RunCause"
 import { librarianFailureMessage } from "./LibrarianLaunch"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
@@ -110,6 +111,74 @@ test("a setup journal's code reads on the run card exactly as it reads on the se
   }
   expect(runFailureOf({ workflow: "repository/setup", error: `failed — stale_revision: ${STALE}`, events: journal(`stale_revision: ${STALE}`) }))
     .toEqual({ fault: "user", message: STALE, detail: `stale_revision: ${STALE}` })
+})
+
+/*
+ * L111. A run that made nine calls and then died at turn 6 said only the infra
+ * lead — true about blame, empty about cause, and the last sentence a person
+ * reads after a run that visibly did most of its work. The cause it died with
+ * IS typed: the harness and the model each declare a closed code vocabulary,
+ * and the journal's first line and the gateway's verdict both carry the code.
+ * Neither was read here.
+ */
+const LATE_FLOW = "agent/run"
+/* Verbatim shapes, ids and all: AgentSession.ts:1942 and CompletionClaim.ts:551. */
+const EXHAUSTED = 'model_failed: The agent session "run-7f3a" ended without a completed answer after 6 frames'
+const UNPROVEN = "claim_unproven: A completion reporting work this run never recorded: invented 0.91 (complete 0.35, overclaims 0.89, neither of which decides this). The claim was handed back for a frame and came back still unrecorded."
+
+test("a run that died late names what happened, and never in the harness's own words", () => {
+  for (const cause of [EXHAUSTED, UNPROVEN]) {
+    const failure = runFailureOf({ workflow: LATE_FLOW, error: `failed — ${cause.slice(0, 100)}`, events: journal(cause) })
+    expect(failure.message).not.toBe(INFRA)
+    expect(failure.message).not.toContain("run-7f3a")
+    expect(failure.message).not.toContain("frames")
+    expect(failure.message).not.toContain("invented")
+    expect(failure.detail).toBe(cause)
+  }
+  /* The brake's two halves mean different things since 46fcc61722f5, so they read differently. */
+  const unproven = runFailureOf({ workflow: LATE_FLOW, error: "", events: journal(UNPROVEN) })
+  const unjudged = runFailureOf({ workflow: LATE_FLOW, error: "", events: journal("completion_unjudged: A completion no evaluator could judge (transport): 503") })
+  expect(unproven.message).not.toBe(unjudged.message)
+  for (const failure of [unproven, unjudged]) expect(failure.message).toContain("Not your fault")
+})
+
+test("every code the harness and the model can journal reaches a person as its own sentence", () => {
+  for (const code of [...HARNESS_CODES, ...MODEL_CODES]) {
+    const answered = runCause(code)!
+    expect(runFailureOf({ workflow: LATE_FLOW, error: `failed — ${code}: whatever the host wrote`, events: journal(`${code}: whatever the host wrote`) }))
+      .toEqual({ fault: answered.fault, message: answered.message, detail: `${code}: whatever the host wrote` })
+  }
+})
+
+/*
+ * The run this lane was opened for could not be read at all: teardown deleted
+ * the workspace, and the journal is a live read against it
+ * (workflow-pump.ts `readJournalPages` -> `gateway.runEvents`). The verdict is
+ * not — it is `<phase> — <first journal line clipped to 100>`, persisted on the
+ * card, and it carries the same code.
+ */
+test("the sentence survives the workspace the journal died with", () => {
+  for (const code of [...HARNESS_CODES, ...MODEL_CODES]) {
+    const answered = runCause(code)!
+    const verdict = `failed — ${code}: whatever the host wrote`
+    expect(runFailureOf({ workflow: LATE_FLOW, error: verdict }))
+      .toEqual({ fault: answered.fault, message: answered.message, detail: verdict })
+    expect(runFailureOf({ workflow: LATE_FLOW, error: verdict, events: [] }))
+      .toEqual({ fault: answered.fault, message: answered.message, detail: verdict })
+  }
+})
+
+test("a late failure carrying no code this build knows is still Smithers', headline and all", () => {
+  for (const error of [
+    "failed — Smithers generated an OpenRouter default agent, but OPENROUTER_API_KEY is not set.",
+    "failed — no cause recorded in the journal",
+    "failed — Error: connect ECONNREFUSED 127.0.0.1:8788"
+  ]) {
+    expect(runFailureOf({ workflow: LATE_FLOW, error })).toEqual({ fault: "infra", message: INFRA, detail: error })
+  }
+  /* The setup bridge's and the registrar's vocabularies are answered where they always were, not here. */
+  expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: setupCause(TRIAL) }))
+    .toEqual({ fault: "user", message: TRIAL, detail: `invalid_receipt: ${TRIAL}` })
 })
 
 test("every sentence in the table is one the setup flows still emit, in the file that emits it", () => {
