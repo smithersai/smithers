@@ -20,7 +20,7 @@ import type { ControllerContext } from "./context"
 import { MODELS_CARD_ID } from "./models"
 import { setupQuestionCardId } from "./repositorySetup"
 import { setupGuideQuestions } from "./repositorySetupGuide"
-import { alreadySaid,latestOrdinal } from "./spokenLines"
+import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
 
 /*
  * THE FORM LAW (apps/app/AGENTS.md; docs/workbench-lanes/flow-forms.md), the
@@ -140,6 +140,9 @@ export const decideFormFieldInput = (
 export const createFormsController = (ctx: ControllerContext, deps: FormsControllerDependencies): FormsController => {
   const { store } = ctx
   const { collections } = store
+  // The door lines already spent on an act, shared with the surfacing path
+  // (controller/failures.ts); an error row is a word owed to one act too.
+  const claimedLines = claimedSpokenLines(ctx)
   // Authority comes only from a registry invocation, never from persisted or model-authored payloads.
   const continuations = actorSharedState(ctx, "form-continuations", () =>
     new Map<string, { readonly invocation: AgentInvocation; readonly payload: string }>())
@@ -543,7 +546,17 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     }
     const error = describe(outcome)
     const { error: _repeated, ...settledPayload } = current.payload
-    await patch(current, alreadySaid(collections, error, saidBefore) ? { ...settledPayload, submitting: false } : { ...current.payload, submitting: false, error }, "error")
+    /*
+     * The row yields to a door's line by TAKING it, never by matching the
+     * sentence (controller/spokenLines.ts). The sentences are a closed table,
+     * so an act whose row matched a line another act was already given lost
+     * its word entirely: the transcript line belongs to the other act and
+     * this card printed nothing. A line nobody has spent is this act's; a
+     * line already spent leaves the row to say it.
+     */
+    const yielded = claimSpokenLine(collections, error, saidBefore, claimedLines)
+    forgetVanishedClaims(collections, claimedLines)
+    await patch(current, yielded ? { ...settledPayload, submitting: false } : { ...current.payload, submitting: false, error }, "error")
     // The card carries the refusal for the human; the agent reads it as its result.
     return actor === "smithers" ? error : undefined
   }

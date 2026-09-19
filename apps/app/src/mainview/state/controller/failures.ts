@@ -3,7 +3,7 @@ import type { Toast } from "../AppState"
 import { spokenLostAct } from "../BrowserWriteFailure"
 import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import type { ControllerContext } from "./context"
-import { claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
+import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
 
 /**
  * Launch Checklist D-4's exhausted-balance refusal, shared between the
@@ -60,12 +60,12 @@ export interface FailureController {
 
 export const createFailureController = (ctx: ControllerContext): FailureController => {
   /*
-   * The door lines already spent on an act (controller/spokenLines.ts). One
-   * per controller, because the acts that can collide are the acts of one
-   * person in one session, and it is pruned to the lines the transcript still
+   * The door lines already spent on an act (controller/spokenLines.ts),
+   * shared with the other surface that yields to one — the form card's error
+   * row (controller/forms.ts). It is pruned to the lines the transcript still
    * holds on every claim.
    */
-  const claimedLines = new Set<string>()
+  const claimedLines = claimedSpokenLines(ctx)
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const later = (work: () => void, delay: number): ReturnType<typeof setTimeout> => {
     const timer = setTimeout(() => {

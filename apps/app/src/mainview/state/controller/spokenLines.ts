@@ -1,3 +1,4 @@
+import { actorSharedState } from "../ActorBindings"
 import type { AppStore } from "../AppStore"
 
 /*
@@ -36,6 +37,15 @@ import type { AppStore } from "../AppStore"
  * lost act gets one line, and no act gets two — without the transcript having
  * to carry an act identity it renders nowhere. The failure mode of a surface
  * that forgets to claim is one duplicate line, never silence.
+ *
+ * EVERY SURFACE THAT YIELDS CLAIMS, out of one set ({@link claimedSpokenLines}).
+ * The form card's error row read the sentence without spending it, on the
+ * reasoning that reading is not spending — but the row is a word owed to an
+ * act, so yielding to a line another act already holds loses that word as
+ * surely as swallowing a transcript line does. Driven (R104e part 3): act A
+ * takes a door's line in the surfacing path, act B correctly states itself in
+ * the transcript, and act B's form card printed nothing. The two surfaces are
+ * two halves of one controller and share one claim set.
  */
 
 type Transcript = Pick<AppStore["collections"], "messages">
@@ -55,15 +65,15 @@ const spokenSince = (collections: Transcript, sentence: string, since: number): 
     .map((message) => ({ id: message.id, ordinal: message.ordinal }))
 
 /**
- * Did a door already say this sentence, in the transcript, since `since`?
+ * The door lines already spent on an act, for one controller.
  *
- * Read-only: the answer is whether a line exists, for a surface that decides
- * whether to paint the same sentence somewhere ELSE (a form card's error row).
- * A surface that would APPEND a second transcript line claims instead, so two
- * acts cannot both yield to the one line ({@link claimSpokenLine}).
+ * Keyed on the controller's context, so the surfacing path and the form card
+ * — and either principal's projection of them (state/ActorBindings.ts) — draw
+ * from the same set. The acts that can collide are the acts of one person in
+ * one session; nothing here outlives that controller.
  */
-export const alreadySaid = (collections: Transcript, sentence: string, since: number): boolean =>
-  spokenSince(collections, sentence, since).length > 0
+export const claimedSpokenLines = (context: object): Set<string> =>
+  actorSharedState(context, "spoken-line-claims", () => new Set<string>())
 
 /**
  * Take a door's line for this act, if one is still going spare.
