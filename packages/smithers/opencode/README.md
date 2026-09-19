@@ -21,7 +21,7 @@ Node 22.19.0 or later is required.
 | Module           | What it holds                                                                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Serve`          | The bind and its admission rule, the banner, `app` (the whole application as a router layer) and `layer` (the same on a Node socket with its own SQLite store).            |
-| `Routes`         | Every v1 route the hosted app calls, with the 1.18.31 response shapes, plus the three v2 routes it calls in v1 mode.                                                       |
+| `Routes`         | Every v1 route the hosted app and the shipped TUI call, with the 1.18.31 response shapes, plus the three v2 routes the app calls in v1 mode.                               |
 | `Events`         | The server-sent event hub: `server.connected`, live events in the `{directory, project, payload}` envelope, heartbeats, and a bounded replay for reconnects.               |
 | `Store`          | Sessions, message headers, parts, pending permissions, grants, and open turns in `<directory>/.smithers/opencode.sqlite`, so history is a read.                            |
 | `Projection`     | The pure fold from harness `AgentEvent`s to OpenCode v1 events and parts, with part ids derived from the message and a sort key so a replayed frame updates cards.         |
@@ -89,3 +89,5 @@ const scripted = Serve.host({
 `AI_GATEWAY_API_KEY` is required to run a model. The harness asks Jev whether a completion describes what the run did and fails a run it cannot judge, so `smithers opencode` refuses to start when the host can bind no evaluator (`EngineDriver.evaluatorRefusal`, exit 2). The same key turns on the cell's `classify` flows and the health dot (🟢 🟡 🔴, ⚪ when one evaluation does not answer). `--scripted` replays the recorded turn, runs no model, and needs no key.
 
 The contract this server answers is recorded in `docs/jev-harness/trace/summary.md` in the repository: the routes per step, the events per step, and the envelope, traced from the hosted app against OpenCode 1.18.31.
+
+The shipped OpenCode TUI is the second client: `opencode attach http://127.0.0.1:4096 --dir <the directory>` connects, lists the sessions, streams a turn, renders the cards and answers a permission. What it asks for beyond the hosted app is recorded in `test/TuiContract.test.ts`, and what it offers that this server does not answer is in `docs/jev-harness/runbook.md`.

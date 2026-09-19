@@ -166,11 +166,12 @@ describe("the app's route mock as a contract", () => {
   })
 
   // mock-server.ts answers routes this server deliberately does not mount
-  // (`/experimental/capabilities`, the v2 `/api/*` tree, the question reply
-  // routes). The app reads the 404 and moves on; what it cannot read is a
-  // network error, so the 404 is JSON and carries the allow headers.
+  // (the v2 `/api/*` tree, the question reply routes; `/experimental/*` was
+  // among them until the TUI's contract added two of them). The app reads the
+  // 404 and moves on; what it cannot read is a network error, so the 404 is
+  // JSON and carries the allow headers.
   it("answers a route it does not mount with a readable 404", async () => {
-    for (const path of ["/experimental/capabilities", "/api/pty/shells", "/api/vcs"]) {
+    for (const path of ["/api/pty/shells", "/api/vcs", "/api/question/request"]) {
       const response = await ask(path, { headers: { origin: APP_ORIGIN } })
       expect(response.status, path).toBe(404)
       expect(await response.json(), path).toEqual({ name: "NotFoundError", data: { message: "Route not found" } })

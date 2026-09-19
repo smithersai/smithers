@@ -4,6 +4,22 @@
 
 ### Added
 
+- The six routes the shipped OpenCode TUI asks for and the hosted app never
+  did, so `opencode attach http://127.0.0.1:4096 --dir <the directory>` is a
+  second client: `config.providers`, the synchronous prompt
+  `POST /session/:id/message` the TUI prompts through, the permission answer
+  `POST /permission/:permissionID/reply` it presses a card through,
+  `GET /project/:projectID/directories`, `GET /experimental/capabilities` and
+  `GET /experimental/console`. The first three are what a client cannot work
+  without: a 404 on `config.providers` ended the TUI at boot with
+  `Error: Route not found`, a 404 on the prompt route painted
+  `Failed to send prompt`, and a 404 on the reply route left every permission
+  card unanswerable. `POST /session/:id/message` answers with the finished
+  assistant message and its parts, which is what `session.prompt` declares, so
+  it holds the request for the length of the turn; `Turns.settled` is the wait.
+  Proven by attaching the real TUI through a pseudo-terminal: one turn read a
+  repository, ran `bun test`, fixed the bug the test caught and ran it again.
+
 - `/skill`, `/formatter`, and `/provider/auth`, the three bootstrap routes the
   hosted app asks for on every boot and this server did not mount. The app's
   own route mock (`packages/app/e2e/utils/mock-server.ts` in OpenCode main)

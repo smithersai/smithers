@@ -33,6 +33,38 @@ State lives in `<directory>/.smithers/opencode.sqlite`. One server serves one di
 2. Click **Add project**, type the path into **Search folders**, then click the row **with the mouse**. Enter closes the picker without opening the project.
 3. The project appears in the Projects list. Click **New session** to get a prompt box, then type and press Enter.
 
+## The terminal client
+
+`opencode attach` works against this server. Point the shipped OpenCode TUI
+at the port the banner names and pass the same directory:
+
+```
+opencode attach http://127.0.0.1:4096 --dir ~/some-repo
+```
+
+What was proven against OpenCode 1.18.31 on 2026-09-18, driving the TUI
+through a pseudo-terminal: it connects and lists the sessions, each with its
+health dot in front of the title; it replays a session's history on reattach,
+including the cell and tool cards; a prompt streams, the `cell`, `health` and
+`demand` cards render as the generic tool row and file, grep, glob and shell
+calls get the TUI's native rendering; a permission card appears with **Allow
+once**, **Allow always** and **Reject**, and **Allow always** names the
+patterns the grant covers; the footer counts the frames, the calls, the Jev
+calls and the cost. `Ctrl-C` leaves the TUI and leaves the server serving.
+One turn read a repository, ran `bun test`, fixed the bug the test caught and
+ran it again, all from the terminal.
+
+Three routes had to be added for this, and they are in the server as of this
+page: `config.providers`, the synchronous prompt `POST /session/:id/message`
+the TUI prompts through, and `POST /permission/:id/reply` it answers a card
+through. Before them the TUI exited at boot with `Error: Route not found`.
+
+What the TUI offers and this server does not answer, so the command reports a
+404 and nothing happens: fork, summarize, compact, shell, revert, unrevert,
+init and the session command verb. The `/api/*` routes it probes at boot
+(location, agent, model, provider, command, skill, integration) and
+`/experimental/workspace` answer 404 too, which it has always tolerated.
+
 ## What the health dot means
 
 The dot sits in front of the session title. One Jev evaluation runs per frame, from the server, never from the cell.

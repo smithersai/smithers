@@ -13,6 +13,14 @@
  * `/api/health` (polled every ten seconds), `/api/session` (the home list)
  * and `/api/reference`.
  *
+ * The shipped OpenCode TUI (`opencode attach`) is the second client, and it
+ * asks for six routes the app never does: `/config/providers`,
+ * `/project/:projectID/directories`, `/experimental/capabilities`,
+ * `/experimental/console`, the synchronous prompt `POST /session/:id/message`
+ * and the permission answer `POST /permission/:permissionID/reply`. What
+ * each one is for, and which of them a client cannot work without, is in
+ * `test/TuiContract.test.ts`.
+ *
  * @since 1.0.0
  */
 import { Effect, type Layer, Option, Stream } from "effect"
@@ -236,6 +244,30 @@ const body = (request: HttpServerRequest.HttpServerRequest): Effect.Effect<Recor
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 
 /**
+ * The prompt a request body asks for. Both prompt routes read the same body
+ * (`session.prompt` and `session.prompt_async` declare one input); they
+ * differ only in when they answer.
+ */
+const promptOf = (sessionID: string, input: Record<string, unknown>): Turns.PromptInput => {
+  const wanted = isRecord(input["model"]) ? input["model"] : undefined
+  return {
+    sessionID,
+    messageID: typeof input["messageID"] === "string" ? input["messageID"] : undefined,
+    agent: typeof input["agent"] === "string" ? input["agent"] : undefined,
+    model: wanted !== undefined && typeof wanted["providerID"] === "string" && typeof wanted["modelID"] === "string"
+      ? { providerID: wanted["providerID"], modelID: wanted["modelID"] }
+      : undefined,
+    parts: Array.isArray(input["parts"])
+      ? input["parts"].filter(isRecord).map((part) => ({
+        id: typeof part["id"] === "string" ? part["id"] : undefined,
+        type: typeof part["type"] === "string" ? part["type"] : "",
+        text: typeof part["text"] === "string" ? part["text"] : undefined
+      }))
+      : []
+  }
+}
+
+/**
  * Mounts every route. Needs the store, the hub, and the turns.
  *
  * @category layers
@@ -351,6 +383,14 @@ export const layer = (
             return json({ ...projectInfo(), ...(typeof name === "string" ? { name } : {}) })
           })
       )
+      // `project.directories`: the local directories of a project. One
+      // server serves one, so that is the list.
+      yield* router.add(
+        "GET",
+        "/project/:id/directories",
+        Effect.map(HttpRouter.params, (params) =>
+          params["id"] === project ? json([{ directory }]) : notFound(`Project ${params["id"]} not found`))
+      )
       yield* router.add(
         "GET",
         "/provider",
@@ -359,6 +399,13 @@ export const layer = (
           connected: [model.providerID],
           default: { [model.providerID]: model.modelID }
         })
+      )
+      // `config.providers`: the same provider and default the TUI reads at
+      // boot. A 404 here ends `opencode attach` before it paints a frame.
+      yield* router.add(
+        "GET",
+        "/config/providers",
+        json({ providers: [provider(options.seat)], default: { [model.providerID]: model.modelID } })
       )
       yield* router.add("GET", "/agent", json([agent(options.agent, options.seat)]))
       yield* router.add("GET", "/command", json([]))
@@ -372,6 +419,10 @@ export const layer = (
       yield* router.add("GET", "/provider/auth", json({}))
       yield* router.add("GET", "/mcp", json({}))
       yield* router.add("GET", "/experimental/resource", json({}))
+      // The TUI reads both on every boot: no background subagents here, and
+      // no console account behind the seat.
+      yield* router.add("GET", "/experimental/capabilities", json({ backgroundSubagents: false }))
+      yield* router.add("GET", "/experimental/console", json({ consoleManagedProviders: [], switchableOrgCount: 0 }))
       yield* router.add("GET", "/question", json([]))
       yield* router.add(
         "GET",
@@ -401,7 +452,9 @@ export const layer = (
         "/file",
         (request) => {
           const params = query(request)
-          return Effect.sync(() => json(listFiles(params.get("directory") ?? directory, params.get("path") ?? "")))
+          return Effect.sync(() =>
+            json(listFiles(params.get("directory") ?? directory, params.get("path") ?? ""))
+          )
         }
       )
       yield* router.add(
@@ -600,41 +653,40 @@ export const layer = (
       yield* router.add("GET", "/session/:id/todo", json([]))
       yield* router.add("GET", "/session/:id/children", json([]))
       yield* router.add("GET", "/session/:id/diff", json([]))
+      const promptFailure = {
+        "@smthrs/opencode/TurnsError": (error: Turns.TurnsError) =>
+          Effect.succeed(error.code === "unknown_session" ? notFound(error.message) : badRequest(error.message)),
+        "@smthrs/opencode/StoreError": onStoreError
+      }
       yield* router.add(
         "POST",
         "/session/:id/prompt_async",
         (request) =>
           Effect.flatMap(sessionParam, (id) =>
             Effect.gen(function*() {
-              const input = yield* body(request)
-              const parts = Array.isArray(input["parts"])
-                ? input["parts"].filter(isRecord).map((part) => ({
-                  id: typeof part["id"] === "string" ? part["id"] : undefined,
-                  type: typeof part["type"] === "string" ? part["type"] : "",
-                  text: typeof part["text"] === "string" ? part["text"] : undefined
-                }))
-                : []
-              const wanted = isRecord(input["model"]) ? input["model"] : undefined
-              yield* turns.prompt({
-                sessionID: id,
-                messageID: typeof input["messageID"] === "string" ? input["messageID"] : undefined,
-                agent: typeof input["agent"] === "string" ? input["agent"] : undefined,
-                model: wanted !== undefined && typeof wanted["providerID"] === "string" &&
-                    typeof wanted["modelID"] === "string"
-                  ? { providerID: wanted["providerID"], modelID: wanted["modelID"] }
-                  : undefined,
-                parts
-              })
+              yield* turns.prompt(promptOf(id, yield* body(request)))
               return HttpServerResponse.empty({ status: 204 })
-            }).pipe(
-              Effect.catchTags({
-                "@smthrs/opencode/TurnsError": (error) =>
-                  Effect.succeed(
-                    error.code === "unknown_session" ? notFound(error.message) : badRequest(error.message)
-                  ),
-                "@smthrs/opencode/StoreError": onStoreError
-              })
-            ))
+            }).pipe(Effect.catchTags(promptFailure)))
+      )
+      // `session.prompt`, the route the TUI prompts through. The same prompt
+      // as `prompt_async`, answered when the turn is over rather than when it
+      // is accepted: the answer is the finished message and its parts, which
+      // is what the TUI reads back. A turn the person never unparks holds the
+      // request, the way OpenCode's own server holds it.
+      yield* router.add(
+        "POST",
+        "/session/:id/message",
+        (request) =>
+          Effect.flatMap(sessionParam, (id) =>
+            Effect.gen(function*() {
+              yield* turns.prompt(promptOf(id, yield* body(request)))
+              yield* turns.settled(id)
+              const messages = yield* store.listMessages(id)
+              const answer = messages.filter((message) => message.info.role === "assistant").at(-1)
+              return answer === undefined
+                ? failed(`Session ${id} has no answer`)
+                : json({ info: answer.info, parts: answer.parts })
+            }).pipe(Effect.catchTags(promptFailure)))
       )
       yield* router.add(
         "POST",
@@ -657,6 +709,37 @@ export const layer = (
               permissionID: params["permissionID"]!,
               response
             })
+            return json(true)
+          }).pipe(
+            Effect.catchTags({
+              "@smthrs/opencode/TurnsError": (error) => Effect.succeed(notFound(error.message)),
+              "@smthrs/opencode/StoreError": onStoreError
+            })
+          )
+      )
+
+      // `permission.reply`, the route the TUI answers a permission card
+      // through. The session is the one the request was asked for, so the id
+      // of the request is the whole address.
+      yield* router.add(
+        "POST",
+        "/permission/:permissionID/reply",
+        (request) =>
+          Effect.gen(function*() {
+            const params = yield* HttpRouter.params
+            const permissionID = params["permissionID"]!
+            const input = yield* body(request)
+            const reply = input["reply"]
+            if (reply !== "once" && reply !== "always" && reply !== "reject") {
+              return badRequest("reply must be once, always or reject")
+            }
+            // The session is looked up because the reply route does not name
+            // it. An id nothing is parked on belongs to no session, and the
+            // refusal for that is `Turns`', the same one the session-scoped
+            // route answers, so not-pending is decided in one place.
+            const pending = yield* store.listPermissions()
+            const sessionID = pending.find((candidate) => candidate.id === permissionID)?.sessionID ?? ""
+            yield* turns.permission({ sessionID, permissionID, response: reply })
             return json(true)
           }).pipe(
             Effect.catchTags({

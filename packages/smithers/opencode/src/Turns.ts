@@ -107,6 +107,13 @@ export interface Service {
   ) => Effect.Effect<Option.Option<Protocol.Session>, Store.StoreError>
   /** The status of every session that is not idle. */
   readonly status: () => Effect.Effect<Record<string, Protocol.SessionStatus>>
+  /**
+   * Resolves once the session has no open turn. `POST /session/:id/message`,
+   * the synchronous prompt route the TUI uses, answers with the finished
+   * message, so it waits here for the turn it just opened. A session that
+   * is already idle resolves at once.
+   */
+  readonly settled: (sessionID: string) => Effect.Effect<void>
 }
 
 /**
@@ -539,6 +546,11 @@ export const make = (
         return yield* Deferred.await(result)
       })
 
+    const settled: Service["settled"] = (sessionID) =>
+      Effect.gen(function*() {
+        while (states.has(sessionID)) yield* Effect.sleep(settleRetryDelay)
+      })
+
     const status: Service["status"] = () =>
       Effect.sync(() => {
         const out: Record<string, Protocol.SessionStatus> = {}
@@ -582,7 +594,7 @@ export const make = (
       Effect.catchCause((cause) => Effect.logError({ message: "Open turns could not be resumed", cause }))
     )
 
-    return { prompt, abort, permission, update, status }
+    return { prompt, abort, permission, update, status, settled }
   })
 
 /**
@@ -622,6 +634,16 @@ export const storeRetries = 6_000
  * @since 1.0.0
  */
 export const steerRetryDelay = "25 millis"
+
+/**
+ * How long `settled` waits between looks at the open turn. The synchronous
+ * prompt route holds a request for the length of a turn, so the cost of a
+ * look is one map read per session per interval.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settleRetryDelay = "25 millis"
 
 interface Open {
   readonly _tag: "open"
