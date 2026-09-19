@@ -3,7 +3,7 @@ import type { Toast } from "../AppState"
 import { spokenLostAct } from "../BrowserWriteFailure"
 import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import type { ControllerContext } from "./context"
-import { alreadySaid,latestOrdinal } from "./spokenLines"
+import { claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
 
 /**
  * Launch Checklist D-4's exhausted-balance refusal, shared between the
@@ -59,6 +59,13 @@ export interface FailureController {
 }
 
 export const createFailureController = (ctx: ControllerContext): FailureController => {
+  /*
+   * The door lines already spent on an act (controller/spokenLines.ts). One
+   * per controller, because the acts that can collide are the acts of one
+   * person in one session, and it is pruned to the lines the transcript still
+   * holds on every claim.
+   */
+  const claimedLines = new Set<string>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const later = (work: () => void, delay: number): ReturnType<typeof setTimeout> => {
     const timer = setTimeout(() => {
@@ -286,18 +293,21 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
      * card put their own sentence in the transcript as they refuse, and this
      * act's line is theirs when it is theirs: a line marked `Message.spoken`,
      * appended since this act was admitted (controller/spokenLines.ts, the
-     * same window the form card yields on). Matching the transcript's tail
-     * instead made a SECOND lost act silent whenever its sentence was already
-     * the last line — two refused `Run` presses, one line, and a toast that
-     * leaves as the only word for the second. The window's default matches
-     * nothing, so a caller that carries no window repeats a line rather than
-     * swallowing one.
+     * same window the form card yields on), AND not already spent on another
+     * act. The window alone was not enough: the sentences are a closed table,
+     * so two acts overlapping in time carry the same sentence with both
+     * windows open, and the one that surfaced last matched the other's line
+     * and said nothing — two lost acts, two toasts, one line. Claiming makes
+     * a door's line stand in for at most one act, so the count is exact in
+     * both directions. A caller that carries no window claims nothing and
+     * repeats a line rather than swallowing one.
      */
     if (outcome.writeRefused === true || spokenLostAct(outcome.error)) {
       const since = saidBefore ?? latestOrdinal(ctx.store.collections)
-      if (!alreadySaid(ctx.store.collections, outcome.error, since)) {
+      if (!claimSpokenLine(ctx.store.collections, outcome.error, since, claimedLines)) {
         ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
       }
+      forgetVanishedClaims(ctx.store.collections, claimedLines)
     }
     const key = `command.failed.${name}`
     // A seam can refuse before the requirement axis knows the session is gone.

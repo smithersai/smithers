@@ -106,15 +106,8 @@ const writersOf = (file: string): Map<string, Array<string>> => {
   return resolved
 }
 
-const writers = new Map<string, Array<string>>()
-for (const file of [...sources(CONTROLLER), join(SRC, "state", "AppController.ts")]) {
-  for (const [name, sites] of writersOf(file)) {
-    writers.set(name, [...new Set([...(writers.get(name) ?? []), ...sites])])
-  }
-}
-
 /** Every declared flow, with the controller members its handler calls. */
-interface Door {
+export interface Door {
   readonly flow: string
   readonly file: string
   readonly line: number
@@ -123,40 +116,63 @@ interface Door {
   readonly control: boolean
 }
 
-const controls = new Set<string>()
-for (const file of [...sources(CARDS), ...sources(SRC)]) {
-  const text = readFileSync(file, "utf8")
-  for (const match of text.matchAll(/(?:onRunCommand|runCommand)\(\s*"([\w.-]+)"/g)) controls.add(match[1]!)
-  for (const match of text.matchAll(/flowAction\(\s*onRunCommand\s*,\s*"([\w.-]+)"/g)) controls.add(match[1]!)
-}
-
-const doors: Array<Door> = []
-for (const file of sources(ENTRIES)) {
-  const lines = readFileSync(file, "utf8").split("\n")
-  lines.forEach((text, index) => {
-    const named = /name:\s*"([\w.-]+)"/.exec(text)
-    if (named === null) return
-    // The declaration runs to the next `name:` or the end of the literal.
-    const next = lines.findIndex((candidate, at) => at > index && /name:\s*"[\w.-]+"/.test(candidate))
-    const body = lines.slice(index, next === -1 ? lines.length : next).join("\n")
-    const members = [...new Set([...body.matchAll(/\bactions\.([A-Za-z_$][\w$]*)/g)].map((match) => match[1]!))]
-    const writes = [...new Set(members.flatMap((member) => writers.get(member) ?? []))]
-    doors.push({
-      flow: named[1]!, file: file.slice(file.indexOf("apps/app")), line: index + 1,
-      members, writes, control: controls.has(named[1]!)
-    })
-  })
-}
-
-if (process.env.DBG) { console.log("writers", writers.size, [...writers.keys()].slice(0, 10)); console.log("doors", doors.slice(0, 3)) }
-const writing = doors.filter((door) => door.writes.length > 0)
-if (process.argv.includes("--json")) {
-  console.log(JSON.stringify(writing, null, 2))
-} else {
-  console.log(`| flow | rendered as a control | handler | durable write |`)
-  console.log(`| --- | --- | --- | --- |`)
-  for (const door of [...writing].sort((a, b) => a.flow.localeCompare(b.flow))) {
-    console.log(`| \`${door.flow}\` | ${door.control ? "yes" : "slash or palette only"} | ${door.members.join(", ")} | ${door.writes.join(" · ")} |`)
+/** Every declared flow, including the ones that reach no durable write. */
+export const declaredDoors = (): ReadonlyArray<Door> => {
+  const writers = new Map<string, Array<string>>()
+  for (const file of [...sources(CONTROLLER), join(SRC, "state", "AppController.ts")]) {
+    for (const [name, sites] of writersOf(file)) {
+      writers.set(name, [...new Set([...(writers.get(name) ?? []), ...sites])])
+    }
   }
-  console.log(`\n${writing.length} of ${doors.length} declared flows reach a durable write; ${writing.filter((door) => door.control).length} of those are rendered as a control.`)
+  const controls = new Set<string>()
+  for (const file of [...sources(CARDS), ...sources(SRC)]) {
+    const text = readFileSync(file, "utf8")
+    for (const match of text.matchAll(/(?:onRunCommand|runCommand)\(\s*"([\w.-]+)"/g)) controls.add(match[1]!)
+    for (const match of text.matchAll(/flowAction\(\s*onRunCommand\s*,\s*"([\w.-]+)"/g)) controls.add(match[1]!)
+  }
+  const doors: Array<Door> = []
+  for (const file of sources(ENTRIES)) {
+    const lines = readFileSync(file, "utf8").split("\n")
+    lines.forEach((text, index) => {
+      const named = /name:\s*"([\w.-]+)"/.exec(text)
+      if (named === null) return
+      // The declaration runs to the next `name:` or the end of the literal.
+      const next = lines.findIndex((candidate, at) => at > index && /name:\s*"[\w.-]+"/.test(candidate))
+      const body = lines.slice(index, next === -1 ? lines.length : next).join("\n")
+      const members = [...new Set([...body.matchAll(/\bactions\.([A-Za-z_$][\w$]*)/g)].map((match) => match[1]!))]
+      const writes = [...new Set(members.flatMap((member) => writers.get(member) ?? []))]
+      doors.push({
+        flow: named[1]!, file: file.slice(file.indexOf("apps/app")), line: index + 1,
+        members, writes, control: controls.has(named[1]!)
+      })
+    })
+  }
+  return doors
+}
+
+/**
+ * THE ENUMERATION, as a value.
+ *
+ * The inventory is the class every claim about "every door" is measured
+ * against, so the test that drives the class reads it from here rather than
+ * from a list somebody typed: a door declared tomorrow is driven tomorrow
+ * (state/DurableWriteDoorLines.test.ts).
+ */
+export const durableWriteDoors = (): ReadonlyArray<Door> =>
+  declaredDoors().filter((door) => door.writes.length > 0)
+
+if (import.meta.main) {
+  const doors = declaredDoors()
+  if (process.env.DBG) console.log("doors", doors.slice(0, 3))
+  const writing = doors.filter((door) => door.writes.length > 0)
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify(writing, null, 2))
+  } else {
+    console.log(`| flow | rendered as a control | handler | durable write |`)
+    console.log(`| --- | --- | --- | --- |`)
+    for (const door of [...writing].sort((a, b) => a.flow.localeCompare(b.flow))) {
+      console.log(`| \`${door.flow}\` | ${door.control ? "yes" : "slash or palette only"} | ${door.members.join(", ")} | ${door.writes.join(" · ")} |`)
+    }
+    console.log(`\n${writing.length} of ${doors.length} declared flows reach a durable write; ${writing.filter((door) => door.control).length} of those are rendered as a control.`)
+  }
 }

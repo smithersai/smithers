@@ -112,6 +112,14 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
    * own so the commit that records it can be picked out from the first.
    */
   let runReads = 0
+  /*
+   * A hold on the run read the PRESS makes, so a second act can be admitted
+   * and settle while the press is still in flight. Two lost acts overlapping
+   * in time is the only state in which one act's line can stand in for
+   * another's, and on a live card it is a race; here it is the precondition.
+   */
+  let gate: Promise<void> | undefined
+  let openGate: (() => void) | undefined
   await store.dispatch({ type: "card.upsert", actor: "user", card: {
     id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
     payload: {
@@ -139,6 +147,7 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
         const body = typeof init?.body === "string" ? JSON.parse(init.body) as { procedure?: string; payload?: { selector?: { _tag?: string } } } : undefined
         if (body?.procedure === "Projection.Snapshot" && body.payload?.selector?._tag === "run-summary") {
           runReads += 1
+          if (runReads > 1 && gate !== undefined) await gate
           return Response.json({ ok: true, payload: { cursor: { projection: "run-summary", runId: null, value: runReads }, rows: [{
             runId: "run-1", flowId: "issues", status: "completed", createdAt: 1, updatedAt: 2, turns: 0, calls: 0, callsFailed: 0,
             editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0, verdict: "completed",
@@ -203,7 +212,10 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
   const refuseObservationWrite = () => { storage.refuseCommitNaming("read again") }
   /** The next card write lands, and the step that runs after it throws. */
   const explodeAfterNextCardWrite = () => { arming = true }
-  return { store, controller, pick, press, pressRunAccess, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, refuseObservationWrite, explodeAfterNextCardWrite, close }
+  /** Hold the press's own run read, and let it go. */
+  const holdRunRead = () => { gate = new Promise<void>(resolve => { openGate = resolve }) }
+  const releaseRunRead = () => { openGate?.(); gate = undefined }
+  return { store, controller, holdRunRead, releaseRunRead, pick, press, pressRunAccess, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, refuseObservationWrite, explodeAfterNextCardWrite, close }
 }
 
 /*
@@ -413,5 +425,41 @@ test("each lost act gets its own line, and a door that already said it is not re
     t.pressRunAccess()
     await t.settle(600)
     expect(t.transcript()).toEqual([STORAGE_FULL, STORAGE_FULL, STORAGE_FULL])
+  } finally { await t.close() }
+})
+
+
+/*
+ * TWO LOST ACTS, TWO DOORS, ONE WINDOW (R104d).
+ *
+ * The rule above matches a door's line by SENTENCE inside the act's window,
+ * and the sentences are a closed table (state/BrowserWriteFailure.ts): any two
+ * acts that overlap in time therefore carry the same sentence, with both
+ * windows open while either door speaks. The act that surfaced last matched
+ * the OTHER act's line and said nothing — two lost acts, two toasts, one
+ * line, which is the same silence the rule exists to prevent, one door over.
+ *
+ * Driven here as the person meets it. `Run` is pressed and held on its run
+ * read; while it is in flight the person changes `When to run Fix for real`
+ * and this browser refuses that write too. The pick's door speaks its own
+ * line; the press owes a line of its own, because a door's line stands in for
+ * at most one act (controller/spokenLines.ts). The class this stands for is
+ * driven at every door in DurableWriteDoorLines.test.ts.
+ */
+test("two lost acts inside one window each get their own line", async () => {
+  const t = await walk({ observedRun: true })
+  try {
+    t.refuseObservationWrite()
+    t.holdRunRead()
+    t.pressRunAccess()
+    await t.settle(120)
+    t.refuseCardWrite()
+    t.pick("automatic")
+    await t.settle(500)
+    t.releaseRunRead()
+    await t.settle(900)
+    // The app counted two lost acts; the person must hear about both.
+    expect(t.toastDetails()).toEqual([STORAGE_FULL, STORAGE_FULL])
+    expect(t.transcript()).toEqual([STORAGE_FULL, STORAGE_FULL])
   } finally { await t.close() }
 })
