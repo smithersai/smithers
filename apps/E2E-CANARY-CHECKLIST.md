@@ -165,7 +165,7 @@ The problem is above unit level:
 | E7.1  | `POST /api/workflow/provision` provisions-or-resumes; idempotent on a second call                | PASS    | `worker-e2e.ts`  |
 | E7.2  | No gateway credential ever reaches the browser                                                   | PASS    | `worker-e2e.ts`  |
 | E7.3  | `listWorkflows` through the relay                                                                | PASS    | `worker-e2e.ts`  |
-| E7.4  | create-flow launched with the user's own words                                               | PASS    | `worker-e2e.ts`  |
+| E7.4  | create-flow launched with the user's own words                                               | UNTESTED | `worker-e2e.ts` covers the relay call; nobody has watched this door produce a flow on a real workspace |
 | E7.5  | The embedded run card tracks the run live                                                        | PASS    | `worker-e2e.ts`  |
 | E7.6  | Approval round trip through the relay                                                            | PASS    | `worker-e2e.ts`  |
 | E7.7  | Auto-resume to a result stated in words                                                          | PASS    | `worker-e2e.ts`  |
