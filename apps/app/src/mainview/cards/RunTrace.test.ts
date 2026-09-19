@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { durationWords, isTraceFilter, spanMatches, spanPath, traceFiltersFor, traceFromJournal, turnNarratives, waterfallGeometry } from "./RunTrace"
+import { durationWords, isTraceFilter, phaseBandGeometry, phaseExtent, spanMatches, spanPath, traceFiltersFor, traceFromJournal, turnNarratives, waterfallGeometry } from "./RunTrace"
 import type { JournalRecord } from "./RunTrace"
+import { CODING_PLAN } from "./fixtures/CodingPlan"
 
 /*
  * The trace model over a journal in the agent's own shapes (AgentSession's
@@ -244,4 +245,473 @@ test("native call facts upgrade telemetry through the gateway's shared normaliza
   const calls = model.rows.filter(row => row.kind === "call")
   expect(calls).toHaveLength(1)
   expect(calls[0]).toMatchObject({ id: "call-1", detail: { input: { path: "a" }, output: "recorded" } })
+})
+
+/*
+ * What the frame was DOING, over the journal a code-mode run writes: the phase
+ * a frame's own calls put it in, the band those phases merge into, the line a
+ * person reads instead of the call tree, the moments worth scrubbing to, and
+ * the discipline records the controller wrote. Every expectation below is a
+ * fact some record carried; none of it is read off what the model said.
+ */
+
+/**
+ * The targets a plan declares (`flows/coding/schema.ts` `Check.target`), read
+ * off the recipe fixture the card itself folds: this repo's are build-target
+ * LABELS. The path beside them is the other shape a plan may carry, and the
+ * two are matched by different rules because they mean different things.
+ */
+const PLAN_TARGETS = CODING_PLAN.changes.flatMap((change) => change.checks.map((check) => check.target))
+const CHECKS = { checkTargets: [...PLAN_TARGETS, "tests/admin_views"] }
+
+/** Read, search, edit, check: one frame per stretch, and the run settles. */
+const CODE_MODE: ReadonlyArray<JournalRecord> = [
+  at(1, "control.agent.turn-opened", { seat: "openai:gpt-5.6-sol" }, 1000),
+  at(2, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/admin/views.py" } }, 1100),
+  at(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "120 lines" }, 1200),
+  at(4, "control.agent.turn-opened", {}, 2000),
+  at(5, "control.agent.cell-call-started", { flowName: "grep", input: { pattern: "def get_admin" } }, 2100),
+  at(6, "control.agent.cell-call-settled", { flowName: "grep", outcome: "success", value: "3 hits" }, 2200),
+  at(7, "control.agent.turn-opened", {}, 3000),
+  at(8, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/admin/views.py" } }, 3100),
+  at(9, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+12 −2" }, 3200),
+  at(10, "control.agent.mutation-observed", { basis: "observed", mutated: true, digest: "t2", paths: 1, declaredWrites: 1 }, 3300),
+  at(11, "control.agent.turn-opened", {}, 4000),
+  at(12, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, 4100),
+  at(13, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "12 passed" }, 4900),
+  at(14, "control.run.completed", {}, 5000)
+]
+
+describe("what the frame was doing", () => {
+  test("each phase comes from the calls the frame made, and contiguous frames merge into one band", () => {
+    const model = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    expect(model.bands).toEqual([
+      { phase: "researching", startedAt: 1000, endedAt: 3000, frames: ["frame-1", "frame-2"], seq: 1 },
+      { phase: "implementing", startedAt: 3000, endedAt: 4000, frames: ["frame-3"], seq: 7 },
+      { phase: "testing", startedAt: 4000, endedAt: 5000, frames: ["frame-4"], seq: 11 }
+    ])
+  })
+
+  test("a frame's line is its dominant call in plain English, and an unsettled call has no result yet", () => {
+    const model = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    expect(model.lines).toEqual([
+      { spanId: "frame-1", frame: 1, verb: "read", subject: "views.py", result: "120 lines", failed: false, wrote: false },
+      { spanId: "frame-2", frame: 2, verb: "searched", subject: "def get_admin", result: "3 hits", failed: false, wrote: false },
+      { spanId: "frame-3", frame: 3, verb: "edited", subject: "views.py", result: "+12 −2", failed: false, wrote: true },
+      { spanId: "frame-4", frame: 4, verb: "ran", subject: "pytest tests/admin_views", result: "12 passed", failed: false, wrote: false }
+    ])
+    // The edit outranks the check in the same frame, and a flow the verb table
+    // has never heard of is named by itself.
+    const open = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1),
+      at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, 2),
+      at(3, "control.agent.cell-call-started", { flowName: "edit", input: { path: "a/b/x.ts" } }, 3),
+      at(4, "control.agent.turn-opened", {}, 4),
+      at(5, "control.agent.cell-call-started", { flowName: "target.run", input: { label: "//apps/app:unitTests" } }, 5)
+    ], CHECKS)
+    expect(open.lines).toEqual([
+      { spanId: "frame-1", frame: 1, verb: "edited", subject: "x.ts", result: "", failed: false, wrote: false },
+      { spanId: "frame-2", frame: 2, verb: "target.run", subject: "", result: "", failed: false, wrote: false }
+    ])
+    // A frame that called nothing has no line; absence is absence.
+    expect(traceFromJournal(RUN, [at(1, "control.agent.turn-opened", {}, 1)]).lines).toEqual([])
+  })
+
+  test("milestones are the moments worth scrubbing to, and every successful write is one of them", () => {
+    const model = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    expect(model.milestones).toEqual([
+      { seq: 9, at: 3200, label: "views.py", tone: "brand" },
+      { seq: 14, at: 5000, label: "completed", tone: "good" }
+    ])
+    // A failed write is not a write.
+    const refused = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1),
+      at(2, "control.agent.cell-call-started", { flowName: "write", input: { path: "src/x.ts" } }, 2),
+      at(3, "control.agent.cell-call-settled", { flowName: "write", outcome: "failure", message: "read-only tree" }, 3),
+      at(4, "control.run.failed", {}, 4)
+    ])
+    expect(refused.milestones).toEqual([{ seq: 4, at: 4, label: "failed", tone: "bad" }])
+    expect(refused.lines).toEqual([
+      { spanId: "frame-1", frame: 1, verb: "wrote", subject: "x.ts", result: "read-only tree", failed: true, wrote: false }
+    ])
+  })
+
+  test("a frame's writes are one milestone: the first file named and the rest counted", () => {
+    // One frame, fifteen successful edits: the strip gets one pin for the
+    // moment the frame wrote, not fifteen filenames stacked over one track.
+    const writes = (frame: number, paths: ReadonlyArray<string>, from: number): ReadonlyArray<JournalRecord> => [
+      at(from, "control.agent.turn-opened", {}, frame * 1000),
+      ...paths.flatMap((path, index) => [
+        at(from + 1 + index * 2, "control.agent.cell-call-started", { flowName: "edit", input: { path } }, frame * 1000 + 10 + index * 10),
+        at(from + 2 + index * 2, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, frame * 1000 + 15 + index * 10)
+      ])
+    ]
+    const fifteen = Array.from({ length: 15 }, (_unused, index) => `src/a${index}.ts`)
+    const model = traceFromJournal(RUN, writes(1, fifteen, 1))
+    // The pin stands where the frame started writing, which is the file it names.
+    expect(model.milestones).toEqual([{ seq: 3, at: 1015, label: "a0.ts +14", tone: "brand" }])
+    // The count is of FILES, the unit a multi-file patch already counts in: a
+    // file written twice is one file, and a patch adds the files it names.
+    const patch = ["*** Begin Patch", "*** Update File: src/a.ts", "*** Add File: src/c.ts", "*** End Patch"].join("\n")
+    const mixed = traceFromJournal(RUN, [
+      ...writes(1, ["src/a.ts", "src/a.ts", "src/b.ts"], 1),
+      at(8, "control.agent.cell-call-started", { flowName: "apply_patch", input: { input: patch } }, 1100),
+      at(9, "control.agent.cell-call-settled", { flowName: "apply_patch", outcome: "success", value: { output: "Success." } }, 1110),
+      // The next frame's write is its own moment.
+      ...writes(2, ["src/a.ts"], 10)
+    ])
+    expect(mixed.milestones).toEqual([
+      { seq: 3, at: 1015, label: "a.ts +2", tone: "brand" },
+      { seq: 12, at: 2015, label: "a.ts", tone: "brand" }
+    ])
+  })
+
+  test("a narrowed check does not satisfy the broader target the plan declared", () => {
+    const journal = (command: string): ReadonlyArray<JournalRecord> => [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "ok" }, 1500)
+    ]
+    expect(traceFromJournal(RUN, journal("pytest tests/admin_views"), CHECKS).bands.map((band) => band.phase)).toEqual(["testing"])
+    // It CONTAINS the target and runs one file of it: strictly narrower, never the check itself.
+    expect(traceFromJournal(RUN, journal("pytest tests/admin_views/tests.py"), CHECKS).bands.map((band) => band.phase))
+      .toEqual(["researching"])
+    // Without declared targets no command is a check at all.
+    expect(traceFromJournal(RUN, journal("pytest tests/admin_views")).bands.map((band) => band.phase)).toEqual(["researching"])
+  })
+
+  test("a stall streak names the frame it repeats; a check re-run after an edit does not", () => {
+    const check = (sequence: number, stamp: number): ReadonlyArray<JournalRecord> => [
+      at(sequence, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, stamp),
+      at(sequence + 1, "control.agent.cell-call-settled", { flowName: "bash", outcome: "failure", message: "1 failed" }, stamp + 700)
+    ]
+    const stalled = traceFromJournal({ ...RUN, status: "running" }, [
+      at(1, "control.agent.turn-opened", {}, 1000), ...check(2, 1100),
+      at(4, "control.agent.turn-opened", {}, 2000), ...check(5, 2100),
+      at(7, "control.agent.turn-opened", {}, 3000), ...check(8, 3100),
+      at(10, "control.agent.repeat-demanded", { frames: 3, cap: 4, nextFrame: 4 }, 3900)
+    ], CHECKS)
+    expect(stalled.lines.map(({ frame, repeatOf }) => ({ frame, repeatOf }))).toEqual([
+      { frame: 1, repeatOf: undefined },
+      { frame: 2, repeatOf: 1 },
+      { frame: 3, repeatOf: 1 }
+    ])
+    expect(stalled.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual([
+      "testing frame-1",
+      "stuck frame-2,frame-3"
+    ])
+    // The cap is the run's own armed number, read off the payload.
+    expect(stalled.notes).toEqual([
+      { seq: 10, spanId: "frame-3", tone: "warn", title: "repeat", body: "3 of 4 frames repeated calls. Frame 4." }
+    ])
+    // Re-running the same check after an edit is the OPPOSITE of a stall: the
+    // frame repeats a call, but no frame beside it does, so nothing is flagged.
+    const fixed = traceFromJournal({ ...RUN, status: "running" }, [
+      at(1, "control.agent.turn-opened", {}, 1000), ...check(2, 1100),
+      at(4, "control.agent.turn-opened", {}, 2000),
+      at(5, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/admin/views.py" } }, 2100),
+      at(6, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1 −1" }, 2200),
+      at(7, "control.agent.turn-opened", {}, 3000),
+      at(8, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, 3100),
+      at(9, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "12 passed" }, 3900)
+    ], CHECKS)
+    expect(fixed.lines.every((line) => line.repeatOf === undefined)).toBe(true)
+    expect(fixed.bands.map((band) => band.phase)).toEqual(["testing", "implementing", "testing"])
+  })
+
+  test("a parked frame and a refused ask both read as blocked", () => {
+    const parked = traceFromJournal({ ...RUN, status: "waiting-approval" }, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "write", input: { path: "src/x.ts" } }, 1100),
+      at(3, "control.agent.permission-required", { request: { requestId: "req-1" } }, 1200),
+      at(4, "control.agent.suspended", { reason: { code: "permission-required" } }, 1300)
+    ], CHECKS)
+    expect(parked.bands.map((band) => band.phase)).toEqual(["blocked"])
+    expect(parked.milestones).toEqual([{ seq: 3, at: 1200, label: "permission", tone: "warn" }])
+    // `ask` settles SUCCESSFULLY with the person's answer, so a refusal is a denial and not a failure.
+    const denied = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "ask", input: { question: "write src/x.ts?" } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "ask", outcome: "success", value: { answer: "denied", approved: false } }, 1200),
+      at(4, "control.agent.turn-opened", {}, 2000),
+      at(5, "control.agent.cell-call-started", { flowName: "ask", input: { question: "write src/y.ts?" } }, 2100),
+      at(6, "control.agent.cell-call-settled", { flowName: "ask", outcome: "success", value: { answer: "approved", approved: true } }, 2200)
+    ], CHECKS)
+    expect(denied.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual([
+      "blocked frame-1",
+      "researching frame-2"
+    ])
+  })
+
+  test("a demand's note quotes the payload's own fields, and mutation is noted only when the tree moved", () => {
+    const model = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.mutation-observed", { basis: "declared", mutated: false, digest: "t1", paths: 0, declaredWrites: 0 }, 1100),
+      at(3, "control.agent.narrowed-demanded", {
+        flow: "bash", broader: "pytest tests/admin_views", narrower: "pytest tests/admin_views/tests.py",
+        broaderDigest: "t0", currentDigest: "t1", nextFrame: 2
+      }, 1200),
+      at(4, "control.agent.unresolved-demanded", { flow: "bash", failed: "pytest tests/admin_views", instead: "ls tests", currentDigest: "t1", nextFrame: 2 }, 1300),
+      at(5, "control.agent.unmoved-demanded", { openedDigest: "t1", currentDigest: "t1", nextFrame: 2 }, 1400),
+      at(6, "control.agent.checkpoint-minted", { id: "cp-1-0", ref: "refs/smithers/cp-1-0", cell: "c1", ordinal: 0 }, 1500)
+    ], CHECKS)
+    expect(model.notes).toEqual([
+      {
+        seq: 3, spanId: "frame-1", tone: "bad", title: "narrowed",
+        body: "bash ran narrower than the reading it stands in for. Frame 2.",
+        evidence: ["pytest tests/admin_views", "pytest tests/admin_views/tests.py"]
+      },
+      {
+        seq: 4, spanId: "frame-1", tone: "bad", title: "unresolved",
+        body: "bash failed and was not answered. Frame 2.",
+        evidence: ["pytest tests/admin_views", "ls tests"]
+      },
+      {
+        seq: 5, spanId: "frame-1", tone: "bad", title: "unmoved",
+        body: "The tree the run opened on is the tree it closed on. Frame 2.",
+        evidence: ["t1", "t1"]
+      },
+      { seq: 6, spanId: "frame-1", tone: "good", title: "checkpoint", body: "refs/smithers/cp-1-0" }
+    ])
+    // The one that moved the tree carries its basis, because a declared answer is paperwork.
+    const moved = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1),
+      at(2, "control.agent.mutation-observed", { basis: "declared", mutated: true, digest: "", paths: 0, declaredWrites: 1 }, 2)
+    ])
+    expect(moved.notes).toEqual([{ seq: 2, spanId: "frame-1", tone: "warn", title: "changed", body: "declared" }])
+    expect(moved.bands.map((band) => band.phase)).toEqual(["implementing"])
+  })
+
+  test("the five kinds the journal writes with no fields are read by presence alone", () => {
+    const model = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      // AgentSession's `default` arm journals each of these as `payload: {}`.
+      at(2, "control.agent.read-only-demand-issued", {}, 1100),
+      at(3, "control.agent.narrow-only-demanded", {}, 1200),
+      at(4, "control.agent.steering-drained", {}, 1300),
+      at(5, "control.agent.sufficiency-observed", {}, 1400),
+      at(6, "control.agent.cell-rejected-in-frame", {}, 1500),
+      // These two do carry fields, and only a firing is a moment.
+      at(7, "control.agent.claim-demanded", { complete: 0.4, overclaims: 0.9, latencyMs: 300, demanded: false, currentDigest: "t1", nextFrame: 2 }, 1600),
+      at(8, "control.agent.claim-demanded", { complete: 0.3, overclaims: 0.95, latencyMs: 310, demanded: true, currentDigest: "t1", nextFrame: 2 }, 1700),
+      at(9, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 2, nextAction: "write" }, 1800)
+    ], CHECKS)
+    expect(model.milestones).toEqual([
+      { seq: 2, at: 1100, label: "read-only", tone: "warn" },
+      { seq: 3, at: 1200, label: "narrow-only", tone: "warn" },
+      { seq: 4, at: 1300, label: "steering", tone: "warn" },
+      { seq: 5, at: 1400, label: "sufficiency", tone: "good" },
+      { seq: 8, at: 1700, label: "claim", tone: "bad" },
+      { seq: 9, at: 1800, label: "read-only", tone: "warn" }
+    ])
+    expect(model.notes.map(({ seq, title, body }) => ({ seq, title, body }))).toEqual([
+      { seq: 8, title: "claim", body: "complete 0.3, overclaims 0.95. Frame 2." },
+      // 7, not a constant: a host arms its own read-only cap.
+      { seq: 9, title: "read-only", body: "7 of 7 frames changed nothing. Frame 2: write." }
+    ])
+  })
+
+  test("the two-argument call folds the same trace and derives nothing the third argument would have", () => {
+    const two = traceFromJournal(RUN, CODE_MODE)
+    const three = traceFromJournal(RUN, CODE_MODE, {})
+    expect(two.rows.map((span) => `${span.depth}:${span.id}:${span.status}`))
+      .toEqual(three.rows.map((span) => `${span.depth}:${span.id}:${span.status}`))
+    expect(two.counts).toEqual(three.counts)
+    expect(two.extent).toEqual(three.extent)
+    expect(two.lines).toEqual(three.lines)
+    // The whole existing fixture folds unchanged, and its own frames still read.
+    const legacy = traceFromJournal(RUN, JOURNAL)
+    expect(legacy.rows.map((span) => span.id)).toEqual(traceFromJournal(RUN, JOURNAL, CHECKS).rows.map((span) => span.id))
+    expect(legacy.counts).toEqual({ spans: 10, running: 3, failed: 1 })
+    // `files.edit` is not a flow the verb table knows, so nothing here is
+    // edit-like and both frames merge into the one honest band.
+    expect(legacy.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual(["researching frame-1,frame-2"])
+    expect(legacy.lines.map((line) => `${line.frame} ${line.verb} ${line.subject}`))
+      .toEqual(["1 files.read README.md", "2 files.edit x.ts"])
+    expect(traceFromJournal(RUN, [])).toMatchObject({ bands: [], milestones: [], lines: [], notes: [] })
+  })
+})
+
+/*
+ * The readings an adversarial review probed and found asserted rather than
+ * recorded: a re-check after an edit called a stall, a check target matched as
+ * raw text, a flow's whole Output rendered into one row, two standard flows
+ * whose input this fold could not read, a moment with no axis to sit on, a run
+ * with no measured duration, and a phase word put on a frame the journal says
+ * nothing about.
+ */
+describe("what the journal did not say", () => {
+  /** One frame per element: a check, an edit, then checks again. */
+  const check = (sequence: number, stamp: number): ReadonlyArray<JournalRecord> => [
+    at(sequence, "control.agent.cell-call-started", { flowName: "bash", input: { command: "pytest tests/admin_views" } }, stamp),
+    at(sequence + 1, "control.agent.cell-call-settled", { flowName: "bash", outcome: "failure", message: "1 failed" }, stamp + 700)
+  ]
+
+  test("a check re-run after an edit is not a stall, and a stall that starts after the edit still is", () => {
+    // The reviewer's probe: run the check, edit, run the SAME check, repeat.
+    // The repeat two frames later must not drag the answering frame in with it.
+    const model = traceFromJournal({ ...RUN, status: "running" }, [
+      at(1, "control.agent.turn-opened", {}, 1000), ...check(2, 1100),
+      at(4, "control.agent.turn-opened", {}, 2000),
+      at(5, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/admin/views.py" } }, 2100),
+      at(6, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1 −1" }, 2200),
+      at(7, "control.agent.turn-opened", {}, 3000), ...check(8, 3100),
+      at(10, "control.agent.turn-opened", {}, 4000), ...check(11, 4100),
+      at(13, "control.agent.turn-opened", {}, 5000), ...check(14, 5100)
+    ], CHECKS)
+    // Frame 3 answers the edit, so it repeats nothing; frames 4 and 5 repeat
+    // frame 3, on a tree that has not moved since.
+    expect(model.lines.map(({ frame, repeatOf }) => ({ frame, repeatOf }))).toEqual([
+      { frame: 1, repeatOf: undefined },
+      { frame: 2, repeatOf: undefined },
+      { frame: 3, repeatOf: undefined },
+      { frame: 4, repeatOf: 3 },
+      { frame: 5, repeatOf: 3 }
+    ])
+    expect(model.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual([
+      "testing frame-1",
+      "implementing frame-2",
+      "testing frame-3",
+      "stuck frame-4,frame-5"
+    ])
+  })
+
+  test("a plan's real targets are labels, and a label is matched as a token wherever the runner put its flags", () => {
+    const journal = (command: string): ReadonlyArray<JournalRecord> => [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "ok" }, 1500)
+    ]
+    const phases = (command: string, options = CHECKS) =>
+      traceFromJournal(RUN, journal(command), options).bands.map((band) => band.phase)
+    // The shape the recipe fixture actually declares.
+    expect(PLAN_TARGETS).toContain("//memory:typecheck")
+    // A runner puts its own arguments after the label, so the command it ran
+    // the check with does not end with it.
+    expect(phases("bun run check //memory:typecheck --reporter=dot")).toEqual(["testing"])
+    expect(phases("bun run check //memory:typecheck")).toEqual(["testing"])
+    // A longer label is a different target, not this one.
+    expect(phases("bun run check //ui:browser_only")).toEqual(["researching"])
+  })
+
+  test("a path target matches at a token boundary, and a target that cannot be a token is not guessed at", () => {
+    const journal = (command: string): ReadonlyArray<JournalRecord> => [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "bash", input: { command } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "ok" }, 1500)
+    ]
+    const phases = (command: string, targets: ReadonlyArray<string>) =>
+      traceFromJournal(RUN, journal(command), { checkTargets: targets }).bands.map((band) => band.phase)
+    // The reviewer's probe: `admin_views` ends with `views` and is not it.
+    expect(phases("pytest admin_views", ["views"])).toEqual(["researching"])
+    expect(phases("pytest views", ["views"])).toEqual(["testing"])
+    // A narrower reading is still refused.
+    expect(phases("pytest tests/admin_views/tests.py", ["tests/admin_views"])).toEqual(["researching"])
+    // Two tokens can never be one token of a command, so this target matches nothing.
+    expect(phases("pytest a b", ["a b"])).toEqual(["researching"])
+  })
+
+  test("a frame line's result is bounded; a flow's whole Output does not become one card row", () => {
+    const model = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/x.ts" } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: { text: "x".repeat(5000) } }, 1200)
+    ], CHECKS)
+    expect(model.lines[0]!.result).toHaveLength(160)
+    expect(model.lines[0]!.result.endsWith("…")).toBe(true)
+    // The span still carries everything the journal carried.
+    expect(model.rows.find((span) => span.id === "call-1")?.detail.output?.length).toBeGreaterThan(5000)
+  })
+
+  test("apply_patch and test name what they touched, and a write the journal gave no subject mints no pin", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: src/admin/views.py",
+      "@@ def get_admin",
+      "-    return None",
+      "+    return admin",
+      "*** Add File: src/admin/urls.py",
+      "+urlpatterns = []",
+      "*** End Patch"
+    ].join("\n")
+    const model = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "apply_patch", input: { input: patch } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "apply_patch", outcome: "success", value: { output: "Success.", added: ["src/admin/urls.py"], modified: ["src/admin/views.py"], deleted: [] } }, 1200),
+      at(4, "control.agent.turn-opened", {}, 2000),
+      at(5, "control.agent.cell-call-started", { flowName: "test", input: { selection: ["tests/admin_views"], against: "base", timeoutMs: 600_000 } }, 2100),
+      at(6, "control.agent.cell-call-settled", { flowName: "test", outcome: "success", value: { passed: 12, failed: [] } }, 2200)
+    ], CHECKS)
+    // The patch is not the subject; the files it patches are, the first named and the rest counted.
+    expect(model.lines.map((line) => `${line.verb} ${line.subject}`)).toEqual([
+      "patched views.py +1",
+      "ran tests/admin_views"
+    ])
+    expect(model.milestones).toEqual([{ seq: 3, at: 1200, label: "views.py +1", tone: "brand" }])
+    // A string that is not a patch names no file, and a pin is its label.
+    const blank = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "apply_patch", input: { input: "not a patch" } }, 1100),
+      at(3, "control.agent.cell-call-settled", { flowName: "apply_patch", outcome: "success", value: { output: "" } }, 1200)
+    ], CHECKS)
+    expect(blank.milestones).toEqual([])
+    expect(blank.lines.map((line) => line.subject)).toEqual([""])
+  })
+
+  test("milestones survive a journal that opened no frame; the strip's axis is then the run's own", () => {
+    const model = traceFromJournal({ ...RUN, status: "completed" }, [
+      at(1, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 1, nextAction: "write" }, 1000),
+      at(2, "control.agent.sufficiency-observed", {}, 3000)
+    ], CHECKS)
+    expect(model.bands).toEqual([])
+    expect(model.milestones.map((milestone) => milestone.label)).toEqual(["read-only", "sufficiency"])
+    expect(phaseExtent(model)).toEqual({ start: 1000, end: 3000 })
+    // With bands, the bands are the axis.
+    const banded = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    expect(phaseExtent(banded)).toEqual({ start: banded.bands[0]!.startedAt, end: banded.bands.at(-1)!.endedAt })
+  })
+
+  test("a run with no measured duration lays its bands out by ordinal instead of stacking them at zero", () => {
+    const model = traceFromJournal({ ...RUN, status: "completed" }, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/x.ts" } }, 1000),
+      at(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "ok" }, 1000),
+      at(4, "control.agent.turn-opened", {}, 1000),
+      at(5, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/x.ts" } }, 1000),
+      at(6, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1000)
+    ], CHECKS)
+    const extent = phaseExtent(model)
+    expect(extent).toEqual({ start: 1000, end: 1000 })
+    expect(model.bands.map((band, index) => phaseBandGeometry(band, extent, index, model.bands.length))).toEqual([
+      { left: 0, width: 50 },
+      { left: 50, width: 50 }
+    ])
+    // A measured run is still measured.
+    const measured = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    const axis = phaseExtent(measured)
+    expect(phaseBandGeometry(measured.bands[0]!, axis, 0, measured.bands.length)).toEqual({ left: 0, width: 50 })
+  })
+
+  test("a frame the journal says nothing about is not asserted to have been researching", () => {
+    const model = traceFromJournal({ ...RUN, status: "completed" }, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.turn-opened", {}, 2000),
+      at(3, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/x.ts" } }, 2100),
+      at(4, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "ok" }, 2200),
+      at(5, "control.run.completed", {}, 3000)
+    ], CHECKS)
+    // The fold writes no line for frame 1, so it names no phase for it either.
+    expect(model.lines.map((line) => line.frame)).toEqual([2])
+    expect(model.bands.map((band) => `${band.phase} ${band.frames.join(",")}`)).toEqual([
+      "unrecorded frame-1",
+      "researching frame-2"
+    ])
+    // A frame whose only call is the checkpoint mint is the same silence.
+    const bookkeeping = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-call-started", { flowName: "checkpoint", input: {} }, 1100)
+    ], CHECKS)
+    expect(bookkeeping.lines).toEqual([])
+    expect(bookkeeping.bands.map((band) => band.phase)).toEqual(["unrecorded"])
+  })
 })

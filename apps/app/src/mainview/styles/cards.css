@@ -1699,6 +1699,178 @@
 	font-size: var(--fs-small);
 }
 .run-trace-kind { font-family: var(--font-mono); font-weight: 600; margin-right: 0.375rem; }
+
+/*
+ * The timeline's phase band, its milestone pins, and what each frame did.
+ *
+ * Fills mix against --bg, never --surface: the `*-soft` tokens already carry
+ * --surface, so on a card they land within a shade of the paper they sit on.
+ * A 22% tint keeps --text above the small-text floor in both modes.
+ */
+.run-phases { position: relative; }
+/* One row per pin in the widest cluster: the two-row height until a cluster is deeper, and never past the card's cap (RunTraceCard `PIN_ROWS`). */
+.run-phase-pins { position: relative; height: calc(0.75rem + var(--pin-rows, 2) * 0.875rem); }
+.run-phase-pin {
+	position: absolute;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	transform: translateX(-50%);
+	max-width: 10rem;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--fs-small);
+	line-height: 1.2;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.run-phase-pin:hover { color: var(--text); }
+.run-phase-pin[aria-current="location"] { color: var(--text); font-weight: 600; }
+.run-phase-pin:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; border-radius: 2px; }
+.run-phase-pin-label { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/*
+ * Rows staggered by tick length alone: every pin stays anchored at the bottom,
+ * so a shorter tick is the only thing that lowers the next label. Raising
+ * `bottom` by what the tick lost would put them back on one line. The last row
+ * sits on the track and each row above it is one label taller, so a third pin
+ * in one cluster grows the strip instead of landing on a label already there.
+ */
+.run-phase-pin-tick {
+	width: 1px;
+	background: var(--border-strong);
+	height: calc(0.375rem + (var(--pin-rows, 2) - 1 - var(--pin-row, 0)) * 0.875rem);
+}
+.run-phase-pin[data-tone="warn"] .run-phase-pin-tick { background: var(--warning); }
+.run-phase-pin[data-tone="bad"] .run-phase-pin-tick { background: var(--danger); }
+.run-phase-pin[data-tone="good"] .run-phase-pin-tick { background: var(--success); }
+.run-phase-pin[data-tone="brand"] .run-phase-pin-tick { background: var(--brand); }
+.run-phase-track {
+	position: relative;
+	height: 1.25rem;
+	border-radius: 2px;
+	background: var(--surface-2);
+	overflow: hidden;
+}
+.run-phase-band {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	--band-tint: 22%;
+	min-width: 2px;
+	display: flex;
+	align-items: center;
+	padding: 0 0.25rem;
+	border: 0;
+	border-left: 1px solid var(--bg);
+	background: var(--surface-2);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+	line-height: 1;
+	cursor: pointer;
+	overflow: hidden;
+}
+.run-phase-band[data-phase-band="researching"] { background: color-mix(in srgb, var(--info) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="implementing"] { background: color-mix(in srgb, var(--brand) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="testing"] { background: color-mix(in srgb, var(--success) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="stuck"] { background: color-mix(in srgb, var(--warning) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="blocked"] { background: color-mix(in srgb, var(--danger) var(--band-tint), var(--bg)); }
+/*
+ * The journal past the cursor: it happened, the reader has not scrubbed there.
+ * It keeps its shape and its press at a weaker tint rather than disappearing,
+ * which is the difference between a scrubber and a one-way trip.
+ */
+.run-phase-band[data-reached="false"] { --band-tint: 8%; color: var(--text-muted); }
+.run-phase-pin[data-reached="false"] { color: var(--text-faint); }
+.run-phase-pin[data-reached="false"]:hover { color: var(--text); }
+.run-phase-pin[data-reached="false"] .run-phase-pin-tick { background: var(--border); }
+.run-phase-band[aria-current="location"] { outline: 2px solid var(--text); outline-offset: -2px; }
+.run-phase-band:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-phase-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* One row per recorded frame; its discipline events sit under it. */
+.run-lines {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	overflow: hidden;
+}
+.run-lines > li + li { border-top: 1px solid var(--border); }
+.run-line {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 var(--sp-2);
+	width: 100%;
+	padding: var(--sp-2) var(--sp-3);
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: var(--fs-body);
+	text-align: left;
+	cursor: pointer;
+}
+.run-line:hover { background: var(--hover-subtle); }
+.run-line[aria-pressed="true"] { background: var(--brand-soft); }
+.run-line:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-line-number {
+	flex: none;
+	min-width: 1.25rem;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	font-variant-numeric: tabular-nums;
+}
+.run-line-body { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.run-line-verb { font-weight: 600; }
+.run-line-subject { font-family: var(--font-mono); }
+.run-line-result { color: var(--text-muted); font-size: var(--fs-small); }
+.run-line[data-failed="true"] .run-line-result { color: var(--danger); }
+.run-line-repeat, .run-line-wrote {
+	flex: none;
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-full);
+	font-size: var(--fs-small);
+}
+.run-line-wrote { background: color-mix(in srgb, var(--brand) 16%, var(--bg)); color: var(--text); }
+.run-line-repeat { background: color-mix(in srgb, var(--warning) 16%, var(--bg)); color: var(--text); }
+.run-note {
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	margin: 0 var(--sp-3) var(--sp-2) calc(var(--sp-3) + 1.25rem);
+	padding: var(--sp-2) var(--sp-3);
+	border-left: 2px solid var(--border-strong);
+	border-radius: 0 var(--r-sm) var(--r-sm) 0;
+	background: var(--surface-2);
+	font-size: var(--fs-small);
+}
+.run-note[data-tone="warn"] { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--bg)); }
+.run-note[data-tone="bad"] { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--bg)); }
+.run-note[data-tone="good"] { border-left-color: var(--success); background: color-mix(in srgb, var(--success) 10%, var(--bg)); }
+.run-note-title { font-weight: 600; }
+.run-note-body { color: var(--text-muted); overflow-wrap: anywhere; }
+.run-note-evidence {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	overflow-wrap: anywhere;
+}
+
 .smithers-card[data-maximized="true"] .run-trace-tree,
 .smithers-card[data-maximized="true"] .run-trace-waterfall,
 .smithers-card[data-maximized="true"] .run-trace-code { max-height: none; }

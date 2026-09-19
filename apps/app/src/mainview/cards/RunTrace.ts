@@ -87,12 +87,86 @@ export interface TraceExtent {
   readonly end: number
 }
 
+/**
+ * What a frame was doing, derived from what it did — never declared.
+ *
+ * `unrecorded` is the honest reading of a frame whose journal carries nothing
+ * this fold can name: every other word here is a claim about the frame's work,
+ * and a claim needs a record behind it.
+ */
+export type PhaseId = "researching" | "implementing" | "testing" | "stuck" | "blocked" | "unrecorded"
+
+/** One contiguous run of frames in one phase. */
+export interface PhaseBand {
+  readonly phase: PhaseId
+  readonly startedAt: number
+  readonly endedAt: number
+  /** Span ids of the frames in this band, in order. */
+  readonly frames: ReadonlyArray<string>
+  /** Journal sequence to scrub to when this band is clicked. */
+  readonly seq: number
+}
+
+/** A moment a person would scrub to. */
+export interface Milestone {
+  readonly seq: number
+  readonly at: number
+  readonly label: string
+  readonly tone: "warn" | "bad" | "good" | "brand"
+}
+
+/** What one frame did, in plain English, derived from its calls. */
+export interface FrameLine {
+  readonly spanId: string
+  /** Frame ordinal as shown to a person, 1-based. */
+  readonly frame: number
+  readonly verb: string
+  /** Empty when the call's input named nothing this fold reads as a subject; the card then prints the verb alone. */
+  readonly subject: string
+  readonly result: string
+  readonly failed: boolean
+  readonly wrote: boolean
+  /** Frame ordinal this repeats, set ONLY inside a stall streak. */
+  readonly repeatOf?: number
+}
+
+/** A discipline event, rendered where it happened. */
+export interface TraceNote {
+  readonly seq: number
+  /** Span id of the frame it attaches under. */
+  readonly spanId: string
+  readonly tone: "warn" | "bad" | "good"
+  readonly title: string
+  readonly body: string
+  /** Quoted evidence lines, already clipped. */
+  readonly evidence?: ReadonlyArray<string>
+}
+
+/** Extra options the fold takes; every field optional, absent = today's behaviour. */
+export interface TraceOptions {
+  /**
+   * Check targets the PLAN declared (`flows/coding/schema.ts` `Check.target`),
+   * in either shape a plan carries them: a build-target label or a path. A
+   * bash call is "testing" only if its command ran one of them, by the rules
+   * {@link runsCheck} holds. Absent = no frame is classified testing.
+   */
+  readonly checkTargets?: ReadonlyArray<string>
+}
+
 export interface TraceModel {
   readonly root: TraceSpan
   /** Every span in tree order, with its depth: the tree's rows and the waterfall's rows. */
   readonly rows: ReadonlyArray<TraceSpan>
   readonly extent: TraceExtent
   readonly counts: { readonly spans: number; readonly running: number; readonly failed: number }
+  /** The run's frames merged into what they were doing; empty when the journal opened no frame. */
+  readonly bands: ReadonlyArray<PhaseBand>
+  /** The moments a person scrubs to, in journal order; empty when the journal recorded none. */
+  readonly milestones: ReadonlyArray<Milestone>
+  /** One line per frame that called something; a frame that called nothing has none. */
+  readonly lines: ReadonlyArray<FrameLine>
+  /** The discipline records that carry fields, attached where they happened. */
+  readonly notes: ReadonlyArray<TraceNote>
 }
 
 /** Mutable draft shared by the control and native journal folds; never persisted. */
@@ -153,6 +227,569 @@ const builder = (
   detail: SpanDetail
 ): Builder => ({ id, kind, label, status, startedAt, children: [], detail })
 
+/*
+ * What the frame was DOING.
+ *
+ * Same discipline as the tree above, held one level closer to the reader:
+ * every word below is read off a journal record, never off what the model said
+ * it would do. A frame's line comes from the calls it made; its phase comes
+ * from those calls and from the controller's own observations of the tree; a
+ * note is a discipline record's own fields, quoted. Nothing here counts what
+ * the journal may be missing, and a frame the journal says nothing about gets
+ * nothing said about it.
+ */
+
+/**
+ * The verb one flow's call reads as, and which phase rule it answers.
+ *
+ * This table belongs on the registry descriptor, next to `description`. A verb
+ * table on the UI side drifts the moment someone adds a flow, and this module
+ * cannot see the flows a host bound; until the descriptor carries it, the
+ * table stays small and stays in this one place. The keys are the standard
+ * flows' own names (`@smthrs/std` `Bash.name`, `Edit.name`, ...). `acts` is
+ * what the phase rules mean by "edit-like" and "bash-like"; a flow this table
+ * has never heard of is neither, and its verb is its own name.
+ */
+const FLOW_ACTS: Readonly<Record<string, { readonly verb: string; readonly acts?: "edit" | "bash" }>> = {
+  bash: { verb: "ran", acts: "bash" },
+  test: { verb: "ran", acts: "bash" },
+  edit: { verb: "edited", acts: "edit" },
+  write: { verb: "wrote", acts: "edit" },
+  apply_patch: { verb: "patched", acts: "edit" },
+  read: { verb: "read" },
+  grep: { verb: "searched" },
+  glob: { verb: "listed" },
+  ls: { verb: "listed" }
+}
+
+/**
+ * The name a queued checkpoint mint carries (`QuickJSSandbox` `checkpointFlow`).
+ * A mint journals `control.agent.checkpoint-minted` and never a call, so no
+ * call in a journal wears this name today; the dominant-call rule skips it
+ * anyway, so a host that binds a flow by that name cannot make a frame's
+ * headline read as bookkeeping.
+ */
+const CHECKPOINT_FLOW = "checkpoint"
+
+/** The command line a call ran, for the flows that run one. */
+const commandOf = (input: unknown): string | undefined => {
+  const fields = asRecord(input)
+  return asString(fields.command) ?? asString(fields.script)
+}
+
+/** The last segment of a path: the name a person calls the file. */
+const basename = (path: string): string => path.split("/").filter((part) => part !== "").pop() ?? path
+
+/**
+ * The files a V4A patch names (`@smthrs/std` ApplyPatch's `*** Add File: `,
+ * `*** Delete File: ` and `*** Update File: ` markers).
+ *
+ * `apply_patch` carries its entire patch in one `input` string, and the patch
+ * is not the subject: what it patches is. A string that is not a patch names no
+ * files and yields none, so a flow that happens to call its field `input` is
+ * not mistaken for one.
+ */
+const patchedPaths = (patch: string): ReadonlyArray<string> => {
+  const paths: Array<string> = []
+  for (const line of patch.split("\n")) {
+    const named = /^\*\*\* (?:Add|Delete|Update) File:\s*(\S.*)$/.exec(line.trim())?.[1]
+    if (named !== undefined) paths.push(named.trim())
+  }
+  return paths
+}
+
+/**
+ * Several files in the room one name has: the first named, the rest counted.
+ *
+ * A multi-file patch's line and a frame's write pin both say it through here,
+ * so `views.py +1` means one thing wherever the card prints it. The count is a
+ * fact the journal carried, never an estimate. No file, no words.
+ */
+const filesLabel = (paths: ReadonlyArray<string>): string => {
+  const first = paths[0]
+  if (first === undefined) return ""
+  return paths.length === 1 ? basename(first) : `${basename(first)} +${paths.length - 1}`
+}
+
+/** The files an edit-like call names: its `path`, or every file its patch names. */
+const writtenPaths = (input: unknown): ReadonlyArray<string> => {
+  const fields = asRecord(input)
+  const path = asString(fields.path)
+  if (path !== undefined) return [path]
+  const patch = asString(fields.input)
+  return patch === undefined ? [] : patchedPaths(patch)
+}
+
+/** A call's subject: a path reads as its basename, a command as itself. */
+const subjectOf = (input: unknown): string => {
+  const fields = asRecord(input)
+  const path = asString(fields.path)
+  if (path !== undefined) return basename(path)
+  const command = commandOf(input)
+  if (command !== undefined) return command
+  const patch = asString(fields.input)
+  if (patch !== undefined) {
+    // The patch is not the subject; the files it patches are.
+    const files = filesLabel(patchedPaths(patch))
+    if (files !== "") return files
+  }
+  // `test` names what it selected (`@smthrs/std` TestRun `Input.selection`).
+  // An omitted selection means the record named nothing; that the flow would
+  // then run everything is the flow's default, not a fact this record carries.
+  const selection = Array.isArray(fields.selection)
+    ? fields.selection.filter((one): one is string => typeof one === "string")
+    : undefined
+  if (selection !== undefined && selection.length > 0) return selection.join(" ")
+  return asString(fields.pattern) ?? ""
+}
+
+/**
+ * Whether a command ran one of the checks the plan declared.
+ *
+ * Two target shapes reach here and they MEAN differently, so they match
+ * differently (`flows/coding/schema.ts` `Check.target`).
+ *
+ * A build-target LABEL — `//memory:typecheck`, `//ui:browser`, the shape this
+ * repo's own plans declare — names one whole target and is an atom: no narrower
+ * reading is spelled inside it, and a runner puts its own arguments after it
+ * (`bun run check //memory:typecheck --watch`). So a command runs it when the
+ * label stands in the command as its own token, wherever it stands. A flag that
+ * narrows what the target then runs is `control.agent.narrowed-demanded`'s
+ * business, not this rule's.
+ *
+ * A PATH target names a tree, and a path under it is a strictly NARROWER
+ * reading: `pytest tests/admin_views/tests.py` runs one file of what
+ * `tests/admin_views` names. Reading a substring as the target is how a UI
+ * launders a narrowed check into a pass, which is the exact confusion
+ * `control.agent.narrowed-demanded` exists to catch, so a path target must be
+ * the command's LAST token. A token, not a suffix of the raw text: `views`
+ * must not match `pytest admin_views`.
+ *
+ * A target that cannot be one token — empty, or carrying whitespace — cannot be
+ * matched against a tokenised command at all. Guessing at it is the laundering
+ * above, so it matches nothing and the frame is classified on what else it did.
+ */
+const runsCheck = (command: string, targets: ReadonlyArray<string>): boolean => {
+  const tokens = command.split(/\s+/).filter((token) => token !== "")
+  const last = tokens[tokens.length - 1]
+  return targets.some((target) =>
+    target === "" || /\s/.test(target)
+      ? false
+      : target.startsWith("//")
+      ? tokens.includes(target)
+      : last === target)
+}
+
+/** A note body from the sentences the payload carried; a field the record omitted contributes nothing. */
+const bodyOf = (...sentences: ReadonlyArray<string | undefined>): string =>
+  sentences.filter((sentence) => sentence !== undefined).join(" ")
+
+/** One quoted line of evidence, bounded the way the turn list bounds prose. */
+const clip = (value: unknown): string | undefined => {
+  const line = asString(value)
+  if (line === undefined || line === "") return undefined
+  return line.length <= 160 ? line : `${line.slice(0, 159).trimEnd()}…`
+}
+
+/** One call a frame made, as the journal opened and settled it. */
+interface CallFacts {
+  readonly flowName: string
+  readonly callId?: string | undefined
+  readonly input: unknown
+  /**
+   * What a repeat is judged by: the flow and the input exactly as journaled. A
+   * field the trail truncated still canonicalizes to its own digest, so a
+   * repeat of a huge input is still recognised as one.
+   */
+  readonly signature: string
+  settled?: { readonly failed: boolean; readonly result: string; readonly denied: boolean }
+}
+
+/** What one frame did, as its own records said it. */
+interface FrameFacts {
+  readonly id: string
+  readonly frame: number
+  readonly seq: number
+  readonly startedAt: number
+  endedAt: number
+  blocked: boolean
+  /** `control.agent.mutation-observed`'s answer; absent when the frame closed on none. */
+  mutated?: boolean
+  /** The write pin this frame minted: where it sits in the milestones, and every file it counts. */
+  wrote?: { readonly milestone: number; readonly paths: Array<string> }
+  readonly calls: Array<CallFacts>
+}
+
+/** Whether the frame made an edit-like call the journal recorded settling successfully. */
+const madeAWrite = (entry: FrameFacts): boolean =>
+  entry.calls.some((call) => FLOW_ACTS[call.flowName]?.acts === "edit" && call.settled?.failed === false)
+
+/**
+ * The call a frame's line is about: a change it made, else the check it ran,
+ * else the first thing it asked for.
+ *
+ * The phase rules and the lines read the same answer, so the two can never
+ * disagree about whether the journal said anything about a frame at all.
+ */
+const dominantCall = (entry: FrameFacts): CallFacts | undefined =>
+  entry.calls.find((one) => FLOW_ACTS[one.flowName]?.acts === "edit")
+    ?? entry.calls.find((one) => FLOW_ACTS[one.flowName]?.acts === "bash")
+    ?? entry.calls.find((one) => one.flowName !== CHECKPOINT_FLOW)
+
+/**
+ * Folds the journal a second time, into what a person would say the run was
+ * doing: its phase bands, its milestones, one line per frame, and the
+ * discipline notes.
+ *
+ * Read off the RECORDS rather than off the spans the fold above builds, for
+ * three reasons. The spans keep a settled value as text (`textOf`), so an
+ * `ask` denial would have to be parsed back out of JSON. An unrecognised
+ * kind's span hangs off `cell ?? frame ?? root`, so the frame a note belongs
+ * to would have to be recovered from tree position. And that span shape is the
+ * fold's `default` arm: the day a kind gains a case of its own, notes read off
+ * `detail.fields` would vanish without a word, while notes read off the
+ * records keep working.
+ *
+ * @param runId the run, for the notes that land before any frame opened
+ * @param ordered the journal, in sequence order, call events already deduplicated
+ * @param options the check targets the plan declared, if any
+ */
+const disciplineFold = (
+  runId: string,
+  ordered: ReadonlyArray<JournalRecord>,
+  options: TraceOptions
+): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes"> => {
+  const targets = options.checkTargets ?? []
+  const frames: Array<FrameFacts> = []
+  const notes: Array<TraceNote> = []
+  const milestones: Array<Milestone> = []
+  const open: Array<CallFacts> = []
+  let frame: FrameFacts | undefined
+  let lastAt = 0
+  /** Where a discipline record attaches: the open frame, else the run itself. */
+  const here = (): string => frame?.id ?? `run:${runId}`
+  const note = (
+    seq: number,
+    tone: TraceNote["tone"],
+    title: string,
+    body: string,
+    evidence: ReadonlyArray<string | undefined>
+  ): void => {
+    const quoted = evidence.filter((line): line is string => line !== undefined)
+    notes.push({ seq, spanId: here(), tone, title, body, ...(quoted.length === 0 ? {} : { evidence: quoted }) })
+  }
+
+  for (const record of ordered) {
+    const kind = record.kind ?? ""
+    const payload = asRecord(record.payload)
+    const at = timeOf(record, payload)
+    const seq = record.sequence ?? 0
+    lastAt = Math.max(lastAt, at)
+    if (frame !== undefined) frame.endedAt = Math.max(frame.endedAt, at)
+    switch (kind) {
+      case "control.agent.turn-opened": {
+        frame = {
+          id: `frame-${frames.length + 1}`,
+          frame: frames.length + 1,
+          seq,
+          startedAt: at,
+          endedAt: at,
+          blocked: false,
+          calls: []
+        }
+        frames.push(frame)
+        break
+      }
+      case "control.agent.cell-call-started": {
+        const flowName = asString(payload.flowName) ?? ""
+        const call: CallFacts = {
+          flowName,
+          callId: asString(payload.callId),
+          input: payload.input,
+          signature: `${flowName} ${textOf(payload.input) ?? ""}`
+        }
+        open.push(call)
+        // A call journaled outside a frame belongs to no frame, and the tree
+        // above puts it on the run. It is still open work, so it still pairs.
+        frame?.calls.push(call)
+        break
+      }
+      case "control.agent.cell-call-settled": {
+        const index = openCallIndex(open, asString(payload.callId), asString(payload.flowName))
+        const call = index < 0 ? undefined : open.splice(index, 1)[0]
+        if (call === undefined) break
+        const failed = asString(payload.outcome) === "failure"
+        // `ask` settles SUCCESSFULLY with the person's answer (`AgentSession`
+        // answers `{ answer, approved }`), so a refusal is a denial and not a
+        // failure. That is the call that settles with a denial.
+        const denied = !failed && asRecord(payload.value).approved === false
+        call.settled = {
+          failed,
+          result: (failed ? textOf(payload.message) : textOf(payload.value)) ?? "",
+          denied
+        }
+        if (denied && frame !== undefined) frame.blocked = true
+        // A write is the fastest thing a run does, so its band is always too
+        // narrow to carry a label, and its own marker is the only way to reach
+        // the moment that matters most.
+        if (!failed && FLOW_ACTS[call.flowName]?.acts === "edit") {
+          // A pin is its label, so a pin with none is a marker nobody can read
+          // and nobody can tell from the next one. The journal gave this call
+          // no file; no file, no pin.
+          const paths = [...new Set(writtenPaths(call.input))]
+          const minted = frame?.wrote
+          if (minted !== undefined) {
+            // A frame's writes are ONE moment. A frame that edits fifteen files
+            // does it inside a second, so a pin per file is fifteen names
+            // stacked over a point on the axis nobody can aim between. The pin
+            // stays where the frame started writing, on the file it names, and
+            // counts the rest; a file written twice is still one file.
+            for (const path of paths) if (!minted.paths.includes(path)) minted.paths.push(path)
+            milestones[minted.milestone] = { ...milestones[minted.milestone]!, label: filesLabel(minted.paths) }
+          } else if (paths.length > 0) {
+            // A write journaled outside a frame has no frame to be counted
+            // into, so it stays a moment of its own.
+            if (frame !== undefined) frame.wrote = { milestone: milestones.length, paths }
+            milestones.push({ seq, at, label: filesLabel(paths), tone: "brand" })
+          }
+        }
+        break
+      }
+      case "control.agent.mutation-observed": {
+        const mutated = payload.mutated === true
+        if (frame !== undefined) frame.mutated = mutated
+        // Written for every frame, so only a frame that changed something is
+        // worth a note. `basis` is the body because a `declared` answer is
+        // paperwork and an `observed` one is a fact about the tree, and a
+        // reader must not have to guess which one they are holding. `paths` is
+        // a COUNT of what the measurement covered, not the paths themselves,
+        // so it is not quotable evidence and is not quoted.
+        if (mutated) {
+          note(seq, asString(payload.basis) === "observed" ? "good" : "warn", "changed", asString(payload.basis) ?? "", [])
+        }
+        break
+      }
+      case "control.agent.permission-required": {
+        if (frame !== undefined) frame.blocked = true
+        milestones.push({ seq, at, label: "permission", tone: "warn" })
+        break
+      }
+      case "control.agent.suspended": {
+        if (frame !== undefined) frame.blocked = true
+        break
+      }
+      case "control.agent.checkpoint-minted": {
+        note(seq, "good", "checkpoint", asString(payload.ref) ?? "", [])
+        break
+      }
+      case "control.agent.read-only-demanded": {
+        // The caps are this run's own armed numbers, read off the payload: a
+        // host overrides any of them, so a constant here would print a number
+        // the run never used.
+        const streak = asNumber(payload.streak)
+        const cap = asNumber(payload.cap)
+        const nextFrame = asNumber(payload.nextFrame)
+        const nextAction = asString(payload.nextAction)
+        note(seq, "warn", "read-only", bodyOf(
+          streak === undefined || cap === undefined ? undefined : `${streak} of ${cap} frames changed nothing.`,
+          nextFrame === undefined || nextAction === undefined ? undefined : `Frame ${nextFrame}: ${nextAction}.`
+        ), [])
+        milestones.push({ seq, at, label: "read-only", tone: "warn" })
+        break
+      }
+      case "control.agent.repeat-demanded": {
+        const spent = asNumber(payload.frames)
+        const cap = asNumber(payload.cap)
+        const nextFrame = asNumber(payload.nextFrame)
+        note(seq, "warn", "repeat", bodyOf(
+          spent === undefined || cap === undefined ? undefined : `${spent} of ${cap} frames repeated calls.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        ), [])
+        milestones.push({ seq, at, label: "repeat", tone: "warn" })
+        break
+      }
+      case "control.agent.narrowed-demanded": {
+        const flow = asString(payload.flow)
+        const nextFrame = asNumber(payload.nextFrame)
+        note(seq, "bad", "narrowed", bodyOf(
+          flow === undefined ? undefined : `${flow} ran narrower than the reading it stands in for.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        ), [clip(payload.broader), clip(payload.narrower)])
+        milestones.push({ seq, at, label: "narrowed", tone: "bad" })
+        break
+      }
+      case "control.agent.unmoved-demanded": {
+        const nextFrame = asNumber(payload.nextFrame)
+        // Both digests or neither: one alone cannot tell an unmoved tree from a
+        // measurement that never happened, and either may be the empty string.
+        const opened = clip(payload.openedDigest)
+        const current = clip(payload.currentDigest)
+        note(seq, "bad", "unmoved", bodyOf(
+          "The tree the run opened on is the tree it closed on.",
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        ), opened === undefined || current === undefined ? [] : [opened, current])
+        milestones.push({ seq, at, label: "unmoved", tone: "bad" })
+        break
+      }
+      case "control.agent.unresolved-demanded": {
+        const flow = asString(payload.flow)
+        const nextFrame = asNumber(payload.nextFrame)
+        note(seq, "bad", "unresolved", bodyOf(
+          flow === undefined ? undefined : `${flow} failed and was not answered.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        ), [clip(payload.failed), clip(payload.instead)])
+        milestones.push({ seq, at, label: "unresolved", tone: "bad" })
+        break
+      }
+      case "control.agent.claim-demanded": {
+        // Written on EVERY evaluation, and a reading with `demanded: false`
+        // cost the run nothing and changed nothing, so only a firing is a
+        // moment anyone would scrub to.
+        if (payload.demanded !== true) break
+        const complete = asNumber(payload.complete)
+        const overclaims = asNumber(payload.overclaims)
+        const nextFrame = asNumber(payload.nextFrame)
+        note(seq, "bad", "claim", bodyOf(
+          complete === undefined || overclaims === undefined
+            ? undefined
+            : `complete ${complete}, overclaims ${overclaims}.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        ), [])
+        milestones.push({ seq, at, label: "claim", tone: "bad" })
+        break
+      }
+      // `AgentSession`'s `default` arm journals five kinds with `payload: {}`,
+      // however rich their `AgentEvent` schema is:
+      // read-only-demand-issued, sufficiency-observed, steering-drained,
+      // narrow-only-demanded and cell-rejected-in-frame. No field of theirs is
+      // readable here, so they are read by PRESENCE alone. Four of them are
+      // moments, and presence is all a moment needs; none of them can carry a
+      // note, because a note would have nothing in it.
+      case "control.agent.read-only-demand-issued": {
+        milestones.push({ seq, at, label: "read-only", tone: "warn" })
+        break
+      }
+      case "control.agent.narrow-only-demanded": {
+        milestones.push({ seq, at, label: "narrow-only", tone: "warn" })
+        break
+      }
+      case "control.agent.steering-drained": {
+        milestones.push({ seq, at, label: "steering", tone: "warn" })
+        break
+      }
+      case "control.agent.sufficiency-observed": {
+        // The one observation that rewards a run rather than braking it: a
+        // failing check answered by a passing one.
+        milestones.push({ seq, at, label: "sufficiency", tone: "good" })
+        break
+      }
+      case "control.run.completed":
+      case "control.run.failed":
+      case "control.run.cancelled": {
+        const verdict = kind.slice("control.run.".length)
+        milestones.push({ seq, at, label: verdict, tone: verdict === "completed" ? "good" : "bad" })
+        break
+      }
+      default:
+        break
+    }
+  }
+
+  // "Changed" is what the journal recorded: the frame's own
+  // `mutation-observed` said the tree moved, or it made a successful edit-like
+  // call for a change to have been recorded from.
+  const changed = frames.map((entry) => entry.mutated === true || madeAWrite(entry))
+
+  // A repeated call is only evidence of a stall inside a STREAK, and only
+  // across a span the workspace never moved in.
+  //
+  // Re-running one check after an edit is the OPPOSITE of a stall: it is the
+  // answer `control.agent.sufficiency-observed` rewards. A rule that flagged
+  // any second occurrence of a call would mark that good frame and a looping
+  // one identically, and a rule that only checked THIS frame for a change
+  // would still flag it, because the edit it answers happened in the frame
+  // before. So a change resets what a first occurrence is: a call is judged
+  // against the last time it ran on THIS tree, never against a run from before
+  // an edit landed. On top of that a repeat counts only where the frames beside
+  // it repeat too — each of them recording no change of its own — and
+  // `repeatOf` is set only inside a streak of two or more such frames.
+  const firstSeen = new Map<string, number>()
+  const repeatedFrom: Array<number | undefined> = []
+  frames.forEach((entry, index) => {
+    let earliest: number | undefined
+    for (const call of entry.calls) {
+      const seen = firstSeen.get(call.signature)
+      if (seen === undefined) firstSeen.set(call.signature, entry.frame)
+      else if (seen < entry.frame) earliest = earliest === undefined ? seen : Math.min(earliest, seen)
+    }
+    repeatedFrom.push(earliest)
+    // The tree moved in this frame, so every call recorded before it ran
+    // against a tree that no longer exists and none of them can be repeated.
+    if (changed[index] === true) firstSeen.clear()
+  })
+  const stalling = frames.map((_frame, index) => repeatedFrom[index] !== undefined && changed[index] !== true)
+  const stuck = stalling.map((flag, index) =>
+    flag && (stalling[index - 1] === true || stalling[index + 1] === true))
+
+  // Phase, most specific rule first. The last rule is the honesty one: every
+  // other word is a claim about what the frame was doing, and `researching` is
+  // as much of a claim as the rest. A frame this fold cannot name one call for
+  // is a frame it declines to write a line about, so it declines to name a
+  // phase for it too.
+  const phases = frames.map((entry, index): PhaseId =>
+    entry.blocked
+      ? "blocked"
+      : stuck[index] === true
+      ? "stuck"
+      : changed[index] === true
+      ? "implementing"
+      : entry.calls.some((call) =>
+          FLOW_ACTS[call.flowName]?.acts === "bash" && runsCheck(commandOf(call.input) ?? "", targets)
+        )
+      ? "testing"
+      : dominantCall(entry) === undefined
+      ? "unrecorded"
+      : "researching")
+
+  const bands: Array<PhaseBand> = []
+  frames.forEach((entry, index) => {
+    const phase = phases[index]!
+    // A frame's band ends where the next frame opens, and the last one ends
+    // where the journal does: the rule the tree's own frames close by.
+    const endedAt = frames[index + 1]?.startedAt ?? Math.max(entry.endedAt, lastAt)
+    const last = bands[bands.length - 1]
+    if (last !== undefined && last.phase === phase) {
+      bands[bands.length - 1] = { ...last, endedAt, frames: [...last.frames, entry.id] }
+      return
+    }
+    bands.push({ phase, startedAt: entry.startedAt, endedAt, frames: [entry.id], seq: entry.seq })
+  })
+
+  const lines = frames.flatMap((entry, index): ReadonlyArray<FrameLine> => {
+    const call = dominantCall(entry)
+    // A frame that called nothing has no line. Absence is absence.
+    if (call === undefined) return []
+    const acts = FLOW_ACTS[call.flowName]
+    const repeatOf = stuck[index] === true ? repeatedFrom[index] : undefined
+    return [{
+      spanId: entry.id,
+      frame: entry.frame,
+      verb: acts?.verb ?? call.flowName,
+      subject: subjectOf(call.input),
+      // A call the journal has not settled has no result yet, and a settled one
+      // carries its flow's whole Output up to the journal's cap: one row of a
+      // card is not where 64 KiB of JSON goes, so it is bounded like every
+      // other quoted line here.
+      result: clip(call.settled?.result) ?? "",
+      failed: call.settled?.failed === true,
+      wrote: acts?.acts === "edit" && call.settled?.failed === false,
+      ...(repeatOf === undefined ? {} : { repeatOf })
+    }]
+  })
+
+  return { bands, milestones, lines, notes }
+}
+
 /**
  * Folds a run's journal into its trace.
  *
@@ -164,10 +801,18 @@ const builder = (
  * `node-output` projection knows it by. A journal with no records yields the
  * run root alone, wearing the run's status: the honest empty trace.
  *
+ * The same records fold a second time, into what a person would say the run
+ * was doing: see {@link disciplineFold}.
+ *
  * @param run the run as its card knows it
  * @param records the run's journal, in sequence order
+ * @param options what the plan declared; absent leaves every derived field at its empty reading
  */
-export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRecord>): TraceModel => {
+export const traceFromJournal = (
+  run: TraceRun,
+  records: ReadonlyArray<JournalRecord>,
+  options: TraceOptions = {}
+): TraceModel => {
   const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
   const ordered = uniqueCallEvents(rawOrdered)
   const firstAt = ordered.length === 0 ? 0 : timeOf(ordered[0]!, asRecord(ordered[0]!.payload))
@@ -427,7 +1072,8 @@ export const traceFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRe
       spans: rows.length - 1,
       running: rows.filter((span) => span.kind !== "run" && span.status === "running").length,
       failed: rows.filter((span) => span.kind !== "run" && span.status === "failed").length
-    }
+    },
+    ...disciplineFold(run.runId, ordered, options)
   }
 }
 
@@ -448,6 +1094,59 @@ export const waterfallGeometry = (
   const left = ((from - extent.start) / width) * 100
   const bar = Math.max(((to - from) / width) * 100, 0)
   return { left: Math.round(left * 100) / 100, width: Math.round(bar * 100) / 100 }
+}
+
+/**
+ * The axis the phase strip measures on: the bands' own span when the journal
+ * opened frames, the run's whole extent when it opened none.
+ *
+ * A milestone is a journal record, and the records that write one do not need a
+ * frame: a journal of `read-only-demanded` and `sufficiency-observed` with no
+ * `turn-opened` carries two moments and opens no band. Milestones therefore
+ * survive without bands, and the axis that places them cannot be read off the
+ * bands alone. The other choice — dropping a moment because no band was drawn
+ * beside it — would be this fold deciding a record the journal made did not
+ * happen, which is the one thing it may never do.
+ *
+ * @param model the trace
+ */
+export const phaseExtent = (model: TraceModel): TraceExtent => {
+  const first = model.bands[0]
+  const last = model.bands[model.bands.length - 1]
+  return first === undefined || last === undefined ? model.extent : { start: first.startedAt, end: last.endedAt }
+}
+
+/**
+ * One band's share of that axis, as percentages, the way the waterfall measures
+ * a span.
+ *
+ * A run whose frames all land in one millisecond recorded no elapsed time. Read
+ * against a floored axis every such band is zero wide at left 0, so the whole
+ * strip collapses onto the left edge and says nothing at all. The bands' ORDER
+ * is a journal fact even where their durations are not, so with no duration to
+ * measure the ordinal IS the axis: equal slices, left to right.
+ *
+ * @param band the band
+ * @param extent the axis, from {@link phaseExtent}
+ * @param index the band's place in the strip
+ * @param count how many bands the strip holds
+ */
+export const phaseBandGeometry = (
+  band: PhaseBand,
+  extent: TraceExtent,
+  index: number,
+  count: number
+): { readonly left: number; readonly width: number } => {
+  const round = (value: number): number => Math.round(value * 100) / 100
+  const axis = extent.end - extent.start
+  if (axis <= 0) {
+    const share = 100 / Math.max(count, 1)
+    return { left: round(index * share), width: round(share) }
+  }
+  return {
+    left: round(((band.startedAt - extent.start) / axis) * 100),
+    width: round((Math.max(band.endedAt - band.startedAt, 0) / axis) * 100)
+  }
 }
 
 /** The flows whose spans are messages between a coordinator and its workers (spec 06 §3). */

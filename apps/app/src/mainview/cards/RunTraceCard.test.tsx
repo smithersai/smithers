@@ -6,11 +6,13 @@ import { createRoot, type Root } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
 import { memoryStorage } from "../state/TestFixtures"
-import { PROTOTYPE_BANNER, RunTraceBody } from "./RunTraceCard"
+import { phasePins, PROTOTYPE_BANNER, RunTraceBody, traceOf } from "./RunTraceCard"
 import { WorkflowRunCardBody } from "./WorkflowCards"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
 import { completedRequestCard, vibeCatalog, CODING_REQUEST_ID, publicationVibeCard } from "./fixtures/CodingVibe"
 import { blockedCodingJournal, earlyCodingJournal, preparedCodingJournal } from "./fixtures/CodingJournal"
+import { traceFromJournal, turnNarratives } from "./RunTrace"
+import practice from "../state/practice/hello-server/run.journal.json"
 
 /*
  * The run trace (factory spec 06, mocks #s5 and #s6): one card shows every
@@ -637,4 +639,361 @@ test("source retention is an early fact with the existing exact child debugger a
   expect(document.activeElement).toBe(inspect)
   inspect.click()
   expect(sent).toEqual([{ name: "runs.trace.select", args: "sourceCard=vibe-card vibe-root engine:original-publication:0" }])
+})
+
+
+/*
+ * The timeline's phase band, its milestone pins, the plain-English rows and
+ * the discipline notes. The fold derives all four from the calls the journal
+ * recorded and from the check targets the plan declared; the card renders
+ * exactly what the fold produced, and every affordance is the existing
+ * `runs.trace.select`, now carrying the seq its grammar has always parsed.
+ */
+describe("the timeline reads as phases, then what each frame did", () => {
+  /** The targets the recipe's plan declared; a bash command is a check only when it ends with one. */
+  const CHECK_TARGETS = CODING_PLAN.changes.flatMap((change) => change.checks.map((check) => check.target))
+  const CHECK = CHECK_TARGETS[0]!
+
+  /** A run that reads, edits, checks, edits again and checks again: one band per stretch. */
+  const PHASED = [
+    stamp(1, "control.agent.turn-opened", { seat: "openai:gpt-5.6-sol" }, 1000),
+    stamp(2, "control.agent.cell-produced", { language: "ts", text: "await ctx.call(\"read\", { path: \"src/memory.ts\" })" }, 1100),
+    stamp(3, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/memory.ts" } }, 1200),
+    stamp(4, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "80 lines" }, 1800),
+    stamp(5, "control.agent.cell-settled", { outcome: "success" }, 1900),
+    stamp(6, "control.agent.turn-opened", {}, 2000),
+    stamp(7, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/memory.ts" } }, 2100),
+    stamp(8, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "src/memory.ts +12" }, 2600),
+    stamp(9, "control.agent.turn-opened", {}, 3000),
+    stamp(10, "control.agent.cell-call-started", { flowName: "bash", input: { command: `bun run check ${CHECK}` } }, 3100),
+    stamp(11, "control.agent.cell-call-settled", { flowName: "bash", outcome: "failure", message: "2 errors" }, 4500),
+    stamp(12, "control.agent.turn-opened", {}, 5000),
+    stamp(13, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/memory.ts" } }, 5100),
+    stamp(14, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "src/memory.ts −1 +3" }, 5600),
+    stamp(15, "control.agent.turn-opened", {}, 6000),
+    stamp(16, "control.agent.cell-call-started", { flowName: "bash", input: { command: `bun run check ${CHECK}` } }, 6100),
+    stamp(17, "control.agent.cell-call-settled", { flowName: "bash", outcome: "success", value: "0 errors" }, 7400),
+    stamp(18, "control.run.completed", { runId: "run-1", status: "completed" }, 7500)
+  ]
+
+  /** The same failing command, unchanged, four turns running: a stall a reader must not have to infer. */
+  const STALLED = [
+    stamp(1, "control.agent.turn-opened", {}, 1000),
+    stamp(2, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/memory.ts" } }, 1100),
+    stamp(3, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "src/memory.ts +2" }, 1300),
+    ...[0, 1, 2, 3].flatMap((round) => {
+      const base = 4 + round * 3
+      const at = 2000 + round * 1000
+      return [
+        stamp(base, "control.agent.turn-opened", {}, at),
+        stamp(base + 1, "control.agent.cell-call-started", { flowName: "bash", input: { command: `bun run check ${CHECK}` } }, at + 100),
+        stamp(base + 2, "control.agent.cell-call-settled", { flowName: "bash", outcome: "failure", message: "2 errors" }, at + 800)
+      ]
+    }),
+    /* What the harness journals when a run has spent its repeat cap (`@smthrs/agent` AgentEvent.RepeatDemanded). */
+    stamp(16, "control.agent.repeat-demanded", { frames: 4, cap: 4, nextFrame: 6 }, 5900)
+  ]
+
+  /** The fold the card builds for these payloads: the same run, journal and declared targets. */
+  const fold = (events: Array<ReturnType<typeof stamp>>, status = "completed") =>
+    traceFromJournal({ runId: "run-1", flowId: "coding", status }, events, { checkTargets: CHECK_TARGETS })
+
+  const timeline = (events: Array<ReturnType<typeof stamp>>, over: Partial<Extract<Card, { kind: "run-trace" }>["payload"]> = {}) =>
+    renderTrace({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN }, events, traceView: "timeline", liveTail: false, ...over })
+
+  test("the band is one segment per phase, and a press scrubs to that band's own seq", () => {
+    const model = fold(PHASED)
+    const { host, dispatched } = timeline(PHASED)
+    const segments = [...host.querySelectorAll("[data-phase-band]")]
+    expect(model.bands.length).toBeGreaterThan(1)
+    expect(segments.map((segment) => segment.getAttribute("data-phase-band"))).toEqual(model.bands.map((band) => band.phase))
+    // A band is a contiguous stretch of one phase, so no two neighbours can share one.
+    expect(segments.filter((segment, index) =>
+      index > 0 && segment.getAttribute("data-phase-band") === segments[index - 1]!.getAttribute("data-phase-band")
+    )).toEqual([])
+    // Width is the recorded duration on the bands' own axis: left to right, inside the axis, never overlapping.
+    const boxes = segments.map((segment) => ({
+      left: Number.parseFloat((segment as HTMLElement).style.left),
+      width: Number.parseFloat((segment as HTMLElement).style.width)
+    }))
+    for (const [index, box] of boxes.entries()) {
+      expect(box.left + box.width).toBeLessThanOrEqual(100.01)
+      if (index > 0) expect(box.left).toBeGreaterThanOrEqual(boxes[index - 1]!.left + boxes[index - 1]!.width - 0.01)
+    }
+    const second = segments[1]!
+    expect(second.getAttribute("data-seq")).toBe(String(model.bands[1]!.seq))
+    click(second)
+    expect(dispatched).toEqual([{
+      name: "runs.trace.select",
+      args: `sourceCard=flow-run-run-1 run-1 ${model.bands[1]!.frames[0]} ${model.bands[1]!.seq}`
+    }])
+  })
+
+  test("milestone pins take two rows and never overprint, staggered by the tick alone", () => {
+    const model = fold(PHASED)
+    const { host, dispatched } = timeline(PHASED)
+    const pins = [...host.querySelectorAll("[data-pin-row]")]
+    expect(pins).toHaveLength(model.milestones.length)
+    expect(pins.length).toBeGreaterThan(0)
+    const placed = pins.map((pin) => ({
+      row: pin.getAttribute("data-pin-row"),
+      left: Number.parseFloat((pin as HTMLElement).style.left),
+      bottom: (pin as HTMLElement).style.bottom
+    }))
+    for (const [index, pin] of placed.entries()) {
+      for (const other of placed.slice(index + 1)) {
+        if (pin.row === other.row) expect(Math.abs(pin.left - other.left)).toBeGreaterThanOrEqual(8)
+      }
+      // Every pin stays anchored at the bottom: only the tick's length staggers a row.
+      expect(pin.bottom).toBe("")
+    }
+    expect(new Set(placed.map((pin) => pin.row)).size).toBeLessThanOrEqual(2)
+    // Left to right, whatever order the fold listed them in.
+    const ordered = [...model.milestones].sort((left, right) => left.at - right.at)
+    expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent)).toEqual(ordered.map((milestone) => milestone.label))
+    expect(placed.map((pin) => pin.left)).toEqual([...placed.map((pin) => pin.left)].sort((left, right) => left - right))
+    click(pins[0]!)
+    expect(dispatched.at(0)?.name).toBe("runs.trace.select")
+    expect(dispatched.at(0)?.args?.startsWith("sourceCard=flow-run-run-1 run-1 ")).toBe(true)
+    expect(dispatched.at(0)?.args?.endsWith(` ${ordered[0]!.seq}`)).toBe(true)
+  })
+
+  test("a row per frame says what it did, marks the frame that wrote, and selects its span", () => {
+    const model = fold(PHASED)
+    const { host, dispatched } = timeline(PHASED)
+    const rows = [...host.querySelectorAll("[data-frame-line]")]
+    expect(model.lines.length).toBeGreaterThan(1)
+    expect(rows.map((row) => row.getAttribute("data-frame-line"))).toEqual(model.lines.map((line) => line.spanId))
+    const first = model.lines[0]!
+    expect(rows[0]?.querySelector(".run-line-number")?.textContent).toBe(String(first.frame))
+    expect(rows[0]?.querySelector(".run-line-verb")?.textContent).toBe(first.verb)
+    expect(rows[0]?.querySelector(".run-line-subject")?.textContent).toBe(first.subject)
+    expect(rows[0]?.querySelector(".run-line-result")?.textContent).toBe(first.result)
+    const wrote = model.lines.find((line) => line.wrote)!
+    expect(host.querySelector(`[data-frame-line="${wrote.spanId}"]`)?.getAttribute("data-wrote")).toBe("true")
+    const failed = model.lines.find((line) => line.failed)!
+    expect(host.querySelector(`[data-frame-line="${failed.spanId}"]`)?.getAttribute("data-failed")).toBe("true")
+    click(rows[0]!)
+    expect(dispatched).toEqual([{ name: "runs.trace.select", args: `sourceCard=flow-run-run-1 run-1 ${first.spanId}` }])
+  })
+
+  test("a stalled frame names the frame it repeats, and the discipline note sits under the frame it happened in", () => {
+    const model = fold(STALLED, "running")
+    const { host } = timeline(STALLED, { phase: "running" })
+    const repeated = model.lines.filter((line) => line.repeatOf !== undefined)
+    expect(repeated.length).toBeGreaterThan(0)
+    const row = host.querySelector(`[data-frame-line="${repeated[0]!.spanId}"]`)
+    expect(row?.textContent).toContain(`same as ${repeated[0]!.repeatOf}`)
+    // Outside a stall streak nothing claims a repeat.
+    expect(host.querySelectorAll(".run-line-repeat")).toHaveLength(repeated.length)
+    const notes = [...host.querySelectorAll("[data-note]")]
+    expect(model.notes.length).toBeGreaterThan(0)
+    expect(notes.map((note) => note.getAttribute("data-note"))).toEqual(model.notes.map((note) => String(note.seq)))
+    const note = model.notes[0]!
+    const placed = host.querySelector(`[data-frame-line="${note.spanId}"]`)?.closest("li")
+    expect(placed?.querySelector(`[data-note="${note.seq}"]`)).not.toBeNull()
+    expect(placed?.querySelector(".run-note-title")?.textContent).toBe(note.title)
+    expect(placed?.querySelector(".run-note-body")?.textContent).toBe(note.body)
+  })
+
+  /*
+   * Five frames that each write inside one second of a long run, then a demand
+   * the harness journals in the same second. Every moment lands inside
+   * PIN_APART of its neighbour: the case the strip's rows cannot hold.
+   */
+  const CLUSTERED = [
+    ...[0, 1, 2, 3, 4].flatMap((round) => [
+      stamp(1 + round * 3, "control.agent.turn-opened", {}, 1000 + round * 50),
+      stamp(2 + round * 3, "control.agent.cell-call-started", { flowName: "edit", input: { path: `src/a${round}.ts` } }, 1010 + round * 50),
+      stamp(3 + round * 3, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1020 + round * 50)
+    ]),
+    stamp(16, "control.agent.unresolved-demanded", { flow: "bash", nextFrame: 6 }, 1260),
+    stamp(17, "control.agent.turn-opened", {}, 20000),
+    stamp(18, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/z.ts" } }, 20100),
+    stamp(19, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "80 lines" }, 20200),
+    stamp(20, "control.run.completed", { runId: "run-1", status: "completed" }, 21000)
+  ]
+
+  test("a scrub keeps every later band and pin on the strip, marked as not reached, and stops the rows at the cursor", () => {
+    const model = fold(PHASED)
+    const parked = model.bands[1]!.seq
+    const { host, dispatched } = timeline(PHASED, { cursorSeq: parked })
+    const bands = [...host.querySelectorAll("[data-phase-band]")]
+    // Every band the journal recorded is still there, including the ones after the cursor.
+    expect(bands.map((band) => band.getAttribute("data-seq"))).toEqual(model.bands.map((band) => String(band.seq)))
+    expect(bands.map((band) => band.getAttribute("data-reached"))).toEqual(model.bands.map((band) => String(band.seq <= parked)))
+    expect(bands.filter((band) => band.getAttribute("data-reached") === "false").length).toBeGreaterThan(0)
+    const pins = [...host.querySelectorAll("[data-pin-row]")]
+    expect(pins).toHaveLength(model.milestones.length)
+    expect(pins.filter((pin) => pin.getAttribute("data-reached") === "false"))
+      .toHaveLength(model.milestones.filter((milestone) => milestone.seq > parked).length)
+    // A band after the cursor is still a door: pressing it scrubs forward.
+    const ahead = model.bands.at(-1)!
+    click(bands.at(-1)!)
+    expect(dispatched).toEqual([{
+      name: "runs.trace.select",
+      args: `sourceCard=flow-run-run-1 run-1 ${ahead.frames[0]} ${ahead.seq}`
+    }])
+    // The rows below are the log, and a log stops at the cursor.
+    const capped = traceFromJournal(
+      { runId: "run-1", flowId: "coding", status: "running" },
+      PHASED.filter((record) => record.sequence <= parked),
+      { checkTargets: CHECK_TARGETS }
+    )
+    expect(capped.lines.length).toBeLessThan(model.lines.length)
+    expect([...host.querySelectorAll("[data-frame-line]")].map((row) => row.getAttribute("data-frame-line")))
+      .toEqual(capped.lines.map((line) => line.spanId))
+  })
+
+  test("the outcome's counts are the run's own, so a parked cursor never puts a verdict beside a part of the run", () => {
+    const model = fold(PHASED)
+    const { host } = timeline(PHASED, { cursorSeq: model.bands[1]!.seq })
+    const outcome = host.querySelector("[data-testid='run-outcome-run-1']")!
+    const calls = model.rows.filter((span) => span.kind === "call").length
+    expect(outcome.textContent).toContain("Finished.")
+    expect(outcome.textContent).toContain(`${turnNarratives(model).length} turns · ${calls} calls`)
+    // The same line the run reads at its live tail: the cursor moved the log, not the verdict.
+    expect(timeline(PHASED).host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toBe(outcome.textContent)
+  })
+
+  test("a cluster of pins takes a row each up to the strip's cap, and the moments past it are counted on the last pin", () => {
+    const model = fold(CLUSTERED)
+    // The cluster is real: six moments, five writes and the demand, inside one second of twenty.
+    expect(model.milestones.map((milestone) => milestone.label))
+      .toEqual(["a0.ts", "a1.ts", "a2.ts", "a3.ts", "a4.ts", "unresolved", "completed"])
+    const { host, dispatched } = timeline(CLUSTERED)
+    const pins = [...host.querySelectorAll("[data-pin-row]")]
+    const placed = pins.map((pin) => ({
+      row: pin.getAttribute("data-pin-row"),
+      left: Number.parseFloat((pin as HTMLElement).style.left)
+    }))
+    for (const [index, pin] of placed.entries()) {
+      for (const other of placed.slice(index + 1)) {
+        if (pin.row === other.row) expect(Math.abs(pin.left - other.left)).toBeGreaterThanOrEqual(8)
+      }
+    }
+    // Three rows and no more: a deeper cluster would otherwise stack a label per
+    // moment over a track a fraction of that height.
+    expect(placed.map((pin) => pin.row)).toEqual(["0", "1", "2", "0"])
+    expect((host.querySelector(".run-phase-pins") as HTMLElement).getAttribute("style")).toContain("--pin-rows: 3")
+    // The moments with no row left are not dropped and not overprinted: the
+    // last pin placed stops naming one moment and counts the four it stands for.
+    expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent))
+      .toEqual(["a0.ts", "a1.ts", "+4", "completed"])
+    // One of the four is a failed demand, so the count wears its tone: a red
+    // moment does not disappear into a write-coloured pin.
+    expect(pins.map((pin) => pin.getAttribute("data-tone"))).toEqual(["brand", "brand", "bad", "good"])
+    // The count is still a door, onto the first moment it stands for.
+    click(pins[2]!)
+    expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-3 9" }])
+  })
+
+  test("one frame's fifteen edits are one pin, and the strip keeps its two-row height", () => {
+    const { host } = timeline([
+      stamp(1, "control.agent.turn-opened", {}, 1000),
+      ...Array.from({ length: 15 }, (_unused, index) => [
+        stamp(2 + index * 2, "control.agent.cell-call-started", { flowName: "edit", input: { path: `src/a${index}.ts` } }, 1100 + index * 10),
+        stamp(3 + index * 2, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1105 + index * 10)
+      ]).flat(),
+      stamp(32, "control.agent.turn-opened", {}, 20000)
+    ], { phase: "running" })
+    expect([...host.querySelectorAll(".run-phase-pin-label")].map((label) => label.textContent)).toEqual(["a0.ts +14"])
+    expect((host.querySelector(".run-phase-pins") as HTMLElement).getAttribute("style")).toContain("--pin-rows: 2")
+  })
+
+  test("a moment the fold could not name gets no pin: the strip never paints an empty label", () => {
+    /*
+     * `AgentSession` replaces a call input over 64 KiB with { truncated, bytes,
+     * digest }, so `subjectOf` has no path, command or pattern to name the write
+     * by. The fold drops such a moment now; the strip drops one regardless of
+     * what the fold hands it.
+     */
+    const unnamed = { seq: 3, at: 1200, label: "", tone: "brand" } as const
+    const named = { seq: 6, at: 5200, label: "memory.ts", tone: "brand" } as const
+    const pins = phasePins([unnamed, named], { start: 1000, end: 6000 })
+    expect(pins.map((pin) => pin.milestone.label)).toEqual(["memory.ts"])
+    expect(pins.map((pin) => pin.row)).toEqual([0])
+  })
+
+  test("one payload is folded once, so a re-render never walks the journal again", () => {
+    const card = runCard({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN }, events: PHASED })
+    // The fold is the walk `codingEvidenceOf` and `traceFromJournal` make over
+    // the journal: holding it by payload is what stops every render repeating it.
+    expect(traceOf(card)).toBe(traceOf(card))
+    expect(traceOf(runCard({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN }, events: PHASED })))
+      .not.toBe(traceOf(card))
+  })
+
+  test("the turns view keeps its own reading: no band, no pins, no rows", () => {
+    const { host } = timeline(PHASED, { traceView: "turns" })
+    expect(host.querySelector("[data-phase-band]")).toBeNull()
+    expect(host.querySelector("[data-pin-row]")).toBeNull()
+    expect(host.querySelector("[data-frame-line]")).toBeNull()
+    expect(host.querySelector("[aria-label='Turn explanations']")).not.toBeNull()
+    expect(host.querySelectorAll(".run-turn")).toHaveLength(5)
+  })
+
+  test("a journal with no frames shows no band and no rows, never an empty one", () => {
+    const { host } = timeline([])
+    expect(host.querySelector("[aria-label='Phases']")).toBeNull()
+    expect(host.querySelector("[aria-label='What each frame did']")).toBeNull()
+  })
+})
+
+/*
+ * Two readings the phase strip dropped: a moment the journal recorded before
+ * any turn opened, and a run whose frames all land on one stamp.
+ */
+test("a journal that opened no turn still shows the moments it recorded", () => {
+  const { host } = renderTrace({
+    workflow: "coding",
+    phase: "completed",
+    liveTail: false,
+    events: [
+      stamp(1, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 1, nextAction: "write" }, 1000),
+      stamp(2, "control.agent.sufficiency-observed", {}, 3000)
+    ]
+  })
+  // No frame opened, so there is no band to draw; the moments are records all the same.
+  expect([...host.querySelectorAll("[data-phase-band]")]).toHaveLength(0)
+  expect([...host.querySelectorAll(".run-phase-pin-label")].map((pin) => pin.textContent))
+    .toEqual(["read-only", "sufficiency"])
+})
+
+test("a run whose frames share one stamp lays its bands left to right, not stacked at zero", () => {
+  const { host } = renderTrace({
+    workflow: "coding",
+    phase: "completed",
+    liveTail: false,
+    events: [
+      stamp(1, "control.agent.turn-opened", {}, 1000),
+      stamp(2, "control.agent.cell-call-started", { flowName: "read", input: { path: "src/x.ts" } }, 1000),
+      stamp(3, "control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "ok" }, 1000),
+      stamp(4, "control.agent.turn-opened", {}, 1000),
+      stamp(5, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/x.ts" } }, 1000),
+      stamp(6, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1000)
+    ]
+  })
+  expect([...host.querySelectorAll("[data-phase-band]")].map((band) => [
+    (band as HTMLElement).style.left,
+    (band as HTMLElement).style.width
+  ])).toEqual([["0%", "50%"], ["50%", "50%"]])
+})
+
+/*
+ * The onboarding practice run is the first timeline a new person opens, so its
+ * card is pinned over the journal file itself. Its last frame calls `commit`,
+ * a name no standard flow carries (`@smthrs/std` has none), with `{ message }`
+ * alone: a flow the verb table has never heard of, whose input names nothing
+ * the fold reads as a subject. Such a line is the flow's name and nothing else.
+ */
+test("the practice run's own timeline names an unknown flow alone, with no empty subject beside it", () => {
+  const { host } = renderTrace({ runId: practice.runId, workflow: "coding", phase: "completed", liveTail: false, events: practice.events })
+  const rows = [...host.querySelectorAll("[data-frame-line]")]
+  expect(rows.map((row) => row.querySelector(".run-line-body")?.textContent))
+    .toEqual(["edited hello.test.ts", "edited hello.ts", "edited README.md", "commit"])
+  expect(rows.map((row) => row.querySelectorAll(".run-line-subject").length)).toEqual([1, 1, 1, 0])
+  // One pin per frame that wrote, each under the strip's two rows.
+  expect([...host.querySelectorAll(".run-phase-pin-label")].map((label) => label.textContent))
+    .toEqual(["hello.test.ts", "hello.ts", "README.md"])
 })
