@@ -275,8 +275,17 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
   }
   const upsert = (card: SetupCard, actor: "user" | "smithers" | "system" = ctx.commandActor) =>
     ctx.store.dispatch({ type: "card.upsert", actor, card: { ...card, payload: reconcileSetupHistory(card.payload) } }).isPersisted.promise.then(() => { const latest = get(card.id); if (latest) scheduleRefresh(latest) })
+  /*
+   * One card's writes run in order. The queue orders them; it does not decide
+   * whether they run. `.then(apply)` alone made the predecessor's rejection
+   * the successor's verdict: a door whose write failed silently cancelled the
+   * NEXT edit the person made, which then reached nothing and said nothing —
+   * the same lost-pick shape B3-N5 recorded, one step removed from its cause.
+   * `.then(apply, apply)` keeps the ordering and isolates the outcome: the
+   * failed write still rejects for ITS caller, who owns that sentence.
+   */
   const edit = (id: string, apply: () => Result): Result => {
-    const next = (shared.edits.get(id) ?? Promise.resolve()).then(apply)
+    const next = (shared.edits.get(id) ?? Promise.resolve()).then(apply, apply)
     shared.edits.set(id, next)
     void next.finally(() => { if (shared.edits.get(id) === next) shared.edits.delete(id) }).catch(() => {})
     return next

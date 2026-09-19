@@ -157,3 +157,32 @@ test("a run-mode pick this browser did not save is named in the transcript, not 
     expect(t.transcript()[0]).not.toContain("quota")
   } finally { await t.close() }
 })
+
+/*
+ * The adjacent hazard. One card's writes are ordered by a promise chain, and
+ * `.then(apply)` made a failed write the verdict of the NEXT edit: press
+ * `Inspect repository`, have that write fail, set a run mode, and the mode
+ * never ran `apply` at all — it reached nothing and said nothing, one step
+ * removed from a cause that was never the person's. Ordering is what the queue
+ * owes the card; a verdict is not, and the press owns its own sentence.
+ */
+test("a run-mode pick made while an earlier write is still failing still reaches the draft", async () => {
+  const t = await walk()
+  try {
+    const before = t.setup().revision
+    t.refuseOperationWrite("inspect")
+    // Both doors are entered before either settles, which is the only state in
+    // which the queue can hand one edit another's verdict. Pressed from the
+    // card, that overlap is a race; here it is the precondition under test.
+    const pressed = t.controller.runRepositorySetup(id, "inspect")
+    const picked = t.controller.configureRepositorySetup(id, "step.fix.mode", "automatic")
+    // The press owns its own failure; only the pick's fate is under test here.
+    await expect(pressed).rejects.toThrow()
+    expect(await picked).toEqual({ value: "Draft updated." })
+    await t.settle(400)
+    expect(t.setup().request).toBeUndefined()
+    expect(fixModeOf(t.setup())).toBe("automatic")
+    expect(t.setup().revision).toBe(before + 1)
+    expect(t.select().value).toBe("automatic")
+  } finally { await t.close() }
+})
