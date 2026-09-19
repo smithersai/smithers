@@ -233,6 +233,61 @@ const trailSourceId = JournalEvent.SourceId.make("/control/executor/trail")
 const observationOnly = new Set(["at", "durationMillis"])
 
 /**
+ * Payload fields added to an event type AFTER runs were journaled without them.
+ *
+ * {@link traceIdentity} hashes the payload, so enriching an event that already
+ * exists in the wild changes what its identity derives to. A run journaled by
+ * the old producer and RESUMED under the new one replays its whole recorded
+ * prefix, re-projects every event in it with the new fields, derives an
+ * identity none of the recorded rows carry, and
+ * `UNIQUE (run_id, source_id, source_seq)` admits all of them: the prefix is
+ * published a second time, and a projection summing usage or counting demands
+ * over-counts the run once per park. Listing the added fields here keeps the
+ * old producer's keys, so the recorded prefix still deduplicates and only what
+ * the resumed attempt genuinely produced is admitted.
+ *
+ * The exclusion costs what it says it costs: two events of the same type at
+ * the same coordinates that differ ONLY in a late field collide and the second
+ * is dropped. That is why an entry names one event type rather than one field
+ * name — `callId` is excluded from the two call lifecycle events that gained
+ * it and from nothing else — and why a field belongs here only if it was added
+ * after journals existed.
+ *
+ * A brand-new event TYPE needs no entry. Its identity has never been derived,
+ * so no recorded prefix can mismatch it, and excluding its fields would only
+ * collapse distinct events onto one key. Add an entry when you add a field to
+ * an event type that is already being journaled; add nothing when you add the
+ * event type itself.
+ *
+ * A Map rather than an object literal because the key is an event type read
+ * off a decoded event. A literal resolves `lateFields["constructor"]` through
+ * `Object.prototype` to a function, which is truthy — so `??` cannot catch it
+ * and the `.has` below throws on a value that was never an entry.
+ * `@smthrs/ui` `status.ts` carries the same note over the same hazard.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  // callId enriches the control projection of an identity the harness already
+  // carried. Resuming a pre-callId run must deduplicate its recorded prefix
+  // instead of publishing every call a second time.
+  ["control.agent.cell-call-started", new Set(["callId"])],
+  ["control.agent.cell-call-settled", new Set(["callId"])],
+  // The five events below reached every consumer countable and otherwise
+  // empty: the projection's `default` arm dropped every field they carried.
+  // Their whole payload is late, so their whole payload is excluded.
+  ["control.agent.cell-rejected-in-frame", new Set(["attempt", "code", "message"])],
+  ["control.agent.narrow-only-demanded", new Set(["flow", "check", "targets", "currentDigest", "nextFrame"])],
+  ["control.agent.read-only-demand-issued", new Set(["streak", "cap", "nextFrame"])],
+  ["control.agent.steering-drained", new Set(["messages"])],
+  ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])]
+])
+
+/** The exclusion set for an event type that has never been enriched. */
+const noLateFields: ReadonlySet<string> = new Set()
+
+/**
  * The producer identity of one journaled agent event.
  *
  * A resumed attempt replays its whole prefix and re-publishes every event in
@@ -274,13 +329,12 @@ export const traceIdentity = (
   eventType: string,
   payload: Readonly<Record<string, unknown>>
 ): JournalEvent.SourceSeq => {
-  // callId enriches the control projection of an identity the harness already
-  // carried. Keep old producer keys: resuming a pre-callId run must deduplicate
-  // its recorded prefix instead of publishing every call a second time.
-  const callEvent = eventType === "control.agent.cell-call-started" ||
-    eventType === "control.agent.cell-call-settled"
+  // Keep old producer keys for every field this event type gained after runs
+  // were journaled without it, so a resumed pre-enrichment run deduplicates
+  // its recorded prefix instead of publishing all of it a second time.
+  const late = lateFields.get(eventType) ?? noLateFields
   const material = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => !observationOnly.has(key) && !(callEvent && key === "callId"))
+    Object.entries(payload).filter(([key]) => !observationOnly.has(key) && !late.has(key))
   )
   const digest = Digest.digest(CanonicalJson.stringify({ cell, eventType, frame, material, ordinal }))
   return JournalEvent.SourceSeq.make(Number.parseInt(digest.slice(0, 12), 16))
@@ -354,6 +408,23 @@ type Uptake =
 
 const assistantText = (message: ModelRequest.AssistantMessage): string =>
   message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+
+/**
+ * The readable text of one transcript message of any role.
+ *
+ * `assistantText` reads one settled assistant turn, where the only parts that
+ * carry prose are text parts. A steering insert is whatever an operator or a
+ * flow put on the queue, so the role is not known in advance and a tool result
+ * keeps its prose in `content` rather than in a text part. Thinking blocks and
+ * tool calls are left out: the first is the provider's attested reasoning and
+ * the second is already journaled per call by `cell-call-started`.
+ */
+const messageText = (message: ModelRequest.Message): string => {
+  const parts: ReadonlyArray<ModelRequest.ContentPart> = message.content
+  return parts
+    .flatMap((part) => part.type === "text" ? [part.text] : part.type === "tool-result" ? [part.content] : [])
+    .join("\n")
+}
 
 /**
  * The journal projection of one agent event.
@@ -446,6 +517,17 @@ export const trace = (
         eventType: "control.agent.cell-produced",
         payload: { language: event.cell.language, digest: event.cell.digest, text: tracedField(event.cell.text) }
       }
+    case "cell-rejected-in-frame":
+      // The re-ask is spend: a refused reply is a real model call, and a wave
+      // counting cost per frame would otherwise see the output of an answer it
+      // has no record of asking for. `attempt` is what makes the ratio of this
+      // event to a frame's settlement readable — how often one re-ask recovers
+      // a frame — and the message is bounded because a `compile_failed`
+      // refusal quotes the interpreter back at whatever the cell was.
+      return {
+        eventType: "control.agent.cell-rejected-in-frame",
+        payload: { attempt: event.attempt, code: event.code, message: tracedField(event.message) }
+      }
     case "cell-call-started":
       // The input is bounded for the same reason the result is. A `write` call
       // carries the whole file it is about to write, so the record that opens
@@ -517,6 +599,15 @@ export const trace = (
         eventType: "control.agent.checkpoint-minted",
         payload: { id: event.id, ref: event.ref, cell: event.cell, ordinal: event.ordinal }
       }
+    case "read-only-demand-issued":
+      // The issuance, kept apart from `read-only-demanded` above, which is the
+      // same demand's later answer. A crash between the two boundaries must
+      // still leave the demand on the record, so the streak and the cap it
+      // reached are written here rather than only where the answer lands.
+      return {
+        eventType: "control.agent.read-only-demand-issued",
+        payload: { streak: event.streak, cap: event.cap, nextFrame: event.nextFrame }
+      }
     case "read-only-demanded":
       return {
         eventType: "control.agent.read-only-demanded",
@@ -548,6 +639,24 @@ export const trace = (
           broader: event.broader,
           narrower: event.narrower,
           broaderDigest: event.broaderDigest,
+          currentDigest: event.currentDigest,
+          nextFrame: event.nextFrame
+        }
+      }
+    case "narrow-only-demanded":
+      // The sibling of `narrowed-demanded` from the other side: that one fires
+      // when a broader check exists in the ledger and was not re-run, this one
+      // when no broader check was ever taken. There is no broader input to
+      // pair the check against, so `targets` is what stands in its place — the
+      // subjects the demand is about, which is the whole of what a grader
+      // needs to decide after the fact whether refusing the completion was
+      // right.
+      return {
+        eventType: "control.agent.narrow-only-demanded",
+        payload: {
+          flow: event.flow,
+          check: event.check,
+          targets: event.targets,
           currentDigest: event.currentDigest,
           nextFrame: event.nextFrame
         }
@@ -596,6 +705,24 @@ export const trace = (
           nextFrame: event.nextFrame
         }
       }
+    case "sufficiency-observed":
+      // The one control in the set that is not a brake, and the only event
+      // written for a frame that has done nothing wrong: the run watched a
+      // check fail before it changed anything and watched the same check, or a
+      // broader one, pass after. The two inputs and `epoch` — the run's count
+      // of mutating frames when the failure was recorded — are what make that
+      // ordering checkable after the fact, and they are the whole record:
+      // nothing is refused, so there is no cap to journal beside them.
+      return {
+        eventType: "control.agent.sufficiency-observed",
+        payload: {
+          flow: event.flow,
+          failed: event.failed,
+          passed: event.passed,
+          epoch: event.epoch,
+          nextFrame: event.nextFrame
+        }
+      }
     case "vacuous-verification-observed":
       // The stored check travels with the identity the controller matched it
       // by, because the whole judgement is that this exact call had already
@@ -619,6 +746,25 @@ export const trace = (
         eventType: "control.agent.compaction-settled",
         payload: { replacedPrefixDigest: event.replacedPrefixDigest }
       }
+    case "steering-drained":
+      // The operator's own words, which existed nowhere else in the journal:
+      // a steer is admitted through `Control.steer`, delivered at a frame
+      // boundary, and read by the next model turn, and until now the trail
+      // recorded only that some number of them had been drained. The role
+      // travels with each one because a drain carries whatever the queue held,
+      // and a run's own continuation insert reads differently from a person
+      // interrupting it. Each message is bounded on its own rather than the
+      // array as a whole, so one pasted file does not erase the steers around
+      // it.
+      return {
+        eventType: "control.agent.steering-drained",
+        payload: {
+          messages: event.messages.map((message) => ({
+            role: message.role,
+            text: tracedField(messageText(message))
+          }))
+        }
+      }
     case "turn-closed":
       return {
         eventType: "control.agent.turn-closed",
@@ -630,8 +776,21 @@ export const trace = (
       return { eventType: "control.agent.aborted", payload: { reason: event.reason } }
     case "resolved":
       return { eventType: "control.agent.resolved", payload: { text: tracedField(assistantText(event.message)) } }
-    default:
-      return { eventType: `control.agent.${event._tag}`, payload: {} }
+    // Unreachable, and pinned that way. Every declared `AgentEvent` now has an
+    // arm above, and the `never` assignment is what a newly declared tag fails
+    // on: the arm it would otherwise fall into projects the event countable
+    // and otherwise empty, which is how `read-only-demand-issued`,
+    // `sufficiency-observed`, `steering-drained`, `narrow-only-demanded` and
+    // `cell-rejected-in-frame` reached every consumer with every field
+    // dropped. The fallback itself is kept unchanged beneath the assignment,
+    // because a build that somehow meets a tag it has never heard of should
+    // still count the event rather than lose it.
+    /* v8 ignore next 5 -- the `never` assignment proves at compile time that no declared event reaches this arm, and `AgentEvent` is a closed union built from the same sources, so nothing in the suite can produce a value that takes it */
+    default: {
+      const unreachable: never = event
+      const unknown = unreachable as AgentEvent.AgentEvent
+      return { eventType: `control.agent.${unknown._tag}`, payload: {} }
+    }
   }
 }
 

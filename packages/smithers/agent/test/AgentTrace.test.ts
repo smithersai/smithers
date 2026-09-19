@@ -201,6 +201,22 @@ describe("trace", () => {
         }
       ],
       [
+        "cell-rejected-in-frame",
+        new AgentEvent.CellRejectedInFrame({
+          eventType: "flows.harness.cell-rejected-in-frame.v1",
+          attempt: 2,
+          code: "no_cell",
+          message: "No cell was found in the response."
+        }),
+        {
+          eventType: "control.agent.cell-rejected-in-frame",
+          // A refused reply is a real model call, so the frame's re-ask is
+          // spend a wave counting cost per frame must see. `attempt` is what
+          // makes the ratio to the frame's settlement readable.
+          payload: { attempt: 2, code: "no_cell", message: "No cell was found in the response." }
+        }
+      ],
+      [
         "narrowed-demanded",
         new AgentEvent.NarrowedDemanded({
           eventType: "flows.harness.narrowed-demanded.v1",
@@ -223,6 +239,30 @@ describe("trace", () => {
             broaderDigest: "tree-before",
             currentDigest: "tree-after",
             nextFrame: 19
+          }
+        }
+      ],
+      [
+        "narrow-only-demanded",
+        new AgentEvent.NarrowOnlyDemanded({
+          eventType: "flows.harness.narrow-only-demanded.v1",
+          flow: "bash",
+          check: "{\"command\":\"run one case of the check\"}",
+          targets: ["src/one.ts", "test/one.test.ts"],
+          currentDigest: "tree-after",
+          nextFrame: 21
+        }),
+        {
+          eventType: "control.agent.narrow-only-demanded",
+          // No broader input exists to pair the check against — that is what
+          // separates this demand from `narrowed-demanded` — so `targets` is
+          // the record of what the demand was about.
+          payload: {
+            flow: "bash",
+            check: "{\"command\":\"run one case of the check\"}",
+            targets: ["src/one.ts", "test/one.test.ts"],
+            currentDigest: "tree-after",
+            nextFrame: 21
           }
         }
       ],
@@ -294,6 +334,31 @@ describe("trace", () => {
         }
       ],
       [
+        "sufficiency-observed",
+        new AgentEvent.SufficiencyObserved({
+          eventType: "flows.harness.sufficiency-observed.v1",
+          flow: "bash",
+          failed: "{\"command\":\"run the whole check\"}",
+          passed: "{\"command\":\"run the whole check\"}",
+          epoch: 3,
+          nextFrame: 9
+        }),
+        {
+          eventType: "control.agent.sufficiency-observed",
+          // The only control in the set that is not a brake, and the only
+          // event written for a frame that did nothing wrong. `epoch` is the
+          // run's mutating-frame count when the failure was recorded, which is
+          // what makes the before-and-after ordering checkable after the fact.
+          payload: {
+            flow: "bash",
+            failed: "{\"command\":\"run the whole check\"}",
+            passed: "{\"command\":\"run the whole check\"}",
+            epoch: 3,
+            nextFrame: 9
+          }
+        }
+      ],
+      [
         "vacuous-verification-observed",
         new AgentEvent.VacuousVerificationObserved({
           eventType: "flows.harness.vacuous-verification-observed.v1",
@@ -314,6 +379,22 @@ describe("trace", () => {
             signature: "e3b0c44298fc1c14",
             nextFrame: 15
           }
+        }
+      ],
+      [
+        "read-only-demand-issued",
+        new AgentEvent.ReadOnlyDemandIssued({
+          eventType: "flows.harness.read-only-demand-issued.v1",
+          streak: 12,
+          cap: 12,
+          nextFrame: 13
+        }),
+        {
+          eventType: "control.agent.read-only-demand-issued",
+          // The demand's issuance, kept apart from `read-only-demanded`, which
+          // is the same demand's later answer: a crash between those two
+          // boundaries must still leave the demand on the record.
+          payload: { streak: 12, cap: 12, nextFrame: 13 }
         }
       ],
       [
@@ -484,6 +565,29 @@ describe("trace", () => {
         {
           eventType: "control.agent.compaction-settled",
           payload: { replacedPrefixDigest: "sha256:prefix" }
+        }
+      ],
+      [
+        "steering-drained",
+        new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [
+            ModelRequest.Message.user("Stop rewriting the parser and fix the lockfile."),
+            ModelRequest.Message.assistant("Acknowledged.")
+          ]
+        }),
+        {
+          eventType: "control.agent.steering-drained",
+          // The operator's own words, which existed nowhere else in the
+          // journal: the trail used to record only that some number of steers
+          // had been drained. The role travels with each one because a drain
+          // carries whatever the queue held.
+          payload: {
+            messages: [
+              { role: "user", text: "Stop rewriting the parser and fix the lockfile." },
+              { role: "assistant", text: "Acknowledged." }
+            ]
+          }
         }
       ],
       [
@@ -706,5 +810,174 @@ describe("trace", () => {
     expect(Result.isFailure(
       Transcript.validateJournal(entries.map(({ payload: _payload, ...rest }) => ({ ...rest, payload: {} })) as never)
     )).toBe(true)
+  })
+})
+
+/**
+ * The migration half of the projection.
+ *
+ * `traceIdentity` hashes the payload, so giving an event type fields it did
+ * not have changes what its identity derives to. A run journaled by the old
+ * producer and resumed under the new one re-projects its whole recorded prefix
+ * with the new fields, derives identities none of the recorded rows carry, and
+ * `UNIQUE (run_id, source_id, source_seq)` admits every one of them: the prefix
+ * is published a second time. `lateFields` is what keeps the old keys, and
+ * these cases are the proof that it does — over the real projection, not over
+ * the exclusion set's contents.
+ */
+describe("late payload fields", () => {
+  const enriched = [
+    new AgentEvent.CellRejectedInFrame({
+      eventType: "flows.harness.cell-rejected-in-frame.v1",
+      attempt: 2,
+      code: "no_cell",
+      message: "No cell was found in the response."
+    }),
+    new AgentEvent.ReadOnlyDemandIssued({
+      eventType: "flows.harness.read-only-demand-issued.v1",
+      streak: 12,
+      cap: 12,
+      nextFrame: 13
+    }),
+    new AgentEvent.NarrowOnlyDemanded({
+      eventType: "flows.harness.narrow-only-demanded.v1",
+      flow: "bash",
+      check: "{\"command\":\"run one case of the check\"}",
+      targets: ["src/one.ts"],
+      currentDigest: "tree-after",
+      nextFrame: 21
+    }),
+    new AgentEvent.SufficiencyObserved({
+      eventType: "flows.harness.sufficiency-observed.v1",
+      flow: "bash",
+      failed: "{\"command\":\"run the whole check\"}",
+      passed: "{\"command\":\"run the whole check\"}",
+      epoch: 3,
+      nextFrame: 9
+    }),
+    new AgentEvent.SteeringDrained({
+      eventType: "flows.harness.steering-drained.v1",
+      messages: [ModelRequest.Message.user("Fix the lockfile.")]
+    })
+  ] satisfies ReadonlyArray<AgentEvent.AgentEvent>
+
+  /** The bytes the executor derives an identity from: the projection, JSON-normalized. */
+  const material = (event: AgentEvent.AgentEvent) =>
+    JSON.parse(JSON.stringify(AgentSession.trace(event)!.payload)) as Record<string, unknown>
+
+  it("keeps a resumed old-producer prefix deduplicating across every enriched arm", () => {
+    for (const event of enriched) {
+      const projected = AgentSession.trace(event)!
+      // The old producer wrote these five through the `default` arm: the same
+      // event type, derived from `_tag`, with an empty payload. The enriched
+      // arm must land on that same identity or the resumed prefix republishes.
+      expect(projected.eventType).toBe(`control.agent.${event._tag}`)
+      const populated = material(event)
+      expect(Object.keys(populated).length).toBeGreaterThan(0)
+      expect(AgentSession.traceIdentity(4, 2, cell.digest, projected.eventType, populated))
+        .toBe(AgentSession.traceIdentity(4, 2, cell.digest, projected.eventType, {}))
+    }
+  })
+
+  it("still separates an enriched event by where it sits", () => {
+    // The exclusion is not a licence to drop the event from the sequence
+    // space: two sufficiency observations at different coordinates remain two
+    // identities, which is what admits the second one at all.
+    const event = enriched[3]!
+    const type = AgentSession.trace(event)!.eventType
+    const payload = material(event)
+    const base = AgentSession.traceIdentity(4, 2, cell.digest, type, payload)
+    expect(AgentSession.traceIdentity(5, 2, cell.digest, type, payload)).not.toBe(base)
+    expect(AgentSession.traceIdentity(4, 3, cell.digest, type, payload)).not.toBe(base)
+    expect(AgentSession.traceIdentity(4, 2, "sha256:other", type, payload)).not.toBe(base)
+  })
+
+  it("excludes only the fields the table names, and only for the type it names them under", () => {
+    // A field the table does not list still contributes, so the mechanism
+    // cannot quietly collapse two different events onto one key.
+    const observed = "control.agent.sufficiency-observed"
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, observed, { epoch: 3, verdict: "a" }))
+      .not.toBe(AgentSession.traceIdentity(4, 2, cell.digest, observed, { epoch: 3, verdict: "b" }))
+    // `streak` and `cap` are late on the issuance and original on the answer.
+    // The table is keyed by event type, so the answer keeps hashing them.
+    const answered = (streak: number) =>
+      AgentSession.traceIdentity(4, 2, cell.digest, "control.agent.read-only-demanded", {
+        streak,
+        cap: 12,
+        nextFrame: 13,
+        nextAction: "write"
+      })
+    expect(answered(12)).not.toBe(answered(11))
+  })
+
+  it("derives an identity for an event type that names an Object.prototype key", () => {
+    // The event type is read off a decoded event, so it is host data. A plain
+    // object literal resolves `lateFields["constructor"]` through the
+    // prototype to a function — truthy, so `??` cannot catch it — and the
+    // membership test then throws on a value that was never an entry.
+    for (const type of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      expect(() => AgentSession.traceIdentity(4, 2, cell.digest, type, { streak: 3 })).not.toThrow()
+    }
+    // Nothing is excluded for such a type, so its payload still separates it.
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, "constructor", { streak: 3 }))
+      .not.toBe(AgentSession.traceIdentity(4, 2, cell.digest, "constructor", { streak: 4 }))
+  })
+
+  it("reads the prose out of whatever role the drain carried", () => {
+    // A drain carries whatever the queue held, and the queue admits any
+    // transcript message: a tool result keeps its prose in `content` rather
+    // than in a text part, and an assistant turn carries a tool call between
+    // its text parts that `cell-call-started` has already journaled on its own.
+    expect(
+      AgentSession.trace(
+        new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [
+            ModelRequest.Message.tool(
+              ModelRequest.ToolResultPart.make({ toolCallId: "call-0", content: "exit 0" })
+            ),
+            assistant
+          ]
+        })
+      )
+    ).toEqual({
+      eventType: "control.agent.steering-drained",
+      payload: {
+        messages: [
+          { role: "tool", text: "exit 0" },
+          { role: "assistant", text: "First line.\nSecond line." }
+        ]
+      }
+    })
+  })
+
+  it("bounds one steering insert without erasing the steers around it", () => {
+    // A steer is whatever an operator pasted, and the trail is a durable
+    // journal row: one pasted file must not take the row, or the identity
+    // hashing behind it, with it.
+    const pasted = "z".repeat(5 * 1024 * 1024)
+    expect(
+      AgentSession.trace(
+        new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [ModelRequest.Message.user(pasted), ModelRequest.Message.user("And keep the tests green.")]
+        })
+      )
+    ).toEqual({
+      eventType: "control.agent.steering-drained",
+      payload: {
+        messages: [
+          {
+            role: "user",
+            text: {
+              truncated: true,
+              bytes: new TextEncoder().encode(pasted).byteLength,
+              digest: Digest.digest(CanonicalJson.stringify(pasted))
+            }
+          },
+          { role: "user", text: "And keep the tests green." }
+        ]
+      }
+    })
   })
 })
