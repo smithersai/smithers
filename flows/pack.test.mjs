@@ -514,10 +514,9 @@ describe("the home pane", () => {
     }
   });
 
-  it("says what the repository is, features its flows, and asks for the CI benchmark without inventing numbers", () => {
+  it("leads with featured flows and asks for the CI benchmark without inventing numbers", () => {
     const types = home.blocks.map((block) => block.type);
-    assert.ok(types.includes("text"), "a text block says what the repository is");
-    assert.ok(types.includes("flows"), "a flows block features the catalog's flows");
+    assert.equal(types[0], "flows", "the home pane opens on flows a visitor can run");
     const benchmark = home.blocks.find((block) => block.type === "ci-benchmark");
     assert.ok(benchmark, "a ci-benchmark block asks for the CI numbers");
     assert.deepEqual(benchmark.measures, ["cold", "incremental", "cache-hit-rate"]);
