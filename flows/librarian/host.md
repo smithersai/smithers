@@ -16,7 +16,7 @@ Wiki completion requires successful publication to `POST /api/gateways/{gatewayI
 
 Mythical history must create `refs/heads/mythical` and `refs/notes/mythical` atomically, preserve the source branch, and prove final-tree equality before writing refs. Only a verified snapshot note in the earlier format may be replaced by compare-and-swap; foreign or diverged refs refuse. Completion requires publication of both refs to the owning repository.
 
-Acceptance executes the built artifact in a separate process over real HTTP RPC, real Git, durable SQLite, and a contract publication server:
+Acceptance executes the built artifact in a separate process over real HTTP RPC, real Git, durable SQLite, and a contract publication server. The fixture builds that artifact from the current sources into a temporary directory and checks the SHA-256 sidecar, so it needs no prior build and never reads a stale one. Set `SMITHERS_PRODUCT_HOST_ARTIFACT` to validate staged bytes instead.
 
 ```
 node --test flows/test/product-host.test.mjs

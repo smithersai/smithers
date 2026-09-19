@@ -5,7 +5,13 @@ import { execFileSync, spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-const artifact = resolve(process.env.SMITHERS_PRODUCT_HOST_ARTIFACT ?? "dist/product-host/smithers.mjs")
+import { buildProductHost } from "../librarian/build.mjs"
+// Staged bytes are validated as staged; otherwise the fixture builds the host it
+// executes, so acceptance never depends on an untracked artifact from an earlier run.
+const staged = process.env.SMITHERS_PRODUCT_HOST_ARTIFACT
+const built = staged === undefined ? await mkdtemp(join(tmpdir(), "product-host-artifact-")) : undefined
+const artifact = staged === undefined ? join(built, "smithers.mjs") : resolve(staged)
+const digest = staged === undefined ? await buildProductHost(artifact) : undefined
 const runtime = process.env.SMITHERS_PRODUCT_HOST_RUNTIME ?? process.execPath
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim()
@@ -13,6 +19,10 @@ const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { enco
 test("standalone product gateway executes real librarian flows, publishes before completion, and survives restart", { timeout: 180_000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "product-gateway-"))
   t.after(() => rm(root, { recursive: true, force: true }))
+  if (built !== undefined) {
+    t.after(() => rm(built, { recursive: true, force: true }))
+    assert.ok((await readFile(`${artifact}.sha256`, "utf8")).startsWith(`${digest}  `), "the host sidecar must record the built bytes")
+  }
   git(root, "init", "-b", "main"); git(root, "config", "user.name", "Fixture"); git(root, "config", "user.email", "fixture@example.invalid")
   await writeFile(join(root, "README.md"), "# Fixture\n")
   git(root, "add", "."); git(root, "commit", "-m", "Fixture")
