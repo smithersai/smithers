@@ -1546,6 +1546,75 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(closed.state.health).toEqual({ color: "red", reason: "stopped: the frame budget of 2 is exhausted" })
   })
 
+  it("names what ended a turn that was already red, on the resolve and on the close", () => {
+    const ctx = { directory, now: clock().now, maxFrames: 2 }
+    /** The reason every `health` card a step emitted carries. */
+    const reasons = (step: Projection.Step): Array<string> =>
+      step.events.flatMap((event) => {
+        if (event.type !== "message.part.updated") return []
+        const part = event.properties["part"] as Protocol.Part
+        return part.type === "tool" && part.tool === "health" && part.state.status === "completed"
+          ? [String(part.state.metadata["reason"])]
+          : []
+      })
+    /** A turn parked on a permission: red, reading the park, which is what the live drive left. */
+    const parked = (): Projection.State => {
+      let state = Projection.open(ctx, opened()).state
+      for (
+        const event of [
+          scriptEvents()[0]!,
+          new AgentEvents.PermissionRequired({
+            eventType: "flows.harness.permission-required.v1",
+            request: DemoScript.script({ sessionID, messageID: assistantMessageID, prompt: "p" }).segments
+              .flatMap((segment) => segment._tag === "permission" ? [segment.request] : [])[0]!
+          })
+        ]
+      ) state = Projection.fold(ctx, state, event).state
+      return Projection.decided(ctx, state, { color: "red", reason: "waiting for approval" }, undefined).state
+    }
+    expect(parked().health).toEqual({ color: "red", reason: "waiting for approval" })
+    // The budget runs out while the card is open. The dot stays red, which is
+    // right, and the reason must say what ended the run and not what it was
+    // waiting for: the card is gone and nobody is being waited on.
+    let spending = parked()
+    let resolved: Projection.Step = { state: spending, events: [] }
+    for (
+      const event of [
+        new AgentEvents.TransitionApplied({
+          eventType: "flows.harness.transition-applied.v1",
+          transition: new Cell.Continue({})
+        }),
+        new AgentEvents.TurnClosed({
+          eventType: "flows.harness.turn-closed.v1",
+          stopReason: "stop",
+          outcome: "resolved"
+        }),
+        new AgentEvents.Resolved({
+          eventType: "flows.harness.resolved.v1",
+          message: ModelRequest.Message.assistant("The frame budget of 2 is exhausted.", { stopReason: "stop" })
+        })
+      ]
+    ) {
+      resolved = Projection.fold(ctx, spending, event)
+      spending = resolved.state
+    }
+    expect(reasons(resolved)).toEqual(["stopped: the frame budget of 2 is exhausted"])
+    // The same short-circuit masked every other terminal reason a red turn
+    // could end on: a seat out of quota, and a harness that stopped the run.
+    const quota = Projection.close(ctx, parked(), {
+      _tag: "failed",
+      message: "out of quota",
+      provider: { seat: "cerebras:gpt-oss-120b", providerID: "cerebras", code: "quota_exceeded", message: "no quota" }
+    })
+    expect(reasons(quota)).toEqual(["stopped: cerebras:gpt-oss-120b is out of quota"])
+    const refused = Projection.close(ctx, parked(), {
+      _tag: "failed",
+      message: "the run reported work it never recorded",
+      harness: { code: "claim_unproven" }
+    })
+    expect(reasons(refused)).toEqual(["stopped: the run reported work it never recorded"])
+  })
+
   it("gives a turn that finishes in one frame a color, because a resolved turn needs no answers to have one", () => {
     const ctx = { directory, now: clock().now }
     let state = Projection.open(ctx, opened()).state

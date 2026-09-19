@@ -644,20 +644,30 @@ describe("Turns", () => {
           always: [],
           tool: { messageID: "m", callID: "c" }
         })
-        // The row is there and no turn of this session is running here, which
-        // is what a second server started over the same directory sees: the
-        // answer is refused rather than taking the row down and handing it to
-        // a driver with nothing to resume.
-        const orphan = yield* Effect.flip(
-          turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
-        )
+        // The row is there and no turn of this session is running here: the
+        // card belongs to a turn that is over. It is answered and taken down
+        // rather than refused, and the driver is not asked, because there is
+        // no parked execution to resume.
+        yield* turns.permission({ sessionID: "ses_3", permissionID: "per_3", response: "always" })
+        const orphan = yield* store.listPermissions("ses_3")
+        // A second row nobody answers, so the sweeps the turn's end and the
+        // Stop each run meet the refusing store and log instead of throwing.
+        yield* store.putPermission({
+          id: "per_3b",
+          sessionID: "ses_3",
+          permission: "bash",
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: "m", callID: "c" }
+        })
         refuse = true
         yield* turns.prompt({ sessionID: "ses_3", parts: [{ type: "text", text: "go" }] })
         yield* Effect.sleep("50 millis")
         return { orphan, status: yield* turns.status(), aborted: yield* turns.abort("ses_3") }
       }).pipe(Effect.provide(flakyStack))
     )
-    expect(result.orphan).toMatchObject({ code: "unknown_permission" })
+    expect(result.orphan).toEqual([])
     expect(result.status).toEqual({})
     expect(result.aborted).toBe(true)
     expect(Turns.promptText([{ type: "text", text: "a" }, { type: "file" }, { type: "text", text: "b" }])).toBe("a\nb")
@@ -947,6 +957,26 @@ describe("Turns", () => {
       ]
     }
     expect(Turns.history([message("u1", "user", ["hi"]), summarized])).toBe("Person: hi\n\nAssistant: done")
+    // A turn the person stopped is marked. Without the mark the tail is a
+    // prompt with no answer under it, and the next turn's model reads that as
+    // work still outstanding: the live drive re-asked for the very command
+    // the stopped turn was parked on, twice.
+    const stopped: Store.MessageWithParts = {
+      ...message("a3", "assistant", []),
+      info: {
+        ...(message("a3", "assistant", []).info as Protocol.AssistantMessage),
+        finish: "error",
+        error: { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
+      }
+    }
+    expect(Turns.history([message("u1", "user", ["run the tests"]), stopped])).toBe(
+      `Person: run the tests\n\nAssistant: ${Turns.stoppedTurn}`
+    )
+    // A stop that landed after the turn had said something keeps both.
+    const partly: Store.MessageWithParts = { ...stopped, parts: message("a3", "assistant", ["I read the file"]).parts }
+    expect(Turns.history([message("u1", "user", ["hi"]), partly])).toBe(
+      `Person: hi\n\nAssistant: I read the file\n${Turns.stoppedTurn}`
+    )
     const long = Turns.history([message("u1", "user", ["a".repeat(30)]), message("a1", "assistant", ["done"])], 20)
     expect(long?.startsWith("[earlier turns omitted]\n")).toBe(true)
     expect(long?.endsWith("Assistant: done")).toBe(true)
@@ -1062,5 +1092,110 @@ describe("Turns", () => {
       Effect.flatMap(Turns.Turns, (turns) => turns.status()).pipe(Effect.provide(stack(failing, "turns-failing-boot")))
     )
     expect(status).toEqual({})
+  })
+  it("sweeps the card of a turn its own abort event closed, and answers a row whose turn is gone", async () => {
+    const park = new Permission.PermissionRequired({
+      requestId: "per_escaped_1_c0ffee00_0",
+      runId: "msg_escaped",
+      capability: Capability.make("proc:spawn", "bash"),
+      tier: "irreversible",
+      meta: {
+        flow: "bash",
+        input: { command: "sleep 1 && echo late" },
+        identity: { frame: 1, cell: "c0ffee00", ordinal: 0 }
+      }
+    })
+    const sinks = new Map<string, Driver.Sink>()
+    /**
+     * The interleaving the live drive hit and three scripted attempts missed:
+     * the frame asks a moment after the Stop, and the harness's own `Aborted`
+     * closes the turn through the fold. The projection deletes the state
+     * there, so the body's exit finds no state and its close is dropped: the
+     * sweep that only the close ran never runs, and the row outlives the turn.
+     */
+    const stopping = Layer.succeed(Driver.Driver, {
+      start: (input: Driver.StartInput, sink: Driver.Sink) => Effect.sync(() => sinks.set(input.sessionID, sink)),
+      interrupt: (sessionID: string) =>
+        Effect.gen(function*() {
+          const sink = sinks.get(sessionID)!
+          yield* sink.event(
+            new AgentEvents.PermissionRequired({
+              eventType: "flows.harness.permission-required.v1",
+              request: park
+            })
+          )
+          yield* sink.event(
+            new AgentEvents.Aborted({ eventType: "flows.harness.aborted.v1", reason: "The turn was interrupted" })
+          )
+          yield* sink.closed({ _tag: "interrupted" })
+          return true
+        }),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session("ses_escaped"))
+        yield* turns.prompt({ sessionID: "ses_escaped", parts: [{ type: "text", text: "run it" }] })
+        yield* Effect.promise(() => until(async () => sinks.has("ses_escaped")))
+        const before = (yield* hub.replay()).length
+        yield* turns.abort("ses_escaped")
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(turns.status(), (status) => status["ses_escaped"] === undefined)))
+        )
+        yield* Effect.sleep("60 millis")
+        return {
+          left: yield* store.listPermissions("ses_escaped"),
+          status: yield* turns.status(),
+          after: (yield* hub.replay()).slice(before).map((envelope) => envelope.payload)
+        }
+      }).pipe(Effect.provide(stack(stopping, "turns-escaped")))
+    )
+    expect(result.status).toEqual({})
+    expect(result.left).toEqual([])
+    expect(result.after.filter((event) => event.type === "permission.replied")).toMatchObject([{
+      properties: { sessionID: "ses_escaped", requestID: park.requestId, reply: "reject" }
+    }])
+  })
+
+  it("answers a pending row whose turn is gone instead of refusing it forever", async () => {
+    const idle = Layer.succeed(Driver.Driver, {
+      start: () => Effect.void,
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const result = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        const hub = yield* Events.Events
+        yield* store.putSession(session("ses_orphan"))
+        yield* store.putPermission({
+          id: "per_orphan",
+          sessionID: "ses_orphan",
+          permission: "bash",
+          patterns: ["bash sleep *"],
+          metadata: {},
+          always: ["sleep *"],
+          tool: { messageID: "m", callID: "c" }
+        })
+        const before = (yield* hub.replay()).length
+        yield* turns.permission({ sessionID: "ses_orphan", permissionID: "per_orphan", response: "reject" })
+        return {
+          left: yield* store.listPermissions("ses_orphan"),
+          after: (yield* hub.replay()).slice(before).map((envelope) => envelope.payload)
+        }
+      }).pipe(Effect.provide(stack(idle, "turns-orphan")))
+    )
+    expect(result.left).toEqual([])
+    expect(result.after.filter((event) => event.type === "permission.replied")).toMatchObject([{
+      properties: { sessionID: "ses_orphan", requestID: "per_orphan", reply: "reject" }
+    }])
   })
 })

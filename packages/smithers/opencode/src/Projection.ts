@@ -972,6 +972,30 @@ const endTurn = (
 export const budgetEnded = (state: State): boolean => state.facts.lastTransition !== "complete"
 
 /**
+ * The turn's last reading, which always lands.
+ *
+ * {@link decided} emits a card only when the color changed, which keeps a
+ * long run from growing one card a frame. The end of a turn is the one
+ * decision that rule is wrong about. A run whose frame budget ran out while a
+ * permission card was open ends red under the red the park earned, so the
+ * reason an operator reads says `waiting for approval` about a card that is
+ * gone, and the same silence masked every other terminal reason a red turn
+ * can end on: a seat out of quota, a claim the harness refused, a run it
+ * stopped. The color rule was never wrong; the card that carries its words
+ * was never emitted.
+ *
+ * So the final reading is taken against a state carrying no earlier color,
+ * and the card that names what ended the run always lands.
+ */
+const finalDecision = (
+  ctx: Context,
+  state: State,
+  decision: Health.Decision,
+  answers: Health.Answers | undefined,
+  frame: number
+): Step => decided(ctx, { ...state, health: undefined }, decision, answers, frame)
+
+/**
  * Ends a turn that answered, after one last reading of the color rule.
  *
  * The dot a finished session keeps is the last one anything decided, and
@@ -1016,7 +1040,7 @@ const resolvedTurn = (state: State, ctx: Context): Step => {
   const decision = endedBy === undefined && state.answers === undefined
     ? { color: "green" as const, reason: Health.answeredReason }
     : Health.decide(facts, state.answers)
-  const last = decided(ctx, { ...state, facts }, decision, state.answers, lastFrame(state))
+  const last = finalDecision(ctx, { ...state, facts }, decision, state.answers, lastFrame(state))
   const ended = close(last.state)
   return { state: ended.state, events: [...last.events, ...ended.events] }
 }
@@ -2030,7 +2054,7 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
     : stoppedBy !== undefined
     ? { color: "red", reason: Health.limitReason(stoppedBy) }
     : { color: "red", reason: Health.endedReason(endedBy) }
-  const marked = decided(
+  const marked = finalDecision(
     ctx,
     { ...settled.state, facts: { ...settled.state.facts, stoppedBy, endedBy } },
     decision,

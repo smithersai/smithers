@@ -18,24 +18,24 @@ Node 22.19.0 or later is required.
 
 ## Modules
 
-| Module           | What it holds                                                                                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Serve`          | The bind and its admission rule, the banner, `app` (the whole application as a router layer) and `layer` (the same on a Node socket with its own SQLite store).            |
-| `Routes`         | Every v1 route the hosted app and the shipped TUI call, with the 1.18.31 response shapes, plus the three v2 routes the app calls in v1 mode.                               |
-| `Events`         | The server-sent event hub: `server.connected`, live events in the `{directory, project, payload}` envelope, heartbeats, and a bounded replay for reconnects.               |
-| `Store`          | Sessions, message headers, parts, pending permissions, grants, and open turns in `<directory>/.smithers/opencode.sqlite`, so history is a read.                            |
-| `Projection`     | The pure fold from harness `AgentEvent`s to OpenCode v1 events and parts, with part ids derived from the message and a sort key so a replayed frame updates cards.         |
-| `Health`         | The health color: the `harness/health` classifier, the color rule as a pure function, the title dot, the evaluator over `AI_GATEWAY_API_KEY`, and the record per decision. |
-| `Turns`          | One turn per prompt: opens the projection, forks the driver, stores then publishes every event, answers permissions, aborts, re-opens what a restart finds.                |
-| `Driver`         | The seam a turn runner implements: `start`, `interrupt`, `permission`, `steer`, `resumeOnBoot`.                                                                            |
-| `EngineDriver`   | The driver over the durable flow engine: one `Agent.run` per prompt under `<directory>/.smithers/opencode.sqlite`, permission parks, steering, interrupts, resume.         |
-| `ScriptedDriver` | A driver that replays a recorded turn, with permission parks and their continuations.                                                                                      |
-| `DemoScript`     | The recorded turn the scripted driver ships with: a read, a list, a read-only demand, a shell call behind a permission, and a final answer.                                |
-| `Pricing`        | The published list prices of the starter seats, so the header's cost is a number.                                                                                          |
-| `Ids`            | OpenCode identifiers: prefixes, the time-ordered head, and derived part ids.                                                                                               |
-| `Cors`           | The allowed origins and the preflight answer.                                                                                                                              |
-| `Auth`           | Basic authentication from `OPENCODE_SERVER_PASSWORD`, with the health probes left open.                                                                                    |
-| `Protocol`       | The wire types, transcribed from the OpenAPI document.                                                                                                                     |
+| Module           | What it holds                                                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Serve`          | The bind and its admission rule, the banner, `app` (the whole application as a router layer) and `layer` (the same on a Node socket with its own SQLite store).                                   |
+| `Routes`         | Every v1 route the hosted app and the shipped TUI call, with the 1.18.31 response shapes, plus the three v2 routes the app calls in v1 mode.                                                      |
+| `Events`         | The server-sent event hub: `server.connected`, live events in the `{directory, project, payload}` envelope, heartbeats, and a bounded replay for reconnects.                                      |
+| `Store`          | Sessions, message headers, parts, pending permissions, grants, and open turns in `<directory>/.smithers/opencode.sqlite`, so history is a read.                                                   |
+| `Projection`     | The pure fold from harness `AgentEvent`s to OpenCode v1 events and parts, with part ids derived from the message and a sort key so a replayed frame updates cards.                                |
+| `Health`         | The health color: the `harness/health` classifier, the color rule as a pure function, the title dot, the evaluator over `AI_GATEWAY_API_KEY`, and the record per decision.                        |
+| `Turns`          | One turn per prompt: opens the projection, forks the driver, stores then publishes every event, answers permissions, sweeps the cards a turn ends without, aborts, re-opens what a restart finds. |
+| `Driver`         | The seam a turn runner implements: `start`, `interrupt`, `permission`, `steer`, `resumeOnBoot`.                                                                                                   |
+| `EngineDriver`   | The driver over the durable flow engine: one `Agent.run` per prompt under `<directory>/.smithers/opencode.sqlite`, permission parks, steering, interrupts, resume.                                |
+| `ScriptedDriver` | A driver that replays a recorded turn, with permission parks and their continuations.                                                                                                             |
+| `DemoScript`     | The recorded turn the scripted driver ships with: a read, a list, a read-only demand, a shell call behind a permission, and a final answer.                                                       |
+| `Pricing`        | The published list prices of the starter seats, so the header's cost is a number.                                                                                                                 |
+| `Ids`            | OpenCode identifiers: prefixes, the time-ordered head, and derived part ids.                                                                                                                      |
+| `Cors`           | The allowed origins and the preflight answer.                                                                                                                                                     |
+| `Auth`           | Basic authentication from `OPENCODE_SERVER_PASSWORD`, with the health probes left open.                                                                                                           |
+| `Protocol`       | The wire types, transcribed from the OpenAPI document.                                                                                                                                            |
 
 ## Hosting the server
 

@@ -51,6 +51,71 @@
 
 ### Fixed
 
+- A permission card can no longer outlive the turn that asked for it. A turn
+  ends in two places and only one of them swept: the body's exit closed the
+  projection through a `close` job that answered every card the person never
+  answered, and the fold closed it too, on the harness's own `Aborted` and on
+  a resolve. A turn that ended in the fold deleted its state there, so the
+  exit that followed found no state and its `close` was dropped, and with it
+  the sweep. That is the shape a Stop makes: the frame asks a moment after the
+  Stop, `Aborted` closes the turn, and the row the ask wrote is still there.
+  Measured on the final live drive: `GET /permission` listed
+  `per_..._sleep 1 && echo late` for minutes while `GET /session/status`
+  answered `{}`, and the hosted app pressed Allow more than forty times, 1.3 s
+  apart, against a card nothing could clear. The sweep now runs wherever a
+  turn ends, and a `close` whose turn is already gone sweeps rather than being
+  dropped. `test/Turns.test.ts` drives the interleaving itself: a driver that
+  asks and then reports `Aborted` before its exit, which reproduces the
+  escaped row every run.
+
+- An answer to a card whose turn is gone takes the card down instead of being
+  refused forever. `Turns.permission` refused any row whose session had no
+  live turn here, on the reasoning that a second server over the same
+  directory must not answer the first one's cards. `Ownership` already
+  settles that: a second server over a directory refuses to start. What the
+  refusal actually produced was the only thing worse than a wrong answer, a
+  card that can never be cleared, answering
+  `Permission ... belongs to no turn this server is running` to every press.
+  The row now goes down and `permission.replied` is published, which is what
+  takes the card off the screen; the driver is not asked, because there is no
+  parked execution to resume. Proven live on 2026-09-19 over HTTP with the
+  real seat and a real gateway key, against a card standing over an idle
+  session: the old server answered 404 with that sentence and left the row,
+  and the new one answered `true`, published `permission.replied`, and left
+  `GET /permission` empty.
+
+- An ended run's reason names what ended it. `Projection.decided` writes a
+  `health` card only when the color changed, which keeps a long run from
+  growing one card a frame, and the end of a turn is the one decision that
+  rule is wrong about. A run whose frame budget ran out while a permission
+  card was open ended red under the red the park had earned, so the reason an
+  operator read said `waiting for approval` about a card that was gone. The
+  same silence masked every other terminal reason a red turn can end on: a
+  seat out of quota, a claim the harness refused, a run it stopped. The
+  turn's last reading is now exempt from the color rule and always writes its
+  card, so `stopped: the frame budget of 2 is exhausted` is what the operator
+  reads. The color rule itself is unchanged; it was never what lied. Measured
+  live on 2026-09-19 at `--max-frames 1`: on the old server a run that ended
+  `The frame budget of 1 is exhausted` carried one health card and it read red
+  `waiting for approval`; on the new one the park's red is followed by red
+  `stopped: the frame budget of 1 is exhausted`.
+
+- The conversation tail marks a turn the person stopped. A stopped turn left
+  a prompt in the tail with no answer under it, and the next turn's model read
+  that as work still outstanding: the live drive pressed Stop on a parked
+  `bash` call and the very next prompt asked for the same command again, twice.
+  The fact the tail was missing is not that a call was denied, it is that the
+  person ended the turn, so `Turns.history` says so
+  (`Turns.stoppedTurn`) and the model stops treating the abandoned work as a
+  request. The denial memory `EngineDriver` keeps is deliberately the turn's
+  own and stays that way: a Stop is a verdict on the turn, not on one call,
+  and a denial that outlived its turn would refuse a call the person's next
+  prompt explicitly asks for. Measured live on 2026-09-19, a Stop on a turn
+  parked on `sleep 30 && echo late` and then "Reply with only the letter A":
+  three runs on the old server parked on `sleep 30 && echo late` again and
+  never answered inside three minutes, and three on the new one answered `A`
+  in 2.75 s with no card at all.
+
 - The health dot tells the truth about a run that is over. Gray says one
   thing, "health is unavailable", and an operator who walked away reads it on
   an idle session as Jev having been down while the run carried on. Nothing

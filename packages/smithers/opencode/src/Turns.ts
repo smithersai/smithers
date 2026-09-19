@@ -10,7 +10,11 @@
  * message and steered into the running turn. A permission answer is
  * published as `permission.replied`, clears the park on the health facts, and
  * is handed to the driver, which resumes the parked execution. An abort answers every pending card `reject` on the
- * stream, then interrupts the driver, whose exit closes the projection. A
+ * stream, then interrupts the driver, whose exit closes the projection.
+ * Wherever a turn ends, the fold's close as much as the body's exit, the
+ * cards nobody answered are answered `reject`, so no card outlives the turn
+ * that asked; an answer to a card whose turn is already gone takes the card
+ * down rather than refusing it. A
  * rename or an archive from the app is applied on the same queue as the
  * turn's own writes and folded into the open turn, so a title set mid-turn
  * is what the turn's next `session.updated` carries. At boot the driver
@@ -126,9 +130,36 @@ export interface Service {
 export const historyCap = 4096
 
 /**
- * The conversation tail a follow-up prompt carries: every user prompt and
- * every final answer so far, oldest first, cut from the front to
- * `historyCap` characters. `undefined` when the session has no history.
+ * The name the header of a turn the person stopped carries, which is what
+ * tells {@link history} that the turn ended in a Stop.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const abortedError = "MessageAbortedError"
+
+/**
+ * What the conversation tail says about a turn the person stopped.
+ *
+ * A stopped turn leaves a prompt in the tail with no answer under it, and
+ * that is what the next turn's model reads: a request nobody served. It
+ * served it. The live drive pressed Stop on a parked `bash` call and the very
+ * next prompt asked for that same command again, twice, so the Stop read as
+ * if it had not worked. The fact the tail was missing is not that a call was
+ * denied, it is that the person ended the turn, so the tail says that and the
+ * model stops treating the abandoned work as outstanding.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const stoppedTurn =
+  "[stopped by the person. This turn never answered, and nothing it had started is still being asked for.]"
+
+/**
+ * The conversation tail a follow-up prompt carries: every user prompt, every
+ * final answer so far, and a mark on every turn the person stopped, oldest
+ * first, cut from the front to `historyCap` characters. `undefined` when the
+ * session has no history.
  *
  * @category conversions
  * @since 1.0.0
@@ -139,8 +170,10 @@ export const history = (messages: ReadonlyArray<Store.MessageWithParts>, cap = h
     // The run summary is a synthetic text part: the person never read it as an answer.
     const text = message.parts.flatMap((part) => part.type === "text" && part.synthetic !== true ? [part.text] : [])
       .join("").trim()
-    if (text === "") continue
-    lines.push(`${message.info.role === "user" ? "Person" : "Assistant"}: ${text}`)
+    const stopped = message.info.role === "assistant" && message.info.error?.name === abortedError
+    if (text === "" && !stopped) continue
+    const said = !stopped ? text : text === "" ? stoppedTurn : `${text}\n${stoppedTurn}`
+    lines.push(`${message.info.role === "user" ? "Person" : "Assistant"}: ${said}`)
   }
   if (lines.length === 0) return undefined
   const joined = lines.join("\n\n")
@@ -216,8 +249,19 @@ export const make = (
 
     /**
      * Applies a step: keeps its state until the turn ends, then stores and
-     * publishes its events, and forks a health evaluation when the step
-     * hands out facts. A store failure is logged, never thrown.
+     * publishes its events, sweeps the cards the turn never answered when it
+     * ended, and forks a health evaluation when the step hands out facts. A
+     * store failure is logged, never thrown.
+     *
+     * The sweep belongs here, where every turn ends, and not on the close
+     * job alone. The fold ends turns too: the harness's own `Aborted` closes
+     * the projection, and so does a resolve. A turn that ends in the fold
+     * deletes its state here, so the body's exit that follows finds no state
+     * and its close job is dropped, and the sweep the close carried never
+     * runs. That is the interleaving a Stop makes and the one the live drive
+     * hit: the frame asks a moment after the Stop, `Aborted` closes the turn,
+     * and the row the ask wrote outlives it on a session the app reads as
+     * idle, showing a card that can never be cleared.
      */
     const apply = (sessionID: string, step: Projection.Step): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -226,6 +270,7 @@ export const make = (
         yield* emit(step.events).pipe(
           Effect.catchCause((cause) => Effect.logError({ message: "The turn could not be stored", cause }))
         )
+        if (step.state.closed) yield* sweep(sessionID)
         if (step.health !== undefined && !step.state.closed) {
           yield* Effect.forkIn(evaluateHealth(sessionID, step.state.assistantMessageID, step.health), scope)
         }
@@ -298,6 +343,16 @@ export const make = (
           properties: { sessionID, requestID: request.id, reply: "reject" }
         })))
 
+    /** The sweep itself: every moot card answered, stored, and published. */
+    const sweep = (sessionID: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const moot = yield* mootCards(sessionID)
+        if (moot.length === 0) return
+        yield* emit(moot).pipe(
+          Effect.catchCause((cause) => Effect.logError({ message: "The moot cards could not be stored", cause }))
+        )
+      })
+
     /**
      * The projection runs on a fiber of its own, fed in order by a queue.
      * The driver's sink runs inside the engine's frame, which holds the
@@ -317,18 +372,14 @@ export const make = (
           yield* emit(job.events).pipe(
             Effect.catchCause((cause) => Effect.logError({ message: "The event could not be stored", cause }))
           )
+        } else if (job._tag === "close") {
+          // A close whose turn is already gone is not dropped: the fold ends
+          // turns too, and the body's exit arrives after that. It still
+          // sweeps, so nothing the ended turn asked for is left on screen.
+          if (state === undefined) yield* sweep(job.sessionID)
+          else yield* apply(job.sessionID, Projection.close(ctx, state, job.closing))
         } else if (state !== undefined && job._tag === "event") {
           yield* apply(job.sessionID, Projection.fold(ctx, state, job.event))
-        } else if (state !== undefined && job._tag === "close") {
-          // The moot cards go down with the close, not only at the abort,
-          // because a frame that parks a moment after the Stop writes its
-          // request after the abort has already swept, and that card would
-          // outlive the turn on a session the app reads as idle.
-          const closed = Projection.close(ctx, state, job.closing)
-          yield* apply(job.sessionID, {
-            ...closed,
-            events: [...closed.events, ...yield* mootCards(job.sessionID)]
-          })
         } else if (state !== undefined && job._tag === "replied") {
           yield* apply(job.sessionID, Projection.replied(state))
         } else if (job._tag === "health") {
@@ -540,18 +591,28 @@ export const make = (
             message: `Permission ${input.permissionID} is not pending`
           })
         }
-        // The row says a card is open; this process's own turn is what can act
-        // on the answer. A second server started over the same directory reads
-        // the same rows and would take the row down, publish the reply on its
-        // own hub, and hand the answer to a driver with no turn to resume,
-        // leaving the parked turn on the other server busy for good. A row
-        // without an open turn here is not this server's to answer.
+        // A row with no open turn is a card whose turn is over: nothing here
+        // can resume it, and nothing ever will. Refusing it left the app with
+        // a card it could never clear, which the live drive clicked Allow on
+        // forty times, 1.3 s apart, over a session that read idle. So the row
+        // goes down and the reply is published, which is what takes the card
+        // off the screen, and the driver is not asked: there is no parked
+        // execution to hand the answer to.
+        //
+        // One server owns a directory (`Ownership`), which is what makes this
+        // safe. A second server over the same directory refuses to start
+        // rather than answering the first one's cards, so a row this server
+        // has no turn for belongs to no turn at all.
         if (!states.has(input.sessionID)) {
-          return yield* new TurnsError({
-            code: "unknown_permission",
-            message:
-              `Permission ${input.permissionID} belongs to no turn this server is running; another server may be serving this directory`
+          yield* commit({
+            _tag: "emit",
+            sessionID: input.sessionID,
+            events: [{
+              type: "permission.replied",
+              properties: { sessionID: input.sessionID, requestID: input.permissionID, reply: input.response }
+            }]
           })
+          return
         }
         yield* commit({
           _tag: "emit",
