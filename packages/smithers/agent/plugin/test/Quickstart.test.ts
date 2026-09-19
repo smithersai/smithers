@@ -26,6 +26,8 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
     for (const [name, source] of files) writeFileSync(join(temporaryRoot, name), source)
     const program = ts.createProgram([...files.keys()].map((name) => join(temporaryRoot, name)), {
       target: ts.ScriptTarget.ES2022,
+      // The source fallback is checked with the same libraries as the package.
+      lib: ["lib.es2022.d.ts", "lib.es2024.string.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
       module: ts.ModuleKind.NodeNext,
       moduleResolution: ts.ModuleResolutionKind.NodeNext,
       strict: true,
