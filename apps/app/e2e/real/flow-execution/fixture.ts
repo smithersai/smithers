@@ -2,6 +2,7 @@ import { fixtureRepositoryName } from "../support/values"
 import type { APIRequestContext, BrowserContext, Page, TestInfo } from "@playwright/test"
 import { authenticatedTest } from "../auth-permissions/profile"
 import { closeComposer, command, expect, realApi } from "../support/test"
+import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
 import {
   attachProductionJson,
   bootProductionRepository,
@@ -235,8 +236,16 @@ export const workflowTest = authenticatedTest.extend<WorkflowFixtures>({
       runs, drained, githubDeleted, cloudDeleted,
       preserved: !drained || fixture.ambiguities.length > 0
     })
-    const failures = [...(bodyError === undefined ? [] : [bodyError]), ...cleanupFailures]
-    if (failures.length > 0) throw new AggregateError(failures, `Workflow scenario or cleanup for ${fixture.repo} failed.`)
+    /*
+     * The scenario answers for its body. A cleanup that could not finish is
+     * filed as a teardown problem, where the real-E2E reporter folds it into
+     * the run's reporter errors and the coverage gate fails the RUN — so the
+     * leak is still loud, and a proof that ran to completion is not reported
+     * as a failure because the housekeeping after it hit an account wall.
+     */
+    const outcome = scenarioOutcome({ repository: fixture.repo, bodyError, teardownFailures: cleanupFailures })
+    for (const sentence of outcome.teardown) testInfo.annotations.push({ type: TEARDOWN_ANNOTATION, description: sentence })
+    if (outcome.verdict !== undefined) throw outcome.verdict
   }
 })
 

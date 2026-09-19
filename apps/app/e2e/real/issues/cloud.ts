@@ -1,6 +1,7 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { expect, realApi } from "../support/test"
 import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
+import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
 import { runSlash } from "./local"
 import {
   attachProductionJson,
@@ -320,9 +321,9 @@ export const withOwnedImportedRepository = async (
     }
   }
 
-  if (primaryFailure !== undefined && cleanupFailures.length > 0) {
-    throw new AggregateError([primaryFailure, ...cleanupFailures], `The private repository scenario failed and cleanup for ${repo} was incomplete`)
-  }
-  if (primaryFailure !== undefined) throw primaryFailure
-  if (cleanupFailures.length > 0) throw new AggregateError(cleanupFailures, `Cleanup for ${repo} was incomplete`)
+  // The scenario answers for its body; a cleanup that could not finish is filed
+  // as a teardown problem, which the real-E2E reporter fails the RUN on.
+  const outcome = scenarioOutcome({ repository: repo, bodyError: primaryFailure, teardownFailures: cleanupFailures })
+  for (const sentence of outcome.teardown) testInfo.annotations.push({ type: TEARDOWN_ANNOTATION, description: sentence })
+  if (outcome.verdict !== undefined) throw outcome.verdict
 }

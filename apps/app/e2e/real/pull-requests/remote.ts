@@ -1,6 +1,7 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { command, expect, realApi } from "../support/test"
 import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
+import { scenarioOutcome, TEARDOWN_ANNOTATION } from "../support/teardown"
 import { expectFlowOutcome } from "../repositories-github/local"
 import {
   attachProductionJson,
@@ -481,9 +482,15 @@ export const withOwnedPullRequestRepo = async <T>(
   } catch (error) {
     cleanupFailure = error
   }
-  const failures = [scenarioFailure, cleanupFailure].filter((error) => error !== undefined)
-  if (failures.length > 1) throw new AggregateError(failures, `Scenario and cleanup both failed for ${owned.fullName}`)
-  if (failures.length === 1) throw failures[0]
+  // The scenario answers for its body; a cleanup that could not finish is filed
+  // as a teardown problem, which the real-E2E reporter fails the RUN on.
+  const outcome = scenarioOutcome({
+    repository: owned.fullName,
+    bodyError: scenarioFailure,
+    teardownFailures: cleanupFailure === undefined ? [] : [cleanupFailure]
+  })
+  for (const sentence of outcome.teardown) testInfo.annotations.push({ type: TEARDOWN_ANNOTATION, description: sentence })
+  if (outcome.verdict !== undefined) throw outcome.verdict
   return value as T
 }
 

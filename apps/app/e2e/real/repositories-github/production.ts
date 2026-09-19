@@ -1,5 +1,6 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
 import { command, expect, realApi } from "../support/test"
+import { deletionOutcome, githubCreationBar, TeardownRefusal } from "../support/teardown"
 import { readAuthenticatedSession } from "../auth-permissions/profile"
 
 export const PRODUCTION_REPO = "codeplanesmithers/canary-sandbox"
@@ -75,6 +76,11 @@ export const createOwnedGitHubRepository = async (
   if (!/^smithers-e2e-import-[a-z0-9-]+$/.test(name)) {
     throw new Error(`Refusing to create a GitHub repository outside the owned E2E namespace: ${name}`)
   }
+  // A run that cannot delete what it owns must not mint more of it. The bar is
+  // raised by the first deletion that hit a wall a machine cannot pass, and it
+  // names the act that clears it, so this refusal is the same sentence.
+  const barred = githubCreationBar.reason()
+  if (barred !== undefined) throw new TeardownRefusal("github-sudo-mode", barred)
   const github = await context.newPage()
   const fullName = `codeplanesmithers/${name}`
   const url = `https://github.com/${fullName}`
@@ -210,7 +216,26 @@ export const deleteOwnedGitHubRepository = async (owned: OwnedGitHubRepository):
   const finalDelete = github.getByRole("button", { name: /^Delete this repository$/ }).last()
   await expect(finalDelete).toBeEnabled({ timeout: 30_000 })
   await finalDelete.click()
-  await github.waitForURL((candidate) => !candidate.pathname.startsWith(`/${owned.fullName}`), { timeout: 60_000 })
+  /*
+   * GitHub answers the final Delete in one of two ways, and only one of them
+   * navigates. When the profile's sudo session has lapsed it renders Confirm
+   * access instead and offers a single factor, an emailed code. Waiting on the
+   * navigation alone spent 60 seconds on something that could never happen and
+   * then reported a library timeout, so both answers are awaited together and
+   * the wall is named for what it is.
+   */
+  try {
+    await deletionOutcome({
+      repository: owned.fullName,
+      navigatedAway: github.waitForURL((candidate) => !candidate.pathname.startsWith(`/${owned.fullName}`), { timeout: 60_000 }),
+      sudoConfirmVisible: github.getByRole("heading", { name: /^Confirm access$/ }).first().waitFor({ state: "visible", timeout: 60_000 })
+    })
+  } catch (error) {
+    // Every later scenario would mint a repository this same wall keeps, so the
+    // refusal closes the door behind it before it is reported.
+    if (error instanceof TeardownRefusal) githubCreationBar.raise(error.message)
+    throw error
+  }
 
   const missing = await github.goto(owned.url, { waitUntil: "domcontentloaded" })
   expect(missing?.status()).toBe(404)

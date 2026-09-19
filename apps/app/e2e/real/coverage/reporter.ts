@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter"
+import { TEARDOWN_ANNOTATION } from "../support/teardown"
 import { REAL_HOSTS } from "./types"
 import type { RealE2EEvidenceFile, RealHost, RealScenarioRunEvidence } from "./types"
 
@@ -36,6 +37,12 @@ export default class RealE2EEvidenceReporter implements Reporter {
     }
     const verifiedHosts = annotation(test, "real-host-verified")
     if (verifiedHosts.length !== 1 || verifiedHosts[0] !== this.host) this.errors.push(`${ids[0]}: fixture did not verify host ${this.host}`)
+    /*
+     * A teardown that could not finish is the run's problem, not the
+     * scenario's verdict: the body keeps the status it earned, and the leak is
+     * reported here, where the coverage gate reads it and fails the run.
+     */
+    for (const sentence of annotation(test, TEARDOWN_ANNOTATION)) this.errors.push(`${ids[0]}: ${sentence}`)
     const started = result.startTime
     const artifact = result.attachments.find((item) => item.path !== undefined)?.path
     this.runs.push({
