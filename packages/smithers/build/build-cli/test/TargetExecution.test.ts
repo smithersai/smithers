@@ -220,7 +220,7 @@ describe.skipIf(process.platform === "win32")("target toolchain enforcement", ()
     expect(await f.run(target)).toMatchObject({ _tag: "Success", value: { stdout: "TOOL_EXECUTED\n" } })
     expect((await f.invocations()).map((entry) => entry.args)).toEqual([
       ["--version"],
-      ["x", "vitest", "run", "--environment", "node", "--coverage.enabled=false"]
+      ["x", "--bun", "vitest", "run", "--environment", "node", "--coverage.enabled=false"]
     ])
   })
 
