@@ -1,9 +1,11 @@
+import { randomBytes } from "node:crypto"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { extractRequestedGrep } from "../e2e/real/coverage/selection"
 import { admitSourceRevision } from "../e2e/real/coverage/revision"
+import { MODEL_CREDENTIAL_ENV_PREFIX, MODEL_CREDENTIAL_ORIGIN_SUFFIX, MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -50,6 +52,56 @@ const serve = async (): Promise<never> => {
   return await new Promise<never>(() => {})
 }
 
+/*
+ * The named model credentials of e2e/real/models.spec.ts, and the loopback
+ * provider they are pinned to. A custom credential exists only as the env pair
+ * the operator declares before the host boots, so the provider's port has to
+ * be known first: this runner owns the provider for the whole run. The values
+ * are per-run random and the UI only ever types the NAME. E2E_LOOPBACK is the
+ * key the provider accepts; E2E_REVOKED is a well-formed key it answers 401.
+ */
+const launchModelProvider = async (): Promise<() => Promise<void>> => {
+  const loopback = `${MODEL_CREDENTIAL_ENV_PREFIX}E2E_LOOPBACK`
+  const revoked = `${MODEL_CREDENTIAL_ENV_PREFIX}E2E_REVOKED`
+  process.env[loopback] ??= `sk-loopback-${randomBytes(24).toString("hex")}`
+  process.env[revoked] ??= `sk-revoked-${randomBytes(24).toString("hex")}`
+  const provider = Bun.spawn(["bun", "e2e/real/support/model-provider.ts"], {
+    cwd: appDir,
+    env: {
+      ...process.env,
+      SMITHERS_MODEL_PROVIDER_KEY: process.env[loopback],
+      // An ephemeral port unless the operator fixed one; either way it is known before the host boots.
+      SMITHERS_MODEL_PROVIDER_PORT: process.env.SMITHERS_MODEL_PROVIDER_PORT ?? "0",
+      // Its slow model must outlast the one deadline a test runs under.
+      SMITHERS_MODEL_PROVIDER_SLOW_MS: String(MODEL_TEST_DEADLINE_MS * 2)
+    },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit"
+  })
+  const stop = async (): Promise<void> => {
+    provider.kill("SIGTERM")
+    await provider.exited
+  }
+  const reader = provider.stdout.getReader()
+  const decoder = new TextDecoder()
+  let line = ""
+  while (!line.includes("\n")) {
+    const chunk = await reader.read()
+    if (chunk.done) throw new Error(`The model provider exited ${await provider.exited} before it was ready.`)
+    line += decoder.decode(chunk.value, { stream: true })
+  }
+  reader.releaseLock()
+  const ready = JSON.parse(line.slice(0, line.indexOf("\n"))) as { readonly event?: string; readonly origin?: string }
+  if (ready.event !== "ready" || ready.origin === undefined) {
+    await stop()
+    throw new Error("The model provider did not report ready.")
+  }
+  process.env[`${loopback}${MODEL_CREDENTIAL_ORIGIN_SUFFIX}`] = ready.origin
+  process.env[`${revoked}${MODEL_CREDENTIAL_ORIGIN_SUFFIX}`] = ready.origin
+  return stop
+}
+
 if (args[0] === "serve") {
   await serve()
 } else {
@@ -80,7 +132,14 @@ if (args[0] === "serve") {
   const evidence = process.env.SMITHERS_REAL_E2E_RESULTS ?? join(appDir, "test-results/real-e2e-evidence.json")
   process.env.SMITHERS_REAL_E2E_RESULTS = evidence
   await rm(evidence, { force: true })
-  const code = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...selection.args])
+  // Only the host this runner boots can reach a loopback provider; a deployed canary never sees one.
+  const stopModelProvider = external || args.includes("--list") ? undefined : await launchModelProvider()
+  let code: number
+  try {
+    code = await run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...selection.args])
+  } finally {
+    await stopModelProvider?.()
+  }
   if (args.includes("--list")) process.exit(code)
   const gate = await run(process.execPath, ["scripts/check-real-e2e.ts", "--results", evidence, "--expected-host", process.env.SMITHERS_REAL_E2E_HOST!, "--expected-revision", process.env.SMITHERS_REAL_E2E_REVISION!])
   process.exit(code || gate)

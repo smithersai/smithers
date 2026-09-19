@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 import { hostGrep } from "./e2e/real/coverage/selection"
 import type { RealHost } from "./e2e/real/coverage/types"
+import { MODEL_CREDENTIAL_ENV_PREFIX } from "@smthrs/rpc/ConfiguredModel"
 
 const PORT = Number(process.env.SMITHERS_REAL_PORT ?? "47321")
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error(`Invalid SMITHERS_REAL_PORT: ${process.env.SMITHERS_REAL_PORT}`)
@@ -10,6 +11,9 @@ const baseURL = externalBaseURL ?? `http://127.0.0.1:${PORT}`
 const expectedHost = process.env.SMITHERS_REAL_E2E_HOST ?? (externalBaseURL ? "production" : "local")
 if (!["local", "production", "native"].includes(expectedHost)) throw new Error(`Invalid SMITHERS_REAL_E2E_HOST: ${expectedHost}`)
 process.env.SMITHERS_REAL_E2E_HOST = expectedHost
+// The named model credentials and their pinned origins the runner declared: the host under test reads them by name.
+const modelCredentials = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] =>
+  entry[0].startsWith(MODEL_CREDENTIAL_ENV_PREFIX) && entry[1] !== undefined))
 const parsed = new URL(baseURL)
 if (!/^https?:$/.test(parsed.protocol)) throw new Error(`SMITHERS_REAL_BASE_URL must use http(s): ${baseURL}`)
 
@@ -41,7 +45,8 @@ export default defineConfig({
     timeout: 300_000,
     env: {
       SMITHERS_REAL_PORT: String(PORT),
-      SMITHERS_CHAT_STUB: "0"
+      SMITHERS_CHAT_STUB: "0",
+      ...modelCredentials
     }
   }
 })

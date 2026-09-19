@@ -9,6 +9,7 @@ packaged-app tier.
 | ---- | ------------------------------------ | ---------------------- | ------------------------ |
 | T1   | `pnpm --filter smithers-app test:e2e` | `playwright.config.ts` | `playwright/*.spec.ts`   |
 | T2   | `bun run test:e2e` (repository root) | `packaged/run.ts`      | `packaged/*.e2e.test.ts` |
+| Real | `pnpm --filter smithers-app test:e2e:real` | `scripts/run-real-e2e.ts` | `real/**/*.spec.ts` |
 
 T1 boots the local origin without a window (`playwright/webserver.ts` builds
 the SPA and runs `bun src/bun/serve.ts` on port 47311 with
@@ -31,6 +32,37 @@ stale-fixture report, or set `SMITHERS_E2E_RECOVER_STALE=1` to repair and
 continue explicitly. Failure logs, reports, and best-effort screenshots land
 under `test-results/electrobun-packaged/`. T2 currently requires macOS and
 network access to the public fixture remote.
+
+## The real tier (`real/`)
+
+The real tier has no doubles. `scripts/run-real-e2e.ts` builds the SPA, boots
+an isolated local host in hybrid mode with `SMITHERS_CHAT_STUB=0`, drives it
+with Chromium through `playwright.real.config.ts`, and then runs the coverage
+gate (`scripts/check-real-e2e.ts`). `real/coverage/README.md` holds the
+scenario contract the gate enforces. Arguments pass through:
+
+```sh
+pnpm --filter smithers-app test:e2e:real --grep models
+bun apps/app/scripts/check-real-e2e.ts   # the structural gate alone, no browser
+```
+
+`SMITHERS_REAL_PORT` moves the host off 47321, `SMITHERS_SKIP_SPA_BUILD=1`
+reuses `dist/`, and `SMITHERS_REAL_BASE_URL` points the suite at a deployed
+canary instead of booting a host.
+
+`real/models.spec.ts` tests a configured model against a provider the runner
+owns. A custom model credential is a NAME the operator declares as an env pair
+before the host boots: `SMITHERS_MODEL_KEY_<NAME>` holds the value and
+`SMITHERS_MODEL_KEY_<NAME>_ORIGIN` is the only origin that value may be sent
+to. The runner launches `real/support/model-provider.ts` on a free loopback
+port, mints two per-run values, and declares both pairs at that origin:
+`E2E_LOOPBACK` (the key the provider accepts) and `E2E_REVOKED` (a well-formed
+key it answers 401). `playwright.real.config.ts` forwards every
+`SMITHERS_MODEL_KEY_*` variable to the host under test. The specs type only the
+names, and assert that neither value reaches the DOM, any request or response
+between the page and its host, or the provider's journal, which holds a sha256.
+Those scenarios are `host:local` only: a deployed Worker cannot reach a
+loopback provider. `real/models/MANUAL.md` is the same walk by hand.
 
 `contracts/` holds the assertion contracts both tiers share: pure predicates
 that decide what counts as evidence, each with its own Bun test.
