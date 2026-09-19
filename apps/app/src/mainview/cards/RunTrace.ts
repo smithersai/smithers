@@ -658,28 +658,94 @@ const disciplineFold = (
         milestones.push({ seq, at, label: "claim", tone: "bad" })
         break
       }
-      // `AgentSession`'s `default` arm journals five kinds with `payload: {}`,
-      // however rich their `AgentEvent` schema is:
-      // read-only-demand-issued, sufficiency-observed, steering-drained,
-      // narrow-only-demanded and cell-rejected-in-frame. No field of theirs is
-      // readable here, so they are read by PRESENCE alone. Four of them are
-      // moments, and presence is all a moment needs; none of them can carry a
-      // note, because a note would have nothing in it.
+      /*
+       * The five kinds `AgentSession`'s `default` arm once journaled with
+       * `payload: {}`, however rich their `AgentEvent` schema was:
+       * cell-rejected-in-frame, read-only-demand-issued,
+       * narrow-only-demanded, steering-drained and sufficiency-observed.
+       * Their whole payload is late (`AgentSession` `lateFields`), so one
+       * record carries every field or none, and each arm below reads what its
+       * record has: a legacy record still folds, and still says nothing the
+       * record does not carry. A note with no body and no evidence is a title
+       * on its own, so a fieldless record writes none.
+       */
+      case "control.agent.cell-rejected-in-frame": {
+        // A refused reply is a model call the frame paid for. The code is why
+        // the parse refused it; the message is what the frame said back.
+        const attempt = asNumber(payload.attempt)
+        const code = asString(payload.code)
+        const body = bodyOf(
+          code === undefined ? undefined : `${code}.`,
+          attempt === undefined ? undefined : `Attempt ${attempt}.`
+        )
+        if (body !== "") note(seq, "warn", "rejected", body, [clip(payload.message)])
+        break
+      }
       case "control.agent.read-only-demand-issued": {
+        // The issuance's own numbers. `read-only-demanded` above carries the
+        // same demand's later answer, and a run that crashes between the two
+        // boundaries still has this one.
+        const streak = asNumber(payload.streak)
+        const cap = asNumber(payload.cap)
+        const nextFrame = asNumber(payload.nextFrame)
+        const body = bodyOf(
+          streak === undefined || cap === undefined ? undefined : `${streak} of ${cap} frames changed nothing.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        )
+        if (body !== "") note(seq, "warn", "read-only", body, [])
         milestones.push({ seq, at, label: "read-only", tone: "warn" })
         break
       }
       case "control.agent.narrow-only-demanded": {
+        // The sibling of `narrowed-demanded`: that one fires when a broader
+        // reading exists and was not re-run, this one when none was ever
+        // taken. There is no broader input to quote, so the subjects the
+        // demand is about stand in its place.
+        const flow = asString(payload.flow)
+        const targets = Array.isArray(payload.targets)
+          ? payload.targets.filter((one): one is string => typeof one === "string")
+          : []
+        const nextFrame = asNumber(payload.nextFrame)
+        const body = bodyOf(
+          flow === undefined || targets.length === 0
+            ? undefined
+            : `${flow} ran on ${targets.join(", ")} and nothing broader.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        )
+        if (body !== "") note(seq, "warn", "narrow-only", body, [clip(payload.check)])
         milestones.push({ seq, at, label: "narrow-only", tone: "warn" })
         break
       }
       case "control.agent.steering-drained": {
+        // A drain is written at every frame boundary, and the queue is empty
+        // at almost all of them. Only messages ON the record establish that a
+        // person reached the run, so an empty drain is not a moment and a
+        // legacy record — which carries no messages either way — cannot be
+        // read as one. A steer too large to trace was still delivered; the
+        // record says so even where its words are gone.
+        const messages = Array.isArray(payload.messages) ? payload.messages : []
+        if (messages.length === 0) break
+        note(
+          seq,
+          "warn",
+          "steering",
+          messages.length === 1 ? "1 steer." : `${messages.length} steers.`,
+          messages.map((message) => clip(asRecord(message).text))
+        )
         milestones.push({ seq, at, label: "steering", tone: "warn" })
         break
       }
       case "control.agent.sufficiency-observed": {
         // The one observation that rewards a run rather than braking it: a
-        // failing check answered by a passing one.
+        // failing check answered by a passing one. The two inputs are the
+        // whole of it, so they are quoted.
+        const flow = asString(payload.flow)
+        const nextFrame = asNumber(payload.nextFrame)
+        const body = bodyOf(
+          flow === undefined ? undefined : `${flow} failed before the change and passed after it.`,
+          nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
+        )
+        if (body !== "") note(seq, "good", "sufficiency", body, [clip(payload.failed), clip(payload.passed)])
         milestones.push({ seq, at, label: "sufficiency", tone: "good" })
         break
       }

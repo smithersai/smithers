@@ -482,10 +482,10 @@ describe("what the frame was doing", () => {
     expect(moved.bands.map((band) => band.phase)).toEqual(["implementing"])
   })
 
-  test("the five kinds the journal writes with no fields are read by presence alone", () => {
+  test("a legacy journal's fieldless kinds are read by presence alone, and a drain it cannot show is no steer", () => {
     const model = traceFromJournal(RUN, [
       at(1, "control.agent.turn-opened", {}, 1000),
-      // AgentSession's `default` arm journals each of these as `payload: {}`.
+      // AgentSession's `default` arm journaled each of these as `payload: {}`.
       at(2, "control.agent.read-only-demand-issued", {}, 1100),
       at(3, "control.agent.narrow-only-demanded", {}, 1200),
       at(4, "control.agent.steering-drained", {}, 1300),
@@ -496,19 +496,61 @@ describe("what the frame was doing", () => {
       at(8, "control.agent.claim-demanded", { complete: 0.3, overclaims: 0.95, latencyMs: 310, demanded: true, currentDigest: "t1", nextFrame: 2 }, 1700),
       at(9, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 2, nextAction: "write" }, 1800)
     ], CHECKS)
+    // No steering moment at seq 4: the record does not say a message was delivered.
     expect(model.milestones).toEqual([
       { seq: 2, at: 1100, label: "read-only", tone: "warn" },
       { seq: 3, at: 1200, label: "narrow-only", tone: "warn" },
-      { seq: 4, at: 1300, label: "steering", tone: "warn" },
       { seq: 5, at: 1400, label: "sufficiency", tone: "good" },
       { seq: 8, at: 1700, label: "claim", tone: "bad" },
       { seq: 9, at: 1800, label: "read-only", tone: "warn" }
     ])
+    // A fieldless record has nothing to put in a note, so it writes none.
     expect(model.notes.map(({ seq, title, body }) => ({ seq, title, body }))).toEqual([
       { seq: 8, title: "claim", body: "complete 0.3, overclaims 0.95. Frame 2." },
       // 7, not a constant: a host arms its own read-only cap.
       { seq: 9, title: "read-only", body: "7 of 7 frames changed nothing. Frame 2: write." }
     ])
+  })
+
+  test("the five enriched payloads are read into notes, and a drain that delivered nothing is no steer", () => {
+    const model = traceFromJournal(RUN, [
+      at(1, "control.agent.turn-opened", {}, 1000),
+      at(2, "control.agent.cell-rejected-in-frame", { attempt: 2, code: "compile_failed", message: "SyntaxError: unexpected }" }, 1100),
+      at(3, "control.agent.read-only-demand-issued", { streak: 4, cap: 4, nextFrame: 2 }, 1200),
+      at(4, "control.agent.narrow-only-demanded", { flow: "bash", check: "pytest tests/admin_views/tests.py", targets: ["tests/admin_views/tests.py"], currentDigest: "t1", nextFrame: 2 }, 1300),
+      // Written whether or not the queue held anything; this one held nothing.
+      at(5, "control.agent.steering-drained", { messages: [] }, 1400),
+      at(6, "control.agent.steering-drained", { messages: [{ role: "user", text: "stop rewriting the test" }] }, 1500),
+      at(7, "control.agent.sufficiency-observed", { flow: "bash", failed: "pytest tests/admin_views/tests.py", passed: "pytest tests/admin_views", epoch: 1, nextFrame: 2 }, 1600),
+      // A steer too large to trace was still delivered; the record says so, the words are gone.
+      at(8, "control.agent.steering-drained", { messages: [{ role: "user", text: { truncated: true, bytes: 99_999, digest: "d1" } }] }, 1700)
+    ], CHECKS)
+    expect(model.milestones).toEqual([
+      { seq: 3, at: 1200, label: "read-only", tone: "warn" },
+      { seq: 4, at: 1300, label: "narrow-only", tone: "warn" },
+      { seq: 6, at: 1500, label: "steering", tone: "warn" },
+      { seq: 7, at: 1600, label: "sufficiency", tone: "good" },
+      { seq: 8, at: 1700, label: "steering", tone: "warn" }
+    ])
+    expect(model.notes).toEqual([
+      { seq: 2, spanId: "frame-1", tone: "warn", title: "rejected", body: "compile_failed. Attempt 2.", evidence: ["SyntaxError: unexpected }"] },
+      { seq: 3, spanId: "frame-1", tone: "warn", title: "read-only", body: "4 of 4 frames changed nothing. Frame 2." },
+      {
+        seq: 4, spanId: "frame-1", tone: "warn", title: "narrow-only",
+        body: "bash ran on tests/admin_views/tests.py and nothing broader. Frame 2.",
+        evidence: ["pytest tests/admin_views/tests.py"]
+      },
+      { seq: 6, spanId: "frame-1", tone: "warn", title: "steering", body: "1 steer.", evidence: ["stop rewriting the test"] },
+      {
+        seq: 7, spanId: "frame-1", tone: "good", title: "sufficiency",
+        body: "bash failed before the change and passed after it. Frame 2.",
+        evidence: ["pytest tests/admin_views/tests.py", "pytest tests/admin_views"]
+      },
+      { seq: 8, spanId: "frame-1", tone: "warn", title: "steering", body: "1 steer." }
+    ])
+    // Nothing the payload carried is dropped: the details pane holds the whole record.
+    expect(model.rows.find((span) => span.detail.event === "control.agent.sufficiency-observed")?.detail.fields)
+      .toEqual({ flow: "bash", failed: "pytest tests/admin_views/tests.py", passed: "pytest tests/admin_views", epoch: 1, nextFrame: 2 })
   })
 
   test("the two-argument call folds the same trace and derives nothing the third argument would have", () => {
