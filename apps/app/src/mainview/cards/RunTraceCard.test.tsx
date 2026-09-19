@@ -729,7 +729,7 @@ describe("the timeline reads as phases, then what each frame did", () => {
     }])
   })
 
-  test("milestone pins take two rows and never overprint, staggered by the tick alone", () => {
+  test("milestone doors retain their labels and dispatch their recorded sequence", () => {
     const model = fold(PHASED)
     const { host, dispatched } = timeline(PHASED)
     const pins = [...host.querySelectorAll("[data-pin-row]")]
@@ -744,12 +744,11 @@ describe("the timeline reads as phases, then what each frame did", () => {
       for (const other of placed.slice(index + 1)) {
         if (pin.row === other.row) expect(Math.abs(pin.left - other.left)).toBeGreaterThanOrEqual(8)
       }
-      // Every pin stays anchored at the bottom: only the tick's length staggers a row.
+      // Rendered bounds are checked in Chromium by e2e/probes/run-trace-phase-strip.test.ts.
       expect(pin.bottom).toBe("")
     }
     expect(new Set(placed.map((pin) => pin.row)).size).toBeLessThanOrEqual(2)
-    // Left to right, whatever order the fold listed them in.
-    const ordered = [...model.milestones].sort((left, right) => left.at - right.at)
+    const ordered = [...model.milestones].sort((left, right) => left.seq - right.seq)
     expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent)).toEqual(ordered.map((milestone) => milestone.label))
     expect(placed.map((pin) => pin.left)).toEqual([...placed.map((pin) => pin.left)].sort((left, right) => left - right))
     click(pins[0]!)
@@ -856,7 +855,7 @@ describe("the timeline reads as phases, then what each frame did", () => {
     expect(timeline(PHASED).host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toBe(outcome.textContent)
   })
 
-  test("a cluster of pins takes a row each up to the strip's cap, and the moments past it are counted on the last pin", () => {
+  test("a dense cluster discloses each member with its own sequence and the loudest tone", () => {
     const model = fold(CLUSTERED)
     // The cluster is real: six moments, five writes and the demand, inside one second of twenty.
     expect(model.milestones.map((milestone) => milestone.label))
@@ -875,7 +874,6 @@ describe("the timeline reads as phases, then what each frame did", () => {
     // Three rows and no more: a deeper cluster would otherwise stack a label per
     // moment over a track a fraction of that height.
     expect(placed.map((pin) => pin.row)).toEqual(["0", "1", "2", "0"])
-    expect((host.querySelector(".run-phase-pins") as HTMLElement).getAttribute("style")).toContain("--pin-rows: 3")
     // The moments with no row left are not dropped and not overprinted: the
     // last pin placed stops naming one moment and counts the four it stands for.
     expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent))
@@ -883,12 +881,18 @@ describe("the timeline reads as phases, then what each frame did", () => {
     // One of the four is a failed demand, so the count wears its tone: a red
     // moment does not disappear into a write-coloured pin.
     expect(pins.map((pin) => pin.getAttribute("data-tone"))).toEqual(["brand", "brand", "bad", "good"])
-    // The count is still a door, onto the first moment it stands for.
-    click(pins[2]!)
-    expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-3 9" }])
+    const disclosure = pins[2]! as HTMLDetailsElement
+    expect(disclosure.tagName).toBe("DETAILS")
+    const members = [...disclosure.querySelectorAll("button")]
+    expect(members.map((member) => member.getAttribute("aria-label")))
+      .toEqual(["a2.ts · #9", "a3.ts · #12", "a4.ts · #15", "unresolved · #16"])
+    for (const member of members) click(member)
+    expect(dispatched).toEqual([9, 12, 15, 16].map((seq, index) => ({
+      name: "runs.trace.select", args: `sourceCard=flow-run-run-1 run-1 frame-${Math.min(index + 3, 5)} ${seq}`
+    })))
   })
 
-  test("one frame's fifteen edits are one pin, and the strip keeps its two-row height", () => {
+  test("one frame's fifteen edits are one pin", () => {
     const { host } = timeline([
       stamp(1, "control.agent.turn-opened", {}, 1000),
       ...Array.from({ length: 15 }, (_unused, index) => [
@@ -898,7 +902,6 @@ describe("the timeline reads as phases, then what each frame did", () => {
       stamp(32, "control.agent.turn-opened", {}, 20000)
     ], { phase: "running" })
     expect([...host.querySelectorAll(".run-phase-pin-label")].map((label) => label.textContent)).toEqual(["a0.ts +14"])
-    expect((host.querySelector(".run-phase-pins") as HTMLElement).getAttribute("style")).toContain("--pin-rows: 2")
   })
 
   test("a pin belongs to the frame the journal opened before it, not to the frame its stamp lands inside", () => {

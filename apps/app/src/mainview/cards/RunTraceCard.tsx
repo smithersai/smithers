@@ -30,7 +30,8 @@ import { flowAction } from "../flows/FlowAction"
  */
 import { runSourceCommand } from "../flows/RunCommand"
 import { Button, Markdown, StatusPill } from "@smthrs/ui"
-import type { CSSProperties } from "react"
+import { PhaseStrip } from "./RunTracePhaseStrip"
+export { phasePins } from "./RunTracePhaseStrip"
 import { codingEvidenceOf } from "./CodingPlan"
 import { CodingPlanBody } from "./CodingPlanCard"
 import { CodingPocBody } from "./CodingPocCard"
@@ -40,12 +41,8 @@ import { timeLabel } from "../Timestamps"
 import type { RunCommand } from "./CardFamily"
 import {
   durationWords,
-  type Milestone,
-  phaseBandGeometry,
-  phaseExtent,
   spanMatches,
   spanPath,
-  type TraceExtent,
   type TraceFilter,
   traceFiltersFor,
   traceFromJournal,
@@ -194,97 +191,6 @@ export const selectedSpan = (card: RunTraceCard, model: TraceModel): TraceSpan =
     if (newest !== undefined) return newest
   }
   return model.root
-}
-
-/** Percent of the phase axis a segment needs before its phase is written inside it. */
-const BAND_NAMED = 12
-
-/** Percent of the phase axis two pins need between them to share a row. */
-const PIN_APART = 8
-
-/**
- * The rows a cluster of pins may take. Two is the strip's resting height and a
- * third is what a run's busy second needs; past that the labels are taller than
- * the track they point at, and a long run has a cluster like that in every
- * stretch of its axis.
- */
-const PIN_ROWS = 3
-
-/** How loudly a pin speaks. A pin that stands for several moments wears the loudest of them. */
-const TONE_RANK: Readonly<Record<Milestone["tone"], number>> = { brand: 0, good: 1, warn: 2, bad: 3 }
-
-/** One pin on the strip: the moment it opens on, where it sits, and the later moments it also stands for. */
-export interface PhasePin {
-  readonly milestone: Milestone
-  readonly left: number
-  readonly row: number
-  /** The moments that found no row beside this pin, in journal order; empty for a pin that is one moment. */
-  readonly folded: ReadonlyArray<Milestone>
-}
-
-/**
- * Where each milestone's pin sits: its percent of the phase axis, and the row
- * it takes there.
- *
- * In journal order, which is the order Tab reads them in. A stamp comes from
- * whoever produced the record — the agent's own `at` when it carries one, the
- * journal's otherwise — so two moments share one stamp, and a later record
- * carries an earlier stamp than the record before it. The sequence does
- * neither: it is the journal's own order. The s16 timeline attachment is a
- * production run whose pins came out 100, 167, 159 under a sort by stamp.
- *
- * A row is still assigned against the pins already placed, so no two labels on
- * one row come within {@link PIN_APART} of each other, and a cluster takes a
- * row per pin up to {@link PIN_ROWS}. A moment that finds no row is neither
- * dropped nor printed on a row already occupied: it is folded into the pin
- * placed just before it and that pin is drawn as a count of what it stands
- * for.
- *
- * @param milestones the fold's moments, in journal order
- * @param extent the phase axis they are placed on
- */
-export const phasePins = (
-  milestones: ReadonlyArray<Milestone>,
-  extent: TraceExtent
-): ReadonlyArray<PhasePin> => {
-  const axis = Math.max(extent.end - extent.start, 1)
-  const at = (moment: number): number => Math.min(Math.max(((moment - extent.start) / axis) * 100, 0), 100)
-  const lastOnRow: Array<number> = []
-  const pins: Array<{ milestone: Milestone; left: number; row: number; folded: Array<Milestone> }> = []
-  const ordered = [...milestones]
-    // A truncated call input names nothing (RunTrace.ts `subjectOf`), and a pin
-    // with no label is an unreadable box the reader cannot aim at.
-    .filter((milestone) => milestone.label !== "")
-    .sort((left, right) => left.seq - right.seq)
-  for (const milestone of ordered) {
-    const left = at(milestone.at)
-    const free = lastOnRow.findIndex((last) => left - last >= PIN_APART)
-    const row = free >= 0 ? free : lastOnRow.length
-    const beside = pins[pins.length - 1]
-    if (row >= PIN_ROWS && beside !== undefined) {
-      beside.folded.push(milestone)
-      continue
-    }
-    lastOnRow[row] = left
-    pins.push({ milestone, left, row, folded: [] })
-  }
-  return pins
-}
-
-/**
- * The frame the journal had open at that sequence; the run itself when none
- * was.
- *
- * By the sequence each frame opened on, never by the stamps it spans: a frame
- * closes on the stamp the next one opens on, so a moment recorded there sits
- * inside both of them and the earlier one answers first.
- */
-const frameAt = (model: TraceModel, seq: number): string => {
-  let open: string | undefined
-  for (const span of model.rows) {
-    if (span.kind === "frame" && (span.detail.sequence ?? 0) <= seq) open = span.id
-  }
-  return open ?? model.root.id
 }
 
 /** The calls a turn made, in order, each once: the row's summary of what the agent did. */
@@ -526,7 +432,7 @@ export const RunTraceBody = ({
             </span>
             {scrub}
           </div>
-          <PhaseStrip model={whole} runId={runId} cursorSeq={card.payload.cursorSeq} onRunCommand={onRunCommand} />
+          <PhaseStrip model={whole} records={card.payload.events ?? []} runId={runId} cursorSeq={card.payload.cursorSeq} onRunCommand={onRunCommand} />
           <FrameLines model={model} selected={selected} runId={runId} onRunCommand={onRunCommand} />
           <nav className="run-trace-path" aria-label="Recorded call path">
             <PathCrumbs path={path} selected={selected} runId={runId} onRunCommand={onRunCommand} />
@@ -607,104 +513,6 @@ const PathCrumbs = ({ path, selected, runId, onRunCommand }: {
     ))}
   </>
 )
-
-/**
- * What the run was doing, in bands, and the moments worth returning to.
- *
- * The strip is the whole journal the card holds, never the part before the
- * cursor: a scrubber whose future disappears on the first press has nowhere
- * left to scrub to. What the cursor has not reached is marked
- * `data-reached="false"` and stays a door forward; the log below it is the one
- * that stops at the cursor.
- *
- * Each band is a contiguous run of frames in one phase, its width the recorded
- * duration on the bands' own axis, and a press scrubs the card to that band's
- * journal seq through the select flow's third argument. The pins above it are
- * the model's milestones; pins that land together take a row each up to the
- * strip's cap and are counted past it ({@link phasePins}), staggered by the
- * tick's length alone, because a pin is anchored at the bottom and raising it
- * by what the tick lost would put the labels back on one line.
- * Returning to the live tail is the bar's own Latest, directly above.
- */
-const PhaseStrip = ({ model, runId, cursorSeq, onRunCommand }: {
-  readonly model: TraceModel
-  readonly runId: string
-  readonly cursorSeq: number | undefined
-  readonly onRunCommand: RunCommand
-}) => {
-  const { bands, milestones } = model
-  const extent = phaseExtent(model)
-  /** Everything up to the cursor has been scrubbed to; the rest is journal the reader has not reached yet. */
-  const reached = (seq: number): boolean => cursorSeq === undefined || seq <= cursorSeq
-  const pins = phasePins(milestones, extent)
-  // A milestone is a record, not a frame: a journal that opened no turn can
-  // still carry moments worth scrubbing to, and the strip exists for them too.
-  if (bands.length === 0 && pins.length === 0) return null
-  /* Two rows is the strip's own height, so only a deeper cluster grows it, and PIN_ROWS is as far as it grows. */
-  const rows = Math.max(2, ...pins.map((pin) => pin.row + 1))
-  const here = cursorSeq === undefined ? undefined : [...bands].reverse().find((band) => band.seq <= cursorSeq)
-  return (
-    <section className="run-phases" aria-label="Phases">
-      {pins.length > 0 ? (
-        <div className="run-phase-pins" style={{ "--pin-rows": String(rows) } as CSSProperties}>
-          {pins.map(({ milestone, left, row, folded }) => {
-            // A pin that stands for several moments names none of them: a name
-            // beside a count would read as that one moment's own. It wears the
-            // loudest tone among them, so a failed demand is never drawn as a
-            // write, and it is here once the cursor is on any of them.
-            const moments = [milestone, ...folded]
-            const tone = moments.reduce((loudest, one) => TONE_RANK[one.tone] > TONE_RANK[loudest] ? one.tone : loudest, milestone.tone)
-            return (
-              <button
-                key={`${milestone.seq}:${milestone.label}`}
-                type="button"
-                className="run-phase-pin"
-                data-pin-row={row}
-                data-tone={tone}
-                data-reached={reached(milestone.seq)}
-                aria-current={moments.some((one) => one.seq === cursorSeq) ? "location" : undefined}
-                style={{ left: `${left}%`, "--pin-row": String(row) } as CSSProperties}
-                {...flowAction(
-                  onRunCommand,
-                  "runs.trace.select",
-                  `${runId} ${frameAt(model, milestone.seq)} ${milestone.seq}`
-                )}
-              >
-                <span className="run-phase-pin-label">{folded.length === 0 ? milestone.label : `+${moments.length}`}</span>
-                <span className="run-phase-pin-tick" aria-hidden />
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-      <div className="run-phase-track">
-        {bands.map((band, index) => {
-          const bar = phaseBandGeometry(band, extent, index, bands.length)
-          return (
-            <button
-              key={`${band.seq}:${band.startedAt}`}
-              type="button"
-              className="run-phase-band"
-              data-phase-band={band.phase}
-              data-seq={band.seq}
-              data-reached={reached(band.seq)}
-              aria-current={band === here ? "location" : undefined}
-              aria-label={`${band.phase} · ${durationWords(Math.max(band.endedAt - band.startedAt, 0))}`}
-              style={{ left: `${bar.left}%`, width: `${bar.width}%` }}
-              {...flowAction(
-                onRunCommand,
-                "runs.trace.select",
-                `${runId} ${band.frames[0] ?? model.root.id} ${band.seq}`
-              )}
-            >
-              {bar.width >= BAND_NAMED ? <span className="run-phase-name">{band.phase}</span> : null}
-            </button>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
 
 /** One discipline event, under the frame it happened in. */
 const Note = ({ note }: { readonly note: TraceNote }) => (

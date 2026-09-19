@@ -1,0 +1,76 @@
+import { createElement } from "react"
+import { createRoot } from "react-dom/client"
+import { createAppStore } from "../../state/AppStore"
+import { createAppController } from "../../state/AppController"
+import { silentAgent, unavailableRepositories } from "../../state/TestFixtures"
+import type { Card } from "../../state/AppState"
+import type { FlowName } from "../../flows/FlowName"
+import { RunTraceBody } from "../RunTraceCard.tsx"
+
+// The real card, store and command registry, on an isolated local origin.
+const stamp = (sequence: number, kind: string, at: number, payload = {}) => ({
+  sequence, kind: `control.${kind}`, occurredAt: at, payload: { ...payload, at }
+})
+const scenario = new URLSearchParams(location.search).get("scenario")
+const events = scenario === "cluster" ? [
+  stamp(1, "agent.turn-opened", 1000),
+  stamp(2, "agent.read-only-demand-issued", 1200),
+  stamp(3, "agent.repeat-demanded", 1201, { frames: 4, cap: 4 }),
+  stamp(4, "agent.narrow-only-demanded", 1202),
+  stamp(5, "agent.steering-drained", 1203),
+  stamp(6, "agent.unmoved-demanded", 1204),
+  stamp(7, "agent.unresolved-demanded", 1205),
+  stamp(8, "agent.sufficiency-observed", 1206),
+  stamp(9, "run.completed", 10000)
+] : scenario === "labels" ? [
+  stamp(1, "agent.turn-opened", 1000),
+  stamp(2, "agent.read-only-demand-issued", 1000),
+  stamp(3, "agent.repeat-demanded", 3700, { frames: 4, cap: 4 }),
+  stamp(4, "agent.sufficiency-observed", 4600),
+  stamp(5, "run.completed", 10000)
+] : [
+  ...[0, 1, 2, 3].flatMap((index) => [
+    stamp(1 + index * 4, "agent.turn-opened", 1000 + index * 2000),
+    stamp(2 + index * 4, "agent.cell-call-started", 1200 + index * 2000, { flowName: "read", input: { path: `src/${index}.ts` } }),
+    stamp(3 + index * 4, "agent.cell-call-settled", 1800 + index * 2000, { flowName: "read", outcome: "success", value: `result ${index}` }),
+    stamp(4 + index * 4, "agent.turn-closed", 1900 + index * 2000)
+  ]),
+  stamp(17, "run.completed", 9000)
+]
+
+const store = await createAppStore({ kind: "localStorage", storage: localStorage }, { seedWiki: false })
+const cardId = "flow-run-strip-browser"
+if (!store.collections.cards.has(cardId)) {
+  const card: Extract<Card, { kind: "run-trace" }> = {
+    id: cardId, kind: "run-trace", title: "Trace", status: "active", createdAt: 0, ordinal: 0,
+    payload: { repo: "fixture/strip", runId: "strip-browser", workflow: "probe", phase: "completed", steps: [], result: null, lastSeq: events.length, events, traceView: "timeline", liveTail: true }
+  }
+  await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+}
+const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  fetchImpl: async () => new Response("{}", { status: 404 }),
+  cloudSocketUrl: () => undefined,
+  cloudLspSocketUrl: () => undefined
+})
+const root = createRoot(document.getElementById("fixture")!)
+const commands: Array<{ name: string; args?: string }> = []
+declare global {
+  interface Window {
+    runTraceBrowser: { cursor: number | "latest"; selection: string; commands: typeof commands }
+  }
+}
+const render = () => {
+  const card = store.collections.cards.get(cardId)
+  if (card?.kind !== "run-trace") throw new Error("The fixture run card is absent")
+  root.render(createElement(RunTraceBody, { card, onRunCommand: run }))
+  window.runTraceBrowser = { cursor: card.payload.cursorSeq ?? "latest", selection: card.payload.selection ?? "", commands }
+}
+const run = (name: FlowName, args?: string) => {
+  commands.push({ name, args })
+  void controller.commands.run(name, args).then(async (result) => {
+    await store.settled?.()
+    if (result.status === "failed") throw new Error(result.error)
+    render()
+  })
+}
+render()

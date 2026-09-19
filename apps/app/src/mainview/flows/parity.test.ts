@@ -379,12 +379,11 @@ describe("launch-law parity: every affordance is a command", () => {
        * switches (Turns and Timeline), the filters, the turn rows, the engine
        * rows, the breadcrumbs, the tree rows, the timeline bars and the
        * recorded child link. Every button enters onRunCommand and persists in
-       * the same card. 14 = 11 + the timeline's phase strip and log: the phase
-       * band and the milestone pin (each scrubs through runs.trace.select with
-       * a journal seq as its third argument) and the frame line (selects its
-       * frame through the same flow).
+       * the same card. The phase strip has its own module and census below.
        */
-      "../cards/RunTraceCard.tsx": 14,
+      "../cards/RunTraceCard.tsx": 12,
+      // Single milestones, disclosed members and phase jumps all select a recorded sequence.
+      "../cards/RunTracePhaseStrip.tsx": 3,
       /*
        * Lane runs: the run inbox's Open per row, its All/status filter chips,
        * and the Stop-all footer (all through onRunCommand), plus the

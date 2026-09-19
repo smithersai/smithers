@@ -1794,48 +1794,77 @@
  * A 22% tint keeps --text above the small-text floor in both modes.
  */
 .run-phases { position: relative; }
-/* One row per pin in the widest cluster: the two-row height until a cluster is deeper, and never past the card's cap (RunTraceCard `PIN_ROWS`). */
-.run-phase-pins { position: relative; height: calc(0.75rem + var(--pin-rows, 2) * 0.875rem); }
+/* Label dimensions come from the browser, and resize with the font and card. */
+.run-phase-pins { position: relative; min-height: 3.5rem; }
 .run-phase-pin {
 	position: absolute;
-	bottom: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	transform: translateX(-50%);
-	max-width: 10rem;
+	top: var(--pin-top, calc(var(--pin-row, 0) * 1.5rem));
+	display: block;
+	transform: translateX(var(--pin-shift, -50%));
+	width: max-content;
+	max-width: min(10rem, 100%);
 	padding: 0;
 	border: 0;
 	background: transparent;
 	color: var(--text-muted);
 	font: inherit;
 	font-size: var(--fs-small);
-	line-height: 1.2;
+	line-height: 1.4;
 	white-space: nowrap;
 	cursor: pointer;
 }
 .run-phase-pin:hover { color: var(--text); }
-.run-phase-pin[aria-current="location"] { color: var(--text); font-weight: 600; }
-.run-phase-pin:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; border-radius: 2px; }
-.run-phase-pin-label { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-/*
- * Rows staggered by tick length alone: every pin stays anchored at the bottom,
- * so a shorter tick is the only thing that lowers the next label. Raising
- * `bottom` by what the tick lost would put them back on one line. The last row
- * sits on the track and each row above it is one label taller, so a third pin
- * in one cluster grows the strip instead of landing on a label already there.
- */
+.run-phase-pin[aria-current="location"] { color: var(--text); }
+.run-phase-pin:focus-visible,
+.run-phase-cluster summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; border-radius: 2px; }
+.run-phase-pin-label { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .run-phase-pin-tick {
+	position: absolute;
+	pointer-events: none;
+	left: var(--pin-anchor, 50%);
+	top: var(--pin-label-height, 1.25rem);
 	width: 1px;
 	background: var(--border-strong);
-	height: calc(0.375rem + (var(--pin-rows, 2) - 1 - var(--pin-row, 0)) * 0.875rem);
+	height: max(0px, calc(var(--pin-height, 3.5rem) - var(--pin-top, 0px) - var(--pin-label-height, 1.25rem)));
 }
+.run-phase-cluster summary { list-style: none; }
+.run-phase-cluster summary::-webkit-details-marker { display: none; }
+.run-phase-cluster[open] { z-index: 3; }
+.run-phase-members {
+	position: absolute;
+	top: 100%;
+	left: var(--pin-menu-shift, 0px);
+	width: var(--pin-width, 16rem);
+	max-height: 12rem;
+	overflow: auto;
+	list-style: none;
+	margin: 0.25rem 0 0;
+	padding: var(--sp-1);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+.run-phase-members button {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--sp-3);
+	width: 100%;
+	padding: var(--sp-2);
+	text-align: left;
+}
+.run-phase-members button span:first-child { white-space: normal; overflow-wrap: anywhere; }
+.run-phase-members button:hover,
+.run-phase-members button[aria-current="location"] { background: var(--hover-subtle); }
+.run-phase-members button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
 .run-phase-pin[data-tone="warn"] .run-phase-pin-tick { background: var(--warning); }
 .run-phase-pin[data-tone="bad"] .run-phase-pin-tick { background: var(--danger); }
 .run-phase-pin[data-tone="good"] .run-phase-pin-tick { background: var(--success); }
 .run-phase-pin[data-tone="brand"] .run-phase-pin-tick { background: var(--brand); }
 .run-phase-track {
 	position: relative;
+	touch-action: none;
+	user-select: none;
+	cursor: ew-resize;
 	height: 1.25rem;
 	border-radius: 2px;
 	background: var(--surface-2);
@@ -1877,6 +1906,18 @@
 .run-phase-band[aria-current="location"] { outline: 2px solid var(--text); outline-offset: -2px; }
 .run-phase-band:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
 .run-phase-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.run-phase-position { position: absolute; inset: 0; pointer-events: none; }
+.run-phase-position:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-phase-cursor {
+	position: absolute;
+	left: clamp(1px, var(--scrub-preview, var(--scrub-position, 100%)), calc(100% - 1px));
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	transform: translateX(-50%);
+	background: var(--text);
+}
 
 /* One row per recorded frame; its discipline events sit under it. */
 .run-lines {
