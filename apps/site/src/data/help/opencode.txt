@@ -1,4 +1,4 @@
-smthrs opencode — Serve the OpenCode protocol over the agent loop for the hosted OpenCode app
+smthrs opencode — Serve the OpenCode protocol over the agent loop for the hosted OpenCode app; needs AI_GATEWAY_API_KEY unless --scripted
 
 Usage: smthrs opencode [directory] [options]
 
@@ -16,8 +16,8 @@ Options:
   --listen               Allow a non-loopback bind; needs OPENCODE_SERVER_PASSWORD
   --cors <array>         Extra browser origins to allow
   --seat <string>        Model seat as provider:model
-  --max-frames <number>  Frame budget per turn (default: 100)
-  --scripted             Replay the recorded turn instead of running a model
+  --max-frames <number>  Frame budget per turn; forty suits a prompt in the app, raise it for a long task (default: 40)
+  --scripted             Replay the recorded turn instead of running a model; runs without AI_GATEWAY_API_KEY
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
