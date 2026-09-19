@@ -18,7 +18,7 @@
  *
  * That the id resolves in the registry the coding host really composes is the
  * other half of this seam, proved against that composition in
- * `flows/test/create-flow-registry.test.ts`.
+ * `flows/test/coding-create-flow-registry.test.ts`.
  */
 import { expect, test } from "bun:test"
 import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
