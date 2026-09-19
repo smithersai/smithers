@@ -92,6 +92,18 @@ const flakyStorage = (): StorageApi & { refuseCommandWrites: (flow: string, time
 
 const settle = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
+/*
+ * The roll call. A claim about a class is only as good as the list it was
+ * measured over, so `DOOR_ROLL_CALL=1 bun test …` prints every door and what
+ * it did — the evidence a report quotes, produced by the run that asserts it
+ * rather than typed next to it. Silent otherwise: 78 doors times five
+ * scenarios is not a thing to read on every run.
+ */
+const rollCall = (scenario: string, door: string, lines: number, expected: number): void => {
+  if (process.env.DOOR_ROLL_CALL === undefined) return
+  console.log(`${lines === expected ? "ok  " : "FAIL"} ${scenario}\t${door}\t${lines} line(s), expected ${expected}`)
+}
+
 // ---------------------------------------------------------------------------
 // Layer 1: every door reaches the lost-write path, through the real controller.
 // ---------------------------------------------------------------------------
@@ -133,10 +145,11 @@ const reachEveryDoor = async (): Promise<ReadonlyArray<Reached>> => {
       controller.runCommand(door.flow)
       await settle(150)
       const lines = [...store.collections.messages.values()].filter(message => message.text === STORAGE_FULL).length
+      rollCall("two acts at one door, driven", door.flow, lines, 2)
       results.push({ flow: door.flow, lines, registered })
     } finally {
       await controller.dispose().catch(() => {})
-      await store.dispose?.().catch(() => {})
+      await Promise.resolve(store.dispose?.()).catch(() => {})
     }
   }
   return results
@@ -196,7 +209,7 @@ const surfacing = async () => {
   return {
     store, surfaceCommandFailure, speakAsADoor, said,
     window: () => latestOrdinal(store.collections),
-    close: async () => { disposed = true; for (const cleanup of cleanups) cleanup(); await store.dispose?.().catch(() => {}) }
+    close: async () => { disposed = true; for (const cleanup of cleanups) cleanup(); await Promise.resolve(store.dispose?.()).catch(() => {}) }
   }
 }
 
@@ -220,6 +233,7 @@ test("two lost acts inside one window each get their own line, at every door", a
   const wrong: Array<string> = []
   for (const door of durableWriteDoors()) {
     const lines = await overlap(door.flow, door.flow)
+    rollCall("two acts, one window, same door", door.flow, lines, 2)
     if (lines !== 2) wrong.push(`${door.flow}: ${lines} lines for 2 lost acts in one window`)
   }
   expect(wrong).toEqual([])
@@ -231,6 +245,7 @@ test("two lost acts at two different doors inside one window each get their own 
   for (const [index, door] of doors.entries()) {
     const neighbour = doors[(index + 1) % doors.length]!
     const lines = await overlap(door.flow, neighbour.flow)
+    rollCall("two acts, one window, two doors", `${door.flow} then ${neighbour.flow}`, lines, 2)
     if (lines !== 2) wrong.push(`${door.flow} then ${neighbour.flow}: ${lines} lines for 2 lost acts in one window`)
   }
   expect(wrong).toEqual([])
@@ -244,7 +259,24 @@ test("a door that already said it is still not repeated, at every door", async (
       const window = t.window()
       await t.speakAsADoor()
       t.surfaceCommandFailure(door.flow, lostAct, window)
+      rollCall("one act its own door said", door.flow, t.said(), 1)
       if (t.said() !== 1) wrong.push(`${door.flow}: ${t.said()} lines for 1 lost act its own door already said`)
+    } finally { await t.close() }
+  }
+  expect(wrong).toEqual([])
+}, 600_000)
+
+test("a surface that threads no window repeats a line rather than swallowing one, at every door", async () => {
+  const wrong: Array<string> = []
+  for (const door of durableWriteDoors()) {
+    const t = await surfacing()
+    try {
+      await t.speakAsADoor()
+      // No window: controller/repositoryReadiness.ts's deferred command is on
+      // this default deliberately. The default must be the safe direction.
+      t.surfaceCommandFailure(door.flow, lostAct)
+      rollCall("one act, no window threaded", door.flow, t.said(), 2)
+      if (t.said() !== 2) wrong.push(`${door.flow}: ${t.said()} lines for a lost act surfaced with no window`)
     } finally { await t.close() }
   }
   expect(wrong).toEqual([])
@@ -259,6 +291,7 @@ test("a door's sentence from before this act's window never stands in for it", a
       await t.speakAsADoor()
       const window = t.window()
       t.surfaceCommandFailure(door.flow, lostAct, window)
+      rollCall("one act, older line standing", door.flow, t.said(), 2)
       if (t.said() !== 2) wrong.push(`${door.flow}: ${t.said()} lines when an older line stood in the transcript`)
     } finally { await t.close() }
   }
