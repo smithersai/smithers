@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { runFailure, runFailureOf, SETUP_REFUSALS } from "./RunFailure"
+import { RECEIPT_CODES, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence } from "./RunFailure"
 import { librarianFailureMessage } from "./LibrarianLaunch"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
@@ -99,5 +99,51 @@ test("every sentence in the table is one the setup flows still emit, in the file
   for (const sentence of SETUP_REFUSALS) {
     if (sentence.endsWith("for this exact candidate before continuing")) continue
     expect(source).toContain(`invalid("${sentence}")`)
+  }
+})
+
+/*
+ * The canary's own retry, verbatim (.artifacts/mvp-canary-walk-20260917/
+ * W1-g-discard-and-retry.json `L76-issuesAfterRetry`): the issues card's
+ * settled failure read `failed — invalid_receipt: Setup input must match the
+ * reviewed candidate digest` — a run status and an engine code, shown to a
+ * person. A settled verdict is `<phase> — <code>: <sentence>`; every code the
+ * setup bridge can put there is answered, so none of them reaches a card as
+ * itself.
+ */
+const RETRY_VERDICT = "failed — invalid_receipt: Setup input must match the reviewed candidate digest"
+
+test("a settled verdict never reaches a person as its phase and code", () => {
+  expect(setupFailureSentence(RETRY_VERDICT)).toBe("This setup changed after it was reviewed. Test this draft again, then apply it.")
+  expect(setupFailureSentence("failed — invalid_receipt: Run evals for this exact candidate before continuing"))
+    .toBe("Run evals for this exact candidate before continuing")
+  expect(setupFailureSentence("failed — invalid_receipt: Setup output failed the shared response contract")).toBe(INFRA)
+  /* An uncoded host sentence is the host's own and stays exactly as written. */
+  expect(setupFailureSentence("AI check Documentation edits preserve existing content has no completed in-scope trial result; test a change that exercises it")).toBeUndefined()
+  expect(setupFailureSentence(undefined)).toBeUndefined()
+  for (const code of RECEIPT_CODES) {
+    const sentence = setupFailureSentence(`failed — ${code}: Something the engine wrote`)
+    expect(sentence).toBeString()
+    expect(sentence).not.toContain(code)
+    expect(sentence).not.toContain("failed — ")
+  }
+  /* A code this build does not know is still never printed at a person. */
+  expect(setupFailureSentence("failed — brand_new_code: Something the engine wrote")).toBe(INFRA)
+})
+
+test("every receipt code the setup flows can raise is answered here", () => {
+  const schema = readFileSync(fileURLToPath(new URL("../../../../../flows/coding/schema.ts", import.meta.url)), "utf8")
+  const declared = /export class CodingError[\s\S]*?code: Schema\.Literals\(\[([\s\S]*?)\]\)/.exec(schema)?.[1] ?? ""
+  const codes = [...declared.matchAll(/"([a-z_]+)"/g)].map((match) => match[1])
+  expect(codes.length).toBeGreaterThan(0)
+  const answered: ReadonlyArray<string> = RECEIPT_CODES
+  expect([...answered].sort()).toEqual(codes.sort())
+})
+
+test("the sentences the app words itself are ones the setup flows still emit", () => {
+  const setup = readFileSync(fileURLToPath(new URL("../../../../../flows/repository/setup.ts", import.meta.url)), "utf8")
+  for (const sentence of SETUP_REFUSAL_COPY.keys()) {
+    expect(SETUP_REFUSALS.has(sentence)).toBe(true)
+    expect(setup).toContain(`invalid("${sentence}")`)
   }
 })

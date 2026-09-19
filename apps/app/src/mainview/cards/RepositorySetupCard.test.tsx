@@ -449,9 +449,17 @@ test("a settled refusal the person must answer reads as the host's sentence, not
   const t = mount(card)
   try {
     expect(t.host.querySelector(".setup-error p")?.textContent).toBe("Run evals for this exact candidate before continuing")
+    /* .artifacts/mvp-canary-walk-20260917/W1-g-discard-and-retry.json `L76-issuesAfterRetry`, after Retry. */
+    card.payload.request = { ...card.payload.request, error: "failed — invalid_receipt: Setup input must match the reviewed candidate digest" }
+    t.render(card)
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("This setup changed after it was reviewed. Test this draft again, then apply it.")
     card.payload.request = { ...card.payload.request, error: "failed — invalid_receipt: Setup output failed the shared response contract" }
     t.render(card)
-    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("failed — invalid_receipt: Setup output failed the shared response contract")
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("Something on Smithers' side failed. Not your fault, and nothing your request could have changed.")
+    /* A host sentence with no code is the host's own; only a verdict line is replaced. */
+    card.payload.request = { ...card.payload.request, error: "AI check Documentation edits preserve existing content has no completed in-scope trial result; test a change that exercises it" }
+    t.render(card)
+    expect(t.host.querySelector(".setup-error p")?.textContent).toBe("AI check Documentation edits preserve existing content has no completed in-scope trial result; test a change that exercises it")
     card.payload.recovery = { id: "recover", baseRevision: 1, baseDigest: setupCandidate(card.payload), state: "failed",
       registrationState: "unavailable", error: "The workspace behind this setup is gone." }
     t.render(card)
