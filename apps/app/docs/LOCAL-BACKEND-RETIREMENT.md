@@ -20,10 +20,16 @@ VM. One feature set is one product.
 
 ## Where the old code is
 
-The full local backend is readable at commit **`42b8abbc1cf6`**. This deletion
-is the commit immediately after it:
+The full local backend is readable at commit **`42b8abbc1cf6`**, and is gone as
+of the deletion commit:
 
-> **After-commit SHA: `<FILL IN AFTER COMMIT>`**
+> **Before: `42b8abbc1cf6`** — the last state carrying the whole local backend.
+> **After: `57a48653c7e8`** — this deletion.
+
+Peer sessions landed on `main` between the two, so they are not parent and
+child. Read the removed code with `jj file show -r 42b8abbc1cf6 <path>`, or
+diff a single cluster with
+`jj diff --from 42b8abbc1cf6 --to 57a48653c7e8 apps/app/src/bun`.
 
 ## What was removed and what replaced it on the web
 
