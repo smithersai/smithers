@@ -26,6 +26,7 @@ import type { CommandResult } from "../../flows/Flows"
 import { framePath } from "../../runtime/FrameHistory"
 import { actorSharedState } from "../ActorBindings"
 import type { ApprovalsInboxRequest, Card } from "../AppState"
+import { pendingWorkflowLaunch, workflowInputOf } from "../WorkflowLaunch"
 import { sameApproval } from "../ApprovalReference"
 import { liveTutorialTranscript } from "../LiveTutorialTranscript"
 import { gatewayBindingFor,gatewayRunContextFor } from "../RepoContext"
@@ -317,7 +318,7 @@ export const createRunsController = (
       repo,
       binding,
       workflow: card.payload.workflow,
-      input: card.payload.input,
+      input: workflowInputOf(card)!,
       title: `${card.payload.workflow} — ${repo}`
     })
     if ("message" in launched) return launched.message
@@ -589,6 +590,7 @@ export const createRunsController = (
       : ([...store.collections.cards.values()].filter(
         (card) =>
           card.kind === "run-trace" &&
+          !pendingWorkflowLaunch(card) &&
           (card.payload.phase === "launching" ||
             card.payload.phase === "running" ||
             card.payload.phase === "waiting-approval" ||

@@ -41,7 +41,8 @@ export const toolActLine = (call: PendingToolCall, result: string): string => {
   if (launched !== undefined && toolResultLaunchedRun(result)) {
     const workflow = /\bworkflow=(\S+)/.exec(result)?.[1] ?? inner
     const repo = /\brepo=(\S+)/.exec(result)?.[1]
-    return `Smithers started a ${workflow} run${repo === undefined ? "" : ` on ${repo}`}`
+    const verb = /\brun-requested\b/.test(result) ? "requested" : "started"
+    return `Smithers ${verb} a ${workflow} run${repo === undefined ? "" : ` on ${repo}`}`
   }
   const label = call.name === "commands" ? `/${inner}` : call.name
   if (result.startsWith("executed /") || (!result.startsWith("failed:") && !result.startsWith("unknown-"))) {
@@ -52,4 +53,3 @@ export const toolActLine = (call: PendingToolCall, result: string): string => {
   const clean = result.trim().startsWith("{") || result.trim().startsWith("[") ? "that didn't work" : result
   return `Smithers tried ${label} — ${clean.replace(/\s+/g, " ").slice(0, 160)}`
 }
-

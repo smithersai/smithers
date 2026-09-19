@@ -170,7 +170,7 @@ const signIn = async (store: Awaited<ReturnType<typeof webStore>>, loaded: strin
 }
 
 const runCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { kind: "run-trace" }> | undefined => {
-  const card = store.collections.cards.get("flow-run-run-w12")
+  const card = [...store.collections.cards.values()].find(card => card.kind === "run-trace" && card.payload.runId === "run-w12")
   return card?.kind === "run-trace" ? card : undefined
 }
 
@@ -313,10 +313,9 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(transcript(store)).toContain("I started a create-flow run")
   })
 
-  test("a turn that launched NOTHING leaves the model's words alone", async () => {
-    // The substitution is armed by a real launch, not by the vocabulary: a
-    // refusal (signed out, chooser route, unknown workflow) leaves nothing to
-    // misdescribe, so suppressing prose there would be censorship, not truth.
+  test("an unknown remote flow is requested, then its recorded refusal appears on the card", async () => {
+    // The command records intent before the remote registry can refuse it.
+    // Model prose cannot turn that receipt into an execution verdict.
     const store = await webStore()
     const double = relay()
     const { agent } = scriptedToolAgent([
@@ -343,7 +342,10 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
 
     controller.send("run nope")
     await settle(30)
-    expect(transcript(store)).toContain("There's no workflow called nope — nothing was started.")
+    expect(transcript(store)).toContain("Smithers requested a nope run")
+    expect(transcript(store)).toContain("Run requested.")
+    expect(transcript(store)).not.toContain("Smithers started")
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.payload.error === "Unknown workflow: nope"))
   })
 
   test("held-back whitespace still settles the turn — the composer never locks (review)", async () => {
@@ -409,7 +411,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await signIn(store)
 
     controller.send("make me a workflow")
-    await waitFor(() => store.collections.cards.get("flow-run-run-w12") !== undefined)
+    await waitFor(() => runCard(store) !== undefined)
     controller.stop()
     await settle(4)
 
@@ -626,7 +628,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
     await waitFor(() => runCard(store)?.payload.phase === "quiet")
 
     // Retry restarts the watch and says so in words.
-    expect((await controller.commands.run("flow.run.retry", "flow-run-run-w12")).status).toBe("executed")
+    expect((await controller.commands.run("flow.run.retry", runCard(store)!.id)).status).toBe("executed")
     expect(runCard(store)?.payload.steps.join(" ")).toContain("Checking the run again")
     await settle(4)
 
@@ -635,7 +637,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
      * the card can say the run was cancelled without claiming anything the
      * workspace did not do.
      */
-    expect((await controller.commands.run("flow.run.stop", "flow-run-run-w12")).status).toBe("executed")
+    expect((await controller.commands.run("flow.run.stop", runCard(store)!.id)).status).toBe("executed")
     await waitFor(() => runCard(store)?.payload.phase === "cancelled")
     expect(runCard(store)?.payload.steps.join(" ")).toContain("Cancelled this run.")
     expect(

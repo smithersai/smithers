@@ -274,7 +274,7 @@ const signIn = async (store: Awaited<ReturnType<typeof webStore>>, loaded: strin
 }
 
 const runCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { kind: "run-trace" }> | undefined => {
-  const card = store.collections.cards.get("flow-run-run-w11")
+  const card = [...store.collections.cards.values()].find(card => card.kind === "run-trace" && card.payload.runId === "run-w11")
   return card?.kind === "run-trace" ? card : undefined
 }
 
@@ -524,7 +524,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     expect(double.calls.length).toBe(reads)
     unavailable = false
     events.push({ sequence: 2, occurredAt: 2, kind: "control.engine.projection-settled", payload: { version: 1, executionId: "run-w11", generation: 0 } })
-    await resumed.commands.run("flow.run.retry", "flow-run-run-w11")
+    await resumed.commands.run("flow.run.retry", runCard(store)!.id)
     expect(runCard(store)?.payload.error).toBe(double.state.verdict)
     await waitFor(() => runCard(store)?.payload.observationError === undefined)
     expect(runCard(store)?.payload.error).toBe(double.state.verdict)
@@ -757,8 +757,11 @@ describe("wave 11 — workflows are presented", () => {
     await signIn(store)
 
     const outcome = await controller.commands.run("flow.run", "nope")
-    expect(said(outcome)).toContain("There's no flow called nope")
-    expect(said(outcome)).toContain("create-flow")
+    expect(said(outcome)).toContain("run-requested")
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.payload.workflow === "nope" && card.status === "error"))
+    const failed = [...store.collections.cards.values()].find(card => card.kind === "run-trace" && card.payload.workflow === "nope")!
+    expect(failed.kind === "run-trace" && failed.payload.error).toContain("There's no flow called nope")
+    expect(failed.kind === "run-trace" && failed.payload.error).toContain("create-flow")
     expect(double.state.launched).toHaveLength(0)
   })
 
@@ -828,7 +831,7 @@ describe("wave 11 — workflows are presented", () => {
     expect(created).toBe(`run-started workflow=create-flow run=run-w11 repo=${REPO}`)
 
     const ran = said(await controller.commands.run("flow.run", "review-pr"))
-    expect(ran).toBe(`run-started workflow=review-pr run=run-w11 repo=${REPO}`)
+    expect(ran).toMatch(/^run-requested workflow=review-pr request=\S+ repo=/)
   })
 
   test("the three commands are agent-reachable (trigger both) — this is the whole of the new surface", async () => {

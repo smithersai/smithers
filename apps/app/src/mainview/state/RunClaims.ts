@@ -55,7 +55,7 @@ export const runLaunchCommandOf = (toolName: string, toolArguments: string): str
  * misdescribe. Only a real launch arms the substitution.
  */
 export const toolResultLaunchedRun = (result: string): boolean =>
-  !result.startsWith("failed:") && !result.startsWith("unknown-") && /\brun-started\b/.test(result)
+  !result.startsWith("failed:") && !result.startsWith("unknown-") && /\brun-(?:started|requested)\b/.test(result)
 
 /** What the run is called, in the vocabulary a claim would use. */
 const RUN_SUBJECT = /\b(workflow|workflows|run|runs|flow|flows|automation|pipeline|job|it|that|this|they|everything)\b/i
@@ -91,7 +91,7 @@ export const claimsRunState = (text: string): boolean => {
  * one about its own layout, so it names the card instead of pointing at it.
  */
 export const deterministicRunLine = (command: string): string =>
-  command === "flow.create"
+  command.endsWith(":requested") ? "Run requested." : command === "flow.create"
     ? `I started a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
     : "I started that run — the run card shows its real progress."
 

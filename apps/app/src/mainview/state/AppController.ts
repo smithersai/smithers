@@ -1023,11 +1023,14 @@ export const createAppController = (
   const {
     pumpWorkflowRun,
     stopWatchingRun,
-    retryRunWatch,
+    retryRunWatch: retryObservedRun,
     resumeWorkflowRuns
   } = createWorkflowPumpController(ctx, store.nextOrdinal)
 
   const workflowController: WorkflowController = actors.pair(ctx, (context, select) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun, select(renderFlowForm)))
+  const retryRunWatch = (cardId: string): string | void => {
+    if (!workflowController.retryWorkflowRequest(cardId)) return retryObservedRun(cardId)
+  }
   const liveTutorial = actors.pair(ctx, context => createLiveTutorialController(context, store.nextOrdinal))
   const repositorySetup = actors.pair(ctx, (context, select) => createRepositorySetupController(context, {
     promptSignIn: () => promptSignIn(),
@@ -1893,6 +1896,7 @@ export const createAppController = (
   }
 
   liveTutorial.resume()
+  workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()
   // A test the card still holds as requested is launched again.
   resumeModelTests()
@@ -1902,6 +1906,7 @@ export const createAppController = (
    * before that answer would only be superseded by it.
    */
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
+    workflowController.resumeWorkflowRequests()
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     runs.resumeApprovalRequests()

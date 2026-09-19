@@ -14,7 +14,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -169,8 +169,9 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
     // The guard is not in the way any more — the (unreachable, stubbed 500)
     // workspace seam is what fails next, never the balance message.
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).not.toBe(EXHAUSTED_TEXT)
+    expect(outcome.status).toBe("executed")
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.status === "error"))
+    expect(transcriptTexts(store)).not.toContain(EXHAUSTED_TEXT)
   })
 
   test("an unread/unavailable billing seam never blocks a workflow launch (gate on answers, not silence)", async () => {
@@ -207,8 +208,9 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
     const outcome = await controller.commands.run("flow.run", "review-pr")
 
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).not.toBe(EXHAUSTED_TEXT)
+    expect(outcome.status).toBe("executed")
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.status === "error"))
+    expect(transcriptTexts(store)).not.toContain(EXHAUSTED_TEXT)
   })
 
   test("a button-driven flow.run at $0 does not double-surface the refusal as a toast", async () => {
@@ -244,8 +246,8 @@ test("a selected cloud workspace uses its own provider at zero managed balance",
   await store.dispatch({ type: "repo.selected", actor: "user", id: REPO + "#workspace:" + workspaceId }).isPersisted.promise
   calls.length = 0
   const outcome = await controller.commands.run("flow.run", "coding/request " + REPO + ' {"prompt":"Document cloud development"}')
-  expect(outcome.status).toBe("failed")
-  if (outcome.status === "failed") expect(outcome.error).not.toBe(EXHAUSTED_TEXT)
+  expect(outcome.status).toBe("executed")
+  await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.status === "error"))
   expect(calls.some(url => url.includes("workflow/provision"))).toBe(true)
   expect(transcriptTexts(store)).not.toContain(EXHAUSTED_TEXT)
   // Selecting a cloud copy must not exempt another repository's managed run.

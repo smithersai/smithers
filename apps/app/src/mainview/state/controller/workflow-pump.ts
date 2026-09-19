@@ -11,6 +11,7 @@ import { AppEventIntegrityError } from "../AppEventStream"
 import { changedRuntimeRunObservation, RuntimeProjectionIntegrityError, runtimeRunKey, runtimeScopeOf } from "../RuntimeProjection"
 import type { RuntimeRun, RuntimeRunObservation } from "../RuntimeProjection"
 import { canonicalEventValue } from "../EventValue"
+import { pendingWorkflowLaunch } from "../WorkflowLaunch"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -132,6 +133,7 @@ export const createWorkflowPumpController = (
         card.kind === "run-trace" && card.runtimeView?.revision === undefined &&
         // A practice run (state/practice) is a bundled replay: no workspace to ask.
         !card.payload.repo.startsWith("practice:") &&
+        !pendingWorkflowLaunch(card) &&
         (card.payload.phase === "launching" ||
           card.payload.phase === "running" ||
           card.payload.phase === "waiting-approval" ||
@@ -255,6 +257,7 @@ export const createWorkflowPumpController = (
         if (pump.stopped) return
         const card = store.collections.cards.get(cardId)
         if (ctx.disposed || card === undefined || card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
+        if (pendingWorkflowLaunch(card)) return
         const alreadyTerminal = TERMINAL_PHASES.has(card.payload.phase)
         const projectionPending = engineProjectionPending(card.payload.events)
         if (

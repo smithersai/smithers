@@ -19,6 +19,7 @@ import { ProjectionCursor } from "@smthrs/gateway/GatewaySchema"
 import { SubmitApprovalOutput } from "@smthrs/gateway/GatewayRpcs"
 import { WORKFLOW_RPC_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { Option, Schema } from "effect"
+import { cloudFailure } from "../seams/CloudClient"
 
 /**
  * What one relayed call answered. A refusal carries the sentence the relay
@@ -28,7 +29,7 @@ import { Option, Schema } from "effect"
  */
 export type GatewayResult<A> =
   | { readonly status: "ok"; readonly value: A; readonly cursor?: ProjectionCursor }
-  | { readonly status: "error"; readonly message: string; readonly code?: string }
+  | { readonly status: "error"; readonly message: string; readonly code?: string; readonly retryAfterSeconds?: number }
 
 /** ControlError.FlowNotFound on the wire: its `code` and its tag. */
 export const FLOW_NOT_FOUND_CODE = "flow_not_found"
@@ -171,7 +172,10 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
           body: JSON.stringify({ repo, procedure, payload, ...target })
         })
         if (!response.ok) {
-          return { status: "error", message: await errorMessageOf(response, "The workspace didn't answer.") }
+          const failure = await cloudFailure(response.clone(), "The workspace didn't answer.")
+          return { status: "error", message: await errorMessageOf(response, "The workspace didn't answer."),
+            ...(failure.code === null ? {} : { code: failure.code }),
+            ...(failure.retryAfterSeconds === null ? {} : { retryAfterSeconds: failure.retryAfterSeconds }) }
         }
         body = (await response.json().catch(() => undefined)) as typeof body
         // A snapshot is a read. Keep its original binding while a sleeping VM
@@ -237,11 +241,17 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       repo: string,
       flowId: string,
       input: Record<string, unknown>,
-      requestedBinding?: GatewayWorkspaceBinding
+      requestedBinding?: GatewayWorkspaceBinding,
+      request?: { readonly idempotencyKey: string; readonly stillCurrent: () => boolean }
     ): Promise<GatewayResult<{ readonly runId: string; readonly workspaceId?: string }>> => {
       const binding = requestedBinding ?? transport.bindingFor?.(repo) ?? {}
       if ("error" in binding) return { status: "error", message: binding.error }
-      const planned = await call(repo, "Plan", { flowId, input }, binding)
+      const owned = transport.observationGuard?.() ?? (() => true)
+      const current = () => owned() && (request?.stillCurrent() ?? true)
+      const superseded = { status: "error" as const, code: "request_superseded", message: "This launch belongs to a previous session." }
+      if (!current()) return superseded
+      const planned = await call(repo, "Plan", { flowId, input, ...(request ? { idempotencyKey: `plan:${request.idempotencyKey}` } : {}) }, binding)
+      if (!current()) return superseded
       if (planned.status !== "ok") return planned
       const card = asRecord(planned.value)
       const planId = typeof card.planId === "string" ? card.planId : undefined
@@ -255,6 +265,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
         idempotencyKey: `approve:${planId}`,
         decision: "approve"
       }, binding)
+      if (!current()) return superseded
       if (approved.status !== "ok") return approved
       const started = await call(repo, "Run", {
         _tag: "Plan",
@@ -263,6 +274,7 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
         envelope: card.envelope,
         idempotencyKey: `run:${planId}`
       }, binding)
+      if (!current()) return superseded
       if (started.status !== "ok") return started
       const runId = asRecord(started.value).runId
       return typeof runId === "string"

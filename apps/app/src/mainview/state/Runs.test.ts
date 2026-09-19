@@ -1,3 +1,4 @@
+import { workflowInputOf } from "./WorkflowLaunch"
 import { decodeEventValue } from "./EventValue"
 import { flowArgs } from "../flows/FlowArgs"
 import { runtimeRunKey } from "./RuntimeProjection"
@@ -409,7 +410,7 @@ test("optional flow inputs are offered before launch, while an empty schema can 
   expect(double.state.launched[0]?.input).toEqual({})
   declare(Schema.Struct({}))
   await controller.commands.run("flow.run", "review-pr")
-  expect(double.state.launched).toHaveLength(2)
+  expect(double.state.launched).toHaveLength(1)
 })
 
 describe("runs.list — the run inbox", () => {
@@ -557,28 +558,17 @@ describe("runs.rerun — the same flow, the same input, or the honest refusal", 
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
-    await controller.commands.run("flow.run", "review-pr")
+    await controller.commands.run("flow.run", 'review-pr {"args":"summarize my open issues"}')
     await waitFor(() => double.state.launched.length === 1)
-    // Launch carries no input for flow.run; give the card one as flow.create would.
     const firstRunId = "run-1"
-    store.dispatch({
-      type: "card.updated",
-      actor: "system",
-      id: `flow-run-${firstRunId}`,
-      patch: {
-        payload: {
-          ...(store.collections.cards.get(`flow-run-${firstRunId}`) as Extract<Card, { kind: "run-trace" }>).payload,
-          input: { prompt: "summarize my open issues" }
-        }
-      }
-    })
+    await waitFor(() => runCardInScope(store, { repo: REPO, runId: firstRunId }) !== undefined)
 
     const reran = await controller.commands.run("runs.rerun", firstRunId)
     expect(said(reran)).toContain("run-started")
     expect(double.state.launched).toHaveLength(2)
     expect(double.state.launched[1]).toMatchObject({
       workflow: "review-pr",
-      input: { prompt: "summarize my open issues" },
+      input: { args: "summarize my open issues" },
       repo: REPO
     })
   })
@@ -1428,23 +1418,24 @@ describe("typed coding launch and plan inspection", () => {
     await signIn(store)
     const launched = await controller.commands.run("flow.run", `coding ${REPO} ${JSON.stringify({ plan: CODING_PLAN })}`)
     expect(launched.status).toBe("executed")
+    await waitFor(() => runCardInScope(store, { repo: REPO, runId: "run-1" }) !== undefined)
     expect(double.state.launched[0]).toEqual({ workflow: "coding", input: { plan: CODING_PLAN }, repo: REPO })
     expect((await controller.commands.runForAgent("runs.coding.select", "run-1 memory")).status).toBe("executed")
-    let card = store.collections.cards.get("flow-run-run-1") as Extract<Card, { kind: "run-trace" }>
+    let card = runCardInScope(store, { repo: REPO, runId: "run-1" }) as Extract<Card, { kind: "run-trace" }>
     expect(card.payload.codingChangeId).toBe("memory")
     expect([...store.collections.transitions.values()].filter((row) => row.type === "card.upsert").sort((a, b) => a.revision - b.revision).at(-1)?.actor).toBe("smithers")
     await controller.commands.run("runs.open", `run-1 ${REPO}`)
-    card = store.collections.cards.get("flow-run-run-1") as typeof card
-    expect(card.payload.input).toEqual({ plan: CODING_PLAN })
+    card = runCardInScope(store, { repo: REPO, runId: "run-1" }) as typeof card
+    expect(workflowInputOf(card)).toEqual({ plan: CODING_PLAN })
     expect(card.payload.codingChangeId).toBe("memory")
     expect(said(await controller.commands.run("runs.coding.select", "run-1 fabricated"))).toContain("no recorded planned Change")
     await settle()
     controller.dispose()
     await store.dispose?.()
     const reloaded = await createAppStore({ kind: "localStorage", storage })
-    const restored = reloaded.collections.cards.get("flow-run-run-1") as typeof card
+    const restored = runCardInScope(reloaded, { repo: REPO, runId: "run-1" }) as typeof card
     expect(restored.payload.codingChangeId).toBe("memory")
-    expect(restored.payload.input).toEqual({ plan: CODING_PLAN })
+    expect(workflowInputOf(restored)).toEqual({ plan: CODING_PLAN })
     const second = createAppController(reloaded, unavailableRepositories, silentAgent, double.services)
     await second.commands.run("runs.coding.select", "run-1 memory")
     expect((reloaded.collections.cards.get(card.id) as typeof card).payload.codingChangeId).toBeUndefined()
@@ -1497,6 +1488,7 @@ describe("workspace-bound run cards", () => {
     await signIn(store, [REPO, "other/repo"])
     await selectWorkspace(store)
     expect((await controller.commands.run("flow.run", "coding/request")).status).toBe("executed")
+    await waitFor(() => runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" }) !== undefined)
     const source = runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })!
     await waitFor(() => runCardInScope(store, source.payload)?.payload.phase === "completed")
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
@@ -1509,6 +1501,7 @@ describe("workspace-bound run cards", () => {
     expect(missing).toMatchObject({ status: "form", fields: ["name"] })
     expect(store.collections.cards.get("form-flow.run")).toMatchObject({ payload: { draft: { sourceCard: source.id } } })
     expect((await controller.commands.run("flow.run", `sourceCard=${source.id} coding/vibe {"requestExecutionId":"native-request"}`)).status).toBe("executed")
+    await waitFor(() => double.state.launched.at(-1)?.workflow === "coding/vibe")
     expect(double.state.launched.at(-1)).toMatchObject({ workflow: "coding/vibe", input: { requestExecutionId: "native-request" } })
     for (const call of double.calls.slice(before).filter(call => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
     const refused = double.calls.length
@@ -1522,6 +1515,7 @@ describe("workspace-bound run cards", () => {
     expect(store.collections.cards.get(catalog.id)).toMatchObject({ payload: { workspaceId, gatewayBindingVersion: 1 } })
     const afterReload = double.calls.length
     expect((await controller.commands.run("flow.run", `sourceCard=${catalog.id} review-pr`)).status).toBe("executed")
+    await waitFor(() => double.state.launched.at(-1)?.workflow === "review-pr")
     for (const call of double.calls.slice(afterReload).filter(call => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
   })
 
@@ -1650,6 +1644,7 @@ describe("workspace-bound run cards", () => {
       await selectWorkspace(store)
       const result = await controller.commands.run(command, command === "flow.run" ? "review-pr" : "run-1")
       expect(result.status).toBe("executed")
+      await waitFor(() => runCardInScope(store, { repo: REPO, runId: "run-1", workspaceId }) !== undefined)
       expect(runCardInScope(store, { repo: REPO, runId: "run-1", workspaceId })).toMatchObject({ kind: "run-trace", payload: { workspaceId } })
       expect(store.session().activeRepoKey).toBe(REPO)
       for (const call of double.calls.filter((call) => call.path.startsWith("/api/workflow/"))) {
@@ -1694,6 +1689,7 @@ describe("workspace-bound run cards", () => {
     expect((await controller.commands.run("flow.run", "review-pr")).status).toBe("executed")
     const scopeA = { repo: REPO, workspaceId, runId: "run-1" }
     const scopeB = { repo: REPO, workspaceId: workspaceB, runId: "run-1" }
+    await waitFor(() => runCardInScope(store, scopeA) !== undefined && runCardInScope(store, scopeB) !== undefined)
     const cardA = runCardInScope(store, scopeA)!
     const cardB = runCardInScope(store, scopeB)!
     expect(cardA.id).not.toBe(cardB.id)

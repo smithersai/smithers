@@ -44,6 +44,32 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 const keysOf = (calls: ReadonlyArray<RecordedCall>): ReadonlyArray<string> =>
   calls.map((call) => String((call.payload as { idempotencyKey: unknown }).idempotencyKey))
 
+test("HTTP workspace_starting keeps its typed code and Retry-After for a durable launch retry", async () => {
+  const seam = createGatewaySeam({ baseUrl: "", fetch: async () => new Response(JSON.stringify({ code: "workspace_starting", message: "Waking up" }),
+    { status: 503, headers: { "Retry-After": "10" } }), errorMessageOf: async () => "Waking up" })
+  expect(await seam.launch("o/r", "review", {})).toEqual({ status: "error", code: "workspace_starting", message: "Waking up", retryAfterSeconds: 10 })
+})
+
+test("a recovered launch sends the persisted key to Plan and the same plan identity to approval and Run", async () => {
+  const { seam, calls } = relay({ Plan: { ok: true, payload: { planId: "p", digest: "d", envelope: {} } }, Run: { ok: true, payload: { runId: "r" } } })
+  const request = { idempotencyKey: "saved-request", stillCurrent: () => true }
+  await seam.launch("o/r", "review", { args: "inspect" }, {}, request)
+  await seam.launch("o/r", "review", { args: "inspect" }, {}, request)
+  expect(keysOf(calls)).toEqual(["plan:saved-request", "approve:p", "run:p", "plan:saved-request", "approve:p", "run:p"])
+})
+
+test("a superseded Plan response cannot authorize approval or Run", async () => {
+  let current = true
+  const calls: string[] = []
+  const seam = createGatewaySeam({ baseUrl: "", fetch: async (_url, init) => {
+    calls.push(JSON.parse(String(init?.body)).procedure)
+    current = false
+    return Response.json({ ok: true, payload: { planId: "p", digest: "d", envelope: {} } })
+  }, errorMessageOf: async () => "Unavailable" })
+  expect(await seam.launch("o/r", "review", {}, {}, { idempotencyKey: "old", stillCurrent: () => current })).toMatchObject({ status: "error", code: "request_superseded" })
+  expect(calls).toEqual(["Plan"])
+})
+
 describe("the run lifecycle operations", () => {
   test("cancel carries the human's reason, defaulting to the standing one", async () => {
     const { calls, seam } = relay()

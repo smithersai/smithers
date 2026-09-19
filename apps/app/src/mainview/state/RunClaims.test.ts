@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { canonicalCommandName } from "../flows/CommandName"
-import { RUN_LAUNCH_COMMANDS, runLaunchCommandOf } from "./RunClaims"
+import { RUN_LAUNCH_COMMANDS, runLaunchCommandOf, renderedRunTurnText, toolResultLaunchedRun } from "./RunClaims"
 
 const call = (name: string): string => JSON.stringify({ action: "execute", name, args: "x" })
+
+test("a requested launch arms claim suppression without claiming a run has started", () => {
+  expect(toolResultLaunchedRun("run-requested workflow=review request=r1 repo=o/r")).toBe(true)
+  expect(toolResultLaunchedRun("failed: run-requested")).toBe(false)
+  expect(renderedRunTurnText("flow.run:requested", "The run has completed.")).toBe("Run requested.")
+  expect(renderedRunTurnText("flow.run:requested", "The run is now running.")).toBe("Run requested.")
+})
 
 /*
  * ui-state-store/api-design/1: execution (agentTools.ts) trims and strips a

@@ -19,6 +19,7 @@ import type { FormsController } from "./forms"
 import { flowArgs } from "../../flows/FlowArgs"
 import { projectRuntimeCard, runtimeApprovalIdOf, runtimeApprovalKey } from "../RuntimeProjection"
 import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
+import { createWorkflowLaunchController } from "./workflow-launch"
 
 /**
  * A launch the workspace refused, in the wire's own words and shape: the
@@ -29,9 +30,12 @@ import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 export interface LaunchRefusal {
   readonly message: string
   readonly code?: string
+  readonly retryAfterSeconds?: number
 }
 
 export interface WorkflowController {
+  readonly resumeWorkflowRequests: () => void
+  readonly retryWorkflowRequest: (cardId: string) => boolean
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly listWorkspaceWorkflows: ViewAction<[repo?: string, sourceCard?: string]>
   /** The Flows pane: the surface switch, and the same listing that fills it. */
@@ -179,16 +183,18 @@ export const createWorkflowController = (
     return { description: input.trim() }
   }
 
-  const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | string> => {
-    const identity = store.collections.identitySessions.get("identity")
-    const current = () => !ctx.disposed && store.collections.identitySessions.get("identity") === identity
+  const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | LaunchRefusal> => {
+    const login = store.collections.identitySessions.get("identity")?.login
+    const epoch = ctx.accountEpoch
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch &&
+      store.collections.identitySessions.get("identity")?.state === "signed-in" && store.collections.identitySessions.get("identity")?.login === login
     // The Worker absorbs the upstream 409 and answers 200 `{ status: "provisioning" }`
     // while a workspace is mid-provision (apps/server/src/index.ts): poll that
     // body to a bounded deadline, never stampede. Any non-2xx here is a failure.
     const deadline = Date.now() + 180_000
     for (;;) {
-      if (!current()) return "The account changed while the workspace was being prepared."
-      if (signal?.aborted) return "Workspace preparation took longer than 3 minutes. Try again."
+      if (!current()) return { code: "request_superseded", message: "The account changed while the workspace was being prepared." }
+      if (signal?.aborted) return { code: "request_aborted", message: "Workspace preparation was interrupted." }
       let body: { status?: unknown; message?: unknown } | undefined
       try {
         const response = await boundedFetch(`${baseUrl}${WORKFLOW_PROVISION_PATH}`, {
@@ -199,16 +205,17 @@ export const createWorkflowController = (
         })
         if (!response.ok) {
           const failure = await cloudFailure(response, "The workspace couldn't be prepared.")
-          if (!current()) return "The account changed while the workspace was being prepared."
+          if (!current()) return { code: "request_superseded", message: "The account changed while the workspace was being prepared." }
           if (failure.refusal.rawCode === "plan_limit_exceeded") {
-            return renderPlanLimit(store, failure.refusal, ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, ctx.commandActor)
+            return { code: "plan_limit_exceeded", message: await renderPlanLimit(store, failure.refusal, ctx.services.bootstrap?.capabilities.includes("billing.checkout") ?? true, ctx.commandActor) }
           }
-          return refusalSentence(failure.refusal)
+          return { code: failure.code ?? "workspace_unavailable", message: refusalSentence(failure.refusal),
+            ...(failure.retryAfterSeconds === null ? {} : { retryAfterSeconds: failure.retryAfterSeconds }) }
         }
         body = (await response.json().catch(() => undefined)) as typeof body
-        if (!current()) return "The account changed while the workspace was being prepared."
+        if (!current()) return { code: "request_superseded", message: "The account changed while the workspace was being prepared." }
       } catch {
-        return "The workspace couldn't be prepared: the flow service didn't answer in time."
+        return { code: "workspace_unreachable", message: "The workspace couldn't be prepared: the flow service didn't answer in time." }
       }
       if (body?.status === "ready") return true
       /*
@@ -217,17 +224,18 @@ export const createWorkflowController = (
        * answer is that fact, not the provision seam's raw HTTP failure.
        */
       if (body?.status === "no-cloud-repo") {
-        return `${repo} isn't on Smithers Cloud yet, so there's no workspace to run this on. Add it there and I'll pick it up, or point me at a repo that is.`
+        return { code: "no_cloud_repo", message: `${repo} isn't on Smithers Cloud yet, so there's no workspace to run this on. Add it there and I'll pick it up, or point me at a repo that is.` }
       }
       if (body?.status === "provisioning") {
+        if (signal !== undefined) return { code: "workspace_starting", message: "Your workspace is starting." }
         if (Date.now() > deadline) {
-          return `The workspace for ${repo} is still being prepared — try again in a moment.`
+          return { code: "workspace_starting", message: `The workspace for ${repo} is still being prepared. Try again in a moment.` }
         }
         await waitMs(RUN_POLL_MS)
         continue
       }
-      if (typeof body?.message === "string") return body.message
-      return "The workspace couldn't be prepared."
+      if (typeof body?.message === "string") return { code: "workspace_unavailable", message: body.message }
+      return { code: "invalid_workspace_response", message: "The workspace couldn't be prepared." }
     }
   }
 
@@ -238,9 +246,11 @@ export const createWorkflowController = (
       `flow.provision.${repo}.${binding.workspaceId ?? "legacy"}`,
       `Preparing your ${repo} workspace…`,
       "Workspace ready",
-      () => provisionWorkspaceImpl(repo, binding, signal)
+      async () => { const result = await provisionWorkspaceImpl(repo, binding, signal); return result === true ? true : result.message }
     )
   }
+
+  const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, provisionWorkspaceImpl)
 
   const upsertRunCard = (args: {
     readonly runId: string
@@ -589,33 +599,7 @@ export const createWorkflowController = (
       }
       return `The inputs do not match ${name}'s declared schema.`
     }
-    const provisioned = await provisionWorkspace(repo, binding)
-    if (provisioned !== true) return provisioned
-    // Launch first (see createWorkflow: a listing is a second round trip that
-    // can only agree with the launch); a genuine miss comes back as the
-    // gateway's own NOT_FOUND, and only then is it worth naming what the
-    // workspace does have.
-    const launched = await launchWorkflow({
-      repo,
-      binding,
-      workflow: name,
-      input,
-      title: `${name} — ${repo}`
-    })
-    if ("message" in launched) {
-      // The miss is read off the wire's own shape (FlowNotFound's code), never off its prose.
-      if (!isFlowNotFound(launched.code)) return launched.message
-      // A genuine miss: only now is it worth naming what the workspace has.
-      const list = await gateway.listFlows(repo, binding)
-      const available = list.status === "ok"
-        ? list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).map((flow) => flow.flowId).slice(0, 8).join(", ")
-        : ""
-      return `There's no flow called ${name} on ${repo}${
-        available === "" ? "." : `. The workspace has: ${available}.`
-      }`
-    }
-    // The same minimal acknowledgment (§1): the card is the claim surface.
-    return { value: `run-started workflow=${name} run=${launched.runId} repo=${repo}` }
+    return requests.start({ repo, binding, workflow: name, input, actor: ctx.commandActor })
   }
 
   /**
@@ -794,6 +778,8 @@ export const createWorkflowController = (
     })
   }
   return {
+    resumeWorkflowRequests: requests.resume,
+    retryWorkflowRequest: requests.retry,
     createWorkflow,
     listWorkspaceWorkflows,
     showFlows,

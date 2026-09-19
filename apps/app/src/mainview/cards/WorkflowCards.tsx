@@ -1,4 +1,5 @@
 import { flowAction, flowProps } from "../flows/FlowAction"
+import { workflowLaunchOf } from "../state/WorkflowLaunch"
 import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
 /*
  * The workflow cards: the embedded run card (run-trace) with its trace body
@@ -46,6 +47,13 @@ export const WorkflowRunCardBody = ({
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
+  const request = workflowLaunchOf(card)
+  if (request && request.runId === undefined) return <div className="flow-run-card">
+    <p className={request.error ? "sui-approval-error" : "smithers-card-note"} role={request.error ? "alert" : "status"}>
+      {request.error?.message ?? "Requested"}
+    </p>
+    {request.error ? <Button size="sm" {...flowProps("flow.run.retry")} onClick={() => onRetryRun(card.id)}>Retry</Button> : null}
+  </div>
   const { phase, error, observationError, runId, kind } = card.payload
   const failure = runFailureOf(card.payload)
   const facet = card.payload.facet ?? "steps"
