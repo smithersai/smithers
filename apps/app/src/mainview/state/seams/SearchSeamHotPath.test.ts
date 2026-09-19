@@ -4,13 +4,22 @@
  * `controller.searchPalette(draft)` is what the composer calls on EVERY
  * keystroke while the overlay is open. Deriving an item's actions walks the
  * registry and derives a form per namespace flow, so doing it per indexed
- * fact made a thousand-file repository cost tens of thousands of form
- * derivations per character. The seam ranks facts and derives actions only
- * for the rows it shows (PALETTE_GROUP_CAP per group) or answers (`limit`).
+ * fact made a thousand-row index cost tens of thousands of form derivations
+ * per character. The seam ranks facts and derives actions only for the rows
+ * it shows (PALETTE_GROUP_CAP per group) or answers (`limit`).
  *
- * These tests pin that as a CALL COUNT of actionsFor against a 500-file
+ * These tests pin that as a CALL COUNT of actionsFor against a 500-row
  * fixture, not a description: attaching actions before ranking fails here
  * immediately with hundreds of calls per keystroke.
+ *
+ * The counted index is RUNS, not files: an indexed fact whose flow is already
+ * known carries its own actions and skips the registry walk entirely, which is
+ * how a file row retains the repository or working copy it was listed from
+ * ("fix(app): retain file search repository and working-copy targets",
+ * 3865852bcc, pinned by SearchSeam.test.ts "workspace files retain distinct
+ * explicit targets"). A run row has no such shortcut, so it is the honest
+ * ruler for the walk. The last case pins the file row's zero, so the shortcut
+ * cannot quietly disappear either.
  */
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
@@ -46,11 +55,14 @@ const unavailableRepositories: NativeRepositories = {
   })
 }
 
-const FILE_COUNT = 500
+const ROW_COUNT = 500
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-/** A signed-in app whose files seam has listed 500 files under src/, every one matching `src/f`. */
+/**
+ * A signed-in app holding two 500-row indexes: a run list whose rows all match
+ * `run-`, and a file listing under src/ whose rows all match `src/f`.
+ */
 const ready = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
@@ -69,17 +81,40 @@ const ready = async () => {
     type: "card.upsert",
     actor: "system",
     card: {
-      id: "files-many",
-      kind: "file-list",
-      title: "files",
+      id: "runs-many",
+      kind: "run-list",
+      title: "runs",
       status: "active",
       createdAt: 1,
       ordinal: 1,
       payload: {
         repo: "smithers",
+        runs: Array.from({ length: ROW_COUNT }, (_, index) => ({
+          runId: `run-${String(index).padStart(3, "0")}`,
+          flowId: "review",
+          status: "running",
+          createdAt: 1,
+          turns: 1,
+          calls: 1
+        }))
+      }
+    }
+  })
+  store.dispatch({
+    type: "card.upsert",
+    actor: "system",
+    card: {
+      id: "files-many",
+      kind: "file-list",
+      title: "files",
+      status: "active",
+      createdAt: 1,
+      ordinal: 2,
+      payload: {
+        repo: "smithers",
         localRepoId: "r1",
         path: "src",
-        entries: Array.from({ length: FILE_COUNT }, (_, index) => ({ name: `file-${String(index).padStart(3, "0")}.ts`, kind: "file" as const }))
+        entries: Array.from({ length: ROW_COUNT }, (_, index) => ({ name: `file-${String(index).padStart(3, "0")}.ts`, kind: "file" as const }))
       }
     }
   })
@@ -100,34 +135,46 @@ const countActions = () => {
 }
 
 describe("the palette hot path: actions are derived for shown rows only", () => {
-  test("a run of keystrokes over 500 files derives actions for the capped rows of each answer, never per file", async () => {
+  test("a run of keystrokes over 500 runs derives actions for the capped rows of each answer, never per indexed run", async () => {
     const { controller } = await ready()
     const calls = countActions()
     let shown = 0
-    // Every draft reads in the path mode (a `/` in the query), so the answer is one Files group.
-    for (const draft of ["src/", "src/f", "src/fi", "src/fil", "src/file"]) {
+    // Every draft reads in the runs mode (the `run:` prefix), so the answer is one Runs group.
+    for (const draft of ["run:run-", "run:run-0", "run:run-00", "run:run-01", "run:run-02"]) {
       const answer = controller.searchPalette(draft)
-      expect(answer.parsed.mode).toBe("path")
+      expect(answer.parsed.mode).toBe("runs")
       const rows = answer.groups.flatMap((group) => group.items)
       // The fixture is large enough that the cap, not the index, bounds the rows.
       expect(rows.length).toBe(PALETTE_GROUP_CAP)
-      expect(rows.every((row) => row.item.kind === "file" && row.item.actions.length > 0)).toBe(true)
+      expect(rows.every((row) => row.item.kind === "run" && row.item.actions.length > 0)).toBe(true)
       shown += rows.length
     }
     expect(calls()).toBe(shown)
-    expect(calls()).toBeLessThan(FILE_COUNT)
+    expect(calls()).toBeLessThan(ROW_COUNT)
   })
 
   test("the flow door derives actions for the rows it answers (the default limit), not for the whole index", async () => {
     const { store, controller } = await ready()
     const calls = countActions()
-    const outcome = await controller.commands.run("search.files", "src/f")
+    const outcome = await controller.commands.run("search.runs", "run-")
     expect(outcome.status).toBe("executed")
-    const card = store.collections.cards.get("search-search.files")
+    const card = store.collections.cards.get("search-search.runs")
     if (card?.kind !== "search-results") throw new Error("expected the search-results card")
     expect(card.payload.items.length).toBe(SEARCH_DEFAULT_LIMIT)
-    expect(card.payload.items.every((item) => item.actions.some((action) => action.flow === "files.read"))).toBe(true)
+    expect(card.payload.items.every((item) => item.actions.some((action) => action.flow === "runs.open"))).toBe(true)
     expect(calls()).toBe(SEARCH_DEFAULT_LIMIT)
-    expect(calls()).toBeLessThan(FILE_COUNT)
+    expect(calls()).toBeLessThan(ROW_COUNT)
+  })
+
+  test("a file row is listed with the flow that reads it, so showing one costs no derivation at all", async () => {
+    const { controller } = await ready()
+    const calls = countActions()
+    const answer = controller.searchPalette("src/file")
+    expect(answer.parsed.mode).toBe("path")
+    const rows = answer.groups.flatMap((group) => group.items)
+    expect(rows.length).toBe(PALETTE_GROUP_CAP)
+    // The action names the local repository the listing came from, which is why it cannot come from the registry walk.
+    expect(rows.every((row) => row.item.kind === "file" && row.item.actions.some((action) => action.flow === "files.read"))).toBe(true)
+    expect(calls()).toBe(0)
   })
 })
