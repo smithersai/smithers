@@ -19,6 +19,23 @@ const goals = (records: ReadonlyArray<JournalRecord>, cursor?: number) => traceG
 const checkState = (records: ReadonlyArray<JournalRecord>, cursor?: number) => goals(records, cursor)[0]!.checks[0]!.state
 
 describe("current run status", () => {
+  test("a late cell record cannot hide the native call that is still running", () => {
+    const callId = `cell-call-v1:${"a".repeat(64)}`
+    const native: JournalRecord = { sequence: 2, kind: "control.engine.event", runId: "run-1", payload: {
+      version: 1, sequence: 10, eventType: "flows.harness.call-fact.v1", executionId: "run-1", generation: 0, emittedAtMs: 200,
+      sourceSequence: 0, sourceId: `call-fact-v1:${callId}:invoked`, payload: {
+        version: 1, phase: "invoked", callId, flowName: "bash", input: { command: "bun test marker.test.ts" },
+        identity: { runId: "run-1", cell: "cell", declaration: "bash-v1", frame: 0, ordinal: 0, layers: [] }
+      }
+    } }
+    const records = [event(1, "agent.turn-opened"), native,
+      event(3, "agent.cell-produced", { digest: "cell", text: "recorded cell" }),
+      event(4, "agent.cell-call-started", { callId, flowName: "bash", input: { command: "bun test marker.test.ts" } })]
+    expect(traceStatus(model(records)).activity).toBe("Running bun test marker.test.ts")
+    expect(traceStatus(model(records), 3).activity).toBe("Running bun test marker.test.ts")
+    expect(traceStatus(model([...records, event(5, "agent.cell-call-settled", { callId, flowName: "bash", outcome: "success", value: { exitCode: 0 } })])).activity)
+      .toBe("Ran bun test marker.test.ts")
+  })
   test("activity remains independent of a recorded thrashing condition", () => {
     const records = [...call(1, "read", { path: "README.md" }), event(3, "agent.repeat-demanded", { frames: 3, cap: 3 })]
     expect(traceStatus(model(records))).toMatchObject({ activity: "Read README.md", condition: "thrashing" })

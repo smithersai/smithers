@@ -83,7 +83,11 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
     const p = record(row.payload)
     switch (row.kind) {
       case "control.agent.turn-opened": activity = "Thinking"; break
-      case "control.agent.cell-produced": activity = "Running code"; break
+      case "control.agent.cell-produced":
+        // Native call facts can commit before this cell's telemetry arrives.
+        // An active call is more specific than the delayed cell announcement.
+        if (calls.length === 0) activity = "Running code"
+        break
       case "control.agent.cell-call-started": {
         const name = text(p.flowName)
         if (name === undefined) break
