@@ -135,13 +135,19 @@ const journalledCause = (events: ReadonlyArray<Record<string, unknown>> = []): s
  * a decode failure, a deadline — so the code alone says nothing about blame.
  * The registrar is the one flow that builds it from the maintainer's own
  * declared input (flows/repository/triggers.ts), so the pair identifies a
- * refusal the request has to answer. The setup bridge mixes both, so there the
- * host's own sentence decides. Every other pair is Smithers' until the host
- * journals the fault beside the cause.
+ * refusal the request has to answer. Every other pair is Smithers' until the
+ * host journals the fault beside the cause.
+ *
+ * The setup bridge is the exception, and it is not a special case: it journals
+ * the same typed pair its settled receipt carries, so {@link receiptFault}
+ * reads it here exactly as {@link setupVerdict} reads it on the setup card. A
+ * `stale_revision` used to be the person's on the card and Smithers' on the
+ * run card of the same failure; one code now reads one way.
  */
 const journalledFault = (workflow: string, code: string, sentence: string): PlueFault | undefined =>
-  code !== "invalid_receipt" ? undefined
-    : workflow === REGISTRAR_FLOW || (workflow === SETUP_FLOW && SETUP_REFUSALS.has(sentence)) ? "user" : undefined
+  workflow === SETUP_FLOW ? isReceiptCode(code) ? receiptFault(code, sentence) : undefined
+    : code !== "invalid_receipt" ? undefined
+    : workflow === REGISTRAR_FLOW ? "user" : undefined
 
 /**
  * What a settled setup receipt says, typed by its own code.
@@ -188,10 +194,11 @@ export const runFailureOf = (payload: {
   if (fault === undefined) return failure
   switch (fault) {
     case "user": return { fault, message: SETUP_REFUSAL_COPY.get(journalled[2] ?? "") ?? journalled[2] ?? "", detail: line }
+    /* The fault's own lead, so the setup card and the run card say one thing; the verdict stays the evidence. */
     case "wait":
     case "infra":
     case "dependency":
-    case "bug": return failure
+    case "bug": return payload.workflow === SETUP_FLOW ? { fault, message: REFUSAL_COPY[fault].lead, detail: failure.detail } : failure
     default: { const unhandled: never = fault; return unhandled }
   }
 }

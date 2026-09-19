@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { RECEIPT_CODES, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence } from "./RunFailure"
+import { RECEIPT_CODES, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence, setupVerdict } from "./RunFailure"
 import { librarianFailureMessage } from "./LibrarianLaunch"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
@@ -58,6 +58,8 @@ test("a registrar failure the registrar did not refuse keeps the verdict and the
  * (.artifacts/mvp-canary-walk-20260917/B-18-state-trial-terminal.json, receipt run-3). */
 const TRIAL = "Run evals for this exact candidate before continuing"
 const TRIAL_VERDICT = `failed — invalid_receipt: ${TRIAL}`
+/* flows/repository/setup.ts refuses a request whose revision moved on. */
+const STALE = "Setup input must match the current setup revision"
 const setupCause = (sentence: string) => journal(`invalid_receipt: ${sentence}\n    at repository/Setup (flows/repository/receipts.ts:109)`)
 
 test("a setup refusal the person must answer is the person's, headline and all", () => {
@@ -89,6 +91,25 @@ test("a setup failure the person cannot act on stays Smithers', and no other flo
   }
   expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: journal(`execution: ${TRIAL}`) }))
     .toEqual({ fault: "infra", message: INFRA, detail: TRIAL_VERDICT })
+})
+
+/*
+ * L103's own disclosure, closed: the setup bridge journals the same typed pair
+ * the settled receipt carries, so `stale_revision` used to read as the
+ * person's on the setup card and as Smithers' on the run card of the very same
+ * failure. One code, one reading, on both surfaces.
+ */
+test("a setup journal's code reads on the run card exactly as it reads on the setup card", () => {
+  for (const code of RECEIPT_CODES) {
+    for (const sentence of [TRIAL, "Something the engine wrote"]) {
+      const verdict = `failed — ${code}: ${sentence}`
+      const settled = setupVerdict(verdict)!
+      expect(runFailureOf({ workflow: "repository/setup", error: verdict, events: journal(`${code}: ${sentence}`) }))
+        .toMatchObject({ fault: settled.fault, message: settled.message })
+    }
+  }
+  expect(runFailureOf({ workflow: "repository/setup", error: `failed — stale_revision: ${STALE}`, events: journal(`stale_revision: ${STALE}`) }))
+    .toEqual({ fault: "user", message: STALE, detail: `stale_revision: ${STALE}` })
 })
 
 test("every sentence in the table is one the setup flows still emit, in the file that emits it", () => {
