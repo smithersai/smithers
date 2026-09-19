@@ -68,7 +68,11 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
 test("the publisher rechecks both runtime receipts and publishes only missing exact packages", async (test) => {
   const state = await fixture(test)
   const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
-  assert.match(verified.approvalPrompt, /1 pending of 49/)
+  // The fixture stocks the registry with every package but the last, so exactly one is
+  // pending out of the whole roster. The roster's size is `scripts/pack-release.mjs`'s
+  // decision and `scripts/pack-release.test.mjs` pins it; restating it here too would
+  // only mean a third file to edit whenever a package joins or leaves the release.
+  assert.match(verified.approvalPrompt, new RegExp(`1 pending of ${publishedPackages.length} packages\\.`))
   const result = await state.ops.publish({ input: state.input, candidate: verified })
   assert.deepEqual(result.published, [state.packages.at(-1)!.name])
   assert.equal(state.publishes.length, 1)
