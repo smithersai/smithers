@@ -221,8 +221,9 @@ export const deleteOwnedGitHubRepository = async (owned: OwnedGitHubRepository):
    * navigates. When the profile's sudo session has lapsed it renders Confirm
    * access instead and offers a single factor, an emailed code. Waiting on the
    * navigation alone spent 60 seconds on something that could never happen and
-   * then reported a library timeout, so both answers are awaited together and
-   * the wall is named for what it is.
+   * then reported a library timeout, so both answers are watched and the first
+   * one ends the wait: an ordinary deletion costs what it costs, and the wall
+   * is named for what it is as soon as it renders.
    */
   try {
     await deletionOutcome({

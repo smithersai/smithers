@@ -69,6 +69,13 @@ export const unsettledSentence = (repository: string): string =>
  * navigation — a wait for something that could never happen, reported as a
  * library message nobody could act on.
  *
+ * The first answer ends the wait. Both waits carry the same long budget, so
+ * settling both would charge every ordinary successful deletion the full budget
+ * of a wall that never appeared, which is a minute of dead time per scenario on
+ * the path where nothing is wrong. The loser is abandoned where it stands:
+ * nothing awaits it again, and its eventual rejection is already claimed here,
+ * so it can neither delay the teardown nor crash the run.
+ *
  * A rejection never decides the race: the loser of a real answer always rejects
  * too, on its own timeout. Only both rejecting is an outcome, and it is the
  * unsettled one.
@@ -78,18 +85,20 @@ export const deletionOutcome = async (options: {
   readonly navigatedAway: Promise<unknown>
   readonly sudoConfirmVisible: Promise<unknown>
 }): Promise<"deleted"> => {
-  const settled = await Promise.allSettled([
+  /*
+   * The deletion is listed first, so when both answers arrive in the same turn
+   * the deletion is the one `Promise.any` settles on: the repository is gone
+   * either way, and a wall that rendered beside its own deletion clears nothing.
+   */
+  const answer = await Promise.any([
     options.navigatedAway.then(() => "deleted" as const),
     options.sudoConfirmVisible.then(() => "sudo" as const)
-  ])
-  const answers = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : [])
-  if (answers.includes("deleted")) return "deleted"
-  if (answers.includes("sudo")) {
+  ]).catch((unanswered: AggregateError) => unanswered)
+  if (answer === "deleted") return "deleted"
+  if (answer === "sudo") {
     throw new TeardownRefusal("github-sudo-mode", sudoModeSentence(options.repository))
   }
-  throw new TeardownRefusal("delete-unsettled", unsettledSentence(options.repository), {
-    cause: settled.flatMap((entry) => entry.status === "rejected" ? [entry.reason] : [])
-  })
+  throw new TeardownRefusal("delete-unsettled", unsettledSentence(options.repository), { cause: answer.errors })
 }
 
 /**

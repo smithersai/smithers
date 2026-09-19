@@ -11,6 +11,13 @@ import {
 /** A promise that never answers, standing for a wait that runs out its budget. */
 const rejects = (message: string): Promise<never> => Promise.reject(new Error(message))
 
+/** A wait that answers only when its budget runs out, the way a locator does. */
+const rejectsAfter = (ms: number, message: string): Promise<never> =>
+  new Promise((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms))
+
+/** The loser's budget in a timing test. Short enough to keep the suite fast, long enough to fail loudly. */
+const LOSER_BUDGET_MS = 1_500
+
 describe("the answer the final Delete click produced", () => {
   test("is the deletion when the repository page goes away", async () => {
     expect(await deletionOutcome({
@@ -60,6 +67,49 @@ describe("the answer the final Delete click produced", () => {
     expect((refusal as TeardownRefusal).message).not.toContain("Timeout")
     // The raw causes survive for a trace reader, off the sentence.
     expect((refusal as TeardownRefusal).cause).toHaveLength(2)
+  })
+
+  test("arrives as soon as the repository page goes away, without serving out the other wait's budget", async () => {
+    const started = Date.now()
+    const outcome = await deletionOutcome({
+      repository: "codeplanesmithers/smithers-e2e-import-x",
+      navigatedAway: Promise.resolve(),
+      sudoConfirmVisible: rejectsAfter(LOSER_BUDGET_MS, "locator.waitFor: Timeout 60000ms exceeded")
+    })
+    const elapsed = Date.now() - started
+    expect(outcome).toBe("deleted")
+    // A successful deletion is the ordinary path. It must cost what the
+    // deletion cost, not what the wall's budget would have cost.
+    expect(elapsed).toBeLessThan(LOSER_BUDGET_MS / 5)
+  })
+
+  test("arrives as soon as the account wall renders, without serving out the navigation's budget", async () => {
+    const started = Date.now()
+    const refusal = await deletionOutcome({
+      repository: "codeplanesmithers/smithers-e2e-import-x",
+      navigatedAway: rejectsAfter(LOSER_BUDGET_MS, "page.waitForURL: Timeout 60000ms exceeded"),
+      sudoConfirmVisible: Promise.resolve()
+    }).catch((error: unknown) => error)
+    const elapsed = Date.now() - started
+    expect((refusal as TeardownRefusal).reason).toBe("github-sudo-mode")
+    expect(elapsed).toBeLessThan(LOSER_BUDGET_MS / 5)
+  })
+
+  test("leaves the abandoned wait unable to crash the run when it finally rejects", async () => {
+    const unhandled: unknown[] = []
+    const record = (reason: unknown): void => { unhandled.push(reason) }
+    process.on("unhandledRejection", record)
+    try {
+      await deletionOutcome({
+        repository: "codeplanesmithers/smithers-e2e-import-x",
+        navigatedAway: Promise.resolve(),
+        sudoConfirmVisible: rejectsAfter(20, "locator.waitFor: Timeout 60000ms exceeded")
+      })
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    } finally {
+      process.off("unhandledRejection", record)
+    }
+    expect(unhandled).toEqual([])
   })
 })
 
