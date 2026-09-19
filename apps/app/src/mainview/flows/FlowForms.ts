@@ -11,6 +11,7 @@
  * (state/controller/forms.ts) resolves option providers against the seams
  * and holds the draft in the card's payload.
  */
+import { REPO_TOKEN } from "../state/RepoContext"
 import { splitRunSource } from "./RunCommand"
 import { SchemaRepresentation } from "effect"
 import type { JsonSchema, Schema, SchemaAST } from "effect"
@@ -82,6 +83,17 @@ export interface FormHints {
   readonly args?: (payload: Readonly<Record<string, unknown>>) => string
   /** What a slash line that failed to parse still gave, by field. */
   readonly partial?: (args: string) => Readonly<Record<string, unknown>>
+  /**
+   * The flow's OWN rule over what the invocation already named, stated on the
+   * card before the form asks for the rest.
+   *
+   * A value the line carried is the same value the field carries, so it earns
+   * the same refusal — `/triggers.register --tokens 500000` reached the Tokens
+   * field and was told nothing, while 500000 typed into that field and
+   * prepared was refused with the range (walk W1). The sentence is the rule's
+   * own: a door routes here, it never writes a second copy of the copy.
+   */
+  readonly refuse?: (payload: Readonly<Record<string, unknown>>) => string | undefined
 }
 
 export interface FormField {
@@ -195,6 +207,28 @@ const tokensOf = (args: string | undefined): Array<string> =>
   (args ?? "").trim().split(/\s+/).filter((token) => token !== "")
 
 /**
+ * Whether this token is the repository the field asks for.
+ *
+ * `repo` is the one name the whole app gives a repository target (RepoContext,
+ * and every trailing-`owner/repo` grammar), and `owner/name` is the one shape
+ * it takes. Counting slots alone spent `codeplanesmithers/canary-sandbox` on
+ * the schedule name behind it (R102 follow-up), which no schedule is called.
+ */
+const namesARepository = (field: FormField, token: string): boolean =>
+  field.name === "repo" && REPO_TOKEN.test(token)
+
+/** What the positional read made of a line the grammar refused. */
+export interface PositionalRead {
+  /** The values it placed, by field. */
+  readonly payload: Readonly<Record<string, unknown>>
+  /**
+   * The optional slots it passed over so the required slots behind them could
+   * have the tokens that were left — the fields the line never named.
+   */
+  readonly skipped: ReadonlyArray<string>
+}
+
+/**
  * What a slash line that did not parse still gave, by field: the tokens fill
  * the non-boolean fields positionally in schema order, a `--flag` ends the
  * positional read, a token that is not a number ends it at a number field,
@@ -202,25 +236,48 @@ const tokensOf = (args: string | undefined): Array<string> =>
  * take "the rest of the line" for their last text). A flow whose grammar is
  * not positional supplies its own `partial`.
  *
+ * Which slot a token lands in is decided by the declaration, not by position
+ * alone: an OPTIONAL slot only takes a token the required slots behind it can
+ * spare. `/triggers.pause canary-w1-not-registered` spent its one token on the
+ * optional repository that leads `ScheduleTarget`, so the form came back
+ * asking for the schedule name the person had just typed and holding it under
+ * Repo instead (walk W1, W1-d-doors.json `pauseFormFields`). Counting the
+ * required slots ahead is the same rule every trailing-`owner/repo` grammar
+ * applies, derived from the input schema rather than written per door.
+ *
+ * A slot passed over that way is reported in `skipped`, because it is a field
+ * the line did not name: the card still has something to ask for, whatever
+ * `missingFields` says about the required ones (controller/forms.ts).
+ *
  * @category derivation
  */
-export const partialPayload = (
+export const positionalRead = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
   args: string | undefined
-): Readonly<Record<string, unknown>> => {
-  if (hints?.partial !== undefined) return hints.partial(args ?? "")
+): PositionalRead => {
+  if (hints?.partial !== undefined) return { payload: hints.partial(args ?? ""), skipped: [] }
   const source = fields.some((field) => field.name === "sourceCard") ? splitRunSource(args) : { args, sourceCard: undefined }
   const tokens = tokensOf(source.args)
   const flag = tokens.findIndex((token) => token.startsWith("--"))
   const positional = flag === -1 ? tokens : tokens.slice(0, flag)
   const payload: Record<string, unknown> = source.sourceCard === undefined ? {} : { sourceCard: source.sourceCard }
   const slots = fields.filter((field) => field.kind !== "boolean" && field.name !== "sourceCard")
+  const skipped: Array<string> = []
   let lastText: string | undefined
   let index = 0
-  for (const field of slots) {
+  let slot = 0
+  for (; slot < slots.length; slot += 1) {
+    const field = slots[slot]!
     const token = positional[index]
     if (token === undefined) break
+    // An optional slot is skipped while the required slots behind it need every token left,
+    // unless the token is shaped like the repository that slot names — no schedule is called `owner/name`.
+    const requiredAhead = slots.slice(slot + 1).filter((candidate) => candidate.required).length
+    if (!field.required && positional.length - index <= requiredAhead && !namesARepository(field, token)) {
+      skipped.push(field.name)
+      continue
+    }
     if (field.kind === "number") {
       const value = Number(token)
       if (!Number.isFinite(value)) break
@@ -231,11 +288,18 @@ export const partialPayload = (
     }
     index += 1
   }
-  if (index === slots.length && lastText !== undefined && positional.length > index) {
+  if (slot === slots.length && lastText !== undefined && positional.length > index) {
     payload[lastText] = [payload[lastText], ...positional.slice(index)].join(" ")
   }
-  return payload
+  return { payload, skipped }
 }
+
+/** `positionalRead`'s values alone, for the callers that only place them. */
+export const partialPayload = (
+  fields: ReadonlyArray<FormField>,
+  hints: FormHints | undefined,
+  args: string | undefined
+): Readonly<Record<string, unknown>> => positionalRead(fields, hints, args).payload
 
 /** What the input schema says about one property, past `Schema.optional`. */
 interface PropertyShape {

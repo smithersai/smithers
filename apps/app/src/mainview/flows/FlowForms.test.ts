@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { FORM_OPTION_PROVIDERS } from "@smthrs/rpc/Cards"
 import { Schema } from "effect"
-import { assembleArgs, draftFrom, formFieldsFor, missingFields, OPTION_PROVIDERS, partialPayload } from "./FlowForms"
+import { assembleArgs, draftFrom, formFieldsFor, missingFields, OPTION_PROVIDERS, partialPayload, positionalRead } from "./FlowForms"
 import type { FormHints } from "./FlowForms"
 
 /*
@@ -96,6 +96,57 @@ describe("partialPayload — prefill from whatever the slash line gave", () => {
   test("a flow's own partial reader wins over the positional default", () => {
     const hints: FormHints = { partial: (args) => ({ id: args.trim().toUpperCase() }) }
     expect(partialPayload(fields, hints, "reviewer codex")).toEqual({ id: "REVIEWER CODEX" })
+  })
+
+  /*
+   * Walk W1 (W1-d-doors.json `pauseFormFields`): `/triggers.pause
+   * canary-w1-not-registered` opened the pause form with Repo holding the
+   * schedule's name and Slug empty, because the prefill spent the one token it
+   * had on the OPTIONAL repository that happened to lead the schema. A
+   * positional read only spends a token on an optional slot when the required
+   * slots behind it still have tokens of their own.
+   */
+  const ScheduleTarget = Schema.Struct({ repo: Schema.optional(Schema.String), slug: Schema.String })
+
+  test("an optional slot only takes a token the required slots behind it can spare", () => {
+    const schedule = formFieldsFor(ScheduleTarget, undefined)
+    expect(partialPayload(schedule, undefined, "canary-w1-not-registered")).toEqual({ slug: "canary-w1-not-registered" })
+    expect(partialPayload(schedule, undefined, "codeplanesmithers/canary-sandbox nightly"))
+      .toEqual({ repo: "codeplanesmithers/canary-sandbox", slug: "nightly" })
+  })
+
+  /*
+   * R102 follow-up. Counting slots alone put `codeplanesmithers/canary-sandbox`
+   * under Slug, and no schedule is named `owner/name`. A token of the
+   * repository's own shape (RepoContext.REPO_TOKEN, the shape every trailing
+   * `owner/repo` grammar already reads) fills the repository slot it would
+   * otherwise skip, and the form asks for the name that is genuinely missing.
+   */
+  test("a repository-shaped token fills the repository slot rather than the name behind it", () => {
+    const schedule = formFieldsFor(ScheduleTarget, undefined)
+    expect(partialPayload(schedule, undefined, "codeplanesmithers/canary-sandbox"))
+      .toEqual({ repo: "codeplanesmithers/canary-sandbox" })
+    // A name that only looks path-ish is still a name: the shape has to be exactly `owner/name`.
+    expect(partialPayload(schedule, undefined, "nightly/build/2")).toEqual({ slug: "nightly/build/2" })
+    // And the leading slot has to be the repository's; a required slot never yields its token.
+    const runTarget = Schema.Struct({ slug: Schema.String, repo: Schema.optional(Schema.String) })
+    expect(partialPayload(formFieldsFor(runTarget, undefined), undefined, "codeplanesmithers/canary-sandbox"))
+      .toEqual({ slug: "codeplanesmithers/canary-sandbox" })
+  })
+
+  /*
+   * A slot the read passed over is a field the line never named, and the card
+   * has to be able to say so: `missingFields` counts only the REQUIRED ones,
+   * so without this report `/triggers.register one two three` looks complete
+   * and re-earns the grammar's usage sentence (R102c B1c,
+   * controller/forms.ts). The report names the slots, not a count.
+   */
+  test("the read reports the optional slots it passed over", () => {
+    const schedule = formFieldsFor(ScheduleTarget, undefined)
+    expect(positionalRead(schedule, undefined, "canary-w1-not-registered").skipped).toEqual(["repo"])
+    expect(positionalRead(schedule, undefined, "codeplanesmithers/canary-sandbox nightly").skipped).toEqual([])
+    expect(positionalRead(schedule, undefined, "codeplanesmithers/canary-sandbox").skipped).toEqual([])
+    expect(positionalRead(schedule, undefined, undefined).skipped).toEqual([])
   })
 })
 
