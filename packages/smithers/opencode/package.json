@@ -29,7 +29,7 @@
     "agent"
   ],
   "engines": {
-    "node": ">=22.19.0"
+    "node": "^22.19.0 || >=24.11.0"
   },
   "sideEffects": [],
   "exports": {
@@ -163,6 +163,16 @@
         "require": {
           "types": "./dist/cjs/Ids.d.ts",
           "default": "./dist/cjs/Ids.js"
+        }
+      },
+      "./Ownership": {
+        "import": {
+          "types": "./dist/esm/Ownership.d.ts",
+          "default": "./dist/esm/Ownership.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ownership.d.ts",
+          "default": "./dist/cjs/Ownership.js"
         }
       },
       "./Pricing": {
