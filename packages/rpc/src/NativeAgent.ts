@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { AgentRuntimeContext } from "./AgentContext.ts"
 import type { AgentRoleId, CloudRoleId } from "./AgentRoles.ts"
 import { CardPatchSchema, CardSchema } from "./Cards.ts"
+import type { ModelBinding } from "./ConfiguredModel.ts"
 
 /**
  * The fetch like contract shared by the host and its clients.
@@ -204,6 +205,19 @@ export interface StartAgentTurnRequest {
    * goes to the chat upstream, as every body did before this field existed.
    */
   readonly commands?: ReadonlyArray<AgentTurnCommand>
+  /**
+   * The generation model a SEALED side turn asks to be answered on (seat
+   * `explainer`, ConfiguredModel.ts). Unlike `tier` and `role` this is not a
+   * hint: a serving side that cannot serve the binding refuses the turn, and
+   * a turn carrying it plus tools is `tools_not_supported`. Never a fallback.
+   */
+  readonly model?: ModelBinding
+  /**
+   * The decision model the front door reads this turn's message with (seat
+   * `front-door`). Not a hint either: a binding the serving side does not
+   * allow is `request_invalid`; absent leaves its default to decide.
+   */
+  readonly decisionModel?: ModelBinding
 }
 
 /**

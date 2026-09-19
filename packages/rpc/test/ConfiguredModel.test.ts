@@ -1,0 +1,655 @@
+import { describe, expect, test } from "vitest"
+import {
+  bindingOf,
+  ConfiguredModelSchema,
+  customModelCredentials,
+  cutModelCredential,
+  DECISION_MODEL_IDS,
+  failedModelTest,
+  hostModelCredentials,
+  hostRefusedModelTest,
+  MODEL_CREDENTIAL_ENV_PREFIX,
+  MODEL_CREDENTIALS,
+  MODEL_PROTOCOLS,
+  MODEL_SEAT_DEFAULT,
+  MODEL_SEATS,
+  MODEL_TEST_DEADLINE_MS,
+  MODEL_TEST_FAILURE_CODES,
+  MODEL_TEST_SAMPLE_MAX,
+  MODEL_TEST_STATES,
+  ModelBindingSchema,
+  ModelCatalogSchema,
+  modelCredentialEnvName,
+  ModelCredentialListingSchema,
+  ModelCredentialNameSchema,
+  modelFailureFault,
+  modelFailureRefusalCode,
+  modelKindOf,
+  modelOriginOf,
+  ModelRecordIdSchema,
+  ModelsCardPayloadSchema,
+  modelSeatsOf,
+  ModelTestFailureSchema,
+  modelTestFixOf,
+  ModelTestRequestSchema,
+  ModelTestResultSchema,
+  modelTestStateOf,
+  planModelBinding,
+  resolveModelEndpoint,
+  scrubModelSample,
+  seatAccepts,
+  SeatAssignmentSchema,
+  SeatIdSchema,
+  servableModels
+} from "../src/ConfiguredModel.ts"
+import type {
+  ConfiguredModel,
+  ModelCredentialListing,
+  ModelTestFailure,
+  ModelTestResult
+} from "../src/ConfiguredModel.ts"
+import { PLUE_FAULTS } from "../src/PlueFailureCodes.ts"
+import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes.ts"
+
+const LOOPBACK = "http://127.0.0.1:4010"
+
+/** A host table: the five built-ins, all set, plus one operator-declared loopback credential. */
+const table: ReadonlyArray<ModelCredentialListing> = hostModelCredentials({
+  ANTHROPIC_API_KEY: "sk-ant",
+  OPENAI_API_KEY: "sk-oai",
+  CEREBRAS_API_KEY: "csk",
+  OPENROUTER_API_KEY: "sk-or",
+  AI_GATEWAY_API_KEY: "vck",
+  SMITHERS_MODEL_KEY_E2E_LOOPBACK: "sk-loopback",
+  SMITHERS_MODEL_KEY_E2E_LOOPBACK_ORIGIN: LOOPBACK
+})
+
+const chat = (patch: Partial<ConfiguredModel> = {}): ConfiguredModel => ({
+  id: "fast-local",
+  protocol: "openai-chat",
+  baseUrl: LOOPBACK,
+  modelId: "e2e-answers",
+  credential: "E2E_LOOPBACK",
+  ...patch
+})
+
+describe("the configured model record", () => {
+  test("is flat, and its kind is derived from the protocol", () => {
+    expect(ConfiguredModelSchema.parse(chat())).toEqual(chat())
+    expect(MODEL_PROTOCOLS.map(modelKindOf)).toEqual(["generation", "generation", "generation", "decision"])
+  })
+
+  test("refuses a key it does not declare, so a value can never ride a record", () => {
+    expect(ConfiguredModelSchema.safeParse({ ...chat(), apiKey: "sk-live" }).success).toBe(false)
+    expect(ModelBindingSchema.safeParse({ ...bindingOf(chat()), apiKey: "sk-live" }).success).toBe(false)
+    expect(ModelTestRequestSchema.safeParse({ model: chat(), apiKey: "sk-live" }).success).toBe(false)
+  })
+
+  test.each(["Fast", "9lives", "a b", "", "a".repeat(41)])("refuses the name %j", (id) => {
+    expect(ModelRecordIdSchema.safeParse(id).success).toBe(false)
+  })
+
+  test("no model can take the name a seat is returned to its host by", () => {
+    expect(MODEL_SEAT_DEFAULT).toBe("default")
+    expect(ModelRecordIdSchema.safeParse("default").success).toBe(false)
+    expect(ModelRecordIdSchema.safeParse(`${MODEL_SEAT_DEFAULT}-fast`).success).toBe(true)
+  })
+
+  test.each(["lower_case", "1ST_KEY", "A", "FOO_ORIGIN", "ORIGIN", "FOO__BAR", "FOO_", "sk-live-0123456789"])(
+    "refuses the credential name %j",
+    (name) => {
+      expect(ModelCredentialNameSchema.safeParse(name).success).toBe(false)
+    }
+  )
+
+  test("a binding is the record without its name", () => {
+    expect(bindingOf(chat({ builtin: true, path: "/v1/chat/completions" }))).toEqual({
+      protocol: "openai-chat",
+      baseUrl: LOOPBACK,
+      path: "/v1/chat/completions",
+      modelId: "e2e-answers",
+      credential: "E2E_LOOPBACK"
+    })
+    expect(Object.keys(bindingOf(chat({ baseUrl: undefined })))).toEqual(["protocol", "modelId", "credential"])
+  })
+})
+
+describe("credentials", () => {
+  test("every built-in is an https origin under its own name", () => {
+    for (const { name, origins } of MODEL_CREDENTIALS) {
+      expect(ModelCredentialNameSchema.safeParse(name).success).toBe(true)
+      expect(modelCredentialEnvName(name)).toBe(name)
+      for (const origin of origins) expect(modelOriginOf(origin)).toBe(origin)
+      for (const origin of origins) expect(origin.startsWith("https://")).toBe(true)
+    }
+    expect(modelCredentialEnvName("E2E_LOOPBACK")).toBe(`${MODEL_CREDENTIAL_ENV_PREFIX}E2E_LOOPBACK`)
+  })
+
+  test("an operator-declared pair is a custom credential pinned to its one origin", () => {
+    expect(
+      customModelCredentials({
+        SMITHERS_MODEL_KEY_OLLAMA: "unused",
+        SMITHERS_MODEL_KEY_OLLAMA_ORIGIN: "http://localhost:11434/v1",
+        SMITHERS_MODEL_KEY_LAN: "k",
+        SMITHERS_MODEL_KEY_LAN_ORIGIN: "https://10.0.0.5:8443"
+      })
+    ).toEqual([
+      { name: "LAN", origin: "https://10.0.0.5:8443" },
+      { name: "OLLAMA", origin: "http://localhost:11434" }
+    ])
+  })
+
+  test.each([
+    ["http to a private host", "http://10.0.0.5:8080"],
+    ["http to a public host", "http://example.com"],
+    ["userinfo", "https://user:pass@example.com"],
+    ["a query", "https://example.com/?key=1"],
+    ["another scheme", "ftp://127.0.0.1"],
+    ["no url at all", "localhost"],
+    ["blank", " "]
+  ])("a declared origin with %s declares nothing", (_, origin) => {
+    expect(modelOriginOf(origin)).toBeUndefined()
+    expect(customModelCredentials({ SMITHERS_MODEL_KEY_X: "k", SMITHERS_MODEL_KEY_X_ORIGIN: origin })).toEqual([])
+  })
+
+  test.each(["http://127.0.0.1:1", "http://127.8.9.10", "http://[::1]:8080", "http://localhost"])(
+    "%s is loopback, so http is allowed",
+    (origin) => {
+      expect(modelOriginOf(origin)).toBe(origin)
+    }
+  )
+
+  test("an _ORIGIN sibling of a built-in name is ignored, prefixed or not", () => {
+    const listed = hostModelCredentials({
+      CEREBRAS_API_KEY: "csk",
+      CEREBRAS_API_KEY_ORIGIN: "https://attacker.example",
+      SMITHERS_MODEL_KEY_CEREBRAS_API_KEY: "other",
+      SMITHERS_MODEL_KEY_CEREBRAS_API_KEY_ORIGIN: "https://attacker.example"
+    })
+    expect(listed.map((row) => row.name)).toEqual(MODEL_CREDENTIALS.map((row) => row.name))
+    expect(listed.find((row) => row.name === "CEREBRAS_API_KEY")).toEqual({
+      name: "CEREBRAS_API_KEY",
+      present: true,
+      origins: ["https://api.cerebras.ai"]
+    })
+  })
+
+  test("an unprefixed name is never read, whatever the environment holds", () => {
+    const reads: Array<string> = []
+    const env = new Proxy<Record<string, string>>({
+      GITHUB_TOKEN: "ghp_secret",
+      GITHUB_TOKEN_ORIGIN: LOOPBACK,
+      DATABASE_URL: "postgres://secret",
+      SMITHERS_MODEL_KEY_MINE: "sk-mine",
+      SMITHERS_MODEL_KEY_MINE_ORIGIN: LOOPBACK
+    }, {
+      get: (target, key) => {
+        if (typeof key === "string") reads.push(key)
+        return Reflect.get(target, key)
+      }
+    })
+    const listed = hostModelCredentials(env)
+    expect(listed.map((row) => row.name)).toEqual([...MODEL_CREDENTIALS.map((row) => row.name), "MINE"])
+    const allowed = new Set<string>(MODEL_CREDENTIALS.map((row) => row.name))
+    expect(reads.filter((key) => !allowed.has(key) && !key.startsWith(MODEL_CREDENTIAL_ENV_PREFIX))).toEqual([])
+  })
+
+  test.each(["lower", "my-key", "A", "X_ORIGIN", "1ST"])(
+    "a pair declared under the name %j declares nothing",
+    (name) => {
+      const env = { [`SMITHERS_MODEL_KEY_${name}`]: "k", [`SMITHERS_MODEL_KEY_${name}_ORIGIN`]: LOOPBACK }
+      expect(customModelCredentials(env)).toEqual([])
+      const listed = hostModelCredentials(env)
+      expect(listed.map((row) => row.name)).toEqual(MODEL_CREDENTIALS.map((row) => row.name))
+      expect(listed.every((row) => ModelCredentialListingSchema.safeParse(row).success)).toBe(true)
+    }
+  )
+
+  test("a listing states presence and never a value", () => {
+    const listed = hostModelCredentials({
+      OPENAI_API_KEY: "sk-live-0123456789",
+      ANTHROPIC_API_KEY: "  ",
+      SMITHERS_MODEL_KEY_MINE: "sk-mine-0123456789",
+      SMITHERS_MODEL_KEY_MINE_ORIGIN: LOOPBACK,
+      SMITHERS_MODEL_KEY_EMPTY_ORIGIN: LOOPBACK
+    })
+    expect(JSON.stringify(listed)).not.toMatch(/sk-live|sk-mine/)
+    const present = Object.fromEntries(listed.map((row) => [row.name, row.present]))
+    expect(present).toMatchObject({ OPENAI_API_KEY: true, ANTHROPIC_API_KEY: false, MINE: true, EMPTY: false })
+  })
+})
+
+describe("origin pinning", () => {
+  test("a built-in credential to a foreign origin is endpoint_forbidden", () => {
+    const stolen = chat({ credential: "CEREBRAS_API_KEY", baseUrl: "https://attacker.example" })
+    expect(resolveModelEndpoint(stolen, table)).toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+    const local = chat({ credential: "CEREBRAS_API_KEY" })
+    expect(resolveModelEndpoint(local, table)).toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+  })
+
+  test("a lookalike of a pinned origin is still foreign", () => {
+    for (
+      const baseUrl of [
+        "https://api.cerebras.ai.attacker.example",
+        "https://api.cerebras.ai:8443",
+        "http://api.cerebras.ai",
+        "https://attacker.example/https://api.cerebras.ai"
+      ]
+    ) {
+      const result = resolveModelEndpoint(chat({ credential: "CEREBRAS_API_KEY", baseUrl }), table)
+      expect(result).toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+    }
+  })
+
+  test("a built-in credential to its own origin resolves", () => {
+    const result = resolveModelEndpoint(
+      chat({ credential: "CEREBRAS_API_KEY", baseUrl: "https://api.cerebras.ai/" }),
+      table
+    )
+    expect(result).toEqual({
+      ok: true,
+      endpoint: {
+        origin: "https://api.cerebras.ai",
+        baseUrl: "https://api.cerebras.ai",
+        path: "/v1/chat/completions",
+        url: "https://api.cerebras.ai/v1/chat/completions"
+      }
+    })
+  })
+
+  test("a custom credential to its declared loopback origin is allowed, and nowhere else", () => {
+    const result = resolveModelEndpoint(chat(), table)
+    expect(result.ok && result.endpoint.url).toBe(`${LOOPBACK}/v1/chat/completions`)
+    expect(resolveModelEndpoint(chat({ baseUrl: "http://127.0.0.1:4011" }), table))
+      .toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+  })
+
+  test("http to a non-loopback host is refused even when a table lists it", () => {
+    const forged: ReadonlyArray<ModelCredentialListing> = [{ name: "LAN", present: true, origins: ["http://10.0.0.5"] }]
+    expect(resolveModelEndpoint(chat({ credential: "LAN", baseUrl: "http://10.0.0.5" }), forged))
+      .toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+  })
+
+  test("a host without egress reaches loopback only", () => {
+    expect(resolveModelEndpoint(chat(), table, { egress: false }).ok).toBe(true)
+    const cloud = chat({ credential: "CEREBRAS_API_KEY", baseUrl: "https://api.cerebras.ai" })
+    expect(resolveModelEndpoint(cloud, table, { egress: false }))
+      .toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+  })
+
+  test("a name the host does not list is credential_unknown, echoing the name only", () => {
+    expect(resolveModelEndpoint(chat({ credential: "GITHUB_TOKEN" }), table))
+      .toEqual({ ok: false, failure: { code: "credential_unknown", credential: "GITHUB_TOKEN" } })
+  })
+
+  test.each([
+    ["userinfo", "http://user:pass@127.0.0.1:4010"],
+    ["a query", `${LOOPBACK}/?x=1`],
+    ["a fragment", `${LOOPBACK}/#x`],
+    ["no url", "not a url"]
+  ])("a base URL with %s is invalid", (_, baseUrl) => {
+    expect(resolveModelEndpoint(chat({ baseUrl }), table))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "baseUrl" } })
+  })
+
+  test("openai-chat has no default origin; the vendor protocols do", () => {
+    expect(resolveModelEndpoint(chat({ baseUrl: undefined }), table))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "baseUrl" } })
+    const anthropic = chat({ protocol: "anthropic-messages", credential: "ANTHROPIC_API_KEY", baseUrl: undefined })
+    const resolved = resolveModelEndpoint(anthropic, table)
+    expect(resolved.ok && resolved.endpoint.url).toBe("https://api.anthropic.com/v1/messages")
+    const openrouter = chat({
+      protocol: "openai-responses",
+      credential: "OPENROUTER_API_KEY",
+      baseUrl: "https://openrouter.ai/api"
+    })
+    const routed = resolveModelEndpoint(openrouter, table)
+    expect(routed.ok && routed.endpoint.url).toBe("https://openrouter.ai/api/v1/responses")
+  })
+
+  test.each(["/v1/../admin", "/v1/%2e%2e/admin", "/v1?x=1", "/v1#x", "v1/chat", "//attacker.example/v1"])(
+    "the path %j is invalid",
+    (path) => {
+      expect(resolveModelEndpoint(chat({ path }), table))
+        .toEqual({ ok: false, failure: { code: "invalid", field: "path" } })
+    }
+  )
+
+  test("only openai-chat takes its own path", () => {
+    const own = resolveModelEndpoint(chat({ path: "/chat/completions" }), table)
+    expect(own.ok && own.endpoint.url).toBe(`${LOOPBACK}/chat/completions`)
+    const anthropic = chat({ protocol: "anthropic-messages", credential: "ANTHROPIC_API_KEY", baseUrl: undefined })
+    expect(resolveModelEndpoint({ ...anthropic, path: "/v2/messages" }, table))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "path" } })
+  })
+})
+
+describe("seats", () => {
+  test("are the three something reads", () => {
+    expect(MODEL_SEATS.map(({ id, kind, hosts }) => ({ id, kind, hosts }))).toEqual([
+      { id: "explainer", kind: "generation", hosts: ["local", "cloud"] },
+      { id: "front-door", kind: "decision", hosts: ["cloud"] },
+      { id: "recommend", kind: "decision", hosts: ["cloud"] }
+    ])
+    expect(modelSeatsOf("local")).toEqual(["explainer"])
+    expect(modelSeatsOf("cloud")).toEqual(["explainer", "front-door", "recommend"])
+    expect(SeatIdSchema.safeParse("role:ui").success).toBe(false)
+  })
+
+  test("a seat takes only a model of its kind", () => {
+    const accepted = MODEL_SEATS.map((seat) => MODEL_PROTOCOLS.filter((protocol) => seatAccepts(seat.id, protocol)))
+    expect(accepted).toEqual([
+      ["anthropic-messages", "openai-responses", "openai-chat"],
+      ["evaluation"],
+      ["evaluation"]
+    ])
+  })
+
+  test("an assignment names one seat and one record", () => {
+    expect(SeatAssignmentSchema.parse({ id: "explainer", recordId: "fast-local" }))
+      .toEqual({ id: "explainer", recordId: "fast-local" })
+    expect(SeatAssignmentSchema.safeParse({ id: "health", recordId: "fast-local" }).success).toBe(false)
+    expect(SeatAssignmentSchema.safeParse({ id: "explainer", recordId: "Fast Local" }).success).toBe(false)
+  })
+})
+
+describe("the planner", () => {
+  const jev = { protocol: "evaluation", modelId: DECISION_MODEL_IDS[0], credential: "AI_GATEWAY_API_KEY" } as const
+
+  test("turns a binding into a plan that holds a name and an address, never a value", () => {
+    const planned = planModelBinding(bindingOf(chat()), table)
+    expect(planned).toEqual({
+      ok: true,
+      plan: {
+        kind: "generation",
+        protocol: "openai-chat",
+        modelId: "e2e-answers",
+        credential: "E2E_LOOPBACK",
+        origin: LOOPBACK,
+        baseUrl: LOOPBACK,
+        path: "/v1/chat/completions",
+        url: `${LOOPBACK}/v1/chat/completions`
+      }
+    })
+    expect(JSON.stringify(planned)).not.toContain("sk-loopback")
+  })
+
+  test("plans the allowlisted decision model at the gateway", () => {
+    const planned = planModelBinding(jev, table, { kind: "decision" })
+    expect(planned.ok && planned.plan.url).toBe("https://ai-gateway.vercel.sh/v4/ai/evaluation-model")
+  })
+
+  test("a decision id off the allowlist is model_not_allowed on a built-in credential", () => {
+    expect(planModelBinding({ ...jev, modelId: "openai/gpt-x" }, table))
+      .toEqual({ ok: false, failure: { code: "model_not_allowed" } })
+  })
+
+  test("the allowlist guards deployment keys; an operator's own endpoint names its own models", () => {
+    const own = { protocol: "evaluation", baseUrl: LOOPBACK, modelId: "e2e-answers", credential: "E2E_LOOPBACK" }
+    const planned = planModelBinding(own, table)
+    expect(planned.ok && planned.plan.url).toBe(`${LOOPBACK}/v4/ai/evaluation-model`)
+  })
+
+  test("a binding of the wrong kind for its seat is invalid at the protocol", () => {
+    expect(planModelBinding(jev, table, { kind: "generation" }))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "protocol" } })
+    expect(planModelBinding(bindingOf(chat()), table, { kind: "decision" }))
+      .toEqual({ ok: false, failure: { code: "invalid", field: "protocol" } })
+  })
+
+  test.each([
+    ["nothing", undefined, "model"],
+    ["a string", "fast-local", "model"],
+    ["an unknown protocol", { ...bindingOf(chat()), protocol: "grpc" }, "protocol"],
+    ["a model id with a space", { ...bindingOf(chat()), modelId: "two words" }, "modelId"],
+    ["a lowercase credential", { ...bindingOf(chat()), credential: "sk-live-0123456789" }, "credential"],
+    ["a smuggled key", { ...bindingOf(chat()), apiKey: "sk-live" }, "model"]
+  ])("%s is invalid and names the field, never the input", (_, input, field) => {
+    const planned = planModelBinding(input, table)
+    expect(planned).toEqual({ ok: false, failure: { code: "invalid", field } })
+    expect(JSON.stringify(planned)).not.toContain("sk-live")
+  })
+
+  test("pinning is judged before presence: an unset key never excuses a foreign origin", () => {
+    const unset = hostModelCredentials({})
+    expect(planModelBinding({ ...bindingOf(chat()), credential: "CEREBRAS_API_KEY" }, unset))
+      .toEqual({ ok: false, failure: { code: "endpoint_forbidden" } })
+    const cerebras = { protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "gpt-oss-120b" }
+    expect(planModelBinding({ ...cerebras, credential: "CEREBRAS_API_KEY" }, unset))
+      .toEqual({ ok: false, failure: { code: "credential_missing", credential: "CEREBRAS_API_KEY" } })
+  })
+})
+
+describe("the test result", () => {
+  const every: Record<ModelTestFailure["code"], ModelTestFailure> = {
+    unreachable: { code: "unreachable" },
+    refused: { code: "refused", status: 401 },
+    timeout: { code: "timeout", deadlineMs: MODEL_TEST_DEADLINE_MS },
+    invalid: { code: "invalid", field: "baseUrl" },
+    credential_missing: { code: "credential_missing", credential: "OPENAI_API_KEY" },
+    credential_unknown: { code: "credential_unknown", credential: "GITHUB_TOKEN" },
+    endpoint_forbidden: { code: "endpoint_forbidden" },
+    model_not_allowed: { code: "model_not_allowed" },
+    host_refused: { code: "host_refused", refusal: "sign_in_required", status: 401, fault: "user" }
+  }
+
+  test("the fixture above names every code the union declares", () => {
+    expect(Object.keys(every).sort()).toEqual([...MODEL_TEST_FAILURE_CODES].sort())
+    expect(ModelTestFailureSchema.options.map((option) => option.shape.code.value).sort())
+      .toEqual([...MODEL_TEST_FAILURE_CODES].sort())
+  })
+
+  test.each(Object.values(every))("$code decodes, has a fault on both hosts, and a refusal code", (failure) => {
+    expect(ModelTestFailureSchema.parse(failure)).toEqual(failure)
+    for (const host of ["local", "cloud"] as const) {
+      expect(PLUE_FAULTS).toContain(modelFailureFault(failure, host))
+      const result = failedModelTest(failure, 12, host)
+      expect(ModelTestResultSchema.parse(result)).toEqual(result)
+      expect(result).toEqual({ ok: false, latencyMs: 12, failure, fault: modelFailureFault(failure, host) })
+    }
+    expect(WORKER_FAILURE_CODES).toContain(modelFailureRefusalCode(failure))
+  })
+
+  test.each(Object.values(every))("$code carries no free text", (failure) => {
+    expect(ModelTestFailureSchema.safeParse({ ...failure, message: "connect failed for sk-live" }).success).toBe(false)
+  })
+
+  test("whose problem it is follows the code, the status, and the host", () => {
+    expect(modelFailureFault({ code: "refused", status: 401 }, "local")).toBe("user")
+    expect(modelFailureFault({ code: "refused", status: 429 }, "local")).toBe("wait")
+    expect(modelFailureFault({ code: "refused", status: 503 }, "local")).toBe("dependency")
+    expect(modelFailureFault({ code: "refused", status: 307 }, "local")).toBe("user")
+    expect(modelFailureFault(every.credential_missing, "local")).toBe("user")
+    expect(modelFailureFault(every.credential_missing, "cloud")).toBe("infra")
+    expect(modelFailureFault({ ...every.host_refused, fault: "wait" } as ModelTestFailure, "cloud")).toBe("wait")
+  })
+
+  test("a decision id off the list is request_invalid, and an unset key is the deployment's", () => {
+    expect(modelFailureRefusalCode(every.model_not_allowed)).toBe("request_invalid")
+    expect(modelFailureRefusalCode(every.endpoint_forbidden)).toBe("request_invalid")
+    expect(modelFailureRefusalCode(every.credential_missing)).toBe("seam_not_configured")
+    expect(modelFailureRefusalCode({ code: "refused", status: 429 })).toBe("model_rate_limited")
+  })
+
+  test("the timeout states the deadline that armed it", () => {
+    expect(ModelTestFailureSchema.safeParse({ code: "timeout" }).success).toBe(false)
+    expect(MODEL_TEST_DEADLINE_MS).toBe(15_000)
+  })
+
+  test("a status is a provider's refusal, never a success", () => {
+    expect(ModelTestFailureSchema.safeParse({ code: "refused", status: 200 }).success).toBe(false)
+    expect(ModelTestFailureSchema.safeParse({ code: "refused", status: 307 }).success).toBe(true)
+  })
+
+  test("a success is a latency and a bounded sample", () => {
+    const ok = { ok: true, latencyMs: 412, sample: "ok" }
+    expect(ModelTestResultSchema.parse(ok)).toEqual(ok)
+    expect(ModelTestResultSchema.safeParse({ ...ok, sample: "x".repeat(MODEL_TEST_SAMPLE_MAX + 1) }).success).toBe(
+      false
+    )
+    expect(ModelTestResultSchema.safeParse({ ...ok, message: "hello" }).success).toBe(false)
+  })
+
+  test("a sample that echoes the key is cut before it leaves the host", () => {
+    const secret = "sk-test-REDACTME-123"
+    const scrubbed = scrubModelSample(`Bearer ${secret}\n and again ${secret} ${"x".repeat(200)}`, secret)
+    expect(scrubbed).not.toContain(secret)
+    expect(scrubbed.length).toBeLessThanOrEqual(MODEL_TEST_SAMPLE_MAX)
+    expect(scrubModelSample("  ok \n", "")).toBe("ok")
+  })
+
+  test("cutting the key out cannot assemble it again from what was around it", () => {
+    expect(scrubModelSample("sk-sk-abcabc", "sk-abc")).not.toContain("sk-abc")
+  })
+
+  test("the cut a sample gets is the cut a turn's text gets: the value only, every other character kept", () => {
+    expect(cutModelCredential("your key is  sk-abc \n", "sk-abc")).toBe("your key is   \n")
+    expect(cutModelCredential("sk-sk-abcabc", "sk-abc")).toBe("")
+    expect(cutModelCredential("  ok \n", "")).toBe("  ok \n")
+  })
+
+  test("a host's refusal to run a test is stored as its code, status and fault, never its words", () => {
+    const refusal = { code: "sign_in_required", status: 401, fault: "user", message: "Sign in. token=sk-live" } as const
+    const result = hostRefusedModelTest(refusal, 7.6)
+    expect(result).toEqual({
+      ok: false,
+      latencyMs: 8,
+      failure: { code: "host_refused", refusal: "sign_in_required", status: 401, fault: "user" },
+      fault: "user"
+    })
+    expect(ModelTestResultSchema.parse(result)).toEqual(result)
+    expect(JSON.stringify(result)).not.toContain("sk-live")
+  })
+
+  test("no response at all is a host refusal with no code and no status", () => {
+    const result = hostRefusedModelTest({ code: null, status: null, fault: "infra" }, 0)
+    expect(ModelTestResultSchema.parse(result)).toEqual(result)
+    expect(result.ok === false && result.failure).toEqual({
+      code: "host_refused",
+      refusal: null,
+      status: null,
+      fault: "infra"
+    })
+  })
+
+  test("a row's test state is running while asked, then what the last result says", () => {
+    const record = (result: ModelTestResult) => ({ id: "fast-local", testedAt: 1, result })
+    const passed = record({ ok: true, latencyMs: 3, sample: "ok" })
+    const failed = record(failedModelTest({ code: "unreachable" }, 3, "local"))
+    expect(modelTestStateOf(undefined, false)).toBe("idle")
+    expect(modelTestStateOf(passed, false)).toBe("passed")
+    expect(modelTestStateOf(failed, false)).toBe("failed")
+    expect(modelTestStateOf(passed, true)).toBe("running")
+    expect(MODEL_TEST_STATES).toEqual(["idle", "running", "passed", "failed"])
+  })
+})
+
+describe("the one fix a failed test offers", () => {
+  const failedBy = (failure: ModelTestFailure, host: "local" | "cloud" = "local") => failedModelTest(failure, 3, host)
+
+  test("the record's own mistake is edited", () => {
+    for (
+      const failure of [
+        { code: "refused", status: 401 },
+        { code: "invalid", field: "baseUrl" },
+        { code: "endpoint_forbidden" },
+        { code: "credential_unknown", credential: "NOBODY" }
+      ] as const
+    ) {
+      expect(modelTestFixOf(false, failedBy(failure))).toBe("edit")
+    }
+  })
+
+  test("a fault that is not the record's is tried again", () => {
+    for (
+      const failure of [
+        { code: "refused", status: 429 },
+        { code: "refused", status: 503 },
+        { code: "timeout", deadlineMs: 15_000 },
+        { code: "unreachable" }
+      ] as const
+    ) {
+      expect(modelTestFixOf(false, failedBy(failure))).toBe("test")
+    }
+    expect(modelTestFixOf(false, failedBy({ code: "credential_missing", credential: "CEREBRAS_API_KEY" }, "cloud")))
+      .toBe("test")
+  })
+
+  test("a host row cannot be edited, whatever failed", () => {
+    expect(modelTestFixOf(true, failedBy({ code: "refused", status: 401 }))).toBe("test")
+  })
+})
+
+describe("the rows a host lists", () => {
+  const cerebras: ConfiguredModel = {
+    id: "cerebras",
+    protocol: "openai-chat",
+    baseUrl: "https://api.cerebras.ai",
+    modelId: "gpt-oss-120b",
+    credential: "CEREBRAS_API_KEY",
+    builtin: true
+  }
+  const jev: ConfiguredModel = {
+    id: "jev",
+    protocol: "evaluation",
+    modelId: DECISION_MODEL_IDS[0],
+    credential: "AI_GATEWAY_API_KEY",
+    builtin: true
+  }
+  const local = chat({ id: "local", builtin: true })
+
+  test("are exactly the rows a Test on that host would plan", () => {
+    const rows = [cerebras, jev, local, chat({ id: "unknown", credential: "NOBODY" })]
+    expect(servableModels(rows, table).map((row) => row.id)).toEqual(["cerebras", "jev", "local"])
+    for (const row of rows) {
+      expect(servableModels([row], table).length === 1).toBe(planModelBinding(bindingOf(row), table).ok)
+    }
+  })
+
+  test("a row whose key is unset is not listed", () => {
+    expect(servableModels([cerebras, jev], hostModelCredentials({ AI_GATEWAY_API_KEY: "vck" }))).toEqual([jev])
+  })
+
+  test("a host without egress lists loopback rows only", () => {
+    expect(servableModels([cerebras, jev, local], table, { egress: false })).toEqual([local])
+  })
+})
+
+describe("the catalog and the card", () => {
+  const catalog = {
+    models: [{ ...chat(), builtin: true }],
+    credentials: [...table],
+    seats: modelSeatsOf("local")
+  }
+
+  test("the catalog lists models, credential names with presence and origins, and seat ids", () => {
+    expect(ModelCatalogSchema.parse(catalog)).toEqual(catalog)
+    expect(JSON.stringify(catalog)).not.toContain("sk-")
+  })
+
+  test("the catalog has no field a value could ride in", () => {
+    const leaky = {
+      ...catalog,
+      credentials: [{ name: "OPENAI_API_KEY", present: true, origins: [], value: "sk-live" }]
+    }
+    expect(ModelCatalogSchema.safeParse(leaky).success).toBe(false)
+  })
+
+  test("the card payload keeps the last result per model beside what is still running", () => {
+    const payload = {
+      models: catalog.models,
+      seats: [{ id: "explainer", recordId: "fast-local", resolvable: true }],
+      credentials: catalog.credentials,
+      tests: [{ id: "fast-local", testedAt: 1, result: failedModelTest({ code: "refused", status: 401 }, 9, "local") }],
+      testing: ["fast-local"],
+      host: "observed",
+      selected: "fast-local",
+      attention: { kind: "seat-unresolved", seat: "explainer" }
+    }
+    expect(ModelsCardPayloadSchema.parse(payload)).toEqual(payload)
+    expect(
+      ModelsCardPayloadSchema.safeParse({ ...payload, attention: { kind: "test-failed", seat: "explainer" } }).success
+    )
+      .toBe(false)
+  })
+})

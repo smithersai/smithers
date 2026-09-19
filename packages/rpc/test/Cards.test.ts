@@ -5,6 +5,7 @@ import type { Card } from "../src/Cards.ts"
 import {
   CardPatchSchema,
   CardSchema,
+  FORM_OPTION_PROVIDERS,
   GitHubRateLimitSchema,
   TargetDetailSchema,
   TargetsViewSchema
@@ -282,6 +283,102 @@ describe("the agent cards", () => {
     expect(CardSchema.safeParse({ ...base, kind: "agent", payload: { ...payload, roleId: "Not An Id" } }).success).toBe(
       false
     )
+  })
+})
+
+describe("the models card", () => {
+  const payload = { models: [], seats: [], credentials: [], tests: [], testing: [], host: "observed" }
+  const model = {
+    id: "ollama",
+    protocol: "openai-chat",
+    baseUrl: "http://127.0.0.1:11434",
+    modelId: "llama3",
+    credential: "OLLAMA"
+  }
+
+  test("carries models, seats, credential names, what is running and the last result per model", () => {
+    const card = CardSchema.parse({
+      ...base,
+      kind: "models",
+      payload: {
+        ...payload,
+        models: [model],
+        seats: [{ id: "explainer", recordId: "ollama", resolvable: false }],
+        credentials: [{ name: "OLLAMA", present: false, origins: ["http://127.0.0.1:11434"] }],
+        tests: [{
+          id: "ollama",
+          testedAt: 5,
+          result: {
+            ok: false,
+            latencyMs: 15_000,
+            failure: { code: "timeout", deadlineMs: 15_000 },
+            fault: "dependency"
+          }
+        }],
+        testing: ["ollama"],
+        selected: "ollama",
+        attention: { kind: "seat-unresolved", seat: "explainer" }
+      }
+    })
+    if (card.kind !== "models") throw new Error("the models card decoded as another kind")
+    expect(card.payload.models).toEqual([model])
+    expect(card.payload.tests[0]?.result).toEqual({
+      ok: false,
+      latencyMs: 15_000,
+      failure: { code: "timeout", deadlineMs: 15_000 },
+      fault: "dependency"
+    })
+    expect(card.payload.attention).toEqual({ kind: "seat-unresolved", seat: "explainer" })
+  })
+
+  test("refuses a key anywhere a value could ride: on a model, on a credential, on a result", () => {
+    const refused = (patch: Record<string, unknown>): boolean =>
+      !CardSchema.safeParse({ ...base, kind: "models", payload: { ...payload, ...patch } }).success
+    expect(refused({ models: [{ ...model, apiKey: "sk-live" }] })).toBe(true)
+    expect(refused({ credentials: [{ name: "OLLAMA", present: true, origins: [], value: "sk-live" }] })).toBe(true)
+    expect(refused({
+      tests: [{ id: "ollama", testedAt: 1, result: { ok: true, latencyMs: 1, sample: "ok", message: "sk-live" } }]
+    })).toBe(true)
+  })
+
+  test("refuses a seat nothing reads, a failure code off the union, and attention of an unknown kind", () => {
+    const refused = (patch: Record<string, unknown>): boolean =>
+      !CardSchema.safeParse({ ...base, kind: "models", payload: { ...payload, ...patch } }).success
+    expect(refused({ seats: [{ id: "role:ui", recordId: null, resolvable: true }] })).toBe(true)
+    expect(refused({
+      tests: [{
+        id: "ollama",
+        testedAt: 1,
+        result: { ok: false, latencyMs: 1, failure: { code: "authentication" }, fault: "user" }
+      }]
+    })).toBe(true)
+    expect(refused({ attention: { kind: "celebrate" } })).toBe(true)
+  })
+
+  test("a retired agent-models card still decodes as retired beside it", () => {
+    const retired = CardSchema.parse({ ...base, kind: "agent-models", payload: { models: [model] } })
+    expect(retired).toEqual({ ...base, kind: "retired", title: "", status: "acted", payload: {}, loading: false })
+    expect(CardSchema.parse({ ...base, kind: "models", payload }).kind).toBe("models")
+  })
+
+  test("a model form draws its selects from models, credentials and seats, and model.save is not a retired flow", () => {
+    expect(FORM_OPTION_PROVIDERS).toEqual(expect.arrayContaining(["models", "credentials", "seats"]))
+    const form = CardSchema.parse({
+      ...base,
+      kind: "flow-form",
+      payload: {
+        flow: "model.save",
+        via: "user",
+        fields: [
+          { name: "credential", label: "Credential", kind: "select", required: true, optionsFrom: "credentials" },
+          { name: "seat", label: "Seat", kind: "select", required: true, optionsFrom: "seats" },
+          { name: "recordId", label: "Model", kind: "select", required: true, optionsFrom: "models" }
+        ],
+        draft: {},
+        given: {}
+      }
+    })
+    expect(form.kind).toBe("flow-form")
   })
 })
 
@@ -918,6 +1015,55 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         matchHeaders: ["authorization"],
         updatedAt: "2026-09-05T09:00:00Z"
       }]
+    }
+  },
+  models: {
+    minimal: { models: [], seats: [], credentials: [], tests: [], testing: [], host: "unavailable" },
+    full: {
+      models: [
+        {
+          id: "cerebras",
+          protocol: "openai-chat",
+          baseUrl: "https://api.cerebras.ai",
+          modelId: "gpt-oss-120b",
+          credential: "CEREBRAS_API_KEY",
+          builtin: true
+        },
+        {
+          id: "ollama",
+          protocol: "openai-chat",
+          baseUrl: "http://127.0.0.1:11434",
+          path: "/v1/chat/completions",
+          modelId: "llama3",
+          credential: "OLLAMA"
+        }
+      ],
+      seats: [
+        { id: "explainer", recordId: "ollama", resolvable: true },
+        { id: "front-door", recordId: null, resolvable: true }
+      ],
+      credentials: [
+        { name: "CEREBRAS_API_KEY", present: false, origins: ["https://api.cerebras.ai"] },
+        { name: "OLLAMA", present: true, origins: ["http://127.0.0.1:11434"] }
+      ],
+      tests: [
+        { id: "ollama", testedAt: 1, result: { ok: true, latencyMs: 41, sample: "ok" } },
+        {
+          id: "cerebras",
+          testedAt: 2,
+          result: {
+            ok: false,
+            latencyMs: 0,
+            failure: { code: "credential_missing", credential: "CEREBRAS_API_KEY" },
+            fault: "user"
+          }
+        }
+      ],
+      testing: ["ollama"],
+      host: "observed",
+      selected: "ollama",
+      attention: { kind: "test-failed", recordId: "cerebras" },
+      error: "The host did not list its models."
     }
   },
   history: {

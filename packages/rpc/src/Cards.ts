@@ -24,6 +24,7 @@ import {
   LandingBlockSchema,
   RevisionPinSchema
 } from "./Changes.ts"
+import { ModelsCardPayloadSchema } from "./ConfiguredModel.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
@@ -181,7 +182,13 @@ export const FORM_OPTION_PROVIDERS = [
   "agents",
   "plugins",
   /* The selected repository's real files, listed by the tutorial's file lesson. */
-  "files"
+  "files",
+  /* The configured models; with a seat in the draft, only the ones that seat takes. */
+  "models",
+  /* The credential NAMES the host listed on the models card. Never a value. */
+  "credentials",
+  /* The seats the host listed on the models card. */
+  "seats"
 ] as const
 
 const cardBaseShape = {
@@ -1451,6 +1458,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         })
       )
     })
+  }),
+  /*
+   * The configured models and the seats they answer for (ConfiguredModel.ts).
+   * A credential is a NAME with its presence and origins; no value exists on
+   * this payload, and a test's failure is codes and numbers, never a
+   * provider's words.
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("models"),
+    payload: ModelsCardPayloadSchema
   }),
   /*
    * The mythical history (Factory design session 2026-09-07 §3, mock 13): the

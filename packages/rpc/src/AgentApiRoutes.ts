@@ -228,6 +228,29 @@ export const WORKFLOW_TRIGGERS_PATH = "/api/workflow/triggers"
  * @category constants
  */
 export const MODEL_STREAM_PATH = "/api/model/stream"
+/*
+ * The Models surface (ConfiguredModel.ts). Both hosts answer both routes
+ * themselves: a credential is resolved by NAME on the host that holds it, so
+ * neither route is ever forwarded and no value exists on either wire.
+ */
+/**
+ * The model catalog route: `GET` answers `ModelCatalogSchema`, the built-in
+ * models this host serves, the credential names it resolves with their
+ * presence and origins, and the seats it reads.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CATALOG_PATH = "/api/model/catalog"
+/**
+ * The model test route: `POST { model }` makes one real call and answers
+ * `ModelTestResultSchema` with HTTP 200 for a pass and for a typed failure
+ * alike. Only a refusal to run the test uses the refusal envelopes.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_TEST_PATH = "/api/model/test"
 
 /*
  * The public catalog and its read-only companions (apps/server
