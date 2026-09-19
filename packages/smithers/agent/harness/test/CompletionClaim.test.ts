@@ -25,6 +25,7 @@ import { ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as CallLedger from "../src/CallLedger.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as CompletionClaim from "../src/CompletionClaim.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
@@ -347,7 +348,7 @@ describe("the claim brake", () => {
     expect(jev.asked).toEqual([])
   })
 
-  it("sends the task, the claim, the tree fact, the checks run and the last check, and no ledger", async () => {
+  it("sends the task, the claim and measured check and call receipts", async () => {
     const jev = reading({ complete: 0.9, overclaims: 0.1, invented: 0.05 })
     await settled({
       layer: jev.layer,
@@ -398,9 +399,12 @@ describe("the claim brake", () => {
     expect(state["checksRun"]).toEqual([
       { command: "{\"command\":\"pytest tests/admin_views\"}", outcome: "passed" }
     ])
-    // Every question the classifier declares, and no ledger, transcript or
-    // call history under any name.
-    expect(Object.keys(state).sort()).toEqual(["checksRun", "claim", "lastCheck", "task", "treeMoved"])
+    expect(state["callsRun"]).toEqual([
+      { flow: "bash", input: "{\"command\":\"grep -rn catch_all_view\"}", ok: true, resultSummary: "matches=2" },
+      { flow: "edit", input: "admin.py", ok: true, resultSummary: "" },
+      { flow: "bash", input: "tests/admin_views", ok: true, resultSummary: "exitCode=0 stdout=10b" }
+    ])
+    expect(Object.keys(state).sort()).toEqual(["callsRun", "checksRun", "claim", "lastCheck", "task", "treeMoved"])
     expect(Object.keys(jev.asked[0]?.questions ?? {}).sort()).toEqual(["complete", "invented", "overclaims"])
   })
 
@@ -447,6 +451,41 @@ describe("the claim brake", () => {
     expect((jev.asked[0]?.state as Record<string, unknown>)["task"]).toBe(`The task: ${task}`)
   })
 
+  it("carries settled classifier and read receipts from earlier frames into the completion evidence", async () => {
+    const jev = reading({})
+    const classified = CallLedger.entry(1, {
+      flow: "classify",
+      input: { states: [1, 2], question: "even" },
+      ok: true,
+      value: { results: [{ ok: true }, { ok: true }], latencyMs: 20 }
+    })
+    const read = CallLedger.entry(2, {
+      flow: "read",
+      input: { path: "add.mjs" },
+      ok: true,
+      value: { text: "export const add = (a, b) => a + b" }
+    })
+    await settled({
+      layer: jev.layer,
+      changes: { callLedger: [classified, read] },
+      calls: [call({
+        flow: "read",
+        input: { path: "missing.mjs" },
+        ok: false,
+        passing: false,
+        value: null,
+        message: "missing path"
+      })]
+    })
+
+    expect((jev.asked[0]?.state as Record<string, unknown>)["callsRun"]).toEqual([
+      { flow: "classify", input: classified.subject, ok: true, resultSummary: "latencyMs=20 results=[2]" },
+      { flow: "read", input: "add.mjs", ok: true, resultSummary: "text=34b" },
+      { flow: "read", input: "missing.mjs", ok: false, resultSummary: "missing path" }
+    ])
+    expect((jev.asked[0]?.state as Record<string, unknown>)["checksRun"]).toEqual([])
+  })
+
   it("quotes the newest check that reported an exit status, past a write and a failure", async () => {
     const jev = reading({ complete: 0.9, overclaims: 0.1, invented: 0.05 })
     await settled({
@@ -481,6 +520,7 @@ describe("the claim brake", () => {
     })
 
     expect(Object.keys(jev.asked[0]?.state as Record<string, unknown>).sort()).toEqual([
+      "callsRun",
       "checksRun",
       "claim",
       "task",

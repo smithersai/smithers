@@ -12,10 +12,11 @@
  * So the sixth asks a model. Jev is the decision-only model this repo already
  * speaks to through `@smthrs/model`: a classifier declares a state and typed
  * questions, and the transport answers each one with a probability. This
- * module declares one classifier, `completion/claim`, over five facts the
+ * module declares one classifier, `completion/claim`, over the facts the
  * harness already holds — the task, the claim, whether the tree moved, every
- * check the run has run over the tree it is completing on, and the verbatim
- * result of the last one — and asks three questions about them.
+ * check the run has run in its workspace, and the verbatim
+ * result of the last one, and bounded receipts for settled flow calls — and
+ * asks three questions about them.
  *
  * It is a brake and only a brake in what it may approve: a confident
  * "complete" ends nothing, bypasses nothing, and is worth precisely the
@@ -255,7 +256,7 @@ export const inventedAt = 0.85
  *
  * One of these, because a result is the expensive field: {@link Evidence}
  * travels on every completion of every run and a test log has no size at all.
- * Every *other* check the run took over this tree is in
+ * Every *other* check the run took in its workspace is in
  * {@link Evidence.checksRun} without its output, which is what the narrow
  * question needs to know a command was run and what it reported.
  *
@@ -320,19 +321,15 @@ export const checksRunLimit = 24
 /**
  * Everything the brake sends, and the whole of it.
  *
- * Five fields, and no ledger of calls, transcript, diff or frame history: the
- * question is whether one sentence matches the evidence for it, and the run's
- * own narrative is what a model would use to reconstruct a story rather than
- * judge the claim. `checksRun` is the exception the measurement forced, and it
- * is not narrative: it is the list of readings the run took over the very tree
- * it is completing on, so a claim about a command's result can be read against
- * whether that command ran and what it said. Before it existed, a run whose
- * proving check was not the *last* thing it did looked exactly like a run that
- * never checked anything, and the live gate went red on one. `lastCheck` is
- * absent when the completing frame ran no call that reported an exit status,
- * and `checksRun` is empty when the run has taken no reading of this tree,
- * which is how a run that completes without checking anything reaches the
- * model looking like exactly that.
+ * The task and claim are prose; the rest is measured evidence. `checksRun`
+ * keeps checks visible after their frame closes. `callsRun` does the same for
+ * work that reports no exit status, including classification and file reads.
+ * It carries the existing bounded call ledger's flow, input subject,
+ * settlement status and structural result summary, without model narration
+ * or full output. A summary records that a result was obtained, not every
+ * value in it. `lastCheck` supplies the completing frame's newest check output
+ * when there is one. Older callers may omit `callsRun`; the controller always
+ * supplies it, including an empty list when no call settled.
  *
  * @category schemas
  * @since 1.0.0-rc.0
@@ -346,6 +343,17 @@ export const Evidence = Schema.Struct({
   checksRun: Schema.Array(Ran).annotate({
     description: "Every check this run ran, and what it last reported, oldest first"
   }),
+  callsRun: Schema.optional(
+    Schema.Array(Schema.Struct({
+      flow: Schema.String,
+      input: Schema.String,
+      ok: Schema.Boolean,
+      resultSummary: Schema.String
+    })).annotate({
+      description:
+        "Bounded receipts for recent settled flow calls, oldest first. The input and structural result summary may be abbreviated. ok describes call settlement, not a check's exit status."
+    })
+  ),
   lastCheck: Schema.optional(Check)
 })
 

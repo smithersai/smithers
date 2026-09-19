@@ -221,7 +221,7 @@ export interface Accounting {
   readonly facts:
     & StateChanges
     & Required<Pick<StateChanges, "readOnlyFrames" | "repeatFrames" | "checks" | "failures" | "mutations">>
-    & Required<Pick<StateChanges, "openingDigest">>
+    & Required<Pick<StateChanges, "openingDigest" | "callLedger">>
 }
 
 /**
@@ -827,6 +827,12 @@ export const judgeCompletion = (
       // brake above owns the unmoved case and has already passed on it.
       treeMoved: UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest }) === undefined,
       checksRun: checksRun(facts.checks),
+      callsRun: facts.callLedger.map((entry) => ({
+        flow: entry.flow,
+        input: entry.subject,
+        ok: entry.ok,
+        resultSummary: entry.digest
+      })),
       ...(check === undefined ? {} : { lastCheck: check })
     })
     if (reading === undefined) return stands

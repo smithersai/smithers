@@ -1032,12 +1032,18 @@ must have demonstrated the subject was still live by returning to it.
 `import * as CompletionClaim from "@smthrs/harness/CompletionClaim"`
 
 The sixth brake on a completion, and the only one that is not a measurement.
-It declares one classifier, `completion/claim`, over five facts the harness
+It declares one classifier, `completion/claim`, over the facts the harness
 already holds: the task as the person stated it, the completion message,
-whether the tree moved, every check the run took over the tree it is
-completing on as `Evidence.checksRun` (command and outcome, newest
-`checksRunLimit` (24) kept), and the last check the completing frame ran with
-its result clipped to the newest `outputBytes` (4 KiB). It asks Jev three
+whether the tree moved, every check the run took in its workspace as
+`Evidence.checksRun` (command and outcome, newest
+`checksRunLimit` (24) kept), the last check the completing frame ran with
+its result clipped to the newest `outputBytes` (4 KiB), and `Evidence.callsRun`.
+The latter lists the newest 30 settled calls from the durable call ledger,
+including classification and reads that report no exit status. Each receipt
+names the flow, bounded input subject, settlement status and structural result
+summary. It records that a result was obtained without carrying its full
+payload. Direct callers may omit this field for compatibility; the controller
+always supplies it. It asks Jev three
 questions through the `Evaluator` service. Does the evidence show the task as
 stated is done, does the claim assert something the evidence does not show,
 and does the claim report having run a command, or having obtained a result,
@@ -1045,6 +1051,12 @@ that the evidence does not record? `read` asks and returns all three
 probabilities with the latency; it returns nothing only where there is no task
 and no claim to form a question about, and fails with `completion_unjudged`
 for every other reason it could not get an answer.
+
+`CellTurn` records a completion reading at an engine boundary keyed by the
+session, frame, cell digest and classifier digest. Replay uses that recorded
+reading, so a resumed turn keeps its previous decision without asking Jev
+again. Provider refusals retain their code, HTTP status when present and
+detail through the journal's error schema.
 
 **All three ask; only the third refuses.** `find` hands the completion back at
 any of three heights, `disprovenAt` (0.3) or below on the first question,
