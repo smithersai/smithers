@@ -33,7 +33,7 @@ const supported = (evidence: ReviewedPage["evidence"]): Review => ({ sections: e
 const citationsSupported = Evaluator.layerScripted((request) =>
   "support" in request.questions
     ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
 
 test("host-owned wiki operations retain their injected filesystem under a different action context", async t => {
   const f = await fixture(t), fs = await run(FileSystem.FileSystem)

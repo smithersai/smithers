@@ -30,7 +30,7 @@ import type { PageSpec } from "../wiki/schema.ts"
 const citationsSupported = Evaluator.layerScripted((request) =>
   "support" in request.questions
     ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
 
 const CheckRun = Flow.make("acceptance/WikiCheck", { payload: RunCheck.payloadSchema, success: Receipt, error: CodingError,
   body: input => RunCheck.call(input) })

@@ -126,7 +126,8 @@ const agentHost = Layer.effect(AgentAction.Host, Effect.gen(function*() {
  */
 const confidentEvaluator = Evaluator.layerScripted(() => ({
   complete: { probability: 0.99 },
-  overclaims: { probability: 0.01 }
+  overclaims: { probability: 0.01 },
+  invented: { probability: 0.01 }
 }))
 
 const runTurn = async (

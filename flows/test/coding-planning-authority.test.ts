@@ -228,7 +228,7 @@ const fixture = async (t: TestContext, contributed = false) => {
       // falls back. This suite is offline, so the judge is scripted and lets a
       // stated completion stand.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }))
+        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }))
       ),
       Layer.provideMerge(Layer.mergeAll(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
       // This authority test never exercises rollback; the separate native JJ

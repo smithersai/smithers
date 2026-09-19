@@ -90,7 +90,7 @@ const scriptedSeats = () => {
  * said yes. */
 const scriptedEvaluator = Evaluator.layerScripted(request =>
   "complete" in request.questions && "overclaims" in request.questions
-    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
     : Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "No evaluator is installed on this host" })))
 
 interface Probe {

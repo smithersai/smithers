@@ -36,7 +36,8 @@ const scriptedJev = (template: ReleaseTemplate, confidence: number) =>
  * else. */
 const scriptedCompletion = Evaluator.layerScripted(() => ({
   complete: { probability: 0.99 },
-  overclaims: { probability: 0.01 }
+  overclaims: { probability: 0.01 },
+  invented: { probability: 0.01 }
 }))
 
 test("the classifier asks one closed question over the four narratives and nothing else", () => {

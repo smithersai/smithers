@@ -38,7 +38,7 @@ export const scriptedTemplate = Evaluator.layerScripted((request) =>
         probabilities: Object.fromEntries(templates.map((name) => [name, name === brief.template ? 0.95 : 0.05 / 3]))
       }
     }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
 export const copy = { text: "Release approvals resume after a process restart.", claimIds: ["approval"] }
 export const draft: Draft = { changelog: copy, blog: copy, thread: { tweets: [copy] } }
 export const review = { passed: true, score: 0.95, feedback: [] }

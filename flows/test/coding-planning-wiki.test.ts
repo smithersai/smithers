@@ -32,7 +32,7 @@ const input = { prompt: "Add the next feature from verified current documentatio
 const citationsSupported = Evaluator.layerScripted((request) =>
   "support" in request.questions
     ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
 test("wiki generation precedes planning, reuses exact reviews, rechecks changed pages and refuses unsupported prose", {
   skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to the existing native Plue adapter" : false,
   timeout: 600_000

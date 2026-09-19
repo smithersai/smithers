@@ -24,7 +24,7 @@ import { type Input, PageSpec, WikiError } from "../wiki/schema.ts"
 const citationsSupported = Evaluator.layerScripted((request) =>
   "support" in request.questions
     ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } })
+    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
 
 // Simulate a section parser change that preserves ids, source and body hashes.
 const SectionsProbe = Flow.make("wiki/test/changed-sections", {
