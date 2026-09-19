@@ -270,7 +270,16 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/canary.yml",
             ".github/workflows/pr-review.yml",
             ".github/workflows/reliability.yml",
-            ".github/workflows/mirror-sync.yml"
+            ".github/workflows/mirror-sync.yml",
+            // The live OpenCode turn. It is not a job here because every step
+            // this generator can emit is `smthrs <verb> <target>`, and the
+            // executor hands a child only `Exec.inheritedEnvironmentNames`
+            // plus declared values, while a declared secret arrives as a
+            // placeholder the proxy substitutes for plain HTTP alone. A seat
+            // key therefore cannot reach the model through a target, and
+            // `test/LiveBugFix.test.ts` run under `smthrs test` reports
+            // "Live turn skipped" with both keys exported.
+            ".github/workflows/live-opencode.yml"
           ]
         })
       }),

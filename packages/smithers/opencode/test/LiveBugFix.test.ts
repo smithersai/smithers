@@ -18,6 +18,16 @@
  *
  * Every wait is bounded, the frame budget is capped at eight, and the prompt
  * is one edit in one file so the turn needs few frames.
+ *
+ * Run this file ALONE with `--coverage.enabled=false`. The package config's
+ * 100% thresholds are measured over `src`, and one file that imports none of
+ * it reports 0%, so `vitest run test/LiveBugFix.test.ts` exits 1 on coverage
+ * after the turn itself passed. `.github/workflows/live-opencode.yml` is that
+ * command in CI, and it is a workflow of its own because a target step cannot
+ * carry a seat key: the build executor hands a child only
+ * `Exec.inheritedEnvironmentNames` plus declared values, and a declared secret
+ * arrives as a placeholder the proxy substitutes for plain HTTP alone, so this
+ * file skips under `smthrs test` with both keys exported.
  */
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
