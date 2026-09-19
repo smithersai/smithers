@@ -901,6 +901,44 @@ describe("the timeline reads as phases, then what each frame did", () => {
     expect((host.querySelector(".run-phase-pins") as HTMLElement).getAttribute("style")).toContain("--pin-rows: 2")
   })
 
+  test("a pin belongs to the frame the journal opened before it, not to the frame its stamp lands inside", () => {
+    const { host, dispatched } = timeline([
+      stamp(1, "control.agent.turn-opened", {}, 1000),
+      stamp(2, "control.agent.cell-call-started", { flowName: "edit", input: { path: "src/a.ts" } }, 1000),
+      stamp(3, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1000),
+      // Frame 2 opens on the stamp frame 1 closes on, and the demand is
+      // recorded after it: by stamp alone the moment sits in both frames.
+      stamp(4, "control.agent.turn-opened", {}, 2000),
+      stamp(5, "control.agent.read-only-demanded", { streak: 4, cap: 4, nextFrame: 3, nextAction: "write" }, 2000)
+    ])
+    const pins = [...host.querySelectorAll(".run-phase-pin")]
+    expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent)).toEqual(["a.ts", "read-only"])
+    click(pins[1]!)
+    expect(dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 frame-2 5" }])
+  })
+
+  test("pins read in journal order, so a record stamped before the one it follows still reads after it", () => {
+    const { host } = timeline([
+      stamp(1, "control.agent.turn-opened", {}, 1000),
+      stamp(2, "control.agent.cell-call-started", { flowName: "edit", input: { path: "README.md" } }, 1100),
+      stamp(3, "control.agent.cell-call-settled", { flowName: "edit", outcome: "success", value: "+1" }, 1200),
+      // The verdict shares the write's stamp; the drain after it was stamped
+      // before both. The s16 timeline attachment ordered its pins 100, 167,
+      // 159 for exactly this reason.
+      stamp(4, "control.run.completed", { runId: "run-1", status: "completed" }, 1200),
+      stamp(5, "control.agent.steering-drained", { messages: [{ role: "user", text: "ship it" }] }, 1150)
+    ])
+    const pins = [...host.querySelectorAll(".run-phase-pin")]
+    expect(pins.map((pin) => pin.querySelector(".run-phase-pin-label")?.textContent))
+      .toEqual(["README.md", "completed", "steering"])
+    expect(pins.map((pin) => pin.getAttribute("data-flow-args")))
+      .toEqual(["run-1 frame-1 3", "run-1 frame-1 4", "run-1 frame-1 5"])
+    // Tab reads the DOM, and nothing here overrides it, so journal order is
+    // the traversal order.
+    expect(pins.map((pin) => pin.getAttribute("tabindex"))).toEqual([null, null, null])
+    expect(pins.map((pin) => (pin as HTMLElement).tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON"])
+  })
+
   test("a moment the fold could not name gets no pin: the strip never paints an empty label", () => {
     /*
      * `AgentSession` replaces a call input over 64 KiB with { truncated, bytes,

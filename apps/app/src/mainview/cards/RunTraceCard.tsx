@@ -226,12 +226,19 @@ export interface PhasePin {
  * Where each milestone's pin sits: its percent of the phase axis, and the row
  * it takes there.
  *
- * Left to right, so a row is assigned against the pin actually beside it and
- * Tab reads the strip in order. A cluster takes a row per pin up to
- * {@link PIN_ROWS}. A moment that finds no row is neither dropped nor printed
- * on a row already occupied, which is how two labels end up on one line: it is
- * folded into the pin placed just before it, the one it sits beside, and that
- * pin is drawn as a count of what it stands for.
+ * In journal order, which is the order Tab reads them in. A stamp comes from
+ * whoever produced the record — the agent's own `at` when it carries one, the
+ * journal's otherwise — so two moments share one stamp, and a later record
+ * carries an earlier stamp than the record before it. The sequence does
+ * neither: it is the journal's own order. The s16 timeline attachment is a
+ * production run whose pins came out 100, 167, 159 under a sort by stamp.
+ *
+ * A row is still assigned against the pins already placed, so no two labels on
+ * one row come within {@link PIN_APART} of each other, and a cluster takes a
+ * row per pin up to {@link PIN_ROWS}. A moment that finds no row is neither
+ * dropped nor printed on a row already occupied: it is folded into the pin
+ * placed just before it and that pin is drawn as a count of what it stands
+ * for.
  *
  * @param milestones the fold's moments, in journal order
  * @param extent the phase axis they are placed on
@@ -248,7 +255,7 @@ export const phasePins = (
     // A truncated call input names nothing (RunTrace.ts `subjectOf`), and a pin
     // with no label is an unreadable box the reader cannot aim at.
     .filter((milestone) => milestone.label !== "")
-    .sort((left, right) => left.at - right.at)
+    .sort((left, right) => left.seq - right.seq)
   for (const milestone of ordered) {
     const left = at(milestone.at)
     const free = lastOnRow.findIndex((last) => left - last >= PIN_APART)
@@ -264,11 +271,21 @@ export const phasePins = (
   return pins
 }
 
-/** The frame the journal had open at that moment; the run itself when none was. */
-const frameAt = (model: TraceModel, at: number): string =>
-  model.rows.find((span) =>
-    span.kind === "frame" && span.startedAt <= at && at <= (span.endedAt ?? Number.POSITIVE_INFINITY)
-  )?.id ?? model.root.id
+/**
+ * The frame the journal had open at that sequence; the run itself when none
+ * was.
+ *
+ * By the sequence each frame opened on, never by the stamps it spans: a frame
+ * closes on the stamp the next one opens on, so a moment recorded there sits
+ * inside both of them and the earlier one answers first.
+ */
+const frameAt = (model: TraceModel, seq: number): string => {
+  let open: string | undefined
+  for (const span of model.rows) {
+    if (span.kind === "frame" && (span.detail.sequence ?? 0) <= seq) open = span.id
+  }
+  return open ?? model.root.id
+}
 
 /** The calls a turn made, in order, each once: the row's summary of what the agent did. */
 const callsOf = (frame: TraceSpan): ReadonlyArray<TraceSpan> => {
@@ -650,7 +667,7 @@ const PhaseStrip = ({ model, runId, cursorSeq, onRunCommand }: {
                 {...flowAction(
                   onRunCommand,
                   "runs.trace.select",
-                  `${runId} ${frameAt(model, milestone.at)} ${milestone.seq}`
+                  `${runId} ${frameAt(model, milestone.seq)} ${milestone.seq}`
                 )}
               >
                 <span className="run-phase-pin-label">{folded.length === 0 ? milestone.label : `+${moments.length}`}</span>
