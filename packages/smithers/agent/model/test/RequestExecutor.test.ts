@@ -2295,4 +2295,86 @@ describe("RequestExecutor", () => {
 
     expect(Exit.hasInterrupts(interrupted)).toBe(true)
   })
+
+  // A probe wants one request and the provider's own answer. The clock is moved
+  // past the whole retry budget so a retry that was only sleeping would show.
+  const singleAttempt = async (
+    answer: (
+      attempted: HttpClientRequest.HttpClientRequest
+    ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>,
+    options?: RequestExecutor.MakeOptions
+  ): Promise<{ readonly attempts: number; readonly error: ModelError }> => {
+    let attempts = 0
+    const client = HttpClient.make((attempted) =>
+      Effect.suspend(() => {
+        attempts += 1
+        return answer(attempted)
+      })
+    )
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(client), options)
+          const fiber = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
+          yield* TestClock.adjust(120_000)
+          yield* TestClock.adjust(120_000)
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+    return { attempts, error: expectModelError(error) }
+  }
+
+  const answers = (spec: ResponseSpec) => (attempted: HttpClientRequest.HttpClientRequest) =>
+    Effect.succeed(response(attempted, spec))
+
+  const unreachable = (attempted: HttpClientRequest.HttpClientRequest) =>
+    Effect.fail(
+      new HttpClientError.HttpClientError({
+        reason: new HttpClientError.TransportError({ request: attempted, description: "connection refused" })
+      })
+    )
+
+  it("makes one request for a 429 when asked for no retries", async () => {
+    const result = await singleAttempt(
+      answers({ status: 429, body: "{\"error\":{\"message\":\"slow down\"}}", headers: { "retry-after": "1" } }),
+      { maxRetries: 0 }
+    )
+
+    expect(result.attempts).toBe(1)
+    expect(result.error).toMatchObject({
+      code: "rate_limited",
+      httpStatus: 429,
+      retryable: true,
+      retryAfterMillis: 1_000
+    })
+  })
+
+  it("makes one request for a 503 when asked for no retries", async () => {
+    const result = await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: 0 })
+
+    expect(result.attempts).toBe(1)
+    expect(result.error).toMatchObject({ code: "provider_internal", httpStatus: 503, retryable: true })
+  })
+
+  it("makes one request for a transport failure when asked for no retries", async () => {
+    const result = await singleAttempt(unreachable, { maxRetries: 0 })
+
+    expect(result.attempts).toBe(1)
+    expect(result.error).toMatchObject({ code: "transport", retryable: true })
+  })
+
+  it("bounds the ladder at the retries it was asked for", async () => {
+    expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: 1 })).attempts).toBe(2)
+  })
+
+  it("keeps the default ladder when no usable bound is given, and reads a negative one as none", async () => {
+    for (const options of [undefined, {}, { maxRetries: undefined }, { maxRetries: Number.NaN }]) {
+      expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), options)).attempts).toBe(3)
+    }
+    expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: -1 })).attempts).toBe(1)
+  })
 })

@@ -2,7 +2,8 @@
  * Executes provider requests with bounded retries, quota classification, and
  * credential-safe diagnostics.
  *
- * One call makes at most three attempts (the first plus `MAX_RETRIES`), with a
+ * One call makes at most three attempts by default (the first plus
+ * `MAX_RETRIES`, or the `maxRetries` its executor was built with), with a
  * 500 ms exponential base, a 10 s delay cap, and a 60 s total retry budget.
  * `Retry-After` replaces the computed delay without jitter and is bounded by
  * the same 10 s cap. A provider wait beyond the total budget is surfaced to the
@@ -704,7 +705,8 @@ const mapHttpError = (
 }
 
 const retryFailures = <A, R>(
-  effect: Effect.Effect<A, RequestError, R>
+  effect: Effect.Effect<A, RequestError, R>,
+  times: number
 ): Effect.Effect<A, RequestError, R> => {
   const schedule = Schedule.exponential(Duration.millis(BASE_DELAY_MS)).pipe(
     Schedule.jittered,
@@ -720,7 +722,7 @@ const retryFailures = <A, R>(
     Schedule.modifyDelay(({ duration }) =>
       Effect.succeed(Duration.millis(Math.min(Duration.toMillis(duration), MAX_DELAY_MS)))
     ),
-    Schedule.upTo({ times: MAX_RETRIES, duration: Duration.millis(MAX_RETRY_DURATION_MS) })
+    Schedule.upTo({ times, duration: Duration.millis(MAX_RETRY_DURATION_MS) })
   )
   return Effect.retry(effect, {
     schedule,
@@ -835,6 +837,21 @@ export const fixed = (client: KernelHttpClient.HttpClient): Transport => ({
 })
 
 /**
+ * What an executor is built with, fixed for every request it makes.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface MakeOptions {
+  /**
+   * Retries after the first attempt. Defaults to 2; 0 makes `execute` a single
+   * attempt, which is what a probe of a route wants. Negative counts are 0 and
+   * a count that is not a finite number is the default.
+   */
+  readonly maxRetries?: number | undefined
+}
+
+/**
  * Scoped provider request executor.
  *
  * The caller's scope owns the successful response body and aborts its transport
@@ -880,8 +897,11 @@ export const RequestExecutor: Context.Service<RequestExecutor, RequestExecutor> 
  * @category constructors
  * @since 0.1.0
  */
-export const makeWith = (transport: Transport): Effect.Effect<RequestExecutor> =>
+export const makeWith = (transport: Transport, options: MakeOptions = {}): Effect.Effect<RequestExecutor> =>
   Effect.gen(function*() {
+    const maxRetries = options.maxRetries !== undefined && Number.isFinite(options.maxRetries)
+      ? Math.max(0, Math.floor(options.maxRetries))
+      : MAX_RETRIES
     let http = transport.client
     /**
      * Which client `http` is: bumped by every replacement, and stamped on each
@@ -949,7 +969,9 @@ export const makeWith = (transport: Transport): Effect.Effect<RequestExecutor> =
       })
 
     return RequestExecutor.of({
-      execute: Effect.fn("RequestExecutor.execute")((request, options) => retryFailures(executeOnce(request, options)))
+      execute: Effect.fn("RequestExecutor.execute")((request, options) =>
+        retryFailures(executeOnce(request, options), maxRetries)
+      )
     })
   })
 
