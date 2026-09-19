@@ -7,3 +7,11 @@ test("the bare GitHub inventory read is allowlisted for GET only", () => {
   expect(platformProxyMatch("/api/user/github-repos/o/r/issues", "GET")).toBe(true)
   expect(platformProxyMatch("/api/user/github-repos", "POST")).toBe(false)
 })
+
+test("only billing overview and catalog GETs join the platform proxy", () => {
+  for (const path of ["/api/billing", "/api/billing/plans"]) {
+    expect(platformProxyMatch(path, "GET")).toBe(true)
+    expect(platformProxyMatch(path, "POST")).toBe(false)
+  }
+  expect(platformProxyMatch("/api/billing/balance", "GET")).toBe(false)
+})

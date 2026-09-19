@@ -4,7 +4,6 @@ import { refusalFromStored, storedRefusal } from "@smthrs/rpc/Refusal"
 import { refusalDoors, refusalLead } from "@smthrs/rpc/RefusalCopy"
 import { SessionRefusalSchema } from "@smthrs/rpc/Cards"
 import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
-import { platformProxyMatch } from "../../../../../server/src/proxies"
 
 test("plan-limit fields survive the proxy, CloudClient, and persisted card", async () => {
   const body = { code: "plan_limit_exceeded", plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro" }
@@ -21,12 +20,4 @@ test("malformed optional plan fields are dropped", async () => {
   expect(failure.refusal.plan_key).toBeUndefined()
   expect(failure.refusal.limit_kind).toBeUndefined()
   expect(failure.refusal.upgrade_plan_key).toBeUndefined()
-})
-
-test("only billing overview and catalog GETs join the platform proxy", () => {
-  for (const path of ["/api/billing", "/api/billing/plans"]) {
-    expect(platformProxyMatch(path, "GET")).toBe(true)
-    expect(platformProxyMatch(path, "POST")).toBe(false)
-  }
-  expect(platformProxyMatch("/api/billing/balance", "GET")).toBe(false)
 })
