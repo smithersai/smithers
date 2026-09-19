@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema"
 import * as HttpBody from "effect/unstable/http/HttpBody"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as CanonicalJson from "./CanonicalJson.ts"
 
 /**
  * The failure vocabulary shared by the transport and the classifier above it.
@@ -536,6 +537,20 @@ export function layerVercelGateway(
           const encodedQuestions = yield* encodeWireQuestions(request.questions).pipe(
             Effect.mapError((error) => new EvaluatorError({ code: "invalid_question", message: error.message }))
           )
+          const serializedBody = yield* Effect.try({
+            try: () => {
+              // Reject values JSON would omit or coerce, as well as cycles
+              // and bigint. Keep the existing wire order after validation.
+              CanonicalJson.stringify(request.state)
+              return JSON.stringify({
+                state: request.state,
+                questions: encodedQuestions,
+                providerOptions: { gateway: { zeroDataRetention } }
+              })
+            },
+            catch: () =>
+              new EvaluatorError({ code: "invalid_question", message: "The evaluation state must be a JSON value" })
+          })
           const wire = HttpClientRequest.post(baseUrl, {
             headers: {
               authorization: `Bearer ${Redacted.value(apiKey)}`,
@@ -545,14 +560,7 @@ export function layerVercelGateway(
               "ai-model-id": model,
               "content-type": "application/json"
             },
-            body: HttpBody.text(
-              JSON.stringify({
-                state: request.state,
-                questions: encodedQuestions,
-                providerOptions: { gateway: { zeroDataRetention } }
-              }),
-              "application/json"
-            )
+            body: HttpBody.text(serializedBody, "application/json")
           })
           const response = yield* http.execute(wire).pipe(
             KernelHttpClient.withModelCall(model),

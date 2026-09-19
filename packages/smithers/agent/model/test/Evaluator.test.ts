@@ -201,6 +201,30 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(sent).toHaveLength(0)
   })
 
+  it.each([
+    ["a bigint", () => ({ count: 1n })],
+    ["a cycle", () => {
+      const value: Record<string, unknown> = {}
+      value["self"] = value
+      return value
+    }],
+    ["a missing state", () => undefined],
+    ["an undefined field", () => ({ count: undefined })],
+    ["a non-finite number", () => ({ count: Number.NaN })],
+    ["a Map", () => new Map([["count", 1]])]
+  ])("fails a state that is not JSON as invalid_question: %s", async (_, makeState) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+
+    const error = failure(await evaluate(layer, { state: makeState(), questions }))
+
+    expect(error).toBeInstanceOf(Evaluator.EvaluatorError)
+    expect(error.code).toBe("invalid_question")
+    expect(sent).toHaveLength(0)
+  })
+
   it("carries the provider's own per-question confidence", async () => {
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
       Layer.provide(
