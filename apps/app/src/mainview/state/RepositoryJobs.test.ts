@@ -6,33 +6,38 @@ import { repositoryJobState, repositoryJobStates } from "./RepositoryJobs"
 
 /*
  * The canary's own census, verbatim (.artifacts/mvp-canary-walk-20260917/
- * W1-g-discard-and-retry.json): two jobs of one repository, each with the
- * registration the host answered with, read in the SAME census.
+ * W1-a-buttons-and-chat.json, W1-g-discard-and-retry.json), and the host
+ * answers behind it (W1-00-state-issues.json, W1-00-state-feature.json):
  *
- *   L76-issuesBefore   activeEnabled false, activeRevision 4
- *   featureStateBefore active { enabled: true, revision: 57 }
- *   jobButtonsWithState  "Handle issues · Paused" … "Build a feature"
+ *   23:22:41.531  state-issues   registrationActive {enabled:false, revision:4}   registrationState "known"
+ *   23:22:42.113  state-feature  registrationActive {enabled:true,  revision:57}  registrationState "known"
+ *   23:22:59.523  cardsAfterClear []
+ *   23:22:59.522  L83-freshConversationJobButtons  "Handle issues" … "Build a feature"   (every label plain)
+ *   23:24:34      cardsAfterOpen  ['issues']
+ *   23:42:25.546  jobButtonsWithState  "Handle issues · Paused" … "Build a feature"
+ *   23:42:52.300  featureCard     ['feature']   ← the feature card's first appearance
  *
- * The walk booted into that census, and boot re-reads every setup card's
- * registration (controller/repositorySetup.ts resumeRepositorySetups →
- * requestRecovery), which parks `registrationState` back at "unknown" while
- * the read is in flight and at "unavailable" when it fails. A registration
- * the card is HOLDING does not stop being known because it is being read
- * again, so both buttons must read their own state.
+ * Every registration the walk read was "known"; no receipt in it carries
+ * "unknown" or "unavailable". What moved between the two button censuses was
+ * the CARD: with none open no button read a state, and with the issues card
+ * open only that button did. `repositoryJobStates` reads cards and nothing
+ * else, because a registration reaches this app only through a setup card's
+ * own recovery (controller/repositorySetup.ts `recover()`, GET
+ * /api/repository-setup/state?repo&job, asked per job for a card that already
+ * exists). Both tests below are that census, held in place.
  */
 const REPO = "codeplanesmithers/canary-sandbox"
 const OWNER = "codeplanesmithers"
 
-const setup = (job: RepositoryJob, active: { readonly enabled: boolean; readonly revision: number },
-  recovery: RepositorySetup["recovery"]): RepositorySetup => {
+const setup = (job: RepositoryJob, active: { readonly enabled: boolean; readonly revision: number }): RepositorySetup => {
   const payload = initialSetup(REPO, job, OWNER)
   const digest = setupCandidate(payload)
-  return {
+  const state: RepositorySetup = {
     ...payload,
     revision: active.revision,
-    active: { revision: active.revision, digest, registrationId: `reg-${job}`, sourceRevision: "f4d4814e", enabled: active.enabled },
-    ...(recovery === undefined ? {} : { recovery })
+    active: { revision: active.revision, digest, registrationId: `reg-${job}`, sourceRevision: "c9785dea", enabled: active.enabled, owned: true }
   }
+  return { ...state, recovery: { id: `rec-${job}`, baseRevision: state.revision, baseDigest: setupCandidate(state), state: "completed", registrationState: "known" } }
 }
 
 const card = (job: RepositoryJob, payload: RepositorySetup): Card => ({
@@ -40,19 +45,27 @@ const card = (job: RepositoryJob, payload: RepositorySetup): Card => ({
   status: "active", createdAt: 1, ordinal: 1, payload
 })
 
-const known = (payload: RepositorySetup): RepositorySetup["recovery"] =>
-  ({ id: "rec-known", baseRevision: payload.revision, baseDigest: setupCandidate(payload), state: "completed", registrationState: "known" })
+test("a job reads the state of the registration its own card recovered", () => {
+  const issues = setup("issues", { enabled: false, revision: 4 })
+  const feature = setup("feature", { enabled: true, revision: 57 })
+  expect(repositoryJobState(issues)).toBe("Paused")
+  expect(repositoryJobState(feature)).toBe("Enabled")
+  expect(repositoryJobStates([card("issues", issues), card("feature", feature)], REPO, OWNER))
+    .toEqual({ issues: "Paused", feature: "Enabled" })
+})
 
-test("a registration the card holds is read while its re-read is still in flight", () => {
-  const issues = setup("issues", { enabled: false, revision: 4 }, undefined)
-  const feature = setup("feature", { enabled: true, revision: 57 }, undefined)
-  const issuesCard = card("issues", { ...issues, recovery: known(issues) })
-  const inFlight = card("feature", { ...feature, recovery: { id: "rec-1", baseRevision: 57, baseDigest: setupCandidate(feature), state: "requested", registrationState: "unknown" } })
-  const unavailable = card("feature", { ...feature, recovery: { id: "rec-2", baseRevision: 57, baseDigest: setupCandidate(feature), state: "failed", registrationState: "unavailable", error: "The registration could not be read." } })
-  expect(repositoryJobState(issuesCard.kind === "repository-setup" ? issuesCard.payload : issues)).toBe("Paused")
-  expect(repositoryJobState(inFlight.kind === "repository-setup" ? inFlight.payload : feature)).toBe("Enabled")
-  expect(repositoryJobState(unavailable.kind === "repository-setup" ? unavailable.payload : feature)).toBe("Enabled")
-  expect(repositoryJobStates([issuesCard, inFlight], REPO, OWNER)).toEqual({ issues: "Paused", feature: "Enabled" })
+/*
+ * The defect W1 filed, held exactly as production produced it, because no
+ * code in this app closes it: the button's state has no source but the card.
+ * A fresh conversation holds no setup card at all (`cardsAfterClear []`), so
+ * every job reads as its own name however its registration stands upstream;
+ * with only the issues card open, only that button reads a state. When a job's
+ * registrations reach the app without its card, this test is what changes.
+ */
+test("a job whose setup card is not open reads no state, whatever the host holds", () => {
+  const issuesCard = card("issues", setup("issues", { enabled: false, revision: 4 }))
+  expect(repositoryJobStates([], REPO, OWNER)).toEqual({})
+  expect(repositoryJobStates([issuesCard], REPO, OWNER)).toEqual({ issues: "Paused" })
 })
 
 test("a registration nothing has answered for yet is still not a state", () => {

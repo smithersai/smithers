@@ -20,24 +20,34 @@ export const repositoryJobWorkspace = (cards: Iterable<Card>, repo: string, owne
 /**
  * A job's registered state, in the setup card's own words. Undefined until the
  * host has answered what is registered: an unread registration is not "Off".
- *
- * A registration the card is HOLDING is an answer the host already gave, so it
- * is read whatever the recovery is doing now. Boot re-reads every setup card
- * (controller/repositorySetup.ts resumeRepositorySetups), and that re-read
- * parks `registrationState` at "unknown" until it lands and at "unavailable"
- * when it fails — which used to blank the state of a job that is registered,
- * so one census read "Handle issues · Paused" beside a bare "Build a feature"
- * whose registration was enabled at revision 57. Only a card with no
- * registration at all waits for the answer.
  */
 export const repositoryJobState = (setup: Pick<RepositorySetup, "revision" | "active" | "recovery">): string | undefined =>
-  setup.active?.enabled ? setup.active.revision === setup.revision ? "Enabled" : "Enabled · draft changes"
+  setup.recovery !== undefined && setup.recovery.registrationState !== "known" ? undefined
+    : setup.active?.enabled ? setup.active.revision === setup.revision ? "Enabled" : "Enabled · draft changes"
     : setup.active ? "Paused"
-    : setup.recovery !== undefined && setup.recovery.registrationState !== "known" ? undefined
     : setup.recovery?.trialRegistration ? setup.recovery.trialRegistration.enabled ? "Trial" : "Paused"
     : "Off"
 
-/** {@link repositoryJobState} for every job this account configured on one repository. */
+/**
+ * {@link repositoryJobState} for every job this account configured on one
+ * repository — read from the conversation's cards, which is the only place
+ * this app keeps a registration at all.
+ *
+ * A job's registration enters app state through ONE door: its setup card's
+ * recovery, `GET /api/repository-setup/state?repo&job`, asked per job by
+ * `controller/repositorySetup.ts` `recover()` for a card that already exists.
+ * No collection in `AppStore` holds registrations, and no route hands the app
+ * a repository's registrations together, so a job whose card is not open has
+ * no state here to read and is listed as its own name.
+ *
+ * That, not a recovery field, is what the canary census recorded
+ * (.artifacts/mvp-canary-walk-20260917/W1-a-buttons-and-chat.json): with
+ * `cardsAfterClear []` all five buttons read plain — `Handle issues` included,
+ * while the host held it registered and paused at revision 4 — and twenty
+ * minutes later, with only the issues card open, `jobButtonsWithState` read
+ * "Handle issues · Paused" beside a bare "Build a feature" whose registration
+ * was enabled at revision 57. `RepositoryJobs.test.ts` pins both halves.
+ */
 export const repositoryJobStates = (cards: Iterable<Card>, repo: string, owner: string | null): Partial<Record<RepositoryJob, string>> => {
   const states: Partial<Record<RepositoryJob, string>> = {}
   for (const card of cards) {
