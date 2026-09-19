@@ -274,7 +274,7 @@ describe("AgentEvent", () => {
         eventType: "flows.harness.vacuous-verification-observed.v1",
         flow: "bash",
         check: "pytest tests",
-        signature: "call-signature",
+        callDigest: "call-digest",
         nextFrame: 7
       })
     ]

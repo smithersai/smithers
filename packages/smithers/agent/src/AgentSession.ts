@@ -730,7 +730,7 @@ export const trace = (
       // The stored check travels with the identity the controller matched it
       // by, because the whole judgement is that this exact call had already
       // been watched passing: a reader with only the text cannot tell an exact
-      // reuse from a command that merely reads like one, and the signature
+      // reuse from a command that merely reads like one, and the call's digest
       // reconciles the row directly against the run's own
       // `cell-call-settled` record.
       return {
@@ -738,7 +738,7 @@ export const trace = (
         payload: {
           flow: event.flow,
           check: event.check,
-          signature: event.signature,
+          callDigest: event.callDigest,
           nextFrame: event.nextFrame
         }
       }

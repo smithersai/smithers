@@ -640,10 +640,18 @@ export class SufficiencyObserved extends Schema.TaggedClass<SufficiencyObserved>
  * the same class of fact — a result that reads identically on a broken tree and
  * on a fixed one.
  *
- * `check` quotes the stored input as the run wrote it, and `signature` is the
+ * `check` quotes the stored input as the run wrote it, and `callDigest` is the
  * controller's own identity for that call, so a reader can reconcile the
  * observation against the run's own `cell-call-settled` rows without replaying
  * anything. Nothing is refused and no cap is spent, so there is no cap field.
+ *
+ * It is named for what it is -- the digest of `{ flow, input }`, nothing signs
+ * it -- rather than `signature`, the controller's own word for it everywhere
+ * else. The journal redacts by field name, and `signature` names a credential
+ * often enough in this repository (an HMAC over share claims, a grant
+ * envelope, a webhook header) that the rule stays. A field this row exists to
+ * be reconciled by cannot be written as `[REDACTED]`, so the field carries the
+ * honest word and the rule keeps its reach.
  *
  * @category events
  * @since 0.1.0
@@ -656,8 +664,8 @@ export class VacuousVerificationObserved extends Schema.TaggedClass<VacuousVerif
   flow: Schema.String,
   /** The stored check's input as the run wrote it, clipped. */
   check: Schema.String,
-  /** The controller's identity for that call. */
-  signature: Schema.String,
+  /** The controller's identity for that call: the digest of its flow and input. */
+  callDigest: Schema.String,
   /** The frame the observation was attached to. */
   nextFrame: Schema.Int
 }) {}

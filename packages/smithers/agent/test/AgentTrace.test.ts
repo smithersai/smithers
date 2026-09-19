@@ -11,6 +11,7 @@ import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as Transcript from "@smthrs/harness/Transcript"
+import { Redaction } from "@smthrs/journal"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
@@ -368,7 +369,7 @@ describe("trace", () => {
           eventType: "flows.harness.vacuous-verification-observed.v1",
           flow: "bash",
           check: "{\"command\":\"run the whole check\"}",
-          signature: "e3b0c44298fc1c14",
+          callDigest: "e3b0c44298fc1c14",
           nextFrame: 15
         }),
         {
@@ -380,7 +381,7 @@ describe("trace", () => {
           payload: {
             flow: "bash",
             check: "{\"command\":\"run the whole check\"}",
-            signature: "e3b0c44298fc1c14",
+            callDigest: "e3b0c44298fc1c14",
             nextFrame: 15
           }
         }
@@ -983,5 +984,38 @@ describe("late payload fields", () => {
         ]
       }
     })
+  })
+})
+
+/*
+ * The journal is redacted on its write path, by field name. A projected
+ * payload that a reader must reconcile against another row therefore has to
+ * survive that pass: a field the redactor replaces is a fact the journal
+ * records and can never answer.
+ */
+describe("what survives the journal's own redaction", () => {
+  it("keeps the call digest a vacuous-verification observation is reconciled by", () => {
+    const projected = AgentSession.trace(
+      new AgentEvent.VacuousVerificationObserved({
+        eventType: "flows.harness.vacuous-verification-observed.v1",
+        flow: "bash",
+        check: "{\"command\":\"run the whole check\"}",
+        callDigest: "e3b0c44298fc1c14",
+        nextFrame: 15
+      })
+    )
+    // The whole judgement is that THIS call had already been watched passing.
+    // Redacted, the row says a call was, and names none.
+    expect(Redaction.make()(projected.payload)).toEqual({
+      flow: "bash",
+      check: "{\"command\":\"run the whole check\"}",
+      callDigest: "e3b0c44298fc1c14",
+      nextFrame: 15
+    })
+  })
+
+  it("still refuses a field named after a credential, so the narrowing is this field and not the rule", () => {
+    expect(Redaction.isSensitiveKey("signature")).toBe(true)
+    expect(Redaction.isSensitiveKey("callDigest")).toBe(false)
   })
 })

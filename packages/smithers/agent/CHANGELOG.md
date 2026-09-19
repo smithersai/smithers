@@ -8,6 +8,10 @@
 
 ### Changed
 
+- `control.agent.vacuous-verification-observed` now projects `callDigest` where
+  it projected `signature`. The journal's redactor treats `signature` as a
+  sensitive field name, so the identity the row is reconciled against its
+  `cell-call-settled` record by was written as `[REDACTED]`.
 - **`Agent.run` and every `AgentAction` layer now require
   `Evaluator.Evaluator`** from `@smthrs/model`. The harness's sixth brake on a
   completion never falls back: a claim nothing could judge fails the run as

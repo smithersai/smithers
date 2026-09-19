@@ -59,6 +59,17 @@
   discarded, because restoring it is how a bounced "the tests pass" became a
   run's final answer with a `stop` finish.
 
+- `AgentEvent.VacuousVerificationObserved.signature` is now `callDigest`. The
+  journal redacts by field name, and `signature` is on its sensitive list, so
+  the one field the row exists to be reconciled by reached the durable table as
+  `[REDACTED]` -- a permanent record of the fact with the fact's identity
+  removed. The rule stays: `signature` names an HMAC over share claims, a grant
+  envelope and three webhook headers elsewhere in this repository, and a
+  key-name net cannot tell a MAC over a secret from a digest over public input.
+  The field carries the honest word instead -- nothing signs it; it is
+  `Digest.digest(CanonicalJson.stringify([flow, input]))`, which `CallLedger`
+  already documents as a digest. The control is still unwired, so no journal in
+  flight carries either spelling.
 - The completion claim brake is a verdict and not only a demand. Every
   completion with a claim is now read, `claimCap` is the number of frames a
   run is _given_ to prove one rather than the number of completions that are

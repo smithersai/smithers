@@ -173,6 +173,17 @@ export const defaultRules: ReadonlyArray<Rule> = [
  * these are SUFFIX tests: `connectionString` does not end in `connection`, and
  * `secretKey` does not end in `secret`. A bare `key` suffix is not on the list
  * for the opposite reason: it would redact `monkey` and `turkey`.
+ *
+ * `signature` stays, and a field it costs is renamed rather than excused. A
+ * name test cannot tell a MAC computed with a secret from a digest over public
+ * input, and both are called `signature`: `WorkspaceShare` signs its claims
+ * with `ShareSigner.signHmac` and that value IS the share's authorization,
+ * `GrantStore` carries envelope signatures, and the GitHub, Linear and
+ * Telegram webhook readers all verify a header by that name. Against those, a
+ * digest whose whole purpose is to be reconciled costs nothing to rename and
+ * everything to leave unreadable -- see
+ * `AgentEvent.VacuousVerificationObserved.callDigest`, which was `signature`
+ * and reached durable rows as the placeholder.
  */
 const sensitiveKeySuffixes = [
   "auth",
