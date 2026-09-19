@@ -48,6 +48,7 @@ const codingPackages = [
   "packages/smithers/agent/evals",
   "packages/smithers/agent/fs",
   "packages/smithers/agent/harness",
+  "packages/smithers/agent/harness-detect",
   "packages/smithers/agent/integrations",
   "packages/smithers/agent/memory",
   "packages/smithers/agent/model",
@@ -91,6 +92,7 @@ const codingPackages = [
   "packages/smithers/mcp",
   "packages/smithers/migrate",
   "packages/smithers/notifications",
+  "packages/smithers/opencode",
   "packages/smithers/ui",
   "packages/smithers/ui/ui-styleguide"
 ] as const
@@ -137,7 +139,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts"),
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),
-    Smithers.file("//flows/test/coding-source-publication.test.ts")]),
+    Smithers.file("//flows/test/coding-source-publication.test.ts"), Smithers.file("//flows/test/coding-dispatch.test.ts")]),
   srcs: [...codingSources, ...codingProjectInputs], deps: codingDependencies, cwd
 })
 const codingConfigBun = Smithers.NodeTest({

@@ -9,11 +9,16 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 export const nativeTests = [
   "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts", "coding-wiki-check.test.ts",
   "coding-atoms.test.ts", "coding-correction.test.ts", "coding-planning.test.ts", "coding-planning-wiki.test.ts",
-  "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts", "coding-vibe-cleanup.test.ts"
+  "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts",
+  "coding-dispatch-host.test.ts", "coding-vibe-cleanup.test.ts"
 ]
-// These two standalone fixtures hardwire NodeRuntime. The Bun request-host
-// fixture exercises the production atom/correction composition through Bun DI.
-export const bunNativeTests = nativeTests.filter(name => name !== "coding-atoms.test.ts" && name !== "coding-correction.test.ts")
+// These three standalone fixtures hardwire the Node runtime: the atom and
+// correction fixtures build NodeRuntime directly, and the dispatch host imports
+// NodeControlHost without the `process.versions.bun` branch its request-host
+// sibling carries. The Bun request-host fixture exercises the production
+// atom/correction composition through Bun DI.
+const nodeOnly = ["coding-atoms.test.ts", "coding-correction.test.ts", "coding-dispatch-host.test.ts"]
+export const bunNativeTests = nativeTests.filter(name => !nodeOnly.includes(name))
 
 const digest = async path => {
   const hash = createHash("sha256")
