@@ -462,6 +462,37 @@ describe("Classifier.confidence and confident", () => {
 })
 
 describe("Classifier.decodeAnswers and Answer", () => {
+  it("keeps every question id as an own answer property", async () => {
+    const questions = Object.fromEntries(
+      ["__proto__", "constructor", "toString"].map((id) => [id, Classifier.boolean({ instructions: "Is it ok?" })])
+    )
+    const raw = Object.fromEntries(
+      Object.keys(questions).map((id) => [id, { type: "boolean" as const, probability: 0.9 }])
+    )
+
+    const answers = await Effect.runPromise(Classifier.decodeAnswers(questions, raw))
+
+    expect(Object.keys(answers)).toEqual(Object.keys(questions))
+    expect(JSON.parse(JSON.stringify(answers))).toEqual(
+      Object.fromEntries(Object.keys(questions).map((id) => [id, { value: true, probability: 0.9 }]))
+    )
+  })
+
+  it("keeps choice options as own probabilities and never reads inherited probabilities", async () => {
+    const criteria = Object.fromEntries(["__proto__", "constructor", "toString"].map((key) => [key, key]))
+    const questions = { kind: Classifier.choice({ instructions: "Which?", criteria }) }
+    const answers = await Effect.runPromise(Classifier.decodeAnswers(questions, {
+      kind: { type: "choice", choice: "__proto__", probabilities: Object.fromEntries([["__proto__", 1]]) }
+    }))
+
+    expect(answers.kind).toEqual({
+      value: "__proto__",
+      probabilities: Object.fromEntries([["__proto__", 1], ["constructor", 0], ["toString", 0]]),
+      confidence: 1
+    })
+    expect(Object.keys(answers.kind.probabilities)).toEqual(Object.keys(criteria))
+  })
+
   it("decodes raw answers against ad-hoc questions", async () => {
     const questions = {
       ok: { type: "boolean", instructions: "Is it ok?" },

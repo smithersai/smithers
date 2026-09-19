@@ -254,11 +254,13 @@ const distribution = (
   given: Readonly<Record<string, number>> | undefined,
   aliases: (index: number) => ReadonlyArray<string>
 ): Result.Result<Readonly<Record<string, number>>, string> => {
-  const probabilities: Record<string, number> = {}
+  const probabilities: Record<string, number> = Object.create(null)
   for (const [index, key] of keys.entries()) {
     const provided = given === undefined
       ? undefined
-      : aliases(index).map((alias) => given[alias]).find((value) => value !== undefined)
+      : aliases(index).map((alias) => Object.hasOwn(given, alias) ? given[alias] : undefined).find((value) =>
+        value !== undefined
+      )
     const probability = provided ?? (given === undefined && key === chosen ? 1 : 0)
     if (!isUnitInterval(probability)) return Result.fail(`probability of "${key}" is ${probability}`)
     probabilities[key] = probability
@@ -330,9 +332,9 @@ export const decodeAnswers = <Qs extends Questions>(
   raw: Evaluator.RawAnswers
 ): Effect.Effect<AnswersOf<Qs>, ClassifierError> =>
   Effect.suspend(() => {
-    const answers: Record<string, Answer> = {}
+    const answers: Record<string, Answer> = Object.create(null)
     for (const [id, question] of Object.entries(questions)) {
-      const decoded = decodeOne(id, question, raw[id])
+      const decoded = decodeOne(id, question, Object.hasOwn(raw, id) ? raw[id] : undefined)
       if (Result.isFailure(decoded)) return Effect.fail(decoded.failure)
       answers[id] = decoded.success
     }
