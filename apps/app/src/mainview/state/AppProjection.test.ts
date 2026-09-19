@@ -5,6 +5,7 @@ APP_PROJECTION_COLLECTION_NAMES,APP_PROJECTION_SCHEMAS,APP_TRANSITION_TYPES,
 appProjectionKey,appTransitionErasesPrivateState,emptyAppProjection,projectAppEvent,seedAppProjection,
 type AppProjectionSnapshot
 } from "./AppProjection"
+import type { ConfiguredModel,ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
 import type { AppTransition,Card,CloudWorkspaceInput } from "./AppState"
 import { cardFrameId,DEFAULT_BRANCH_ID,parseRepoSelection,repoKeyOf } from "./AppState"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
@@ -45,7 +46,7 @@ const workspace: CloudWorkspaceInput = {
 
 describe("pure app event projection", () => {
   test("owns exactly the domain roster and its stable keys", () => {
-    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(42)
+    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(44)
     expect(Object.keys(emptyAppProjection())).toEqual(Object.keys(APP_PROJECTION_SCHEMAS))
     expect(APP_PROJECTION_COLLECTION_NAMES).not.toContain("appEvents")
     expect(appProjectionKey("githubAppStatuses", { repo: "org/repo" })).toBe("org/repo")
@@ -362,5 +363,94 @@ describe("pure app event projection", () => {
       { type: "session.turn.orphaned", actor: "system" }
     ] as AppTransition[]) expect(appProjectionHash(apply(shuffled, event))).toBe(appProjectionHash(apply(state, event)))
     expect(apply(state, { type: "world.document.removed", actor: "user", id: "removed" }).sessions[0]!.selectedWorldDocumentId).toBe("a-note")
+  })
+})
+
+describe("models and seats", () => {
+  const hosted: ConfiguredModel = { id: "cerebras", protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "gpt-oss-120b",
+    credential: "CEREBRAS_API_KEY", builtin: true }
+  const jev: ConfiguredModel = { id: "jev", protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY", builtin: true }
+  const mine: ConfiguredModel = { id: "mine", protocol: "anthropic-messages", modelId: "claude-fable-5", credential: "ANTHROPIC_API_KEY" }
+  const passed: ModelTestRecord = { id: "mine", testedAt: 300, result: { ok: true, latencyMs: 412, sample: "ok" } }
+  const observe = (state: AppProjectionSnapshot, models: ReadonlyArray<ConfiguredModel>) =>
+    apply(state, { type: "models.observed", actor: "system", models })
+  const save = (state: AppProjectionSnapshot, model: ConfiguredModel) => apply(state, { type: "model.saved", actor: "user", model })
+
+  test("nothing is seeded: a host that answered nothing shows no model and no seat", () => {
+    expect(boot().models).toEqual([])
+    expect(boot().seats).toEqual([])
+  })
+
+  test("an observation replaces the host's rows in place and never a user's record", () => {
+    let state = observe(save(boot(), mine), [hosted, jev])
+    expect(state.models.map((row) => row.id).sort()).toEqual(["cerebras", "jev", "mine"])
+    state = observe(state, [{ ...hosted, modelId: "qwen-3" }])
+    expect(state.models.find((row) => row.id === "cerebras")).toEqual({ ...hosted, modelId: "qwen-3" })
+    expect(state.models.map((row) => row.id).sort()).toEqual(["cerebras", "mine"])
+    // A host row spelled with a user's name does not take the record over.
+    state = observe(state, [{ ...hosted, id: "mine" }])
+    expect(state.models).toEqual([mine])
+  })
+
+  test("a host row is marked builtin whatever the transition claimed", () => {
+    const { builtin: _builtin, ...unmarked } = hosted
+    expect(observe(boot(), [unmarked]).models).toEqual([hosted])
+  })
+
+  test("a save never writes a host row, and never marks a user row builtin", () => {
+    const state = save(observe(boot(), [hosted]), { ...mine, id: "cerebras" })
+    expect(state.models).toEqual([hosted])
+    expect(save(boot(), { ...mine, builtin: true }).models).toEqual([mine])
+  })
+
+  test("a test is evidence about one route: an edit that moves the route drops it", () => {
+    const tested = apply(save(boot(), { ...mine, protocol: "openai-chat", baseUrl: "https://openrouter.ai", path: "/api/v1/chat/completions",
+      credential: "OPENROUTER_API_KEY" }), { type: "model.tested", actor: "system", test: passed })
+    expect(tested.models[0]!.lastTest).toEqual(passed)
+    expect(save(tested, tested.models.map(({ lastTest: _lastTest, ...model }) => model)[0]!).models[0]!.lastTest).toEqual(passed)
+    const rerouted = save(tested, mine)
+    // The cleared optional fields leave the row; they do not linger from the old route.
+    expect(rerouted.models).toEqual([mine])
+  })
+
+  test("a test of a model that is gone writes nothing", () => {
+    const state = boot()
+    expect(apply(state, { type: "model.tested", actor: "system", test: passed }).models).toEqual([])
+  })
+
+  test("a seat takes only a model of its kind, and default frees it", () => {
+    let state = observe(save(boot(), mine), [jev])
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "front-door", recordId: "mine" })
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "jev" })
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "absent" })
+    expect(state.seats).toEqual([])
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "mine" })
+    state = apply(state, { type: "seat.assigned", actor: "smithers", seat: "front-door", recordId: "jev" })
+    expect(state.seats).toEqual([{ id: "explainer", recordId: "mine" }, { id: "front-door", recordId: "jev" }])
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "explainer", recordId: null })
+    expect(state.seats).toEqual([{ id: "front-door", recordId: "jev" }])
+  })
+
+  test("removing a model frees every seat it held, and a host row cannot be removed", () => {
+    let state = observe(save(boot(), mine), [jev])
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "mine" })
+    state = apply(state, { type: "seat.assigned", actor: "user", seat: "recommend", recordId: "jev" })
+    state = apply(state, { type: "model.removed", actor: "user", id: "jev" })
+    state = apply(state, { type: "model.removed", actor: "user", id: "mine" })
+    expect(state.models).toEqual([jev])
+    expect(state.seats).toEqual([{ id: "recommend", recordId: "jev" }])
+  })
+
+  test("a host that stops serving a model leaves its seat assigned, so the gap can be shown", () => {
+    let state = apply(observe(boot(), [jev]), { type: "seat.assigned", actor: "user", seat: "recommend", recordId: "jev" })
+    state = observe(state, [])
+    expect(state.models).toEqual([])
+    expect(state.seats).toEqual([{ id: "recommend", recordId: "jev" }])
+  })
+
+  test("reset forgets both", () => {
+    let state = apply(save(boot(), mine), { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "mine" })
+    state = apply(state, { type: "app.reset", actor: "user" })
+    expect([state.models, state.seats]).toEqual([[], []])
   })
 })

@@ -45,7 +45,13 @@ export const OPTION_PROVIDERS = [
   /** The plugin catalog, with the ones already on this workspace's shelf marked. */
   "plugins",
   /** The selected repository's real files, read from the file seam at render. */
-  "files"
+  "files",
+  /** The configured models; with a seat in the draft, only the ones that seat takes. */
+  "models",
+  /** The credential NAMES the host listed on the Models card. Never a value. */
+  "credentials",
+  /** The seats the host listed on the Models card. */
+  "seats"
 ] as const
 export type OptionProvider = (typeof OPTION_PROVIDERS)[number]
 

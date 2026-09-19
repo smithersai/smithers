@@ -57,6 +57,7 @@ import { frameFlows } from "./entries/frame"
 import { githubFlows } from "./entries/github"
 import { issuesFlows } from "./entries/issues"
 import { setupFlows } from "./entries/setup"
+import { modelFlows } from "./entries/model"
 import { notificationsFlows } from "./entries/notifications"
 import { paletteFlows } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON, pluginsFlows, pluginsSurfaceFlows } from "./entries/plugins"
@@ -151,6 +152,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...notificationsFlows(actions),
   ...envFlows(actions),
   ...secretsFlows(actions),
+  ...modelFlows(actions),
   ...(actions.snapshot?.()?.mythicalHistory === true ? historyFlows(actions) : []),
   ...branchesFlows(actions),
   ...commitsFlows(actions),

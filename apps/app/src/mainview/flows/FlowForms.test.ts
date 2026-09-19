@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { FORM_OPTION_PROVIDERS } from "@smthrs/rpc/Cards"
 import { Schema } from "effect"
-import { assembleArgs, draftFrom, formFieldsFor, missingFields, partialPayload } from "./FlowForms"
+import { assembleArgs, draftFrom, formFieldsFor, missingFields, OPTION_PROVIDERS, partialPayload } from "./FlowForms"
 import type { FormHints } from "./FlowForms"
 
 /*
@@ -123,5 +124,12 @@ describe("assembleArgs — the filled form is one slash line again", () => {
     const fields = formFieldsFor(AgentCreate, undefined)
     const hints: FormHints = { args: (payload) => `${String(payload.id)} --model ${String(payload.model)}` }
     expect(assembleArgs(fields, hints, { id: "reviewer", model: "gpt" })).toBe("reviewer --model gpt")
+  })
+})
+
+describe("the option providers", () => {
+  test("a flow may name exactly the providers a stored form card decodes", () => {
+    // Cards.ts validates `optionsFrom` on the wire: a provider named here and not there renders a card the store refuses.
+    expect([...OPTION_PROVIDERS]).toEqual([...FORM_OPTION_PROVIDERS])
   })
 })

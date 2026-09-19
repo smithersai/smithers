@@ -341,6 +341,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/IssueCards.tsx": 8, // + the detail's comment box submit (issues.comment)
       "../cards/LandingCards.tsx": 5, // Includes the durable PR tab flow.
       "../cards/FileCards.tsx": 3,
+      /* A row's Test, Edit, Remove and select; New; and the attention row's Assign, Test or Edit. */
+      "../cards/ModelCards.tsx": 8,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
       /* The account card's Sign out door (auth.sign-out through onRunCommand). */

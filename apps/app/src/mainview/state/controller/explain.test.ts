@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../../runtime/AgentPort"
+import { createAppStore } from "../AppStore"
+import { memoryStorage } from "../TestFixtures"
 import { createControllerContext, type ControllerContext } from "./context"
 import { createExplainController } from "./explain"
 
@@ -18,7 +20,11 @@ const recordingController = () => {
     cancelTurn: async () => {}
   }
   const controller = createExplainController({
-    store: { dispatch: (action: (typeof dispatches)[number]) => { dispatches.push(action) } },
+    store: {
+      collections: { seats: new Map(), models: new Map() },
+      dispatch: (action: (typeof dispatches)[number]) => { dispatches.push(action) }
+    },
+    services: {},
     agent,
     unref: () => {},
     onDispose: () => {}
@@ -93,7 +99,7 @@ const streamingController = (start: AgentPort["startTurn"] = async () => ({ stat
   }
   const ctx = createControllerContext({
     // The network diagnostics ring scopes observations to the current identity.
-    collections: { identitySessions: {
+    collections: { seats: new Map(), models: new Map(), identitySessions: {
       get: () => undefined,
       subscribeChanges: (listener: () => void) => {
         identityListeners.add(listener)
@@ -190,5 +196,56 @@ describe("explanations belong to the controller disposal scope", () => {
       for (const timer of timers) clearTimeout(timer)
       await ctx.dispose()
     }
+  })
+})
+
+describe("the explainer seat", () => {
+  const MINE = { id: "mine", protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "qwen-3-coder-480b", credential: "CEREBRAS_API_KEY" } as const
+
+  const seated = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+    const launches: StartAgentTurnRequest[] = []
+    const agent: AgentPort = {
+      available: true,
+      subscribe: () => () => {},
+      // Settle immediately so the test leaves no timer or subscription behind.
+      startTurn: async (request) => { launches.push(request); return { status: "error", message: "recorded" } },
+      cancelTurn: async () => {}
+    }
+    const controller = createExplainController({ store, agent, services: {}, unref: () => {}, onDispose: () => {} } as unknown as ControllerContext)
+    const card = () => [...store.collections.cards.values()].find((row) => row.kind === "explain")
+    return { store, controller, launches, card, close: async () => { await store.dispose?.() } }
+  }
+
+  test("unassigned, the side turn is the request it always was", async () => {
+    const t = await seated()
+    await t.controller.explain("Why did the build fail?")
+    expect(Object.keys(t.launches[0]!).sort()).toEqual(["instructions", "messages", "purpose", "role", "runId"])
+    expect(t.card()?.payload).toMatchObject({ answeredBy: expect.stringContaining("the serving side chooses the model") })
+    await t.close()
+  })
+
+  test("assigned, the sealed side turn binds the model, carries no tools, and the card names it", async () => {
+    const t = await seated()
+    await t.store.dispatch({ type: "model.saved", actor: "user", model: MINE }).isPersisted.promise
+    await t.store.dispatch({ type: "seat.assigned", actor: "user", seat: "explainer", recordId: "mine" }).isPersisted.promise
+    await t.controller.explain("Why did the build fail?")
+    const launch = t.launches[0]!
+    expect(launch.model).toEqual({ protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "qwen-3-coder-480b", credential: "CEREBRAS_API_KEY" })
+    expect(launch.tools).toBeUndefined()
+    expect(launch.decisionModel).toBeUndefined()
+    expect(launch.role).toBe("explainer")
+    expect(t.card()?.payload).toMatchObject({ answeredBy: "mine" })
+    await t.close()
+  })
+
+  test("the seat is read per question: back on the default, the next question binds nothing", async () => {
+    const t = await seated()
+    await t.store.dispatch({ type: "model.saved", actor: "user", model: MINE }).isPersisted.promise
+    await t.store.dispatch({ type: "seat.assigned", actor: "user", seat: "explainer", recordId: "mine" }).isPersisted.promise
+    await t.store.dispatch({ type: "seat.assigned", actor: "user", seat: "explainer", recordId: null }).isPersisted.promise
+    await t.controller.explain("Why did the build fail?")
+    expect("model" in t.launches[0]!).toBe(false)
+    await t.close()
   })
 })

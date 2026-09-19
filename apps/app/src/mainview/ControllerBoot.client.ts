@@ -122,6 +122,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
       // Agents as data (custom-agents.md): the app-agents mirror loads beside the harness list.
       yield* Effect.sync(() => void controller.loadAgents())
     }
+    // An assigned seat this host cannot answer surfaces unasked (controller/models.ts).
+    yield* Effect.sync(() => void controller.observeModels())
     // Web identity loads its Cloud session before resuming parked commands.
     // The native PAT is independent of GitHub and still needs its own read.
     if (bootstrap.host === "local" && hasCapability(bootstrap, "cloud")) {

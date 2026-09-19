@@ -1,7 +1,9 @@
 import { Schema } from "effect"
 import { agentRole } from "@smthrs/rpc/AgentRoles"
+import { bindingOf } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { ControllerContext } from "./context"
+import { assignedModel } from "./modelSeats"
 
 /*
  * The explainer (AgentRoles.ts "explainer"): `explain <what>` runs ONE side
@@ -13,6 +15,10 @@ import type { ControllerContext } from "./context"
  * Honesty: the request carries `role: "explainer"` as a hint. The stream does
  * not say which model answered, so the card states what was ASKED for and
  * that the serving side chose — it never claims Kimi K3 answered.
+ *
+ * The `explainer` seat (modelSeats.ts): with a model assigned the request
+ * BINDS it, and the serving side answers on that model or refuses the turn,
+ * so the card names the assigned model. Unassigned, nothing here changes.
  */
 
 export interface ExplainConfig {
@@ -64,6 +70,8 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
       .replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")
     if (question === "") return "agent.explain needs something to explain: /agent.explain <what>"
     if (!agent.available) return "There is no agent on this host to explain with."
+    // Read once per question: the card names the model this request carried.
+    const bound = assignedModel(ctx, "explainer")
     const runId = `explain-${Date.now()}`
     const cardId = `explain-${runId}`
     const now = Date.now()
@@ -82,7 +90,7 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
           status: phase === "failed" ? "error" : phase === "answered" ? "acted" : "active",
           createdAt: now,
           ordinal: 0,
-          payload: { question, answer, phase, answeredBy: ANSWERED_BY, ...(error === undefined ? {} : { error }) }
+          payload: { question, answer, phase, answeredBy: bound?.id ?? ANSWERED_BY, ...(error === undefined ? {} : { error }) }
         }
       })
     }
@@ -138,7 +146,8 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
         ],
         instructions: explainInstructions(),
         purpose: "explain",
-        role: "explainer"
+        role: "explainer",
+        ...(bound === undefined ? {} : { model: bindingOf(bound) })
       })
       if (result.status === "error") finish("failed", result.message)
     } catch (error) {

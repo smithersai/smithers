@@ -88,6 +88,8 @@ export interface CardActions {
    * answers, not on silence).
    */
   readonly signedOut?: boolean
+  /** Which frame the body is mounted in. Absent in static previews, which read as embedded. */
+  readonly presentation?: "embedded" | "maximized"
 }
 
 /** How one card kind renders and which pill it wears. */

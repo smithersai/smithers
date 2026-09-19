@@ -53,3 +53,27 @@ test("domain schemas validate observed inventories and creation types", () => {
     { type: "tab.opened", actor: "user", tab: { id: "t", kind: "terminal", title: "Terminal" } }
   ]) expect(() => validateAppTransition(state, invalid)).toThrow("event contract")
 })
+
+test("a model event carries a credential name and never a value, a test record or a reserved name", () => {
+  const state = fixture()
+  const model = { id: "mine", protocol: "openai-chat", baseUrl: "https://openrouter.ai", modelId: "moonshotai/kimi-k3", credential: "OPENROUTER_API_KEY" }
+  const test = { id: "mine", testedAt: 5, result: { ok: false, latencyMs: 9, failure: { code: "timeout", deadlineMs: 15000 }, fault: "dependency" } }
+  for (const valid of [
+    { type: "models.observed", actor: "system", models: [{ ...model, builtin: true }] },
+    { type: "model.saved", actor: "smithers", model },
+    { type: "model.removed", actor: "user", id: "mine" },
+    { type: "model.tested", actor: "system", test },
+    { type: "seat.assigned", actor: "user", seat: "explainer", recordId: null }
+  ] as const) expect(validateAppTransition(state, valid)).toEqual(valid as unknown as ReturnType<typeof validateAppTransition>)
+  for (const invalid of [
+    { type: "model.saved", actor: "user", model: { ...model, apiKey: "sk-live" } },
+    { type: "model.saved", actor: "user", model: { ...model, lastTest: test } },
+    { type: "model.saved", actor: "user", model: { ...model, id: "default" } },
+    { type: "model.saved", actor: "user", model: { ...model, credential: "sk-live-lowercase" } },
+    { type: "models.observed", actor: "user", models: [] },
+    { type: "model.tested", actor: "user", test },
+    { type: "model.tested", actor: "system", test: { ...test, result: { ...test.result, failure: { code: "timeout", deadlineMs: 15000, message: "sk-live" } } } },
+    { type: "seat.assigned", actor: "user", seat: "role:ui", recordId: "mine" },
+    { type: "seat.assigned", actor: "user", seat: "explainer", recordId: "default" }
+  ]) expect(() => validateAppTransition(state, invalid)).toThrow("event contract")
+})

@@ -149,6 +149,43 @@ const triggerRegistration = (args: string | undefined): Parsed => {
 }
 
 /**
+ * `--name <name> --protocol <protocol> --model <model id> --credential <NAME>
+ * [--url <base url>] [--path <path>]`: the record model.save takes, each flag
+ * onto the record's own field name. No value holds whitespace, and a short
+ * line decodes to what it gave: that is the prefill model.edit opens the form
+ * with. There is no flag for a credential's value, because there is no field.
+ */
+const MODEL_FLAGS: Readonly<Record<string, string>> = {
+  name: "name",
+  protocol: "protocol",
+  model: "modelId",
+  credential: "credential",
+  url: "baseUrl",
+  path: "path"
+}
+const modelSave = (args: string | undefined): Parsed => {
+  const reason = `model.save takes ${Object.keys(MODEL_FLAGS).map((name) => `--${name}`).join(", ")}`
+  const payload: Record<string, unknown> = {}
+  const rest = trimmed(args)
+  if (rest === "") return ok(payload)
+  if (!rest.startsWith("--")) return no(reason)
+  for (const part of rest.split(/\s+(?=--)/)) {
+    const flag = /^--([a-z]+)(?:\s+(\S+))?$/.exec(part.trim())
+    const field = flag === null ? undefined : MODEL_FLAGS[flag[1]!]
+    if (flag === null || field === undefined) return no(reason)
+    if (flag[2] !== undefined) payload[field] = flag[2]
+  }
+  return ok(payload)
+}
+
+/** `<name>`: the one model a model flow acts on. A name holds no whitespace, and a bare line opens the form. */
+const modelName = (name: string, args: string | undefined): Parsed => {
+  const [id, ...extra] = tokensOf(args)
+  if (extra.length > 0) return no(`${name} takes one model name`)
+  return ok(id === undefined ? {} : { id })
+}
+
+/**
  * `<name> [owner/repo]`: the schedule `triggers.run` fires now. A schedule's
  * name holds no whitespace (SLUG), so the repository trails it as it does
  * everywhere else, and a line with no name at all opens the form for it.
@@ -558,6 +595,17 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { assignment: rest } : { assignment: rest, repo })
   },
   "secrets.list": (args) => repoOnly("secrets.list", args),
+  "model.show": (args) => modelName("model.show", args),
+  "model.edit": (args) => modelName("model.edit", args),
+  "model.remove": (args) => modelName("model.remove", args),
+  "model.test": (args) => modelName("model.test", args),
+  "model.save": (args) => modelSave(args),
+  /* `<seat> <name|default>`: the seat alone is the card's Assign button, and the form asks for the model. */
+  "model.assign": (args) => {
+    const [seat, recordId, ...extra] = tokensOf(args)
+    if (extra.length > 0) return no("model.assign takes a seat and a model name")
+    return ok({ ...(seat === undefined ? {} : { seat }), ...(recordId === undefined ? {} : { recordId }) })
+  },
   /*
    * The palette flows (Search and Command Palette Spec 2026-09-07 §6): the
    * whole line is the query, qualifiers included (`retry section:tried`);

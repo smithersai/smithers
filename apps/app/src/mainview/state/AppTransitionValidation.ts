@@ -1,5 +1,6 @@
 import { AgentTurnBatchSchema,AgentTurnCursorSchema,AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { BillingPlanSchema,SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
+import { ConfiguredModelSchema,ModelRecordIdSchema,ModelTestRecordSchema,SeatIdSchema } from "@smthrs/rpc/ConfiguredModel"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { RepoFileEntrySchema } from "@smthrs/rpc/LocalApp"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
@@ -153,6 +154,11 @@ export const APP_TRANSITION_SCHEMAS = {
   "status.expired": z.object({ "type": z.literal("status.expired"), "actor": z.literal("system"), "now": z.number().finite(), "runtime": z.literal(true).optional() }).strict(),
   "harnesses.loaded": z.object({ "type": z.literal("harnesses.loaded"), "actor": z.literal("system"), "harnesses": z.array(HarnessSchema) }).strict(),
   "agents.loaded": z.object({ "type": z.literal("agents.loaded"), "actor": z.literal("system"), "agents": z.array(AgentRoleSchema) }).strict(),
+  "models.observed": z.object({ "type": z.literal("models.observed"), "actor": z.literal("system"), "models": z.array(ConfiguredModelSchema) }).strict(),
+  "model.saved": z.object({ "type": z.literal("model.saved"), "actor": ActorSchema, "model": ConfiguredModelSchema }).strict(),
+  "model.removed": z.object({ "type": z.literal("model.removed"), "actor": ActorSchema, "id": ModelRecordIdSchema }).strict(),
+  "model.tested": z.object({ "type": z.literal("model.tested"), "actor": z.literal("system"), "test": ModelTestRecordSchema }).strict(),
+  "seat.assigned": z.object({ "type": z.literal("seat.assigned"), "actor": ActorSchema, "seat": SeatIdSchema, "recordId": ModelRecordIdSchema.nullable() }).strict(),
   "repos.loaded": z.object({ "type": z.literal("repos.loaded"), "actor": z.literal("system"), "repos": z.array(RepoSchema) }).strict(),
   "repositories.loaded": z.object({ "type": z.literal("repositories.loaded"), "actor": z.literal("system"), "repositories": z.array(CloudRepositorySchema.pick({ "id": true, "org": true, "ownerKind": true, "name": true, "head": true, "catalog": true, "summary": true })) }).strict(),
   "repository.upserted": z.object({ "type": z.literal("repository.upserted"), "actor": z.literal("system"), "repository": CloudRepositorySchema.pick({ "id": true, "org": true, "ownerKind": true, "name": true, "head": true, "catalog": true, "summary": true }) }).strict(),

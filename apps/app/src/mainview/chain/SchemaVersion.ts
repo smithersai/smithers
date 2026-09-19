@@ -122,6 +122,9 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
   "app-harnesses",
   /* Agents as data (custom-agents.md): the mirror of `GET /api/agents`. */
   "app-agents",
+  /* Models as data: a user's records, the rows the host's catalog reported, and the seat each answers for. */
+  "app-models",
+  "app-seats",
   "app-repos",
   "app-pinned-repos",
   "app-starred-targets",

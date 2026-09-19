@@ -1,4 +1,6 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
+import type { ConfiguredModel } from "@smthrs/rpc/ConfiguredModel"
+import { bindingOf,seatAccepts } from "@smthrs/rpc/ConfiguredModel"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import { z } from "zod"
@@ -23,6 +25,7 @@ Recommendation,
 RepoTreeRow,
 RepositoryCapabilityPattern,
 Session,
+StoredModel,
 TabRow,
 Toast,
 WorkingCopy,
@@ -58,8 +61,10 @@ RepoSchema,
 RepoTreeRowSchema,
 RepositoryFlowsRowSchema,
 RetiredChainLineageSchema,
+SeatAssignmentSchema,
 SessionSchema,
 StarredTargetSchema,
+StoredModelSchema,
 TabSchema,
 ToastSchema,
 ToolCallRecordSchema,
@@ -139,6 +144,8 @@ export const APP_PROJECTION_SCHEMAS = {
   tabs: TabSchema,
   harnesses: HarnessSchema,
   agents: AgentRoleSchema,
+  models: StoredModelSchema,
+  seats: SeatAssignmentSchema,
   repos: RepoSchema,
   pinnedRepos: PinnedRepoSchema,
   starredTargets: StarredTargetSchema,
@@ -275,6 +282,11 @@ export const APP_TRANSITION_TYPES = {
   "pty.exited": true,
   "harnesses.loaded": true,
   "agents.loaded": true,
+  "models.observed": true,
+  "model.saved": true,
+  "model.removed": true,
+  "model.tested": true,
+  "seat.assigned": true,
   "repos.loaded": true,
   "repositories.loaded": true,
   "repository.upserted": true,
@@ -639,6 +651,17 @@ export const appTransitionErasesPrivateState = (snapshot: AppProjectionSnapshot,
  * posted after a card above that card — and because the ordinals persist, the
  * wrong order survived a reload (§7.5).
  */
+/*
+ * Writes a model over its stored row. Updates merge fields, so the optional
+ * ones the new record omits are cleared explicitly. A test is evidence about
+ * one route: it survives only a write that leaves the route where it was.
+ */
+const writeModel = (draft: StoredModel, model: ConfiguredModel): void => {
+  const rerouted = canonicalEventValue(bindingOf(draft)) !== canonicalEventValue(bindingOf(model))
+  Object.assign(draft, { baseUrl: undefined, path: undefined, builtin: undefined }, model)
+  if (rerouted) draft.lastTest = undefined
+}
+
 /*
  * Everything on screen that belonged to the account that just left.
  *
@@ -2827,6 +2850,62 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
                 Object.assign(draft, agent)
               })
             }
+          }
+          break
+        }
+
+        case "models.observed": {
+          // The harnesses' replace-in-place rule over the host's own rows only: a user's record is never the host's to rewrite.
+          const next = new Set<string>(transition.models.map((model) => model.id))
+          const stale = [...collections.models.values()].filter((row) => row.builtin === true && !next.has(row.id)).map((row) => row.id)
+          if (stale.length > 0) collections.models.delete(stale)
+          for (const model of transition.models) {
+            const existing = collections.models.get(model.id)
+            if (existing === undefined) collections.models.insert({ ...model, builtin: true })
+            else if (existing.builtin === true) collections.models.update(model.id, (draft) => { writeModel(draft, { ...model, builtin: true }) })
+          }
+          break
+        }
+
+        case "model.saved": {
+          // A user row omits `builtin`, whatever the event claimed.
+          const { builtin: _builtin, ...model } = transition.model
+          const existing = collections.models.get(model.id)
+          if (existing === undefined) collections.models.insert(model)
+          else if (existing.builtin !== true) collections.models.update(model.id, (draft) => { writeModel(draft, model) })
+          break
+        }
+
+        case "model.removed": {
+          const existing = collections.models.get(transition.id)
+          if (existing === undefined || existing.builtin === true) break
+          collections.models.delete(transition.id)
+          const freed = [...collections.seats.values()].filter((seat) => seat.recordId === transition.id).map((seat) => seat.id)
+          if (freed.length > 0) collections.seats.delete(freed)
+          break
+        }
+
+        case "model.tested": {
+          if (collections.models.get(transition.test.id) === undefined) break
+          collections.models.update(transition.test.id, (draft) => {
+            draft.lastTest = transition.test
+          })
+          break
+        }
+
+        case "seat.assigned": {
+          const { seat, recordId } = transition
+          if (recordId === null) {
+            collections.seats.delete(seat)
+            break
+          }
+          const record = collections.models.get(recordId)
+          if (record === undefined || !seatAccepts(seat, record.protocol)) break
+          if (collections.seats.get(seat) === undefined) collections.seats.insert({ id: seat, recordId })
+          else {
+            collections.seats.update(seat, (draft) => {
+              draft.recordId = recordId
+            })
           }
           break
         }

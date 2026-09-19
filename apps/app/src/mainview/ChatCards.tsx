@@ -92,7 +92,8 @@ export const CardView = memo(function CardView({
   pluginLibrary,
   wiki,
   mythicalHistory,
-  signedOut
+  signedOut,
+  presentation
 }: CardViewProps) {
   /*
    * Maximize and minimize replace each other in the header, so the button
@@ -287,7 +288,8 @@ export const CardView = memo(function CardView({
             debugVerbose,
             workflowCatalogs,
             projectionStore,
-            signedOut
+            signedOut,
+            presentation: presentation ?? (maximized ? "maximized" : "embedded")
           })}
           </CardBodyBoundary>
         </div>

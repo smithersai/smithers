@@ -353,6 +353,37 @@ describe("the live store's authoritative event path", () => {
     expect(act).toMatchObject({ text: "Smithers ran /runs.list", answersTurn: true })
   })
 
+  test("version 10 upgrade rotates a checkpoint written before models and seats existed", async () => {
+    /*
+     * Version 10 checkpointed 42 collections. This build names 44, and a
+     * snapshot whose roster differs is refused outright, so the version moves
+     * and the rotation re-seeds from the rows on disk. Nothing is seeded into
+     * the two new collections.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "kept" }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const { models: _models, seats: _seats, ...snapshot } = structuredClone(old.checkpoint.snapshot)
+    const head = { ...old.head, projectorVersion: 10 }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 10, snapshot }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session().draft).toBe("kept")
+    expect([restored.collections.models.size, restored.collections.seats.size]).toEqual([0, 0])
+    await restored.dispatch({ type: "model.saved", actor: "user", model: { id: "mine", protocol: "anthropic-messages", modelId: "claude-fable-5", credential: "ANTHROPIC_API_KEY" } }).isPersisted.promise
+    expect((await restored.verifyState()).valid).toBe(true)
+  })
+
   test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
     const storage = memoryStorage()
     const store = await open(storage)

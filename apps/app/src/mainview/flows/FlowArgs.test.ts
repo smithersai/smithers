@@ -27,6 +27,10 @@ describe("flowArgs — one serialisation, and the grammar gives the values back"
     })
   })
 
+  test("model.assign carries the seat and the name, and `default` is a name", () => {
+    roundTrip("model.assign", { seat: "explainer", recordId: "default" }, "explainer default", { seat: "explainer", recordId: "default" })
+  })
+
   test("change.pins carries both pins", () => {
     roundTrip("change.pins", { changeId: "ch-1", from: "parent", to: "current" }, "ch-1 parent current", {
       changeId: "ch-1",
@@ -78,6 +82,7 @@ describe("FlowName — the seam's names are the registry's names", () => {
       "change.pins",
       "change.resolve",
       "form.set",
+      "model.assign",
       "runs.steer",
     ]
     expect(named.filter((name) => !declared.has(name))).toEqual([])

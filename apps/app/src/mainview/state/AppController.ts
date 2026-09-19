@@ -58,6 +58,7 @@ import { createIssueFlowsController,type IssueFlowsController } from "./controll
 import { createRepositorySetupController, type RepositorySetupController } from "./controller/repositorySetup"
 import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
 import { createLiveTutorialController } from "./controller/liveTutorial"
+import { createModelsController,type ModelsController } from "./controller/models"
 import type { OnboardingController } from "./controller/onboarding"
 import { createOnboardingController } from "./controller/onboarding"
 import { createPluginsController } from "./controller/plugins"
@@ -312,6 +313,16 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly setFormField: FormsController["setFormField"]
   readonly submitForm: FormsController["submitForm"]
   readonly dismissCard: FormsController["dismissCard"]
+  /* Configured models and the seats they fill; see controller/models.ts. */
+  readonly listModels: ModelsController["listModels"]
+  readonly showModel: ModelsController["showModel"]
+  readonly newModel: ModelsController["newModel"]
+  readonly editModel: ModelsController["editModel"]
+  readonly saveModel: ModelsController["saveModel"]
+  readonly removeModel: ModelsController["removeModel"]
+  readonly testModel: ModelsController["testModel"]
+  readonly assignSeat: ModelsController["assignSeat"]
+  readonly observeModels: ModelsController["observeModels"]
   readonly loadRepos: TabsController["loadRepos"]
   readonly notePtyExit: TabsController["notePtyExit"]
   /** Lane citc: the cloud-workspace terminal transport (one socket per workspace session). */
@@ -940,6 +951,18 @@ export const createAppController = (
     installKeyboard
   } = actors.pair(ctx, (context) => createTabsController(context))
   const { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff: formFocus } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal }))
+  const {
+    listModels,
+    showModel,
+    newModel,
+    editModel,
+    saveModel,
+    removeModel,
+    testModel,
+    assignSeat,
+    resumeModelTests,
+    observeModels
+  } = actors.pair(ctx, (context, select) => createModelsController(context, { nextOrdinal: store.nextOrdinal, renderFlowForm: select(renderFlowForm), minimizeCard }))
   const {
     loadAgents,
     listAgents,
@@ -1580,6 +1603,15 @@ export const createAppController = (
     setFormField,
     submitForm,
     dismissCard,
+    listModels,
+    showModel,
+    newModel,
+    editModel,
+    saveModel,
+    removeModel,
+    testModel,
+    assignSeat,
+    observeModels,
     loadRepos,
     notePtyExit,
     cloudTerminal,
@@ -1846,6 +1878,8 @@ export const createAppController = (
 
   liveTutorial.resume()
   repositorySetup.resumeRepositorySetups()
+  // A test the card still holds as requested is launched again.
+  resumeModelTests()
   /*
    * Persisted repository and approval reads reconnect from the identity answer,
    * never from construction: every boot adopts or probes the session, and a read started

@@ -15,6 +15,8 @@ WorkspaceFileEntrySchema,
 WorkspaceHeadSchema,
 WorkspaceServiceSchema
 } from "@smthrs/rpc/Cards"
+import type { ConfiguredModel,ModelRecordId,ModelTestRecord,SeatId } from "@smthrs/rpc/ConfiguredModel"
+import { ConfiguredModelSchema,ModelTestRecordSchema,SeatAssignmentSchema } from "@smthrs/rpc/ConfiguredModel"
 import { StatusRollupSchema,type StatusRollup } from "@smthrs/rpc/Health"
 import type { Harness,Repo } from "@smthrs/rpc/LocalApp"
 import { HARNESS_IDS,HarnessSchema,RepoFileEntrySchema,RepoSchema } from "@smthrs/rpc/LocalApp"
@@ -50,6 +52,17 @@ WorkspaceHeadSchema,
 WorkspaceServiceSchema
 }
 export type { AgentRole,Harness,Repo }
+
+/*
+ * Models as data. An `app-models` row is a configured model plus the last test
+ * of THIS route; an `app-seats` row is one seat's assignment, and a seat the
+ * host answers by default has no row. A credential is a name: no value is ever
+ * a field of either.
+ */
+export const StoredModelSchema = ConfiguredModelSchema.extend({ lastTest: ModelTestRecordSchema.optional() })
+export type StoredModel = z.infer<typeof StoredModelSchema>
+export { SeatAssignmentSchema }
+export type { SeatAssignment } from "@smthrs/rpc/ConfiguredModel"
 
 /*
  * The sidebar's pinned repositories (docs/LOCAL-APP.md "Tabs"). A server
@@ -1604,6 +1617,13 @@ export type AppTransition =
   | { type: "harnesses.loaded"; actor: "system"; harnesses: ReadonlyArray<Harness> }
   /* Agents as data (custom-agents.md): `GET /api/agents` replaces the app-agents mirror the way the harness list does. */
   | { type: "agents.loaded"; actor: "system"; agents: ReadonlyArray<AgentRole> }
+  /* Models as data: the host's catalog replaces its own rows in place and never a user's record. */
+  | { type: "models.observed"; actor: "system"; models: ReadonlyArray<ConfiguredModel> }
+  | { type: "model.saved"; actor: Actor; model: ConfiguredModel }
+  | { type: "model.removed"; actor: Actor; id: ModelRecordId }
+  | { type: "model.tested"; actor: "system"; test: ModelTestRecord }
+  /* A null record returns the seat to the host's default. */
+  | { type: "seat.assigned"; actor: Actor; seat: SeatId; recordId: ModelRecordId | null }
   | { type: "repos.loaded"; actor: "system"; repos: ReadonlyArray<Repo> }
   /*
    * Lane piper: the cloud repository inventory (RepositoriesSeam) replaces

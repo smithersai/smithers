@@ -15,12 +15,14 @@ import { freezeProjectionValue, isImmutableProjectionValue } from "./ImmutablePr
 export const APP_EVENT_FORMAT_VERSION = 1
 /*
  * Bump whenever an already-persisted row would reproject differently: a field
- * removed, renamed or retyped, or a changed transition set. A bump retires the
- * stream and clears the event log (AppStore.ts, "projector-upgrade"), so an
- * added OPTIONAL field owes none — every stored row still parses to the same
- * bytes and the same hash, which AppStore.events.test.ts pins per field.
+ * removed, renamed or retyped, a changed transition set, or a changed
+ * collection roster (a checkpoint naming another roster is refused below; 11
+ * added models and seats). A bump retires the stream and clears the event log
+ * (AppStore.ts, "projector-upgrade"), so an added OPTIONAL field owes none —
+ * every stored row still parses to the same bytes and the same hash, which
+ * AppStore.events.test.ts pins per field.
  */
-export const APP_PROJECTOR_VERSION = 10
+export const APP_PROJECTOR_VERSION = 11
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

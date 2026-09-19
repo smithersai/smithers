@@ -6,6 +6,7 @@ import type { CommandRegistry } from "../../flows/Commands"
 import type { NativeRepositories } from "../../native/NativeBridge"
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
+import type { Toast } from "../AppState"
 import type { AppStore } from "../AppStore"
 import type { ImpossibleAskClass } from "../Instructions"
 import type { GatewaySeam } from "./gateway"
@@ -114,7 +115,7 @@ export interface ControllerContext {
   /** Resolve a toast; an ok outcome dismisses itself (failures.ts resolveToast). */
   resolveToast: (
     key: string,
-    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly autoDismissMs?: number }
+    outcome: { readonly status: "ok" | "failed"; readonly title?: string; readonly detail: string; readonly action?: Toast["action"]; readonly autoDismissMs?: number }
   ) => void
 }
 

@@ -41,6 +41,7 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
       <CardView
         card={card}
         maximized={sessionRows[0]?.maximizedCardId === card.id}
+        presentation="maximized"
         debugVerbose={sessionRows[0]?.verbose === true}
         worldDocuments={worldDocuments}
         workflowCatalogs={workflowCatalogs}

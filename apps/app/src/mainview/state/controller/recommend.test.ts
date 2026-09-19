@@ -203,3 +203,43 @@ for (const change of ["replacement", "failed-cleanup"] as const) {
     } finally { await h.close() }
   })
 }
+
+/** The recommend seat: every /api/recommend body this controller posts. */
+const seatFixture = async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await identity(store, "alice")
+  const bodies: Array<Record<string, unknown>> = []
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+    features: { wiki: true },
+    recommender: { enabled: true, debounceMs: 60_000 },
+    fetchImpl: async (input, init) => {
+      if (!String(input).endsWith("/api/recommend")) return json(404, {})
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return json(200, { id: `answer-${bodies.length}`, commands: ["wiki"], model: "fixture" })
+    }
+  })
+  const assign = async (recordId: string | null) => {
+    await store.dispatch({ type: "model.saved", actor: "user", model: { id: "jev", protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" } }).isPersisted.promise
+    await store.dispatch({ type: "seat.assigned", actor: "user", seat: "recommend", recordId }).isPersisted.promise
+  }
+  return { controller, bodies, assign, close: async () => { await controller.dispose(); await store.dispose?.() } }
+}
+
+test("an unassigned recommend seat posts the body it always posted; an assigned one adds the decision model and nothing else", async () => {
+  const h = await seatFixture()
+  try {
+    await h.controller.recommend()
+    await h.assign("jev")
+    await h.controller.recommend()
+    await h.assign(null)
+    await h.controller.recommend()
+    expect(h.bodies).toHaveLength(3)
+    const [bare, bound, again] = h.bodies
+    expect(Object.keys(bare!).sort()).toEqual(["commands", "repo", "tail"])
+    expect(bound!.model).toEqual({ protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" })
+    const { model: _model, ...rest } = bound!
+    expect(rest).toEqual(bare!)
+    expect(again).toEqual(bare!)
+  } finally { await h.close() }
+})

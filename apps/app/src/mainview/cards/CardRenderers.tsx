@@ -30,6 +30,7 @@ import { flowFormCardFamily } from "./FlowFormCards"
 import { historyCardFamily } from "./HistoryCard"
 import { issueCardFamily } from "./IssueCards"
 import { landingCardFamily } from "./LandingCards"
+import { modelCardFamily } from "./ModelCards"
 import { notificationsCardFamily } from "./NotificationsCard"
 import { LibrarianLibraryCard } from "../plugins/tutorial2-librarian-card"
 import { RepositoryChoiceCard } from "./RepositoryChoiceCard"
@@ -95,6 +96,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   repositoryUpdateCardFamily,
   envCardFamily,
   secretsCardFamily,
+  modelCardFamily,
   accountCardFamily,
   historyCardFamily,
   repoImportCardFamily,
@@ -137,6 +139,7 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...repositoryUpdateCardFamily,
   ...envCardFamily,
   ...secretsCardFamily,
+  ...modelCardFamily,
   ...accountCardFamily,
   ...historyCardFamily,
   ...repoImportCardFamily,

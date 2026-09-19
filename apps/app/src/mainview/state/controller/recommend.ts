@@ -15,6 +15,7 @@ import {
 } from "../Recommend"
 import type { RecommendInput } from "../Recommend"
 import type { ControllerContext } from "./context"
+import { assignedBinding } from "./modelSeats"
 
 /*
  * The recommender's controller half (Recommend.ts has the pure half): a
@@ -150,13 +151,15 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
      * account's row. The sequence is not an account authority.
      */
     const owns = (): boolean => !disposed && ctx.accountEpoch === epoch && accountOwner() === owner
+    const model = assignedBinding(ctx, "recommend")
     try {
       let response: Response
       try {
         response = await ctx.boundedFetch(`${ctx.baseUrl}${RECOMMEND_PATH}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(recommendRequest(snapshot))
+          // The `recommend` seat: the assigned decision model, or nothing at all.
+          body: JSON.stringify({ ...recommendRequest(snapshot), ...(model === undefined ? {} : { model }) })
         })
       } catch {
         return

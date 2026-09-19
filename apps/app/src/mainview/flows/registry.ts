@@ -50,6 +50,7 @@ import * as github from "./entries/github"
 import * as history from "./entries/history"
 import * as issue from "./entries/issue"
 import * as issues from "./entries/issues"
+import * as model from "./entries/model"
 import * as notifications from "./entries/notifications"
 import * as palette from "./entries/palette"
 import * as plugins from "./entries/plugins"
@@ -478,6 +479,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   commits.namespace,
   env.namespace,
   secrets.namespace,
+  model.namespace,
   history.namespace,
   notifications.namespace,
   browser.namespace,

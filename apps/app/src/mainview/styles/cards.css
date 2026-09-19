@@ -1322,6 +1322,92 @@
 	vertical-align: top;
 }
 
+/* The models card: a row is its name, a test dot and its acts; maximized it is the list beside the facts and the seats. */
+.models-row {
+	flex-wrap: wrap;
+	border-radius: var(--r-sm);
+}
+.models-row[data-selected="true"] {
+	background: var(--hover-subtle);
+}
+.models-row-select {
+	all: unset;
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	cursor: pointer;
+	border-radius: var(--r-sm);
+}
+.models-row-select:focus-visible {
+	outline: 2px solid var(--ring);
+}
+.models-test {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+	white-space: nowrap;
+}
+.models-dot {
+	flex: none;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: var(--r-full);
+	background: var(--border-strong);
+}
+.models-row[data-test-state="passed"] .models-dot {
+	background: var(--success);
+}
+.models-row[data-test-state="failed"] .models-dot {
+	background: var(--danger);
+}
+.models-row[data-test-state="failed"] .models-test {
+	color: var(--danger);
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.models-row[data-test-state="running"] .models-dot {
+	background: var(--run);
+	animation: run-outcome-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.models-dot { animation: none; }
+}
+.models-seats select {
+	padding: var(--sp-1) var(--sp-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+}
+.models-seats select:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.models-seats tr[data-resolvable="false"] select {
+	border-color: var(--danger);
+}
+.models-pane {
+	display: grid;
+	grid-template-columns: minmax(16rem, 26rem) 1fr;
+	gap: 1rem;
+}
+.models-pane-list,
+.models-pane-main {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	min-width: 0;
+}
+@media (max-width: 600px) {
+	.models-pane { grid-template-columns: 1fr; }
+}
+
 /*
  * The run trace (Factory design session 2026-09-07 §6b, redrawn 2026-09-12):
  * the outcome line, the folded plan and progress, the turn list that expands

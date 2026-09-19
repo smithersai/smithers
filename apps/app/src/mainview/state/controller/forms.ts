@@ -1,4 +1,5 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
+import { MODEL_SEAT_DEFAULT,SeatIdSchema,modelSeat,seatAccepts } from "@smthrs/rpc/ConfiguredModel"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
 import { Schema } from "effect"
@@ -16,6 +17,7 @@ import type { Card } from "../AppState"
 import { knownRepositories } from "../RepoContext"
 import { fileOptions,fileTargetKey } from "../seams/tutorial2-file_open"
 import type { ControllerContext } from "./context"
+import { MODELS_CARD_ID } from "./models"
 import { setupQuestionCardId } from "./repositorySetup"
 import { setupGuideQuestions } from "./repositorySetupGuide"
 
@@ -179,7 +181,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
   }
 
   /** The options a seam supplies for a provider, read at render; an empty list is a valid answer. */
-  const optionsFor = (provider: OptionProvider, _draft: FormDraft): ReadonlyArray<FieldOption> => {
+  const optionsFor = (provider: OptionProvider, draft: FormDraft): ReadonlyArray<FieldOption> => {
+    /* What the host listed is on the Models card (controller/models.ts); with no card it listed nothing. */
+    const listed = (): Extract<Card, { kind: "models" }>["payload"] | undefined => {
+      const card = collections.cards.get(MODELS_CARD_ID)
+      return card?.kind === "models" ? card.payload : undefined
+    }
     switch (provider) {
       case "files":
         /* Filled asynchronously from the selected repository below; never invented here. */
@@ -216,6 +223,24 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
           label: entry.title,
           ...(entry.available ? {} : { disabled: true, reason: entry.reason })
         }))
+      case "models": {
+        // A seat takes one kind of model, and `default` hands it back to the host.
+        const seat = SeatIdSchema.safeParse(draft["seat"])
+        return [
+          ...(seat.success ? [{ value: MODEL_SEAT_DEFAULT, label: "Default" }] : []),
+          ...[...collections.models.values()]
+            .filter((model) => !seat.success || seatAccepts(seat.data, model.protocol))
+            .map((model) => ({ value: model.id, label: `${model.id} · ${model.modelId}` }))
+        ]
+      }
+      case "credentials":
+        return (listed()?.credentials ?? []).map((credential) =>
+          credential.present
+            ? { value: credential.name, label: credential.name }
+            : { value: credential.name, label: credential.name, disabled: true, reason: "missing" }
+        )
+      case "seats":
+        return (listed()?.seats ?? []).map((seat) => ({ value: seat.id, label: modelSeat(seat.id).label }))
     }
   }
 
@@ -429,11 +454,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const { draft } = payload
     /*
      * Options were supplied at render and stay as the card holds them; only a
-     * field that can change WHICH harness the model list belongs to
-     * re-resolves the providers and re-reads the list (so a later commit on
-     * another field never overwrites the list the harness answered with).
+     * field that can change WHICH harness the model list belongs to, or which
+     * seat the models must suit, re-resolves the providers and re-reads the
+     * list (so a later commit on another field never overwrites the list the
+     * harness answered with).
      */
-    const dependency = ["harness", "harnessId", "id", "roleId"].includes(name)
+    const dependency = ["harness", "harnessId", "id", "roleId", "seat"].includes(name)
     await patch(card, { ...payload, draft, fields: dependency ? withOptions(card.payload.fields, draft) : card.payload.fields }, "active")
     if (name === "repo") await refreshFileList(cardId)
   }

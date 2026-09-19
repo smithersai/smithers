@@ -1,4 +1,5 @@
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
+import type { ModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { setupCandidate, storedSetupCandidate } from "@smthrs/rpc/RepositorySetup"
@@ -39,6 +40,7 @@ import { currentAgentRoles } from "./agents"
 import { downloadUrlOf } from "./app"
 import type { ActiveTurn,ControllerContext } from "./context"
 import { createHttpTurnDriver } from "./httpTurns"
+import { assignedBinding } from "./modelSeats"
 
 /**
  * The client-side tool-loop leg cap, mirroring the chat worker's
@@ -598,11 +600,17 @@ export const createTurnController = (
       .map((command) => ({ name: command.name, summary: command.summary }))
   }
 
+  // The `front-door` seat rides every conversation leg. `model` never does:
+  // these turns carry tools, and a bound turn is sealed.
   const composeTurn = (): {
     readonly context: AgentRuntimeContext
     readonly instructions: string
     readonly commands: ReadonlyArray<AgentTurnCommand>
-  } => ({ ...composeInstructions(), commands: turnCommands() })
+    readonly decisionModel?: ModelBinding
+  } => {
+    const decisionModel = assignedBinding(ctx, "front-door")
+    return { ...composeInstructions(), commands: turnCommands(), ...(decisionModel === undefined ? {} : { decisionModel }) }
+  }
 
   /*
    * The named roles the orchestrator may delegate to, with THIS host's
@@ -683,7 +691,7 @@ export const createTurnController = (
      * every later turn failed the same way, and /clear could not recover it
      * because /clear runs a model turn of its own into the same wall.
      */
-    const { commands, context, instructions } = composeTurn()
+    const { commands, context, instructions, decisionModel } = composeTurn()
     const { request } = boundTurnRequest(
       {
         runId: turnId,
@@ -691,7 +699,8 @@ export const createTurnController = (
         instructions,
         tools: ctx.commands.toolSpecs(),
         commands,
-        context
+        context,
+        ...(decisionModel === undefined ? {} : { decisionModel })
       },
       keepTail
     )
