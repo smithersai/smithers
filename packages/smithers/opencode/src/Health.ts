@@ -272,16 +272,26 @@ export const colorOf = (title: string): Color | undefined => {
 }
 
 /**
- * The title without its dot. The hosted app echoes a dotted title back with
- * an emoji presentation selector (U+FE0F) after the dot, so the selector
- * and the space that follows it go with the dot.
+ * The title without its dots. The hosted app echoes a dotted title back with
+ * an emoji presentation selector (U+FE0F) after the dot, so the selector and
+ * the space that follows it go with the dot.
+ *
+ * Every leading dot goes, not just the first: a person renaming a session
+ * pastes the echoed title back over a dot the app already wrote, so the
+ * words can arrive under two or three of them. Dropping one left the rest in
+ * the stored words, where `dotted` rendered a title with two dots in it and
+ * `colorOf` read a color out of the person's words that the server never
+ * decided.
  *
  * @category conversions
  * @since 1.0.0
  */
 export const strip = (title: string): string => {
-  const color = colorOf(title)
-  return color === undefined ? title : title.slice(dots[color].length).replace(/^\uFE0F?\s*/, "")
+  let rest = title
+  for (let color = colorOf(rest); color !== undefined; color = colorOf(rest)) {
+    rest = rest.slice(dots[color].length).replace(/^\uFE0F?\s*/, "")
+  }
+  return rest
 }
 
 /**

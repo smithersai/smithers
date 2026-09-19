@@ -234,6 +234,54 @@ describe("Health", () => {
     expect(Health.retitle("Old", "")).toBe("Old")
   })
 
+  it("leaves an emoji that is not one of the four dots where the person typed it", () => {
+    // Only the four dots are the server's. A rocket, a check mark or a
+    // yellow heart that is not the yellow dot is part of the person's own
+    // words, so it survives a strip, a re-dot and a rename.
+    for (const typed of ["🚀 Ship it", "✅ Done", "💛 Fix it", "🟩 Fix it", "🔵 Fix it"]) {
+      expect(Health.colorOf(typed)).toBeUndefined()
+      expect(Health.strip(typed)).toBe(typed)
+      expect(Health.dotted(typed, "red")).toBe(`🔴 ${typed}`)
+      expect(Health.retitle("🟢 Old", typed)).toBe(`🟢 ${typed}`)
+      expect(Health.retitle("Old", typed)).toBe(typed)
+    }
+  })
+
+  it("never doubles a dot the server owns, however many arrive", () => {
+    // The app echoes a dotted title back, and a person can paste one in on
+    // top of that, so the words can arrive under several dots at once. What
+    // is stored carries the session's own dot, once.
+    const typed = [
+      "New",
+      "🟢 New",
+      "🔴\uFE0F New",
+      "🔴 🟡 New",
+      "⚪⚪⚪ New",
+      "🟡\uFE0F🟢\uFE0F New"
+    ]
+    for (const wanted of typed) {
+      for (const current of ["Old", "🟢 Old", "⚪\uFE0F Old"]) {
+        const stored = Health.retitle(current, wanted)
+        const dots = stored.match(/[🟢🟡🔴⚪]/gu) ?? []
+        expect({ wanted, current, stored, dots: dots.length }, wanted).toMatchObject({
+          dots: Health.colorOf(current) === undefined ? 0 : 1
+        })
+        // A colour change on top of the stored title still carries one dot.
+        expect(Health.dotted(stored, "red").match(/[🟢🟡🔴⚪]/gu)?.length, wanted).toBe(1)
+        expect(Health.strip(stored).startsWith("New"), wanted).toBe(true)
+      }
+    }
+  })
+
+  it("keeps the previous title when a rename is whitespace alone", () => {
+    // A session is never left without a name: the rename is refused and the
+    // title it would have erased stays, dot and all.
+    for (const blank of ["", " ", "   ", "\t", "\n", " \t\n ", "🔴", "🔴\uFE0F", "🔴 ", " ⚪\uFE0F\t"]) {
+      expect(Health.retitle("🟢 Old", blank), JSON.stringify(blank)).toBe("🟢 Old")
+      expect(Health.retitle("Old", blank), JSON.stringify(blank)).toBe("Old")
+    }
+  })
+
   it("evaluates through a scripted evaluator and decides", async () => {
     const evaluation = await Effect.runPromise(
       Health.evaluate(facts()).pipe(Effect.provide(Evaluator.layerScripted(script(healthy))))
