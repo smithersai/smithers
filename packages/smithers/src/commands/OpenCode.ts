@@ -32,6 +32,7 @@ import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Auth from "@smthrs/opencode/Auth"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
@@ -42,8 +43,10 @@ import * as Pricing from "@smthrs/opencode/Pricing"
 import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
 import * as Store from "@smthrs/opencode/Store"
+import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import type * as Scope from "effect/Scope"
+import { hostname } from "node:os"
 import { resolve } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as CliError from "../CliError.ts"
@@ -146,6 +149,14 @@ export const nodeHost = (
 ): EngineDriver.Host => {
   const grants = NodeControl.layerGrantStore(directory)
   const platform = NodeControl.layerGuardedPlatform(directory, grants)
+  // Stop must also contain commands that ignore SIGTERM. The prepared
+  // supervisor terminates their group after a short grace, including when
+  // the owning process disappears. This host keeps only its live ledger;
+  // settled shell results are durable through the engine separately.
+  const contained = ProcessReaper.layerSpawner({ graceMs: 500 }).pipe(
+    Layer.provideMerge(platform),
+    Layer.provide(ProcessLedger.layerMemory({ hostId: hostname(), ownerPid: process.pid }))
+  )
   const executor = Layer.effect(
     RequestExecutor.RequestExecutor,
     Effect.gen(function*() {
@@ -169,7 +180,7 @@ export const nodeHost = (
   return {
     platform: KernelChildProcessSpawner.layer.pipe(
       Layer.provide(grants),
-      Layer.provideMerge(platform)
+      Layer.provideMerge(contained)
     ),
     seats: NodeControl.layerSeatResolver(environment).pipe(
       Layer.provide(executor)
