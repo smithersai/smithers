@@ -21,14 +21,14 @@ describe("slash payload argument counts", () => {
   })
 
   test("flow.run refuses extra text that is not a JSON input object", () => {
-    const parsed = payloadFor("flow.run", "create-workflow will/flows extra")
+    const parsed = payloadFor("flow.run", "create-flow will/flows extra")
     expect(parsed).toEqual({ error: "Flow input is not valid JSON. Fix the JSON object before running it." })
   })
 
   test("flow.run still takes its name and optional repo", () => {
-    expect(payloadFor("flow.run", "create-workflow")).toEqual({ payload: { name: "create-workflow" } })
-    expect(payloadFor("flow.run", "create-workflow will/flows")).toEqual({
-      payload: { name: "create-workflow", repo: "will/flows" }
+    expect(payloadFor("flow.run", "create-flow")).toEqual({ payload: { name: "create-flow" } })
+    expect(payloadFor("flow.run", "create-flow will/flows")).toEqual({
+      payload: { name: "create-flow", repo: "will/flows" }
     })
     expect(payloadFor("flow.run", "")).toEqual({
       error: "flow.run needs a flow name"

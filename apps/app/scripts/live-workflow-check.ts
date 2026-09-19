@@ -9,7 +9,7 @@
  *   2. POST /api/workflow/provision — provision-or-resume through the
  *      wave-11b Cloud token door; idempotent on a second call,
  *   3. no gateway credential ever reaches the browser,
- *   4. List flows through the relay — is `create-workflow` really there,
+ *   4. List flows through the relay — is `create-flow` really there,
  *   5. the real conversation: ask for a workflow, watch the embedded run card
  *      go live, approve if it parks, see it complete.
  *
@@ -172,14 +172,14 @@ if (ready) {
     `${firstBody.gatewayId} → ${secondBody.gatewayId}`
   )
 
-  /* ---- 4. List flows through the relay: is create-workflow really there ---- */
+  /* ---- 4. List flows through the relay: is create-flow really there ---- */
   const list = await post("/api/workflow/rpc", { repo: target, procedure: "List", payload: { _tag: "flows" } })
   note(`List flows → HTTP ${list.status} ${list.text.slice(0, 400)}`)
   const listBody = JSON.parse(list.text) as { ok?: boolean; payload?: { items?: Array<{ flowId?: string }> } }
   const ids = (listBody.payload?.items ?? []).map((entry) => entry.flowId).filter(Boolean)
   check("List flows answered through the relay", listBody.ok === true, JSON.stringify(ids).slice(0, 300))
-  if (ids.includes("create-workflow")) {
-    check("the workspace lists the stock create-workflow flow", true, JSON.stringify(ids).slice(0, 300))
+  if (ids.includes("create-flow")) {
+    check("the workspace lists the stock create-flow flow", true, JSON.stringify(ids).slice(0, 300))
   } else {
     // Not a failure: discovery is a directory walk the workspace does when it
     // starts, so a cold list shows only what was on disk at boot. `Plan`
@@ -346,7 +346,7 @@ check(
 if (runCards > 0) {
   check(
     "a launched run is described by the client's deterministic line, not the model's prose",
-    /I started a create-workflow run|Smithers started a create-workflow run/.test(finalTranscript),
+    /I started a create-flow run|Smithers started a create-flow run/.test(finalTranscript),
     finalTranscript.replace(/\s+/g, " ").slice(-300)
   )
 }

@@ -62,7 +62,7 @@ const relay = (options: {
     launched: [] as Array<{ workflow: string; input: unknown }>
   }
   const flows = options.flows ?? [
-    { flowId: "create-workflow", description: "Build a new Smithers workflow from a plain-English ask." },
+    { flowId: "create-flow", description: "Build a new Smithers workflow from a plain-English ask." },
     { flowId: "review-pr" }
   ]
   /** What the plan card of the launch in flight said. */
@@ -300,11 +300,11 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     expect(said(outcome)).toContain("run-w11")
 
     // The gateway was provisioned BEFORE anything was launched, and the
-    // launch is the stock create-workflow with the description as its input.
+    // launch is the stock create-flow with the description as its input.
     const order = double.calls.map((call) => call.path)
     expect(order[0]).toBe("/api/workflow/provision")
     expect(double.state.launched).toEqual([
-      { workflow: "create-workflow", input: { prompt: "a workflow that summarizes my open issues" } }
+      { workflow: "create-flow", input: { prompt: "a workflow that summarizes my open issues" } }
     ])
     // The provision toast reported and then SETTLED into its result — the
     // wave-9 law: a toast past the debounce never keeps its running sentence.
@@ -316,7 +316,7 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     const card = runCard(store)
     expect(card).toBeDefined()
     expect(card?.payload.repo).toBe(REPO)
-    expect(card?.payload.workflow).toBe("create-workflow")
+    expect(card?.payload.workflow).toBe("create-flow")
     expect(store.collections.sessions.get("main")?.surface).toBe("chat")
 
     // Progress arrives in WORDS, never as a raw payload.
@@ -398,7 +398,7 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     controller.send("can you make me a smithers workflow that summarizes my open issues?")
     await settle(30)
 
-    expect(double.state.launched[0]?.workflow).toBe("create-workflow")
+    expect(double.state.launched[0]?.workflow).toBe("create-flow")
     expect(runCard(store)).toBeDefined()
     expect(store.collections.sessions.get("main")?.surface).toBe("chat")
     // The tool result the model saw states the run, so it cannot claim
@@ -723,11 +723,11 @@ describe("wave 11 — workflows are presented", () => {
 
     const outcome = await controller.commands.run("flow.list")
     expect(outcome.status).toBe("executed")
-    expect(said(outcome)).toContain("create-workflow")
+    expect(said(outcome)).toContain("create-flow")
     const card = store.collections.cards.get(`workflow-list-${REPO}`)
     expect(card?.kind).toBe("workflow-list")
     expect(card?.kind === "workflow-list" && card.payload.workflows.map((entry) => entry.key)).toEqual([
-      "create-workflow",
+      "create-flow",
       "review-pr"
     ])
     // A workflow with no description says nothing rather than inventing one.
@@ -758,20 +758,22 @@ describe("wave 11 — workflows are presented", () => {
 
     const outcome = await controller.commands.run("flow.run", "nope")
     expect(said(outcome)).toContain("There's no flow called nope")
-    expect(said(outcome)).toContain("create-workflow")
+    expect(said(outcome)).toContain("create-flow")
     expect(double.state.launched).toHaveLength(0)
   })
 
-  test("a workspace without create-workflow surfaces the GATEWAY's own refusal, never a guess", async () => {
-    // The live gateway populates its global pack lazily, so a cold
-    // listWorkflows is not evidence of absence — only launchRun's NOT_FOUND is.
+  test("a workspace without create-flow is refused by the LAUNCH, and told what to do", async () => {
+    // A listing is never the evidence: only the launch resolves the registry.
+    // What the launch's miss is turned into is L106's rule — the workspace
+    // cannot author a flow, so say that and what closes it, not the id.
     const store = await webStore()
     const double = relay({ flows: [{ flowId: "review-pr" }] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("No flow \"create-workflow\" is registered on this workspace.")
+    expect(said(outcome)).not.toContain("is registered on this workspace")
+    expect(said(outcome)).toContain("flow-authoring flow")
     expect(double.state.launched).toHaveLength(0)
     // It tried the launch — it did not refuse on a stale list.
     expect(double.calls.some((call) => (call.body as { procedure?: string } | undefined)?.procedure === "Plan")).toBe(
@@ -779,11 +781,12 @@ describe("wave 11 — workflows are presented", () => {
     )
   })
 
-  test("a cold listWorkflows never blocks a workflow the workspace really has", async () => {
-    // Regression for the live-caught defect: the pre-flight list gate
-    // refused `create-workflow` on a workspace that ran it seconds later.
+  test("a listing that disagrees with the registry never blocks a flow the workspace really has", async () => {
+    // Regression for the live-caught defect: the pre-flight list gate refused
+    // a flow on a workspace that ran it seconds later. The launch resolves the
+    // registry; a listing is a second answer that can only ever agree with it.
     const store = await webStore()
-    const double = relay({ flows: [{ flowId: "create-workflow" }] })
+    const double = relay({ flows: [{ flowId: "create-flow" }] })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       ...double.services,
       fetchImpl: async (input, init) => {
@@ -806,7 +809,7 @@ describe("wave 11 — workflows are presented", () => {
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
     expect(said(outcome)).toContain("run-w11")
-    expect(double.state.launched[0]?.workflow).toBe("create-workflow")
+    expect(double.state.launched[0]?.workflow).toBe("create-flow")
   })
 
   test("a launch answers with a MINIMAL machine acknowledgment — the claim surface is not the model's", async () => {
@@ -822,7 +825,7 @@ describe("wave 11 — workflows are presented", () => {
     await signIn(store)
 
     const created = said(await controller.commands.run("flow.create", "summarize my open issues"))
-    expect(created).toBe(`run-started workflow=create-workflow run=run-w11 repo=${REPO}`)
+    expect(created).toBe(`run-started workflow=create-flow run=run-w11 repo=${REPO}`)
 
     const ran = said(await controller.commands.run("flow.run", "review-pr"))
     expect(ran).toBe(`run-started workflow=review-pr run=run-w11 repo=${REPO}`)

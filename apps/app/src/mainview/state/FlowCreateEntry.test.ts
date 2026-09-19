@@ -1,0 +1,136 @@
+/*
+ * L106: `/flow.create` launched a flow no 1.0 composition has ever registered.
+ *
+ * `create-workflow` was the 0.x JSX workflow `.smithers/workflows/
+ * create-workflow.tsx`, deleted with the reconciler architecture in
+ * `2716e9855855`. Its six prompt bodies came back the next day as
+ * `flows/create-flow/*` — staged, by that commit's own words, as migration-pack
+ * inputs — and nothing registered them. The door kept the dead name, so the
+ * headline "create a flow from a description" feature refused on every
+ * workspace, twice measured on production.
+ *
+ * Two halves are pinned here, both about what a PERSON gets:
+ *   1. the door launches the id the workspace host provisions, read from the
+ *      one module both halves import; and
+ *   2. a workspace that cannot resolve it is told which flow is missing and
+ *      what to do, never the control plane's `No flow "…" is registered on
+ *      this workspace.`, which names an internal id and no action.
+ *
+ * That the id resolves in the registry the coding host really composes is the
+ * other half of this seam, proved against that composition in
+ * `flows/test/create-flow-registry.test.ts`.
+ */
+import { expect, test } from "bun:test"
+import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
+import { scopedControllers } from "./ControllerTestScope"
+import type { AppServices } from "./AppController"
+import { createAppStore } from "./AppStore"
+import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+
+const createAppController = scopedControllers()
+
+const REPO = "codeplanesmithers/canary-sandbox"
+
+/** The control plane's own words for an unresolved flow: an id and no action. */
+const controlPlaneRefusal = (flow: string) => `No flow "${flow}" is registered on this workspace.`
+
+const relay = (options: { readonly registered?: boolean } = {}) => {
+  const launched: Array<{ flowId: string; input: unknown }> = []
+  let planned: { flowId: string; input: unknown } | undefined
+  const services: AppServices = {
+    workflowPollMs: 1,
+    toastDebounceMs: 0,
+    toastAutoDismissMs: 10_000,
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const absolute = new URL(url, "https://app.test")
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (absolute.pathname === "/api/workflow/provision") {
+        return json(200, { status: "ready", repo: body?.repo, gatewayId: "gw-1" })
+      }
+      if (absolute.pathname === "/api/workflow/rpc") {
+        const procedure = String(body?.procedure)
+        const payload = (body?.payload ?? {}) as { flowId?: unknown; input?: unknown }
+        const flowId = String(payload.flowId ?? "")
+        if (procedure === "List") {
+          return json(200, { ok: true, payload: { _tag: "flows", items: [{ flowId: "coding", description: "" }] } })
+        }
+        if (procedure === "Plan") {
+          /* The host's typed FlowNotFound, in the wire shape production sent. */
+          if (options.registered === false) {
+            return json(200, {
+              ok: false,
+              error: {
+                message: controlPlaneRefusal(flowId),
+                detail: [{ _tag: "Fail", error: { _tag: "/control/FlowNotFound", code: "flow_not_found", flowId } }]
+              }
+            })
+          }
+          planned = { flowId, input: payload.input }
+          return json(200, {
+            ok: true,
+            payload: { planId: "plan-1", flowId, digest: "d", envelope: { capabilities: [], flows: [], budget: {} },
+              inputSummary: "", deployClass: false, nodes: [] }
+          })
+        }
+        if (procedure === "Run") {
+          if (planned !== undefined) launched.push(planned)
+          return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: "run-1" } })
+        }
+        if (procedure === "Approval.Submit") {
+          return json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "a" }, resume: { _tag: "Accepted", receiptId: "b" } } })
+        }
+        if (procedure === "Projection.Snapshot") {
+          return json(200, { ok: true, payload: { cursor: { projection: "run-summary", runId: "run-1", value: 1 }, rows: [] } })
+        }
+        return json(200, { ok: false, error: { message: `no ${procedure}` } })
+      }
+      return json(404, { status: "error", message: `no stub for ${absolute.pathname}` })
+    }
+  }
+  return { services, launched }
+}
+
+const signedInStore = async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+    login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null })
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{
+    id: REPO, org: REPO.split("/")[0] ?? "", ownerKind: "user", name: REPO.split("/")[1] ?? "", head: null
+  }] })
+  await settle(2)
+  return store
+}
+
+const said = (outcome: { status: string; value?: string; error?: string }): string =>
+  outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
+
+test("the flow-authoring door launches the id the workspace host provisions", async () => {
+  const store = await signedInStore()
+  const double = relay()
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  try {
+    const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    expect(double.launched.map(entry => entry.flowId)).toEqual([FLOW_AUTHORING_ENTRY])
+    expect(double.launched[0]?.input).toEqual({ prompt: "summarise my issues" })
+    /* The 0.x name, so a regression names itself rather than just failing an equality. */
+    expect(double.launched.map(entry => entry.flowId)).not.toContain("create-workflow")
+    expect(said(outcome)).toContain(`run-started workflow=${FLOW_AUTHORING_ENTRY}`)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
+
+test("a workspace without the authoring flow is told what to do, not handed an internal id", async () => {
+  const store = await signedInStore()
+  const double = relay({ registered: false })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  try {
+    const answer = said(await controller.commands.run("flow.create", `summarise my issues ${REPO}`))
+    expect(answer).not.toContain(controlPlaneRefusal(FLOW_AUTHORING_ENTRY))
+    expect(answer).not.toContain("is registered on this workspace")
+    expect(answer).toContain(REPO)
+    expect(answer).toContain("flow-authoring flow")
+    expect(answer).toContain("/flow.create")
+    /* A toast dismisses in four seconds; the transcript is what is still there. */
+    expect([...store.collections.messages.values()].map(message => message.text)).toContain(answer)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})

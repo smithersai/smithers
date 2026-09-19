@@ -11,6 +11,7 @@ import { runCardIdFor, runScopeFromCard } from "../RunReference"
 import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import { FLOW_AUTHORING_ENTRY, flowAuthoringUnavailable } from "@smthrs/rpc/FlowAuthoring"
 import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
 import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
@@ -405,8 +406,8 @@ export const createWorkflowController = (
    * The box a flow is authored on: whatever the person selected, and otherwise
    * the one this repository's reviewed jobs already run on, as the register
    * door reads it (`TriggersSeam.jobWorkspace`). A relay call that names no
-   * workspace reaches the repository's product host, which carries neither
-   * `create-workflow` nor the registrar.
+   * workspace reaches the repository's product host, which carries neither the
+   * authoring pack nor the registrar.
    */
   const flowAuthoringBinding = (repo: string): GatewayBinding => {
     const selected = gatewayBindingFor(store, repo)
@@ -444,28 +445,41 @@ export const createWorkflowController = (
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return refuseCreate(provisioned)
     /*
-     * No pre-flight `listWorkflows` gate here. The live gateway populates
-     * its global pack LAZILY — a cold `listWorkflows` answers with only the
-     * repo's own workflows and `create-workflow` appears moments later — so
-     * gating on that list refuses a workflow the workspace really has.
-     * `launchRun` resolves the registry on a miss and answers NOT_FOUND
-     * honestly, which is the truth worth surfacing.
+     * No pre-flight `listWorkflows` gate here, for a plainer reason than the
+     * one this comment used to give. It claimed the gateway populates a GLOBAL
+     * pack lazily, so a cold list could omit a flow the workspace really has.
+     * That is not how this host behaves: a workspace's catalog is its own
+     * repository's `flows/` tree plus the bodies the host provisions at
+     * startup (`flows/repository/registry.ts`), and both are settled before it
+     * serves a request. The reason to launch first is that the list is a
+     * second round trip which can only ever agree with the launch, and
+     * `launchRun` resolves the registry itself and answers FlowNotFound.
      */
     const launched = await launchWorkflow({
       repo,
       binding,
-      workflow: "create-workflow",
+      workflow: FLOW_AUTHORING_ENTRY,
       input: { prompt: description },
       title: `Creating a flow: ${repo}`
     })
-    if ("message" in launched) return refuseCreate(launched.message)
+    /*
+     * A workspace with no authoring flow is told so in the product's own
+     * words. The control plane's refusal is `No flow "create-flow" is
+     * registered on this workspace.` — an internal id and no action — and for
+     * two nights on production that sentence was the entire answer a person
+     * got from the headline door. Every other refusal is still the
+     * workspace's own, because it is about their request, not about us.
+     */
+    if ("message" in launched) {
+      return refuseCreate(isFlowNotFound(launched.code) ? flowAuthoringUnavailable(repo) : launched.message)
+    }
     /*
      * Wave 12 §1: a MINIMAL machine acknowledgment. Wave 11's paragraph of
      * warnings was the model's only evidence and it rounded up anyway, so the
      * result stops trying to talk the model out of lying: it states the fact
      * the client already knows, and the claim surface is the client's.
      */
-    return { value: `run-started workflow=create-workflow run=${launched.runId} repo=${repo}` }
+    return { value: `run-started workflow=${FLOW_AUTHORING_ENTRY} run=${launched.runId} repo=${repo}` }
   }
 
   /** A source card binds both catalog reads and launches to the retained host. */
@@ -571,9 +585,10 @@ export const createWorkflowController = (
     }
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return provisioned
-    // Launch first (the gateway's registry is lazy — see createWorkflow); a
-    // genuine miss comes back as the gateway's own NOT_FOUND, and only then
-    // is it worth naming what the workspace does have.
+    // Launch first (see createWorkflow: a listing is a second round trip that
+    // can only agree with the launch); a genuine miss comes back as the
+    // gateway's own NOT_FOUND, and only then is it worth naming what the
+    // workspace does have.
     const launched = await launchWorkflow({
       repo,
       binding,

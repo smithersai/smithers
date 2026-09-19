@@ -462,10 +462,10 @@ authenticatedTest(
 )
 
 authenticatedTest(
-  "Add flow completes create-workflow and exposes the new issue flow through the workspace registry",
+  "Add flow completes create-flow and exposes the new issue flow through the workspace registry",
   scenario("issues.production-private-add-flow-artifact", {
     capabilities: ["identity", "cloud"],
-    description: "Create an issue in an owned private import, submit its Add flow form, wait for the real create-workflow run, and verify the generated issue flow in both the UI catalog and workspace RPC before cleanup.",
+    description: "Create an issue in an owned private import, submit its Add flow form, wait for the real create-flow run, and verify the generated issue flow in both the UI catalog and workspace RPC before cleanup.",
     coverage: [
       "action:issues.create", "action:issue.add-flow", "action:flow.create",
       "action:flow.list", "host:production", "path:success", "path:persistence", "door:slash", "door:button",
@@ -508,7 +508,7 @@ authenticatedTest(
         readonly ok?: unknown
         readonly payload?: { readonly runId?: unknown }
       }
-      if (acceptedRequest === undefined) throw new Error("The accepted create-workflow response had no observed Run request to drain.")
+      if (acceptedRequest === undefined) throw new Error("The accepted create-flow response had no observed Run request to drain.")
       const runRequest = acceptedRequest.postDataJSON() as {
         readonly workspaceId?: unknown
       }

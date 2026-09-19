@@ -125,6 +125,11 @@ describe("a flow typed into the composer states its refusal", () => {
    * shape of a refused `Plan`: the gateway's launch plans, approves and runs,
    * so a door that stopped after one call never got past the plan. The
    * workspace's own sentence was returned, toasted for four seconds and lost.
+   *
+   * The refusal here is UNTYPED — no `detail` naming a control error — which
+   * is the case the door cannot translate, so the workspace's own words are
+   * what a person gets. The typed miss it CAN translate (FlowNotFound on the
+   * authoring flow) is pinned in `FlowCreateEntry.test.ts`.
    */
   test("a flow-authoring door the workspace refuses says so in the transcript", async () => {
     const store = await signedInStore()
@@ -138,7 +143,7 @@ describe("a flow typed into the composer states its refusal", () => {
         if (path === "/api/workflow/provision") return json(200, { status: "ready" })
         if (path === "/api/workflow/rpc") {
           rpc.push(String(JSON.parse(String(init?.body ?? "{}")).procedure))
-          return json(200, { ok: false, error: { message: 'No flow "create-workflow" is registered on this workspace.' } })
+          return json(200, { ok: false, error: { message: "The workspace gateway refused this plan." } })
         }
         return json(404, { message: `no stub for ${path}` })
       }
@@ -149,7 +154,7 @@ describe("a flow typed into the composer states its refusal", () => {
     /* One rpc: the launch stopped at its plan, so no run was ever started. */
     expect(rpc).toEqual(["Plan"])
     expect([...store.collections.messages.values()].map((message) => message.text))
-      .toContain('No flow "create-workflow" is registered on this workspace.')
+      .toContain("The workspace gateway refused this plan.")
   })
 
   /*

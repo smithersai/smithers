@@ -304,7 +304,7 @@ describe("server-emitted card frames", () => {
       payload: {
         runId: "run-1",
         repo: "will/flows",
-        workflow: "create-workflow",
+        workflow: "create-flow",
         phase,
         steps: ["The run started."],
         result: null,

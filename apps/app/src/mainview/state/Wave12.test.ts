@@ -44,7 +44,7 @@ const relay = (options: {
     calls: 0,
     launched: [] as Array<{ workflow: string; input: unknown; repo: string }>
   }
-  const flows = options.flows ?? [{ flowId: "create-workflow" }, { flowId: "review-pr" }]
+  const flows = options.flows ?? [{ flowId: "create-flow" }, { flowId: "review-pr" }]
   let planned: { flowId: string; input: unknown } | undefined
 
   const procedure = (repo: string, name: string, payload: Record<string, unknown>): Response => {
@@ -219,10 +219,10 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(rendered).not.toContain("has been created")
     expect(rendered).not.toContain("summarize-open-issues")
     // What IS on screen: the deterministic line, and the card beside it.
-    expect(rendered).toContain("I started a create-workflow run — the run card shows its real progress.")
+    expect(rendered).toContain("I started a create-flow run — the run card shows its real progress.")
     expect(runCard(store)).toBeDefined()
     // The act line names the run the CLIENT started, from the machine ack.
-    expect(rendered).toContain(`Smithers started a create-workflow run on ${REPO}`)
+    expect(rendered).toContain(`Smithers started a create-flow run on ${REPO}`)
   })
 
   test("prose that claims nothing about the run is rendered untouched", async () => {
@@ -283,8 +283,8 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(30)
     const rendered = transcript(store)
     expect(rendered).not.toContain("has been created")
-    expect(rendered).toContain("I started a create-workflow run — the run card shows its real progress.")
-    expect(rendered).toContain(`Smithers started a create-workflow run on ${REPO}`)
+    expect(rendered).toContain("I started a create-flow run — the run card shows its real progress.")
+    expect(rendered).toContain(`Smithers started a create-flow run on ${REPO}`)
     expect(runCard(store)).toBeDefined()
   })
 
@@ -310,7 +310,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     controller.send("make me a workflow")
     await settle(30)
     expect(transcript(store)).not.toContain("Creating that workflow for you now")
-    expect(transcript(store)).toContain("I started a create-workflow run")
+    expect(transcript(store)).toContain("I started a create-flow run")
   })
 
   test("a turn that launched NOTHING leaves the model's words alone", async () => {
@@ -379,7 +379,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await waitFor(() => store.session().phase === "idle")
     expect(store.session().phase).toBe("idle")
     // The launch itself still happened and is stated by the client.
-    expect(transcript(store)).toContain("Smithers started a create-workflow run")
+    expect(transcript(store)).toContain("Smithers started a create-flow run")
   })
 
   test("a turn stopped mid-flight does not leave a claiming preamble standing (review)", async () => {
@@ -414,7 +414,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(4)
 
     expect(transcript(store)).not.toContain("has been created")
-    expect(transcript(store)).toContain("I started a create-workflow run")
+    expect(transcript(store)).toContain("I started a create-flow run")
     expect(store.session().phase).toBe("idle")
   })
 
@@ -424,7 +424,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(claimsRunState("It should be done shortly.")).toBe(true)
     expect(claimsRunState("Approvals go to you, never to me.")).toBe(false)
     expect(renderedRunTurnText("flow.create", WAVE11_LIE)).toBe(
-      "I started a create-workflow run — the run card shows its real progress."
+      "I started a create-flow run — the run card shows its real progress."
     )
     expect(
       runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "flow.create", args: "x" }))
@@ -434,7 +434,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     ).toBe("flow.create")
     expect(runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "world" }))).toBeUndefined()
     expect(runLaunchCommandOf("commands", "not json")).toBeUndefined()
-    expect(toolResultLaunchedRun("run-started workflow=create-workflow run=r1 repo=o/r")).toBe(true)
+    expect(toolResultLaunchedRun("run-started workflow=create-flow run=r1 repo=o/r")).toBe(true)
     expect(toolResultLaunchedRun("failed: run-started")).toBe(false)
   })
 })
@@ -462,7 +462,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     expect(said(outcome)).toContain(`repo=${OTHER_REPO}`)
     // The repo token is the target, NOT part of the description.
     expect(double.state.launched[0]).toMatchObject({
-      workflow: "create-workflow",
+      workflow: "create-flow",
       repo: OTHER_REPO,
       input: { prompt: "summarize my open issues" }
     })

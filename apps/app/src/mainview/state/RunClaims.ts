@@ -18,6 +18,7 @@
  * failure. Nothing here touches the store or the DOM, so the rule is unit-pinned.
  */
 
+import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 import { canonicalCommandName } from "../flows/CommandName"
 import { ASK_HONEST_LINES, type ImpossibleAskClass } from "./Instructions"
 
@@ -91,7 +92,7 @@ export const claimsRunState = (text: string): boolean => {
  */
 export const deterministicRunLine = (command: string): string =>
   command === "flow.create"
-    ? "I started a create-workflow run — the run card shows its real progress."
+    ? `I started a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
     : "I started that run — the run card shows its real progress."
 
 /*

@@ -55,7 +55,7 @@ test(
     await bootLocal(page)
     await runSignedOutCommand(page, "/flow.create s15 must not start smithersai/smithers", "Sign in with GitHub to create a Smithers flow from a description.")
     await runSignedOutCommand(page, "/flow.list smithersai/smithers", "Sign in with GitHub to list the flows on your workspace.")
-    await runSignedOutCommand(page, "/flow.run create-workflow smithersai/smithers", "Sign in with GitHub to run create-workflow on smithersai/smithers.")
+    await runSignedOutCommand(page, "/flow.run create-flow smithersai/smithers", "Sign in with GitHub to run create-flow on smithersai/smithers.")
     await closeComposer(page)
 
     expect(workflowRequests).toEqual([])
@@ -242,7 +242,7 @@ workflowTest(
     const after = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workflowRepo.workspaceId)
     const flows = (after.payload as { readonly items?: ReadonlyArray<{ readonly flowId?: unknown; readonly inputSchema?: unknown }> })?.items ?? []
     const declared = flows.find((flow) => flow.flowId === marker)
-    expect(declared, `create-workflow must publish the exact requested id ${marker}`).toBeDefined()
+    expect(declared, `create-flow must publish the exact requested id ${marker}`).toBeDefined()
     expect(beforeIds.has(marker), `${marker} must be a newly created registry artifact`).toBe(false)
     expect(declared?.inputSchema, `${marker} must publish its declared input schema`).toBeDefined()
 

@@ -19,7 +19,7 @@ const validArgs: Record<string, string> = {
   "flow.repo.choose": "codeplanesmithers/canary-sandbox",
   "flow.run.stop": "missing-card",
   "flow.run.retry": "missing-card",
-  "flow.run": "create-workflow codeplanesmithers/canary-sandbox",
+  "flow.run": "create-flow codeplanesmithers/canary-sandbox",
   "card.maximize": "missing-card",
   "copy-message": "hello",
   "approval.approve": "missing-card",

@@ -44,9 +44,9 @@ const relay = (options: { readonly provisionStatus?: number; readonly provision?
       }
       if (absolute.pathname === "/api/workflow/rpc") {
         const procedure = String(body?.procedure)
-        if (procedure === "List") return json(200, { ok: true, payload: { _tag: "flows", items: [{ flowId: "create-workflow", description: "" }] } })
+        if (procedure === "List") return json(200, { ok: true, payload: { _tag: "flows", items: [{ flowId: "create-flow", description: "" }] } })
         if (procedure === "Plan") {
-          return json(200, { ok: true, payload: { planId: "plan-1", flowId: "create-workflow", digest: "d", envelope: { capabilities: [], flows: [], budget: {} }, inputSummary: "", deployClass: false, nodes: [] } })
+          return json(200, { ok: true, payload: { planId: "plan-1", flowId: "create-flow", digest: "d", envelope: { capabilities: [], flows: [], budget: {} }, inputSummary: "", deployClass: false, nodes: [] } })
         }
         if (procedure === "Run") return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: "run-1" } })
         return json(200, { ok: false, error: { message: `no ${procedure}` } })
