@@ -396,7 +396,7 @@ describe("render", () => {
       packageManager: { name: "bun", version: ">=1.4.0", executable: "bun", runtime: bunRuntime }
     }))
     expect(rendered).toContain("      - run: \"bun install --frozen-lockfile --ignore-scripts\"\n")
-    expect(rendered).toContain("        run: \"bun x smthrs test '//scripts/...' --verbose\"\n")
+    expect(rendered).toContain("        run: \"bun x --bun smthrs test '//scripts/...' --verbose\"\n")
     // Bun installs itself; a second manager-setup action would install the same
     // program twice.
     expect(rendered).not.toContain("pnpm/action-setup")
