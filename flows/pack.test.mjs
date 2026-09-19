@@ -600,7 +600,13 @@ describe("the smithers-0x-hello fixture", () => {
     // fixtures directory un-ignores it the way packages/smithers/migrate's does. Without
     // that negation the pack exists on the author's disk and nowhere else, and
     // every test here passes while a fresh clone has no fixture at all.
-    const tracked = spawnSync("git", ["ls-files", "--", `flows/${FIXTURE}`], {
+    // A non-colocated jj workspace has no Git checkout metadata. Inspect its
+    // committed parent, not the auto-snapshotted working copy, so an uncommitted
+    // local fixture cannot satisfy this assertion there either.
+    const jjWorkspace = existsSync(join(repoRoot, ".jj")) && !existsSync(join(repoRoot, ".git"));
+    const tracked = spawnSync(jjWorkspace ? "jj" : "git", jjWorkspace
+      ? ["file", "list", "-r", "@-", "--", `flows/${FIXTURE}`]
+      : ["ls-files", "--", `flows/${FIXTURE}`], {
       cwd: repoRoot,
       encoding: "utf8",
     });
