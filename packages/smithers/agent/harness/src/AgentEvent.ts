@@ -575,10 +575,12 @@ export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
   "flows/harness/AgentEvent/ClaimDemanded"
 )("claim-demanded", {
   eventType: Schema.Literal("flows.harness.claim-demanded.v1"),
-  /** Probability the transport gave to "the task as stated is done". */
+  /** Probability the transport gave to "the task as stated is done"; journaled, decides nothing. */
   complete: Schema.Number,
-  /** Probability it gave to "the claim asserts what the evidence does not show". */
+  /** Probability it gave to "the claim asserts what the evidence does not show"; journaled, decides nothing. */
   overclaims: Schema.Number,
+  /** Probability it gave to "the claim reports a command or a result the evidence does not record"; the one that decides. */
+  invented: Schema.Number,
   /** Wall-clock milliseconds the evaluation took. */
   latencyMs: Schema.Int,
   /** Whether this reading handed the completion back. */

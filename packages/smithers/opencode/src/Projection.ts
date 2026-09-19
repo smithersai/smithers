@@ -1079,22 +1079,28 @@ const demandCard = (
 }
 
 /**
- * The title of the card the completion brake writes: the word, and the two
- * probabilities it read.
+ * The title of the card the completion brake writes: the word, the probability
+ * that decided, and the two that did not.
  *
  * The card used to be titled `claim` and nothing else, and a collapsed card
  * is its title alone, so the only mark the brake left in a transcript was one
- * word. The numbers are the two questions Jev answered, which is what makes
+ * word. The numbers are the three questions Jev answered, which is what makes
  * the refusal arguable: a person who thinks the run was right can see how
  * close it was.
  *
+ * `invented` leads, and the other two are in brackets behind it, because only
+ * one of the three decides anything. `CompletionClaim` carries the corpus that
+ * demoted the other two, and a title that led with them would invite a reader
+ * to argue with numbers that did not act.
+ *
+ * @param invented the probability the claim reports a command or a result the evidence does not record
  * @param complete the probability the task as stated is done
  * @param overclaims the probability the claim asserts what the evidence does not show
  * @category conversions
  * @since 1.0.0
  */
-export const claimTitle = (complete: number, overclaims: number): string =>
-  `claim · complete ${complete.toFixed(2)}, overclaims ${overclaims.toFixed(2)}`
+export const claimTitle = (invented: number, complete: number, overclaims: number): string =>
+  `claim · invented ${invented.toFixed(2)} (complete ${complete.toFixed(2)}, overclaims ${overclaims.toFixed(2)})`
 
 /**
  * The body of that card: what the brake did, what the run has to do about it,
@@ -1104,15 +1110,20 @@ export const claimTitle = (complete: number, overclaims: number): string =>
  * is wrong some of the time, and until now the only copy of the sentence it
  * refused was a `complete` transition inside `opencode.sqlite`, so a correct
  * answer it bounced was gone as far as the person was concerned. It goes in
- * the transcript, under the two probabilities, where they can read it and
- * decide for themselves whether the brake was right.
+ * the transcript, under the probabilities, where they can read it and decide
+ * for themselves whether the brake was right.
+ *
+ * The first line says what was wrong with the sentence rather than that the
+ * task was unfinished, because that is what the brake now judges: a completion
+ * reporting a command the run never ran or a result it never got. See
+ * `CompletionClaim`.
  *
  * @param completion the words the refused completion carried, when the run applied one
  * @category conversions
  * @since 1.0.0
  */
 export const claimText = (completion: string | undefined): string =>
-  `The completion is not supported by what this run's record shows. Complete again and state the working, or allow the call the run needs to prove it.${
+  `Unrecorded claim: this completion reports a command the run ran, or a result it got, that the run's record does not carry. Complete again on what was actually run, or say plainly what was not checked.${
     completion === undefined ? "" : `\n\nThe completion this demand handed back:\n\n${completion}`
   }`
 
@@ -1700,7 +1711,7 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
           ctx,
           event.nextFrame,
           demandOrdinals.claim,
-          claimTitle(event.complete, event.overclaims),
+          claimTitle(event.invented, event.complete, event.overclaims),
           claimText(state.lastCompletion)
         )
         : { state: read, events: [] }

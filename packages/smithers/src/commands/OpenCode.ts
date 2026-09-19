@@ -182,12 +182,14 @@ export const host = async (
       host: nodeHost(directory, environment),
       environment
     })
-  // The words and the brake have to agree. Jev reads every completion, and
-  // a claim the run's own record does not support ends the turn instead of
-  // standing as its answer; see `CompletionClaim` and the runbook.
+  // The words and the brake have to agree, and what the brake refuses is
+  // narrower than what it reads. Jev reads every completion; a claim it finds
+  // thin is handed back for a frame and then stands; a claim reporting a
+  // command or a result the run never recorded ends the turn instead of
+  // standing as its answer. See `CompletionClaim` and the runbook.
   const judge = options.scripted
     ? "No model runs; the recorded turn replays."
-    : "Jev judges every completion, and an unproven claim ends the turn."
+    : "Jev judges every completion; a claim reporting work the run never recorded ends the turn."
   const result = await Effect.runPromiseExit(
     Effect.gen(function*() {
       // The guard samples the directory before the driver creates

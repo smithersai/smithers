@@ -3582,7 +3582,7 @@ describe("CellTurn unsupported claim", () => {
     const { asked, events, model } = await claiming(
       [editing, finishing("check src/a.py", "kept the query string; the suite is green")],
       [edited, green],
-      { complete: { probability: 0.94 }, overclaims: { probability: 0.03 } },
+      { complete: { probability: 0.94 }, overclaims: { probability: 0.03 }, invented: { probability: 0.02 } },
       // A frame the run never needs: a brake with nowhere to hand the frame
       // back to is not consulted at all, so a run at its last frame would
       // prove nothing about what the reading does.
@@ -3590,7 +3590,13 @@ describe("CellTurn unsupported claim", () => {
     )
 
     expect(of(events, "claim-demanded")).toEqual([
-      expect.objectContaining({ complete: 0.94, overclaims: 0.03, demanded: false, currentDigest: "a.py=fixed" })
+      expect.objectContaining({
+        complete: 0.94,
+        overclaims: 0.03,
+        invented: 0.02,
+        demanded: false,
+        currentDigest: "a.py=fixed"
+      })
     ])
     // A passing reading is a journal line and nothing else: the run resolved
     // on the frame it completed on, and no frame after it was ever asked for.
@@ -3598,14 +3604,16 @@ describe("CellTurn unsupported claim", () => {
       expect.objectContaining({ text: "kept the query string; the suite is green" })
     ])
     expect(model.recorder.requests).toHaveLength(2)
-    expect(JSON.stringify(model.recorder.requests)).not.toContain("Unsupported claim")
+    expect(JSON.stringify(model.recorder.requests)).not.toContain("Unrecorded claim")
 
     // What the brake sent: the task the person stated, the sentence the run
-    // wrote, the tree fact, and the one check the completing frame ran.
+    // wrote, the tree fact, every check the run took over the tree it is
+    // completing on, and the verbatim result of the last one.
     expect(asked[0]?.state).toEqual({
       task: "The task for this run:\n\nKeep the query string.",
       claim: "kept the query string; the suite is green",
       treeMoved: true,
+      checksRun: [{ command: "{\"command\":\"check src/a.py\",\"mode\":\"unhermetic\"}", outcome: "passed" }],
       lastCheck: {
         command: "{\"command\":\"check src/a.py\",\"mode\":\"unhermetic\"}",
         exitCode: 0,
@@ -3620,8 +3628,8 @@ describe("CellTurn unsupported claim", () => {
   /** Jev answers by the sentence it is shown, so the two claims read apart. */
   const byClaim = (request: Evaluator.Request): Readonly<Record<string, Evaluator.ScriptedAnswer>> =>
     JSON.stringify(request.state).includes(overclaimed)
-      ? { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } }
-      : { complete: { probability: 0.95 }, overclaims: { probability: 0.02 } }
+      ? { complete: { probability: 0.6 }, overclaims: { probability: 0.88 }, invented: { probability: 0.9 } }
+      : { complete: { probability: 0.95 }, overclaims: { probability: 0.02 }, invented: { probability: 0.02 } }
 
   it("hands back a completion the record does not support, and judges the answer that comes back", async () => {
     const asked: Array<Evaluator.Request> = []
@@ -3651,12 +3659,12 @@ describe("CellTurn unsupported claim", () => {
     // read like any other completion: a cap that stopped the brake here is
     // what let an identical re-claim stand unread on a live seat.
     expect(of(events, "claim-demanded")).toEqual([
-      expect.objectContaining({ demanded: true, nextFrame: 2, complete: 0.6, overclaims: 0.88 }),
-      expect.objectContaining({ demanded: false, complete: 0.95, overclaims: 0.02 })
+      expect.objectContaining({ demanded: true, nextFrame: 2, complete: 0.6, overclaims: 0.88, invented: 0.9 }),
+      expect.objectContaining({ demanded: false, complete: 0.95, overclaims: 0.02, invented: 0.02 })
     ])
     expect(asked).toHaveLength(2)
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unsupported claim")
-    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unsupported claim")
+    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unrecorded claim")
+    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unrecorded claim")
     // The proven answer stands, on the frame it was written on: proving a
     // claim costs the honest run no frame it would not have spent anyway.
     expect(of(events, "resolved")[0]?.message.content).toEqual([
@@ -3668,7 +3676,7 @@ describe("CellTurn unsupported claim", () => {
     const { asked, events, failure } = await claiming(
       [editing, finishing("check src/a.py", overclaimed), finishing("check src/a.py", overclaimed)],
       [edited, green, green],
-      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } }
+      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 }, invented: { probability: 0.9 } }
     )
 
     // The live defect, in one case: frame 1 bounced, the identical sentence
@@ -3680,9 +3688,46 @@ describe("CellTurn unsupported claim", () => {
     ])
     expect(failure).toMatchObject({
       code: "claim_unproven",
-      message: expect.stringContaining("came back still unproven")
+      message: expect.stringContaining("came back still unrecorded")
     })
     expect(of(events, "resolved")).toHaveLength(0)
+  })
+
+  it("lets a claim it only found thin stand when it comes back, rather than taking the answer", async () => {
+    // The defect this lane was opened on, in one case. A reading between the
+    // two heights is a bounce and not a verdict: the run is told once, and
+    // whatever it says next stands. Arming the verdict on the whole bounce
+    // instead ended five live question-shaped turns in a row with no answer,
+    // one of them over the correct sentence, and reddened one live CI dispatch
+    // in four on a run whose planted bug was fixed.
+    const thin = "read the handler; it already keeps the query string"
+    const { asked, events, failure } = await claiming(
+      [editing, finishing("check src/a.py", thin), finishing("check src/a.py", thin)],
+      [edited, green, green],
+      { complete: { probability: 0.08 }, overclaims: { probability: 0.9 }, invented: { probability: 0.6 } }
+    )
+
+    expect(asked).toHaveLength(2)
+    expect(of(events, "claim-demanded")).toEqual([
+      expect.objectContaining({ demanded: true, nextFrame: 2, invented: 0.6 }),
+      expect.objectContaining({ demanded: false, nextFrame: 3, invented: 0.6 })
+    ])
+    expect(failure).toBeUndefined()
+    expect(of(events, "resolved")[0]?.message.content).toEqual([expect.objectContaining({ text: thin })])
+  })
+
+  it("restores a thin bounced claim on the budget notice, because it would have let it stand", async () => {
+    const thin = "read the handler; it already keeps the query string"
+    const { events } = await claiming(
+      [editing, finishing("check src/a.py", thin), editing],
+      [edited, green, edited],
+      { complete: { probability: 0.08 }, overclaims: { probability: 0.9 }, invented: { probability: 0.6 } },
+      { maxFrames: 3 }
+    )
+
+    const resolved = JSON.stringify(of(events, "resolved")[0]?.message.content)
+    expect(resolved).toContain("The frame budget of 3 is exhausted")
+    expect(resolved).toContain(thin)
   })
 
   it("never restores a bounced claim on the budget notice", async () => {
@@ -3691,7 +3736,7 @@ describe("CellTurn unsupported claim", () => {
       // the budget ends the run there.
       [editing, finishing("check src/a.py", overclaimed), editing],
       [edited, green, edited],
-      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } },
+      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 }, invented: { probability: 0.9 } },
       { maxFrames: 3 }
     )
 

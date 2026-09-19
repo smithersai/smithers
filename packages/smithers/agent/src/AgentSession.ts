@@ -689,16 +689,19 @@ export const trace = (
         }
       }
     case "claim-demanded":
-      // Both probabilities and the latency, on every reading rather than only
-      // on a firing, because this is the one demand a grader cannot recompute
-      // from the journal: it is a model's answer, and the passing answers are
-      // what say whether arming the control was right. `demanded` separates
-      // the two. See `CompletionClaim`.
+      // All three probabilities and the latency, on every reading rather than
+      // only on a firing, because this is the one demand a grader cannot
+      // recompute from the journal: it is a model's answer, and the passing
+      // answers are what say whether arming the control was right. `demanded`
+      // separates the two. `invented` is the one that acts; `complete` and
+      // `overclaims` ride along because a journal that stops carrying them
+      // cannot answer whether demoting them was right. See `CompletionClaim`.
       return {
         eventType: "control.agent.claim-demanded",
         payload: {
           complete: event.complete,
           overclaims: event.overclaims,
+          invented: event.invented,
           latencyMs: event.latencyMs,
           demanded: event.demanded,
           currentDigest: event.currentDigest,

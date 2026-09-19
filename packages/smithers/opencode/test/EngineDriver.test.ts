@@ -204,8 +204,8 @@ afterEach(() => {
  * gateway key gives the cell's own classify doors.
  */
 const judging = Evaluator.layerScripted((request) =>
-  "complete" in request.questions && "overclaims" in request.questions
-    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+  "complete" in request.questions && "invented" in request.questions
+    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
     : Effect.fail(
       new Evaluator.EvaluatorError({ code: "unreachable", message: "No evaluator is installed on this host" })
     )
@@ -1266,7 +1266,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
           "yes" in request.questions
             ? { yes: { probability: 0.9 } }
             : "complete" in request.questions
-            ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+            ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
             : {
               relevant: { probability: 0.8 },
               role: { choice: "fixture", probabilities: { implementation: 0.1, fixture: 0.8, unrelated: 0.1 } },
@@ -1302,7 +1302,7 @@ ctx.done(r.ok === false ? "refused " + r.error.message : "answered " + r.answers
             }
             state.asked += 1
             return state.asked > blips
-              ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 } }
+              ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
               : Effect.fail(error())
           }),
           // The wait is the policy's only wall-clock cost, and what it waits

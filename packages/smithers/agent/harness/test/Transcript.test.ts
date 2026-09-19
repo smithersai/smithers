@@ -507,6 +507,7 @@ describe("Transcript", () => {
         eventType: AgentEvent.eventType.claimDemanded,
         complete: 0.92,
         overclaims: 0.06,
+        invented: 0.04,
         latencyMs: 310,
         demanded: false,
         currentDigest: "after",
@@ -516,6 +517,7 @@ describe("Transcript", () => {
         eventType: AgentEvent.eventType.claimDemanded,
         complete: 0.14,
         overclaims: 0.2,
+        invented: 0.88,
         latencyMs: 402,
         demanded: true,
         currentDigest: "after",
@@ -532,7 +534,7 @@ describe("Transcript", () => {
       ModelRequest.Message.user(
         DemandText.narrowOnly("bash", "pytest tests/a.py tests/b.py -k one", ["tests/a.py", "tests/b.py"])
       ),
-      ModelRequest.Message.user(DemandText.claim("incomplete"))
+      ModelRequest.Message.user(DemandText.claim())
     ])
   })
 

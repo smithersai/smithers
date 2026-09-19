@@ -37,7 +37,7 @@ importable as `@smthrs/harness/<Module>`.
 | `CellValidation` | `Validation`, `normalize`, `validate` | Cell validation at the boundary. |
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
-| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `Check`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `reason`, `newest`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
+| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
@@ -606,16 +606,23 @@ The completion nothing in the record contradicts.
 | `proseBytes` | const | constants | The most of the task and the claim the brake sends, in UTF-8 bytes each. |
 | `disprovenAt` | const | constants | At or below this probability of "complete", the claim is handed back. |
 | `overclaimedAt` | const | constants | At or above this probability of "overclaims", the claim is handed back. |
-| `Check` | const | models | The last check the completing frame ran, as the brake states it. |
+| `unsupportedAt` | const | constants | At or above this probability of "invented", the claim is handed back. |
+| `inventedAt` | const | constants | At or above this probability of "invented", the claim ends the run. |
+| `checksRunLimit` | const | constants | The most checks `Evidence.checksRun` lists, newest kept. |
+| `Check` | const | models | The last check the completing frame ran, with its verbatim result. |
+| `Ran` | const | models | One check the run took over the tree it is completing on, without its result. |
 | `Evidence` | const | schemas | Everything the brake sends, and the whole of it. |
 | `classifier` | const | classifiers | The one classifier this brake asks, declared once. |
-| `Probabilities` | interface | models | The two probabilities one evaluation came back with. |
+| `Probabilities` | interface | models | The three probabilities one evaluation came back with. |
 | `Reading` | interface | models | One reading, and what asking for it cost. |
-| `find` | const | conversions | Whether one reading is confident enough to hand the completion back. |
-| `reason` | const | getters | Which of the two failures a reading is about. |
+| `find` | const | conversions | Whether one reading asks anything of the completion at all. |
+| `unrecorded` | const | predicates | Whether a reading is the one this brake ends a run over. |
 | `newest` | const | conversions | The newest `outputBytes` of a check's result, stating what it dropped. |
+| `UnjudgedReason` | type | models | Why one completion went unjudged. |
+| `unjudged` | const | constructors | The failure an unjudged completion ends the turn with. |
+| `unproven` | const | constructors | The failure an unrecorded claim ends the run with. |
 | `read` | const | conversions | Asks Jev about one completion, or says nothing at all. |
-| `demand` | const | constructors | States what the evidence does not show, and names the two ways out. |
+| `demand` | const | constructors | States what the record does not record, and names the two ways out. |
 | `quote` | const | conversions | The canonical JSON of a value, which is how this brake quotes one. |
 | `prose` | const | conversions | The head of a prose field, bounded by `proseBytes`. |
 

@@ -227,7 +227,7 @@ describe("Health", () => {
         facts({ endedBy: { code: "claim_unproven" } }),
         undefined,
         "red",
-        "stopped: the run could not prove its claim"
+        "stopped: the run reported work it never recorded"
       ],
       [
         "the frame budget ended the run",

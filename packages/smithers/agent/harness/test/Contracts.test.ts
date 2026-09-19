@@ -191,6 +191,7 @@ describe("AgentEvent", () => {
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.12,
         overclaims: 0.91,
+        invented: 0.93,
         latencyMs: 480,
         demanded: true,
         currentDigest: "digest-after",

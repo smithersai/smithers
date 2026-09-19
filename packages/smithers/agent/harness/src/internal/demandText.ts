@@ -112,7 +112,7 @@ export const narrowOnly = (flow: string, check: string, targets: ReadonlyArray<s
 Every one of those this run has looked at somewhere else, but no other call it made covers them all, so nothing in this run says what they report on their own. Any term this check carries beyond them — a filter, a selector, a subset of cases, a flag that stops early — is a condition you have never taken off, and what a condition hides is exactly where a change breaks something that was passing. Run ${flow} over the same subjects with those conditions removed and complete once you have seen what it prints; or complete and state in your output that it carries no condition and the reading is already whole. Nothing re-runs it for you, and what you return next is the answer that stands.`
 
 /**
- * Renders the claim-not-supported completion intervention.
+ * Renders the claim-not-recorded completion intervention.
  *
  * It names the one thing that fired and nothing else. The reader is asked
  * only for the working behind its own sentence — which call, what it printed,
@@ -126,24 +126,25 @@ Every one of those this run has looked at somewhere else, but no other call it m
  * No probability is quoted either: a number is journal material for a grader,
  * and in front of a model it is a score to negotiate.
  *
- * The closing sentence used to promise that whatever came back next was the
- * answer that stands. It was not true and it was the loophole: a run that
- * wrote the same sentence again had it accepted unread, so the demand taught
- * the one move that defeats it. The text now states the two real outcomes, so
- * a run that re-states rather than proves knows what re-stating costs it.
- * See `CompletionClaim.unproven`.
+ * It takes no argument. It used to render one of two sentences, for the two
+ * questions that could fire it; only one question fires it now — whether the
+ * claim reports a command or a result the record does not record — so there is
+ * one thing to say. See `CompletionClaim`.
+ *
+ * The text states the way out and what re-stating costs. The way out is not
+ * "prove the task is done": a run is entitled to finish by reporting what it
+ * could not do, and telling it otherwise is what made honest runs re-claim
+ * until they died. The way out is to stop reporting a result the run did not
+ * obtain, which a run can take either by obtaining it or by saying plainly
+ * what it did and did not check.
  *
  * @category conversions
  * @since 1.0.0-rc.0
  * @private
  */
-export const claim = (reason: "incomplete" | "overclaimed"): string =>
-  `Unsupported claim — read against this run's own record, your completion does not show the task being done.
+export const claim = (): string =>
+  `Unrecorded claim — your completion reports a command you ran, or a result you got, that this run's record does not carry.
 
-${
-    reason === "overclaimed"
-      ? "What is missing: your completion states something this run's record does not show."
-      : "What is missing: nothing in the record reaches the behaviour the task asks for."
-  }
+Nothing re-checks this and nothing grades the answer you give it. There are two ways to answer, and both are accepted. Make the call whose result your sentence is about and complete again on what it actually printed. Or complete again saying only what this run did: what you changed, what you ran, what it reported, and what you did not check and why. A completion that reports work honestly left undone is not refused here, and never was — what is refused is a result nothing in this run produced.
 
-Nothing re-checks this and nothing grades the answer you give it. Complete again and state the working: the exact call whose result establishes the behaviour the task names, what it printed, and why that is the behaviour asked for rather than a nearby one. If the work is not finished, finish it instead of restating it. If you believe it is finished and the record simply does not carry the evidence, make the one call that would carry it and complete on that. What you return next is judged the same way this was, and a completion that still does not show the task being done ends this run with no answer at all.`
+What you return next is read the same way this was, and a completion that still reports work this run never recorded ends the run with no answer at all.`

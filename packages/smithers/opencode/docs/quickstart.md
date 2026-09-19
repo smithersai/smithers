@@ -99,13 +99,19 @@ twelve. Raise `--max-frames` for a long task.
 ## When the run says it is done
 
 Jev reads every completion against the record the run produced: the task, the
-sentence the run wrote, whether the workspace changed, and the last check the
-completing frame ran. A completion it reads as unproven is handed back with a
-`demand` card titled `claim`, and the run gets a frame to prove it. That
-happens at most three times; a claim that still does not match the record ends
-the turn with `A completion the run's own record does not support`, and there
-is no answer to read. That is the point: the alternative is a sentence nothing
-supports, returned with a green finish on it.
+sentence the run wrote, whether the workspace changed, every check the run ran
+over the tree it is completing on, and the verbatim result of the last one. A
+completion it reads as thin is handed back with a `demand` card titled
+`claim`, and the run gets a frame to answer. That happens at most three times,
+and whatever comes back then stands.
+
+One kind of claim does not stand: a sentence reporting a command the run never
+ran, or a result it never got. That ends the turn with
+`A completion reporting work this run never recorded`, and there is no answer
+to read. That is the point, and it is also the whole of it. A run that answers
+a question, reports what a command printed, or says plainly that it could not
+check something is handed back at most once and then stands; refusing those too
+killed about one honest run in four before 2026-09-19.
 
 ## Cost
 

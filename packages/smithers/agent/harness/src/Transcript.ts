@@ -15,7 +15,6 @@ import { ModelRequest } from "@smthrs/model"
 import { Result, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type * as Cell from "./Cell.ts"
-import * as CompletionClaim from "./CompletionClaim.ts"
 import type * as EngineLike from "./EngineLike.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as DemandText from "./internal/demandText.ts"
@@ -415,7 +414,7 @@ export const projectStateResult = (
         // The reading that let a completion through was journaled too, and it
         // put nothing in front of the model, so only a firing is replayed.
         if (decoded.success.demanded) {
-          appendDemand(DemandText.claim(CompletionClaim.reason(decoded.success)))
+          appendDemand(DemandText.claim())
         }
         break
       }

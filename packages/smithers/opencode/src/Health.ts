@@ -148,7 +148,7 @@ export const endedReasons: Readonly<Record<HarnessError.HarnessErrorCode | "unkn
   engine_failed: "stopped: the engine failed",
   read_only_cap: "stopped: the run read for too many frames without writing",
   completion_unjudged: "stopped: nothing could judge the completion",
-  claim_unproven: "stopped: the run could not prove its claim",
+  claim_unproven: "stopped: the run reported work it never recorded",
   suspended: "stopped: the run suspended",
   unknown: "stopped: the turn failed"
 }

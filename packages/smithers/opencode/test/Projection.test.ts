@@ -910,6 +910,7 @@ describe("Projection", () => {
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.08,
         overclaims: 0.4,
+        invented: 0.9,
         latencyMs: 380,
         demanded: true,
         currentDigest: "b",
@@ -937,7 +938,7 @@ describe("Projection", () => {
       "unmoved",
       "unresolved · bash",
       "narrow-only · bash",
-      "claim · complete 0.08, overclaims 0.40",
+      "claim · invented 0.90 (complete 0.08, overclaims 0.40)",
       "read-only · 3/3 · park"
     ])
 
@@ -951,6 +952,7 @@ describe("Projection", () => {
           eventType: "flows.harness.claim-demanded.v1",
           complete: 0.95,
           overclaims: 0.02,
+          invented: 0.02,
           latencyMs: 300,
           demanded: false,
           currentDigest: "b",
@@ -1372,6 +1374,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.9,
         overclaims: 0.1,
+        invented: 0.05,
         latencyMs: 412,
         demanded,
         currentDigest: "d",
@@ -1460,7 +1463,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
         "A completion the run's own record does not support (overclaimed): complete 0.08, overclaims 0.89."
       )
     )
-    expect([dotOf(unproven), cardOf(unproven)]).toEqual(["🔴", "stopped: the run could not prove its claim"])
+    expect([dotOf(unproven), cardOf(unproven)]).toEqual(["🔴", "stopped: the run reported work it never recorded"])
     expect(unproven.state.facts.endedBy).toEqual({ code: "claim_unproven" })
     // The words are still the header's, verbatim, so the sentence a person
     // acts on is not paraphrased by the dot.
@@ -1480,7 +1483,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     // history agree about a session nobody is watching any more.
     expect(Health.decide(unproven.state.facts, undefined)).toEqual({
       color: "red",
-      reason: "stopped: the run could not prove its claim"
+      reason: "stopped: the run reported work it never recorded"
     })
     // The operator's own Stop stays gray: nothing about it is theirs to fix.
     const stopped = Projection.close(ctx, start.state, { _tag: "interrupted" })
@@ -1594,6 +1597,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.21,
         overclaims: 0.96,
+        invented: 0.94,
         latencyMs: 412,
         demanded: true,
         currentDigest: "d",
@@ -1604,14 +1608,15 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     const state = card.state
     if (state.status !== "completed") throw new Error(`the demand card is ${state.status}`)
     // The card used to be titled `claim` and nothing else, and a collapsed
-    // card is its title: the only mark the brake left was one word.
-    expect(state.title).toBe("claim · complete 0.21, overclaims 0.96")
-    expect(state.input["description"]).toBe("claim · complete 0.21, overclaims 0.96")
+    // card is its title: the only mark the brake left was one word. `invented`
+    // leads, because it is the one of the three that decides anything.
+    expect(state.title).toBe("claim · invented 0.94 (complete 0.21, overclaims 0.96)")
+    expect(state.input["description"]).toBe("claim · invented 0.94 (complete 0.21, overclaims 0.96)")
     // And the answer it refused was only ever in opencode.sqlite, so a
     // correct answer the brake bounced was gone as far as a person was
     // concerned. It is in the transcript now, word for word.
     expect(state.output).toContain(answer)
-    expect(state.output).toContain("Complete again and state the working")
+    expect(state.output).toContain("Unrecorded claim")
     // A reading that let the completion through writes no card at all.
     expect(
       Projection.fold(
@@ -1621,6 +1626,7 @@ describe("Projection: classify, health, cost, and the run summary", () => {
           eventType: "flows.harness.claim-demanded.v1",
           complete: 0.9,
           overclaims: 0.1,
+          invented: 0.05,
           latencyMs: 4,
           demanded: false,
           currentDigest: "d",

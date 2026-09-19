@@ -289,6 +289,7 @@ describe("trace", () => {
           eventType: "flows.harness.claim-demanded.v1",
           complete: 0.11,
           overclaims: 0.93,
+          invented: 0.94,
           latencyMs: 412,
           demanded: true,
           currentDigest: "tree-after",
@@ -296,12 +297,15 @@ describe("trace", () => {
         }),
         {
           eventType: "control.agent.claim-demanded",
-          // Both probabilities and the latency, because this is the one
+          // All three probabilities and the latency, because this is the one
           // demand a grader cannot recompute: it is a model's answer, and
           // `demanded` is what separates a firing from a reading that agreed.
+          // `invented` is the one that acts; the other two are journaled and
+          // decide nothing. See `CompletionClaim`.
           payload: {
             complete: 0.11,
             overclaims: 0.93,
+            invented: 0.94,
             latencyMs: 412,
             demanded: true,
             currentDigest: "tree-after",

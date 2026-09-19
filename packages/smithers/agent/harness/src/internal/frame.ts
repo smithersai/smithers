@@ -452,12 +452,18 @@ export interface CompletionDemand {
    * True for the five measured demands. Each of them says the record is
    * missing a fact, not that the sentence is wrong, so a run that spends its
    * last frame and never completes again is better served by the answer it
-   * wrote than by a bare budget notice. False for the claim brake, which read
-   * the sentence and found the evidence against it: restoring that sentence
-   * on the budget notice is how one measured run turned a bounced "the tests
-   * pass" into its final answer with a `stop` finish over a repository whose
-   * test exits 1. A bounce that cannot be re-judged must not be undone by the
-   * budget.
+   * wrote than by a bare budget notice.
+   *
+   * For the claim brake it depends on which of its two heights fired, because
+   * they mean different things. A reading between `CompletionClaim.unsupportedAt`
+   * and `CompletionClaim.inventedAt` is a bounce that would let the same
+   * sentence stand if the run re-stated it, so discarding it against an
+   * exhausted budget would throw away an answer the brake was never going to
+   * refuse. A reading at or above `inventedAt` is one the brake *would* refuse:
+   * restoring that sentence on the budget notice is how one measured run turned
+   * a bounced "the tests pass" into its final answer with a `stop` finish over a
+   * repository whose test exits 1. A bounce that cannot be re-judged must not be
+   * undone by the budget. See `CompletionClaim.unrecorded`.
    */
   readonly keeps: boolean
   /** The cap the demand spends. */
@@ -524,11 +530,16 @@ const taskText = (window: ContextWindow.ContextWindow): string =>
 /**
  * The last reading of the completing frame that reported an exit status.
  *
- * The run's durable check ledger keeps a label, a digest and the two exit-
- * status flags, and deliberately keeps no output — it lives in journaled
- * controller state. The verbatim result exists for exactly one frame, the one
- * being judged, so that is the check the brake can quote, and a completing
- * frame that ran none sends none rather than sending a description of one.
+ * The verbatim result exists for exactly one frame, the one being judged, so
+ * this is the only check the brake can quote in full, and a completing frame
+ * that ran none sends none rather than sending a description of one.
+ *
+ * It is not the run's evidence, only the newest page of it. {@link checksRun}
+ * is the rest, and the two are separate because one measured live failure was
+ * exactly the difference: a run that fixed the planted bug, ran the
+ * repository's test, and then ran `git diff` to show its work sent the
+ * `git diff` and not the test, so its true sentence reported a result nothing
+ * in the payload recorded. See `CompletionClaim.Evidence`.
  */
 const lastCheck = (calls: ReadonlyArray<ObservedCall>): CompletionClaim.Check | undefined => {
   for (let index = calls.length - 1; index >= 0; index--) {
@@ -544,6 +555,59 @@ const lastCheck = (calls: ReadonlyArray<ObservedCall>): CompletionClaim.Check | 
   }
   return undefined
 }
+
+/**
+ * Every check this run has run, without its result.
+ *
+ * Read off the run's own durable check ledger, which is the same ledger
+ * `UnresolvedFailure` and `NarrowedCheck` read and which already holds what
+ * this needs: the call's input as a clipped label and whether it reported a
+ * failing or a passing exit status. `NarrowedCheck.remember` keeps the newest
+ * entry per subject, so this is "every distinct command this run ran, and what
+ * it last reported", newest kept and bounded by
+ * `CompletionClaim.checksRunLimit`.
+ *
+ * One filter: `failing || passing`. A read or a search reports no exit status,
+ * and listing it would tell the question a command ran without telling it what
+ * the command found. A reading taken against a checkpoint is not in this
+ * ledger at all, by the ledger's own rule: it read a tree that is not this
+ * workspace, and `account` files it under the sufficiency ledger instead.
+ *
+ * ## Why it does not filter on the tree, although every other reader does
+ *
+ * The ledger stamps each entry with its frame's closing workspace digest and
+ * with `stable`, whether that stamp is the tree the check actually read, and
+ * every deterministic brake reads both because each of them asks a question
+ * about *this* tree. Filtering here the same way was written first and was
+ * measured wrong on a live run: the bug was fixed, the repository's own test
+ * passed at frame 7, the run completed at frame 8 having made no calls, and
+ * the list went out empty, so a true sentence read 0.91 on `invented` and the
+ * run died with the fix on disk. Asked with the list, the same claim reads
+ * 0.40; asked with an empty one, 0.93.
+ *
+ * The cause is the host, not the ledger. `smithers opencode` serves a
+ * directory and keeps the run's own journal at `<directory>/.smithers`, which
+ * `WorkspaceObservation.defaultPrune` does not prune, so the digest moves on
+ * every frame with no call declaring a write. Every frame therefore reads as
+ * an unattributed mutation, which stamps every check `stable: false` and
+ * leaves every ledger entry one digest behind. A tree filter over that reports
+ * "this run has checked nothing" about a run that checked twice.
+ *
+ * So this list is deliberately a weaker statement than the brakes above make.
+ * It says what the run ran and what it reported, not that the reading still
+ * holds over the tree being completed on. That is the statement the question
+ * it feeds actually needs — whether a claim about a command's result is a
+ * claim about a command this run ran — and staleness is owned by
+ * `NarrowedCheck` and `UnresolvedFailure`, which do filter, and which run
+ * first.
+ */
+const checksRun = (
+  ledger: ReadonlyArray<NarrowedCheck.Check>
+): ReadonlyArray<CompletionClaim.Ran> =>
+  ledger
+    .filter((entry) => entry.failing || entry.passing)
+    .slice(-CompletionClaim.checksRunLimit)
+    .map((entry) => ({ command: entry.label, outcome: entry.failing ? "failed" as const : "passed" as const }))
 
 /**
  * The four demands a completion's own measurements produce, in precedence
@@ -662,9 +726,10 @@ const measuredDemand = (
  *    measurement. The four above have said nothing, which means the tree
  *    moved, no check was stepped around, and whatever the run checked it
  *    checked whole — and none of that reads the sentence the run wrote. So
- *    the claim, the task, the tree fact and the frame's last check go to Jev,
- *    and a confident "not done" or "says more than this shows" hands the
- *    frame back from a cap of its own. It is last because it is the only one
+ *    the claim, the task, the tree fact, every check the run took over this
+ *    tree and the verbatim result of the last one go to Jev, and a claim that
+ *    reports a command or a result none of that records hands the frame back
+ *    from a cap of its own. It is last because it is the only one
  *    that costs a request, and because a run one of the four already named
  *    has a demand to answer: asking a model to add a second one would hand
  *    the frame two questions. It never falls back: a completion Jev could
@@ -681,11 +746,21 @@ const measuredDemand = (
  * judges. This one is a sentence being checked against the record, it is what
  * the server banner and the operator docs promise happens to every completion,
  * and the run's answer is the product. So when there is no bounce left to
- * spend — the cap is used up, or none of the room below exists — an unproven
- * claim ends the run as `claim_unproven` instead of standing. That is the
- * shape `read_only_cap` already uses, and it is the only shape that keeps the
- * promise: a cap that stops at the bounce means the second identical claim is
- * accepted unread, which is what a live run did. See `CompletionClaim`.
+ * spend — the cap is used up, or none of the room below exists — a claim that
+ * reports work the record does not record ends the run as `claim_unproven`
+ * instead of standing. That is the shape `read_only_cap` already uses, and it
+ * is the only shape that keeps the promise: a cap that stops at the bounce
+ * means the second identical claim is accepted unread, which is what a live
+ * run did.
+ *
+ * The verdict is narrower than the bounce, and that is the whole of what this
+ * lane changed. A completion the brake merely finds thin is handed back once
+ * and then stands; only a completion at `CompletionClaim.inventedAt` — a
+ * sentence reporting a command or a result nothing in the run produced — is
+ * refused. Arming the verdict on "is the task done" instead killed roughly one
+ * honest run in four, including five question-shaped turns in a row and one
+ * live CI dispatch whose planted bug was fixed. `CompletionClaim`'s header
+ * carries the eighteen-state corpus that measured it.
  *
  * At most one is named, in that order, because they are in descending order of
  * how fundamental the missing thing is: there is nothing to check, then the
@@ -750,16 +825,19 @@ export const judgeCompletion = (
       // reads as moved, which is the reading that asks for nothing: the
       // brake above owns the unmoved case and has already passed on it.
       treeMoved: UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest }) === undefined,
+      checksRun: checksRun(facts.checks),
       ...(check === undefined ? {} : { lastCheck: check })
     })
     if (reading === undefined) return stands
     const found = CompletionClaim.find(reading)
-    // One bounce while the cap and a frame allow it; the verdict after that.
+    // One bounce while the cap and a frame allow it; the verdict after that,
+    // and only over the readings the verdict is about.
     const bounced = found !== undefined && room && state.claimDemands < state.claimCap
     const event = new AgentEvent.ClaimDemanded({
       eventType: eventType.claimDemanded,
       complete: reading.complete,
       overclaims: reading.overclaims,
+      invented: reading.invented,
       latencyMs: reading.latencyMs,
       demanded: bounced,
       currentDigest: workspaceDigest,
@@ -769,16 +847,19 @@ export const judgeCompletion = (
     if (bounced) {
       return handBack({
         event,
-        note: CompletionClaim.demand(found),
-        keeps: false,
+        note: CompletionClaim.demand(),
+        // A bounce the brake would not refuse is worth restoring against an
+        // exhausted budget; one it would refuse is not. See `CompletionDemand`.
+        keeps: !CompletionClaim.unrecorded(found),
         spent: { claimDemands: state.claimDemands + 1 }
       })
     }
-    return {
-      observed: event,
-      demand: undefined,
-      unproven: CompletionClaim.unproven(found, state.claimDemands > 0)
-    }
+    // Out of bounces. A claim the brake only found thin stands here: it was
+    // handed back once, the run answered, and refusing the answer as well is
+    // the price that destroyed honest runs. Only an unrecorded claim is refused.
+    return CompletionClaim.unrecorded(found)
+      ? { observed: event, demand: undefined, unproven: CompletionClaim.unproven(found, state.claimDemands > 0) }
+      : { observed: event, demand: undefined, unproven: undefined }
   })
 
 /**

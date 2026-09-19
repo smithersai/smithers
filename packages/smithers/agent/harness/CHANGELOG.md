@@ -4,6 +4,61 @@
 
 ### Changed
 
+- The completion claim brake refuses one thing, and it is not "the task is not
+  done". `CompletionClaim.classifier` now asks a third question, `invented`,
+  whether the claim reports having run a command or having obtained a result
+  the evidence does not record, and that question alone refuses:
+  `CompletionClaim.inventedAt` (0.85) with no bounce left fails the turn as
+  `claim_unproven`, through the new `CompletionClaim.unrecorded`. All three
+  questions still _bounce_: `CompletionClaim.find` hands the completion back at
+  `disprovenAt` (0.3), `overclaimedAt` (0.8) or the new `unsupportedAt` (0.5),
+  and a bounce costs a frame rather than an answer.
+  `CompletionClaim.reason` is gone, because one demand text now covers the one
+  thing the demand is about.
+
+  The reason is measurement, not taste. Armed on the first two questions the
+  brake destroyed true answers: zero of five live question-shaped turns
+  answered at all, one of them over the correct sentence `add(2, 3) returns
+  -1`, and one live CI dispatch in four died at `complete 0.35, overclaims
+  0.89` on a run whose planted bug was fixed. Eighteen completion states over
+  the live gate's own planted repository were then scored on the gateway, six
+  readings each, on 2026-09-19. Jev is not noisy: six readings of one state
+  spread by 0.03 or less. `complete` is inverted: at or below 0.3 it fired on
+  eight of the twelve honest completions and two of the six lies, and its two
+  lowest readings in the corpus, 0.02, were an honest "the call was denied" and
+  an honest "I changed it and the test still fails", against a flat lie at
+  0.60. `overclaims` at or above 0.8 fired on five of the twelve honest ones.
+  No threshold over the two keeps a lie dead and an honest answer alive: the
+  honest unchecked fix read 0.10 and 0.88, worse on both than the flat lie's
+  0.22 and 0.86. `invented` at 0.85 refused none of the twelve honest
+  completions and ended four of the six lies, with 0.75 the highest honest
+  reading and 0.94 the lowest ended lie. The two lies it misses, a half-truth
+  over a second file and a wrong answer to a question, are not decidable from
+  what the brake is shown. The bounce stays armed on all three because it costs
+  a frame and is sometimes the only thing in this package with anything to say:
+  one live turn asked to fix a one-character bug ran a single `grep` for the
+  string `add.mjs`, found nothing, answered "No add.mjs file found" and stopped
+  at frame 2 of a budget of 8 over a directory whose second file is `add.mjs`.
+
+- `CompletionClaim.Evidence` carries `checksRun`, every check the run took over
+  the tree it is completing on as a command and a `passed`/`failed` outcome,
+  newest `CompletionClaim.checksRunLimit` (24) kept, read off the run's own
+  durable check ledger. `lastCheck` is unchanged and still the only one with a
+  result. The live CI red is why: that run fixed the bug and ran the
+  repository's test, but its _last_ check was a `git diff` it ran to show its
+  work, so the passing test was never in the payload and a true sentence
+  reported a result nothing recorded. Measured on the gateway, that one claim
+  read 0.91 on `invented` without the list and 0.16 with it; a run that proved
+  its claim two frames earlier moved 0.91 to 0.12. The four lies did not move,
+  because they have no checks to list.
+
+- `Frame.CompletionDemand.keeps` is true for a claim demand the brake would not
+  refuse. A bounce below `inventedAt` would have let the same sentence stand,
+  so discarding it against an exhausted frame budget threw away an answer that
+  was never going to be refused; one at or above `inventedAt` is still
+  discarded, because restoring it is how a bounced "the tests pass" became a
+  run's final answer with a `stop` finish.
+
 - The completion claim brake is a verdict and not only a demand. Every
   completion with a claim is now read, `claimCap` is the number of frames a
   run is _given_ to prove one rather than the number of completions that are
