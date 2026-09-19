@@ -63,28 +63,29 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       ? "This command was already accepted, but its outcome is unknown. Check the result before explicitly trying again."
       : "This command already has a saved outcome. It will not run again from the same execution call." }
     const id = invocationKey === undefined ? `command-${crypto.randomUUID()}` : `command-call-${invocationKey}${attempts.length === 0 ? "" : `-${attempts.length + 1}`}`
+    /*
+     * Deciding and staging the human's pending edit happens BEFORE any write
+     * and cannot fail the way a browser fails: the recovery record is written
+     * through `writeEntityRecovery`, which answers `undefined` rather than
+     * throwing. A throw from here is this app's own bug, so it is deliberately
+     * outside the classifier below — dressed as a lost write it would reach
+     * the person as retry advice that can never work, and put a false line in
+     * their transcript about a write that was never attempted.
+     */
     let pendingInput: PendingCommandInput | undefined
-    try {
-      if (request.actor === "user" && request.name === "form.set" && pendingFormInput !== undefined) {
-        const { cardId, field, value } = pendingFormInput
-        const candidate = ctx.store.collections.cards.get(cardId)
-        const decided = decideFormFieldInput(candidate?.kind === "flow-form" ? candidate : undefined, cardId, field, value)
-        if (!("error" in decided)) pendingInput = ctx.store.stagePendingCardInput(cardId, decided.card, id, field)
-        else {
-          const answer = decideApprovalAnswerInput(ctx.store, cardId, field, value)
-          if (!("error" in answer)) pendingInput = ctx.store.stagePendingApprovalAnswer(answer, id)
-        }
+    if (request.actor === "user" && request.name === "form.set" && pendingFormInput !== undefined) {
+      const { cardId, field, value } = pendingFormInput
+      const candidate = ctx.store.collections.cards.get(cardId)
+      const decided = decideFormFieldInput(candidate?.kind === "flow-form" ? candidate : undefined, cardId, field, value)
+      if (!("error" in decided)) pendingInput = ctx.store.stagePendingCardInput(cardId, decided.card, id, field)
+      else {
+        const answer = decideApprovalAnswerInput(ctx.store, cardId, field, value)
+        if (!("error" in answer)) pendingInput = ctx.store.stagePendingApprovalAnswer(answer, id)
       }
+    }
+    try {
       await ctx.store.dispatch({ type: "command.intent.accepted", actor: request.actor,
         id, name: request.name, source: request.source, invocationKey }).isPersisted.promise
-      const accepted = ctx.store.collections.commandIntents.get(id)
-      if (ctx.disposed || ctx.accountEpoch !== epoch || request.invocation?.signal?.aborted || accepted?.status !== "accepted"
-        || !currentHttpCall(ctx, request.httpCall)) {
-        pendingInput?.clear()
-        return { refusal: "The command's controller, account, or turn changed before it could start.", persistenceFailed: true }
-      }
-      onAccepted?.(request)
-      return { receipt: { id, actor: request.actor, acceptedRevision: accepted.acceptedRevision }, ...(pendingInput === undefined ? {} : { pendingInput }) }
     } catch (error) {
       pendingInput?.clear()
       /*
@@ -96,6 +97,14 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
        */
       return { refusal: browserWriteRefusal(error), persistenceFailed: true, writeRefused: true }
     }
+    const accepted = ctx.store.collections.commandIntents.get(id)
+    if (ctx.disposed || ctx.accountEpoch !== epoch || request.invocation?.signal?.aborted || accepted?.status !== "accepted"
+      || !currentHttpCall(ctx, request.httpCall)) {
+      pendingInput?.clear()
+      return { refusal: "The command's controller, account, or turn changed before it could start.", persistenceFailed: true }
+    }
+    onAccepted?.(request)
+    return { receipt: { id, actor: request.actor, acceptedRevision: accepted.acceptedRevision }, ...(pendingInput === undefined ? {} : { pendingInput }) }
   },
   canExecute: (receipt, request) => {
     const row = ctx.store.collections.commandIntents.get(receipt.id)

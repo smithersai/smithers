@@ -273,6 +273,26 @@ describe("durable command intent at the active shared door", () => {
     expect(after?.kind === "flow-form" && after.payload.draft).toEqual(close ? {} : { purpose: "pending words" })
   })
 
+  /*
+   * The classifier answers for the storage boundary, and only for it. Staging
+   * a human's form edit runs before any write and cannot fail the way a
+   * browser fails: when it throws, it is this app's bug. Classified as a lost
+   * write it reached the person as "This browser did not save that change…
+   * Make it again; if it fails twice, reload the page" — retry advice for
+   * something that will never succeed, plus a false line in the transcript
+   * about a write that was never attempted.
+   */
+  test("a bug in the staged form preparation is not dressed up as a browser that would not save", async () => {
+    const store = await open()
+    const controller = controllerFor({ ...store, stagePendingCardInput: () => { throw new TypeError("the form card is not ready") } })
+    controller.renderFlowForm({ name: "repo.tree", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.String }) })
+    await store.settled?.()
+    await expect(controller.commands.run("form.set", "form-repo.tree purpose pending words")).rejects.toThrow(TypeError)
+    // The write was never reached, so nothing was accepted and nothing is owed
+    // a sentence about this browser's saved data.
+    expect(store.collections.commandIntents.size).toBe(0)
+  })
+
   test("invalid form input and agent input cannot use the pre-authorization recovery preparation", async () => {
     const store = await open()
     let stages = 0
