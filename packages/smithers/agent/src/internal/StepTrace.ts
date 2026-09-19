@@ -12,7 +12,7 @@ import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
-import { trace, traceIdentity } from "../AgentSession.ts"
+import { maxTracedBytes, trace, traceIdentity } from "../AgentSession.ts"
 import type * as EventSink from "../EventSink.ts"
 
 interface Cursor {
@@ -21,6 +21,16 @@ interface Cursor {
   cell: string
   occurrences: Map<string, number>
 }
+
+const boundCallFields = (payload: Record<string, Schema.Json>): Record<string, Schema.Json> =>
+  Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => {
+      if (key === "callId" || key === "outcome") return [key, value]
+      const json = JSON.stringify(value)
+      const bytes = new TextEncoder().encode(json).byteLength
+      return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }]
+    })
+  )
 
 /**
  * Every source event owns a small durable checkpoint. Its saved outcome and
@@ -61,14 +71,16 @@ export const make = (journal: Journal.Service) =>
         if (event._tag === "cell-produced") cursor.cell = event.cell.digest
         const json = JSON.stringify(projected.payload)
         const bytes = new TextEncoder().encode(json).byteLength
-        const payload = (bytes <= 262_144 ? JSON.parse(json) : {
-          truncated: true,
-          bytes,
-          digest: Digest.digest(json)
-        }) as Record<string, Schema.Json>
+        const original = JSON.parse(json) as Record<string, Schema.Json>
+        const payload = bytes <= 262_144
+          ? original
+          : projected.eventType === "control.agent.cell-call-started"
+              || projected.eventType === "control.agent.cell-call-settled"
+          ? boundCallFields(original)
+          : { truncated: true, bytes, digest: Digest.digest(json) }
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
-        const position = JSON.stringify([projected.eventType, payload.callId ?? ""])
+        const position = JSON.stringify([projected.eventType, original.callId ?? ""])
         const occurrence = cursor.occurrences.get(position) ?? 0
         cursor.occurrences.set(position, occurrence + 1)
         const { cell, frame, ordinal } = cursor
