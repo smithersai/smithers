@@ -7,6 +7,7 @@ import {
 import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
+import { browserWriteRefusal } from "../BrowserWriteFailure"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 import { resolveTargetRepo } from "../RepoContext"
 import { setupTrialPr } from "../RepositorySetupTrial"
@@ -729,6 +730,14 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
      * already had — the sentence itself only ever appeared on a toast, gone
      * after four seconds. It goes to the transcript as well, where they are
      * still looking when the draft they edited submits the mode they replaced.
+     *
+     * An accepted edit whose WRITE fails reaches them the same way, and used
+     * to say nothing at all: the rejection left this door, the flow harness
+     * relabelled it `/setup.configure failed`, and one toast carried that. The
+     * control reverted exactly as a refusal makes it revert, so a lost pick and
+     * a rejected one were indistinguishable and neither was in the transcript.
+     * A failed write is now named here, in the same place and the same words a
+     * refusal is, and the door never rejects.
      */
     configureRepositorySetup: (id, field, value) => edit(id, async () => {
       const refuse = (sentence: string) => {
@@ -740,7 +749,11 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (card.payload.owner !== null && card.payload.owner !== owner()) return refuse("This setup belongs to a different account.")
       const applied = applySetupEdit(card.payload.draft, card.payload.job, field, value)
       if ("error" in applied) return refuse(applied.error)
-      await upsert({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
+      try {
+        await upsert({ ...card, status: "active", payload: editSetup(card.payload, applied.draft) })
+      } catch (error) {
+        return refuse(browserWriteRefusal(error))
+      }
       return { value: "Draft updated." }
     }),
     /*
